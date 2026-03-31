@@ -1,0 +1,4 @@
+date,start_time,end_time,title,location,category,description,sort_order,is_published
+2026-05-14,08:00,09:00,Welcome Breakfast,Main Pavilion,Meal,Continental breakfast for all attendees,10,true
+2026-05-14,09:30,10:30,Coach Chassis Seminar,Seminar Hall,Seminar,Freightliner chassis maintenance overview,20,true
+2026-05-14,13:00,17:00,Free Time,,Relax,Explore the grounds or nearby town,30,false
