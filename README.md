@@ -1,56 +1,39 @@
-# FCOC Event Hub Starter
+# FCOC Event Hub
 
-This is a starter codebase for the **FCOC Event Hub** PWA concept.
+Starter MVP for a cross-device FCOC event PWA.
 
-## What is included
-- Next.js App Router project
-- Member-facing screens for Home, Agenda, Activities, Attendees, and Nearby
-- Admin screens for Events, Imports, Activities, and Announcements
-- CSV/XLSX import preview using `papaparse` and `xlsx`
-- Reusable location card with Apple Maps and Google Maps directions links
-- Cutoff-date fields for event and activity planning
+## Included in this starter
+- Member home dashboard
+- Agenda page
+- Attendee locator and parking overview
+- Activities page with cutoff logic
+- Nearby page with Apple Maps and Google Maps links
+- Announcements page
+- Admin event creation page
+- Admin CSV/XLSX registration import preview
+- PostgreSQL / Supabase-ready schema
+- Basic PWA manifest and service worker registration
 
-## What is not included yet
-- Database connection
-- Authentication
-- Payment processing
-- Push notifications
-- Real map rendering or site marker placement
-- Production import/save APIs
+## Stack
+- Next.js App Router
+- TypeScript
+- Client-side CSV import with Papa Parse
+- Client-side Excel import with xlsx
 
-## Recommended next build steps
-1. Connect Supabase for auth and storage
-2. Convert the sample data in `lib/sample-data.ts` to real database queries
-3. Add server actions or API routes for event saving, importing, and activity signup
-4. Add a true parking map screen with RV site markers
-5. Add role-based admin access
+## How to run
+1. Install Node.js 20 or newer.
+2. In a terminal, go to this folder.
+3. Run `npm install`.
+4. Run `npm run dev`.
+5. Open `http://localhost:3000`.
 
-## Local setup
-1. Install Node.js 20 or newer
-2. Open a terminal in this folder
-3. Run:
+## Suggested next production steps
+1. Add Supabase and replace mock data with real tables.
+2. Add authentication and admin/member roles.
+3. Add real activity registration and payment flow.
+4. Add map image upload and clickable site assignment tools.
+5. Add nearby auto-populate using a Places API plus admin review.
+6. Add push notifications and offline caching strategy.
 
-```bash
-npm install
-npm run dev
-```
-
-4. Open the local URL shown in the terminal
-
-## Suggested CSV columns
-- registration_id
-- first_name
-- last_name
-- email
-- phone
-- member_number
-- site_number
-- coach_make
-- coach_model
-- arrival_date
-- departure_date
-- visibility_opt_in
-- activity_selections
-
-## Notes for your club
-This starter was shaped around FCOC event operations: agenda updates, attendee lookup, nearby places, tours, parking support, and planning cutoffs.
+## Notes
+This is a solid starter scaffold, not a finished production deployment. The structure is designed so you can extend it into a full event platform for multiple FCOC events.

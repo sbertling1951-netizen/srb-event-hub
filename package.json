@@ -9,28 +9,17 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
-    "@supabase/supabase-js": "^2.99.3",
-    "docx": "^9.6.1",
-    "leaflet": "^1.9.4",
-    "luxon": "^3.7.2",
-    "next": "^15.5.14",
-    "papaparse": "^5.5.2",
+    "@supabase/supabase-js": "^2.99.0",
+    "next": "^15.5.12",
+    "papaparse": "^5.5.3",
     "react": "19.0.0",
-    "react-dom": "19.0.0",
-    "react-leaflet": "^5.0.0",
-    "xlsx": "https://sheet.lol/balls/xlsx-0.20.3.tgz"
+    "react-dom": "19.0.0"
   },
   "devDependencies": {
-    "@types/leaflet": "^1.9.21",
-    "@types/luxon": "^3.7.1",
     "@types/node": "^22.13.10",
-    "@types/papaparse": "^5.5.2",
+    "@types/papaparse": "^5.3.16",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
-    "prettier": "^3.8.1",
     "typescript": "^5.8.2"
   }
 }

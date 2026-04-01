@@ -1,0 +1,21 @@
+{
+  "name": "FCOC Event Hub",
+  "short_name": "FCOC Hub",
+  "description": "Schedules, parking, people, places, and admin tools for FCOC events.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#b91c1c",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

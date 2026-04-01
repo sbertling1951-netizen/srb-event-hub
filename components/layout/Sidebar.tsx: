@@ -1,0 +1,119 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useState } from 'react'
+
+export default function Sidebar() {
+  const pathname = usePathname()
+  const [open, setOpen] = useState(false)
+
+  const sections = [
+    {
+      title: 'Event',
+      items: [
+        { label: 'Home', href: '/' },
+        { label: 'Agenda', href: '/agenda' },
+        { label: 'Nearby', href: '/nearby' },
+        { label: 'Announcements', href: '/announcements' },
+        { label: 'Coach Map', href: '/coach-map' },
+        { label: 'Attendee Locator', href: '/attendees' },
+      ],
+    },
+    {
+      title: 'Admin',
+      items: [
+        { label: 'Dashboard', href: '/admin/dashboard' },
+        { label: 'Events', href: '/admin/events' },
+        { label: 'Master Maps', href: '/admin/master-maps' },
+        { label: 'Parking Admin', href: '/admin/parking' },
+        { label: 'Check-In', href: '/admin/checkin' },
+        { label: 'CSV Import', href: '/admin/imports' },
+        { label: 'Agenda Admin', href: '/admin/agenda' },
+	{ label: 'Agenda Import', href: '/admin/agenda/import' },
+	{ label: 'Agenda Import', href: '/admin/agenda/import' },
+      ],
+    },
+  ]
+
+  return (
+    <>
+      {/* MOBILE TOGGLE BUTTON */}
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          position: 'fixed',
+          top: 10,
+          left: 10,
+          zIndex: 1000,
+          padding: '8px 12px',
+          background: '#0b5cff',
+          color: 'white',
+          borderRadius: 6,
+          border: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        ☰
+      </button>
+
+      {/* SIDEBAR */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: open ? 0 : -260,
+          width: 260,
+          height: '100vh',
+          background: '#1f2937',
+          color: 'white',
+          padding: 16,
+          transition: 'left 0.25s ease',
+          overflowY: 'auto',
+          zIndex: 999,
+        }}
+      >
+        <h2 style={{ marginTop: 0 }}>FCOC</h2>
+
+        {sections.map((section) => (
+          <div key={section.title} style={{ marginBottom: 20 }}>
+            <div
+              style={{
+                fontSize: 12,
+                textTransform: 'uppercase',
+                opacity: 0.6,
+                marginBottom: 6,
+              }}
+            >
+              {section.title}
+            </div>
+
+            {section.items.map((item) => {
+	const active =
+  pathname === item.href ||
+  (pathname?.startsWith(item.href + '/') && item.href !== '/')
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setOpen(false)}
+                  style={{
+                    display: 'block',
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    textDecoration: 'none',
+                    color: active ? '#fff' : '#d1d5db',
+                    background: active ? '#0b5cff' : 'transparent',
+                    marginBottom: 4,
+                  }}
+                >
+                  {item.label}
+                </Link>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
