@@ -35,7 +35,7 @@ function formatEventLabel(evt: EventRow) {
 function AdminDashboardPageInner() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
-  const [event, setEvent] = useState<EventRow | null>(null);
+  const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [status, setStatus] = useState("Loading...");
   const [loading, setLoading] = useState(true);
@@ -47,13 +47,11 @@ function AdminDashboardPageInner() {
 
       const payload = {
         id: evt.id,
-        name: evt.name || evt.title || "Selected Event",
-        title: evt.title || evt.name || "Selected Event",
-        eventName: evt.name || evt.title || "Selected Event",
-        location: evt.location || evt.city_state || evt.venue_name || null,
+        name: evt.name || "Selected Event",
+        eventName: evt.name || "Selected Event",
+        location: evt.location || null,
         start_date: evt.start_date || null,
         end_date: evt.end_date || null,
-        event_code: evt.event_code || null,
       };
 
       localStorage.setItem("fcoc-admin-event-context", JSON.stringify(payload));
@@ -82,13 +80,13 @@ function AdminDashboardPageInner() {
     const selected = events.find((e) => e.id === eventId) || null;
 
     if (!selected) {
-      setEvent(null);
+      setActiveEvent(null);
       setAttendees([]);
-      setStatus("No admin working event selected.");
+      setStatus("No event selected. Choose one above.");
       return;
     }
 
-    setEvent(selected);
+    setActiveEvent(selected);
     setStatus("Loading attendees...");
 
     const { data, error } = await supabase
@@ -116,7 +114,7 @@ function AdminDashboardPageInner() {
 
       if (loadedEvents.length === 0) {
         setSelectedEventId("");
-        setEvent(null);
+        setActiveEvent(null);
         setAttendees([]);
         setStatus("No events found.");
         return;
@@ -130,9 +128,9 @@ function AdminDashboardPageInner() {
 
       if (!preferred) {
         setSelectedEventId("");
-        setEvent(null);
+        setActiveEvent(null);
         setAttendees([]);
-        setStatus("No admin working event selected.");
+        setStatus("No event selected. Choose one above.");
         return;
       }
 
@@ -172,7 +170,7 @@ function AdminDashboardPageInner() {
       setAdminWorkingEventContext(nextEvent);
       await loadDashboardForEvent(nextEventId);
       setStatus(
-        `Admin working event changed to ${nextEvent.name || nextEvent.title || "Selected Event"}.`,
+        `Admin working event changed to ${nextEvent.name || "Selected Event"}.`,
       );
     } catch (err: any) {
       console.error("handleSwitchEvent error:", err);
@@ -258,11 +256,9 @@ function AdminDashboardPageInner() {
 
         <div>
           <div style={{ fontWeight: 700 }}>
-            {event?.name || event?.title || "No selected event"}
+            {activeEvent?.name ?? "No selected event"}
           </div>
-          <div style={{ color: "#555" }}>
-            {event?.location || event?.city_state || event?.venue_name || ""}
-          </div>
+          <div style={{ color: "#555" }}>{activeEvent?.location ?? ""}</div>
           <div style={{ fontSize: 13, marginTop: 6 }}>
             {switching ? "Switching event..." : status}
           </div>

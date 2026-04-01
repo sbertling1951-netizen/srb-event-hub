@@ -1,421 +1,525 @@
-'use client'
+"use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { getAdminEvent } from "@/lib/getAdminEvent";
+
+type AdminEventContext = {
+  id: string | null;
+  name: string | null;
+};
 
 type ActiveEvent = {
-  id: string
-  name: string
-  location: string | null
-  map_image_url: string | null
-  locations_map_open_scale: number | null
-}
+  id: string;
+  name: string;
+  location: string | null;
+  map_image_url: string | null;
+  locations_map_open_scale: number | null;
+};
+
+type EventMapSettingsRow = {
+  event_id: string;
+  selected_master_map_id: string | null;
+};
+
+type MasterMapRow = {
+  id: string;
+  map_image_url: string | null;
+};
 
 type EventLocation = {
-  id: string
-  event_id: string
-  name: string
-  category: string | null
-  description: string | null
-  map_x: number | null
-  map_y: number | null
-  priority: number | null
-}
-
-type PinchState = {
-  startDistance: number
-  startZoom: number
-  contentX: number
-  contentY: number
-}
+  id: string;
+  event_id: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  map_x: number | null;
+  map_y: number | null;
+  priority: number | null;
+};
 
 type DragState = {
-  startX: number
-  startY: number
-  startLeft: number
-  startTop: number
+  startX: number;
+  startY: number;
+  startLeft: number;
+  startTop: number;
+};
+
+type PinchState = {
+  startDistance: number;
+  startZoom: number;
+  contentX: number;
+  contentY: number;
+};
+
+function clampZoom(next: number) {
+  return Math.min(Math.max(next, 0.25), 3);
 }
 
-export default function LocationsAdminPage() {
-  const mapRef = useRef<HTMLDivElement | null>(null)
-  const zoomRef = useRef(0.6)
-  const pinchRef = useRef<PinchState | null>(null)
-  const dragRef = useRef<DragState | null>(null)
+function getTouchDistance(touches: TouchList) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
 
-  const [event, setEvent] = useState<ActiveEvent | null>(null)
-  const [locations, setLocations] = useState<EventLocation[]>([])
-  const [selectedLocationId, setSelectedLocationId] = useState('')
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('Loading...')
-  const [isNarrow, setIsNarrow] = useState(false)
-  const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 })
-  const [defaultZoom, setDefaultZoom] = useState(0.6)
-  const [zoom, setZoom] = useState(0.6)
+function getTouchMidpoint(touches: TouchList) {
+  return {
+    x: (touches[0].clientX + touches[1].clientX) / 2,
+    y: (touches[0].clientY + touches[1].clientY) / 2,
+  };
+}
 
-  const [isPlacing, setIsPlacing] = useState(false)
-  const [formId, setFormId] = useState('')
-  const [formName, setFormName] = useState('')
-  const [formCategory, setFormCategory] = useState('')
-  const [formDescription, setFormDescription] = useState('')
-  const [formPriority, setFormPriority] = useState('100')
-  const [formX, setFormX] = useState('')
-  const [formY, setFormY] = useState('')
+export default function AdminLocationsPage() {
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const pinchRef = useRef<PinchState | null>(null);
+  const zoomRef = useRef(0.6);
 
-  function clampZoom(next: number) {
-    return Math.min(Math.max(next, 0.25), 3)
-  }
+  const [event, setEvent] = useState<ActiveEvent | null>(null);
+  const [locations, setLocations] = useState<EventLocation[]>([]);
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("Loading...");
+  const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
+  const [isNarrow, setIsNarrow] = useState(false);
+  const [defaultZoom, setDefaultZoom] = useState(0.6);
+  const [zoom, setZoom] = useState(0.6);
 
-  function getTouchDistance(touches: TouchList) {
-    const dx = touches[0].clientX - touches[1].clientX
-    const dy = touches[0].clientY - touches[1].clientY
-    return Math.sqrt(dx * dx + dy * dy)
-  }
-
-  function getTouchMidpoint(touches: TouchList) {
-    return {
-      x: (touches[0].clientX + touches[1].clientX) / 2,
-      y: (touches[0].clientY + touches[1].clientY) / 2,
-    }
-  }
+  const [formId, setFormId] = useState("");
+  const [formName, setFormName] = useState("");
+  const [formCategory, setFormCategory] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [formPriority, setFormPriority] = useState("100");
+  const [formX, setFormX] = useState("");
+  const [formY, setFormY] = useState("");
+  const [isPlacing, setIsPlacing] = useState(false);
 
   useEffect(() => {
-    zoomRef.current = zoom
-  }, [zoom])
+    zoomRef.current = zoom;
+  }, [zoom]);
 
   useEffect(() => {
     function handleResize() {
-      setIsNarrow(window.innerWidth < 900)
+      setIsNarrow(window.innerWidth < 900);
     }
 
-    handleResize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
-    const el = mapRef.current
-    if (!el) return
+    const el = mapRef.current;
+    if (!el) return;
+
+    const container = el;
 
     function onTouchStart(e: TouchEvent) {
-      if (e.touches.length !== 2) return
+      if (e.touches.length !== 2) return;
 
-      const rect = el.getBoundingClientRect()
-      const midpoint = getTouchMidpoint(e.touches)
-      const startZoom = zoomRef.current
+      const rect = container.getBoundingClientRect();
+      const midpoint = getTouchMidpoint(e.touches);
+      const startZoom = zoomRef.current;
 
-      const viewportX = midpoint.x - rect.left
-      const viewportY = midpoint.y - rect.top
+      const viewportX = midpoint.x - rect.left;
+      const viewportY = midpoint.y - rect.top;
 
-      const contentX = (el.scrollLeft + viewportX) / startZoom
-      const contentY = (el.scrollTop + viewportY) / startZoom
+      const contentX = (container.scrollLeft + viewportX) / startZoom;
+      const contentY = (container.scrollTop + viewportY) / startZoom;
 
       pinchRef.current = {
         startDistance: getTouchDistance(e.touches),
         startZoom,
         contentX,
         contentY,
-      }
+      };
 
-      e.preventDefault()
+      e.preventDefault();
     }
 
     function onTouchMove(e: TouchEvent) {
-      const pinch = pinchRef.current
-      if (e.touches.length !== 2 || !pinch) return
+      const pinch = pinchRef.current;
+      if (e.touches.length !== 2 || !pinch) return;
 
-      const rect = el.getBoundingClientRect()
-      const midpoint = getTouchMidpoint(e.touches)
-      const currentDistance = getTouchDistance(e.touches)
+      const rect = container.getBoundingClientRect();
+      const midpoint = getTouchMidpoint(e.touches);
+      const currentDistance = getTouchDistance(e.touches);
 
       const nextZoom = clampZoom(
-        pinch.startZoom * (currentDistance / pinch.startDistance)
-      )
+        pinch.startZoom * (currentDistance / pinch.startDistance),
+      );
 
-      const viewportX = midpoint.x - rect.left
-      const viewportY = midpoint.y - rect.top
+      const viewportX = midpoint.x - rect.left;
+      const viewportY = midpoint.y - rect.top;
 
-      setZoom(nextZoom)
-      zoomRef.current = nextZoom
+      setZoom(nextZoom);
+      zoomRef.current = nextZoom;
 
-      const nextLeft = pinch.contentX * nextZoom - viewportX
-      const nextTop = pinch.contentY * nextZoom - viewportY
+      const nextLeft = pinch.contentX * nextZoom - viewportX;
+      const nextTop = pinch.contentY * nextZoom - viewportY;
 
       requestAnimationFrame(() => {
-        el.scrollLeft = Math.max(0, nextLeft)
-        el.scrollTop = Math.max(0, nextTop)
-      })
+        container.scrollLeft = Math.max(0, nextLeft);
+        container.scrollTop = Math.max(0, nextTop);
+      });
 
-      e.preventDefault()
+      e.preventDefault();
     }
 
     function onTouchEnd() {
-      pinchRef.current = null
+      pinchRef.current = null;
     }
 
-    el.addEventListener('touchstart', onTouchStart, { passive: false })
-    el.addEventListener('touchmove', onTouchMove, { passive: false })
-    el.addEventListener('touchend', onTouchEnd, { passive: false })
-    el.addEventListener('touchcancel', onTouchEnd, { passive: false })
+    container.addEventListener("touchstart", onTouchStart, { passive: false });
+    container.addEventListener("touchmove", onTouchMove, { passive: false });
+    container.addEventListener("touchend", onTouchEnd, { passive: false });
+    container.addEventListener("touchcancel", onTouchEnd, { passive: false });
 
     return () => {
-      el.removeEventListener('touchstart', onTouchStart)
-      el.removeEventListener('touchmove', onTouchMove)
-      el.removeEventListener('touchend', onTouchEnd)
-      el.removeEventListener('touchcancel', onTouchEnd)
-    }
-  }, [])
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove", onTouchMove);
+      container.removeEventListener("touchend", onTouchEnd);
+      container.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
 
   useEffect(() => {
-    const el = mapRef.current
-    if (!el) return
+    const el = mapRef.current;
+    if (!el) return;
+
+    const container = el;
 
     function onWheel(e: WheelEvent) {
-      if (isNarrow) return
+      if (isNarrow) return;
 
-      e.preventDefault()
+      e.preventDefault();
 
-      const rect = el.getBoundingClientRect()
-      const viewportX = e.clientX - rect.left
-      const viewportY = e.clientY - rect.top
+      const rect = container.getBoundingClientRect();
+      const viewportX = e.clientX - rect.left;
+      const viewportY = e.clientY - rect.top;
 
-      const currentZoom = zoomRef.current
-      const nextZoom = clampZoom(currentZoom * (e.deltaY > 0 ? 0.92 : 1.08))
+      const currentZoom = zoomRef.current;
+      const nextZoom = clampZoom(currentZoom * (e.deltaY > 0 ? 0.92 : 1.08));
 
-      const contentX = (el.scrollLeft + viewportX) / currentZoom
-      const contentY = (el.scrollTop + viewportY) / currentZoom
+      const contentX = (container.scrollLeft + viewportX) / currentZoom;
+      const contentY = (container.scrollTop + viewportY) / currentZoom;
 
-      setZoom(nextZoom)
-      zoomRef.current = nextZoom
+      setZoom(nextZoom);
+      zoomRef.current = nextZoom;
 
       requestAnimationFrame(() => {
-        el.scrollLeft = Math.max(0, contentX * nextZoom - viewportX)
-        el.scrollTop = Math.max(0, contentY * nextZoom - viewportY)
-      })
+        container.scrollLeft = Math.max(0, contentX * nextZoom - viewportX);
+        container.scrollTop = Math.max(0, contentY * nextZoom - viewportY);
+      });
     }
 
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [isNarrow])
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", onWheel);
+    };
+  }, [isNarrow]);
 
   useEffect(() => {
-    const el = mapRef.current
-    if (!el) return
+    const el = mapRef.current;
+    if (!el) return;
+
+    const container = el;
+    container.style.cursor = isNarrow ? "auto" : "grab";
 
     function onMouseDown(e: MouseEvent) {
-      if (isNarrow) return
-      if (e.button !== 0) return
+      if (isNarrow) return;
+      if (e.button !== 0) return;
 
-      const target = e.target as HTMLElement
-      if (target.closest('button')) return
+      const target = e.target as HTMLElement;
+      if (target.closest("button")) return;
 
       dragRef.current = {
         startX: e.clientX,
         startY: e.clientY,
-        startLeft: el.scrollLeft,
-        startTop: el.scrollTop,
-      }
+        startLeft: container.scrollLeft,
+        startTop: container.scrollTop,
+      };
 
-      el.style.cursor = 'grabbing'
-      e.preventDefault()
+      container.style.cursor = "grabbing";
+      e.preventDefault();
     }
 
     function onMouseMove(e: MouseEvent) {
-      const drag = dragRef.current
-      if (!drag) return
+      if (isNarrow) return;
+      if (!dragRef.current) return;
 
-      const dx = e.clientX - drag.startX
-      const dy = e.clientY - drag.startY
+      const dx = e.clientX - dragRef.current.startX;
+      const dy = e.clientY - dragRef.current.startY;
 
-      el.scrollLeft = drag.startLeft - dx
-      el.scrollTop = drag.startTop - dy
+      container.scrollLeft = dragRef.current.startLeft - dx;
+      container.scrollTop = dragRef.current.startTop - dy;
     }
 
     function onMouseUp() {
-      dragRef.current = null
-      el.style.cursor = isNarrow ? 'auto' : 'grab'
+      dragRef.current = null;
+      container.style.cursor = isNarrow ? "auto" : "grab";
     }
 
-    el.style.cursor = isNarrow ? 'auto' : 'grab'
-    el.addEventListener('mousedown', onMouseDown)
-    window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup', onMouseUp)
+    container.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
 
     return () => {
-      el.removeEventListener('mousedown', onMouseDown)
-      window.removeEventListener('mousemove', onMouseMove)
-      window.removeEventListener('mouseup', onMouseUp)
-    }
-  }, [isNarrow])
+      container.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [isNarrow]);
 
   useEffect(() => {
-    void loadPage()
-  }, [])
+    void loadPage();
+
+    function handleStorage(e: StorageEvent) {
+      if (e.key === "fcoc-admin-event-changed") {
+        void loadPage();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   async function loadPage() {
-    setStatus('Loading...')
+    setStatus("Loading...");
 
-    const { data: activeEvent, error: eventError } = await supabase
-      .from('events')
-      .select('id,name,location,map_image_url,locations_map_open_scale')
-      .eq('is_active', true)
-      .single()
+    const adminEvent = getAdminEvent() as AdminEventContext | null;
 
-    if (eventError || !activeEvent) {
-      setStatus(`Could not load active event: ${eventError?.message || 'No active event found.'}`)
-      return
+    if (!adminEvent?.id) {
+      setEvent(null);
+      setLocations([]);
+      setStatus(
+        "No admin working event selected. Choose one on the Admin Dashboard.",
+      );
+      return;
     }
 
-    const typedEvent = activeEvent as ActiveEvent
-    setEvent(typedEvent)
+    const { data: eventRow, error: eventError } = await supabase
+      .from("events")
+      .select("id,name,location,locations_map_open_scale")
+      .eq("id", adminEvent.id)
+      .single();
 
-    const openingScale = Number(typedEvent.locations_map_open_scale ?? 0.6)
-    const safeOpeningScale = Number.isNaN(openingScale) ? 0.6 : clampZoom(openingScale)
-    setDefaultZoom(safeOpeningScale)
-    setZoom(safeOpeningScale)
+    if (eventError || !eventRow) {
+      setEvent(null);
+      setLocations([]);
+      setStatus(
+        `Could not load admin event: ${eventError?.message || "Selected event not found."}`,
+      );
+      return;
+    }
+
+    const { data: mapSettingsRows, error: mapSettingsError } = await supabase
+      .from("event_map_settings")
+      .select("event_id,selected_master_map_id")
+      .eq("event_id", adminEvent.id)
+      .limit(1);
+
+    if (mapSettingsError) {
+      setStatus(
+        `Could not load event map settings: ${mapSettingsError.message}`,
+      );
+      return;
+    }
+
+    const mapSettings = (mapSettingsRows?.[0] ||
+      null) as EventMapSettingsRow | null;
+
+    let mapImageUrl: string | null = null;
+
+    if (mapSettings?.selected_master_map_id) {
+      const { data: masterMapRows, error: masterMapError } = await supabase
+        .from("master_maps")
+        .select("id,map_image_url")
+        .eq("id", mapSettings.selected_master_map_id)
+        .limit(1);
+
+      if (masterMapError) {
+        setStatus(
+          `Could not load selected master map: ${masterMapError.message}`,
+        );
+        return;
+      }
+
+      const selectedMasterMap = (masterMapRows?.[0] ||
+        null) as MasterMapRow | null;
+      mapImageUrl = selectedMasterMap?.map_image_url || null;
+    }
+
+    const typedEvent: ActiveEvent = {
+      id: String(eventRow.id),
+      name: String(eventRow.name || adminEvent.name || "Selected Event"),
+      location: eventRow.location || null,
+      map_image_url: mapImageUrl,
+      locations_map_open_scale:
+        typeof eventRow.locations_map_open_scale === "number"
+          ? eventRow.locations_map_open_scale
+          : null,
+    };
+
+    setEvent(typedEvent);
+
+    const openingScale = Number(typedEvent.locations_map_open_scale ?? 0.6);
+    const safeOpeningScale = Number.isNaN(openingScale)
+      ? 0.6
+      : clampZoom(openingScale);
+
+    setDefaultZoom(safeOpeningScale);
+    setZoom(safeOpeningScale);
+    zoomRef.current = safeOpeningScale;
 
     const { data: locationData, error: locationError } = await supabase
-      .from('event_locations')
-      .select('id,event_id,name,category,description,map_x,map_y,priority')
-      .eq('event_id', typedEvent.id)
-      .order('priority', { ascending: true })
-      .order('name', { ascending: true })
+      .from("event_locations")
+      .select("id,event_id,name,category,description,map_x,map_y,priority")
+      .eq("event_id", typedEvent.id)
+      .order("priority", { ascending: true })
+      .order("name", { ascending: true });
 
     if (locationError) {
-      setStatus(`Could not load event locations: ${locationError.message}`)
-      return
+      setStatus(`Could not load event locations: ${locationError.message}`);
+      return;
     }
 
-    setLocations((locationData || []) as EventLocation[])
-    setStatus(`Loaded ${(locationData || []).length} locations.`)
+    setLocations((locationData || []) as EventLocation[]);
+    setStatus(`Loaded ${(locationData || []).length} locations.`);
   }
 
   const filteredLocations = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return locations
+    const q = search.trim().toLowerCase();
+    if (!q) return locations;
 
     return locations.filter((loc) => {
-      const text = [loc.name || '', loc.category || '', loc.description || '']
-        .join(' ')
-        .toLowerCase()
+      const text = [loc.name || "", loc.category || "", loc.description || ""]
+        .join(" ")
+        .toLowerCase();
 
-      return text.includes(q)
-    })
-  }, [locations, search])
+      return text.includes(q);
+    });
+  }, [locations, search]);
 
   const selectedLocation =
-    locations.find((loc) => loc.id === selectedLocationId) || null
+    locations.find((loc) => loc.id === selectedLocationId) || null;
 
-  function focusLocation(location: EventLocation, targetZoom = zoomRef.current) {
-    if (!mapRef.current || location.map_x === null || location.map_y === null) return
+  function focusLocation(
+    location: EventLocation,
+    targetZoom = zoomRef.current,
+  ) {
+    if (!mapRef.current || location.map_x === null || location.map_y === null)
+      return;
 
-    const container = mapRef.current
-    const scaledWidth = naturalSize.width * targetZoom
-    const scaledHeight = naturalSize.height * targetZoom
+    const container = mapRef.current;
+    const scaledWidth = naturalSize.width * targetZoom;
+    const scaledHeight = naturalSize.height * targetZoom;
 
-    const x = (location.map_x / 100) * scaledWidth
-    const y = (location.map_y / 100) * scaledHeight
+    const x = (location.map_x / 100) * scaledWidth;
+    const y = (location.map_y / 100) * scaledHeight;
 
     requestAnimationFrame(() => {
       container.scrollTo({
         left: Math.max(0, x - container.clientWidth / 2),
         top: Math.max(0, y - container.clientHeight / 2),
-        behavior: 'smooth',
-      })
-    })
+        behavior: "smooth",
+      });
+    });
   }
 
   function handleLocationClick(location: EventLocation) {
-    setSelectedLocationId(location.id)
-    setIsPlacing(false)
-    focusLocation(location)
-    setStatus(`Focused map on ${location.name}.`)
+    setSelectedLocationId(location.id);
+    setIsPlacing(false);
+    focusLocation(location);
+    loadLocationIntoForm(location);
+    setStatus(`Focused map on ${location.name}.`);
   }
 
   function getMarkerColor(location: EventLocation) {
-    if (location.id === selectedLocationId) return 'gold'
+    if (location.id === selectedLocationId) return "gold";
 
-    switch ((location.category || '').toLowerCase()) {
-      case 'trash':
-      case 'dumpster':
-        return '#dc2626'
-      case 'building':
-      case 'office':
-        return '#2563eb'
-      case 'restroom':
-      case 'bathroom':
-        return '#16a34a'
-      case 'registration':
-        return '#d97706'
+    switch ((location.category || "").toLowerCase()) {
+      case "trash":
+      case "dumpster":
+        return "#dc2626";
+      case "building":
+      case "office":
+        return "#2563eb";
+      case "restroom":
+      case "bathroom":
+        return "#16a34a";
+      case "registration":
+        return "#d97706";
       default:
-        return '#7c3aed'
+        return "#7c3aed";
     }
   }
 
   function getMarkerSize(location: EventLocation) {
-    if (location.id === selectedLocationId) return isNarrow ? 44 : 36
-    return isNarrow ? 22 : 16
+    if (location.id === selectedLocationId) return isNarrow ? 44 : 36;
+    return isNarrow ? 22 : 16;
   }
 
   function resetForm() {
-    setFormId('')
-    setFormName('')
-    setFormCategory('')
-    setFormDescription('')
-    setFormPriority('100')
-    setFormX('')
-    setFormY('')
-    setIsPlacing(false)
+    setFormId("");
+    setFormName("");
+    setFormCategory("");
+    setFormDescription("");
+    setFormPriority("100");
+    setFormX("");
+    setFormY("");
+    setIsPlacing(false);
   }
 
   function loadLocationIntoForm(location: EventLocation) {
-    setFormId(location.id)
-    setFormName(location.name || '')
-    setFormCategory(location.category || '')
-    setFormDescription(location.description || '')
-    setFormPriority(String(location.priority ?? 100))
-    setFormX(location.map_x != null ? String(location.map_x) : '')
-    setFormY(location.map_y != null ? String(location.map_y) : '')
-    setSelectedLocationId(location.id)
-    setIsPlacing(false)
+    setFormId(location.id);
+    setFormName(location.name || "");
+    setFormCategory(location.category || "");
+    setFormDescription(location.description || "");
+    setFormPriority(String(location.priority ?? 100));
+    setFormX(location.map_x != null ? String(location.map_x) : "");
+    setFormY(location.map_y != null ? String(location.map_y) : "");
+    setSelectedLocationId(location.id);
+    setIsPlacing(false);
   }
 
   function handleMapClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (!isPlacing || !mapRef.current) return
+    if (!isPlacing || !mapRef.current) return;
 
-    const container = mapRef.current
-    const rect = container.getBoundingClientRect()
+    const container = mapRef.current;
+    const rect = container.getBoundingClientRect();
 
-    const viewportX = e.clientX - rect.left
-    const viewportY = e.clientY - rect.top
+    const viewportX = e.clientX - rect.left;
+    const viewportY = e.clientY - rect.top;
 
-    const contentX = (container.scrollLeft + viewportX) / zoomRef.current
-    const contentY = (container.scrollTop + viewportY) / zoomRef.current
+    const contentX = (container.scrollLeft + viewportX) / zoomRef.current;
+    const contentY = (container.scrollTop + viewportY) / zoomRef.current;
 
-    const xPercent = (contentX / naturalSize.width) * 100
-    const yPercent = (contentY / naturalSize.height) * 100
+    const xPercent = (contentX / naturalSize.width) * 100;
+    const yPercent = (contentY / naturalSize.height) * 100;
 
-    const safeX = Math.max(0, Math.min(100, Number(xPercent.toFixed(2))))
-    const safeY = Math.max(0, Math.min(100, Number(yPercent.toFixed(2))))
+    const safeX = Math.max(0, Math.min(100, Number(xPercent.toFixed(2))));
+    const safeY = Math.max(0, Math.min(100, Number(yPercent.toFixed(2))));
 
-    setFormX(String(safeX))
-    setFormY(String(safeY))
-    setStatus(`Placed marker at X ${safeX}, Y ${safeY}. Save to keep it.`)
+    setFormX(String(safeX));
+    setFormY(String(safeY));
+    setStatus(`Placed marker at X ${safeX}, Y ${safeY}. Save to keep it.`);
   }
 
   async function saveLocation() {
     if (!event?.id) {
-      setStatus('No active event.')
-      return
+      setStatus("No admin event selected.");
+      return;
     }
 
     if (!formName.trim()) {
-      setStatus('Enter a location name.')
-      return
+      setStatus("Enter a location name.");
+      return;
     }
 
-    if (formX === '' || formY === '') {
-      setStatus('Click Place on Map, then click the map to choose a position.')
-      return
+    if (formX === "" || formY === "") {
+      setStatus("Click Place on Map, then click the map to choose a position.");
+      return;
     }
 
     const payload = {
@@ -426,149 +530,145 @@ export default function LocationsAdminPage() {
       priority: Number(formPriority || 100),
       map_x: Number(formX),
       map_y: Number(formY),
-    }
+    };
 
     if (
       Number.isNaN(payload.priority) ||
       Number.isNaN(payload.map_x) ||
       Number.isNaN(payload.map_y)
     ) {
-      setStatus('Priority or map coordinates are invalid.')
-      return
+      setStatus("Priority or map coordinates are invalid.");
+      return;
     }
 
     if (formId) {
       const { error } = await supabase
-        .from('event_locations')
+        .from("event_locations")
         .update(payload)
-        .eq('id', formId)
+        .eq("id", formId);
 
       if (error) {
-        setStatus(`Could not update location: ${error.message}`)
-        return
+        setStatus(`Could not update location: ${error.message}`);
+        return;
       }
 
-      setStatus(`Updated ${payload.name}.`)
+      setStatus(`Updated ${payload.name}.`);
     } else {
-      const { error } = await supabase
-        .from('event_locations')
-        .insert(payload)
+      const { error } = await supabase.from("event_locations").insert(payload);
 
       if (error) {
-        setStatus(`Could not create location: ${error.message}`)
-        return
+        setStatus(`Could not create location: ${error.message}`);
+        return;
       }
 
-      setStatus(`Created ${payload.name}.`)
+      setStatus(`Created ${payload.name}.`);
     }
 
-    await loadPage()
-    resetForm()
+    await loadPage();
+    resetForm();
   }
 
   async function deleteLocation() {
     if (!formId) {
-      setStatus('No location selected to delete.')
-      return
+      setStatus("No location selected to delete.");
+      return;
     }
 
-    const confirmed = window.confirm(`Delete "${formName}"?`)
-    if (!confirmed) return
+    const confirmed = window.confirm(`Delete "${formName}"?`);
+    if (!confirmed) return;
 
     const { error } = await supabase
-      .from('event_locations')
+      .from("event_locations")
       .delete()
-      .eq('id', formId)
+      .eq("id", formId);
 
     if (error) {
-      setStatus(`Could not delete location: ${error.message}`)
-      return
+      setStatus(`Could not delete location: ${error.message}`);
+      return;
     }
 
-    setStatus(`Deleted ${formName}.`)
+    setStatus(`Deleted ${formName}.`);
     if (selectedLocationId === formId) {
-      setSelectedLocationId('')
+      setSelectedLocationId("");
     }
-    await loadPage()
-    resetForm()
+    await loadPage();
+    resetForm();
   }
 
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
-      <h1 style={{ marginTop: 0 }}>Map Locations</h1>
+      <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
+        Map Locations
+      </h1>
 
       <div
         style={{
-          border: '1px solid #ddd',
+          border: "1px solid #ddd",
           borderRadius: 10,
-          background: '#f8f9fb',
+          background: "#f8f9fb",
           padding: 14,
           marginBottom: 16,
         }}
       >
-        <div style={{ fontWeight: 700 }}>{event?.name || 'No active event'}</div>
-        <div style={{ color: '#555' }}>{event?.location || ''}</div>
+        <div style={{ fontWeight: 700 }}>
+          {event?.name || "No admin working event selected"}
+        </div>
+        <div style={{ color: "#555" }}>{event?.location || ""}</div>
         <div style={{ fontSize: 13, marginTop: 6 }}>Status: {status}</div>
       </div>
 
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: isNarrow ? '1fr' : '360px minmax(0, 1fr)',
-          gridTemplateAreas: isNarrow ? "'map' 'list'" : "'list map'",
+          display: "grid",
+          gridTemplateColumns: isNarrow ? "1fr" : "360px minmax(0, 1fr)",
           gap: 20,
-          alignItems: 'start',
+          alignItems: "start",
         }}
       >
         <div
           style={{
-            gridArea: 'list',
-            border: '1px solid #ddd',
+            border: "1px solid #ddd",
             borderRadius: 10,
-            background: 'white',
+            background: "white",
             padding: 14,
-            display: 'grid',
+            display: "grid",
             gap: 12,
-            maxHeight: isNarrow ? 'none' : '82vh',
-            overflow: isNarrow ? 'visible' : 'auto',
           }}
         >
-          <div style={{ fontWeight: 700 }}>Locations</div>
+          <div style={{ fontWeight: 700 }}>Location Editor</div>
 
           <input
             type="text"
-            placeholder="Search locations"
+            placeholder="Search existing locations"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ padding: 8 }}
           />
 
-          <div style={{ fontSize: 13, color: '#666' }}>
-            Showing {filteredLocations.length} of {locations.length}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" onClick={resetForm}>
+              New
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPlacing((v) => !v)}
+              style={{
+                background: isPlacing ? "#0b5cff" : undefined,
+                color: isPlacing ? "white" : undefined,
+              }}
+            >
+              {isPlacing ? "Placing..." : "Place on Map"}
+            </button>
           </div>
 
-          <div
-            style={{
-              border: '1px solid #eee',
-              borderRadius: 8,
-              padding: 10,
-              background: '#fafafa',
-              display: 'grid',
-              gap: 8,
-            }}
-          >
-            <div style={{ fontWeight: 700 }}>
-              {formId ? 'Edit Location' : 'New Location'}
-            </div>
-
+          <div style={{ display: "grid", gap: 8 }}>
             <input
               type="text"
-              placeholder="Name"
+              placeholder="Location name"
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
               style={{ padding: 8 }}
             />
-
             <input
               type="text"
               placeholder="Category"
@@ -576,195 +676,111 @@ export default function LocationsAdminPage() {
               onChange={(e) => setFormCategory(e.target.value)}
               style={{ padding: 8 }}
             />
-
             <textarea
               placeholder="Description"
               value={formDescription}
               onChange={(e) => setFormDescription(e.target.value)}
-              style={{ padding: 8, minHeight: 80, resize: 'vertical' }}
+              rows={4}
+              style={{ padding: 8, resize: "vertical" }}
             />
-
-            <select
+            <input
+              type="number"
+              placeholder="Priority"
               value={formPriority}
               onChange={(e) => setFormPriority(e.target.value)}
               style={{ padding: 8 }}
-            >
-              <option value="1">1 - Highest Priority</option>
-              <option value="2">2 - Very High</option>
-              <option value="3">3 - High</option>
-              <option value="5">5 - Important</option>
-              <option value="10">10 - Useful</option>
-              <option value="100">100 - Normal</option>
-            </select>
+            />
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+              }}
+            >
               <input
                 type="number"
-                step="0.01"
-                placeholder="Map X"
+                placeholder="X"
                 value={formX}
                 onChange={(e) => setFormX(e.target.value)}
                 style={{ padding: 8 }}
               />
               <input
                 type="number"
-                step="0.01"
-                placeholder="Map Y"
+                placeholder="Y"
                 value={formY}
                 onChange={(e) => setFormY(e.target.value)}
                 style={{ padding: 8 }}
               />
             </div>
 
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" onClick={() => void saveLocation()}>
+                {formId ? "Update Location" : "Save Location"}
+              </button>
               <button
                 type="button"
-                onClick={() => setIsPlacing((v) => !v)}
-                style={{
-                  border: '1px solid #ccc',
-                  background: isPlacing ? '#fff7d6' : 'white',
-                  borderRadius: 6,
-                  padding: '6px 10px',
-                  cursor: 'pointer',
-                }}
+                onClick={() => void deleteLocation()}
+                disabled={!formId}
               >
-                {isPlacing ? 'Cancel Place Mode' : 'Place on Map'}
+                Delete
               </button>
-
-              <button
-                type="button"
-                onClick={() => void saveLocation()}
-                style={{
-                  border: '1px solid #ccc',
-                  background: 'white',
-                  borderRadius: 6,
-                  padding: '6px 10px',
-                  cursor: 'pointer',
-                }}
-              >
-                {formId ? 'Update Location' : 'Save Location'}
-              </button>
-
-              {formId && (
-                <button
-                  type="button"
-                  onClick={() => void deleteLocation()}
-                  style={{
-                    border: '1px solid #ccc',
-                    background: 'white',
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Delete
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={resetForm}
-                style={{
-                  border: '1px solid #ccc',
-                  background: 'white',
-                  borderRadius: 6,
-                  padding: '6px 10px',
-                  cursor: 'pointer',
-                }}
-              >
-                Clear Form
-              </button>
-            </div>
-
-            <div style={{ fontSize: 12, color: '#666' }}>
-              {isPlacing
-                ? 'Place mode is on. Click the map to capture X/Y.'
-                : 'Tip: choose Place on Map, then click the map to set the marker position.'}
             </div>
           </div>
 
-          {filteredLocations.map((loc) => {
-            const selected = loc.id === selectedLocationId
+          <div style={{ fontWeight: 700, marginTop: 8 }}>
+            Existing Locations
+          </div>
 
-            return (
-              <button
-                key={loc.id}
-                type="button"
-                onClick={() => {
-                  handleLocationClick(loc)
-                  loadLocationIntoForm(loc)
-                }}
-                style={{
-                  textAlign: 'left',
-                  width: '100%',
-                  padding: 12,
-                  borderRadius: 8,
-                  border: selected ? '1px solid #f0c36d' : '1px solid #eee',
-                  background: selected ? '#fff7d6' : 'white',
-                  cursor: 'pointer',
-                }}
-              >
-                <div style={{ fontWeight: 700 }}>{loc.name}</div>
-
-                {loc.category && (
-                  <div style={{ fontSize: 12, color: '#555', marginTop: 2 }}>
-                    {loc.category}
-                  </div>
-                )}
-
-                {loc.description && (
-                  <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                    {loc.description}
-                  </div>
-                )}
-
-                <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>
-                  Priority {loc.priority ?? 100} · Tap to center map and load into form
-                </div>
-              </button>
-            )
-          })}
-
-          {selectedLocation && (
-            <div
-              style={{
-                border: '1px solid #eee',
-                borderRadius: 8,
-                padding: 10,
-                background: '#fafafa',
-              }}
-            >
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                Selected Location
+          <div
+            style={{
+              display: "grid",
+              gap: 8,
+              maxHeight: isNarrow ? "none" : "45vh",
+              overflow: "auto",
+            }}
+          >
+            {filteredLocations.length === 0 ? (
+              <div style={{ fontSize: 13, color: "#666" }}>
+                No locations found.
               </div>
+            ) : (
+              filteredLocations.map((location) => {
+                const selected = location.id === selectedLocationId;
 
-              <div>{selectedLocation.name}</div>
-
-              {selectedLocation.category && (
-                <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>
-                  {selectedLocation.category}
-                </div>
-              )}
-
-              {selectedLocation.description && (
-                <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>
-                  {selectedLocation.description}
-                </div>
-              )}
-
-              <div style={{ fontSize: 12, color: '#777', marginTop: 6 }}>
-                Priority: {selectedLocation.priority ?? 100}
-              </div>
-            </div>
-          )}
+                return (
+                  <button
+                    key={location.id}
+                    type="button"
+                    onClick={() => handleLocationClick(location)}
+                    style={{
+                      textAlign: "left",
+                      padding: 10,
+                      borderRadius: 8,
+                      border: selected ? "1px solid #f0c36d" : "1px solid #eee",
+                      background: selected ? "#fff7d6" : "white",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600 }}>{location.name}</div>
+                    <div style={{ fontSize: 13, color: "#555" }}>
+                      {location.category || "Uncategorized"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                      X: {location.map_x ?? "—"} · Y: {location.map_y ?? "—"}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
 
         <div
           style={{
-            gridArea: 'map',
-            border: '1px solid #ddd',
+            border: "1px solid #ddd",
             borderRadius: 10,
-            background: 'white',
+            background: "white",
             padding: 12,
           }}
         >
@@ -772,28 +788,28 @@ export default function LocationsAdminPage() {
             ref={mapRef}
             onClick={handleMapClick}
             style={{
-              overflow: 'auto',
-              maxHeight: isNarrow ? '72vh' : '82vh',
-              border: '1px solid #ddd',
-              background: isPlacing ? '#eef7ff' : '#f2f2f2',
-              WebkitOverflowScrolling: 'touch',
-              touchAction: 'pan-x pan-y',
+              overflow: "auto",
+              maxHeight: isNarrow ? "60vh" : "82vh",
+              border: "1px solid #ddd",
+              background: "#f2f2f2",
+              WebkitOverflowScrolling: "touch",
+              touchAction: "pan-x pan-y",
             }}
           >
             <div
               style={{
-                position: 'relative',
+                position: "relative",
                 width: naturalSize.width * zoom,
                 height: naturalSize.height * zoom,
               }}
             >
               <div
                 style={{
-                  position: 'relative',
+                  position: "relative",
                   width: naturalSize.width,
                   height: naturalSize.height,
                   transform: `scale(${zoom})`,
-                  transformOrigin: 'top left',
+                  transformOrigin: "top left",
                 }}
               >
                 {event?.map_image_url && (
@@ -802,136 +818,143 @@ export default function LocationsAdminPage() {
                     alt="Event map"
                     draggable={false}
                     onLoad={(e) => {
-                      const img = e.currentTarget
+                      const img = e.currentTarget;
                       setNaturalSize({
                         width: img.naturalWidth || 1200,
                         height: img.naturalHeight || 800,
-                      })
+                      });
                     }}
                     style={{
                       width: naturalSize.width,
                       height: naturalSize.height,
-                      display: 'block',
-                      userSelect: 'none',
-                      pointerEvents: 'none',
+                      display: "block",
+                      userSelect: "none",
+                      pointerEvents: "none",
                     }}
                   />
                 )}
 
-                {locations.map((loc) => {
-                  if (loc.map_x === null || loc.map_y === null) return null
-
-                  const markerSize = getMarkerSize(loc)
+                {locations.map((location) => {
+                  if (location.map_x === null || location.map_y === null)
+                    return null;
 
                   return (
                     <div
-                      key={loc.id}
+                      key={location.id}
                       style={{
-                        position: 'absolute',
-                        left: `${loc.map_x}%`,
-                        top: `${loc.map_y}%`,
-                        transform: 'translate(-50%, -50%)',
-                        pointerEvents: 'none',
-                        zIndex: loc.id === selectedLocationId ? 4 : 2,
+                        position: "absolute",
+                        left: `${location.map_x}%`,
+                        top: `${location.map_y}%`,
+                        transform: "translate(-50%, -50%)",
+                        pointerEvents: "none",
                       }}
                     >
                       <button
                         type="button"
-                        onClick={() => {
-                          handleLocationClick(loc)
-                          loadLocationIntoForm(loc)
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleLocationClick(location);
                         }}
-                        title={loc.name}
+                        title={location.name}
                         style={{
-                          width: markerSize,
-                          height: markerSize,
-                          borderRadius: '50%',
-                          background: getMarkerColor(loc),
-                          border: isNarrow ? '3px solid white' : '2px solid white',
-                          boxShadow:
-                            loc.id === selectedLocationId
-                              ? '0 0 0 4px rgba(255,215,0,0.35), 0 1px 4px rgba(0,0,0,0.35)'
-                              : '0 1px 4px rgba(0,0,0,0.35)',
-                          cursor: 'pointer',
+                          width: getMarkerSize(location),
+                          height: getMarkerSize(location),
+                          borderRadius: "50%",
+                          background: getMarkerColor(location),
+                          border: isNarrow
+                            ? "3px solid white"
+                            : "2px solid white",
+                          boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+                          cursor: "pointer",
                           padding: 0,
-                          display: 'block',
-                          margin: '0 auto',
-                          pointerEvents: 'auto',
+                          display: "block",
+                          margin: "0 auto",
+                          pointerEvents: "auto",
                         }}
                       />
 
                       <div
                         style={{
                           marginTop: 4,
-                          marginLeft: 'auto',
-                          marginRight: 'auto',
-                          background: 'rgba(255,255,255,0.92)',
-                          border: '1px solid rgba(0,0,0,0.2)',
+                          marginLeft: "auto",
+                          marginRight: "auto",
+                          background: "rgba(255,255,255,0.92)",
+                          border: "1px solid rgba(0,0,0,0.2)",
                           borderRadius: 4,
-                          fontSize: loc.id === selectedLocationId ? 12 : 10,
+                          fontSize: 10,
                           fontWeight: 700,
-                          padding: loc.id === selectedLocationId ? '2px 6px' : '1px 4px',
-                          color: '#111',
-                          whiteSpace: 'nowrap',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                          display: 'table',
-                          pointerEvents: 'none',
+                          padding: "1px 4px",
+                          color: "#111",
+                          whiteSpace: "nowrap",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                          display: "table",
+                          pointerEvents: "none",
                         }}
                       >
-                        {loc.name}
+                        {location.name}
                       </div>
                     </div>
-                  )
+                  );
                 })}
-
-                {isPlacing && formX !== '' && formY !== '' && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: `${formX}%`,
-                      top: `${formY}%`,
-                      transform: 'translate(-50%, -50%)',
-                      pointerEvents: 'none',
-                      zIndex: 5,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: isNarrow ? 30 : 24,
-                        height: isNarrow ? 30 : 24,
-                        borderRadius: '50%',
-                        background: 'rgba(0,123,255,0.9)',
-                        border: '3px solid white',
-                        boxShadow: '0 0 0 4px rgba(0,123,255,0.2), 0 1px 4px rgba(0,0,0,0.35)',
-                      }}
-                    />
-                  </div>
-                )}
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-            <button type="button" onClick={() => setZoom((z) => clampZoom(z - 0.2))}>
+          <div
+            style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                const next = clampZoom(zoomRef.current - 0.1);
+                setZoom(next);
+                zoomRef.current = next;
+              }}
+            >
               −
             </button>
-            <button type="button" onClick={() => setZoom((z) => clampZoom(z + 0.2))}>
+            <button
+              type="button"
+              onClick={() => {
+                const next = clampZoom(zoomRef.current + 0.1);
+                setZoom(next);
+                zoomRef.current = next;
+              }}
+            >
               +
             </button>
-            <button type="button" onClick={() => setZoom(defaultZoom)}>
+            <button
+              type="button"
+              onClick={() => {
+                setZoom(defaultZoom);
+                zoomRef.current = defaultZoom;
+              }}
+            >
               Reset Zoom
             </button>
-            {selectedLocation && (
-              <button
-                type="button"
-                onClick={() => focusLocation(selectedLocation)}
-              >
-                Recenter Selected
-              </button>
-            )}
           </div>
+
+          {selectedLocation && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: 10,
+                border: "1px solid #eee",
+                borderRadius: 8,
+                background: "#fafafa",
+              }}
+            >
+              <div style={{ fontWeight: 700 }}>{selectedLocation.name}</div>
+              <div style={{ fontSize: 13, color: "#555" }}>
+                {selectedLocation.category || "Uncategorized"}
+              </div>
+              <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
+                {selectedLocation.description || ""}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
-  )
+  );
 }
