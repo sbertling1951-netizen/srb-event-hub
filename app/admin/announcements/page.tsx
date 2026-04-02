@@ -1,196 +1,236 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-
-type Announcement = {
-  id: string
-  title: string
-  body: string | null
-  is_important: boolean | null
-  is_pinned: boolean | null
-  is_published: boolean | null
-  published_at: string | null
-  starts_at: string | null
-  ends_at: string | null
-}
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { getAdminEvent } from "@/lib/getAdminEvent";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 
 type ActiveEvent = {
-  id: string
-  name: string
-}
+  id: string;
+  name: string;
+};
 
-function toLocalInputValue(value: string | null) {
-  if (!value) return ''
-  const d = new Date(value)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const yyyy = d.getFullYear()
-  const mm = pad(d.getMonth() + 1)
-  const dd = pad(d.getDate())
-  const hh = pad(d.getHours())
-  const mi = pad(d.getMinutes())
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`
-}
+type Announcement = {
+  id: string;
+  event_id: string;
+  title: string | null;
+  message: string | null;
+  category: string | null;
+  priority: string | null;
+  is_published: boolean | null;
+  created_at: string | null;
+};
 
-export default function AdminAnnouncementsPage() {
-  const [event, setEvent] = useState<ActiveEvent | null>(null)
-  const [items, setItems] = useState<Announcement[]>([])
-  const [status, setStatus] = useState('Loading...')
+function AdminAnnouncementsPageInner() {
+  const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [status, setStatus] = useState("Loading announcements...");
 
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [isImportant, setIsImportant] = useState(false)
-  const [isPinned, setIsPinned] = useState(false)
-  const [isPublished, setIsPublished] = useState(true)
-  const [startsAt, setStartsAt] = useState('')
-  const [endsAt, setEndsAt] = useState('')
+  const [editingId, setEditingId] = useState("");
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [category, setCategory] = useState("");
+  const [priority, setPriority] = useState("normal");
+  const [isPublished, setIsPublished] = useState(true);
 
   useEffect(() => {
-    void loadPage()
-  }, [])
+    void loadPage();
+
+    function handleStorage(e: StorageEvent) {
+      if (e.key === "fcoc-admin-event-changed") {
+        void loadPage();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   async function loadPage() {
-    setStatus('Loading...')
+    setStatus("Loading announcements...");
 
-    const { data: activeEvent, error: eventError } = await supabase
-      .from('events')
-      .select('id,name')
-      .eq('is_active', true)
-      .single()
+    const adminEvent = getAdminEvent();
 
-    if (eventError || !activeEvent) {
-      setStatus(`Could not load active event: ${eventError?.message || 'No active event found.'}`)
-      return
+    if (!adminEvent?.id) {
+      setActiveEvent(null);
+      setAnnouncements([]);
+      setStatus("No admin working event selected.");
+      return;
     }
 
-    setEvent(activeEvent)
+    const selectedEvent = {
+      id: adminEvent.id,
+      name: adminEvent.name || "Selected Event",
+    };
+
+    setActiveEvent(selectedEvent);
 
     const { data, error } = await supabase
-      .from('announcements')
-      .select('id,title,body,is_important,is_pinned,is_published,published_at,starts_at,ends_at')
-      .eq('event_id', activeEvent.id)
-      .order('is_important', { ascending: false })
-      .order('is_pinned', { ascending: false })
-      .order('published_at', { ascending: false })
+      .from("announcements")
+      .select(
+        "id,event_id,title,message,category,priority,is_published,created_at",
+      )
+      .eq("event_id", selectedEvent.id)
+      .order("created_at", { ascending: false });
 
     if (error) {
-      setStatus(`Could not load announcements: ${error.message}`)
-      return
+      setAnnouncements([]);
+      setStatus(`Could not load announcements: ${error.message}`);
+      return;
     }
 
-    setItems((data || []) as Announcement[])
-    setStatus(`Loaded ${(data || []).length} announcements.`)
+    setAnnouncements((data || []) as Announcement[]);
+    setStatus(
+      `Loaded ${(data || []).length} announcement${(data || []).length === 1 ? "" : "s"} for ${selectedEvent.name}.`,
+    );
   }
 
   function resetForm() {
-    setEditingId(null)
-    setTitle('')
-    setBody('')
-    setIsImportant(false)
-    setIsPinned(false)
-    setIsPublished(true)
-    setStartsAt('')
-    setEndsAt('')
+    setEditingId("");
+    setTitle("");
+    setMessage("");
+    setCategory("");
+    setPriority("normal");
+    setIsPublished(true);
   }
 
   function loadIntoForm(item: Announcement) {
-    setEditingId(item.id)
-    setTitle(item.title)
-    setBody(item.body || '')
-    setIsImportant(!!item.is_important)
-    setIsPinned(!!item.is_pinned)
-    setIsPublished(item.is_published !== false)
-    setStartsAt(toLocalInputValue(item.starts_at))
-    setEndsAt(toLocalInputValue(item.ends_at))
+    setEditingId(item.id);
+    setTitle(item.title || "");
+    setMessage(item.message || "");
+    setCategory(item.category || "");
+    setPriority(item.priority || "normal");
+    setIsPublished(!!item.is_published);
   }
 
   async function saveAnnouncement() {
-    if (!event?.id || !title.trim()) {
-      setStatus('Title is required.')
-      return
+    if (!activeEvent?.id) {
+      setStatus("No admin working event selected.");
+      return;
+    }
+
+    if (!title.trim()) {
+      setStatus("Enter a title.");
+      return;
+    }
+
+    if (!message.trim()) {
+      setStatus("Enter a message.");
+      return;
     }
 
     const payload = {
-      event_id: event.id,
+      event_id: activeEvent.id,
       title: title.trim(),
-      body: body.trim() || null,
-      is_important: isImportant,
-      is_pinned: isPinned,
+      message: message.trim(),
+      category: category.trim() || null,
+      priority: priority || "normal",
       is_published: isPublished,
-      published_at: new Date().toISOString(),
-      starts_at: startsAt ? new Date(startsAt).toISOString() : null,
-      ends_at: endsAt ? new Date(endsAt).toISOString() : null,
-    }
+    };
 
     if (editingId) {
       const { error } = await supabase
-        .from('announcements')
+        .from("announcements")
         .update(payload)
-        .eq('id', editingId)
+        .eq("id", editingId);
 
       if (error) {
-        setStatus(`Could not update announcement: ${error.message}`)
-        return
+        setStatus(`Could not update announcement: ${error.message}`);
+        return;
       }
 
-      setStatus('Announcement updated.')
+      setStatus(`Updated "${payload.title}".`);
     } else {
-      const { error } = await supabase
-        .from('announcements')
-        .insert(payload)
+      const { error } = await supabase.from("announcements").insert(payload);
 
       if (error) {
-        setStatus(`Could not add announcement: ${error.message}`)
-        return
+        setStatus(`Could not create announcement: ${error.message}`);
+        return;
       }
 
-      setStatus('Announcement added.')
+      setStatus(`Created "${payload.title}".`);
     }
 
-    resetForm()
-    await loadPage()
+    resetForm();
+    await loadPage();
   }
 
   async function deleteAnnouncement(id: string) {
-    const ok = window.confirm('Delete this announcement?')
-    if (!ok) return
+    const item = announcements.find((a) => a.id === id);
+    const confirmed = window.confirm(
+      `Delete "${item?.title || "this announcement"}"?`,
+    );
+    if (!confirmed) return;
 
     const { error } = await supabase
-      .from('announcements')
+      .from("announcements")
       .delete()
-      .eq('id', id)
+      .eq("id", id);
 
     if (error) {
-      setStatus(`Could not delete announcement: ${error.message}`)
-      return
+      setStatus(`Could not delete announcement: ${error.message}`);
+      return;
     }
 
-    setStatus('Announcement deleted.')
-    if (editingId === id) resetForm()
-    await loadPage()
+    if (editingId === id) {
+      resetForm();
+    }
+
+    setStatus(`Deleted "${item?.title || "announcement"}".`);
+    await loadPage();
   }
 
   return (
     <div style={{ padding: 24 }}>
-      <h1>Admin Announcements</h1>
+      <div style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = "/admin/dashboard";
+          }}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "1px solid #cbd5e1",
+            background: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          ← Return to Dashboard
+        </button>
+      </div>
+
+      <h1 style={{ marginTop: 0 }}>Admin Announcements</h1>
 
       <div
         style={{
-          border: '1px solid #ddd',
+          border: "1px solid #ddd",
           borderRadius: 10,
-          background: 'white',
+          background: "#f8f9fb",
+          padding: 14,
+          marginBottom: 20,
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>
+          {activeEvent?.name || "No admin working event selected"}
+        </div>
+        <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
+          {status}
+        </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 10,
+          background: "white",
           padding: 16,
-          display: 'grid',
+          display: "grid",
           gap: 10,
           marginBottom: 20,
           maxWidth: 760,
         }}
       >
-        <div style={{ fontWeight: 700 }}>
-          {event?.name || 'No active event'}
-        </div>
-
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -198,32 +238,25 @@ export default function AdminAnnouncementsPage() {
           style={{ padding: 8 }}
         />
 
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Announcement details"
-          style={{ padding: 8, minHeight: 120 }}
+        <input
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          placeholder="Category"
+          style={{ padding: 8 }}
         />
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={isImportant}
-            onChange={(e) => setIsImportant(e.target.checked)}
-          />
-          Important
-        </label>
+        <select
+          value={priority}
+          onChange={(e) => setPriority(e.target.value)}
+          style={{ padding: 8 }}
+        >
+          <option value="low">low</option>
+          <option value="normal">normal</option>
+          <option value="high">high</option>
+          <option value="urgent">urgent</option>
+        </select>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={isPinned}
-            onChange={(e) => setIsPinned(e.target.checked)}
-          />
-          Pinned
-        </label>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
             type="checkbox"
             checked={isPublished}
@@ -232,128 +265,95 @@ export default function AdminAnnouncementsPage() {
           Published
         </label>
 
-        <label style={{ display: 'grid', gap: 4 }}>
-          <span>Show starting at</span>
-          <input
-            type="datetime-local"
-            value={startsAt}
-            onChange={(e) => setStartsAt(e.target.value)}
-            style={{ padding: 8 }}
-          />
-        </label>
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Announcement message"
+          style={{ padding: 8, minHeight: 120 }}
+        />
 
-        <label style={{ display: 'grid', gap: 4 }}>
-          <span>Hide after</span>
-          <input
-            type="datetime-local"
-            value={endsAt}
-            onChange={(e) => setEndsAt(e.target.value)}
-            style={{ padding: 8 }}
-          />
-        </label>
-
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => void saveAnnouncement()}>
-            {editingId ? 'Update Announcement' : 'Add Announcement'}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" onClick={() => void saveAnnouncement()}>
+            {editingId ? "Update Announcement" : "Add Announcement"}
           </button>
-          <button onClick={resetForm} type="button">
-            Clear Form
+
+          <button type="button" onClick={resetForm}>
+            Clear
           </button>
         </div>
-
-        <div style={{ fontSize: 13, color: '#666' }}>{status}</div>
       </div>
 
       <div
         style={{
-          border: '1px solid #ddd',
+          border: "1px solid #ddd",
           borderRadius: 10,
-          background: 'white',
-          overflow: 'hidden',
+          background: "white",
+          overflow: "hidden",
         }}
       >
-        {items.map((item, index) => (
-          <div
-            key={item.id}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr auto auto',
-              gap: 12,
-              padding: 14,
-              borderTop: index === 0 ? 'none' : '1px solid #eee',
-            }}
-          >
-            <div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <div style={{ fontWeight: 700 }}>{item.title}</div>
+        {announcements.length === 0 ? (
+          <div style={{ padding: 16, color: "#666" }}>
+            No announcements found.
+          </div>
+        ) : (
+          announcements.map((item) => (
+            <div
+              key={item.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                gap: 12,
+                padding: 14,
+                borderTop: "1px solid #eee",
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700 }}>
+                  {item.title || "(Untitled announcement)"}
+                </div>
 
-                {item.is_important && (
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '3px 8px',
-                      borderRadius: 999,
-                      background: '#f59e0b',
-                      color: 'white',
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Important
-                  </span>
-                )}
+                <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
+                  {(item.priority || "normal").toUpperCase()}
+                  {item.category ? ` · ${item.category}` : ""}
+                  {item.is_published ? " · Published" : " · Draft"}
+                </div>
 
-                {item.is_pinned && (
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '3px 8px',
-                      borderRadius: 999,
-                      background: '#111827',
-                      color: 'white',
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Pinned
-                  </span>
-                )}
+                {item.message ? (
+                  <div style={{ fontSize: 13, color: "#555", marginTop: 8 }}>
+                    {item.message}
+                  </div>
+                ) : null}
 
-                {item.is_published === false && (
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '3px 8px',
-                      borderRadius: 999,
-                      background: '#6b7280',
-                      color: 'white',
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Unpublished
-                  </span>
-                )}
+                {item.created_at ? (
+                  <div style={{ fontSize: 12, color: "#777", marginTop: 8 }}>
+                    {new Date(item.created_at).toLocaleString()}
+                  </div>
+                ) : null}
               </div>
 
-              {item.published_at && (
-                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                  {new Date(item.published_at).toLocaleString()}
-                </div>
-              )}
-
-              {item.body && (
-                <div style={{ fontSize: 13, color: '#333', marginTop: 8, whiteSpace: 'pre-wrap' }}>
-                  {item.body}
-                </div>
-              )}
+              <div style={{ display: "flex", gap: 8, alignItems: "start" }}>
+                <button type="button" onClick={() => loadIntoForm(item)}>
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void deleteAnnouncement(item.id)}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
-
-            <button onClick={() => loadIntoForm(item)}>Edit</button>
-            <button onClick={() => void deleteAnnouncement(item.id)}>Delete</button>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
-  )
+  );
+}
+
+export default function AdminAnnouncementsPage() {
+  return (
+    <AdminRouteGuard>
+      <AdminAnnouncementsPageInner />
+    </AdminRouteGuard>
+  );
 }

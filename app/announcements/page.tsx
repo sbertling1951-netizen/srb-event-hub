@@ -1,227 +1,189 @@
-'use client'
+"use client";
 
-import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 
 type Announcement = {
-  id: string
-  title: string
-  body: string | null
-  is_important: boolean | null
-  is_pinned: boolean | null
-  is_published: boolean | null
-  published_at: string | null
-  starts_at: string | null
-  ends_at: string | null
-}
+  id: string;
+  title: string;
+  message: string | null;
+  category: string | null;
+  priority: string | null;
+  is_published?: boolean | null;
+  created_at?: string | null;
+};
 
-type ActiveEvent = {
-  id: string
-  name: string
-  location: string | null
-}
+type EventRow = {
+  id?: string | null;
+  name?: string | null;
+  eventName?: string | null;
+  venue_name?: string | null;
+  location?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+};
 
-function isActiveNow(startsAt: string | null, endsAt: string | null) {
-  const now = Date.now()
-  const startsOk = !startsAt || new Date(startsAt).getTime() <= now
-  const endsOk = !endsAt || new Date(endsAt).getTime() >= now
-  return startsOk && endsOk
-}
-
-export default function AnnouncementsPage() {
-  const [event, setEvent] = useState<ActiveEvent | null>(null)
-  const [announcements, setAnnouncements] = useState<Announcement[]>([])
-  const [status, setStatus] = useState('Loading announcements...')
-  const [showImportantOnly, setShowImportantOnly] = useState(false)
+function AnnouncementsPageInner() {
+  const [event, setEvent] = useState<EventRow | null>(null);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [status, setStatus] = useState("Loading announcements...");
 
   useEffect(() => {
-    void loadAnnouncements()
-  }, [])
+    void loadAnnouncements();
+
+    function handleStorage(e: StorageEvent) {
+      if (e.key === "fcoc-member-event-changed") {
+        void loadAnnouncements();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   async function loadAnnouncements() {
-    setStatus('Loading announcements...')
+    try {
+      setStatus("Loading announcements...");
 
-    const { data: activeEvent, error: eventError } = await supabase
-      .from('events')
-      .select('id,name,location')
-      .eq('is_active', true)
-      .single()
+      const memberEvent = getCurrentMemberEvent();
 
-    if (eventError || !activeEvent) {
-      setStatus(`Could not load active event: ${eventError?.message || 'No active event found.'}`)
-      return
+      if (!memberEvent?.id) {
+        setEvent(null);
+        setAnnouncements([]);
+        setStatus("No current event selected.");
+        return;
+      }
+
+      setEvent(memberEvent);
+
+      const { data, error } = await supabase
+        .from("announcements")
+        .select("id,title,message,category,priority,is_published,created_at")
+        .eq("event_id", memberEvent.id)
+        .eq("is_published", true)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      setAnnouncements((data || []) as Announcement[]);
+      setStatus(
+        `Loaded ${(data || []).length} announcement${(data || []).length === 1 ? "" : "s"}.`,
+      );
+    } catch (err: any) {
+      console.error("loadAnnouncements error:", err);
+      setAnnouncements([]);
+      setStatus(err?.message || "Failed to load announcements.");
     }
-
-    setEvent(activeEvent)
-
-    const { data, error } = await supabase
-      .from('announcements')
-      .select('id,title,body,is_important,is_pinned,is_published,published_at,starts_at,ends_at')
-      .eq('event_id', activeEvent.id)
-      .eq('is_published', true)
-      .order('is_important', { ascending: false })
-      .order('is_pinned', { ascending: false })
-      .order('published_at', { ascending: false })
-
-    if (error) {
-      setStatus(`Could not load announcements: ${error.message}`)
-      return
-    }
-
-    setAnnouncements((data || []) as Announcement[])
-    setStatus(`Loaded ${(data || []).length} announcements.`)
   }
 
-  function isRecent(value: string | null) {
-    if (!value) return false
-    return Date.now() - new Date(value).getTime() <= 24 * 60 * 60 * 1000
-  }
+  function priorityBadge(priority: string | null) {
+    const value = (priority || "normal").toLowerCase();
 
-  const visibleAnnouncements = useMemo(() => {
-    let list = announcements.filter((a) => isActiveNow(a.starts_at, a.ends_at))
-    if (showImportantOnly) {
-      list = list.filter((a) => a.is_important)
-    }
-    return list
-  }, [announcements, showImportantOnly])
+    const styles: Record<string, React.CSSProperties> = {
+      low: { background: "#eef2ff", color: "#3730a3" },
+      normal: { background: "#f3f4f6", color: "#374151" },
+      high: { background: "#fff7ed", color: "#c2410c" },
+      urgent: { background: "#fef2f2", color: "#b91c1c" },
+    };
+
+    return (
+      <span
+        style={{
+          padding: "4px 8px",
+          borderRadius: 999,
+          fontSize: 12,
+          fontWeight: 700,
+          ...styles[value],
+        }}
+      >
+        {priority || "normal"}
+      </span>
+    );
+  }
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1>Announcements</h1>
-
+    <div style={{ padding: 24, display: "grid", gap: 16 }}>
       <div
         style={{
-          border: '1px solid #ddd',
+          border: "1px solid #ddd",
           borderRadius: 10,
-          background: '#f8f9fb',
+          background: "#f8f9fb",
           padding: 14,
-          marginBottom: 16,
         }}
       >
-        <div style={{ fontWeight: 700 }}>{event?.name || 'No active event'}</div>
-        <div style={{ color: '#555' }}>{event?.location || ''}</div>
-        <div style={{ fontSize: 13, marginTop: 6 }}>{status}</div>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Announcements</h1>
+        <div style={{ fontWeight: 700 }}>
+          Current event: {event?.name || event?.eventName || "No current event"}
+        </div>
+        <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+          {status}
+        </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          marginBottom: 16,
-        }}
-      >
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={showImportantOnly}
-            onChange={(e) => setShowImportantOnly(e.target.checked)}
-          />
-          Important only
-        </label>
-      </div>
-
-      {visibleAnnouncements.length === 0 && (
+      {announcements.length === 0 ? (
         <div
           style={{
-            border: '1px solid #ddd',
+            border: "1px solid #ddd",
             borderRadius: 10,
-            background: 'white',
-            padding: 18,
+            background: "white",
+            padding: 16,
+            color: "#666",
           }}
         >
           No announcements found.
         </div>
-      )}
-
-      <div style={{ display: 'grid', gap: 14 }}>
-        {visibleAnnouncements.map((item) => {
-          const recent = isRecent(item.published_at)
-
-          return (
+      ) : (
+        announcements.map((item) => (
+          <div
+            key={item.id}
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 10,
+              background: "white",
+              padding: 16,
+            }}
+          >
             <div
-              key={item.id}
               style={{
-                border: item.is_important ? '2px solid #f59e0b' : '1px solid #ddd',
-                borderRadius: 10,
-                background: 'white',
-                padding: 16,
+                display: "flex",
+                gap: 10,
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 10,
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  marginBottom: 8,
-                }}
-              >
-                <div style={{ fontWeight: 700, fontSize: 18 }}>{item.title}</div>
-
-                {item.is_important && (
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '3px 8px',
-                      borderRadius: 999,
-                      background: '#f59e0b',
-                      color: 'white',
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Important
-                  </span>
-                )}
-
-                {item.is_pinned && (
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '3px 8px',
-                      borderRadius: 999,
-                      background: '#111827',
-                      color: 'white',
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Pinned
-                  </span>
-                )}
-
-                {recent && (
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '3px 8px',
-                      borderRadius: 999,
-                      background: '#dc2626',
-                      color: 'white',
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    NEW
-                  </span>
-                )}
-              </div>
-
-              {item.published_at && (
-                <div style={{ fontSize: 12, color: '#666', marginBottom: 10 }}>
-                  {new Date(item.published_at).toLocaleString()}
-                </div>
-              )}
-
-              <div style={{ color: '#333', whiteSpace: 'pre-wrap' }}>
-                {item.body || ''}
-              </div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{item.title}</div>
+              {priorityBadge(item.priority)}
             </div>
-          )
-        })}
-      </div>
+
+            {item.category ? (
+              <div style={{ marginTop: 6, fontSize: 13, color: "#555" }}>
+                {item.category}
+              </div>
+            ) : null}
+
+            {item.message ? (
+              <div style={{ marginTop: 10 }}>{item.message}</div>
+            ) : null}
+
+            {item.created_at ? (
+              <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
+                Posted: {item.created_at}
+              </div>
+            ) : null}
+          </div>
+        ))
+      )}
     </div>
-  )
+  );
+}
+
+export default function AnnouncementsPage() {
+  return (
+    <MemberRouteGuard>
+      <AnnouncementsPageInner />
+    </MemberRouteGuard>
+  );
 }

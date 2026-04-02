@@ -3,19 +3,12 @@ import type { Route } from "next";
 
 export default function HomePage() {
   const links = [
-    { href: "/member/login", label: "Member Login" },
-    { href: "/admin/login", label: "Admin Login" },
-    { href: "/member/events", label: "Events" },
-
-    { href: "/coach-map/public", label: "Coach Map (Public)" },
-
-    { href: "/admin/imports", label: "Admin CSV Import" },
-    { href: "/admin/parking", label: "Parking Map Admin" },
-    { href: "/admin/dashboard", label: "Admin Dashboard" },
+    { href: "/member/login", label: "Member" },
+    { href: "/admin/login", label: "Admin" },
   ];
 
   return (
-    <div style={{ padding: 30 }}>
+    <div style={{ padding: 30, maxWidth: 700, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>FCOC Event Hub</h1>
 
       <p>Welcome to the Freightliner Chassis Owners Club event app.</p>
@@ -33,13 +26,14 @@ export default function HomePage() {
             href={link.href as Route}
             style={{
               display: "block",
-              padding: "14px 16px",
+              padding: "16px 18px",
               border: "1px solid #ddd",
               borderRadius: 10,
               textDecoration: "none",
               color: "#111",
               background: "white",
-              fontWeight: 600,
+              fontWeight: 700,
+              textAlign: "center",
             }}
           >
             {link.label}

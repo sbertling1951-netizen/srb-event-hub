@@ -1,506 +1,294 @@
-'use client'
+"use client";
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 
 type AgendaItem = {
-  id: string
-  title: string
-  description: string | null
-  location: string | null
-  category: string | null
-  start_time: string
-  end_time: string | null
-  sort_order: number | null
-  is_published: boolean
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  speaker: string | null;
+  category: string | null;
+  agenda_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  sort_order: number | null;
+  is_published: boolean | null;
+};
+
+type EventRow = {
+  id?: string | null;
+  name?: string | null;
+  eventName?: string | null;
+  venue_name?: string | null;
+  location?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+};
+
+type GroupedAgenda = {
+  day: string;
+  items: AgendaItem[];
+};
+
+function formatDateRange(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+) {
+  if (!startDate && !endDate) return "";
+
+  const format = (d: string) =>
+    new Date(d).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+  if (startDate && endDate) return `${format(startDate)} – ${format(endDate)}`;
+  return startDate ? format(startDate) : format(endDate!);
 }
 
-type ActiveEvent = {
-  id: string
-  name: string
-  location: string | null
+function formatItemTime(item: AgendaItem) {
+  const format = (d?: string | null) => {
+    if (!d) return null;
+
+    return new Date(d).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
+  const startRaw = getField(row, ["start_time", "starts_at", "start"]);
+
+  const endRaw = getField(row, ["end_time", "ends_at", "end"]);
 }
 
-function categoryColor(category?: string | null) {
-  const c = (category || '').toLowerCase()
-  if (c.includes('meal')) return '#dc2626'
-  if (c.includes('seminar')) return '#2563eb'
-  if (c.includes('social')) return '#16a34a'
-  if (c.includes('tour')) return '#9333ea'
-  return '#6b7280'
+function groupAgenda(items: AgendaItem[]): GroupedAgenda[] {
+  const map = new Map<string, AgendaItem[]>();
+
+  items.forEach((item) => {
+    const day = item.agenda_date || "Schedule";
+
+    if (!map.has(day)) map.set(day, []);
+    map.get(day)!.push(item);
+  });
+
+  return Array.from(map.entries()).map(([day, groupedItems]) => ({
+    day,
+    items: groupedItems.sort((a, b) => {
+      const aSort = a.sort_order ?? 0;
+      const bSort = b.sort_order ?? 0;
+      if (aSort !== bSort) return aSort - bSort;
+
+      const aTime = a.start_time || "";
+      const bTime = b.start_time || "";
+      return aTime.localeCompare(bTime);
+    }),
+  }));
 }
 
-function formatTime(value: string | null) {
-  if (!value) return ''
-  return new Date(value).toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  )
-}
-
-export default function AgendaPage() {
-  const router = useRouter()
-
-  const [event, setEvent] = useState<ActiveEvent | null>(null)
-  const [items, setItems] = useState<AgendaItem[]>([])
-  const [status, setStatus] = useState('Loading agenda...')
-  const [nowTime, setNowTime] = useState(new Date())
-  const [todayOnly, setTodayOnly] = useState(false)
+function AgendaPageInner() {
+  const [event, setEvent] = useState<EventRow | null>(null);
+  const [items, setItems] = useState<AgendaItem[]>([]);
+  const [status, setStatus] = useState("Loading agenda...");
+  const [selectedCategory, setSelectedCategory] = useState("All");
 
   useEffect(() => {
-    void loadAgenda()
-  }, [])
+    void loadAgenda();
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNowTime(new Date())
-    }, 30000)
+    function handleStorage(e: StorageEvent) {
+      if (e.key === "fcoc-member-event-changed") {
+        void loadAgenda();
+      }
+    }
 
-    return () => clearInterval(timer)
-  }, [])
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   async function loadAgenda() {
-    setStatus('Loading agenda...')
+    try {
+      setStatus("Loading agenda...");
 
-    const { data: activeEvent, error: eventError } = await supabase
-      .from('events')
-      .select('id,name,location')
-      .eq('is_active', true)
-      .single()
+      const memberEvent = getCurrentMemberEvent();
 
-    if (eventError || !activeEvent) {
-      setStatus(`Could not load active event: ${eventError?.message || 'No active event found.'}`)
-      return
+      if (!memberEvent?.id) {
+        setEvent(null);
+        setItems([]);
+        setStatus("No current event selected.");
+        return;
+      }
+
+      setEvent(memberEvent);
+
+      const { data, error } = await supabase
+        .from("agenda_items")
+        .select(
+          "id,title,description,location,speaker,category,agenda_date,start_time,end_time,sort_order,is_published",
+        )
+        .eq("event_id", memberEvent.id)
+        .eq("is_published", true)
+        .order("agenda_date", { ascending: true, nullsFirst: false })
+        .order("sort_order", { ascending: true, nullsFirst: false })
+        .order("start_time", { ascending: true, nullsFirst: false });
+
+      if (error) throw error;
+
+      setItems((data || []) as AgendaItem[]);
+      setStatus(
+        `Loaded ${(data || []).length} agenda item${(data || []).length === 1 ? "" : "s"}.`,
+      );
+    } catch (err: any) {
+      console.error("loadAgenda error:", err);
+      setItems([]);
+      setStatus(err?.message || "Failed to load agenda.");
     }
-
-    setEvent(activeEvent)
-
-    const { data, error } = await supabase
-      .from('agenda_items')
-      .select('id,title,description,location,category,start_time,end_time,sort_order,is_published')
-      .eq('event_id', activeEvent.id)
-      .eq('is_published', true)
-      .order('start_time', { ascending: true })
-      .order('sort_order', { ascending: true })
-
-    if (error) {
-      setStatus(`Could not load agenda items: ${error.message}`)
-      return
-    }
-
-    setItems((data || []) as AgendaItem[])
-    setStatus(`Loaded ${(data || []).length} agenda items.`)
   }
 
-  const nowItem = useMemo(() => {
-    const nowMs = nowTime.getTime()
+  const categories = useMemo(() => {
+    const values = Array.from(
+      new Set(items.map((item) => item.category).filter(Boolean)),
+    ) as string[];
 
-    return (
-      items.find((item) => {
-        const startMs = new Date(item.start_time).getTime()
-        const endMs = item.end_time
-          ? new Date(item.end_time).getTime()
-          : startMs + 60 * 60 * 1000
+    return ["All", ...values.sort((a, b) => a.localeCompare(b))];
+  }, [items]);
 
-        return nowMs >= startMs && nowMs <= endMs
-      }) || null
-    )
-  }, [items, nowTime])
+  const filteredItems = useMemo(() => {
+    if (selectedCategory === "All") return items;
 
-  const nextItem = useMemo(() => {
-    const nowMs = nowTime.getTime()
+    return items.filter(
+      (item) =>
+        (item.category || "").toLowerCase() === selectedCategory.toLowerCase(),
+    );
+  }, [items, selectedCategory]);
 
-    return (
-      items.find((item) => {
-        const startMs = new Date(item.start_time).getTime()
-        return startMs > nowMs
-      }) || null
-    )
-  }, [items, nowTime])
+  const grouped = useMemo(() => groupAgenda(filteredItems), [filteredItems]);
+  const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
-  const visibleItems = useMemo(() => {
-    if (!todayOnly) return items
-    return items.filter((item) => isSameDay(new Date(item.start_time), nowTime))
-  }, [items, todayOnly, nowTime])
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, AgendaItem[]>()
-
-    for (const item of visibleItems) {
-      const dayKey = new Date(item.start_time).toLocaleDateString(undefined, {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-      })
-
-      if (!map.has(dayKey)) map.set(dayKey, [])
-      map.get(dayKey)!.push(item)
-    }
-
-    return Array.from(map.entries())
-  }, [visibleItems])
-
-  function openMapForLocation(location: string | null) {
-    if (!location) return
-    router.push(`/nearby?location=${encodeURIComponent(location)}`)
-  }
-
-  function AgendaCard({
-    item,
-    label,
-  }: {
-    item: AgendaItem
-    label?: string
-  }) {
-    return (
+  return (
+    <div style={{ padding: 24, display: "grid", gap: 16 }}>
       <div
         style={{
-          border: '1px solid #ddd',
+          border: "1px solid #ddd",
           borderRadius: 10,
-          background: 'white',
-          padding: 16,
+          background: "#f8f9fb",
+          padding: 14,
         }}
       >
-        {label && (
-          <div
-            style={{
-              display: 'inline-block',
-              marginBottom: 8,
-              padding: '4px 8px',
-              borderRadius: 999,
-              background: '#111827',
-              color: 'white',
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            {label}
-          </div>
-        )}
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Agenda</h1>
 
-        <div style={{ fontWeight: 700, fontSize: 18 }}>{item.title}</div>
-
-        <div style={{ fontSize: 14, color: '#555', marginTop: 4 }}>
-          {formatTime(item.start_time)}
-          {item.end_time ? ` – ${formatTime(item.end_time)}` : ''}
+        <div style={{ fontWeight: 700 }}>
+          Current event: {event?.name || event?.eventName || "No current event"}
         </div>
 
-        {item.category && (
-          <div style={{ marginTop: 8 }}>
-            <span
-              style={{
-                display: 'inline-block',
-                padding: '3px 8px',
-                borderRadius: 999,
-                background: categoryColor(item.category),
-                color: 'white',
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-            >
-              {item.category}
-            </span>
-          </div>
-        )}
+        {event?.venue_name ? (
+          <div style={{ color: "#555", marginTop: 4 }}>{event.venue_name}</div>
+        ) : null}
 
-        {item.location && (
-          <div style={{ fontSize: 13, marginTop: 10 }}>
+        {event?.location ? (
+          <div style={{ color: "#555", marginTop: 4 }}>{event.location}</div>
+        ) : null}
+
+        {dateRange ? (
+          <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
+            {dateRange}
+          </div>
+        ) : null}
+
+        <div
+          style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 8 }}
+        >
+          {categories.map((category) => (
             <button
+              key={category}
               type="button"
-              onClick={() => openMapForLocation(item.location)}
+              onClick={() => setSelectedCategory(category)}
               style={{
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                color: '#0b5cff',
-                textDecoration: 'underline',
-                cursor: 'pointer',
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid #d1d5db",
+                background: selectedCategory === category ? "#e5eefc" : "white",
+                cursor: "pointer",
                 fontSize: 13,
               }}
             >
-              📍 {item.location}
+              {category}
             </button>
-          </div>
-        )}
+          ))}
+        </div>
 
-        {item.description && (
-          <div style={{ marginTop: 10, color: '#333' }}>
-            {item.description}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ padding: 24 }}>
-      <h1>Agenda</h1>
-
-      <div
-        style={{
-          border: '1px solid #ddd',
-          borderRadius: 10,
-          background: '#f8f9fb',
-          padding: 14,
-          marginBottom: 16,
-        }}
-      >
-        <div style={{ fontWeight: 700 }}>{event?.name || 'No active event'}</div>
-        <div style={{ color: '#555' }}>{event?.location || ''}</div>
-        <div style={{ fontSize: 13, marginTop: 6 }}>{status}</div>
+        <div style={{ marginTop: 12, fontSize: 13, color: "#666" }}>
+          {status}
+        </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          marginBottom: 18,
-        }}
-      >
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={todayOnly}
-            onChange={(e) => setTodayOnly(e.target.checked)}
-          />
-          Today only
-        </label>
-
-        {todayOnly && (
-          <button type="button" onClick={() => setTodayOnly(false)}>
-            Show all days
-          </button>
-        )}
-      </div>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: 16,
-          marginBottom: 24,
-        }}
-      >
-        {nowItem ? (
-          <AgendaCard item={nowItem} label="NOW" />
-        ) : (
-          <div
-            style={{
-              border: '1px solid #ddd',
-              borderRadius: 10,
-              background: 'white',
-              padding: 16,
-            }}
-          >
-            <div
-              style={{
-                display: 'inline-block',
-                marginBottom: 8,
-                padding: '4px 8px',
-                borderRadius: 999,
-                background: '#111827',
-                color: 'white',
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-            >
-              NOW
-            </div>
-            <div style={{ color: '#555' }}>No session is in progress right now.</div>
-          </div>
-        )}
-
-        {nextItem ? (
-          <AgendaCard item={nextItem} label="NEXT" />
-        ) : (
-          <div
-            style={{
-              border: '1px solid #ddd',
-              borderRadius: 10,
-              background: 'white',
-              padding: 16,
-            }}
-          >
-            <div
-              style={{
-                display: 'inline-block',
-                marginBottom: 8,
-                padding: '4px 8px',
-                borderRadius: 999,
-                background: '#111827',
-                color: 'white',
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-            >
-              NEXT
-            </div>
-            <div style={{ color: '#555' }}>No upcoming sessions are scheduled.</div>
-          </div>
-        )}
-      </div>
-
-      {grouped.length === 0 && (
+      {grouped.length === 0 ? (
         <div
           style={{
-            border: '1px solid #ddd',
+            border: "1px solid #ddd",
             borderRadius: 10,
-            background: 'white',
-            padding: 18,
+            background: "white",
+            padding: 16,
+            color: "#666",
           }}
         >
-          {todayOnly ? 'No agenda items scheduled for today.' : 'No agenda items published yet.'}
+          No agenda items found.
         </div>
-      )}
+      ) : (
+        grouped.map((group) => (
+          <div key={group.day} style={{ display: "grid", gap: 10 }}>
+            <h2 style={{ margin: 0 }}>{group.day}</h2>
 
-      {grouped.map(([day, dayItems]) => {
-        const today = isSameDay(new Date(dayItems[0].start_time), nowTime)
+            {group.items.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: 10,
+                  background: "white",
+                  padding: 14,
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 17 }}>
+                  {item.title}
+                </div>
 
-        return (
-          <div key={day} style={{ marginBottom: 24 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                flexWrap: 'wrap',
-                marginBottom: 10,
-              }}
-            >
-              <h2 style={{ margin: 0 }}>{day}</h2>
-              {today && (
-                <span
-                  style={{
-                    display: 'inline-block',
-                    padding: '4px 8px',
-                    borderRadius: 999,
-                    background: '#0b5cff',
-                    color: 'white',
-                    fontSize: 12,
-                    fontWeight: 700,
-                  }}
-                >
-                  Today
-                </span>
-              )}
-            </div>
+                <div style={{ marginTop: 6, fontSize: 13, color: "#555" }}>
+                  {formatItemTime(item)}
+                  {item.category ? ` · ${item.category}` : ""}
+                </div>
 
-            <div
-              style={{
-                border: '1px solid #ddd',
-                borderRadius: 10,
-                background: 'white',
-                overflow: 'hidden',
-              }}
-            >
-              {dayItems.map((item, index) => {
-                const isNow = nowItem?.id === item.id
-
-                return (
-                  <div
-                    key={item.id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '150px 1fr',
-                      gap: 16,
-                      padding: 16,
-                      borderTop: index === 0 ? 'none' : '1px solid #eee',
-                      background: isNow ? '#fff7d6' : 'white',
-                    }}
-                  >
-                    <div style={{ fontWeight: 700 }}>
-                      {formatTime(item.start_time)}
-                      {item.end_time ? ` – ${formatTime(item.end_time)}` : ''}
-                    </div>
-
-                    <div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <div style={{ fontWeight: 700 }}>{item.title}</div>
-
-                        {isNow && (
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              padding: '3px 8px',
-                              borderRadius: 999,
-                              background: '#111827',
-                              color: 'white',
-                              fontSize: 12,
-                              fontWeight: 700,
-                            }}
-                          >
-                            Now
-                          </span>
-                        )}
-
-                        {item.category && (
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              padding: '3px 8px',
-                              borderRadius: 999,
-                              background: categoryColor(item.category),
-                              color: 'white',
-                              fontSize: 12,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {item.category}
-                          </span>
-                        )}
-                      </div>
-
-                      {item.location && (
-                        <div style={{ fontSize: 13, marginTop: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => openMapForLocation(item.location)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              padding: 0,
-                              color: '#0b5cff',
-                              textDecoration: 'underline',
-                              cursor: 'pointer',
-                              fontSize: 13,
-                            }}
-                          >
-                            📍 {item.location}
-                          </button>
-                        </div>
-                      )}
-
-                      {item.description && (
-                        <div style={{ marginTop: 8, color: '#333' }}>
-                          {item.description}
-                        </div>
-                      )}
-                    </div>
+                {item.location ? (
+                  <div style={{ marginTop: 6, color: "#555" }}>
+                    {item.location}
                   </div>
-                )
-              })}
-            </div>
+                ) : null}
+
+                {item.speaker ? (
+                  <div style={{ marginTop: 6, color: "#555" }}>
+                    Speaker: {item.speaker}
+                  </div>
+                ) : null}
+
+                {item.description ? (
+                  <div style={{ marginTop: 8 }}>{item.description}</div>
+                ) : null}
+              </div>
+            ))}
           </div>
-        )
-      })}
+        ))
+      )}
     </div>
-  )
+  );
+}
+
+export default function AgendaPage() {
+  return (
+    <MemberRouteGuard>
+      <AgendaPageInner />
+    </MemberRouteGuard>
+  );
 }

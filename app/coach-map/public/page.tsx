@@ -1,19 +1,64 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 
-type EventRow = {
-  id: string;
-  name: string;
-  location: string | null;
-  map_image_url: string | null;
-  coach_map_open_scale: number | null;
+type MemberEventRow = {
+  id?: string | null;
+  name?: string | null;
+  eventName?: string | null;
+  venue_name?: string | null;
+  location?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  map_image_url?: string | null;
+  master_map_id?: string | null;
+  lat?: number | null;
+  lng?: number | null;
 };
 
-type SiteRow = {
+type EventMapSettingsRow = {
+  event_id: string;
+  selected_master_map_id: string | null;
+};
+
+type MasterMapRow = {
+  id: string;
+  name: string | null;
+  map_image_url: string | null;
+};
+
+type MasterMapSiteRow = {
+  id: string;
+  master_map_id: string;
+  site_number: string;
+  display_label: string | null;
+  map_x: number | null;
+  map_y: number | null;
+};
+
+type ParkingSiteRow = {
   id: string;
   event_id: string;
+  site_number: string | null;
+  display_label: string | null;
+  assigned_attendee_id: string | null;
+};
+
+type AttendeeRow = {
+  id: string;
+  pilot_first: string | null;
+  pilot_last: string | null;
+  copilot_first: string | null;
+  copilot_last: string | null;
+  share_with_attendees: boolean | null;
+  assigned_site: string | null;
+};
+
+type RenderedSite = {
+  key: string;
   site_number: string;
   display_label: string | null;
   map_x: number | null;
@@ -21,555 +66,476 @@ type SiteRow = {
   assigned_attendee_id: string | null;
 };
 
-type AttendeeRow = {
-  id: string;
-  event_id: string;
-  pilot_first: string | null;
-  pilot_last: string | null;
-  coach_make: string | null;
-  coach_model: string | null;
-  arrival_status: string | null;
-};
+function fullName(first?: string | null, last?: string | null) {
+  return [first, last].filter(Boolean).join(" ");
+}
 
-type PinchState = {
-  startDistance: number;
-  startZoom: number;
-  contentX: number;
-  contentY: number;
-};
+function formatDateRange(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+) {
+  if (!startDate && !endDate) return "";
+  if (startDate && endDate) return `${startDate} – ${endDate}`;
+  return startDate || endDate || "";
+}
 
-export default function PublicCoachMapPage() {
-  const mapRef = useRef<HTMLDivElement | null>(null);
-  const zoomRef = useRef(0.6);
-  const pinchRef = useRef<PinchState | null>(null);
+function normalizeSiteKey(value: string | null | undefined) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
 
-  const [event, setEvent] = useState<EventRow | null>(null);
-  const [sites, setSites] = useState<SiteRow[]>([]);
+function CoachMapPublicPageInner() {
+  const [event, setEvent] = useState<MemberEventRow | null>(null);
+  const [mapImageUrl, setMapImageUrl] = useState<string | null>(null);
+  const [mapName, setMapName] = useState<string | null>(null);
+  const [masterSites, setMasterSites] = useState<MasterMapSiteRow[]>([]);
+  const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
-  const [selectedSiteId, setSelectedSiteId] = useState("");
-  const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading map...");
-  const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
-  const [defaultZoom, setDefaultZoom] = useState(0.75);
-  const [zoom, setZoom] = useState(0.75);
-  const [isNarrow, setIsNarrow] = useState(false);
-
-  function clampZoom(next: number) {
-    return Math.min(Math.max(next, 0.25), 3);
-  }
-
-  function getTouchDistance(touches: TouchList) {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
-  function getTouchMidpoint(touches: TouchList) {
-    return {
-      x: (touches[0].clientX + touches[1].clientX) / 2,
-      y: (touches[0].clientY + touches[1].clientY) / 2,
-    };
-  }
+  const [selectedSiteKey, setSelectedSiteKey] = useState<string | null>(null);
+  const [showLabels, setShowLabels] = useState(false);
 
   useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
+    void loadMap();
 
-  useEffect(() => {
-    function handleResize() {
-      setIsNarrow(window.innerWidth < 900);
+    function handleStorage(e: StorageEvent) {
+      if (e.key === "fcoc-member-event-changed") {
+        void loadMap();
+      }
     }
 
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  useEffect(() => {
-    const el = mapRef.current;
-    if (!el) return;
+  async function loadMap() {
+    try {
+      setStatus("Loading map...");
 
-    const container = el;
+      const memberEvent = getCurrentMemberEvent();
 
-    function onTouchStart(e: TouchEvent) {
-      if (e.touches.length !== 2) return;
+      if (!memberEvent?.id) {
+        setEvent(null);
+        setMapImageUrl(null);
+        setMapName(null);
+        setMasterSites([]);
+        setParkingSites([]);
+        setAttendees([]);
+        setStatus("No current event selected.");
+        return;
+      }
 
-      const rect = container.getBoundingClientRect();
-      const midpoint = getTouchMidpoint(e.touches);
-      const startZoom = zoomRef.current;
+      const { data: eventRow, error: eventError } = await supabase
+        .from("events")
+        .select(
+          "id,name,venue_name,location,start_date,end_date,map_image_url,master_map_id,lat,lng",
+        )
+        .eq("id", memberEvent.id)
+        .maybeSingle();
 
-      const viewportX = midpoint.x - rect.left;
-      const viewportY = midpoint.y - rect.top;
+      if (eventError) throw eventError;
 
-      const contentX = (container.scrollLeft + viewportX) / startZoom;
-      const contentY = (container.scrollTop + viewportY) / startZoom;
-
-      pinchRef.current = {
-        startDistance: getTouchDistance(e.touches),
-        startZoom,
-        contentX,
-        contentY,
+      const loadedEvent = (eventRow as MemberEventRow | null) || {
+        id: memberEvent.id,
+        name: memberEvent.name || memberEvent.eventName || null,
+        venue_name: memberEvent.venue_name || null,
+        location: memberEvent.location || null,
+        start_date: memberEvent.start_date || null,
+        end_date: memberEvent.end_date || null,
+        map_image_url: null,
+        master_map_id: null,
+        lat: memberEvent.lat || null,
+        lng: memberEvent.lng || null,
       };
 
-      e.preventDefault();
+      setEvent(loadedEvent);
+
+      let resolvedMapId: string | null = null;
+
+      const { data: mapSettingsRow, error: mapSettingsError } = await supabase
+        .from("event_map_settings")
+        .select("event_id,selected_master_map_id")
+        .eq("event_id", memberEvent.id)
+        .maybeSingle();
+
+      if (mapSettingsError) {
+        console.warn(
+          "Could not load event_map_settings:",
+          mapSettingsError.message,
+        );
+      } else {
+        resolvedMapId =
+          (mapSettingsRow as EventMapSettingsRow | null)
+            ?.selected_master_map_id || null;
+      }
+
+      if (!resolvedMapId) {
+        resolvedMapId = loadedEvent.master_map_id || null;
+      }
+
+      let resolvedMapImageUrl: string | null = null;
+      let resolvedMapName: string | null = null;
+
+      if (resolvedMapId) {
+        const { data: masterMapRow, error: masterMapError } = await supabase
+          .from("master_maps")
+          .select("id,name,map_image_url")
+          .eq("id", resolvedMapId)
+          .maybeSingle();
+
+        if (masterMapError) {
+          console.warn("Could not load master map:", masterMapError.message);
+        } else {
+          const mapRow = masterMapRow as MasterMapRow | null;
+          resolvedMapImageUrl = mapRow?.map_image_url || null;
+          resolvedMapName = mapRow?.name || null;
+        }
+      }
+
+      if (!resolvedMapImageUrl) {
+        resolvedMapImageUrl = loadedEvent.map_image_url || null;
+      }
+
+      setMapImageUrl(resolvedMapImageUrl);
+      setMapName(resolvedMapName);
+
+      if (resolvedMapId) {
+        const { data: masterSiteRows, error: masterSiteError } = await supabase
+          .from("master_map_sites")
+          .select("id,master_map_id,site_number,display_label,map_x,map_y")
+          .eq("master_map_id", resolvedMapId)
+          .order("site_number");
+
+        if (masterSiteError) throw masterSiteError;
+        setMasterSites((masterSiteRows || []) as MasterMapSiteRow[]);
+      } else {
+        setMasterSites([]);
+      }
+
+      const { data: parkingSiteRows, error: parkingSiteError } = await supabase
+        .from("parking_sites")
+        .select("id,event_id,site_number,display_label,assigned_attendee_id")
+        .eq("event_id", memberEvent.id);
+
+      if (parkingSiteError) throw parkingSiteError;
+      setParkingSites((parkingSiteRows || []) as ParkingSiteRow[]);
+
+      const { data: attendeeRows, error: attendeeError } = await supabase
+        .from("attendees")
+        .select(
+          "id,pilot_first,pilot_last,copilot_first,copilot_last,share_with_attendees,assigned_site",
+        )
+        .eq("event_id", memberEvent.id);
+
+      if (attendeeError) throw attendeeError;
+      setAttendees((attendeeRows || []) as AttendeeRow[]);
+
+      setStatus("Coach map ready.");
+    } catch (err: any) {
+      console.error("loadMap error:", err);
+      setMasterSites([]);
+      setParkingSites([]);
+      setAttendees([]);
+      setMapImageUrl(null);
+      setMapName(null);
+      setStatus(err?.message || "Failed to load coach map.");
     }
-
-    function onTouchMove(e: TouchEvent) {
-      const pinch = pinchRef.current;
-      if (e.touches.length !== 2 || !pinch) return;
-
-      const rect = container.getBoundingClientRect();
-      const midpoint = getTouchMidpoint(e.touches);
-      const currentDistance = getTouchDistance(e.touches);
-
-      const nextZoom = clampZoom(
-        pinch.startZoom * (currentDistance / pinch.startDistance),
-      );
-
-      const viewportX = midpoint.x - rect.left;
-      const viewportY = midpoint.y - rect.top;
-
-      setZoom(nextZoom);
-      zoomRef.current = nextZoom;
-
-      const nextLeft = pinch.contentX * nextZoom - viewportX;
-      const nextTop = pinch.contentY * nextZoom - viewportY;
-
-      requestAnimationFrame(() => {
-        container.scrollLeft = Math.max(0, nextLeft);
-        container.scrollTop = Math.max(0, nextTop);
-      });
-
-      e.preventDefault();
-    }
-
-    function onTouchEnd() {
-      pinchRef.current = null;
-    }
-
-    container.addEventListener("touchstart", onTouchStart, { passive: false });
-    container.addEventListener("touchmove", onTouchMove, { passive: false });
-    container.addEventListener("touchend", onTouchEnd, { passive: false });
-    container.addEventListener("touchcancel", onTouchEnd, { passive: false });
-
-    return () => {
-      container.removeEventListener("touchstart", onTouchStart);
-      container.removeEventListener("touchmove", onTouchMove);
-      container.removeEventListener("touchend", onTouchEnd);
-      container.removeEventListener("touchcancel", onTouchEnd);
-    };
-  }, []);
-
-  useEffect(() => {
-    void loadPage();
-  }, []);
-
-  useEffect(() => {
-    if (!event?.id) return;
-
-    const parkingChannel = supabase
-      .channel(`public-map-sites-${event.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "parking_sites" },
-        async () => {
-          await loadSitesAndAttendees(event.id);
-        },
-      )
-      .subscribe();
-
-    const attendeesChannel = supabase
-      .channel(`public-map-attendees-${event.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "attendees" },
-        async () => {
-          await loadSitesAndAttendees(event.id);
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(parkingChannel);
-      void supabase.removeChannel(attendeesChannel);
-    };
-  }, [event?.id]);
-
-  async function loadPage() {
-    setStatus("Loading map...");
-
-    const { data: activeEvent, error: eventError } = await supabase
-      .from("events")
-      .select("id,name,location,map_image_url,coach_map_open_scale")
-      .eq("is_active", true)
-      .single();
-
-    if (eventError || !activeEvent) {
-      setStatus(
-        `Could not load active event: ${eventError?.message || "No active event found."}`,
-      );
-      return;
-    }
-
-    const typedEvent = activeEvent as EventRow;
-    setEvent(typedEvent);
-
-    const openingScale = Number(typedEvent.coach_map_open_scale ?? 0.6);
-    const safeOpeningScale = Number.isNaN(openingScale)
-      ? 0.6
-      : clampZoom(openingScale);
-    setDefaultZoom(safeOpeningScale);
-    setZoom(safeOpeningScale);
-
-    await loadSitesAndAttendees(typedEvent.id);
   }
 
-  async function loadSitesAndAttendees(eventId: string) {
-    const { data: siteData, error: siteError } = await supabase
-      .from("parking_sites")
-      .select(
-        "id,event_id,site_number,display_label,map_x,map_y,assigned_attendee_id",
-      )
-      .eq("event_id", eventId);
-
-    if (siteError) {
-      setStatus(`Could not load sites: ${siteError.message}`);
-      return;
-    }
-
-    const { data: attendeeData, error: attendeeError } = await supabase
-      .from("attendees")
-      .select(
-        "id,event_id,pilot_first,pilot_last,coach_make,coach_model,arrival_status",
-      )
-      .eq("event_id", eventId);
-
-    if (attendeeError) {
-      setStatus(`Could not load attendees: ${attendeeError.message}`);
-      return;
-    }
-
-    setSites((siteData || []) as SiteRow[]);
-    setAttendees((attendeeData || []) as AttendeeRow[]);
-    setStatus(`Live · ${(siteData || []).length} sites`);
-  }
-
-  const attendeeById = useMemo(() => {
+  const attendeeLookup = useMemo(() => {
     const map = new Map<string, AttendeeRow>();
-    for (const attendee of attendees) {
-      map.set(attendee.id, attendee);
-    }
+    attendees.forEach((attendee) => map.set(attendee.id, attendee));
     return map;
   }, [attendees]);
 
-  const filteredSites = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return sites;
+  const parkingLookup = useMemo(() => {
+    const map = new Map<string, ParkingSiteRow>();
 
-    return sites.filter((site) => {
-      const occupant = site.assigned_attendee_id
-        ? attendeeById.get(site.assigned_attendee_id)
-        : null;
+    parkingSites.forEach((site) => {
+      const labelKey = normalizeSiteKey(site.display_label);
+      const numberKey = normalizeSiteKey(site.site_number);
 
-      const siteText =
-        `${site.site_number} ${site.display_label || ""}`.toLowerCase();
-      const nameText = occupant
-        ? `${occupant.pilot_first || ""} ${occupant.pilot_last || ""}`.toLowerCase()
-        : "";
-      const coachText = occupant
-        ? `${occupant.coach_make || ""} ${occupant.coach_model || ""}`.toLowerCase()
-        : "";
-
-      return (
-        siteText.includes(q) || nameText.includes(q) || coachText.includes(q)
-      );
+      if (labelKey) map.set(labelKey, site);
+      if (numberKey && !map.has(numberKey)) map.set(numberKey, site);
     });
-  }, [sites, attendeeById, search]);
 
-  const highlightedSiteIds = useMemo(() => {
-    return new Set(filteredSites.map((site) => site.id));
-  }, [filteredSites]);
+    return map;
+  }, [parkingSites]);
 
-  const selectedSite = sites.find((s) => s.id === selectedSiteId) || null;
-  const selectedOccupant = selectedSite?.assigned_attendee_id
-    ? attendeeById.get(selectedSite.assigned_attendee_id) || null
+  const renderedSites = useMemo<RenderedSite[]>(() => {
+    return masterSites.map((site) => {
+      const labelKey = normalizeSiteKey(site.display_label);
+      const numberKey = normalizeSiteKey(site.site_number);
+
+      const assignedParkingSite =
+        parkingLookup.get(labelKey) || parkingLookup.get(numberKey) || null;
+
+      return {
+        key: site.id,
+        site_number: site.site_number,
+        display_label: site.display_label || site.site_number,
+        map_x: site.map_x,
+        map_y: site.map_y,
+        assigned_attendee_id: assignedParkingSite?.assigned_attendee_id || null,
+      };
+    });
+  }, [masterSites, parkingLookup]);
+
+  const selectedSite =
+    renderedSites.find((s) => s.key === selectedSiteKey) || null;
+
+  const selectedAttendee = selectedSite?.assigned_attendee_id
+    ? attendeeLookup.get(selectedSite.assigned_attendee_id) || null
     : null;
 
-  function getSiteColor(site: SiteRow) {
-    if (site.id === selectedSiteId) return "gold";
-    if (!site.assigned_attendee_id) return "green";
-
-    const attendee = attendeeById.get(site.assigned_attendee_id);
-    const arrivalStatus = attendee?.arrival_status || "not_arrived";
-
-    if (arrivalStatus === "parked") return "red";
-    if (arrivalStatus === "arrived") return "orange";
-    return "#0b5cff";
-  }
-
-  function focusSite(site: SiteRow) {
-    if (!mapRef.current || site.map_x === null || site.map_y === null) return;
-
-    const container = mapRef.current;
-    const scaledWidth = naturalSize.width * zoomRef.current;
-    const scaledHeight = naturalSize.height * zoomRef.current;
-
-    const x = (site.map_x / 100) * scaledWidth;
-    const y = (site.map_y / 100) * scaledHeight;
-
-    requestAnimationFrame(() => {
-      container.scrollTo({
-        left: Math.max(0, x - container.clientWidth / 2),
-        top: Math.max(0, y - container.clientHeight / 2),
-        behavior: "smooth",
-      });
-    });
-  }
-
-  function handleSiteClick(site: SiteRow) {
-    setSelectedSiteId(site.id);
-    focusSite(site);
-  }
+  const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
   return (
-    <div
-      style={{
-        paddingTop: isNarrow ? 12 : 24,
-        paddingLeft: isNarrow ? 12 : 24,
-        paddingRight: isNarrow ? 12 : 24,
-        paddingBottom: selectedSite ? 140 : isNarrow ? 12 : 24,
-      }}
-    >
-      <h1 style={{ marginTop: 0 }}>Coach Map</h1>
-
-      <div style={{ color: "#555", marginBottom: 12 }}>
-        {event?.name || ""} {event?.location ? `· ${event.location}` : ""}
-      </div>
-
-      <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-        {status}
-      </div>
-
-      <input
-        type="text"
-        placeholder="Search by site, name, or coach"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{
-          width: "100%",
-          padding: 10,
-          marginBottom: 10,
-          borderRadius: 8,
-          border: "1px solid #ddd",
-        }}
-      />
-
-      <div style={{ fontSize: 12, marginBottom: 10, color: "#444" }}>
-        🟢 Open · 🔵 Assigned · 🟠 Arrived · 🔴 Parked
-      </div>
-
+    <div style={{ padding: 24, display: "grid", gap: 16 }}>
       <div
         style={{
           border: "1px solid #ddd",
           borderRadius: 10,
-          background: "white",
-          padding: 12,
+          background: "#f8f9fb",
+          padding: 14,
         }}
       >
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Coach Map</h1>
+
+        <div style={{ fontWeight: 700 }}>
+          Current event: {event?.name || event?.eventName || "No current event"}
+        </div>
+
+        {event?.venue_name ? (
+          <div style={{ color: "#555", marginTop: 4 }}>{event.venue_name}</div>
+        ) : null}
+
+        {event?.location ? (
+          <div style={{ color: "#555", marginTop: 4 }}>{event.location}</div>
+        ) : null}
+
+        {dateRange ? (
+          <div style={{ color: "#666", marginTop: 4, fontSize: 13 }}>
+            {dateRange}
+          </div>
+        ) : null}
+
+        {mapName ? (
+          <div style={{ color: "#666", marginTop: 4, fontSize: 13 }}>
+            Map: {mapName}
+          </div>
+        ) : null}
+
         <div
-          ref={mapRef}
           style={{
-            overflow: "auto",
-            maxHeight: isNarrow ? "62vh" : "78vh",
+            marginTop: 10,
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={showLabels}
+              onChange={(e) => setShowLabels(e.target.checked)}
+            />
+            Show site labels
+          </label>
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+          {status}
+        </div>
+      </div>
+
+      {!mapImageUrl ? (
+        <div
+          style={{
             border: "1px solid #ddd",
-            background: "#f2f2f2",
-            WebkitOverflowScrolling: "touch",
-            touchAction: "pan-x pan-y",
+            borderRadius: 10,
+            background: "white",
+            padding: 16,
+            color: "#666",
+          }}
+        >
+          No map image is available for this event.
+        </div>
+      ) : (
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 16,
           }}
         >
           <div
             style={{
               position: "relative",
-              width: naturalSize.width * zoom,
-              height: naturalSize.height * zoom,
+              width: "100%",
+              overflow: "auto",
             }}
           >
-            <div
-              style={{
-                position: "relative",
-                width: naturalSize.width,
-                height: naturalSize.height,
-                transform: `scale(${zoom})`,
-                transformOrigin: "top left",
-              }}
-            >
-              {event?.map_image_url && (
-                <img
-                  src={event.map_image_url}
-                  alt="Coach map"
-                  draggable={false}
-                  onLoad={(e) => {
-                    const img = e.currentTarget;
-                    setNaturalSize({
-                      width: img.naturalWidth || 1200,
-                      height: img.naturalHeight || 800,
-                    });
-                  }}
+            <img
+              src={mapImageUrl}
+              alt="Coach map"
+              style={{ width: "100%", display: "block", borderRadius: 8 }}
+            />
+
+            {renderedSites.map((site) => {
+              const x = typeof site.map_x === "number" ? site.map_x : null;
+              const y = typeof site.map_y === "number" ? site.map_y : null;
+              if (x === null || y === null) return null;
+
+              const assigned = site.assigned_attendee_id
+                ? attendeeLookup.get(site.assigned_attendee_id)
+                : null;
+
+              const showOccupantInfo = !!assigned?.share_with_attendees;
+              const isSelected = selectedSiteKey === site.key;
+
+              return (
+                <div
+                  key={site.key}
                   style={{
-                    width: naturalSize.width,
-                    height: naturalSize.height,
-                    display: "block",
-                    userSelect: "none",
-                    pointerEvents: "none",
+                    position: "absolute",
+                    left: `${x}%`,
+                    top: `${y}%`,
+                    transform: "translate(-50%, -50%)",
                   }}
-                />
-              )}
-
-              {sites.map((site) => {
-                if (site.map_x === null || site.map_y === null) return null;
-
-                const highlighted =
-                  search.trim() === "" || highlightedSiteIds.has(site.id);
-
-                return (
-                  <div
-                    key={site.id}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSiteKey(site.key)}
+                    title={site.display_label || site.site_number}
                     style={{
-                      position: "absolute",
-                      left: `${site.map_x}%`,
-                      top: `${site.map_y}%`,
-                      transform: "translate(-50%, -50%)",
-                      opacity: highlighted ? 1 : 0.22,
-                      pointerEvents: "none",
+                      width: 12,
+                      height: 12,
+                      borderRadius: "50%",
+                      border: isSelected
+                        ? "2px solid white"
+                        : "1px solid rgba(255,255,255,0.85)",
+                      background: assigned ? "#2563eb" : "#6b7280",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                      padding: 0,
+                      cursor: "pointer",
+                      display: "block",
+                      margin: "0 auto",
                     }}
-                  >
+                  />
+
+                  {showLabels ? (
                     <button
                       type="button"
-                      onClick={() => handleSiteClick(site)}
+                      onClick={() => setSelectedSiteKey(site.key)}
+                      title={`Site ${site.display_label || site.site_number}`}
                       style={{
-                        width: isNarrow ? 46 : 32,
-                        height: isNarrow ? 46 : 32,
-                        borderRadius: "50%",
-                        background: getSiteColor(site),
-                        border: isNarrow
-                          ? "4px solid white"
-                          : "3px solid white",
-                        boxShadow:
-                          site.id === selectedSiteId
-                            ? "0 0 0 6px rgba(255,215,0,0.35), 0 2px 6px rgba(0,0,0,0.45)"
-                            : "0 2px 6px rgba(0,0,0,0.45)",
-                        cursor: "pointer",
-                        padding: 0,
-                        display: "block",
-                        margin: "0 auto",
-                        pointerEvents: "auto",
-                      }}
-                    />
-                    <div
-                      style={{
-                        marginTop: 4,
+                        marginTop: 3,
                         marginLeft: "auto",
                         marginRight: "auto",
-                        background: "rgba(255,255,255,0.96)",
-                        border: "1px solid rgba(0,0,0,0.25)",
+                        background: isSelected
+                          ? "rgba(219,234,254,0.98)"
+                          : "rgba(255,255,255,0.92)",
+                        border: isSelected
+                          ? "1px solid rgba(37,99,235,0.45)"
+                          : "1px solid rgba(0,0,0,0.18)",
                         borderRadius: 4,
-                        fontSize: isNarrow ? 12 : 11,
+                        fontSize: 9,
                         fontWeight: 700,
-                        padding: "2px 6px",
+                        lineHeight: 1.1,
+                        padding: "1px 4px",
                         color: "#111",
                         whiteSpace: "nowrap",
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
+                        cursor: "pointer",
                         display: "table",
-                        pointerEvents: "none",
                       }}
                     >
                       {site.display_label || site.site_number}
-                    </div>{" "}
-                  </div>
-                );
-              })}
-            </div>
+                    </button>
+                  ) : null}
+
+                  {showOccupantInfo && !showLabels ? (
+                    <div
+                      style={{
+                        marginTop: 3,
+                        marginLeft: "auto",
+                        marginRight: "auto",
+                        background: "rgba(255,255,255,0.96)",
+                        color: "#111",
+                        borderRadius: 4,
+                        padding: "1px 4px",
+                        fontSize: 9,
+                        whiteSpace: "nowrap",
+                        border: "1px solid #ddd",
+                        display: "table",
+                      }}
+                    >
+                      {fullName(assigned?.pilot_first, assigned?.pilot_last) ||
+                        "Occupied"}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </div>
+      )}
 
-        <div
-          style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
-        >
-          <button
-            type="button"
-            onClick={() => setZoom((z) => clampZoom(z - 0.1))}
-          >
-            −
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom((z) => clampZoom(z + 0.1))}
-          >
-            +
-          </button>
-          <button type="button" onClick={() => setZoom(defaultZoom)}>
-            Reset Zoom
-          </button>
-        </div>
-      </div>
-
-      {selectedSite && (
+      {selectedSite ? (
         <div
           style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 3000,
-            background: "rgba(255,255,255,0.98)",
-            backdropFilter: "blur(6px)",
-            borderTop: "1px solid #d6d6d6",
-            boxShadow: "0 -6px 16px rgba(0,0,0,0.12)",
-            padding: 12,
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 16,
           }}
         >
-          <div
-            style={{ display: "flex", justifyContent: "space-between", gap: 8 }}
-          >
-            <div style={{ fontWeight: 700 }}>
-              Site {selectedSite.display_label || selectedSite.site_number}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setSelectedSiteId("")}
-              style={{
-                border: "1px solid #ccc",
-                background: "white",
-                borderRadius: 6,
-                padding: "4px 8px",
-                cursor: "pointer",
-              }}
-            >
-              Close
-            </button>
+          <div style={{ fontWeight: 700, fontSize: 18 }}>
+            Site {selectedSite.display_label || selectedSite.site_number}
           </div>
 
-          {selectedOccupant ? (
-            <>
-              <div style={{ fontWeight: 600, marginTop: 8 }}>
-                {selectedOccupant.pilot_first} {selectedOccupant.pilot_last}
+          {selectedAttendee ? (
+            selectedAttendee.share_with_attendees ? (
+              <div style={{ marginTop: 10 }}>
+                <div>
+                  Pilot:{" "}
+                  {fullName(
+                    selectedAttendee.pilot_first,
+                    selectedAttendee.pilot_last,
+                  ) || "Not listed"}
+                </div>
+
+                <div style={{ marginTop: 6 }}>
+                  Co-Pilot:{" "}
+                  {fullName(
+                    selectedAttendee.copilot_first,
+                    selectedAttendee.copilot_last,
+                  ) || "Not listed"}
+                </div>
               </div>
-              <div style={{ color: "#555", marginTop: 4 }}>
-                {selectedOccupant.coach_make || ""}{" "}
-                {selectedOccupant.coach_model || ""}
+            ) : (
+              <div style={{ marginTop: 10, color: "#666" }}>
+                Occupant details are not shared.
               </div>
-              <div style={{ fontSize: 13, color: "#666", marginTop: 6 }}>
-                Status: {selectedOccupant.arrival_status || "not_arrived"}
-              </div>
-            </>
+            )
           ) : (
-            <div style={{ fontSize: 13, color: "#666", marginTop: 8 }}>
-              Open
+            <div style={{ marginTop: 10, color: "#666" }}>
+              This site is not assigned.
             </div>
           )}
         </div>
-      )}
+      ) : null}
     </div>
+  );
+}
+
+export default function CoachMapPublicPage() {
+  return (
+    <MemberRouteGuard>
+      <CoachMapPublicPageInner />
+    </MemberRouteGuard>
   );
 }
