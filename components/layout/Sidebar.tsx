@@ -34,11 +34,29 @@ export default function Sidebar() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  function handleLogout() {
+    // clear member identity
+    localStorage.removeItem("fcoc-member-attendee-id");
+    localStorage.removeItem("fcoc-member-email");
+    localStorage.removeItem("fcoc-member-entry-id");
+
+    // clear member session
+    localStorage.removeItem("fcoc-member-event-context");
+    localStorage.removeItem("fcoc-member-event-changed");
+
+    // clear admin session
+    localStorage.removeItem("fcoc-admin-event-context");
+    localStorage.removeItem("fcoc-admin-event-changed");
+
+    window.location.href = "/member/login";
+  }
+
   const sections: NavSection[] = [
     {
       title: "Event",
       items: [
         { label: "Home", href: "/" },
+        { label: "My Check-In", href: "/member/checkin" },
         { label: "Agenda", href: "/agenda" },
         { label: "Nearby", href: "/nearby" },
         { label: "Announcements", href: "/announcements" },
@@ -69,6 +87,7 @@ export default function Sidebar() {
 
   return (
     <>
+      {/* Mobile toggle button */}
       {isMobile && (
         <button
           onClick={() => setOpen((v) => !v)}
@@ -85,13 +104,13 @@ export default function Sidebar() {
             borderRadius: 10,
             cursor: "pointer",
             boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
-            WebkitTapHighlightColor: "transparent",
           }}
         >
           ☰
         </button>
       )}
 
+      {/* Overlay */}
       {isMobile && open && (
         <div
           onClick={() => setOpen(false)}
@@ -104,6 +123,7 @@ export default function Sidebar() {
         />
       )}
 
+      {/* Sidebar */}
       <aside
         style={{
           position: "fixed",
@@ -118,51 +138,76 @@ export default function Sidebar() {
           transition: isMobile ? "left 0.25s ease" : "none",
           zIndex: 1100,
           boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
-        <h2 style={{ marginTop: 0, marginBottom: 18 }}>FCOC</h2>
+        <div>
+          <h2 style={{ marginTop: 0, marginBottom: 18 }}>FCOC</h2>
 
-        {sections.map((section) => (
-          <div key={section.title} style={{ marginBottom: 20 }}>
-            <div
-              style={{
-                fontSize: 12,
-                textTransform: "uppercase",
-                opacity: 0.65,
-                marginBottom: 6,
-              }}
-            >
-              {section.title}
+          {sections.map((section) => (
+            <div key={section.title} style={{ marginBottom: 20 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  opacity: 0.65,
+                  marginBottom: 6,
+                }}
+              >
+                {section.title}
+              </div>
+
+              {section.items.map((item) => {
+                const active = isActiveRoute(item.href);
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href as Route}
+                    onClick={() => {
+                      if (isMobile) setOpen(false);
+                    }}
+                    style={{
+                      display: "block",
+                      padding: "8px 10px",
+                      marginBottom: 4,
+                      borderRadius: 6,
+                      textDecoration: "none",
+                      color: active ? "#fff" : "#d1d5db",
+                      background: active ? "#0b5cff" : "transparent",
+                    }}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
             </div>
+          ))}
+        </div>
 
-            {section.items.map((item) => {
-              const active = isActiveRoute(item.href);
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href as Route}
-                  onClick={() => {
-                    if (isMobile) setOpen(false);
-                  }}
-                  style={{
-                    display: "block",
-                    padding: "8px 10px",
-                    marginBottom: 4,
-                    borderRadius: 6,
-                    textDecoration: "none",
-                    color: active ? "#fff" : "#d1d5db",
-                    background: active ? "#0b5cff" : "transparent",
-                  }}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
+        {/* Logout */}
+        <div style={{ marginTop: "auto", paddingTop: 16 }}>
+          <button
+            type="button"
+            onClick={handleLogout}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 8,
+              border: "1px solid #374151",
+              background: "#111827",
+              color: "#fff",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Logout
+          </button>
+        </div>
       </aside>
 
+      {/* Spacer for desktop */}
       {!isMobile && (
         <div
           style={{

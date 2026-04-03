@@ -86,7 +86,15 @@ function buildExternalId(form: AgendaForm) {
 }
 
 function formatAgendaDate(value: string | null) {
-  return value || "No date";
+  if (!value) return "No date";
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return parsed.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function formatAgendaTime(start: string | null, end: string | null) {
@@ -115,13 +123,22 @@ function formFromItem(item: AgendaItem): AgendaForm {
   };
 }
 
+function moveItem<T>(arr: T[], fromIndex: number, toIndex: number) {
+  const copy = [...arr];
+  const [item] = copy.splice(fromIndex, 1);
+  copy.splice(toIndex, 0, item);
+  return copy;
+}
+
 function AdminAgendaPageInner() {
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
   const [items, setItems] = useState<AgendaItem[]>([]);
   const [status, setStatus] = useState("Loading...");
   const [form, setForm] = useState<AgendaForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [savingOrder, setSavingOrder] = useState(false);
   const [filterCategory, setFilterCategory] = useState("All");
+  const [draggedId, setDraggedId] = useState<string | null>(null);
 
   useEffect(() => {
     void loadPage();
@@ -322,6 +339,71 @@ function AdminAgendaPageInner() {
         (item.category || "").toLowerCase() === filterCategory.toLowerCase(),
     );
   }, [items, filterCategory]);
+
+  function handleDragStart(id: string) {
+    setDraggedId(id);
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+  }
+
+  function handleDrop(targetId: string) {
+    if (!draggedId || draggedId === targetId) return;
+
+    const allFrom = [...items];
+    const fromIndex = allFrom.findIndex((item) => item.id === draggedId);
+    const toIndex = allFrom.findIndex((item) => item.id === targetId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggedId(null);
+      return;
+    }
+
+    const reordered = moveItem(allFrom, fromIndex, toIndex).map(
+      (item, index) => ({
+        ...item,
+        sort_order: index + 1,
+      }),
+    );
+
+    setItems(reordered);
+    setDraggedId(null);
+    setStatus("Order changed. Click “Save Order” to keep it.");
+  }
+
+  async function saveOrder() {
+    if (!activeEvent?.id) {
+      setStatus("No admin working event selected.");
+      return;
+    }
+
+    try {
+      setSavingOrder(true);
+
+      for (let index = 0; index < items.length; index += 1) {
+        const item = items[index];
+        const nextSort = index + 1;
+
+        const { error } = await supabase
+          .from("agenda_items")
+          .update({ sort_order: nextSort })
+          .eq("id", item.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      setStatus("Agenda order saved.");
+      await loadPage();
+    } catch (err: any) {
+      console.error("saveOrder error:", err);
+      setStatus(err?.message || "Failed to save order.");
+    } finally {
+      setSavingOrder(false);
+    }
+  }
 
   return (
     <div style={{ padding: 24 }}>
@@ -569,25 +651,49 @@ function AdminAgendaPageInner() {
               display: "flex",
               gap: 8,
               flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
             }}
           >
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                onClick={() => setFilterCategory(category)}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: "1px solid #d1d5db",
-                  background: filterCategory === category ? "#e5eefc" : "white",
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-              >
-                {category}
-              </button>
-            ))}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setFilterCategory(category)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #d1d5db",
+                    background:
+                      filterCategory === category ? "#e5eefc" : "white",
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void saveOrder()}
+              disabled={savingOrder}
+            >
+              {savingOrder ? "Saving Order..." : "Save Order"}
+            </button>
+          </div>
+
+          <div
+            style={{
+              padding: "10px 14px",
+              fontSize: 12,
+              color: "#666",
+              borderBottom: "1px solid #eee",
+            }}
+          >
+            Drag rows to reorder, then click <strong>Save Order</strong>.
           </div>
 
           {filteredItems.length === 0 ? (
@@ -598,14 +704,34 @@ function AdminAgendaPageInner() {
             filteredItems.map((item) => (
               <div
                 key={item.id}
+                draggable
+                onDragStart={() => handleDragStart(item.id)}
+                onDragOver={handleDragOver}
+                onDrop={() => handleDrop(item.id)}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr auto",
+                  gridTemplateColumns: "44px 1fr auto",
                   gap: 12,
                   padding: 14,
                   borderTop: "1px solid #eee",
+                  background: draggedId === item.id ? "#f8fafc" : "white",
                 }}
               >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 18,
+                    color: "#666",
+                    cursor: "grab",
+                    userSelect: "none",
+                  }}
+                  title="Drag to reorder"
+                >
+                  ☰
+                </div>
+
                 <button
                   type="button"
                   onClick={() => setForm(formFromItem(item))}

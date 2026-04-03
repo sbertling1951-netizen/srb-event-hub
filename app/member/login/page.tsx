@@ -17,6 +17,16 @@ type EventRow = {
   visible_to_members?: boolean | null;
 };
 
+type AttendeeRow = {
+  id: string;
+  entry_id: string | null;
+  email: string | null;
+  pilot_first: string | null;
+  pilot_last: string | null;
+  copilot_first: string | null;
+  copilot_last: string | null;
+};
+
 function formatDateRange(startDate: string | null, endDate: string | null) {
   if (!startDate && !endDate) return "";
   if (startDate && endDate) return `${startDate} – ${endDate}`;
@@ -27,7 +37,9 @@ export default function MemberLoginPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [enteredCode, setEnteredCode] = useState("");
+  const [enteredEmail, setEnteredEmail] = useState("");
   const [status, setStatus] = useState("Loading events...");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void loadEvents();
@@ -46,14 +58,16 @@ export default function MemberLoginPage() {
       if (error) throw error;
 
       setEvents((data || []) as EventRow[]);
-      setStatus("Select an event and enter code.");
+      setStatus(
+        "Select an event, enter code, and use your registration email.",
+      );
     } catch (err: any) {
       console.error(err);
       setStatus(err?.message || "Failed to load events.");
     }
   }
 
-  function handleEnter() {
+  async function handleEnter() {
     const event = events.find((e) => e.id === selectedEventId);
 
     if (!event) {
@@ -63,6 +77,7 @@ export default function MemberLoginPage() {
 
     const expected = (event.event_code || "").trim().toLowerCase();
     const entered = enteredCode.trim().toLowerCase();
+    const normalizedEmail = enteredEmail.trim().toLowerCase();
 
     if (!entered) {
       setStatus("Enter the event code.");
@@ -74,21 +89,61 @@ export default function MemberLoginPage() {
       return;
     }
 
-    saveMemberSession({
-      event_id: event.id,
-      event_name: event.name || null,
-      event_code: event.event_code || null,
-      venue_name: event.venue_name || null,
-      location: event.location || null,
-      start_date: event.start_date || null,
-      end_date: event.end_date || null,
-      lat: event.lat || null,
-      lng: event.lng || null,
-      login_at: new Date().toISOString(),
-      expires_at: event.end_date ? `${event.end_date}T23:59:59` : null,
-    });
+    if (!normalizedEmail) {
+      setStatus("Enter the email used for registration.");
+      return;
+    }
 
-    window.location.href = `/nearby?event=${event.id}`;
+    try {
+      setBusy(true);
+      setStatus("Checking registration...");
+
+      const { data, error } = await supabase
+        .from("attendees")
+        .select(
+          "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last",
+        )
+        .eq("event_id", event.id)
+        .eq("email", normalizedEmail)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const attendee = data as AttendeeRow | null;
+
+      if (!attendee?.id) {
+        setStatus(
+          "No attendee registration was found for that email in this event.",
+        );
+        setBusy(false);
+        return;
+      }
+
+      localStorage.setItem("fcoc-member-attendee-id", attendee.id);
+      localStorage.setItem("fcoc-member-email", normalizedEmail);
+      localStorage.setItem("fcoc-member-entry-id", attendee.entry_id || "");
+
+      saveMemberSession({
+        event_id: event.id,
+        event_name: event.name || null,
+        event_code: event.event_code || null,
+        venue_name: event.venue_name || null,
+        location: event.location || null,
+        start_date: event.start_date || null,
+        end_date: event.end_date || null,
+        lat: event.lat || null,
+        lng: event.lng || null,
+        login_at: new Date().toISOString(),
+        expires_at: event.end_date ? `${event.end_date}T23:59:59` : null,
+      });
+
+      window.location.href = `/nearby?event=${event.id}`;
+    } catch (err: any) {
+      console.error(err);
+      setStatus(err?.message || "Login failed.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -135,9 +190,23 @@ export default function MemberLoginPage() {
           />
         </label>
 
+        <label>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>
+            Registration Email
+          </div>
+          <input
+            type="email"
+            value={enteredEmail}
+            onChange={(e) => setEnteredEmail(e.target.value)}
+            placeholder="Email used for registration"
+            style={{ width: "100%", padding: 10 }}
+          />
+        </label>
+
         <button
           type="button"
-          onClick={handleEnter}
+          onClick={() => void handleEnter()}
+          disabled={busy}
           style={{
             padding: "10px 14px",
             borderRadius: 8,
@@ -147,7 +216,7 @@ export default function MemberLoginPage() {
             fontWeight: 600,
           }}
         >
-          Enter
+          {busy ? "Checking..." : "Enter"}
         </button>
 
         <div style={{ fontSize: 13, color: "#666" }}>{status}</div>
