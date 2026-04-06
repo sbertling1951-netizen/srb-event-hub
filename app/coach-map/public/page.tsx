@@ -578,6 +578,18 @@ function CoachMapPublicPageInner() {
       centerSiteInViewport(site);
     });
   }
+  function getLocationColor(category?: string | null) {
+    const c = (category || "").toLowerCase();
+
+    if (c.includes("restroom") || c.includes("bath")) return "#16a34a"; // green
+    if (c.includes("office") || c.includes("registration")) return "#2563eb"; // blue
+    if (c.includes("dump")) return "#92400e"; // brown
+    if (c.includes("food") || c.includes("cafe") || c.includes("restaurant"))
+      return "#f97316"; // orange
+    if (c.includes("medical") || c.includes("first aid")) return "#dc2626"; // red
+
+    return "#6b7280"; // default gray
+  }
 
   function handleGoToFirstMatch() {
     if (searchResults.length > 0) {
@@ -1048,15 +1060,28 @@ function CoachMapPublicPageInner() {
                   >
                     <div
                       style={{
-                        width: 12,
-                        height: 12,
+                        width: 14,
+                        height: 14,
                         borderRadius: 4,
-                        background: "#2563eb",
+                        background: getLocationColor(location.category),
                         border: "2px solid white",
                         boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
                         margin: "0 auto",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 10,
+                        color: "white",
                       }}
-                    />
+                    >
+                      {location.category?.toLowerCase().includes("restroom")
+                        ? "R"
+                        : location.category?.toLowerCase().includes("office")
+                          ? "O"
+                          : location.category?.toLowerCase().includes("dump")
+                            ? "D"
+                            : ""}
+                    </div>
 
                     {showLabels ? (
                       <div
