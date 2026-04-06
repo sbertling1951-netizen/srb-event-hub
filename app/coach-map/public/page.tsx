@@ -325,8 +325,18 @@ function CoachMapPublicPageInner() {
       }
 
       setEvent({
-        ...loadedEvent,
+        id: String(loadedEvent.id || memberEvent.id || ""),
+        name: String(
+          loadedEvent.name || loadedEvent.eventName || "Current Event",
+        ),
+        venue_name: loadedEvent.venue_name || null,
+        location: loadedEvent.location || null,
+        start_date: loadedEvent.start_date || null,
+        end_date: loadedEvent.end_date || null,
         map_image_url: resolvedMapImageUrl,
+        master_map_id: loadedEvent.master_map_id || null,
+        lat: loadedEvent.lat || null,
+        lng: loadedEvent.lng || null,
       });
 
       const [masterSitesResult, masterLocationsResult, assignmentResult] =
@@ -683,7 +693,7 @@ function CoachMapPublicPageInner() {
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Coach Map</h1>
 
         <div style={{ fontWeight: 700 }}>
-          Current event: {event?.name || event?.eventName || "No current event"}
+          Current event: {event?.name || "No current event"}{" "}
         </div>
 
         {event?.venue_name ? (

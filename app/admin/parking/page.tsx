@@ -638,7 +638,7 @@ export default function ParkingAdminPage() {
 
   function closeMobilePalette() {
     setSelectedAttendeeId("");
-    setSelectedSiteId(site.id || site.master_site_id);
+    setSelectedSiteId("");
   }
 
   function getSiteColor(site: ParkingSite) {
