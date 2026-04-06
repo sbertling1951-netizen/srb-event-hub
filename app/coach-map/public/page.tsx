@@ -20,6 +20,19 @@ type MemberEventRow = {
   lng?: number | null;
 };
 
+type ActiveEvent = {
+  id: string;
+  name: string;
+  venue_name?: string | null;
+  location: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  map_image_url: string | null;
+  master_map_id?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+};
+
 type EventMapSettingsRow = {
   event_id: string;
   selected_master_map_id: string | null;
@@ -27,11 +40,11 @@ type EventMapSettingsRow = {
 
 type MasterMapRow = {
   id: string;
-  name: string | null;
+  name?: string | null;
   map_image_url: string | null;
 };
 
-type MasterMapSiteRow = {
+type MasterMapSite = {
   id: string;
   master_map_id: string;
   site_number: string;
@@ -40,15 +53,34 @@ type MasterMapSiteRow = {
   map_y: number | null;
 };
 
-type ParkingSiteRow = {
+type MasterMapLocation = {
+  id: string;
+  master_map_id: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  map_x: number | null;
+  map_y: number | null;
+};
+
+type ParkingAssignmentRow = {
   id: string;
   event_id: string;
-  site_number: string | null;
-  display_label: string | null;
+  master_site_id: string | null;
   assigned_attendee_id: string | null;
 };
 
-type AttendeeRow = {
+type MapSite = {
+  id: string;
+  master_site_id: string;
+  site_number: string;
+  display_label: string | null;
+  map_x: number | null;
+  map_y: number | null;
+  assigned_attendee_id: string | null;
+};
+
+type Attendee = {
   id: string;
   pilot_first: string | null;
   pilot_last: string | null;
@@ -60,6 +92,7 @@ type AttendeeRow = {
   coach_model: string | null;
   coach_length: string | null;
   has_arrived: boolean | null;
+  arrival_status: string | null;
 };
 
 type HouseholdMember = {
@@ -118,21 +151,18 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function CoachMapPublicPageInner() {
-  const [event, setEvent] = useState<MemberEventRow | null>(null);
-  const [mapImageUrl, setMapImageUrl] = useState<string | null>(null);
-  const [mapName, setMapName] = useState<string | null>(null);
-  const [masterSites, setMasterSites] = useState<MasterMapSiteRow[]>([]);
-  const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
-  const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
+  const [event, setEvent] = useState<ActiveEvent | null>(null);
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
     [],
   );
+  const [sites, setSites] = useState<MapSite[]>([]);
+  const [locations, setLocations] = useState<MasterMapLocation[]>([]);
   const [viewerAttendeeId, setViewerAttendeeId] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading map...");
   const [selectedSiteKey, setSelectedSiteKey] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
   const [search, setSearch] = useState("");
-  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const [isNarrow, setIsNarrow] = useState(false);
   const [pulseKey, setPulseKey] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -140,8 +170,9 @@ function CoachMapPublicPageInner() {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
-  const baseMapWidth = isNarrow ? 900 : 1200;
-  const renderedMapWidth = baseMapWidth * zoom;
+  const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
+  const renderedMapWidth = naturalSize.width * zoom;
+  const renderedMapHeight = naturalSize.height * zoom;
 
   useEffect(() => {
     setViewerAttendeeId(getStoredViewerAttendeeId());
@@ -178,8 +209,7 @@ function CoachMapPublicPageInner() {
     }, 100);
 
     return () => clearTimeout(t);
-  }, [zoom, isNarrow, mapImageUrl]);
-
+  }, [zoom, isNarrow, event?.map_image_url]);
   useEffect(() => {
     if (!pulseKey) return;
 
@@ -193,9 +223,9 @@ function CoachMapPublicPageInner() {
   function refreshMapSize() {
     if (!imageRef.current) return;
 
-    setMapSize({
-      width: imageRef.current.offsetWidth,
-      height: imageRef.current.offsetHeight,
+    setNaturalSize({
+      width: imageRef.current.naturalWidth || 1200,
+      height: imageRef.current.naturalHeight || 800,
     });
   }
 
@@ -219,10 +249,8 @@ function CoachMapPublicPageInner() {
 
       if (!memberEvent?.id) {
         setEvent(null);
-        setMapImageUrl(null);
-        setMapName(null);
-        setMasterSites([]);
-        setParkingSites([]);
+        setSites([]);
+        setLocations([]);
         setAttendees([]);
         setHouseholdMembers([]);
         setStatus("No current event selected.");
@@ -252,8 +280,6 @@ function CoachMapPublicPageInner() {
         lng: memberEvent.lng || null,
       };
 
-      setEvent(loadedEvent);
-
       let resolvedMapId: string | null = null;
 
       const { data: mapSettingsRow, error: mapSettingsError } = await supabase
@@ -278,7 +304,6 @@ function CoachMapPublicPageInner() {
       }
 
       let resolvedMapImageUrl: string | null = null;
-      let resolvedMapName: string | null = null;
 
       if (resolvedMapId) {
         const { data: masterMapRow, error: masterMapError } = await supabase
@@ -292,7 +317,6 @@ function CoachMapPublicPageInner() {
         } else {
           const mapRow = masterMapRow as MasterMapRow | null;
           resolvedMapImageUrl = mapRow?.map_image_url || null;
-          resolvedMapName = mapRow?.name || null;
         }
       }
 
@@ -300,39 +324,73 @@ function CoachMapPublicPageInner() {
         resolvedMapImageUrl = loadedEvent.map_image_url || null;
       }
 
-      setMapImageUrl(resolvedMapImageUrl);
-      setMapName(resolvedMapName);
+      setEvent({
+        ...loadedEvent,
+        map_image_url: resolvedMapImageUrl,
+      });
 
-      if (resolvedMapId) {
-        const { data: masterSiteRows, error: masterSiteError } = await supabase
-          .from("master_map_sites")
-          .select("id,master_map_id,site_number,display_label,map_x,map_y")
-          .eq("master_map_id", resolvedMapId)
-          .order("site_number");
+      const [masterSitesResult, masterLocationsResult, assignmentResult] =
+        await Promise.all([
+          resolvedMapId
+            ? supabase
+                .from("master_map_sites")
+                .select(
+                  "id,master_map_id,site_number,display_label,map_x,map_y",
+                )
+                .eq("master_map_id", resolvedMapId)
+                .order("site_number")
+            : Promise.resolve({ data: [], error: null }),
+          resolvedMapId
+            ? supabase
+                .from("master_map_locations")
+                .select(
+                  "id,master_map_id,name,category,description,map_x,map_y",
+                )
+                .eq("master_map_id", resolvedMapId)
+                .order("name")
+            : Promise.resolve({ data: [], error: null }),
+          supabase
+            .from("parking_sites")
+            .select("id,event_id,master_site_id,assigned_attendee_id")
+            .eq("event_id", memberEvent.id),
+        ]);
 
-        if (masterSiteError) throw masterSiteError;
-        setMasterSites((masterSiteRows || []) as MasterMapSiteRow[]);
-      } else {
-        setMasterSites([]);
-      }
+      if (masterSitesResult.error) throw masterSitesResult.error;
+      if (masterLocationsResult.error) throw masterLocationsResult.error;
+      if (assignmentResult.error) throw assignmentResult.error;
 
-      const { data: parkingSiteRows, error: parkingSiteError } = await supabase
-        .from("parking_sites")
-        .select("id,event_id,site_number,display_label,assigned_attendee_id")
-        .eq("event_id", memberEvent.id);
+      const masterSites = (masterSitesResult.data || []) as MasterMapSite[];
+      const assignments = (assignmentResult.data ||
+        []) as ParkingAssignmentRow[];
 
-      if (parkingSiteError) throw parkingSiteError;
-      setParkingSites((parkingSiteRows || []) as ParkingSiteRow[]);
+      const mergedSites: MapSite[] = masterSites.map((site) => {
+        const assignment =
+          assignments.find((a) => a.master_site_id === site.id) || null;
+
+        return {
+          id: assignment?.id || site.id,
+          master_site_id: site.id,
+          site_number: site.site_number,
+          display_label: site.display_label,
+          map_x: site.map_x,
+          map_y: site.map_y,
+          assigned_attendee_id: assignment?.assigned_attendee_id || null,
+        };
+      });
+
+      setSites(mergedSites);
+      setLocations((masterLocationsResult.data || []) as MasterMapLocation[]);
 
       const { data: attendeeRows, error: attendeeError } = await supabase
         .from("attendees")
         .select(
-          "id,pilot_first,pilot_last,copilot_first,copilot_last,share_with_attendees,assigned_site,coach_make,coach_model,coach_length,has_arrived",
+          "id,pilot_first,pilot_last,copilot_first,copilot_last,share_with_attendees,assigned_site,coach_make,coach_model,coach_length,has_arrived,arrival_status",
         )
         .eq("event_id", memberEvent.id);
 
       if (attendeeError) throw attendeeError;
-      const attendeeList = (attendeeRows || []) as AttendeeRow[];
+
+      const attendeeList = (attendeeRows || []) as Attendee[];
       setAttendees(attendeeList);
 
       const attendeeIds = attendeeList.map((a) => a.id);
@@ -356,18 +414,17 @@ function CoachMapPublicPageInner() {
       setTimeout(refreshMapSize, 50);
     } catch (err: any) {
       console.error("loadMap error:", err);
-      setMasterSites([]);
-      setParkingSites([]);
+      setEvent(null);
+      setSites([]);
+      setLocations([]);
       setAttendees([]);
       setHouseholdMembers([]);
-      setMapImageUrl(null);
-      setMapName(null);
       setStatus(err?.message || "Failed to load coach map.");
     }
   }
 
   const attendeeLookup = useMemo(() => {
-    const map = new Map<string, AttendeeRow>();
+    const map = new Map<string, Attendee>();
     attendees.forEach((attendee) => map.set(attendee.id, attendee));
     return map;
   }, [attendees]);
@@ -382,38 +439,16 @@ function CoachMapPublicPageInner() {
     return map;
   }, [householdMembers]);
 
-  const parkingLookup = useMemo(() => {
-    const map = new Map<string, ParkingSiteRow>();
-
-    parkingSites.forEach((site) => {
-      const labelKey = normalizeSiteKey(site.display_label);
-      const numberKey = normalizeSiteKey(site.site_number);
-
-      if (labelKey) map.set(labelKey, site);
-      if (numberKey && !map.has(numberKey)) map.set(numberKey, site);
-    });
-
-    return map;
-  }, [parkingSites]);
-
   const renderedSites = useMemo<RenderedSite[]>(() => {
-    return masterSites.map((site) => {
-      const labelKey = normalizeSiteKey(site.display_label);
-      const numberKey = normalizeSiteKey(site.site_number);
-
-      const assignedParkingSite =
-        parkingLookup.get(labelKey) || parkingLookup.get(numberKey) || null;
-
-      return {
-        key: site.id,
-        site_number: site.site_number,
-        display_label: site.display_label || site.site_number,
-        map_x: site.map_x,
-        map_y: site.map_y,
-        assigned_attendee_id: assignedParkingSite?.assigned_attendee_id || null,
-      };
-    });
-  }, [masterSites, parkingLookup]);
+    return sites.map((site) => ({
+      key: site.master_site_id,
+      site_number: site.site_number,
+      display_label: site.display_label || site.site_number,
+      map_x: site.map_x,
+      map_y: site.map_y,
+      assigned_attendee_id: site.assigned_attendee_id,
+    }));
+  }, [sites]);
 
   const searchableSites = useMemo<SearchableSite[]>(() => {
     return renderedSites.map((site) => {
@@ -509,8 +544,8 @@ function CoachMapPublicPageInner() {
     if (site.map_x === null || site.map_y === null) return;
 
     const viewport = viewportRef.current;
-    const xPx = (site.map_x / 100) * mapSize.width;
-    const yPx = (site.map_y / 100) * mapSize.height;
+    const xPx = (site.map_x / 100) * renderedMapWidth;
+    const yPx = (site.map_y / 100) * renderedMapHeight;
 
     const targetLeft = clamp(
       xPx - viewport.clientWidth / 2,
@@ -556,8 +591,8 @@ function CoachMapPublicPageInner() {
     const gap = 16;
 
     if (
-      !mapSize.width ||
-      !mapSize.height ||
+      !renderedMapWidth ||
+      !renderedMapHeight ||
       site.map_x === null ||
       site.map_y === null
     ) {
@@ -568,18 +603,18 @@ function CoachMapPublicPageInner() {
       };
     }
 
-    const xPx = (site.map_x / 100) * mapSize.width;
-    const yPx = (site.map_y / 100) * mapSize.height;
+    const xPx = (site.map_x / 100) * renderedMapWidth;
+    const yPx = (site.map_y / 100) * renderedMapHeight;
 
     const left =
-      xPx < mapSize.width * 0.58
-        ? clamp(xPx + gap, 12, mapSize.width - width - 12)
-        : clamp(xPx - width - gap, 12, mapSize.width - width - 12);
+      xPx < renderedMapWidth * 0.58
+        ? clamp(xPx + gap, 12, renderedMapWidth - width - 12)
+        : clamp(xPx - width - gap, 12, renderedMapWidth - width - 12);
 
     const top = clamp(
       yPx - heightEstimate / 2,
       12,
-      mapSize.height - heightEstimate - 12,
+      renderedMapHeight - heightEstimate - 12,
     );
 
     return {
@@ -650,12 +685,6 @@ function CoachMapPublicPageInner() {
         {dateRange ? (
           <div style={{ color: "#666", marginTop: 4, fontSize: 13 }}>
             {dateRange}
-          </div>
-        ) : null}
-
-        {mapName ? (
-          <div style={{ color: "#666", marginTop: 4, fontSize: 13 }}>
-            Map: {mapName}
           </div>
         ) : null}
 
@@ -781,7 +810,7 @@ function CoachMapPublicPageInner() {
         ) : null}
       </div>
 
-      {!mapImageUrl ? (
+      {!event?.map_image_url ? (
         <div
           style={{
             border: "1px solid #ddd",
@@ -874,13 +903,13 @@ function CoachMapPublicPageInner() {
               style={{
                 position: "relative",
                 width: `${renderedMapWidth}px`,
-                height: `${mapSize.height || 0}px`,
+                height: `${renderedMapHeight}px`,
                 minWidth: `${renderedMapWidth}px`,
               }}
             >
               <img
                 ref={imageRef}
-                src={mapImageUrl}
+                src={event?.map_image_url || ""}
                 alt="Coach map"
                 onLoad={refreshMapSize}
                 style={{
@@ -891,7 +920,6 @@ function CoachMapPublicPageInner() {
                   height: "auto",
                 }}
               />
-
               {renderedSites.map((site) => {
                 const x = typeof site.map_x === "number" ? site.map_x : null;
                 const y = typeof site.map_y === "number" ? site.map_y : null;
@@ -910,8 +938,8 @@ function CoachMapPublicPageInner() {
                     key={site.key}
                     style={{
                       position: "absolute",
-                      left: `${(x / 100) * mapSize.width}px`,
-                      top: `${(y / 100) * mapSize.height}px`,
+                      left: `${(x / 100) * renderedMapWidth}px`,
+                      top: `${(y / 100) * renderedMapHeight}px`,
                       transform: "translate(-50%, -50%)",
                     }}
                   >
@@ -998,6 +1026,60 @@ function CoachMapPublicPageInner() {
                 );
               })}
 
+              {locations.map((location) => {
+                const x =
+                  typeof location.map_x === "number" ? location.map_x : null;
+                const y =
+                  typeof location.map_y === "number" ? location.map_y : null;
+
+                if (x === null || y === null) return null;
+
+                return (
+                  <div
+                    key={location.id}
+                    style={{
+                      position: "absolute",
+                      left: `${(x / 100) * renderedMapWidth}px`,
+                      top: `${(y / 100) * renderedMapHeight}px`,
+                      transform: "translate(-50%, -50%)",
+                      zIndex: 5,
+                    }}
+                    title={location.name}
+                  >
+                    <div
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 4,
+                        background: "#2563eb",
+                        border: "2px solid white",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+                        margin: "0 auto",
+                      }}
+                    />
+
+                    {showLabels ? (
+                      <div
+                        style={{
+                          marginTop: 3,
+                          marginLeft: "auto",
+                          marginRight: "auto",
+                          background: "rgba(255,255,255,0.92)",
+                          border: "1px solid rgba(0,0,0,0.18)",
+                          borderRadius: 4,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          padding: "1px 4px",
+                          color: "#111",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {location.name}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
               {selectedSite && floatingPanelStyle ? (
                 <div
                   style={{
