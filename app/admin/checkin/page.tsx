@@ -20,6 +20,7 @@ type AttendeeRow = {
   assigned_site: string | null;
   share_with_attendees: boolean | null;
   has_arrived: boolean | null;
+  arrival_status: string | null;
   handicap_parking: boolean | null;
   volunteer: boolean | null;
   first_time: boolean | null;
@@ -106,6 +107,47 @@ function AdminCheckinPageInner() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
+  useEffect(() => {
+    if (!event?.id) return;
+
+    const parkingChannel = supabase
+      .channel(`admin-checkin-parking-${event.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "parking_sites",
+          filter: `event_id=eq.${event.id}`,
+        },
+        async () => {
+          await loadPage();
+        },
+      )
+      .subscribe();
+
+    const attendeesChannel = supabase
+      .channel(`admin-checkin-attendees-${event.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "attendees",
+          filter: `event_id=eq.${event.id}`,
+        },
+        async () => {
+          await loadPage();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(parkingChannel);
+      void supabase.removeChannel(attendeesChannel);
+    };
+  }, [event?.id]);
+
   async function loadPage() {
     try {
       setStatus("Loading check-in...");
@@ -131,19 +173,30 @@ function AdminCheckinPageInner() {
       const loadedEvent = eventRow as AdminEventRow;
       setEvent(loadedEvent);
 
-      const { data: attendeeRows, error: attendeeError } = await supabase
-        .from("attendees")
-        .select(
-          "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,coach_make,coach_model,coach_length,assigned_site,share_with_attendees,has_arrived,handicap_parking,volunteer,first_time",
-        )
-        .eq("event_id", loadedEvent.id)
-        .order("pilot_last", { ascending: true, nullsFirst: false })
-        .order("pilot_first", { ascending: true, nullsFirst: false });
+      const [attendeeResult, siteResult] = await Promise.all([
+        supabase
+          .from("attendees")
+          .select(
+            "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,coach_make,coach_model,coach_length,assigned_site,share_with_attendees,has_arrived,arrival_status,handicap_parking,volunteer,first_time",
+          )
+          .eq("event_id", loadedEvent.id)
+          .order("pilot_last", { ascending: true, nullsFirst: false })
+          .order("pilot_first", { ascending: true, nullsFirst: false }),
+        supabase
+          .from("parking_sites")
+          .select("id,event_id,site_number,display_label,assigned_attendee_id")
+          .eq("event_id", loadedEvent.id)
+          .order("site_number", { ascending: true, nullsFirst: false }),
+      ]);
 
-      if (attendeeError) throw attendeeError;
+      if (attendeeResult.error) throw attendeeResult.error;
+      if (siteResult.error) throw siteResult.error;
 
-      const attendeeList = (attendeeRows || []) as AttendeeRow[];
+      const attendeeList = (attendeeResult.data || []) as AttendeeRow[];
+      const siteRows = (siteResult.data || []) as ParkingSiteRow[];
+
       setAttendees(attendeeList);
+      setParkingSites(siteRows);
 
       const attendeeIds = attendeeList.map((a) => a.id);
 
@@ -162,15 +215,6 @@ function AdminCheckinPageInner() {
       } else {
         setHouseholdMembers([]);
       }
-
-      const { data: siteRows, error: siteError } = await supabase
-        .from("parking_sites")
-        .select("id,event_id,site_number,display_label,assigned_attendee_id")
-        .eq("event_id", loadedEvent.id)
-        .order("site_number", { ascending: true, nullsFirst: false });
-
-      if (siteError) throw siteError;
-      setParkingSites((siteRows || []) as ParkingSiteRow[]);
 
       const nextEditState: Record<string, EditState> = {};
       attendeeList.forEach((attendee) => {
@@ -303,6 +347,8 @@ function AdminCheckinPageInner() {
       }
 
       const oldAssignedSite = attendee.assigned_site || "";
+      const oldHasArrived = !!attendee.has_arrived;
+      const oldShare = !!attendee.share_with_attendees;
 
       if (oldAssignedSite && oldAssignedSite !== normalizedSite) {
         const oldSite =
@@ -326,12 +372,19 @@ function AdminCheckinPageInner() {
         }
       }
 
+      const nextArrivalStatus = current.hasArrived
+        ? attendee.arrival_status === "parked"
+          ? "parked"
+          : "arrived"
+        : "not_arrived";
+
       const { error: attendeeUpdateError } = await supabase
         .from("attendees")
         .update({
           assigned_site: normalizedSite || null,
           share_with_attendees: current.shareWithAttendees,
           has_arrived: current.hasArrived,
+          arrival_status: nextArrivalStatus,
         })
         .eq("id", attendee.id);
 
@@ -368,10 +421,44 @@ function AdminCheckinPageInner() {
         }
       }
 
-      setStatus(
-        `Saved check-in for ${fullName(attendee.pilot_first, attendee.pilot_last)}.`,
-      );
+      const changes: string[] = [];
+
+      if (!oldAssignedSite && normalizedSite) {
+        changes.push(`site assigned to ${normalizedSite}`);
+      } else if (oldAssignedSite && !normalizedSite) {
+        changes.push(`site cleared from ${oldAssignedSite}`);
+      } else if (
+        oldAssignedSite &&
+        normalizedSite &&
+        oldAssignedSite.toLowerCase() !== normalizedSite.toLowerCase()
+      ) {
+        changes.push(
+          `site changed from ${oldAssignedSite} to ${normalizedSite}`,
+        );
+      }
+
+      if (!oldHasArrived && current.hasArrived) {
+        changes.push("marked arrived");
+      } else if (oldHasArrived && !current.hasArrived) {
+        changes.push("arrival unmarked");
+      }
+
+      if (oldShare !== current.shareWithAttendees) {
+        changes.push(
+          current.shareWithAttendees ? "sharing enabled" : "sharing disabled",
+        );
+      }
+
+      const attendeeName =
+        fullName(attendee.pilot_first, attendee.pilot_last) || "Attendee";
+
+      const feedback =
+        changes.length === 0
+          ? `${attendeeName} saved. No visible changes were made.`
+          : `${attendeeName}: ${changes.join(" · ")}.`;
+
       await loadPage();
+      setStatus(feedback);
     } catch (err: any) {
       console.error("saveCheckin error:", err);
       setStatus(err?.message || "Failed to save check-in.");

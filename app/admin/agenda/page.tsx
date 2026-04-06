@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type React from "react";
 import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { getAgendaColor } from "@/lib/agendaColors";
 
 type AgendaItem = {
   id: string;
@@ -13,6 +15,7 @@ type AgendaItem = {
   location: string | null;
   speaker: string | null;
   category: string | null;
+  color: string | null;
   agenda_date: string | null;
   start_time: string | null;
   end_time: string | null;
@@ -34,6 +37,7 @@ type AgendaForm = {
   location: string;
   speaker: string;
   category: string;
+  color: string;
   agenda_date: string;
   start_time: string;
   end_time: string;
@@ -49,6 +53,7 @@ const emptyForm: AgendaForm = {
   location: "",
   speaker: "",
   category: "",
+  color: "",
   agenda_date: "",
   start_time: "",
   end_time: "",
@@ -112,6 +117,7 @@ function formFromItem(item: AgendaItem): AgendaForm {
     location: item.location || "",
     speaker: item.speaker || "",
     category: item.category || "",
+    color: item.color || "",
     agenda_date: item.agenda_date || "",
     start_time: item.start_time || "",
     end_time: item.end_time || "",
@@ -139,6 +145,30 @@ function AdminAgendaPageInner() {
   const [savingOrder, setSavingOrder] = useState(false);
   const [filterCategory, setFilterCategory] = useState("All");
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
+  const useButtonReorder = isMobile && !forceDesktopDrag;
+
+  useEffect(() => {
+    function handleResize() {
+      const userAgent = navigator.userAgent || "";
+      const platform = navigator.platform || "";
+      const isIOSLike = /iPhone|iPad|iPod/i.test(userAgent);
+      const isAndroid = /Android/i.test(userAgent);
+      const isIPadDesktopMode =
+        /Mac/.test(platform) && navigator.maxTouchPoints > 1;
+      const touchDevice = isIOSLike || isAndroid || isIPadDesktopMode;
+
+      setIsMobile(touchDevice);
+    }
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     void loadPage();
@@ -175,7 +205,7 @@ function AdminAgendaPageInner() {
     const { data, error } = await supabase
       .from("agenda_items")
       .select(
-        "id,external_id,title,description,location,speaker,category,agenda_date,start_time,end_time,sort_order,is_published,source",
+        "id,external_id,title,description,location,speaker,category,color,agenda_date,start_time,end_time,sort_order,is_published,source",
       )
       .eq("event_id", selectedEvent.id)
       .order("agenda_date", { ascending: true, nullsFirst: false })
@@ -190,6 +220,38 @@ function AdminAgendaPageInner() {
 
     setItems((data || []) as AgendaItem[]);
     setStatus(`Loaded ${(data || []).length} items for ${selectedEvent.name}.`);
+  }
+
+  function moveItemUp(id: string) {
+    setItems((prev) => {
+      const index = prev.findIndex((item) => item.id === id);
+      if (index <= 0) return prev;
+
+      const next = moveItem(prev, index, index - 1);
+
+      return next.map((item, idx) => ({
+        ...item,
+        sort_order: idx + 1,
+      }));
+    });
+
+    setStatus('Order changed. Click "Save Order" to keep it.');
+  }
+
+  function moveItemDown(id: string) {
+    setItems((prev) => {
+      const index = prev.findIndex((item) => item.id === id);
+      if (index === -1 || index >= prev.length - 1) return prev;
+
+      const next = moveItem(prev, index, index + 1);
+
+      return next.map((item, idx) => ({
+        ...item,
+        sort_order: idx + 1,
+      }));
+    });
+
+    setStatus('Order changed. Click "Save Order" to keep it.');
   }
 
   async function saveItem() {
@@ -223,6 +285,7 @@ function AdminAgendaPageInner() {
       location: normalizeText(form.location),
       speaker: normalizeText(form.speaker),
       category: normalizeText(form.category),
+      color: getAgendaColor(form.category, form.color),
       agenda_date: form.agenda_date.trim(),
       start_time: form.start_time.trim(),
       end_time: normalizeText(form.end_time),
@@ -242,7 +305,6 @@ function AdminAgendaPageInner() {
 
         if (error) {
           setStatus(`Could not update agenda item: ${error.message}`);
-          setSaving(false);
           return;
         }
 
@@ -257,7 +319,6 @@ function AdminAgendaPageInner() {
 
         if (findError) {
           setStatus(`Could not check for duplicate item: ${findError.message}`);
-          setSaving(false);
           return;
         }
 
@@ -265,7 +326,6 @@ function AdminAgendaPageInner() {
           setStatus(
             `An item with external_id "${externalId}" already exists. Edit that item or change the title/date/time.`,
           );
-          setSaving(false);
           return;
         }
 
@@ -273,7 +333,6 @@ function AdminAgendaPageInner() {
 
         if (error) {
           setStatus(`Could not add agenda item: ${error.message}`);
-          setSaving(false);
           return;
         }
 
@@ -340,27 +399,33 @@ function AdminAgendaPageInner() {
     );
   }, [items, filterCategory]);
 
-  function handleDragStart(id: string) {
+  function handleDragStart(e: React.DragEvent<HTMLDivElement>, id: string) {
     setDraggedId(id);
+    try {
+      e.dataTransfer.setData("text/plain", id);
+      e.dataTransfer.effectAllowed = "move";
+    } catch {}
   }
 
   function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
+    try {
+      e.dataTransfer.dropEffect = "move";
+    } catch {}
   }
 
   function handleDrop(targetId: string) {
     if (!draggedId || draggedId === targetId) return;
 
-    const allFrom = [...items];
-    const fromIndex = allFrom.findIndex((item) => item.id === draggedId);
-    const toIndex = allFrom.findIndex((item) => item.id === targetId);
+    const fromIndex = items.findIndex((item) => item.id === draggedId);
+    const toIndex = items.findIndex((item) => item.id === targetId);
 
     if (fromIndex === -1 || toIndex === -1) {
       setDraggedId(null);
       return;
     }
 
-    const reordered = moveItem(allFrom, fromIndex, toIndex).map(
+    const reordered = moveItem(items, fromIndex, toIndex).map(
       (item, index) => ({
         ...item,
         sort_order: index + 1,
@@ -369,7 +434,7 @@ function AdminAgendaPageInner() {
 
     setItems(reordered);
     setDraggedId(null);
-    setStatus("Order changed. Click “Save Order” to keep it.");
+    setStatus('Order changed. Click "Save Order" to keep it.');
   }
 
   async function saveOrder() {
@@ -447,7 +512,7 @@ function AdminAgendaPageInner() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(320px, 420px) 1fr",
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(320px, 420px) 1fr",
           gap: 20,
           alignItems: "start",
         }}
@@ -460,8 +525,8 @@ function AdminAgendaPageInner() {
             padding: 16,
             display: "grid",
             gap: 10,
-            position: "sticky",
-            top: 16,
+            position: isMobile ? "static" : "sticky",
+            top: isMobile ? undefined : 16,
           }}
         >
           <div style={{ fontWeight: 700 }}>
@@ -504,6 +569,15 @@ function AdminAgendaPageInner() {
             style={{ padding: 8 }}
           />
 
+          <input
+            value={form.color}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, color: e.target.value }))
+            }
+            placeholder="Color (optional, like #dbeafe)"
+            style={{ padding: 8 }}
+          />
+
           <textarea
             value={form.description}
             onChange={(e) =>
@@ -528,7 +602,7 @@ function AdminAgendaPageInner() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
               gap: 10,
             }}
           >
@@ -676,13 +750,37 @@ function AdminAgendaPageInner() {
               ))}
             </div>
 
-            <button
-              type="button"
-              onClick={() => void saveOrder()}
-              disabled={savingOrder}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
             >
-              {savingOrder ? "Saving Order..." : "Save Order"}
-            </button>
+              <button
+                type="button"
+                onClick={() => setForceDesktopDrag((prev) => !prev)}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: forceDesktopDrag ? "#dbeafe" : "white",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+              >
+                {forceDesktopDrag ? "Desktop Drag On" : "Desktop Drag Off"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void saveOrder()}
+                disabled={savingOrder}
+              >
+                {savingOrder ? "Saving Order..." : "Save Order"}
+              </button>
+            </div>
           </div>
 
           <div
@@ -693,7 +791,19 @@ function AdminAgendaPageInner() {
               borderBottom: "1px solid #eee",
             }}
           >
-            Drag rows to reorder, then click <strong>Save Order</strong>.
+            {useButtonReorder
+              ? 'Button reorder mode: use ↑ and ↓, then click "Save Order".'
+              : 'Desktop drag mode: drag rows by ☰, then click "Save Order".'}
+          </div>
+
+          <div
+            style={{
+              padding: 12,
+              background: "#fff8dc",
+              border: "1px solid #e5e7eb",
+            }}
+          >
+            items: {items.length} | filteredItems: {filteredItems.length}
           </div>
 
           {filteredItems.length === 0 ? (
@@ -701,92 +811,191 @@ function AdminAgendaPageInner() {
               No agenda items found.
             </div>
           ) : (
-            filteredItems.map((item) => (
-              <div
-                key={item.id}
-                draggable
-                onDragStart={() => handleDragStart(item.id)}
-                onDragOver={handleDragOver}
-                onDrop={() => handleDrop(item.id)}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "44px 1fr auto",
-                  gap: 12,
-                  padding: 14,
-                  borderTop: "1px solid #eee",
-                  background: draggedId === item.id ? "#f8fafc" : "white",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 18,
-                    color: "#666",
-                    cursor: "grab",
-                    userSelect: "none",
-                  }}
-                  title="Drag to reorder"
-                >
-                  ☰
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setForm(formFromItem(item))}
-                  style={{
-                    textAlign: "left",
-                    background: "transparent",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ fontWeight: 700 }}>{item.title}</div>
-
-                  <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-                    {formatAgendaDate(item.agenda_date)} ·{" "}
-                    {formatAgendaTime(item.start_time, item.end_time)}
-                  </div>
-
-                  {item.location ? (
-                    <div style={{ fontSize: 13, marginTop: 4 }}>
-                      {item.location}
-                    </div>
-                  ) : null}
-
-                  <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-                    {item.category || "No category"}
-                    {item.speaker ? ` · Speaker: ${item.speaker}` : ""}
-                  </div>
-
-                  <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>
-                    external_id: {item.external_id || "—"}
-                    {item.sort_order !== null && item.sort_order !== undefined
-                      ? ` · sort: ${item.sort_order}`
-                      : ""}
-                    {item.source ? ` · source: ${item.source}` : ""}
-                  </div>
-                </button>
-
-                <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
-                  <button
-                    type="button"
-                    onClick={() => void togglePublished(item)}
-                  >
-                    {item.is_published ? "Unpublish" : "Publish"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void deleteItem(item.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
+            <div
+              style={{
+                border: "1px solid #ddd",
+                borderRadius: 12,
+                background: "white",
+                marginTop: 16,
+                overflow: "hidden",
+              }}
+            >
+              <div style={{ padding: 14, fontWeight: 700 }}>
+                Agenda Items ({filteredItems.length})
               </div>
-            ))
+
+              {filteredItems.map((item) => (
+                <div
+                  key={item.id}
+                  onDragOver={!useButtonReorder ? handleDragOver : undefined}
+                  onDrop={
+                    !useButtonReorder ? () => handleDrop(item.id) : undefined
+                  }
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: useButtonReorder
+                      ? "56px 1fr auto"
+                      : "44px 1fr auto",
+                    gap: 12,
+                    padding: 14,
+                    borderTop: "1px solid #eee",
+                    background: draggedId === item.id ? "#f8fafc" : "white",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 6,
+                      alignContent: "start",
+                      justifyItems: "center",
+                    }}
+                  >
+                    {useButtonReorder ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => moveItemUp(item.id)}
+                          disabled={filteredItems[0]?.id === item.id}
+                          style={{
+                            padding: "6px 8px",
+                            minWidth: 36,
+                            cursor:
+                              filteredItems[0]?.id === item.id
+                                ? "default"
+                                : "pointer",
+                          }}
+                          title="Move up"
+                        >
+                          ↑
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => moveItemDown(item.id)}
+                          disabled={
+                            filteredItems[filteredItems.length - 1]?.id ===
+                            item.id
+                          }
+                          style={{
+                            padding: "6px 8px",
+                            minWidth: 36,
+                            cursor:
+                              filteredItems[filteredItems.length - 1]?.id ===
+                              item.id
+                                ? "default"
+                                : "pointer",
+                          }}
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                      </>
+                    ) : (
+                      <div
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, item.id)}
+                        onDragEnd={() => setDraggedId(null)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 18,
+                          color: "#666",
+                          cursor: "grab",
+                          userSelect: "none",
+                          width: 32,
+                          height: 32,
+                        }}
+                        title="Drag to reorder"
+                      >
+                        ☰
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setForm(formFromItem(item))}
+                    style={{
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ fontWeight: 700 }}>{item.title}</div>
+
+                    <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
+                      {formatAgendaDate(item.agenda_date)} ·{" "}
+                      {formatAgendaTime(item.start_time, item.end_time)}
+                    </div>
+
+                    {item.location ? (
+                      <div style={{ fontSize: 13, marginTop: 4 }}>
+                        {item.location}
+                      </div>
+                    ) : null}
+
+                    <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
+                      {item.category || "No category"}
+                      {item.speaker ? ` · Speaker: ${item.speaker}` : ""}
+                    </div>
+
+                    {item.color ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          marginTop: 6,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 14,
+                            height: 14,
+                            borderRadius: 999,
+                            background: item.color,
+                            border: "1px solid rgba(0,0,0,0.15)",
+                            display: "inline-block",
+                          }}
+                        />
+                        <span style={{ fontSize: 12, color: "#777" }}>
+                          {item.color}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>
+                      external_id: {item.external_id || "—"}
+                      {item.sort_order !== null && item.sort_order !== undefined
+                        ? ` · sort: ${item.sort_order}`
+                        : ""}
+                      {item.source ? ` · source: ${item.source}` : ""}
+                    </div>
+                  </button>
+
+                  <div
+                    style={{ display: "grid", gap: 8, alignContent: "start" }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void togglePublished(item)}
+                    >
+                      {item.is_published ? "Unpublish" : "Publish"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void deleteItem(item.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>

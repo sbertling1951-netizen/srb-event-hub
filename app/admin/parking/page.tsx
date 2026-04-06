@@ -46,6 +46,7 @@ type Attendee = {
   coach_model: string | null;
   assigned_site: string | null;
   arrival_status: string | null;
+  has_arrived: boolean | null;
 };
 
 export default function ParkingAdminPage() {
@@ -153,7 +154,12 @@ export default function ParkingAdminPage() {
       .channel(`parking-sites-${event.id}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "parking_sites" },
+        {
+          event: "*",
+          schema: "public",
+          table: "parking_sites",
+          filter: `event_id=eq.${event.id}`,
+        },
         async () => {
           await loadPage();
         },
@@ -164,7 +170,12 @@ export default function ParkingAdminPage() {
       .channel(`attendees-${event.id}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "attendees" },
+        {
+          event: "*",
+          schema: "public",
+          table: "attendees",
+          filter: `event_id=eq.${event.id}`,
+        },
         async () => {
           await loadPage();
         },
@@ -265,35 +276,36 @@ export default function ParkingAdminPage() {
     setDefaultZoom(safeOpeningScale);
     setZoom(safeOpeningScale);
 
-    const { data: parkingData, error: parkingError } = await supabase
-      .from("parking_sites")
-      .select(
-        "id,event_id,site_number,display_label,map_x,map_y,assigned_attendee_id",
-      )
-      .eq("event_id", typedEvent.id);
+    const [parkingResult, attendeeResult] = await Promise.all([
+      supabase
+        .from("parking_sites")
+        .select(
+          "id,event_id,site_number,display_label,map_x,map_y,assigned_attendee_id",
+        )
+        .eq("event_id", typedEvent.id),
+      supabase
+        .from("attendees")
+        .select(
+          "id,event_id,pilot_first,pilot_last,coach_make,coach_model,assigned_site,arrival_status,has_arrived",
+        )
+        .eq("event_id", typedEvent.id)
+        .order("pilot_last"),
+    ]);
 
-    if (parkingError) {
-      setStatus(`Could not load parking sites: ${parkingError.message}`);
+    if (parkingResult.error) {
+      setStatus(`Could not load parking sites: ${parkingResult.error.message}`);
       return;
     }
 
-    const { data: attendeeData, error: attendeeError } = await supabase
-      .from("attendees")
-      .select(
-        "id,event_id,pilot_first,pilot_last,coach_make,coach_model,assigned_site,arrival_status",
-      )
-      .eq("event_id", typedEvent.id)
-      .order("pilot_last");
-
-    if (attendeeError) {
-      setStatus(`Could not load attendees: ${attendeeError.message}`);
+    if (attendeeResult.error) {
+      setStatus(`Could not load attendees: ${attendeeResult.error.message}`);
       return;
     }
 
-    setSites((parkingData || []) as ParkingSite[]);
-    setAttendees((attendeeData || []) as Attendee[]);
+    setSites((parkingResult.data || []) as ParkingSite[]);
+    setAttendees((attendeeResult.data || []) as Attendee[]);
     setStatus(
-      `Loaded ${(parkingData || []).length} sites and ${(attendeeData || []).length} attendees.`,
+      `Loaded ${(parkingResult.data || []).length} sites and ${(attendeeResult.data || []).length} attendees.`,
     );
   }
 
@@ -415,12 +427,16 @@ export default function ParkingAdminPage() {
       return;
     }
 
+    const nextArrivalStatus =
+      selectedAttendee.arrival_status === "parked" ? "parked" : "arrived";
+
     const { error: attendeeError } = await supabase
       .from("attendees")
       .update({
         assigned_site: site.site_number,
-        arrival_status:
-          selectedAttendee.arrival_status === "parked" ? "parked" : "arrived",
+        arrival_status: nextArrivalStatus,
+        has_arrived:
+          nextArrivalStatus === "arrived" || nextArrivalStatus === "parked",
       })
       .eq("id", selectedAttendee.id);
 
@@ -461,7 +477,10 @@ export default function ParkingAdminPage() {
 
     const { error } = await supabase
       .from("attendees")
-      .update({ arrival_status: "parked" })
+      .update({
+        arrival_status: "parked",
+        has_arrived: true,
+      })
       .eq("id", selectedAttendee.id);
 
     if (error) {
@@ -494,7 +513,11 @@ export default function ParkingAdminPage() {
 
     const { error: attendeeError } = await supabase
       .from("attendees")
-      .update({ assigned_site: null })
+      .update({
+        assigned_site: null,
+        arrival_status: "arrived",
+        has_arrived: true,
+      })
       .eq("id", site.assigned_attendee_id);
 
     if (attendeeError) {
@@ -511,7 +534,10 @@ export default function ParkingAdminPage() {
   async function setArrivalStatus(attendeeId: string, nextStatus: string) {
     const { error } = await supabase
       .from("attendees")
-      .update({ arrival_status: nextStatus })
+      .update({
+        arrival_status: nextStatus,
+        has_arrived: nextStatus === "arrived" || nextStatus === "parked",
+      })
       .eq("id", attendeeId);
 
     if (error) {

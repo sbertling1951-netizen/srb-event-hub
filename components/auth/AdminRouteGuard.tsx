@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Props = {
@@ -56,6 +57,7 @@ function clearCachedAdminState() {
 }
 
 export default function AdminRouteGuard({ children }: Props) {
+  const router = useRouter();
   const [allowed, setAllowed] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -66,7 +68,7 @@ export default function AdminRouteGuard({ children }: Props) {
       try {
         setChecking(true);
 
-        const {
+        let {
           data: { session },
           error: sessionError,
         } = await supabase.auth.getSession();
@@ -75,11 +77,26 @@ export default function AdminRouteGuard({ children }: Props) {
           throw sessionError;
         }
 
+        if (!session?.user) {
+          const { data: refreshed, error: refreshError } =
+            await supabase.auth.refreshSession();
+
+          if (refreshError) {
+            throw refreshError;
+          }
+
+          session = refreshed.session;
+        }
+
         const user = session?.user;
 
         if (!user) {
           clearCachedAdminState();
-          window.location.href = "/admin/login";
+          if (mounted) {
+            setAllowed(false);
+            setChecking(false);
+            router.replace("/admin/login");
+          }
           return;
         }
 
@@ -106,7 +123,11 @@ export default function AdminRouteGuard({ children }: Props) {
 
         if (!isAdmin) {
           clearCachedAdminState();
-          window.location.href = "/admin/login";
+          if (mounted) {
+            setAllowed(false);
+            setChecking(false);
+            router.replace("/admin/login");
+          }
           return;
         }
 
@@ -121,7 +142,11 @@ export default function AdminRouteGuard({ children }: Props) {
       } catch (err) {
         console.error("AdminRouteGuard error:", err);
         clearCachedAdminState();
-        window.location.href = "/admin/login";
+        if (mounted) {
+          setAllowed(false);
+          setChecking(false);
+          router.replace("/admin/login");
+        }
         return;
       } finally {
         if (mounted) {
@@ -140,7 +165,9 @@ export default function AdminRouteGuard({ children }: Props) {
 
       if (!currentUserId) {
         clearCachedAdminState();
-        setAllowed(false);
+        if (mounted) {
+          setAllowed(false);
+        }
         return;
       }
 
@@ -153,7 +180,7 @@ export default function AdminRouteGuard({ children }: Props) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [router]);
 
   if (checking && !allowed) {
     return (

@@ -135,11 +135,13 @@ function CoachMapPublicPageInner() {
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const [isNarrow, setIsNarrow] = useState(false);
   const [pulseKey, setPulseKey] = useState<string | null>(null);
-  const [isInteractingWithMap, setIsInteractingWithMap] = useState(false);
+  const [zoom, setZoom] = useState(1);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  const baseMapWidth = isNarrow ? 900 : 1200;
+  const renderedMapWidth = baseMapWidth * zoom;
 
   useEffect(() => {
     setViewerAttendeeId(getStoredViewerAttendeeId());
@@ -170,29 +172,14 @@ function CoachMapPublicPageInner() {
     };
   }, []);
 
-  // ===== MOBILE SCROLL LOCK =====
   useEffect(() => {
-    function preventBodyScroll(e: TouchEvent) {
-      if (!isInteractingWithMap) return;
-      e.preventDefault();
-    }
+    const t = setTimeout(() => {
+      refreshMapSize();
+    }, 100);
 
-    if (isInteractingWithMap) {
-      document.body.style.overflow = "hidden";
-      document.addEventListener("touchmove", preventBodyScroll, {
-        passive: false,
-      });
-    } else {
-      document.body.style.overflow = "";
-    }
+    return () => clearTimeout(t);
+  }, [zoom, isNarrow, mapImageUrl]);
 
-    return () => {
-      document.body.style.overflow = "";
-      document.removeEventListener("touchmove", preventBodyScroll);
-    };
-  }, [isInteractingWithMap]);
-
-  // ===== ONE-TIME PULSE RESET =====
   useEffect(() => {
     if (!pulseKey) return;
 
@@ -203,26 +190,25 @@ function CoachMapPublicPageInner() {
     return () => clearTimeout(t);
   }, [pulseKey]);
 
-  // ===== FIXED goToSite (pulse + center) =====
-  function goToSite(siteKey: string) {
-    const site = renderedSites.find((s) => s.key === siteKey);
-    if (!site) return;
+  function refreshMapSize() {
+    if (!imageRef.current) return;
 
-    setSelectedSiteKey(siteKey);
-    setPulseKey(siteKey); // 👈 THIS drives the pulse
-    setSearch("");
-
-    requestAnimationFrame(() => {
-      centerSiteInViewport(site);
+    setMapSize({
+      width: imageRef.current.offsetWidth,
+      height: imageRef.current.offsetHeight,
     });
   }
 
-  function refreshMapSize() {
-    if (!imageRef.current) return;
-    setMapSize({
-      width: imageRef.current.clientWidth,
-      height: imageRef.current.clientHeight,
-    });
+  function zoomIn() {
+    setZoom((z) => clamp(Number((z + 0.2).toFixed(2)), 0.6, 2.5));
+  }
+
+  function zoomOut() {
+    setZoom((z) => clamp(Number((z - 0.2).toFixed(2)), 0.6, 2.5));
+  }
+
+  function resetZoom() {
+    setZoom(1);
   }
 
   async function loadMap() {
@@ -350,6 +336,7 @@ function CoachMapPublicPageInner() {
       setAttendees(attendeeList);
 
       const attendeeIds = attendeeList.map((a) => a.id);
+
       if (attendeeIds.length > 0) {
         const { data: memberRows, error: memberError } = await supabase
           .from("attendee_household_members")
@@ -476,6 +463,7 @@ function CoachMapPublicPageInner() {
   const viewerAttendee = viewerAttendeeId
     ? attendeeLookup.get(viewerAttendeeId) || null
     : null;
+
   const viewerAssignedSiteKey = useMemo(() => {
     if (!viewerAttendee?.assigned_site) return null;
 
@@ -521,8 +509,8 @@ function CoachMapPublicPageInner() {
     if (site.map_x === null || site.map_y === null) return;
 
     const viewport = viewportRef.current;
-    const xPx = (site.map_x / 100) * imageRef.current.clientWidth;
-    const yPx = (site.map_y / 100) * imageRef.current.clientHeight;
+    const xPx = (site.map_x / 100) * mapSize.width;
+    const yPx = (site.map_y / 100) * mapSize.height;
 
     const targetLeft = clamp(
       xPx - viewport.clientWidth / 2,
@@ -549,14 +537,7 @@ function CoachMapPublicPageInner() {
 
     setSelectedSiteKey(siteKey);
     setSearch("");
-
-    // 🔴 trigger one-time pulse
     setPulseKey(siteKey);
-
-    // clear pulse after animation finishes
-    setTimeout(() => {
-      setPulseKey(null);
-    }, 1600);
 
     requestAnimationFrame(() => {
       centerSiteInViewport(site);
@@ -616,33 +597,34 @@ function CoachMapPublicPageInner() {
     <div style={{ padding: 24, display: "grid", gap: 16 }}>
       <style>
         {`
-        @keyframes fcoc-pulse {
-          0% {
-            transform: scale(1);
-            opacity: 0.6;
-          }
-          70% {
-            transform: scale(2.5);
-            opacity: 0;
-          }
-          100% {
-            transform: scale(2.5);
-            opacity: 0;
-          }
+      @keyframes fcoc-pulse {
+        0% {
+          transform: scale(1);
+          opacity: 0.6;
         }
+        70% {
+          transform: scale(2.5);
+          opacity: 0;
+        }
+        100% {
+          transform: scale(2.5);
+          opacity: 0;
+        }
+      }
 
-        @keyframes fcoc-panel-in {
-          0% {
-            opacity: 0;
-            transform: translateY(8px);
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0);
-          }
+      @keyframes fcoc-panel-in {
+        0% {
+          opacity: 0;
+          transform: translateY(8px);
         }
-      `}
+        100% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    `}
       </style>
+
       <div
         style={{
           border: "1px solid #ddd",
@@ -728,58 +710,20 @@ function CoachMapPublicPageInner() {
             style={{ flex: "1 1 240px", padding: 8, minWidth: 220 }}
           />
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleGoToFirstMatch();
-                }
-              }}
-              placeholder="Name, nickname, or site"
-              style={{ flex: "1 1 240px", padding: 8, minWidth: 220 }}
-            />
-
-            <button
-              type="button"
-              onClick={handleGoToFirstMatch}
-              disabled={searchResults.length === 0}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #ddd",
-                background: searchResults.length === 0 ? "#f3f4f6" : "#fff",
-                cursor: searchResults.length === 0 ? "default" : "pointer",
-              }}
-            >
-              Go To
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (viewerAssignedSiteKey) {
-                  goToSite(viewerAssignedSiteKey);
-                }
-              }}
-              disabled={!viewerAssignedSiteKey}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #ddd",
-                background: viewerAssignedSiteKey ? "#ecfdf5" : "#f3f4f6",
-                color: viewerAssignedSiteKey ? "#166534" : "#666",
-                cursor: viewerAssignedSiteKey ? "pointer" : "default",
-                fontWeight: 700,
-              }}
-            >
-              {viewerAttendee?.assigned_site
-                ? `My Site: ${viewerAttendee.assigned_site}`
-                : "My Site"}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleGoToFirstMatch}
+            disabled={searchResults.length === 0}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #ddd",
+              background: searchResults.length === 0 ? "#f3f4f6" : "#fff",
+              cursor: searchResults.length === 0 ? "default" : "pointer",
+            }}
+          >
+            Go To
+          </button>
 
           <button
             type="button"
@@ -793,12 +737,15 @@ function CoachMapPublicPageInner() {
               padding: "8px 12px",
               borderRadius: 8,
               border: "1px solid #ddd",
-              background: viewerAssignedSiteKey ? "#fff" : "#f3f4f6",
+              background: viewerAssignedSiteKey ? "#ecfdf5" : "#f3f4f6",
+              color: viewerAssignedSiteKey ? "#166534" : "#666",
               cursor: viewerAssignedSiteKey ? "pointer" : "default",
-              fontWeight: 600,
+              fontWeight: 700,
             }}
           >
-            My Site
+            {viewerAttendee?.assigned_site
+              ? `My Site: ${viewerAttendee.assigned_site}`
+              : "My Site"}
           </button>
         </div>
 
@@ -856,6 +803,62 @@ function CoachMapPublicPageInner() {
           }}
         >
           <div
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+              marginBottom: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={zoomOut}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #ddd",
+                background: "#fff",
+                fontWeight: 700,
+              }}
+            >
+              −
+            </button>
+
+            <button
+              type="button"
+              onClick={zoomIn}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #ddd",
+                background: "#fff",
+                fontWeight: 700,
+              }}
+            >
+              +
+            </button>
+
+            <button
+              type="button"
+              onClick={resetZoom}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #ddd",
+                background: "#fff",
+                fontWeight: 700,
+              }}
+            >
+              Reset
+            </button>
+
+            <div style={{ fontSize: 13, color: "#666" }}>
+              Zoom: {Math.round(zoom * 100)}%
+            </div>
+          </div>
+
+          <div
             ref={viewportRef}
             style={{
               position: "relative",
@@ -864,15 +867,29 @@ function CoachMapPublicPageInner() {
               maxHeight: "78vh",
               touchAction: "pan-x pan-y",
               WebkitOverflowScrolling: "touch",
+              background: "#f8f9fb",
             }}
           >
-            <div style={{ position: "relative", width: "fit-content" }}>
+            <div
+              style={{
+                position: "relative",
+                width: `${renderedMapWidth}px`,
+                height: `${mapSize.height || 0}px`,
+                minWidth: `${renderedMapWidth}px`,
+              }}
+            >
               <img
                 ref={imageRef}
                 src={mapImageUrl}
                 alt="Coach map"
                 onLoad={refreshMapSize}
-                style={{ width: "100%", display: "block", borderRadius: 8 }}
+                style={{
+                  width: `${renderedMapWidth}px`,
+                  maxWidth: "none",
+                  display: "block",
+                  borderRadius: 8,
+                  height: "auto",
+                }}
               />
 
               {renderedSites.map((site) => {
@@ -893,12 +910,11 @@ function CoachMapPublicPageInner() {
                     key={site.key}
                     style={{
                       position: "absolute",
-                      left: `${x}%`,
-                      top: `${y}%`,
+                      left: `${(x / 100) * mapSize.width}px`,
+                      top: `${(y / 100) * mapSize.height}px`,
                       transform: "translate(-50%, -50%)",
                     }}
                   >
-                    {/* 🔴 Pulse ring (only when selected) */}
                     {isSelected && (
                       <div
                         style={{
@@ -910,14 +926,13 @@ function CoachMapPublicPageInner() {
                           borderRadius: "50%",
                           background: "rgba(255,59,48,0.4)",
                           transform: "translate(-50%, -50%)",
-                          animation: "fcoc-pulse 1.5s ease-out infinite",
+                          animation: "fcoc-pulse 1.5s ease-out",
                           pointerEvents: "none",
                           zIndex: 1,
                         }}
                       />
                     )}
 
-                    {/* 🎯 Marker */}
                     <button
                       type="button"
                       onClick={() => goToSite(site.key)}
@@ -985,7 +1000,6 @@ function CoachMapPublicPageInner() {
 
               {selectedSite && floatingPanelStyle ? (
                 <div
-                  ref={panelRef}
                   style={{
                     position: "absolute",
                     left: floatingPanelStyle.left,

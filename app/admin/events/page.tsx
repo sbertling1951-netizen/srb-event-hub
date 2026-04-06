@@ -116,6 +116,29 @@ function EventAdminPageInner() {
     void loadAssignmentsForEvent(selectedEvent.id);
   }, [selectedEventId, events]);
 
+  function setWorkingAdminEvent(event: EventRow | null) {
+    if (!event) {
+      localStorage.removeItem("fcoc-admin-event-context");
+      localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+      return;
+    }
+
+    localStorage.setItem(
+      "fcoc-admin-event-context",
+      JSON.stringify({
+        id: event.id,
+        name: event.name || null,
+        eventName: event.name || null,
+        location: event.location || null,
+        venue_name: null,
+        start_date: event.start_date || null,
+        end_date: event.end_date || null,
+      }),
+    );
+
+    localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+  }
+
   async function loadPage() {
     try {
       setLoading(true);
@@ -158,6 +181,13 @@ function EventAdminPageInner() {
         "";
 
       setSelectedEventId(preferredEventId);
+
+      const preferredEvent =
+        loadedEvents.find((e) => e.id === preferredEventId) || null;
+
+      if (preferredEvent) {
+        setWorkingAdminEvent(preferredEvent);
+      }
 
       setStatus("Event admin ready.");
     } catch (err: any) {
@@ -242,6 +272,7 @@ function EventAdminPageInner() {
         if (error) throw error;
 
         setSelectedEventId(data.id);
+        setWorkingAdminEvent(data as EventRow);
         setStatus(`Created event "${payload.name}".`);
       }
 
@@ -354,7 +385,13 @@ function EventAdminPageInner() {
 
         <select
           value={selectedEventId}
-          onChange={(e) => setSelectedEventId(e.target.value)}
+          onChange={(e) => {
+            const newId = e.target.value;
+            setSelectedEventId(newId);
+
+            const evt = events.find((row) => row.id === newId) || null;
+            setWorkingAdminEvent(evt);
+          }}
           disabled={loading}
           style={{
             padding: "10px 12px",
@@ -379,6 +416,7 @@ function EventAdminPageInner() {
             setForm(emptyForm);
             setSelectedMasterMapId("");
             setSelectedNearbyListId("");
+            setWorkingAdminEvent(null);
           }}
           style={{ width: "fit-content" }}
         >

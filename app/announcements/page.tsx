@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
@@ -13,6 +13,7 @@ type Announcement = {
   priority: string | null;
   is_published?: boolean | null;
   created_at?: string | null;
+  expires_at?: string | null;
 };
 
 type EventRow = {
@@ -24,6 +25,14 @@ type EventRow = {
   start_date?: string | null;
   end_date?: string | null;
 };
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+
+  return d.toLocaleString();
+}
 
 function AnnouncementsPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
@@ -60,16 +69,31 @@ function AnnouncementsPageInner() {
 
       const { data, error } = await supabase
         .from("announcements")
-        .select("id,title,message,category,priority,is_published,created_at")
+        .select(
+          "id,title,message,category,priority,is_published,created_at,expires_at",
+        )
         .eq("event_id", memberEvent.id)
         .eq("is_published", true)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
-      setAnnouncements((data || []) as Announcement[]);
+      const now = Date.now();
+
+      const activeAnnouncements = ((data || []) as Announcement[]).filter(
+        (item) => {
+          if (!item.expires_at) return true;
+
+          const expires = new Date(item.expires_at).getTime();
+          if (Number.isNaN(expires)) return true;
+
+          return expires > now;
+        },
+      );
+
+      setAnnouncements(activeAnnouncements);
       setStatus(
-        `Loaded ${(data || []).length} announcement${(data || []).length === 1 ? "" : "s"}.`,
+        `Loaded ${activeAnnouncements.length} announcement${activeAnnouncements.length === 1 ? "" : "s"}.`,
       );
     } catch (err: any) {
       console.error("loadAnnouncements error:", err);
@@ -77,6 +101,14 @@ function AnnouncementsPageInner() {
       setStatus(err?.message || "Failed to load announcements.");
     }
   }
+
+  const sortedAnnouncements = useMemo(() => {
+    return [...announcements].sort((a, b) => {
+      const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bCreated - aCreated;
+    });
+  }, [announcements]);
 
   function priorityBadge(priority: string | null) {
     const value = (priority || "normal").toLowerCase();
@@ -122,7 +154,7 @@ function AnnouncementsPageInner() {
         </div>
       </div>
 
-      {announcements.length === 0 ? (
+      {sortedAnnouncements.length === 0 ? (
         <div
           style={{
             border: "1px solid #ddd",
@@ -135,7 +167,7 @@ function AnnouncementsPageInner() {
           No announcements found.
         </div>
       ) : (
-        announcements.map((item) => (
+        sortedAnnouncements.map((item) => (
           <div
             key={item.id}
             style={{
@@ -165,14 +197,20 @@ function AnnouncementsPageInner() {
             ) : null}
 
             {item.message ? (
-              <div style={{ marginTop: 10 }}>{item.message}</div>
-            ) : null}
-
-            {item.created_at ? (
-              <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
-                Posted: {item.created_at}
+              <div style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+                {item.message}
               </div>
             ) : null}
+
+            <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
+              {item.created_at
+                ? `Posted: ${formatDateTime(item.created_at)}`
+                : ""}
+              {item.created_at && item.expires_at ? " · " : ""}
+              {item.expires_at
+                ? `Expires: ${formatDateTime(item.expires_at)}`
+                : ""}
+            </div>
           </div>
         ))
       )}

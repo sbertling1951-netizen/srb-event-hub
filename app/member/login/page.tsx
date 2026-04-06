@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { saveMemberSession } from "@/lib/memberSession";
 
@@ -25,6 +26,7 @@ type AttendeeRow = {
   pilot_last: string | null;
   copilot_first: string | null;
   copilot_last: string | null;
+  has_arrived: boolean | null;
 };
 
 function formatDateRange(startDate: string | null, endDate: string | null) {
@@ -33,7 +35,22 @@ function formatDateRange(startDate: string | null, endDate: string | null) {
   return startDate || endDate || "";
 }
 
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: 10,
+  fontSize: 16,
+  lineHeight: 1.4,
+  border: "1px solid #cbd5e1",
+  borderRadius: 8,
+  background: "#fff",
+  appearance: "none",
+  WebkitAppearance: "none",
+  boxSizing: "border-box",
+};
+
 export default function MemberLoginPage() {
+  const router = useRouter();
+
   const [events, setEvents] = useState<EventRow[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [enteredCode, setEnteredCode] = useState("");
@@ -65,6 +82,11 @@ export default function MemberLoginPage() {
       console.error(err);
       setStatus(err?.message || "Failed to load events.");
     }
+  }
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    void handleEnter();
   }
 
   async function handleEnter() {
@@ -101,7 +123,7 @@ export default function MemberLoginPage() {
       const { data, error } = await supabase
         .from("attendees")
         .select(
-          "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last",
+          "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,has_arrived",
         )
         .eq("event_id", event.id)
         .eq("email", normalizedEmail)
@@ -115,13 +137,15 @@ export default function MemberLoginPage() {
         setStatus(
           "No attendee registration was found for that email in this event.",
         );
-        setBusy(false);
         return;
       }
 
       localStorage.setItem("fcoc-member-attendee-id", attendee.id);
       localStorage.setItem("fcoc-member-email", normalizedEmail);
       localStorage.setItem("fcoc-member-entry-id", attendee.entry_id || "");
+      localStorage.setItem("fcoc-member-has-arrived", "false");
+      localStorage.setItem("fcoc-user-mode", "member");
+      localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
 
       saveMemberSession({
         event_id: event.id,
@@ -137,7 +161,9 @@ export default function MemberLoginPage() {
         expires_at: event.end_date ? `${event.end_date}T23:59:59` : null,
       });
 
-      window.location.href = `/nearby?event=${event.id}`;
+      setStatus("Login successful. Opening check-in...");
+      router.replace("/member/checkin");
+      return;
     } catch (err: any) {
       console.error(err);
       setStatus(err?.message || "Login failed.");
@@ -150,7 +176,9 @@ export default function MemberLoginPage() {
     <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Member Login</h1>
 
-      <div
+      <form
+        onSubmit={handleSubmit}
+        autoComplete="on"
         style={{
           border: "1px solid #ddd",
           borderRadius: 10,
@@ -158,6 +186,8 @@ export default function MemberLoginPage() {
           padding: 16,
           display: "grid",
           gap: 12,
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <label>
@@ -165,7 +195,7 @@ export default function MemberLoginPage() {
           <select
             value={selectedEventId}
             onChange={(e) => setSelectedEventId(e.target.value)}
-            style={{ width: "100%", padding: 10 }}
+            style={inputStyle}
           >
             <option value="">Choose an event</option>
             {events.map((event) => (
@@ -186,7 +216,10 @@ export default function MemberLoginPage() {
             value={enteredCode}
             onChange={(e) => setEnteredCode(e.target.value)}
             placeholder="Event code"
-            style={{ width: "100%", padding: 10 }}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            style={inputStyle}
           />
         </label>
 
@@ -199,28 +232,41 @@ export default function MemberLoginPage() {
             value={enteredEmail}
             onChange={(e) => setEnteredEmail(e.target.value)}
             placeholder="Email used for registration"
-            style={{ width: "100%", padding: 10 }}
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="go"
+            style={inputStyle}
           />
         </label>
 
         <button
-          type="button"
-          onClick={() => void handleEnter()}
+          type="submit"
           disabled={busy}
           style={{
-            padding: "10px 14px",
+            width: "100%",
+            minHeight: 48,
+            padding: "12px 14px",
             borderRadius: 8,
             border: "1px solid #cbd5e1",
-            background: "#fff",
-            cursor: "pointer",
-            fontWeight: 600,
+            background: "#0b5cff",
+            color: "#ffffff",
+            cursor: busy ? "not-allowed" : "pointer",
+            fontWeight: 700,
+            fontSize: 16,
+            lineHeight: 1.2,
+            opacity: busy ? 0.7 : 1,
+            WebkitAppearance: "none",
+            appearance: "none",
           }}
         >
           {busy ? "Checking..." : "Enter"}
         </button>
 
         <div style={{ fontSize: 13, color: "#666" }}>{status}</div>
-      </div>
+      </form>
     </div>
   );
 }

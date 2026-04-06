@@ -332,17 +332,30 @@ function AdminNearbyPageInner() {
 
     try {
       setSavingArea(true);
+      setStatus("Creating stored area...");
+
+      const payload = {
+        name: areaName.trim(),
+        description: areaDescription.trim() || null,
+      };
+
+      console.log("createStoredArea payload:", payload);
 
       const { data, error } = await supabase
         .from("nearby_areas")
-        .insert({
-          name: areaName.trim(),
-          description: areaDescription.trim() || null,
-        })
+        .insert(payload)
         .select("id,name,description")
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("createStoredArea Supabase error:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
+        throw error;
+      }
 
       await loadStoredAreas();
 
@@ -350,10 +363,20 @@ function AdminNearbyPageInner() {
         setSelectedAreaId(data.id);
       }
 
-      setStatus(`Created stored area "${areaName.trim()}".`);
+      setStatus(`Created stored area "${payload.name}".`);
     } catch (err: any) {
-      console.error("createStoredArea error:", err);
-      setStatus(err?.message || "Failed to create stored area.");
+      console.error("createStoredArea full error:", err);
+      console.error("createStoredArea message:", err?.message);
+      console.error("createStoredArea details:", err?.details);
+      console.error("createStoredArea hint:", err?.hint);
+      console.error("createStoredArea code:", err?.code);
+
+      setStatus(
+        err?.message ||
+          err?.details ||
+          err?.hint ||
+          "Failed to create stored area.",
+      );
     } finally {
       setSavingArea(false);
     }
@@ -564,7 +587,6 @@ function AdminNearbyPageInner() {
         let lat = place.lat ?? null;
         let lng = place.lng ?? null;
 
-        // ONLY geocode if missing
         if (lat === null || lng === null) {
           setStatus(
             `Geocoding ${index + 1} of ${sourcePlaces.length}: ${place.name}...`,

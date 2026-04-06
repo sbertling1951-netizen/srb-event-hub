@@ -1,0 +1,32 @@
+FCOC Agenda Import Template Notes
+
+Preferred columns:
+Title
+Description
+Location
+Speaker
+Agenda Date
+Start Time
+End Time
+Category
+Color
+Published
+Sort Order
+
+Required:
+- Title
+- Agenda Date
+- Start Time
+
+Recommended formats:
+- Agenda Date: YYYY-MM-DD
+- Start Time / End Time: HH:MM in 24-hour time
+- Published: Yes or No
+- Color: hex value like #DBEAFE
+- Sort Order: integer like 10, 20, 30
+
+Speaker:
+- Optional presenter/host field
+- Example values: Steve Bertling, FCCC Team, Event Staff
+
+The sample template can be used as the model for either XLSX or CSV imports.

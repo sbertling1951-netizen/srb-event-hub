@@ -1,51 +1,49 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  clearMemberSession,
-  getMemberSession,
-  isMemberSessionExpired,
-} from "@/lib/memberSession";
+import { useRouter } from "next/navigation";
 
-type Props = {
+export default function MemberRouteGuard({
+  children,
+}: {
   children: React.ReactNode;
-};
-
-export default function MemberRouteGuard({ children }: Props) {
-  const [allowed, setAllowed] = useState(false);
-  const [checking, setChecking] = useState(true);
+}) {
+  const router = useRouter();
+  const [status, setStatus] = useState<"checking" | "allowed" | "denied">(
+    "checking",
+  );
 
   useEffect(() => {
-    const session = getMemberSession();
+    try {
+      const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
+      const entryId = localStorage.getItem("fcoc-member-entry-id");
+      const email = localStorage.getItem("fcoc-member-email");
+      const eventContext = localStorage.getItem("fcoc-member-event-context");
 
-    if (!session || isMemberSessionExpired(session)) {
-      clearMemberSession();
-      window.location.href = "/member/login";
-      return;
+      const hasIdentity = !!(attendeeId || entryId || email);
+      const hasEvent = !!eventContext;
+
+      if (hasIdentity && hasEvent) {
+        setStatus("allowed");
+        return;
+      }
+
+      setStatus("denied");
+      router.replace("/member/login");
+    } catch (err) {
+      console.error("MemberRouteGuard error:", err);
+      setStatus("denied");
+      router.replace("/member/login");
     }
+  }, [router]);
 
-    setAllowed(true);
-    setChecking(false);
-  }, []);
-
-  if (checking && !allowed) {
-    return (
-      <div style={{ padding: 24 }}>
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 18,
-          }}
-        >
-          Checking member access...
-        </div>
-      </div>
-    );
+  if (status === "checking") {
+    return <div style={{ padding: 24 }}>Checking member access...</div>;
   }
 
-  if (!allowed) return null;
+  if (status === "denied") {
+    return <div style={{ padding: 24 }}>Redirecting to member login...</div>;
+  }
 
   return <>{children}</>;
 }

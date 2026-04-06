@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -19,7 +19,58 @@ type Announcement = {
   priority: string | null;
   is_published: boolean | null;
   created_at: string | null;
+  expires_at: string | null;
 };
+
+function toDateTimeLocalValue(value: string | null | undefined) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function fromDateTimeLocalValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const d = new Date(trimmed);
+  if (Number.isNaN(d.getTime())) return null;
+
+  return d.toISOString();
+}
+
+function formatExpirationText(expiresAt: string | null | undefined) {
+  if (!expiresAt) return "No expiration";
+
+  const d = new Date(expiresAt);
+  if (Number.isNaN(d.getTime())) return "Invalid expiration";
+
+  return d.toLocaleString();
+}
+
+function getAnnouncementStatus(item: Announcement) {
+  if (!item.is_published) return "Draft";
+  if (!item.expires_at) return "Active";
+
+  const now = Date.now();
+  const expires = new Date(item.expires_at).getTime();
+  if (Number.isNaN(expires)) return "Active";
+  if (expires <= now) return "Expired";
+  return "Active";
+}
+
+function statusColor(status: string) {
+  if (status === "Expired") return "#991b1b";
+  if (status === "Draft") return "#6b7280";
+  return "#166534";
+}
 
 function AdminAnnouncementsPageInner() {
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
@@ -32,6 +83,7 @@ function AdminAnnouncementsPageInner() {
   const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("normal");
   const [isPublished, setIsPublished] = useState(true);
+  const [expiresAtInput, setExpiresAtInput] = useState("");
 
   useEffect(() => {
     void loadPage();
@@ -68,7 +120,7 @@ function AdminAnnouncementsPageInner() {
     const { data, error } = await supabase
       .from("announcements")
       .select(
-        "id,event_id,title,message,category,priority,is_published,created_at",
+        "id,event_id,title,message,category,priority,is_published,created_at,expires_at",
       )
       .eq("event_id", selectedEvent.id)
       .order("created_at", { ascending: false });
@@ -92,6 +144,7 @@ function AdminAnnouncementsPageInner() {
     setCategory("");
     setPriority("normal");
     setIsPublished(true);
+    setExpiresAtInput("");
   }
 
   function loadIntoForm(item: Announcement) {
@@ -101,6 +154,7 @@ function AdminAnnouncementsPageInner() {
     setCategory(item.category || "");
     setPriority(item.priority || "normal");
     setIsPublished(!!item.is_published);
+    setExpiresAtInput(toDateTimeLocalValue(item.expires_at));
   }
 
   async function saveAnnouncement() {
@@ -119,6 +173,13 @@ function AdminAnnouncementsPageInner() {
       return;
     }
 
+    const expiresAt = fromDateTimeLocalValue(expiresAtInput);
+
+    if (expiresAtInput.trim() && !expiresAt) {
+      setStatus("Enter a valid expiration date and time.");
+      return;
+    }
+
     const payload = {
       event_id: activeEvent.id,
       title: title.trim(),
@@ -126,6 +187,7 @@ function AdminAnnouncementsPageInner() {
       category: category.trim() || null,
       priority: priority || "normal",
       is_published: isPublished,
+      expires_at: expiresAt,
     };
 
     if (editingId) {
@@ -179,6 +241,18 @@ function AdminAnnouncementsPageInner() {
     setStatus(`Deleted "${item?.title || "announcement"}".`);
     await loadPage();
   }
+
+  const sortedAnnouncements = useMemo(() => {
+    return [...announcements].sort((a, b) => {
+      const aExpired = getAnnouncementStatus(a) === "Expired" ? 1 : 0;
+      const bExpired = getAnnouncementStatus(b) === "Expired" ? 1 : 0;
+      if (aExpired !== bExpired) return aExpired - bExpired;
+
+      const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bCreated - aCreated;
+    });
+  }, [announcements]);
 
   return (
     <div style={{ padding: 24 }}>
@@ -265,6 +339,23 @@ function AdminAnnouncementsPageInner() {
           Published
         </label>
 
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontSize: 13, color: "#666" }}>
+            Expires At (optional)
+          </span>
+          <input
+            type="datetime-local"
+            value={expiresAtInput}
+            onChange={(e) => setExpiresAtInput(e.target.value)}
+            style={{ padding: 8 }}
+          />
+        </label>
+
+        <div style={{ fontSize: 12, color: "#666" }}>
+          Leave blank to keep the announcement active until manually unpublished
+          or deleted.
+        </div>
+
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -291,59 +382,74 @@ function AdminAnnouncementsPageInner() {
           overflow: "hidden",
         }}
       >
-        {announcements.length === 0 ? (
+        {sortedAnnouncements.length === 0 ? (
           <div style={{ padding: 16, color: "#666" }}>
             No announcements found.
           </div>
         ) : (
-          announcements.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 12,
-                padding: 14,
-                borderTop: "1px solid #eee",
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 700 }}>
-                  {item.title || "(Untitled announcement)"}
-                </div>
+          sortedAnnouncements.map((item) => {
+            const itemStatus = getAnnouncementStatus(item);
 
-                <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-                  {(item.priority || "normal").toUpperCase()}
-                  {item.category ? ` · ${item.category}` : ""}
-                  {item.is_published ? " · Published" : " · Draft"}
-                </div>
-
-                {item.message ? (
-                  <div style={{ fontSize: 13, color: "#555", marginTop: 8 }}>
-                    {item.message}
+            return (
+              <div
+                key={item.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  gap: 12,
+                  padding: 14,
+                  borderTop: "1px solid #eee",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700 }}>
+                    {item.title || "(Untitled announcement)"}
                   </div>
-                ) : null}
 
-                {item.created_at ? (
+                  <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
+                    {(item.priority || "normal").toUpperCase()}
+                    {item.category ? ` · ${item.category}` : ""}
+                    {item.is_published ? " · Published" : " · Draft"}
+                    {` · `}
+                    <span
+                      style={{
+                        color: statusColor(itemStatus),
+                        fontWeight: 700,
+                      }}
+                    >
+                      {itemStatus}
+                    </span>
+                  </div>
+
+                  {item.message ? (
+                    <div style={{ fontSize: 13, color: "#555", marginTop: 8 }}>
+                      {item.message}
+                    </div>
+                  ) : null}
+
                   <div style={{ fontSize: 12, color: "#777", marginTop: 8 }}>
-                    {new Date(item.created_at).toLocaleString()}
+                    {item.created_at
+                      ? `Created: ${new Date(item.created_at).toLocaleString()}`
+                      : ""}
+                    {item.created_at ? " · " : ""}
+                    Expires: {formatExpirationText(item.expires_at)}
                   </div>
-                ) : null}
-              </div>
+                </div>
 
-              <div style={{ display: "flex", gap: 8, alignItems: "start" }}>
-                <button type="button" onClick={() => loadIntoForm(item)}>
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void deleteAnnouncement(item.id)}
-                >
-                  Delete
-                </button>
+                <div style={{ display: "flex", gap: 8, alignItems: "start" }}>
+                  <button type="button" onClick={() => loadIntoForm(item)}>
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteAnnouncement(item.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

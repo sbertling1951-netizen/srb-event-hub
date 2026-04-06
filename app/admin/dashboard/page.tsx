@@ -20,10 +20,9 @@ type Attendee = {
   assigned_site: string | null;
 };
 
-type AdminCard = {
-  title: string;
-  description: string;
-  href: string;
+type HouseholdMember = {
+  id: string;
+  attendee_id: string;
 };
 
 function percent(value: number, total: number) {
@@ -108,6 +107,9 @@ function AdminDashboardPageInner() {
   );
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(initialEvent);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
+    [],
+  );
   const [status, setStatus] = useState(
     initialEvent ? "Loading attendees..." : "Loading dashboard...",
   );
@@ -169,6 +171,7 @@ function AdminDashboardPageInner() {
     if (!selected) {
       setActiveEvent(null);
       setAttendees([]);
+      setHouseholdMembers([]);
       setStatus("No event selected. Choose one above.");
       return;
     }
@@ -176,19 +179,38 @@ function AdminDashboardPageInner() {
     setActiveEvent(selected);
     setStatus("Loading attendees...");
 
-    const { data, error } = await supabase
-      .from("attendees")
-      .select("id,arrival_status,assigned_site")
-      .eq("event_id", selected.id);
+    const [attendeeResult, householdResult] = await Promise.all([
+      supabase
+        .from("attendees")
+        .select("id,arrival_status,assigned_site")
+        .eq("event_id", selected.id),
+      supabase
+        .from("attendee_household_members")
+        .select("id,attendee_id")
+        .eq("event_id", selected.id),
+    ]);
 
-    if (error) {
+    if (attendeeResult.error) {
       setAttendees([]);
-      setStatus(`Could not load attendees: ${error.message}`);
+      setHouseholdMembers([]);
+      setStatus(`Could not load attendees: ${attendeeResult.error.message}`);
       return;
     }
 
-    setAttendees((data || []) as Attendee[]);
-    setStatus(`Loaded ${(data || []).length} attendees.`);
+    if (householdResult.error) {
+      setAttendees([]);
+      setHouseholdMembers([]);
+      setStatus(
+        `Could not load household members: ${householdResult.error.message}`,
+      );
+      return;
+    }
+
+    setAttendees((attendeeResult.data || []) as Attendee[]);
+    setHouseholdMembers((householdResult.data || []) as HouseholdMember[]);
+    setStatus(
+      `Loaded ${(attendeeResult.data || []).length} coaches and ${(householdResult.data || []).length} people.`,
+    );
   }
 
   async function loadPage() {
@@ -206,6 +228,7 @@ function AdminDashboardPageInner() {
         setSelectedEventId("");
         setActiveEvent(null);
         setAttendees([]);
+        setHouseholdMembers([]);
         setStatus("No events found.");
         return;
       }
@@ -221,6 +244,7 @@ function AdminDashboardPageInner() {
         setSelectedEventId("");
         setActiveEvent(null);
         setAttendees([]);
+        setHouseholdMembers([]);
         setStatus("No event selected. Choose one above.");
         return;
       }
@@ -278,10 +302,21 @@ function AdminDashboardPageInner() {
   }
 
   const metrics = useMemo(() => {
-    const total = attendees.length;
+    const registeredCoaches = attendees.length;
 
-    const arrivedCount = attendees.filter(
-      (a) => a.arrival_status === "arrived" || a.arrival_status === "parked",
+    const arrivedAttendeeIds = new Set(
+      attendees
+        .filter(
+          (a) =>
+            a.arrival_status === "arrived" || a.arrival_status === "parked",
+        )
+        .map((a) => a.id),
+    );
+
+    const coachesArrived = arrivedAttendeeIds.size;
+    const peopleRegistered = householdMembers.length;
+    const peopleArrived = householdMembers.filter((m) =>
+      arrivedAttendeeIds.has(m.attendee_id),
     ).length;
 
     const parkedCount = attendees.filter(
@@ -295,16 +330,19 @@ function AdminDashboardPageInner() {
     const assignedCount = attendees.filter((a) => !!a.assigned_site).length;
 
     return {
-      total,
-      arrivedCount,
+      registeredCoaches,
+      coachesArrived,
+      peopleRegistered,
+      peopleArrived,
+      coachArrivedPercent: percent(coachesArrived, registeredCoaches),
+      peopleArrivedPercent: percent(peopleArrived, peopleRegistered),
       parkedCount,
       queueSize,
       assignedCount,
-      arrivedPercent: percent(arrivedCount, total),
-      parkedPercent: percent(parkedCount, total),
-      assignedPercent: percent(assignedCount, total),
+      parkedPercent: percent(parkedCount, registeredCoaches),
+      assignedPercent: percent(assignedCount, registeredCoaches),
     };
-  }, [attendees]);
+  }, [attendees, householdMembers]);
 
   function goTo(href: string) {
     window.location.href = href;
@@ -382,7 +420,7 @@ function AdminDashboardPageInner() {
         style={{
           display: "grid",
           gridTemplateColumns: isWide
-            ? "repeat(5, 1fr)"
+            ? "repeat(4, 1fr)"
             : "repeat(auto-fit, minmax(180px, 1fr))",
           gap: 16,
           marginBottom: 22,
@@ -397,10 +435,12 @@ function AdminDashboardPageInner() {
           }}
         >
           <div style={{ fontSize: 13, color: "#666", marginBottom: 6 }}>
-            Total Attendees
+            Registered Coaches
           </div>
           <div style={{ fontSize: 28, fontWeight: 800 }}>
-            {loading && attendees.length === 0 ? "…" : metrics.total}
+            {loading && attendees.length === 0
+              ? "…"
+              : metrics.registeredCoaches}
           </div>
         </div>
 
@@ -413,18 +453,66 @@ function AdminDashboardPageInner() {
           }}
         >
           <div style={{ fontSize: 13, color: "#666", marginBottom: 6 }}>
-            Arrived
+            Coaches Arrived
           </div>
           <div style={{ fontSize: 28, fontWeight: 800 }}>
-            {loading && attendees.length === 0
-              ? "…"
-              : `${metrics.arrivedPercent}%`}
+            {loading && attendees.length === 0 ? "…" : metrics.coachesArrived}
           </div>
           <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
-            {metrics.arrivedCount} of {metrics.total}
+            {metrics.coachArrivedPercent}%
           </div>
         </div>
 
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 14,
+          }}
+        >
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 6 }}>
+            People Registered
+          </div>
+          <div style={{ fontSize: 28, fontWeight: 800 }}>
+            {loading && householdMembers.length === 0
+              ? "…"
+              : metrics.peopleRegistered}
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 14,
+          }}
+        >
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 6 }}>
+            People Arrived
+          </div>
+          <div style={{ fontSize: 28, fontWeight: 800 }}>
+            {loading && householdMembers.length === 0
+              ? "…"
+              : metrics.peopleArrived}
+          </div>
+          <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
+            {metrics.peopleArrivedPercent}%
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isWide
+            ? "repeat(3, 1fr)"
+            : "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 16,
+          marginBottom: 22,
+        }}
+      >
         <div
           style={{
             border: "1px solid #ddd",
@@ -442,7 +530,7 @@ function AdminDashboardPageInner() {
               : `${metrics.parkedPercent}%`}
           </div>
           <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
-            {metrics.parkedCount} of {metrics.total}
+            {metrics.parkedCount} of {metrics.registeredCoaches}
           </div>
         </div>
 
@@ -482,7 +570,7 @@ function AdminDashboardPageInner() {
               : `${metrics.assignedPercent}%`}
           </div>
           <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
-            {metrics.assignedCount} of {metrics.total}
+            {metrics.assignedCount} of {metrics.registeredCoaches}
           </div>
         </div>
       </div>
@@ -529,16 +617,6 @@ function AdminDashboardPageInner() {
           </button>
         ))}
       </div>
-
-      {/*
-        If /admin/locations exists later, add this to adminCards:
-
-        {
-          title: "Locations",
-          description: "Manage event locations, venue references, and place data.",
-          href: "/admin/locations",
-        }
-      */}
     </div>
   );
 }
