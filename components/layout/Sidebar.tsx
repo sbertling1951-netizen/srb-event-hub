@@ -50,31 +50,29 @@ export default function Sidebar() {
   const isAdminRoute = pathname.startsWith("/admin");
   const isMemberRoute =
     pathname.startsWith("/member") ||
-    pathname === "/" ||
-    pathname === "/agenda" ||
-    pathname === "/announcements" ||
-    pathname === "/coach-map" ||
-    pathname === "/attendees" ||
-    pathname === "/nearby";
+    pathname.startsWith("/coach-map") ||
+    pathname.startsWith("/agenda") ||
+    pathname.startsWith("/announcements") ||
+    pathname.startsWith("/attendees") ||
+    pathname.startsWith("/nearby") ||
+    pathname === "/";
 
   const isPreAuthPage =
     pathname === "/" ||
     pathname === "/member/login" ||
     pathname === "/admin/login";
 
-  const effectiveUserMode =
-    userMode !== "none"
+  const effectiveUserMode = mounted
+    ? userMode !== "none"
       ? userMode
       : !isPreAuthPage && isAdminRoute
         ? "admin"
         : !isPreAuthPage && isMemberRoute
           ? "member"
-          : "none";
+          : "none"
+    : "none";
 
-  const showLoggedInLogout =
-    !isPreAuthPage &&
-    ((effectiveUserMode === "admin" && !!adminEvent?.id) ||
-      (effectiveUserMode === "member" && !!memberEvent?.id));
+  const showLoggedInLogout = !isPreAuthPage && effectiveUserMode !== "none";
 
   useEffect(() => {
     setMounted(true);
@@ -210,7 +208,6 @@ export default function Sidebar() {
       return;
     }
 
-    // CLEAR MODE (no real login yet)
     localStorage.removeItem("fcoc-user-mode");
     localStorage.removeItem("fcoc-user-mode-changed");
     localStorage.removeItem("fcoc-member-event-context");

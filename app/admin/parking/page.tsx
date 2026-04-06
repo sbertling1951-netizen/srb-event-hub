@@ -27,13 +27,29 @@ type MasterMapRow = {
   map_image_url: string | null;
 };
 
-type ParkingSite = {
+type MasterMapSite = {
   id: string;
-  event_id: string;
+  master_map_id: string;
   site_number: string;
   display_label: string | null;
   map_x: number | null;
   map_y: number | null;
+};
+
+type ParkingSite = {
+  id: string | null;
+  event_id: string;
+  master_site_id: string;
+  site_number: string;
+  display_label: string | null;
+  map_x: number | null;
+  map_y: number | null;
+  assigned_attendee_id: string | null;
+};
+type ParkingAssignmentRow = {
+  id: string;
+  event_id: string;
+  master_site_id: string | null;
   assigned_attendee_id: string | null;
 };
 
@@ -205,7 +221,7 @@ export default function ParkingAdminPage() {
 
     const { data: eventRow, error: eventError } = await supabase
       .from("events")
-      .select("id,name,location,parking_map_open_scale")
+      .select("id,name,location,map_image_url,parking_map_open_scale")
       .eq("id", adminEvent.id)
       .single();
 
@@ -235,7 +251,7 @@ export default function ParkingAdminPage() {
     const mapSettings = (mapSettingsRows?.[0] ||
       null) as EventMapSettingsRow | null;
 
-    let mapImageUrl: string | null = null;
+    let mapImageUrl: string | null = eventRow.map_image_url || null;
 
     if (mapSettings?.selected_master_map_id) {
       const { data: masterMapRows, error: masterMapError } = await supabase
@@ -255,6 +271,8 @@ export default function ParkingAdminPage() {
         null) as MasterMapRow | null;
       mapImageUrl = selectedMasterMap?.map_image_url || null;
     }
+    console.log("selected_master_map_id:", mapSettings?.selected_master_map_id);
+    console.log("resolved parking mapImageUrl:", mapImageUrl);
 
     const typedEvent: ActiveEvent = {
       id: String(eventRow.id),
@@ -276,24 +294,39 @@ export default function ParkingAdminPage() {
     setDefaultZoom(safeOpeningScale);
     setZoom(safeOpeningScale);
 
-    const [parkingResult, attendeeResult] = await Promise.all([
-      supabase
-        .from("parking_sites")
-        .select(
-          "id,event_id,site_number,display_label,map_x,map_y,assigned_attendee_id",
-        )
-        .eq("event_id", typedEvent.id),
-      supabase
-        .from("attendees")
-        .select(
-          "id,event_id,pilot_first,pilot_last,coach_make,coach_model,assigned_site,arrival_status,has_arrived",
-        )
-        .eq("event_id", typedEvent.id)
-        .order("pilot_last"),
-    ]);
+    const [masterSitesResult, assignmentResult, attendeeResult] =
+      await Promise.all([
+        mapSettings?.selected_master_map_id
+          ? supabase
+              .from("master_map_sites")
+              .select("id,master_map_id,site_number,display_label,map_x,map_y")
+              .eq("master_map_id", mapSettings.selected_master_map_id)
+              .order("site_number")
+          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from("parking_sites")
+          .select("id,event_id,master_site_id,assigned_attendee_id")
+          .eq("event_id", typedEvent.id),
+        supabase
+          .from("attendees")
+          .select(
+            "id,event_id,pilot_first,pilot_last,coach_make,coach_model,assigned_site,arrival_status,has_arrived",
+          )
+          .eq("event_id", typedEvent.id)
+          .order("pilot_last"),
+      ]);
 
-    if (parkingResult.error) {
-      setStatus(`Could not load parking sites: ${parkingResult.error.message}`);
+    if (masterSitesResult.error) {
+      setStatus(
+        `Could not load master map sites: ${masterSitesResult.error.message}`,
+      );
+      return;
+    }
+
+    if (assignmentResult.error) {
+      setStatus(
+        `Could not load parking assignments: ${assignmentResult.error.message}`,
+      );
       return;
     }
 
@@ -302,10 +335,29 @@ export default function ParkingAdminPage() {
       return;
     }
 
-    setSites((parkingResult.data || []) as ParkingSite[]);
+    const masterSites = (masterSitesResult.data || []) as MasterMapSite[];
+    const assignments = (assignmentResult.data || []) as ParkingAssignmentRow[];
+
+    const mergedSites: ParkingSite[] = masterSites.map((site) => {
+      const assignment =
+        assignments.find((a) => a.master_site_id === site.id) || null;
+
+      return {
+        id: assignment?.id || null,
+        event_id: typedEvent.id,
+        master_site_id: site.id,
+        site_number: site.site_number,
+        display_label: site.display_label,
+        map_x: site.map_x,
+        map_y: site.map_y,
+        assigned_attendee_id: assignment?.assigned_attendee_id || null,
+      };
+    });
+
+    setSites(mergedSites);
     setAttendees((attendeeResult.data || []) as Attendee[]);
     setStatus(
-      `Loaded ${(parkingResult.data || []).length} sites and ${(attendeeResult.data || []).length} attendees.`,
+      `Loaded ${mergedSites.length} sites and ${(attendeeResult.data || []).length} attendees.`,
     );
   }
 
@@ -409,7 +461,8 @@ export default function ParkingAdminPage() {
       const oldSite = sites.find(
         (s) => s.site_number === selectedAttendee.assigned_site,
       );
-      if (oldSite) {
+
+      if (oldSite?.id) {
         await supabase
           .from("parking_sites")
           .update({ assigned_attendee_id: null })
@@ -417,10 +470,24 @@ export default function ParkingAdminPage() {
       }
     }
 
-    const { error: parkingError } = await supabase
-      .from("parking_sites")
-      .update({ assigned_attendee_id: selectedAttendee.id })
-      .eq("id", site.id);
+    let parkingError: { message: string } | null = null;
+
+    if (site.id) {
+      const result = await supabase
+        .from("parking_sites")
+        .update({ assigned_attendee_id: selectedAttendee.id })
+        .eq("id", site.id);
+
+      parkingError = result.error;
+    } else {
+      const result = await supabase.from("parking_sites").insert({
+        event_id: event?.id,
+        master_site_id: site.master_site_id,
+        assigned_attendee_id: selectedAttendee.id,
+      });
+
+      parkingError = result.error;
+    }
 
     if (parkingError) {
       setStatus(`Could not assign site: ${parkingError.message}`);
@@ -450,6 +517,7 @@ export default function ParkingAdminPage() {
     setStatus(
       `Assigned ${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""} to site ${site.site_number}.`,
     );
+
     await loadPage();
   }
 
@@ -496,7 +564,7 @@ export default function ParkingAdminPage() {
   }
 
   async function clearSite(site: ParkingSite) {
-    if (!site.assigned_attendee_id) return;
+    if (!site.assigned_attendee_id || !site.id) return;
 
     const confirmed = window.confirm(`Clear site ${site.site_number}?`);
     if (!confirmed) return;
@@ -550,7 +618,7 @@ export default function ParkingAdminPage() {
   }
 
   function handleSiteClick(site: ParkingSite) {
-    setSelectedSiteId(site.id);
+    setSelectedSiteId(site.id || "");
     focusSite(site);
 
     if (site.assigned_attendee_id) {
@@ -570,7 +638,7 @@ export default function ParkingAdminPage() {
 
   function closeMobilePalette() {
     setSelectedAttendeeId("");
-    setSelectedSiteId("");
+    setSelectedSiteId(site.id || site.master_site_id);
   }
 
   function getSiteColor(site: ParkingSite) {
@@ -1145,7 +1213,7 @@ export default function ParkingAdminPage() {
 
                   return (
                     <div
-                      key={site.id}
+                      key={site.id || site.master_site_id}
                       style={{
                         position: "absolute",
                         left: `${site.map_x}%`,

@@ -44,6 +44,29 @@ type AgendaForm = {
   sort_order: string;
   is_published: boolean;
 };
+type AgendaTemplate = {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+};
+
+type AgendaTemplateItem = {
+  id: string;
+  template_id: string;
+  external_id: string | null;
+  title: string;
+  description: string | null;
+  location: string | null;
+  speaker: string | null;
+  category: string | null;
+  color: string | null;
+  agenda_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  sort_order: number | null;
+  is_published: boolean | null;
+};
 
 const emptyForm: AgendaForm = {
   id: "",
@@ -148,6 +171,9 @@ function AdminAgendaPageInner() {
   const [isMobile, setIsMobile] = useState(false);
   const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
   const useButtonReorder = isMobile && !forceDesktopDrag;
+  const [templates, setTemplates] = useState<AgendaTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [assignedTemplateId, setAssignedTemplateId] = useState("");
 
   useEffect(() => {
     function handleResize() {
@@ -172,10 +198,12 @@ function AdminAgendaPageInner() {
 
   useEffect(() => {
     void loadPage();
+    void loadTemplates();
 
     function handleStorage(e: StorageEvent) {
       if (e.key === "fcoc-admin-event-changed") {
         void loadPage();
+        void loadTemplates();
       }
     }
 
@@ -201,6 +229,22 @@ function AdminAgendaPageInner() {
     };
 
     setActiveEvent(selectedEvent);
+    const { data: eventData, error: eventDataError } = await supabase
+      .from("events")
+      .select("assigned_agenda_template_id")
+      .eq("id", selectedEvent.id)
+      .maybeSingle();
+
+    if (!eventDataError) {
+      const assignedId =
+        (
+          eventData as {
+            assigned_agenda_template_id?: string | null;
+          } | null
+        )?.assigned_agenda_template_id || "";
+      setAssignedTemplateId(assignedId);
+      setSelectedTemplateId(assignedId);
+    }
 
     const { data, error } = await supabase
       .from("agenda_items")
@@ -220,6 +264,20 @@ function AdminAgendaPageInner() {
 
     setItems((data || []) as AgendaItem[]);
     setStatus(`Loaded ${(data || []).length} items for ${selectedEvent.name}.`);
+  }
+  async function loadTemplates() {
+    const { data, error } = await supabase
+      .from("agenda_templates")
+      .select("id,name,description,status")
+      .eq("status", "active")
+      .order("name", { ascending: true });
+
+    if (error) {
+      console.error("loadTemplates error:", error);
+      return;
+    }
+
+    setTemplates((data || []) as AgendaTemplate[]);
   }
 
   function moveItemUp(id: string) {
@@ -469,6 +527,124 @@ function AdminAgendaPageInner() {
       setSavingOrder(false);
     }
   }
+  async function assignTemplate() {
+    if (!activeEvent?.id) {
+      setStatus("No admin working event selected.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("events")
+      .update({
+        assigned_agenda_template_id: selectedTemplateId || null,
+      })
+      .eq("id", activeEvent.id);
+
+    if (error) {
+      setStatus(`Could not assign template: ${error.message}`);
+      return;
+    }
+
+    setAssignedTemplateId(selectedTemplateId || "");
+    const templateName =
+      templates.find((t) => t.id === selectedTemplateId)?.name || "None";
+    setStatus(`Assigned agenda template: ${templateName}.`);
+  }
+  async function copyTemplateToEvent() {
+    if (!activeEvent?.id) {
+      setStatus("No admin working event selected.");
+      return;
+    }
+
+    if (!selectedTemplateId) {
+      setStatus("Select a template first.");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("agenda_template_items")
+      .select(
+        "external_id,title,description,location,speaker,category,color,agenda_date,start_time,end_time,sort_order,is_published",
+      )
+      .eq("template_id", selectedTemplateId)
+      .order("sort_order", { ascending: true, nullsFirst: false });
+
+    if (error) {
+      setStatus(`Could not load template items: ${error.message}`);
+      return;
+    }
+
+    const rows = ((data || []) as AgendaTemplateItem[]).map((item, index) => ({
+      event_id: activeEvent.id,
+      external_id:
+        item.external_id ||
+        [
+          "template",
+          selectedTemplateId,
+          String(index + 1),
+          (item.title || "agenda-item")
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, ""),
+        ].join("-"),
+      title: item.title,
+      description: item.description,
+      location: item.location,
+      speaker: item.speaker,
+      category: item.category,
+      color: item.color,
+      agenda_date: item.agenda_date,
+      start_time: item.start_time,
+      end_time: item.end_time,
+      sort_order: item.sort_order ?? index + 1,
+      is_published: !!item.is_published,
+      source: "template",
+    }));
+
+    const { error: upsertError } = await supabase
+      .from("agenda_items")
+      .upsert(rows, {
+        onConflict: "event_id,external_id",
+      });
+
+    if (upsertError) {
+      setStatus(`Could not copy template to event: ${upsertError.message}`);
+      return;
+    }
+
+    await loadPage();
+    setStatus(`Copied ${rows.length} template items into this event.`);
+  }
+  async function replaceEventFromTemplate() {
+    if (!activeEvent?.id) {
+      setStatus("No admin working event selected.");
+      return;
+    }
+
+    if (!selectedTemplateId) {
+      setStatus("Select a template first.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Replace the current event agenda with the selected template? This will remove current event agenda items first.",
+    );
+    if (!confirmed) return;
+
+    const { error: deleteError } = await supabase
+      .from("agenda_items")
+      .delete()
+      .eq("event_id", activeEvent.id);
+
+    if (deleteError) {
+      setStatus(`Could not clear event agenda: ${deleteError.message}`);
+      return;
+    }
+
+    await copyTemplateToEvent();
+  }
+  const assignedTemplateName =
+    templates.find((t) => t.id === assignedTemplateId)?.name || "None";
 
   return (
     <div style={{ padding: 24 }}>
@@ -489,9 +665,7 @@ function AdminAgendaPageInner() {
           ← Return to Dashboard
         </button>
       </div>
-
       <h1>Admin Agenda</h1>
-
       <div
         style={{
           border: "1px solid #ddd",
@@ -507,8 +681,55 @@ function AdminAgendaPageInner() {
         <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
           {status}
         </div>
-      </div>
 
+        <div style={{ fontSize: 13, color: "#666", marginTop: 6 }}>
+          Assigned Template: {assignedTemplateName}
+        </div>
+      </div>
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 10,
+          background: "white",
+          padding: 16,
+          display: "grid",
+          gap: 12,
+          marginBottom: 20,
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>Agenda Template</div>
+
+        <select
+          value={selectedTemplateId}
+          onChange={(e) => setSelectedTemplateId(e.target.value)}
+          style={{ padding: 8, maxWidth: 420 }}
+        >
+          <option value="">Select template</option>
+          {templates.map((template) => (
+            <option key={template.id} value={template.id}>
+              {template.name}
+            </option>
+          ))}
+        </select>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" onClick={() => void assignTemplate()}>
+            Assign Template
+          </button>
+
+          <button type="button" onClick={() => void copyTemplateToEvent()}>
+            Copy Template to Event
+          </button>
+
+          <button type="button" onClick={() => void replaceEventFromTemplate()}>
+            Replace Event From Template
+          </button>
+        </div>
+
+        <div style={{ fontSize: 12, color: "#666" }}>
+          Current assigned template: {assignedTemplateName}
+        </div>
+      </div>{" "}
       <div
         style={{
           display: "grid",
