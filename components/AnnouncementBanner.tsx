@@ -3,23 +3,22 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 
 type BannerAnnouncement = {
   id: string;
   title: string;
-  message: string | null;
-  is_pinned: boolean | null;
+  message: string;
+  is_pinned: boolean;
   priority: string | null;
-  is_published: boolean | null;
+  is_published: boolean;
   created_at: string | null;
-  expires_at: string | null;
+  expire_at: string | null;
 };
 
-function isNotExpired(expiresAt: string | null) {
-  if (!expiresAt) return true;
-  const expires = new Date(expiresAt).getTime();
-  if (Number.isNaN(expires)) return true;
-  return expires > Date.now();
+function isNotExpired(expireAt?: string | null) {
+  if (!expireAt) return true;
+  return new Date(expireAt).getTime() > Date.now();
 }
 
 function isRecent(value: string | null) {
@@ -34,6 +33,23 @@ function isImportant(priority: string | null) {
   return value === "high" || value === "urgent";
 }
 
+function getPriorityRank(item: {
+  priority: string | null;
+  is_pinned: boolean;
+  created_at: string | null;
+}) {
+  const priority = (item.priority || "normal").toLowerCase();
+
+  if (item.is_pinned && priority === "urgent") return 100;
+  if (priority === "urgent") return 90;
+  if (item.is_pinned && priority === "high") return 80;
+  if (priority === "high") return 70;
+  if (item.is_pinned && priority === "normal") return 60;
+  if (priority === "normal") return 50;
+  if (item.is_pinned && priority === "low") return 40;
+  return 30;
+}
+
 export default function AnnouncementBanner() {
   const [announcement, setAnnouncement] = useState<BannerAnnouncement | null>(
     null,
@@ -43,29 +59,23 @@ export default function AnnouncementBanner() {
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
-
     async function init() {
-      const { data: activeEvent } = await supabase
-        .from("events")
-        .select("id")
-        .eq("is_active", true)
-        .single();
+      const memberEvent = (await getCurrentMemberEvent()) as {
+        id?: string | null;
+      } | null;
 
-      if (!isMounted) return;
-      const eventId = activeEvent?.id || null;
+      const eventId = memberEvent?.id || null;
       setActiveEventId(eventId);
 
       if (eventId) {
         await loadBanner(eventId);
+      } else {
+        setAnnouncement(null);
+        setShowPopup(false);
       }
     }
 
     void init();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -113,21 +123,46 @@ export default function AnnouncementBanner() {
   }, [announcement]);
 
   async function loadBanner(eventId: string) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("announcements")
       .select(
-        "id,title,message,is_pinned,priority,is_published,created_at,expires_at",
+        "id,title,body,is_pinned,priority,is_published,created_at,expire_at",
       )
       .eq("event_id", eventId)
       .eq("is_published", true)
-      .order("is_pinned", { ascending: false })
-      .order("priority", { ascending: false })
-      .order("created_at", { ascending: false });
+      .or(`expire_at.is.null,expire_at.gt.${new Date().toISOString()}`);
+
+    if (error) {
+      console.error("Error loading banner:", error);
+      setAnnouncement(null);
+      setShowPopup(false);
+      return;
+    }
 
     const active =
-      ((data || []) as BannerAnnouncement[]).find((item) =>
-        isNotExpired(item.expires_at),
-      ) || null;
+      (
+        (data || []).map(
+          (item: any): BannerAnnouncement => ({
+            id: item.id,
+            title: item.title ?? "",
+            message: item.body ?? "",
+            is_pinned: !!item.is_pinned,
+            priority: item.priority ?? null,
+            is_published: !!item.is_published,
+            created_at: item.created_at ?? null,
+            expire_at: item.expire_at ?? null,
+          }),
+        ) as BannerAnnouncement[]
+      )
+        .filter((item) => isNotExpired(item.expire_at))
+        .sort((a, b) => {
+          const rankDiff = getPriorityRank(b) - getPriorityRank(a);
+          if (rankDiff !== 0) return rankDiff;
+
+          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return bTime - aTime;
+        })[0] || null;
 
     if (active) {
       setAnnouncement(active);
@@ -139,6 +174,8 @@ export default function AnnouncementBanner() {
 
   const hidden = useMemo(() => {
     if (!announcement) return true;
+    if (announcement.is_pinned && isImportant(announcement.priority))
+      return false;
     return dismissedIds.includes(announcement.id);
   }, [announcement, dismissedIds]);
 
@@ -147,14 +184,25 @@ export default function AnnouncementBanner() {
   const recent = isRecent(announcement.created_at);
   const important = isImportant(announcement.priority);
   const canDismissPopup = !(important && announcement.is_pinned);
+  const canDismissBanner = !(important && announcement.is_pinned);
 
   return (
     <>
       {!hidden && (
         <div
           style={{
-            background: important ? "#fff4d6" : "#eef5ff",
-            borderBottom: "1px solid #d6d6d6",
+            background:
+              announcement.priority?.toLowerCase() === "urgent"
+                ? "#fff1f2"
+                : important
+                  ? "#fff7e6"
+                  : "#eef5ff",
+            borderBottom:
+              announcement.priority?.toLowerCase() === "urgent"
+                ? "2px solid #dc2626"
+                : important
+                  ? "1px solid #f59e0b"
+                  : "1px solid #d6d6d6",
             padding: "10px 16px",
           }}
         >
@@ -209,35 +257,54 @@ export default function AnnouncementBanner() {
                 </span>
               )}
 
-              <span>{announcement.title}</span>
+              <span style={{ fontWeight: 700 }}>{announcement.title}</span>
 
               <Link
-                href="/announcements"
+                href="/member/announcements"
                 style={{
                   color: "#0b5cff",
                   textDecoration: "underline",
                   fontWeight: 600,
                 }}
               >
-                View
+                Open
               </Link>
             </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                setDismissedIds((prev) => [...prev, announcement.id])
-              }
-              style={{
-                border: "1px solid #bbb",
-                background: "white",
-                borderRadius: 6,
-                padding: "4px 8px",
-                cursor: "pointer",
-              }}
-            >
-              Dismiss
-            </button>
+            {canDismissBanner && (
+              <button
+                type="button"
+                onClick={() =>
+                  setDismissedIds((prev) =>
+                    prev.includes(announcement.id)
+                      ? prev
+                      : [...prev, announcement.id],
+                  )
+                }
+                style={{
+                  border: "1px solid #bbb",
+                  background: "white",
+                  borderRadius: 6,
+                  padding: "4px 8px",
+                  cursor: "pointer",
+                }}
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
+
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: 14,
+              color: "#374151",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {announcement.message || ""}
           </div>
         </div>
       )}
@@ -333,7 +400,7 @@ export default function AnnouncementBanner() {
 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <Link
-                  href="/announcements"
+                  href="/member/announcements"
                   style={{
                     padding: "8px 12px",
                     borderRadius: 8,

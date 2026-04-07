@@ -14,13 +14,13 @@ export default function HomePage() {
       const eventContext = localStorage.getItem("fcoc-member-event-context");
       const hasArrived = localStorage.getItem("fcoc-member-has-arrived");
 
-      const sessionExists = !!(attendeeId && eventContext);
+      const sessionExists = !!eventContext;
 
       if (sessionExists) {
         setHasSession(true);
 
-        if (hasArrived === "true") {
-          window.location.href = "/agenda";
+        if (attendeeId && hasArrived === "true") {
+          window.location.href = "/member";
         } else {
           window.location.href = "/member/checkin";
         }

@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import type { Route } from "next";
 import { supabase } from "@/lib/supabase";
 
 type NavItem = {
@@ -246,15 +246,15 @@ export default function Sidebar() {
   }, [isCheckedIn]);
 
   const adminItems: NavItem[] = [
-    { label: "Dashboard", href: "/admin/dashboard" },
-    { label: "Announcements", href: "/admin/announcements" },
-    { label: "Check-In", href: "/admin/checkin" },
-    { label: "Parking Admin", href: "/admin/parking" },
-    { label: "Events", href: "/admin/events" },
-    { label: "Master Maps", href: "/admin/master-maps" },
-    { label: "Nearby Admin", href: "/admin/nearby" },
-    { label: "Agenda Admin", href: "/admin/agenda" },
-    { label: "Agenda Import", href: "/admin/agenda/import" },
+    { label: "Dashboard", href: "/admin/dashboard" as Route },
+    { label: "Announcements", href: "/admin/announcements" as Route },
+    { label: "Check-In", href: "/admin/checkin" as Route },
+    { label: "Parking Admin", href: "/admin/parking" as Route },
+    { label: "Events", href: "/admin/events" as Route },
+    { label: "Master Maps", href: "/admin/master-maps" as Route },
+    { label: "Nearby Admin", href: "/admin/nearby" as Route },
+    { label: "Agenda Admin", href: "/admin/agenda" as Route },
+    { label: "Agenda Import", href: "/admin/agenda/import" as Route },
   ];
 
   const sections: NavSection[] = useMemo(() => {
@@ -280,7 +280,7 @@ export default function Sidebar() {
   }, [effectiveUserMode, memberItems]);
 
   function isActiveRoute(itemHref: string) {
-    return pathname === itemHref;
+    return pathname === itemHref || pathname.startsWith(itemHref + "/");
   }
 
   if (!mounted) return null;

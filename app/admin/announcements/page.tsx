@@ -2,20 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { getAdminEvent } from "@/lib/getAdminEvent";
-import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 
-type AdminEventContext = {
-  id: string | null;
-  name: string | null;
-};
-
-type ActiveEvent = {
-  id: string;
-  name: string;
-  location: string | null;
-  start_date: string | null;
-  end_date: string | null;
+type EventContext = {
+  id?: string | null;
+  name?: string | null;
+  eventName?: string | null;
+  venue_name?: string | null;
+  location?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
 };
 
 type Announcement = {
@@ -23,240 +18,254 @@ type Announcement = {
   event_id: string;
   title: string;
   body: string;
-  category: string | null;
-  priority: string;
+  priority: string | null;
+  is_pinned: boolean;
   is_published: boolean;
-  publish_at: string | null;
+  created_at: string | null;
   expire_at: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
-type AnnouncementForm = {
-  id: string | null;
+type FormState = {
   title: string;
   body: string;
-  category: string;
   priority: string;
+  is_pinned: boolean;
   is_published: boolean;
-  publish_at: string;
   expire_at: string;
 };
 
-const emptyForm: AnnouncementForm = {
-  id: null,
+const EMPTY_FORM: FormState = {
   title: "",
   body: "",
-  category: "",
   priority: "normal",
-  is_published: false,
-  publish_at: "",
+  is_pinned: false,
+  is_published: true,
   expire_at: "",
 };
 
-function toDatetimeLocal(value?: string | null) {
+function getStoredAdminEvent(): EventContext | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem("fcoc-admin-event-context");
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeForInput(value?: string | null) {
   if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60 * 1000);
+  return local.toISOString().slice(0, 16);
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "No expiration";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No expiration";
+  return date.toLocaleString();
 }
 
 export default function AdminAnnouncementsPage() {
-  return (
-    <AdminRouteGuard>
-      <AdminAnnouncementsPageInner />
-    </AdminRouteGuard>
-  );
-}
-
-function AdminAnnouncementsPageInner() {
-  const [event, setEvent] = useState<ActiveEvent | null>(null);
+  const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [form, setForm] = useState<AnnouncementForm>(emptyForm);
-  const [status, setStatus] = useState("Loading...");
-  const [busy, setBusy] = useState(false);
-  const [isNarrow, setIsNarrow] = useState(false);
-  const [filter, setFilter] = useState<"all" | "published" | "drafts">("all");
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [loadingEvent, setLoadingEvent] = useState(true);
+  const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("Loading event...");
+  const [error, setError] = useState<string | null>(null);
+
+  const eventId = currentEvent?.id ?? null;
 
   useEffect(() => {
-    function handleResize() {
-      setIsNarrow(window.innerWidth < 900);
-    }
+    async function loadEvent() {
+      setLoadingEvent(true);
+      setError(null);
 
-    handleResize();
-    window.addEventListener("resize", handleResize);
-
-    void loadPage();
-
-    function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-admin-event-changed") {
-        void loadPage();
+      const stored = getStoredAdminEvent();
+      if (stored?.id) {
+        setCurrentEvent(stored);
+        setStatus("");
+        setLoadingEvent(false);
+        return;
       }
+
+      const { data, error } = await supabase
+        .from("events")
+        .select("id, name, venue_name, location, start_date, end_date")
+        .order("start_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        setError(error.message);
+        setStatus("Could not load event.");
+        setLoadingEvent(false);
+        return;
+      }
+
+      if (!data) {
+        setStatus("No event selected.");
+        setLoadingEvent(false);
+        return;
+      }
+
+      setCurrentEvent({
+        id: data.id,
+        name: data.name,
+        venue_name: data.venue_name,
+        location: data.location,
+        start_date: data.start_date,
+        end_date: data.end_date,
+      });
+
+      setStatus("");
+      setLoadingEvent(false);
     }
 
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("storage", handleStorage);
-    };
+    loadEvent();
   }, []);
 
-  async function loadPage() {
+  async function loadAnnouncements(activeEventId: string) {
+    setLoadingAnnouncements(true);
+    setError(null);
     setStatus("Loading announcements...");
 
-    const adminEvent = getAdminEvent() as AdminEventContext | null;
-
-    if (!adminEvent?.id) {
-      setEvent(null);
-      setAnnouncements([]);
-      setStatus(
-        "No admin working event selected. Choose one on the Admin Dashboard.",
-      );
-      return;
-    }
-
-    const { data: eventRow, error: eventError } = await supabase
-      .from("events")
-      .select("id,name,location,start_date,end_date")
-      .eq("id", adminEvent.id)
-      .single();
-
-    if (eventError || !eventRow) {
-      setEvent(null);
-      setAnnouncements([]);
-      setStatus(
-        `Could not load admin event: ${eventError?.message || "Event not found."}`,
-      );
-      return;
-    }
-
-    setEvent(eventRow as ActiveEvent);
-
-    const { data: announcementRows, error: announcementError } = await supabase
+    const { data, error } = await supabase
       .from("announcements")
       .select(
-        "id,event_id,title,body,category,priority,is_published,publish_at,expire_at,created_at,updated_at",
+        "id, event_id, title, body, priority, is_pinned, is_published, created_at, expire_at",
       )
-      .eq("event_id", adminEvent.id)
-      .order("is_published", { ascending: false })
-      .order("priority", { ascending: true })
+      .eq("event_id", activeEventId)
+      .order("is_pinned", { ascending: false })
       .order("created_at", { ascending: false });
 
-    if (announcementError) {
-      setAnnouncements([]);
-      setStatus(`Could not load announcements: ${announcementError.message}`);
+    if (error) {
+      setError(error.message);
+      setStatus("Could not load announcements.");
+      setLoadingAnnouncements(false);
       return;
     }
 
-    setAnnouncements((announcementRows || []) as Announcement[]);
-    setStatus(`Loaded ${(announcementRows || []).length} announcements.`);
+    setAnnouncements((data || []) as Announcement[]);
+    setStatus("");
+    setLoadingAnnouncements(false);
   }
 
-  const visibleAnnouncements = useMemo(() => {
-    if (filter === "published") {
-      return announcements.filter((a) => a.is_published);
+  useEffect(() => {
+    if (!eventId) {
+      setAnnouncements([]);
+      return;
     }
-    if (filter === "drafts") {
-      return announcements.filter((a) => !a.is_published);
-    }
-    return announcements;
-  }, [announcements, filter]);
+
+    loadAnnouncements(eventId);
+  }, [eventId]);
+
+  const sortedAnnouncements = useMemo(() => {
+    return [...announcements].sort((a, b) => {
+      if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [announcements]);
 
   function resetForm() {
-    setForm(emptyForm);
+    setForm(EMPTY_FORM);
+    setEditingId(null);
   }
 
-  function editAnnouncement(item: Announcement) {
+  function startEdit(item: Announcement) {
+    setEditingId(item.id);
     setForm({
-      id: item.id,
-      title: item.title,
-      body: item.body,
-      category: item.category || "",
-      priority: item.priority || "normal",
+      title: item.title ?? "",
+      body: item.body ?? "",
+      priority: item.priority ?? "normal",
+      is_pinned: !!item.is_pinned,
       is_published: !!item.is_published,
-      publish_at: toDatetimeLocal(item.publish_at),
-      expire_at: toDatetimeLocal(item.expire_at),
+      expire_at: normalizeForInput(item.expire_at),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function saveAnnouncement() {
-    if (!event?.id) {
-      setStatus("No admin working event selected.");
+  async function handleSave() {
+    if (!eventId) {
+      setError("No active event selected.");
       return;
     }
 
     if (!form.title.trim()) {
-      setStatus("Title is required.");
+      setError("Title is required.");
       return;
     }
 
-    setBusy(true);
+    if (!form.body.trim()) {
+      setError("Message is required.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setStatus(
+      editingId ? "Updating announcement..." : "Creating announcement...",
+    );
 
     const payload = {
-      event_id: event.id,
+      event_id: eventId,
       title: form.title.trim(),
       body: form.body.trim(),
-      category: form.category.trim() || null,
-      priority: form.priority,
+      priority: form.priority || "normal",
+      is_pinned: form.is_pinned,
       is_published: form.is_published,
-      publish_at: form.publish_at || null,
-      expire_at: form.expire_at || null,
-      updated_at: new Date().toISOString(),
+      expire_at: form.expire_at ? new Date(form.expire_at).toISOString() : null,
     };
 
-    try {
-      if (form.id) {
-        const { data, error } = await supabase
-          .from("announcements")
-          .update(payload)
-          .eq("id", form.id)
-          .eq("event_id", event.id)
-          .select("id,title,body,updated_at");
+    if (editingId) {
+      const { error } = await supabase
+        .from("announcements")
+        .update(payload)
+        .eq("id", editingId);
 
-        if (error) throw error;
-
-        if (!data || data.length === 0) {
-          throw new Error(
-            "Update did not match any announcement row. Check the announcement id and event_id.",
-          );
-        }
-
-        setStatus("Announcement updated.");
-      } else {
-        const { data, error } = await supabase
-          .from("announcements")
-          .insert(payload)
-          .select("id,title");
-
-        if (error) throw error;
-
-        if (!data || data.length === 0) {
-          throw new Error("Announcement insert returned no row.");
-        }
-
-        setStatus("Announcement created.");
+      if (error) {
+        setError(error.message);
+        setStatus("Update failed.");
+        setSaving(false);
+        return;
       }
 
-      resetForm();
-      await loadPage();
-    } catch (err: any) {
-      console.error("saveAnnouncement error:", err);
-      setStatus(err?.message || "Could not save announcement.");
-    } finally {
-      setBusy(false);
+      setStatus("Announcement updated.");
+    } else {
+      const { error } = await supabase.from("announcements").insert(payload);
+
+      if (error) {
+        setError(error.message);
+        setStatus("Create failed.");
+        setSaving(false);
+        return;
+      }
+
+      setStatus("Announcement created.");
     }
+
+    await loadAnnouncements(eventId);
+    resetForm();
+    setSaving(false);
   }
 
-  async function deleteAnnouncement(id: string) {
+  async function handleDelete(id: string) {
     const confirmed = window.confirm("Delete this announcement?");
     if (!confirmed) return;
+
+    setError(null);
+    setStatus("Deleting announcement...");
 
     const { error } = await supabase
       .from("announcements")
@@ -264,226 +273,247 @@ function AdminAnnouncementsPageInner() {
       .eq("id", id);
 
     if (error) {
-      setStatus(`Could not delete announcement: ${error.message}`);
+      setError(error.message);
+      setStatus("Delete failed.");
       return;
     }
 
-    if (form.id === id) resetForm();
+    if (editingId === id) resetForm();
+    if (eventId) await loadAnnouncements(eventId);
     setStatus("Announcement deleted.");
-    await loadPage();
   }
 
   async function togglePublished(item: Announcement) {
+    setError(null);
+    setStatus(item.is_published ? "Unpublishing..." : "Publishing...");
+
     const { error } = await supabase
       .from("announcements")
-      .update({
-        is_published: !item.is_published,
-        updated_at: new Date().toISOString(),
-      })
+      .update({ is_published: !item.is_published })
       .eq("id", item.id);
 
     if (error) {
-      setStatus(`Could not update publish status: ${error.message}`);
+      setError(error.message);
+      setStatus("Publish update failed.");
       return;
     }
 
+    if (eventId) await loadAnnouncements(eventId);
     setStatus(
-      !item.is_published
-        ? "Announcement published."
-        : "Announcement unpublished.",
+      item.is_published
+        ? "Announcement unpublished."
+        : "Announcement published.",
     );
-    await loadPage();
   }
 
-  function priorityColor(priority: string) {
-    if (priority === "urgent") return "#b91c1c";
-    if (priority === "high") return "#c2410c";
-    if (priority === "low") return "#4b5563";
-    return "#2563eb";
+  async function togglePinned(item: Announcement) {
+    setError(null);
+    setStatus(item.is_pinned ? "Removing pin..." : "Pinning announcement...");
+
+    const { error } = await supabase
+      .from("announcements")
+      .update({ is_pinned: !item.is_pinned })
+      .eq("id", item.id);
+
+    if (error) {
+      setError(error.message);
+      setStatus("Pin update failed.");
+      return;
+    }
+
+    if (eventId) await loadAnnouncements(eventId);
+    setStatus(
+      item.is_pinned ? "Announcement unpinned." : "Announcement pinned.",
+    );
   }
 
   return (
-    <div style={{ padding: isNarrow ? 12 : 24, display: "grid", gap: 16 }}>
-      <div>
-        <button
-          type="button"
-          onClick={() => {
-            window.location.href = "/admin/dashboard";
-          }}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            border: "1px solid #cbd5e1",
-            background: "#fff",
-            cursor: "pointer",
-          }}
-        >
-          ← Return to Dashboard
-        </button>
-      </div>
+    <div style={{ display: "grid", gap: 18 }}>
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Announcements Admin</h1>
 
-      <h1 style={{ margin: 0 }}>Announcements Admin</h1>
-
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-        }}
-      >
-        <div style={{ fontWeight: 700 }}>
-          {event?.name || "No admin working event selected"}
+        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
+          {loadingEvent
+            ? "Loading selected event..."
+            : currentEvent?.name ||
+              currentEvent?.eventName ||
+              "No event selected"}
+          {currentEvent?.location ? ` • ${currentEvent.location}` : ""}
         </div>
-        {event?.location ? (
-          <div style={{ color: "#555", marginTop: 4 }}>{event.location}</div>
+
+        {status ? (
+          <div style={{ marginBottom: 12, fontSize: 14 }}>{status}</div>
         ) : null}
-        <div style={{ fontSize: 13, color: "#666", marginTop: 6 }}>
-          {status}
-        </div>
-      </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: isNarrow ? "1fr" : "minmax(320px, 420px) 1fr",
-          gap: 20,
-          alignItems: "start",
-        }}
-      >
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 16,
-            display: "grid",
-            gap: 10,
-            position: isNarrow ? "static" : "sticky",
-            top: isNarrow ? undefined : 16,
-          }}
-        >
-          <div style={{ fontWeight: 700 }}>
-            {form.id ? "Edit Announcement" : "New Announcement"}
-          </div>
-
-          <input
-            value={form.title}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, title: e.target.value }))
-            }
-            placeholder="Title"
-            style={{ padding: 8 }}
-          />
-
-          <textarea
-            value={form.body}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, body: e.target.value }))
-            }
-            placeholder="Message (optional)"
-            rows={8}
-            style={{ padding: 8, resize: "vertical" }}
-          />
-          <div style={{ fontSize: 12, color: "#666" }}>
-            Title is required. Message is optional.
-          </div>
-
-          <input
-            value={form.category}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, category: e.target.value }))
-            }
-            placeholder="Category (optional)"
-            style={{ padding: 8 }}
-          />
-
-          <select
-            value={form.priority}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, priority: e.target.value }))
-            }
-            style={{ padding: 8 }}
-          >
-            <option value="urgent">Urgent</option>
-            <option value="high">High</option>
-            <option value="normal">Normal</option>
-            <option value="low">Low</option>
-          </select>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 13, color: "#555" }}>
-              Publish At (optional)
-            </span>
-            <input
-              type="datetime-local"
-              value={form.publish_at}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, publish_at: e.target.value }))
-              }
-              style={{ padding: 8 }}
-            />
-          </label>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 13, color: "#555" }}>
-              Expire At (optional)
-            </span>
-            <input
-              type="datetime-local"
-              value={form.expire_at}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, expire_at: e.target.value }))
-              }
-              style={{ padding: 8 }}
-            />
-          </label>
-
-          <label
+        {error ? (
+          <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 14,
+              marginBottom: 12,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #e2b4b4",
+              background: "#fff3f3",
+              color: "#8a1f1f",
             }}
           >
+            {error}
+          </div>
+        ) : null}
+
+        <div style={{ display: "grid", gap: 12 }}>
+          <div>
+            <label
+              style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
+            >
+              Title
+            </label>
             <input
-              type="checkbox"
-              checked={form.is_published}
+              value={form.title}
               onChange={(e) =>
-                setForm((prev) => ({ ...prev, is_published: e.target.checked }))
+                setForm((prev) => ({ ...prev, title: e.target.value }))
               }
+              placeholder="Announcement title"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ccc",
+              }}
             />
-            Publish now
-          </label>
+          </div>
+
+          <div>
+            <label
+              style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
+            >
+              Message
+            </label>
+            <textarea
+              value={form.body}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, body: e.target.value }))
+              }
+              placeholder="Write the announcement here..."
+              rows={6}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ccc",
+                resize: "vertical",
+              }}
+            />
+          </div>
 
           <div
-            style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
           >
+            <div>
+              <label
+                style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
+              >
+                Priority
+              </label>
+              <select
+                value={form.priority}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, priority: e.target.value }))
+                }
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #ccc",
+                }}
+              >
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+
+            <div>
+              <label
+                style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
+              >
+                Expire At
+              </label>
+              <input
+                type="datetime-local"
+                value={form.expire_at}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, expire_at: e.target.value }))
+                }
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #ccc",
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={form.is_pinned}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, is_pinned: e.target.checked }))
+                }
+              />
+              Pin this announcement
+            </label>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={form.is_published}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    is_published: e.target.checked,
+                  }))
+                }
+              />
+              Published
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
               type="button"
-              onClick={() => void saveAnnouncement()}
-              disabled={busy || !event?.id}
+              onClick={handleSave}
+              disabled={saving || !eventId}
               style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #ddd",
-                background: "#fff",
-                cursor: "pointer",
-                fontWeight: 700,
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "none",
+                cursor: saving ? "not-allowed" : "pointer",
+                opacity: saving ? 0.7 : 1,
               }}
             >
-              {form.id ? "Update Announcement" : "Save Announcement"}
+              {saving
+                ? "Saving..."
+                : editingId
+                  ? "Update Announcement"
+                  : "Create Announcement"}
             </button>
 
             <button
               type="button"
               onClick={resetForm}
-              disabled={busy}
+              disabled={saving}
               style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #ddd",
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #ccc",
                 background: "#fff",
                 cursor: "pointer",
               }}
@@ -492,141 +522,170 @@ function AdminAnnouncementsPageInner() {
             </button>
           </div>
         </div>
+      </div>
 
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 16,
-            display: "grid",
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            <div style={{ fontWeight: 700 }}>Event Announcements</div>
+      <div className="card" style={{ padding: 18 }}>
+        <h2 style={{ marginTop: 0, marginBottom: 12 }}>
+          Existing Announcements
+        </h2>
 
-            <select
-              value={filter}
-              onChange={(e) =>
-                setFilter(e.target.value as "all" | "published" | "drafts")
-              }
-              style={{ padding: 8 }}
-            >
-              <option value="all">All</option>
-              <option value="published">Published</option>
-              <option value="drafts">Drafts</option>
-            </select>
+        {loadingAnnouncements ? (
+          <div>Loading announcements...</div>
+        ) : sortedAnnouncements.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>
+            No announcements yet for this event.
           </div>
-
-          {visibleAnnouncements.length === 0 ? (
-            <div style={{ color: "#666" }}>No announcements yet.</div>
-          ) : (
-            visibleAnnouncements.map((item) => (
+        ) : (
+          <div style={{ display: "grid", gap: 14 }}>
+            {sortedAnnouncements.map((announcement) => (
               <div
-                key={item.id}
+                key={announcement.id}
                 style={{
-                  border: "1px solid #eee",
-                  borderRadius: 10,
-                  padding: 12,
-                  background: item.is_published ? "#fff" : "#fafafa",
+                  border: "1px solid #ddd",
+                  borderRadius: 12,
+                  padding: 14,
+                  background: announcement.is_pinned ? "#fffdf2" : "#fafafa",
                 }}
               >
                 <div
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
-                    gap: 10,
-                    alignItems: "start",
+                    gap: 12,
                     flexWrap: "wrap",
+                    marginBottom: 8,
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: 700 }}>{item.title}</div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        marginTop: 4,
-                        color: priorityColor(item.priority),
-                        fontWeight: 700,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {item.priority}
-                      {item.category ? ` · ${item.category}` : ""}
-                      {item.is_published ? " · Published" : " · Draft"}
+                    <div style={{ fontWeight: 700, fontSize: 16 }}>
+                      {announcement.title || "Untitled"}
+                    </div>
+                    <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4 }}>
+                      Created:{" "}
+                      {announcement.created_at
+                        ? new Date(announcement.created_at).toLocaleString()
+                        : "Unknown"}
                     </div>
                   </div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => editAnnouncement(item)}
+                    <span
                       style={{
-                        padding: "6px 10px",
-                        borderRadius: 8,
-                        border: "1px solid #ddd",
+                        fontSize: 12,
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        border: "1px solid #ccc",
                         background: "#fff",
-                        cursor: "pointer",
                       }}
                     >
-                      Edit
-                    </button>
+                      {announcement.priority || "normal"}
+                    </span>
 
-                    <button
-                      type="button"
-                      onClick={() => void togglePublished(item)}
+                    <span
                       style={{
-                        padding: "6px 10px",
-                        borderRadius: 8,
-                        border: "1px solid #ddd",
-                        background: "#fff",
-                        cursor: "pointer",
+                        fontSize: 12,
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        border: "1px solid #ccc",
+                        background: announcement.is_published
+                          ? "#eefaf0"
+                          : "#f6f6f6",
                       }}
                     >
-                      {item.is_published ? "Unpublish" : "Publish"}
-                    </button>
+                      {announcement.is_published ? "Published" : "Draft"}
+                    </span>
 
-                    <button
-                      type="button"
-                      onClick={() => void deleteAnnouncement(item.id)}
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: 8,
-                        border: "1px solid #f5c2c7",
-                        background: "#fff5f5",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Delete
-                    </button>
+                    {announcement.is_pinned ? (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border: "1px solid #ccc",
+                          background: "#fff6cc",
+                        }}
+                      >
+                        Pinned
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 
-                {item.body ? (
-                  <div style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
-                    {item.body}
-                  </div>
-                ) : null}
+                <div
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    lineHeight: 1.45,
+                    marginBottom: 10,
+                  }}
+                >
+                  {announcement.body || ""}
+                </div>
 
-                <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-                  {item.publish_at
-                    ? `Publish: ${item.publish_at}`
-                    : "Publish: immediate"}
-                  {item.expire_at ? ` · Expires: ${item.expire_at}` : ""}
+                <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 12 }}>
+                  Expires: {formatDateTime(announcement.expire_at)}
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => startEdit(announcement)}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #ccc",
+                      background: "#fff",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => togglePublished(announcement)}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #ccc",
+                      background: "#fff",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {announcement.is_published ? "Unpublish" : "Publish"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => togglePinned(announcement)}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #ccc",
+                      background: "#fff",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {announcement.is_pinned ? "Unpin" : "Pin"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(announcement.id)}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #d7b1b1",
+                      background: "#fff5f5",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
