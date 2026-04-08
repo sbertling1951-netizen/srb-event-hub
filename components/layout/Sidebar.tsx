@@ -252,8 +252,11 @@ export default function Sidebar() {
     { label: "Parking Admin", href: "/admin/parking" as Route },
     { label: "Events", href: "/admin/events" as Route },
     { label: "Master Maps", href: "/admin/master-maps" as Route },
+    { label: "Attendees", href: "/admin/attendees" },
+    { label: "Reports", href: "/admin/reports" },
     { label: "Nearby Admin", href: "/admin/nearby" as Route },
     { label: "Agenda Admin", href: "/admin/agenda" as Route },
+    { label: "Imports", href: "/admin/imports" },
     { label: "Agenda Import", href: "/admin/agenda/import" as Route },
   ];
 
