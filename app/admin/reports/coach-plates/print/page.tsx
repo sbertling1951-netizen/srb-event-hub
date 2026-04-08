@@ -28,9 +28,9 @@ export default function CoachPlatesPrintPage() {
     <div>
       <style>{`
         @page {
-  size: letter landscape;
-  margin: 0.35in;
-}
+          size: letter landscape;
+          margin: 0.35in;
+        }
 
         html, body {
           margin: 0;
@@ -65,12 +65,28 @@ export default function CoachPlatesPrintPage() {
           border: 2px solid #999;
           border-radius: 18px;
           padding: 0.35in 0.45in;
+          overflow: hidden;
+          position: relative;
+          background-image: url("/coach-plate-bg.png");
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          display: flex;
+          align-items: stretch;
+          justify-content: stretch;
+        }
+
+        .plate-content {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: flex-start;
           text-align: center;
-          overflow: hidden;
+          background: rgba(255, 255, 255, 0.15);
+          border-radius: 12px;
         }
 
         .event {
@@ -78,11 +94,12 @@ export default function CoachPlatesPrintPage() {
           line-height: 1.02;
           font-weight: 700;
           margin-bottom: 0.18in;
+          margin-top: 0.05in;
         }
 
         .logo {
-          width: 3.0in;
-          max-height: 2.0in;
+          width: 3in;
+          max-height: 2in;
           object-fit: contain;
           margin-bottom: 0.14in;
         }
@@ -143,27 +160,29 @@ export default function CoachPlatesPrintPage() {
         {plates.map((plate, index) => (
           <div key={index} className="page">
             <div className="plate">
-              <div className="event">{plate.eventName}</div>
+              <div className="plate-content">
+                <div className="event">{plate.eventName}</div>
 
-              <img src="/logo.png" className="logo" alt="FCOC logo" />
+                <img src="/logo.png" className="logo" alt="FCOC logo" />
 
-              <div className="member">{plate.memberNumber}</div>
+                <div className="member">{plate.memberNumber}</div>
 
-              <div className="pilot">{plate.pilotDisplay}</div>
+                <div className="pilot">{plate.pilotDisplay}</div>
 
-              {plate.copilotDisplay ? (
-                <div className="copilot">{plate.copilotDisplay}</div>
-              ) : null}
+                {plate.copilotDisplay ? (
+                  <div className="copilot">{plate.copilotDisplay}</div>
+                ) : null}
 
-              <div className="location">
-                {plate.city}
-                {plate.city && plate.state ? ", " : ""}
-                {plate.state}
+                <div className="location">
+                  {plate.city}
+                  {plate.city && plate.state ? ", " : ""}
+                  {plate.state}
+                </div>
+
+                {plate.firstTimer ? (
+                  <div className="first-timer">FIRST TIMER</div>
+                ) : null}
               </div>
-
-              {plate.firstTimer ? (
-                <div className="first-timer">FIRST TIMER</div>
-              ) : null}
             </div>
           </div>
         ))}

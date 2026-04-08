@@ -58,6 +58,13 @@ type ParsedRegistration = {
   warnings: string[];
 };
 
+type PrintSettingsRow = {
+  id?: string;
+  event_id: string;
+  name_tag_bg_url: string | null;
+  coach_plate_bg_url: string | null;
+};
+
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
 
 function getStoredAdminEvent(): EventContext | null {
@@ -244,6 +251,16 @@ export default function AdminAttendeeImportsPage() {
   const [status, setStatus] = useState("Load a CSV or XLSX file to begin.");
   const [error, setError] = useState<string | null>(null);
 
+  const [printSettings, setPrintSettings] = useState<PrintSettingsRow | null>(
+    null,
+  );
+  const [nameTagFile, setNameTagFile] = useState<File | null>(null);
+  const [coachPlateFile, setCoachPlateFile] = useState<File | null>(null);
+  const [assetStatus, setAssetStatus] = useState("");
+  const [assetError, setAssetError] = useState<string | null>(null);
+  const [savingNameTagBg, setSavingNameTagBg] = useState(false);
+  const [savingCoachPlateBg, setSavingCoachPlateBg] = useState(false);
+
   useEffect(() => {
     async function loadEvents() {
       setLoadingEvent(true);
@@ -279,6 +296,48 @@ export default function AdminAttendeeImportsPage() {
 
     void loadEvents();
   }, []);
+
+  useEffect(() => {
+    async function loadPrintSettings() {
+      if (!selectedImportEventId) {
+        setPrintSettings(null);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("event_print_settings")
+          .select("*")
+          .eq("event_id", selectedImportEventId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (data) {
+          setPrintSettings(data as PrintSettingsRow);
+        } else {
+          setPrintSettings({
+            event_id: selectedImportEventId,
+            name_tag_bg_url: null,
+            coach_plate_bg_url: null,
+          });
+        }
+
+        setAssetStatus("");
+        setAssetError(null);
+      } catch (err: any) {
+        console.error("Error loading print settings:", err);
+        setPrintSettings({
+          event_id: selectedImportEventId,
+          name_tag_bg_url: null,
+          coach_plate_bg_url: null,
+        });
+        setAssetError(err?.message || "Could not load print settings.");
+      }
+    }
+
+    void loadPrintSettings();
+  }, [selectedImportEventId]);
 
   const validRows = useMemo(
     () => rows.filter((row) => row.entry_id && row.email),
@@ -350,6 +409,124 @@ export default function AdminAttendeeImportsPage() {
       setStatus("Parse failed.");
     } finally {
       setParsing(false);
+    }
+  }
+
+  async function ensurePrintSettingsRow(nextValues: Partial<PrintSettingsRow>) {
+    if (!selectedImportEventId) return null;
+
+    const payload = {
+      event_id: selectedImportEventId,
+      name_tag_bg_url:
+        nextValues.name_tag_bg_url ?? printSettings?.name_tag_bg_url ?? null,
+      coach_plate_bg_url:
+        nextValues.coach_plate_bg_url ??
+        printSettings?.coach_plate_bg_url ??
+        null,
+    };
+
+    const { data, error } = await supabase
+      .from("event_print_settings")
+      .upsert(payload, { onConflict: "event_id" })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+
+    const row = data as PrintSettingsRow;
+    setPrintSettings(row);
+    return row;
+  }
+
+  async function uploadFileToBucket(file: File, path: string) {
+    const { error: uploadError } = await supabase.storage
+      .from("event-assets")
+      .upload(path, file, {
+        upsert: true,
+        contentType: file.type || "image/png",
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from("event-assets").getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function handleUploadNameTagBackground() {
+    if (!selectedImportEventId || !nameTagFile) return;
+
+    try {
+      setSavingNameTagBg(true);
+      setAssetError(null);
+      setAssetStatus("Uploading name tag background...");
+
+      const ext = nameTagFile.name.split(".").pop() || "png";
+      const path = `${selectedImportEventId}/name-tag-bg.${ext}`;
+      const publicUrl = await uploadFileToBucket(nameTagFile, path);
+
+      await ensurePrintSettingsRow({ name_tag_bg_url: publicUrl });
+      setNameTagFile(null);
+      setAssetStatus("Name tag background saved.");
+    } catch (err: any) {
+      console.error(err);
+      setAssetError(err?.message || "Could not save name tag background.");
+      setAssetStatus("");
+    } finally {
+      setSavingNameTagBg(false);
+    }
+  }
+
+  async function handleUploadCoachPlateBackground() {
+    if (!selectedImportEventId || !coachPlateFile) return;
+
+    try {
+      setSavingCoachPlateBg(true);
+      setAssetError(null);
+      setAssetStatus("Uploading coach plate background...");
+
+      const ext = coachPlateFile.name.split(".").pop() || "png";
+      const path = `${selectedImportEventId}/coach-plate-bg.${ext}`;
+      const publicUrl = await uploadFileToBucket(coachPlateFile, path);
+
+      await ensurePrintSettingsRow({ coach_plate_bg_url: publicUrl });
+      setCoachPlateFile(null);
+      setAssetStatus("Coach plate background saved.");
+    } catch (err: any) {
+      console.error(err);
+      setAssetError(err?.message || "Could not save coach plate background.");
+      setAssetStatus("");
+    } finally {
+      setSavingCoachPlateBg(false);
+    }
+  }
+
+  async function clearNameTagBackground() {
+    if (!selectedImportEventId) return;
+
+    try {
+      setAssetError(null);
+      setAssetStatus("Removing name tag background...");
+      await ensurePrintSettingsRow({ name_tag_bg_url: null });
+      setAssetStatus("Name tag background removed.");
+    } catch (err: any) {
+      console.error(err);
+      setAssetError(err?.message || "Could not remove name tag background.");
+      setAssetStatus("");
+    }
+  }
+
+  async function clearCoachPlateBackground() {
+    if (!selectedImportEventId) return;
+
+    try {
+      setAssetError(null);
+      setAssetStatus("Removing coach plate background...");
+      await ensurePrintSettingsRow({ coach_plate_bg_url: null });
+      setAssetStatus("Coach plate background removed.");
+    } catch (err: any) {
+      console.error(err);
+      setAssetError(err?.message || "Could not remove coach plate background.");
+      setAssetStatus("");
     }
   }
 
@@ -446,6 +623,7 @@ export default function AdminAttendeeImportsPage() {
           raw_import: row.raw_import,
         };
       });
+
       const importRowPayload = validRows.map((row) => ({
         event_id: selectedImportEventId,
         import_type: "attendee_roster",
@@ -517,6 +695,7 @@ export default function AdminAttendeeImportsPage() {
       );
 
       const importedEntryIds = validRows.map((row) => row.entry_id);
+
       if (importedEntryIds.length) {
         const { error: deleteImportRowsError } = await supabase
           .from("event_import_rows")
@@ -571,7 +750,7 @@ export default function AdminAttendeeImportsPage() {
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Attendee Imports</h1>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Imports</h1>
 
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
           <div style={{ fontWeight: 600 }}>Target Event</div>
@@ -657,7 +836,7 @@ export default function AdminAttendeeImportsPage() {
             <label
               style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
             >
-              CSV or XLSX file
+              Attendee CSV or XLSX file
             </label>
             <input
               type="file"
@@ -706,6 +885,183 @@ export default function AdminAttendeeImportsPage() {
             >
               {importing ? "Importing..." : "Import Attendees"}
             </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 18 }}>
+        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Print Assets</h2>
+        <p style={{ marginTop: 0, opacity: 0.8 }}>
+          Optional PNG or image uploads for event-specific name tag and coach
+          plate backgrounds.
+        </p>
+
+        {assetError ? (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #e2b4b4",
+              background: "#fff3f3",
+              color: "#8a1f1f",
+            }}
+          >
+            {assetError}
+          </div>
+        ) : null}
+
+        {assetStatus ? (
+          <div style={{ fontSize: 14, marginBottom: 12 }}>{assetStatus}</div>
+        ) : null}
+
+        <div
+          style={{
+            display: "grid",
+            gap: 18,
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          }}
+        >
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              padding: 14,
+              background: "#fafafa",
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 10 }}>
+              Name Tag Background
+            </h3>
+
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setNameTagFile(e.target.files?.[0] || null)}
+            />
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 12,
+              }}
+            >
+              <button
+                onClick={handleUploadNameTagBackground}
+                disabled={
+                  !selectedImportEventId || !nameTagFile || savingNameTagBg
+                }
+              >
+                {savingNameTagBg
+                  ? "Uploading..."
+                  : "Upload Name Tag Background"}
+              </button>
+
+              <button
+                onClick={clearNameTagBackground}
+                disabled={
+                  !selectedImportEventId || !printSettings?.name_tag_bg_url
+                }
+              >
+                Remove Background
+              </button>
+            </div>
+
+            {printSettings?.name_tag_bg_url ? (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 13, marginBottom: 8, opacity: 0.8 }}>
+                  Current background
+                </div>
+                <img
+                  src={printSettings.name_tag_bg_url}
+                  alt="Name tag background preview"
+                  style={{
+                    width: "100%",
+                    maxWidth: 360,
+                    border: "1px solid #ddd",
+                    borderRadius: 12,
+                  }}
+                />
+              </div>
+            ) : (
+              <div style={{ marginTop: 14, opacity: 0.7 }}>
+                No name tag background set.
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              padding: 14,
+              background: "#fafafa",
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 10 }}>
+              Coach Plate Background
+            </h3>
+
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setCoachPlateFile(e.target.files?.[0] || null)}
+            />
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 12,
+              }}
+            >
+              <button
+                onClick={handleUploadCoachPlateBackground}
+                disabled={
+                  !selectedImportEventId ||
+                  !coachPlateFile ||
+                  savingCoachPlateBg
+                }
+              >
+                {savingCoachPlateBg
+                  ? "Uploading..."
+                  : "Upload Coach Plate Background"}
+              </button>
+
+              <button
+                onClick={clearCoachPlateBackground}
+                disabled={
+                  !selectedImportEventId || !printSettings?.coach_plate_bg_url
+                }
+              >
+                Remove Background
+              </button>
+            </div>
+
+            {printSettings?.coach_plate_bg_url ? (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 13, marginBottom: 8, opacity: 0.8 }}>
+                  Current background
+                </div>
+                <img
+                  src={printSettings.coach_plate_bg_url}
+                  alt="Coach plate background preview"
+                  style={{
+                    width: "100%",
+                    maxWidth: 520,
+                    border: "1px solid #ddd",
+                    borderRadius: 12,
+                  }}
+                />
+              </div>
+            ) : (
+              <div style={{ marginTop: 14, opacity: 0.7 }}>
+                No coach plate background set.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -807,6 +1163,9 @@ export default function AdminAttendeeImportsPage() {
                     Volunteer: {row.wants_to_volunteer ? "Yes" : "No"} • First
                     Timer: {row.is_first_timer ? "Yes" : "No"}
                   </div>
+                  {row.additional_attendees ? (
+                    <div>Additional attendees: {row.additional_attendees}</div>
+                  ) : null}
                 </div>
 
                 {row.activities.length ? (

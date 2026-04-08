@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 type PrintTag = {
   displayFirst: string;
@@ -14,17 +15,42 @@ type PrintTag = {
 export default function NameTagsPrintPage() {
   const [tags, setTags] = useState<PrintTag[]>([]);
   const [eventName, setEventName] = useState("");
+  const [bgUrl, setBgUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem("fcoc-name-tags");
-      const rawEvent = sessionStorage.getItem("fcoc-name-tags-event");
+    async function load() {
+      try {
+        const raw = sessionStorage.getItem("fcoc-name-tags");
+        const rawEvent = sessionStorage.getItem("fcoc-name-tags-event");
+        const rawEventContext = localStorage.getItem(
+          "fcoc-admin-event-context",
+        );
 
-      if (raw) setTags(JSON.parse(raw));
-      if (rawEvent) setEventName(rawEvent);
-    } catch (err) {
-      console.error("Failed to load name tags:", err);
+        if (raw) setTags(JSON.parse(raw));
+        if (rawEvent) setEventName(rawEvent);
+
+        if (rawEventContext) {
+          const parsed = JSON.parse(rawEventContext);
+          const eventId = parsed?.id;
+
+          if (eventId) {
+            const { data, error } = await supabase
+              .from("event_print_settings")
+              .select("name_tag_bg_url")
+              .eq("event_id", eventId)
+              .maybeSingle();
+
+            if (!error) {
+              setBgUrl(data?.name_tag_bg_url || null);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load name tags:", err);
+      }
     }
+
+    void load();
   }, []);
 
   return (
@@ -59,13 +85,37 @@ export default function NameTagsPrintPage() {
           height: 3.33in;
           box-sizing: border-box;
           padding: 0.12in 0.18in 0.12in 0.18in;
+          overflow: hidden;
+          page-break-inside: avoid;
+          position: relative;
+          display: flex;
+          align-items: stretch;
+          justify-content: stretch;
+        }
+
+        .label-bg {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          z-index: 0;
+        }
+
+        .label-content {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: flex-start;
           text-align: center;
-          overflow: hidden;
-          page-break-inside: avoid;
+          position: relative;
+          z-index: 1;
+          background: rgba(255, 255, 255, 0.12);
+          border-radius: 0.08in;
+          padding-top: 0.02in;
         }
 
         .event {
@@ -127,6 +177,10 @@ export default function NameTagsPrintPage() {
           .toolbar {
             display: none;
           }
+
+          aside {
+            display: none !important;
+          }
         }
       `}</style>
 
@@ -137,24 +191,28 @@ export default function NameTagsPrintPage() {
       <div className="sheet">
         {tags.map((tag, index) => (
           <div key={index} className="label">
-            <div className="event">{eventName}</div>
+            {bgUrl ? <img src={bgUrl} alt="" className="label-bg" /> : null}
 
-            <img src="/logo.png" className="logo" alt="FCOC logo" />
+            <div className="label-content">
+              <div className="event">{eventName}</div>
 
-            <div className="member">{tag.memberNumber}</div>
+              <img src="/logo.png" className="logo" alt="FCOC logo" />
 
-            <div className="first">{tag.displayFirst}</div>
-            <div className="last">{tag.lastName}</div>
+              <div className="member">{tag.memberNumber}</div>
 
-            <div className="location">
-              {tag.city}
-              {tag.city && tag.state ? ", " : ""}
-              {tag.state}
+              <div className="first">{tag.displayFirst}</div>
+              <div className="last">{tag.lastName}</div>
+
+              <div className="location">
+                {tag.city}
+                {tag.city && tag.state ? ", " : ""}
+                {tag.state}
+              </div>
+
+              {tag.firstTimer ? (
+                <div className="first-timer">FIRST TIMER</div>
+              ) : null}
             </div>
-
-            {tag.firstTimer ? (
-              <div className="first-timer">FIRST TIMER</div>
-            ) : null}
           </div>
         ))}
       </div>

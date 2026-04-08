@@ -254,6 +254,7 @@ export default function Sidebar() {
     { label: "Master Maps", href: "/admin/master-maps" as Route },
     { label: "Attendees", href: "/admin/attendees" },
     { label: "Reports", href: "/admin/reports" },
+    { label: "Pre-Rally Checklist", href: "/admin/checklist" },
     { label: "Nearby Admin", href: "/admin/nearby" as Route },
     { label: "Agenda Admin", href: "/admin/agenda" as Route },
     { label: "Imports", href: "/admin/imports" },
