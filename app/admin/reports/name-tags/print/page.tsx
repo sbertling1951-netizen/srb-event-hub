@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type PrintTag = {
@@ -11,6 +11,63 @@ type PrintTag = {
   state: string;
   firstTimer?: boolean;
 };
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function useAutoFitText(
+  text: string,
+  maxPx: number,
+  minPx: number,
+  deps: unknown[] = [],
+) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [fontSize, setFontSize] = useState(maxPx);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    let next = maxPx;
+    el.style.fontSize = `${next}px`;
+
+    const availableWidth = el.clientWidth || el.offsetWidth;
+    if (!availableWidth) {
+      setFontSize(maxPx);
+      return;
+    }
+
+    while (next > minPx && el.scrollWidth > availableWidth) {
+      next -= 1;
+      el.style.fontSize = `${next}px`;
+    }
+
+    setFontSize(clamp(next, minPx, maxPx));
+  }, [text, maxPx, minPx, ...deps]);
+
+  return { ref, fontSize };
+}
+
+function AutoFitText({
+  text,
+  className,
+  maxPx,
+  minPx,
+}: {
+  text: string;
+  className: string;
+  maxPx: number;
+  minPx: number;
+}) {
+  const { ref, fontSize } = useAutoFitText(text, maxPx, minPx, [className]);
+
+  return (
+    <div ref={ref} className={className} style={{ fontSize: `${fontSize}px` }}>
+      {text}
+    </div>
+  );
+}
 
 export default function NameTagsPrintPage() {
   const [tags, setTags] = useState<PrintTag[]>([]);
@@ -119,58 +176,70 @@ export default function NameTagsPrintPage() {
         }
 
         .event {
-          font-size: 0.26in;
+          font-size: 19px;
           line-height: 1.05;
           font-weight: 700;
-          margin-bottom: 0.06in;
+          margin-bottom: 4px;
+          max-width: 100%;
+          padding: 0 6px;
+          box-sizing: border-box;
         }
 
         .logo {
           width: 1.45in;
           max-height: 0.9in;
           object-fit: contain;
-          margin-bottom: 0.05in;
+          margin-bottom: 4px;
+          flex-shrink: 0;
         }
 
         .member {
-          font-size: 0.22in;
+          font-size: 16px;
           line-height: 1;
-          margin-bottom: 0.07in;
+          margin-bottom: 5px;
+          max-width: 100%;
+          padding: 0 6px;
+          box-sizing: border-box;
+        }
+
+        .first,
+        .last,
+        .location,
+        .first-timer {
+          width: calc(100% - 12px);
+          box-sizing: border-box;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          text-align: center;
         }
 
         .first {
-          font-size: 0.62in;
-          line-height: 0.95;
           font-weight: 800;
-          margin-bottom: 0.02in;
-          max-width: 100%;
-          word-break: break-word;
+          line-height: 0.95;
+          margin-bottom: 2px;
         }
 
         .last {
-          font-size: 0.34in;
-          line-height: 1;
           font-weight: 700;
-          margin-bottom: 0.05in;
-          max-width: 100%;
-          word-break: break-word;
+          line-height: 1;
+          margin-bottom: 5px;
         }
 
         .location {
-          font-size: 0.23in;
+          font-size: 17px;
           line-height: 1.05;
-          margin-top: 0.01in;
-          max-width: 100%;
-          word-break: break-word;
+          margin-top: 1px;
+          padding: 0 6px;
         }
 
         .first-timer {
-          margin-top: 0.05in;
-          font-size: 0.19in;
+          margin-top: 5px;
+          font-size: 14px;
           line-height: 1;
           font-weight: 800;
           color: #c62828;
           letter-spacing: 0.01in;
+          padding: 0 6px;
         }
 
         @media print {
@@ -200,8 +269,19 @@ export default function NameTagsPrintPage() {
 
               <div className="member">{tag.memberNumber}</div>
 
-              <div className="first">{tag.displayFirst}</div>
-              <div className="last">{tag.lastName}</div>
+              <AutoFitText
+                text={tag.displayFirst}
+                className="first"
+                maxPx={64}
+                minPx={28}
+              />
+
+              <AutoFitText
+                text={tag.lastName}
+                className="last"
+                maxPx={36}
+                minPx={18}
+              />
 
               <div className="location">
                 {tag.city}
