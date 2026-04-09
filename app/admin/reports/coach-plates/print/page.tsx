@@ -153,7 +153,19 @@ export default function CoachPlatesPrintPage() {
       `}</style>
 
       <div className="toolbar">
-        <button onClick={() => window.print()}>Print Coach Plates</button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button onClick={() => window.print()}>Print / Save PDF</button>
+
+          <button
+            onClick={() =>
+              alert(
+                "In the print dialog, choose Destination: Save as PDF to create a PDF backup.",
+              )
+            }
+          >
+            How to Save PDF
+          </button>
+        </div>
       </div>
 
       <div className="pages">

@@ -848,14 +848,14 @@ export default function AdminReportsPage() {
             onClick={generateNameTagsFromEvent}
             disabled={!selectedEventId}
           >
-            Print Name Tags (from Event)
+            Open Name Tags Print / PDF
           </button>
 
           <button
             onClick={generateCoachPlatesFromEvent}
             disabled={!selectedEventId}
           >
-            Print Coach Plates (from Event)
+            Open Coach Plates Print / PDF
           </button>
         </div>
 
