@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import * as XLSX from "xlsx";
 
 type EventItem = {
   id: string;
@@ -99,6 +100,13 @@ function downloadCsv(filename: string, rows: string[][]) {
   document.body.removeChild(link);
 
   URL.revokeObjectURL(url);
+}
+function downloadXlsx(filename: string, sheetName: string, rows: string[][]) {
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  XLSX.writeFile(workbook, filename);
 }
 
 function siteLabel(site: ParkingSite) {
@@ -614,6 +622,35 @@ export default function AdminReportsPage() {
 
     downloadCsv(`${filenameBase}.csv`, rows);
   }
+  function handleExportXlsx() {
+    if (!selectedEvent) return;
+
+    const filenameBase =
+      `${selectedEvent.name || "event"}_${reportType}_${sortType}`
+        .replace(/\s+/g, "_")
+        .replace(/[^\w\-]+/g, "")
+        .toLowerCase();
+
+    const rows: string[][] = [
+      [reportTitle],
+      ["Event", selectedEvent.name || ""],
+      ["Venue", selectedEvent.venue_name || ""],
+      ["Location", selectedEvent.location || ""],
+      ["Sort", sortType],
+      [],
+      ["Site", "Pilot", "Co-Pilot", "Email", "Arrived", "First Timer"],
+      ...reportRows.map((row) => [
+        row.site,
+        row.pilot,
+        row.copilot,
+        row.email,
+        row.arrived,
+        row.firstTimer,
+      ]),
+    ];
+
+    downloadXlsx(`${filenameBase}.xlsx`, reportTitle.slice(0, 31), rows);
+  }
 
   return (
     <div className="card">
@@ -647,6 +684,15 @@ export default function AdminReportsPage() {
             }
           >
             Export CSV
+          </button>
+
+          <button
+            onClick={handleExportXlsx}
+            disabled={
+              !selectedEventId || loadingReport || reportRows.length === 0
+            }
+          >
+            Export XLSX
           </button>
         </div>
       </div>
