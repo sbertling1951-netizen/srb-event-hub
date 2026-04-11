@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type MasterMapRow = {
   id: string;
@@ -47,7 +53,7 @@ function stripDraftSuffix(value: string | null | undefined) {
     .trim();
 }
 
-export default function MasterMapsPage() {
+function MasterMapsPageInner() {
   const [maps, setMaps] = useState<MasterMapRow[]>([]);
   const [status, setStatus] = useState("Loading master maps...");
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -61,6 +67,11 @@ export default function MasterMapsPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [restoringMapId, setRestoringMapId] = useState<string | null>(null);
   const [deletingMapId, setDeletingMapId] = useState<string | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [canManageMaps, setCanManageMaps] = useState(false);
 
   async function loadMasterMaps() {
     const { data, error } = await supabase
@@ -106,6 +117,20 @@ export default function MasterMapsPage() {
       return;
     }
 
+    const admin = await getCurrentAdminAccess();
+    if (
+      !admin ||
+      !currentEvent.id ||
+      !canAccessEvent(admin, String(currentEvent.id))
+    ) {
+      setSelectedEventId("");
+      setSelectedEventName("");
+      setCoachMapOpenScale("0.6");
+      setParkingMapOpenScale("0.6");
+      setLocationsMapOpenScale("0.6");
+      return;
+    }
+
     setSelectedEventId(String(currentEvent.id));
     setSelectedEventName(String(currentEvent.name || ""));
 
@@ -141,6 +166,20 @@ export default function MasterMapsPage() {
       return;
     }
 
+    const admin = await getCurrentAdminAccess();
+
+    if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
+      setError("You do not have permission to manage master maps.");
+      setStatus("Access denied.");
+      return;
+    }
+
+    if (!canAccessEvent(admin, selectedEventId)) {
+      setError("You do not have access to this event.");
+      setStatus("Access denied.");
+      return;
+    }
+
     const coach = Number(coachMapOpenScale || 0.6);
     const parking = Number(parkingMapOpenScale || 0.6);
     const locations = Number(locationsMapOpenScale || 0.6);
@@ -173,6 +212,14 @@ export default function MasterMapsPage() {
 
   async function handleEditMap(map: MasterMapRow) {
     try {
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
+        setError("You do not have permission to manage master maps.");
+        setStatus("Access denied.");
+        return;
+      }
+
       setOpeningMapId(map.id);
       setStatus(`Opening ${map.name}...`);
 
@@ -188,8 +235,7 @@ export default function MasterMapsPage() {
 
       const draftLookup = await supabase
         .from("master_maps")
-        .select("id,name,status")
-        .eq("status", "draft");
+        .select("id,name,status,map_group,park_name");
 
       if (draftLookup.error) {
         setStatus(
@@ -200,6 +246,7 @@ export default function MasterMapsPage() {
 
       const existingDraft = ((draftLookup.data || []) as MasterMapRow[]).find(
         (row) =>
+          row.status === "draft" &&
           (normalizeMapGroup(row.map_group) ||
             normalizeMapGroup(row.park_name) ||
             normalizeMapGroup(stripDraftSuffix(row.name))) === mapGroup,
@@ -283,6 +330,14 @@ export default function MasterMapsPage() {
 
   async function handleRestoreMap(map: MasterMapRow) {
     try {
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
+        setError("You do not have permission to manage master maps.");
+        setStatus("Access denied.");
+        return;
+      }
+
       setRestoringMapId(map.id);
       setStatus(`Restoring ${map.name}...`);
 
@@ -379,6 +434,14 @@ export default function MasterMapsPage() {
     if (!confirmed) return;
 
     try {
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
+        setError("You do not have permission to manage master maps.");
+        setStatus("Access denied.");
+        return;
+      }
+
       setDeletingMapId(map.id);
       setStatus(`Deleting ${map.name}...`);
 
@@ -413,8 +476,44 @@ export default function MasterMapsPage() {
   }
 
   useEffect(() => {
-    void loadMasterMaps();
-    void loadSelectedEventSettings();
+    async function init() {
+      setLoading(true);
+      setError(null);
+      setAccessDenied(false);
+      setStatus("Checking admin access...");
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setMaps([]);
+        setSelectedEventId("");
+        setSelectedEventName("");
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_manage_master_maps")) {
+        setMaps([]);
+        setSelectedEventId("");
+        setSelectedEventName("");
+        setError("You do not have permission to manage master maps.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
+      setCanManageMaps(true);
+
+      await loadMasterMaps();
+      await loadSelectedEventSettings();
+      setLoading(false);
+    }
+
+    void init();
 
     function handleStorage(e: StorageEvent) {
       if (e.key === "fcoc-admin-event-changed") {
@@ -427,6 +526,8 @@ export default function MasterMapsPage() {
   }, []);
 
   useEffect(() => {
+    if (loading) return;
+
     const activeCount = maps.filter((map) => map.status !== "archived").length;
     const archivedCount = maps.filter(
       (map) => map.status === "archived",
@@ -437,7 +538,7 @@ export default function MasterMapsPage() {
         ? `Viewing ${archivedCount} archived map(s).`
         : `Viewing ${activeCount} active map(s).`,
     );
-  }, [showArchived, maps]);
+  }, [showArchived, maps, loading]);
 
   const currentMaps = useMemo(() => {
     return maps.filter((map) => map.status !== "archived");
@@ -449,10 +550,45 @@ export default function MasterMapsPage() {
 
   const visibleMaps = showArchived ? archivedMaps : currentMaps;
 
+  if (!loading && accessDenied) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 18,
+          }}
+        >
+          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Master Maps</h1>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            You do not have access to this page.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <h1>Master Maps</h1>
       <p>Create and maintain protected campground map templates.</p>
+
+      {error ? (
+        <div
+          style={{
+            border: "1px solid #e2b4b4",
+            borderRadius: 10,
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            padding: 12,
+            marginBottom: 16,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -490,6 +626,7 @@ export default function MasterMapsPage() {
               value={coachMapOpenScale}
               onChange={(e) => setCoachMapOpenScale(e.target.value)}
               style={{ padding: 8 }}
+              disabled={!canManageMaps}
             />
           </label>
 
@@ -503,6 +640,7 @@ export default function MasterMapsPage() {
               value={parkingMapOpenScale}
               onChange={(e) => setParkingMapOpenScale(e.target.value)}
               style={{ padding: 8 }}
+              disabled={!canManageMaps}
             />
           </label>
 
@@ -516,12 +654,17 @@ export default function MasterMapsPage() {
               value={locationsMapOpenScale}
               onChange={(e) => setLocationsMapOpenScale(e.target.value)}
               style={{ padding: 8 }}
+              disabled={!canManageMaps}
             />
           </label>
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" onClick={() => void saveMapScales()}>
+          <button
+            type="button"
+            onClick={() => void saveMapScales()}
+            disabled={!canManageMaps || loading}
+          >
             Save Map Scale Settings
           </button>
         </div>
@@ -538,7 +681,7 @@ export default function MasterMapsPage() {
       >
         {!showArchived && (
           <Link href="/admin/master-maps/new">
-            <button>Create New Master Map</button>
+            <button disabled={!canManageMaps}>Create New Master Map</button>
           </Link>
         )}
 
@@ -613,7 +756,7 @@ export default function MasterMapsPage() {
                 <button
                   type="button"
                   onClick={() => void handleRestoreMap(map)}
-                  disabled={restoringMapId === map.id}
+                  disabled={restoringMapId === map.id || !canManageMaps}
                 >
                   {restoringMapId === map.id ? "Restoring..." : "Restore"}
                 </button>
@@ -621,7 +764,7 @@ export default function MasterMapsPage() {
                 <button
                   type="button"
                   onClick={() => void handleDeleteArchivedMap(map)}
-                  disabled={deletingMapId === map.id}
+                  disabled={deletingMapId === map.id || !canManageMaps}
                   style={{
                     background: "#fff1f2",
                     color: "#991b1b",
@@ -640,7 +783,7 @@ export default function MasterMapsPage() {
                 <button
                   type="button"
                   onClick={() => void handleEditMap(map)}
-                  disabled={openingMapId === map.id}
+                  disabled={openingMapId === map.id || !canManageMaps}
                 >
                   {openingMapId === map.id ? "Opening..." : "Edit Map"}
                 </button>
@@ -657,8 +800,16 @@ export default function MasterMapsPage() {
       </div>
 
       <p style={{ marginTop: 20 }}>
-        <strong>Status:</strong> {status}
+        <strong>Status:</strong> {loading ? "Loading..." : status}
       </p>
     </div>
+  );
+}
+
+export default function MasterMapsPage() {
+  return (
+    <AdminRouteGuard>
+      <MasterMapsPageInner />
+    </AdminRouteGuard>
   );
 }

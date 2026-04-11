@@ -4,6 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type MasterMapRow = {
   id: string;
@@ -31,6 +37,11 @@ type Point = {
   y: number;
 };
 
+type AdminEventContext = {
+  id?: string | null;
+  name?: string | null;
+};
+
 function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value));
 }
@@ -50,7 +61,7 @@ function normalizeMapGroup(value: string | null | undefined) {
     .replace(/^-+|-+$/g, "");
 }
 
-export default function MasterMapEditorPage() {
+function MasterMapEditorPageInner() {
   const params = useParams();
   const router = useRouter();
   const masterMapId = params?.id as string;
@@ -83,6 +94,10 @@ export default function MasterMapEditorPage() {
   const [parkName, setParkName] = useState("");
   const [mapLocation, setMapLocation] = useState("");
 
+  const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const readOnlyMarkers =
     masterMap?.status === "published" || masterMap?.is_read_only === true;
 
@@ -96,8 +111,7 @@ export default function MasterMapEditorPage() {
       .single();
 
     if (error) {
-      setStatus(`Could not load master map: ${error.message}`);
-      return;
+      throw new Error(`Could not load master map: ${error.message}`);
     }
 
     const row = data as MasterMapRow;
@@ -115,12 +129,63 @@ export default function MasterMapEditorPage() {
       .order("site_number");
 
     if (error) {
-      setStatus(`Could not load master map sites: ${error.message}`);
-      return;
+      throw new Error(`Could not load master map sites: ${error.message}`);
     }
 
     setSites((data || []) as MasterMapSiteRow[]);
-    setStatus("Ready");
+  }
+
+  async function loadPage() {
+    try {
+      setLoading(true);
+      setError(null);
+      setStatus("Checking admin access...");
+      setAccessDenied(false);
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setMasterMap(null);
+        setSites([]);
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_manage_master_maps")) {
+        setMasterMap(null);
+        setSites([]);
+        setError("You do not have permission to manage master maps.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        return;
+      }
+
+      const adminEvent = getAdminEvent() as AdminEventContext | null;
+
+      if (adminEvent?.id && !canAccessEvent(admin, adminEvent.id)) {
+        setMasterMap(null);
+        setSites([]);
+        setError("You do not have access to the current admin event.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        return;
+      }
+
+      setStatus("Loading master map...");
+      await loadMasterMap();
+      await loadSites();
+      setStatus("Ready");
+    } catch (err: any) {
+      console.error("loadPage error:", err);
+      setMasterMap(null);
+      setSites([]);
+      setError(err?.message || "Failed to load master map.");
+      setStatus("Load failed.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function saveMapDetails() {
@@ -277,8 +342,7 @@ export default function MasterMapEditorPage() {
 
   useEffect(() => {
     if (!masterMapId) return;
-    void loadMasterMap();
-    void loadSites();
+    void loadPage();
   }, [masterMapId]);
 
   const primarySelectedSite = useMemo(() => {
@@ -965,9 +1029,9 @@ export default function MasterMapEditorPage() {
       return;
     }
 
-    const currentEvent = getAdminEvent();
+    const currentEvent = getAdminEvent() as AdminEventContext | null;
 
-    if (!currentEvent) {
+    if (!currentEvent?.id) {
       setStatus("No admin working event selected.");
       return;
     }
@@ -1026,9 +1090,9 @@ export default function MasterMapEditorPage() {
       return;
     }
 
-    const currentEvent = getAdminEvent();
+    const currentEvent = getAdminEvent() as AdminEventContext | null;
 
-    if (!currentEvent) {
+    if (!currentEvent?.id) {
       setStatus("No admin working event selected.");
       return;
     }
@@ -1179,9 +1243,45 @@ export default function MasterMapEditorPage() {
     router.push(`/admin/master-maps/${newMap.id}`);
   }
 
+  if (!loading && accessDenied) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 18,
+          }}
+        >
+          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Master Map Editor</h1>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            You do not have access to this page.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <h1>Master Map Editor</h1>
+
+      {error ? (
+        <div
+          style={{
+            border: "1px solid #e2b4b4",
+            borderRadius: 10,
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
+
       <div style={{ fontSize: 14, color: "#555", marginBottom: 12 }}>
         Editing: <strong>{masterMap?.name || "Loading..."}</strong>
       </div>
@@ -1207,7 +1307,7 @@ export default function MasterMapEditorPage() {
         <div style={{ fontSize: 13 }}>Site count: {sites.length}</div>
         <div style={{ fontSize: 13 }}>Selected: {selectedSiteIds.length}</div>
         <div style={{ fontSize: 13, marginTop: 4 }}>
-          Editor status: {status}
+          Editor status: {loading ? "Loading..." : status}
         </div>
       </div>
 
@@ -1245,6 +1345,7 @@ export default function MasterMapEditorPage() {
                 value={mapName}
                 onChange={(e) => setMapName(e.target.value)}
                 style={{ padding: 8 }}
+                disabled={loading}
               />
             </label>
 
@@ -1254,6 +1355,7 @@ export default function MasterMapEditorPage() {
                 value={parkName}
                 onChange={(e) => setParkName(e.target.value)}
                 style={{ padding: 8 }}
+                disabled={loading}
               />
             </label>
 
@@ -1263,10 +1365,15 @@ export default function MasterMapEditorPage() {
                 value={mapLocation}
                 onChange={(e) => setMapLocation(e.target.value)}
                 style={{ padding: 8 }}
+                disabled={loading}
               />
             </label>
 
-            <button type="button" onClick={() => void saveMapDetails()}>
+            <button
+              type="button"
+              onClick={() => void saveMapDetails()}
+              disabled={loading}
+            >
               Save Map Details
             </button>
           </div>
@@ -1295,7 +1402,7 @@ export default function MasterMapEditorPage() {
                 type="checkbox"
                 checked={saveAndNextMode}
                 onChange={(e) => setSaveAndNextMode(e.target.checked)}
-                disabled={readOnlyMarkers}
+                disabled={readOnlyMarkers || loading}
                 style={{ width: 16, height: 16, flex: "0 0 auto" }}
               />
               <span>Save + Next Marker mode</span>
@@ -1313,6 +1420,7 @@ export default function MasterMapEditorPage() {
                 type="checkbox"
                 checked={showLabels}
                 onChange={(e) => setShowLabels(e.target.checked)}
+                disabled={loading}
                 style={{ width: 16, height: 16, flex: "0 0 auto" }}
               />
               <span>Show labels on map</span>
@@ -1329,7 +1437,7 @@ export default function MasterMapEditorPage() {
                 }
               }}
               placeholder="Site number"
-              disabled={readOnlyMarkers}
+              disabled={readOnlyMarkers || loading}
               style={{ padding: 8 }}
             />
 
@@ -1340,21 +1448,21 @@ export default function MasterMapEditorPage() {
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
-                disabled={readOnlyMarkers}
+                disabled={readOnlyMarkers || loading}
                 onClick={() => void saveNewMarker()}
                 style={{ flex: 1 }}
               >
                 Save New
               </button>
               <button
-                disabled={readOnlyMarkers}
+                disabled={readOnlyMarkers || loading}
                 onClick={() => void saveAndNextMarker()}
                 style={{ flex: 1 }}
               >
                 Save + Next
               </button>
               <button
-                disabled={readOnlyMarkers}
+                disabled={readOnlyMarkers || loading}
                 onClick={() => void updateSelectedMarker()}
                 style={{ flex: 1 }}
               >
@@ -1374,7 +1482,9 @@ export default function MasterMapEditorPage() {
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
-                  disabled={readOnlyMarkers || selectedSiteIds.length < 2}
+                  disabled={
+                    readOnlyMarkers || loading || selectedSiteIds.length < 2
+                  }
                   onClick={() => void alignHorizontalSelected()}
                   style={{ flex: 1 }}
                 >
@@ -1382,7 +1492,9 @@ export default function MasterMapEditorPage() {
                 </button>
 
                 <button
-                  disabled={readOnlyMarkers || selectedSiteIds.length < 3}
+                  disabled={
+                    readOnlyMarkers || loading || selectedSiteIds.length < 3
+                  }
                   onClick={() => void distributeHorizontallySelected()}
                   style={{ flex: 1 }}
                 >
@@ -1392,7 +1504,7 @@ export default function MasterMapEditorPage() {
 
               <div style={{ marginTop: 8 }}>
                 <button
-                  disabled={selectedSiteIds.length === 0}
+                  disabled={loading || selectedSiteIds.length === 0}
                   onClick={() => {
                     setSelectedSiteIds([]);
                     setPrimarySelectedSiteId(null);
@@ -1424,14 +1536,18 @@ export default function MasterMapEditorPage() {
                   onClick={() =>
                     setZoom((z) => Math.max(0.5, Number((z - 0.1).toFixed(2))))
                   }
+                  disabled={loading}
                 >
                   -
                 </button>
-                <button onClick={() => setZoom(1)}>Reset</button>
+                <button onClick={() => setZoom(1)} disabled={loading}>
+                  Reset
+                </button>
                 <button
                   onClick={() =>
                     setZoom((z) => Math.min(3, Number((z + 0.1).toFixed(2))))
                   }
+                  disabled={loading}
                 >
                   +
                 </button>
@@ -1454,7 +1570,7 @@ export default function MasterMapEditorPage() {
               >
                 <div />
                 <button
-                  disabled={readOnlyMarkers}
+                  disabled={readOnlyMarkers || loading}
                   onClick={() =>
                     primarySelectedSiteId
                       ? void nudgeSelected(0, -0.05)
@@ -1465,7 +1581,7 @@ export default function MasterMapEditorPage() {
                 </button>
                 <div />
                 <button
-                  disabled={readOnlyMarkers}
+                  disabled={readOnlyMarkers || loading}
                   onClick={() =>
                     primarySelectedSiteId
                       ? void nudgeSelected(-0.05, 0)
@@ -1475,13 +1591,13 @@ export default function MasterMapEditorPage() {
                   ←
                 </button>
                 <button
-                  disabled={readOnlyMarkers}
+                  disabled={readOnlyMarkers || loading}
                   onClick={() => void saveSelectedPosition()}
                 >
                   Save Pos
                 </button>
                 <button
-                  disabled={readOnlyMarkers}
+                  disabled={readOnlyMarkers || loading}
                   onClick={() =>
                     primarySelectedSiteId
                       ? void nudgeSelected(0.05, 0)
@@ -1492,7 +1608,7 @@ export default function MasterMapEditorPage() {
                 </button>
                 <div />
                 <button
-                  disabled={readOnlyMarkers}
+                  disabled={readOnlyMarkers || loading}
                   onClick={() =>
                     primarySelectedSiteId
                       ? void nudgeSelected(0, 0.05)
@@ -1507,7 +1623,7 @@ export default function MasterMapEditorPage() {
 
             <div style={{ display: "flex", gap: 8 }}>
               <button
-                disabled={readOnlyMarkers || !primarySelectedSiteId}
+                disabled={readOnlyMarkers || loading || !primarySelectedSiteId}
                 onClick={() => void deleteSelectedMarker()}
                 style={{ flex: 1 }}
               >
@@ -1521,6 +1637,7 @@ export default function MasterMapEditorPage() {
                   <button
                     onClick={() => void saveUpdatedMap()}
                     style={{ flex: 1 }}
+                    disabled={loading}
                   >
                     Save Updated Map
                   </button>
@@ -1528,6 +1645,7 @@ export default function MasterMapEditorPage() {
                   <button
                     onClick={() => void publishToSelectedEvent()}
                     style={{ flex: 1 }}
+                    disabled={loading}
                   >
                     Replace Selected Event Sites From Map
                   </button>
@@ -1537,6 +1655,7 @@ export default function MasterMapEditorPage() {
               <button
                 onClick={() => void safeSyncToSelectedEvent()}
                 style={{ flex: 1 }}
+                disabled={loading}
               >
                 {readOnlyMarkers
                   ? "Sync Published Map to Selected Event"
@@ -1547,6 +1666,7 @@ export default function MasterMapEditorPage() {
                 <button
                   onClick={() => void createDraftCopy()}
                   style={{ flex: 1 }}
+                  disabled={loading}
                 >
                   Create Editable Draft
                 </button>
@@ -1751,5 +1871,13 @@ export default function MasterMapEditorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function MasterMapEditorPage() {
+  return (
+    <AdminRouteGuard>
+      <MasterMapEditorPageInner />
+    </AdminRouteGuard>
   );
 }

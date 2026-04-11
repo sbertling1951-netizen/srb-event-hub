@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type EventRow = {
   id: string;
@@ -76,19 +81,59 @@ function EventAdminPageInner() {
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingAssignments, setSavingAssignments] = useState(false);
   const [status, setStatus] = useState("Loading event admin...");
+  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
 
   useEffect(() => {
-    void loadPage();
+    async function init() {
+      setLoading(true);
+      setError(null);
+      setAccessDenied(false);
+      setStatus("Checking admin access...");
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setEvents([]);
+        setMasterMaps([]);
+        setNearbyLists([]);
+        setSelectedEventId("");
+        setForm(emptyForm);
+        setSelectedMasterMapId("");
+        setSelectedNearbyListId("");
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_manage_events")) {
+        setEvents([]);
+        setMasterMaps([]);
+        setNearbyLists([]);
+        setSelectedEventId("");
+        setForm(emptyForm);
+        setSelectedMasterMapId("");
+        setSelectedNearbyListId("");
+        setError("You do not have permission to manage events.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
+      await loadPage();
+    }
+
+    void init();
 
     function handleStorage(e: StorageEvent) {
       if (e.key === "fcoc-admin-event-changed") {
-        const evt = getAdminEvent();
-        if (evt?.id) {
-          setSelectedEventId(evt.id);
-        }
+        void init();
       }
     }
 
@@ -114,7 +159,7 @@ function EventAdminPageInner() {
     });
 
     void loadAssignmentsForEvent(selectedEvent.id);
-  }, [selectedEventId, events]);
+  }, [selectedEvent]);
 
   function setWorkingAdminEvent(event: EventRow | null) {
     if (!event) {
@@ -142,7 +187,24 @@ function EventAdminPageInner() {
   async function loadPage() {
     try {
       setLoading(true);
+      setError(null);
       setStatus("Loading events, maps, and nearby lists...");
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setEvents([]);
+        setMasterMaps([]);
+        setNearbyLists([]);
+        setSelectedEventId("");
+        setForm(emptyForm);
+        setSelectedMasterMapId("");
+        setSelectedNearbyListId("");
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        return;
+      }
 
       const [eventsResult, mapsResult, nearbyResult] = await Promise.all([
         supabase
@@ -166,7 +228,9 @@ function EventAdminPageInner() {
       if (mapsResult.error) throw mapsResult.error;
       if (nearbyResult.error) throw nearbyResult.error;
 
-      const loadedEvents = (eventsResult.data || []) as EventRow[];
+      const loadedEvents = ((eventsResult.data || []) as EventRow[]).filter(
+        (event) => !!event.id && canAccessEvent(admin, event.id),
+      );
       const loadedMaps = (mapsResult.data || []) as MasterMapRow[];
       const loadedNearby = (nearbyResult.data || []) as NearbyAreaRow[];
 
@@ -187,9 +251,11 @@ function EventAdminPageInner() {
 
       if (preferredEvent) {
         setWorkingAdminEvent(preferredEvent);
+        setStatus("Event admin ready.");
+      } else {
+        setWorkingAdminEvent(null);
+        setStatus("No accessible events available.");
       }
-
-      setStatus("Event admin ready.");
     } catch (err: any) {
       console.error("loadPage error:", err);
       setStatus(err?.message || "Failed to load event admin.");
@@ -200,6 +266,13 @@ function EventAdminPageInner() {
 
   async function loadAssignmentsForEvent(eventId: string) {
     try {
+      const admin = await getCurrentAdminAccess();
+      if (!admin || !canAccessEvent(admin, eventId)) {
+        setSelectedMasterMapId("");
+        setSelectedNearbyListId("");
+        return;
+      }
+
       const [mapSettingsResult, nearbyAssignmentResult] = await Promise.all([
         supabase
           .from("event_map_settings")
@@ -244,6 +317,21 @@ function EventAdminPageInner() {
 
     try {
       setSavingEvent(true);
+      setError(null);
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin || !hasPermission(admin, "can_manage_events")) {
+        setError("You do not have permission to manage events.");
+        setStatus("Access denied.");
+        return;
+      }
+
+      if (form.id && !canAccessEvent(admin, form.id)) {
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        return;
+      }
 
       const payload = {
         name: form.name.trim(),
@@ -293,6 +381,21 @@ function EventAdminPageInner() {
 
     try {
       setSavingAssignments(true);
+      setError(null);
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin || !hasPermission(admin, "can_manage_events")) {
+        setError("You do not have permission to manage event assignments.");
+        setStatus("Access denied.");
+        return;
+      }
+
+      if (!canAccessEvent(admin, selectedEventId)) {
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        return;
+      }
 
       const mapUpsert = supabase.from("event_map_settings").upsert(
         {
@@ -338,6 +441,26 @@ function EventAdminPageInner() {
     window.location.href = "/admin/nearby";
   }
 
+  if (!loading && accessDenied) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 18,
+          }}
+        >
+          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Event Admin</h1>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            You do not have access to this page.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: 24, display: "grid", gap: 18 }}>
       <div style={{ marginBottom: -6 }}>
@@ -356,6 +479,20 @@ function EventAdminPageInner() {
         </button>
       </div>
 
+      {error ? (
+        <div
+          style={{
+            border: "1px solid #e2b4b4",
+            borderRadius: 10,
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            padding: 12,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
+
       <div
         style={{
           border: "1px solid #ddd",
@@ -367,7 +504,7 @@ function EventAdminPageInner() {
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Event Admin</h1>
         <div style={{ fontWeight: 700 }}>Status</div>
         <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
-          {status}
+          {loading ? "Loading..." : status}
         </div>
       </div>
 

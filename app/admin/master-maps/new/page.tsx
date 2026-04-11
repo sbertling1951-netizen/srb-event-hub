@@ -1,102 +1,215 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import {
+  getCurrentAdminAccess,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
-export default function NewMasterMapPage() {
-  const router = useRouter()
+function NewMasterMapPageInner() {
+  const router = useRouter();
 
-  const [name, setName] = useState('')
-  const [parkName, setParkName] = useState('')
-  const [location, setLocation] = useState('')
-  const [file, setFile] = useState<File | null>(null)
-  const [status, setStatus] = useState('Fill in the form to create a new master map.')
-  const [busy, setBusy] = useState(false)
+  const [name, setName] = useState("");
+  const [parkName, setParkName] = useState("");
+  const [location, setLocation] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState(
+    "Fill in the form to create a new master map.",
+  );
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      setError(null);
+      setAccessDenied(false);
+      setStatus("Checking admin access...");
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_manage_master_maps")) {
+        setError("You do not have permission to create master maps.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
+      setStatus("Fill in the form to create a new master map.");
+      setLoading(false);
+    }
+
+    void init();
+  }, []);
 
   async function createMasterMap() {
+    if (loading || accessDenied) return;
+
     if (!name.trim()) {
-      setStatus('Enter a master map name.')
-      return
+      setStatus("Enter a master map name.");
+      return;
     }
 
     if (!file) {
-      setStatus('Choose a PNG map image.')
-      return
+      setStatus("Choose a PNG map image.");
+      return;
     }
 
-    setBusy(true)
-    setStatus('Creating master map...')
+    const isPng =
+      file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
 
-    const { data: created, error: createError } = await supabase
-      .from('master_maps')
-      .insert({
-        name: name.trim(),
-        park_name: parkName.trim() || null,
-        location: location.trim() || null,
-        status: 'draft',
-        is_read_only: false,
-      })
-      .select('id')
-      .single()
-
-    if (createError || !created) {
-      setBusy(false)
-      setStatus(`Could not create master map: ${createError?.message || 'Unknown error'}`)
-      return
+    if (!isPng) {
+      setStatus("Please choose a PNG file.");
+      return;
     }
 
-    const path = `${created.id}/base-map.png`
+    try {
+      setBusy(true);
+      setError(null);
+      setStatus("Creating master map...");
 
-    const { error: uploadError } = await supabase.storage
-      .from('master-map-images')
-      .upload(path, file, {
-        upsert: true,
-        contentType: file.type || 'image/png',
-      })
+      const admin = await getCurrentAdminAccess();
 
-    if (uploadError) {
-      setBusy(false)
-      setStatus(`Master map created, but image upload failed: ${uploadError.message}`)
-      return
+      if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
+        setError("You do not have permission to create master maps.");
+        setStatus("Access denied.");
+        setAccessDenied(true);
+        return;
+      }
+
+      const { data: created, error: createError } = await supabase
+        .from("master_maps")
+        .insert({
+          name: name.trim(),
+          park_name: parkName.trim() || null,
+          location: location.trim() || null,
+          status: "draft",
+          is_read_only: false,
+        })
+        .select("id")
+        .single();
+
+      if (createError || !created) {
+        setStatus(
+          `Could not create master map: ${createError?.message || "Unknown error"}`,
+        );
+        return;
+      }
+
+      const path = `${created.id}/base-map.png`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("master-map-images")
+        .upload(path, file, {
+          upsert: true,
+          contentType: file.type || "image/png",
+        });
+
+      if (uploadError) {
+        setStatus(
+          `Master map created, but image upload failed: ${uploadError.message}`,
+        );
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("master-map-images")
+        .getPublicUrl(path);
+
+      const mapImageUrl = publicUrlData.publicUrl;
+
+      const { error: updateError } = await supabase
+        .from("master_maps")
+        .update({
+          map_image_path: path,
+          map_image_url: mapImageUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", created.id);
+
+      if (updateError) {
+        setStatus(
+          `Master map created, but metadata update failed: ${updateError.message}`,
+        );
+        return;
+      }
+
+      router.push(`/admin/master-maps/${created.id}`);
+    } catch (err: any) {
+      console.error("createMasterMap error:", err);
+      setError(err?.message || "Failed to create master map.");
+      setStatus("Create failed.");
+    } finally {
+      setBusy(false);
     }
+  }
 
-    const { data: publicUrlData } = supabase.storage
-      .from('master-map-images')
-      .getPublicUrl(path)
-
-    const mapImageUrl = publicUrlData.publicUrl
-
-    const { error: updateError } = await supabase
-      .from('master_maps')
-      .update({
-        map_image_path: path,
-        map_image_url: mapImageUrl,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', created.id)
-
-    if (updateError) {
-      setBusy(false)
-      setStatus(`Master map created, but metadata update failed: ${updateError.message}`)
-      return
-    }
-
-    router.push(`/admin/master-maps/${created.id}`)
+  if (!loading && accessDenied) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 18,
+            maxWidth: 700,
+          }}
+        >
+          <h1 style={{ marginTop: 0, marginBottom: 8 }}>
+            Create New Master Map
+          </h1>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            You do not have access to this page.
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div style={{ padding: 24, maxWidth: 700 }}>
       <h1>Create New Master Map</h1>
-      <p>Upload the base PNG map first, then place site markers in the editor.</p>
+      <p>
+        Upload the base PNG map first, then place site markers in the editor.
+      </p>
+
+      {error ? (
+        <div
+          style={{
+            border: "1px solid #e2b4b4",
+            borderRadius: 10,
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            padding: 12,
+            marginBottom: 16,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
 
       <div
         style={{
-          border: '1px solid #ddd',
+          border: "1px solid #ddd",
           borderRadius: 10,
-          background: 'white',
+          background: "white",
           padding: 16,
-          display: 'grid',
+          display: "grid",
           gap: 12,
         }}
       >
@@ -105,6 +218,7 @@ export default function NewMasterMapPage() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           style={{ padding: 8 }}
+          disabled={busy || loading}
         />
 
         <input
@@ -112,6 +226,7 @@ export default function NewMasterMapPage() {
           value={parkName}
           onChange={(e) => setParkName(e.target.value)}
           style={{ padding: 8 }}
+          disabled={busy || loading}
         />
 
         <input
@@ -119,6 +234,7 @@ export default function NewMasterMapPage() {
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           style={{ padding: 8 }}
+          disabled={busy || loading}
         />
 
         <div>
@@ -126,22 +242,33 @@ export default function NewMasterMapPage() {
           <input
             type="file"
             accept=".png,image/png"
-            disabled={busy}
+            disabled={busy || loading}
             onChange={(e) => {
-              const selected = e.target.files?.[0] || null
-              setFile(selected)
+              const selected = e.target.files?.[0] || null;
+              setFile(selected);
             }}
           />
         </div>
 
-        <button disabled={busy} onClick={() => void createMasterMap()}>
-          Create Master Map and Open Editor
+        <button
+          disabled={busy || loading || accessDenied}
+          onClick={() => void createMasterMap()}
+        >
+          {busy ? "Creating..." : "Create Master Map and Open Editor"}
         </button>
       </div>
 
       <p style={{ marginTop: 20 }}>
-        <strong>Status:</strong> {status}
+        <strong>Status:</strong> {loading ? "Loading..." : status}
       </p>
     </div>
-  )
+  );
+}
+
+export default function NewMasterMapPage() {
+  return (
+    <AdminRouteGuard>
+      <NewMasterMapPageInner />
+    </AdminRouteGuard>
+  );
 }
