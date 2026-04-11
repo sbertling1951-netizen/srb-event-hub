@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "@/lib/supabase";
+import * as XLSX from "xlsx";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type EventContext = {
   id?: string | null;
@@ -39,54 +45,59 @@ type AttendeeRow = {
   share_with_attendees: boolean | null;
   is_active: boolean;
   inactive_reason: string | null;
+  participant_type?: string | null;
+  source_type?: string | null;
+  include_in_headcount?: boolean | null;
+  needs_name_tag?: boolean | null;
+  needs_coach_plate?: boolean | null;
+  needs_parking?: boolean | null;
+  notes?: string | null;
   created_at?: string | null;
 };
 
-type ActivityRow = {
+type ParkingSiteRow = {
   id: string;
   event_id: string;
-  entry_id: string;
-  attendee_email: string | null;
-  activity_name: string;
-  quantity: number;
-  price: number | null;
-  raw_name: string | null;
-  source_column_prefix: string;
-  created_at?: string | null;
+  site_number: string | null;
+  display_label: string | null;
+  assigned_attendee_id: string | null;
 };
 
-type EditForm = {
+type ViewFilter =
+  | "all"
+  | "active"
+  | "inactive"
+  | "arrived"
+  | "not_arrived"
+  | "first_timers"
+  | "volunteers"
+  | "vendors"
+  | "staff_hosts_helpers"
+  | "needs_parking"
+  | "assigned_site"
+  | "unassigned_site";
+
+type SortType = "name_asc" | "name_desc" | "site_asc" | "site_desc";
+
+type DisplayRow = {
   id: string;
-  event_id: string;
-  entry_id: string;
+  site: string;
+  participantType: string;
+  pilot: string;
+  copilot: string;
   email: string;
-  pilot_first: string;
-  pilot_last: string;
-  copilot_first: string;
-  copilot_last: string;
-  nickname: string;
-  copilot_nickname: string;
-  membership_number: string;
-  primary_phone: string;
-  cell_phone: string;
-  city: string;
-  state: string;
-  wants_to_volunteer: boolean;
-  is_first_timer: boolean;
-  coach_manufacturer: string;
-  coach_model: string;
-  special_events_raw: string;
-  assigned_site: string;
-  share_with_attendees: boolean;
-  has_arrived: boolean;
-  is_active: boolean;
-  inactive_reason: string;
-};
-
-type NewActivityForm = {
-  activity_name: string;
-  quantity: string;
-  price: string;
+  cityState: string;
+  arrived: string;
+  active: string;
+  firstTimer: string;
+  volunteer: string;
+  source: string;
+  pilotFirst: string;
+  pilotLast: string;
+  copilotFirst: string;
+  copilotLast: string;
+  membershipNumber: string;
+  needsParking: string;
 };
 
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
@@ -103,408 +114,462 @@ function getStoredAdminEvent(): EventContext | null {
   }
 }
 
-function fullName(row: AttendeeRow) {
-  const pilot = [row.pilot_first, row.pilot_last]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  const copilot = [row.copilot_first, row.copilot_last]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  if (pilot && copilot) return `${pilot} / ${copilot}`;
-  return pilot || copilot || "(Unnamed attendee)";
+function fullName(first?: string | null, last?: string | null) {
+  return [first, last].filter(Boolean).join(" ").trim();
 }
 
-function makeEditForm(row: AttendeeRow): EditForm {
+function pilotName(row: AttendeeRow) {
+  return fullName(row.pilot_first, row.pilot_last);
+}
+
+function coPilotName(row: AttendeeRow) {
+  return fullName(row.copilot_first, row.copilot_last);
+}
+
+function cityState(row: AttendeeRow) {
+  return [row.city, row.state].filter(Boolean).join(", ");
+}
+
+function participantTypeLabel(value?: string | null) {
+  if (!value) return "attendee";
+  return value.replace(/_/g, " ");
+}
+
+function normalize(value?: string | null) {
+  return (value || "").trim().toLowerCase();
+}
+
+function csvEscape(value: unknown) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+}
+
+function downloadXlsx(filename: string, sheetName: string, rows: string[][]) {
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  XLSX.writeFile(workbook, filename);
+}
+
+function attendeeToDisplayRow(row: AttendeeRow): DisplayRow {
   return {
     id: row.id,
-    event_id: row.event_id,
-    entry_id: row.entry_id || "",
+    site: row.assigned_site || "",
+    participantType: participantTypeLabel(row.participant_type),
+    pilot: pilotName(row),
+    copilot: coPilotName(row),
     email: row.email || "",
-    pilot_first: row.pilot_first || "",
-    pilot_last: row.pilot_last || "",
-    copilot_first: row.copilot_first || "",
-    copilot_last: row.copilot_last || "",
-    nickname: row.nickname || "",
-    copilot_nickname: row.copilot_nickname || "",
-    membership_number: row.membership_number || "",
-    primary_phone: row.primary_phone || "",
-    cell_phone: row.cell_phone || "",
-    city: row.city || "",
-    state: row.state || "",
-    wants_to_volunteer: !!row.wants_to_volunteer,
-    is_first_timer: !!row.is_first_timer,
-    coach_manufacturer: row.coach_manufacturer || "",
-    coach_model: row.coach_model || "",
-    special_events_raw: row.special_events_raw || "",
-    assigned_site: row.assigned_site || "",
-    share_with_attendees: !!row.share_with_attendees,
-    has_arrived: !!row.has_arrived,
-    is_active: !!row.is_active,
-    inactive_reason: row.inactive_reason || "",
+    cityState: cityState(row),
+    arrived: row.has_arrived ? "YES" : "NO",
+    active: row.is_active ? "YES" : "NO",
+    firstTimer: row.is_first_timer ? "YES" : "NO",
+    volunteer: row.wants_to_volunteer ? "YES" : "NO",
+    source: row.source_type || "imported",
+    pilotFirst: row.pilot_first || "",
+    pilotLast: row.pilot_last || "",
+    copilotFirst: row.copilot_first || "",
+    copilotLast: row.copilot_last || "",
+    membershipNumber: row.membership_number || "",
+    needsParking: row.needs_parking ? "YES" : "NO",
   };
+}
+
+function sortDisplayRows(rows: DisplayRow[], sortType: SortType) {
+  return [...rows].sort((a, b) => {
+    const byName =
+      normalize(a.pilotLast).localeCompare(normalize(b.pilotLast), undefined, {
+        sensitivity: "base",
+      }) ||
+      normalize(a.pilotFirst).localeCompare(
+        normalize(b.pilotFirst),
+        undefined,
+        { sensitivity: "base" },
+      ) ||
+      normalize(a.copilotLast).localeCompare(
+        normalize(b.copilotLast),
+        undefined,
+        { sensitivity: "base" },
+      ) ||
+      normalize(a.copilotFirst).localeCompare(
+        normalize(b.copilotFirst),
+        undefined,
+        { sensitivity: "base" },
+      ) ||
+      normalize(a.site).localeCompare(normalize(b.site), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+
+    const bySite =
+      normalize(a.site).localeCompare(normalize(b.site), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }) || byName;
+
+    switch (sortType) {
+      case "name_asc":
+        return byName;
+      case "name_desc":
+        return -byName;
+      case "site_asc":
+        return bySite;
+      case "site_desc":
+        return -bySite;
+      default:
+        return byName;
+    }
+  });
 }
 
 export default function AdminAttendeesPage() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
-  const [selectedAttendee, setSelectedAttendee] = useState<AttendeeRow | null>(
-    null,
-  );
-  const [editForm, setEditForm] = useState<EditForm | null>(null);
-  const [activities, setActivities] = useState<ActivityRow[]>([]);
-  const [newActivity, setNewActivity] = useState<NewActivityForm>({
-    activity_name: "",
-    quantity: "1",
-    price: "",
-  });
-
+  const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "active" | "inactive"
-  >("active");
+  const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
+  const [sortType, setSortType] = useState<SortType>("name_asc");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [loadingActivities, setLoadingActivities] = useState(false);
   const [status, setStatus] = useState("Loading attendees...");
   const [error, setError] = useState<string | null>(null);
-
-  const eventId = currentEvent?.id || null;
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [canExport, setCanExport] = useState(false);
 
   useEffect(() => {
-    const event = getStoredAdminEvent();
-    setCurrentEvent(event);
-    if (!event?.id) {
-      setStatus("No admin event selected.");
-      setLoading(false);
-      return;
+    async function init() {
+      setCanExport(false);
+      setLoading(true);
+      setError(null);
+      setStatus("Checking admin access...");
+      setAccessDenied(false);
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setCanExport(false);
+        setCurrentEvent(null);
+        setAttendees([]);
+        setParkingSites([]);
+        setSearch("");
+        setViewFilter("all");
+        setSortType("name_asc");
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_edit_attendees")) {
+        setCanExport(false);
+        setCurrentEvent(null);
+        setAttendees([]);
+        setParkingSites([]);
+        setSearch("");
+        setViewFilter("all");
+        setSortType("name_asc");
+        setError("You do not have permission to manage attendees.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      setCanExport(hasPermission(admin, "can_export_reports"));
+
+      const event = getStoredAdminEvent();
+
+      if (!event?.id) {
+        setCanExport(false);
+        setCurrentEvent(null);
+        setAttendees([]);
+        setParkingSites([]);
+        setSearch("");
+        setViewFilter("all");
+        setSortType("name_asc");
+        setStatus("No admin event selected.");
+        setLoading(false);
+        return;
+      }
+
+      if (!canAccessEvent(admin, event.id)) {
+        setCanExport(false);
+        setCurrentEvent(null);
+        setAttendees([]);
+        setParkingSites([]);
+        setSearch("");
+        setViewFilter("all");
+        setSortType("name_asc");
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      setCurrentEvent(event);
+      await loadData(event.id);
     }
-    void loadAttendees(event.id);
+
+    void init();
+
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
+        void init();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  async function loadAttendees(activeEventId: string) {
+  async function loadData(activeEventId: string) {
     setLoading(true);
     setError(null);
+    setAccessDenied(false);
     setStatus("Loading attendees...");
 
-    const { data, error } = await supabase
-      .from("attendees")
-      .select("*")
-      .eq("event_id", activeEventId)
-      .order("pilot_last", { ascending: true })
-      .order("pilot_first", { ascending: true });
+    const [
+      { data: attendeeData, error: attendeeError },
+      { data: parkingData, error: parkingError },
+    ] = await Promise.all([
+      supabase
+        .from("attendees")
+        .select("*")
+        .eq("event_id", activeEventId)
+        .order("pilot_last", { ascending: true })
+        .order("pilot_first", { ascending: true }),
 
-    if (error) {
-      setError(error.message);
+      supabase
+        .from("parking_sites")
+        .select("*")
+        .eq("event_id", activeEventId)
+        .order("site_number", { ascending: true }),
+    ]);
+
+    if (attendeeError) {
+      setError(attendeeError.message);
       setStatus("Could not load attendees.");
       setLoading(false);
       return;
     }
 
-    setAttendees((data || []) as AttendeeRow[]);
+    if (parkingError) {
+      setError(parkingError.message);
+      setStatus("Could not load parking sites.");
+      setLoading(false);
+      return;
+    }
+
+    setAttendees((attendeeData || []) as AttendeeRow[]);
+    setParkingSites((parkingData || []) as ParkingSiteRow[]);
     setStatus("");
     setLoading(false);
   }
 
-  async function loadActivities(row: AttendeeRow) {
-    setLoadingActivities(true);
+  const filteredAttendees = useMemo(() => {
+    let rows = [...attendees];
 
-    const { data, error } = await supabase
-      .from("attendee_activities")
-      .select("*")
-      .eq("event_id", row.event_id)
-      .eq("entry_id", row.entry_id || "")
-      .order("activity_name", { ascending: true });
-
-    if (error) {
-      setError(error.message);
-      setActivities([]);
-      setLoadingActivities(false);
-      return;
+    switch (viewFilter) {
+      case "active":
+        rows = rows.filter((row) => row.is_active);
+        break;
+      case "inactive":
+        rows = rows.filter((row) => !row.is_active);
+        break;
+      case "arrived":
+        rows = rows.filter((row) => row.has_arrived);
+        break;
+      case "not_arrived":
+        rows = rows.filter((row) => !row.has_arrived);
+        break;
+      case "first_timers":
+        rows = rows.filter((row) => row.is_first_timer);
+        break;
+      case "volunteers":
+        rows = rows.filter((row) => row.wants_to_volunteer);
+        break;
+      case "vendors":
+        rows = rows.filter((row) => (row.participant_type || "") === "vendor");
+        break;
+      case "staff_hosts_helpers":
+        rows = rows.filter((row) =>
+          ["staff", "host", "helper", "volunteer", "vip"].includes(
+            row.participant_type || "",
+          ),
+        );
+        break;
+      case "needs_parking":
+        rows = rows.filter((row) => row.needs_parking);
+        break;
+      case "assigned_site":
+        rows = rows.filter((row) => !!row.assigned_site);
+        break;
+      case "unassigned_site":
+        rows = rows.filter((row) => !row.assigned_site);
+        break;
+      default:
+        break;
     }
 
-    setActivities((data || []) as ActivityRow[]);
-    setLoadingActivities(false);
-  }
+    const term = search.trim().toLowerCase();
+    if (!term) return rows;
 
-  function selectAttendee(row: AttendeeRow) {
-    setSelectedAttendee(row);
-    setEditForm(makeEditForm(row));
-    setNewActivity({
-      activity_name: "",
-      quantity: "1",
-      price: "",
-    });
-    void loadActivities(row);
-  }
-
-  const filteredAttendees = useMemo(() => {
-    const q = search.trim().toLowerCase();
-
-    return attendees.filter((row) => {
-      if (statusFilter === "active" && !row.is_active) return false;
-      if (statusFilter === "inactive" && row.is_active) return false;
-
-      if (!q) return true;
-
-      const haystack = [
+    return rows.filter((row) =>
+      [
         row.pilot_first,
         row.pilot_last,
         row.copilot_first,
         row.copilot_last,
         row.email,
+        row.assigned_site,
         row.city,
         row.state,
         row.membership_number,
-        row.assigned_site,
-        row.coach_manufacturer,
-        row.coach_model,
       ]
         .filter(Boolean)
         .join(" ")
-        .toLowerCase();
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [attendees, viewFilter, search]);
 
-      return haystack.includes(q);
-    });
-  }, [attendees, search, statusFilter]);
+  const displayRows = useMemo(() => {
+    return sortDisplayRows(
+      filteredAttendees.map(attendeeToDisplayRow),
+      sortType,
+    );
+  }, [filteredAttendees, sortType]);
 
-  async function handleSaveAttendee() {
-    if (!editForm) return;
+  const summary = useMemo(() => {
+    const totalAttendees = attendees.length;
+    const activeCount = attendees.filter((x) => x.is_active).length;
+    const inactiveCount = attendees.filter((x) => !x.is_active).length;
+    const arrivedCount = attendees.filter((x) => x.has_arrived).length;
+    const firstTimers = attendees.filter((x) => x.is_first_timer).length;
+    const volunteerCount = attendees.filter((x) => x.wants_to_volunteer).length;
+    const needsParking = attendees.filter((x) => x.needs_parking).length;
+    const unassignedSiteCount = attendees.filter(
+      (x) => !x.assigned_site,
+    ).length;
 
-    setSaving(true);
-    setError(null);
-    setStatus("Saving attendee...");
-
-    const payload = {
-      email: editForm.email.trim().toLowerCase() || null,
-      pilot_first: editForm.pilot_first.trim() || null,
-      pilot_last: editForm.pilot_last.trim() || null,
-      copilot_first: editForm.copilot_first.trim() || null,
-      copilot_last: editForm.copilot_last.trim() || null,
-      nickname: editForm.nickname.trim() || null,
-      copilot_nickname: editForm.copilot_nickname.trim() || null,
-      membership_number: editForm.membership_number.trim() || null,
-      primary_phone: editForm.primary_phone.trim() || null,
-      cell_phone: editForm.cell_phone.trim() || null,
-      city: editForm.city.trim() || null,
-      state: editForm.state.trim() || null,
-      wants_to_volunteer: editForm.wants_to_volunteer,
-      is_first_timer: editForm.is_first_timer,
-      coach_manufacturer: editForm.coach_manufacturer.trim() || null,
-      coach_model: editForm.coach_model.trim() || null,
-      special_events_raw: editForm.special_events_raw.trim() || null,
-      assigned_site: editForm.assigned_site.trim() || null,
-      share_with_attendees: editForm.share_with_attendees,
-      has_arrived: editForm.has_arrived,
-      is_active: editForm.is_active,
-      inactive_reason: editForm.inactive_reason.trim() || null,
+    return {
+      totalAttendees,
+      activeCount,
+      inactiveCount,
+      arrivedCount,
+      firstTimers,
+      volunteerCount,
+      needsParking,
+      unassignedSiteCount,
+      totalSites: parkingSites.length,
     };
+  }, [attendees, parkingSites]);
 
-    const { error } = await supabase
-      .from("attendees")
-      .update(payload)
-      .eq("id", editForm.id);
-
-    if (error) {
-      setError(error.message);
-      setStatus("Save failed.");
-      setSaving(false);
-      return;
-    }
-
-    if (eventId) await loadAttendees(eventId);
-
-    const refreshed = {
-      ...(selectedAttendee as AttendeeRow),
-      ...payload,
-    } as AttendeeRow;
-
-    setSelectedAttendee(refreshed);
-    setEditForm(makeEditForm(refreshed));
-    setStatus("Attendee saved.");
-    setSaving(false);
+  function buildExportRows(): string[][] {
+    return [
+      ["Attendees"],
+      ["Event", currentEvent?.name || currentEvent?.eventName || ""],
+      ["Location", currentEvent?.location || ""],
+      ["View", viewFilter],
+      ["Sort", sortType],
+      ["Search", search],
+      [],
+      [
+        "Site",
+        "Participant Type",
+        "Pilot",
+        "Co-Pilot",
+        "Email",
+        "City/State",
+        "Arrived",
+        "Active",
+        "First Timer",
+        "Volunteer",
+        "Needs Parking",
+        "Membership Number",
+        "Source",
+      ],
+      ...displayRows.map((row) => [
+        row.site,
+        row.participantType,
+        row.pilot,
+        row.copilot,
+        row.email,
+        row.cityState,
+        row.arrived,
+        row.active,
+        row.firstTimer,
+        row.volunteer,
+        row.needsParking,
+        row.membershipNumber,
+        row.source,
+      ]),
+    ];
   }
 
-  async function handleToggleActive(row: AttendeeRow) {
-    const nextActive = !row.is_active;
-    const reason = nextActive ? null : "Set inactive by admin";
+  function handleExportCsv() {
+    const rows = buildExportRows();
+    const filenameBase = `${(
+      currentEvent?.name ||
+      currentEvent?.eventName ||
+      "event"
+    )
+      .replace(/\s+/g, "_")
+      .replace(/[^\w\-]+/g, "")
+      .toLowerCase()}_attendees`;
 
-    setError(null);
-    setStatus(
-      nextActive ? "Reactivating attendee..." : "Deactivating attendee...",
+    downloadCsv(`${filenameBase}.csv`, rows);
+  }
+
+  function handleExportXlsx() {
+    const rows = buildExportRows();
+    const filenameBase = `${(
+      currentEvent?.name ||
+      currentEvent?.eventName ||
+      "event"
+    )
+      .replace(/\s+/g, "_")
+      .replace(/[^\w\-]+/g, "")
+      .toLowerCase()}_attendees`;
+
+    downloadXlsx(`${filenameBase}.xlsx`, "Attendees", rows);
+  }
+
+  if (!loading && accessDenied) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Attendees</h1>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          You do not have access to this page.
+        </div>
+      </div>
     );
-
-    const { error } = await supabase
-      .from("attendees")
-      .update({
-        is_active: nextActive,
-        inactive_reason: reason,
-      })
-      .eq("id", row.id);
-
-    if (error) {
-      setError(error.message);
-      setStatus("Could not update active status.");
-      return;
-    }
-
-    if (eventId) await loadAttendees(eventId);
-
-    if (selectedAttendee?.id === row.id) {
-      const updated = {
-        ...row,
-        is_active: nextActive,
-        inactive_reason: reason,
-      };
-      setSelectedAttendee(updated);
-      setEditForm(makeEditForm(updated));
-    }
-
-    setStatus(nextActive ? "Attendee reactivated." : "Attendee set inactive.");
-  }
-
-  async function handleDeleteAttendee(row: AttendeeRow) {
-    const confirmed = window.confirm(
-      `Delete attendee ${fullName(row)}? This will remove parking assignment links and activities for this entry.`,
-    );
-    if (!confirmed) return;
-
-    setError(null);
-    setStatus("Deleting attendee...");
-
-    const { error: clearParkingError } = await supabase
-      .from("parking_sites")
-      .update({ assigned_attendee_id: null })
-      .eq("assigned_attendee_id", row.id);
-
-    if (clearParkingError) {
-      setError(clearParkingError.message);
-      setStatus("Could not clear parking assignments.");
-      return;
-    }
-
-    if (row.entry_id) {
-      const { error: deleteActivitiesError } = await supabase
-        .from("attendee_activities")
-        .delete()
-        .eq("event_id", row.event_id)
-        .eq("entry_id", row.entry_id);
-
-      if (deleteActivitiesError) {
-        setError(deleteActivitiesError.message);
-        setStatus("Could not delete attendee activities.");
-        return;
-      }
-    }
-
-    const { error: deleteAttendeeError } = await supabase
-      .from("attendees")
-      .delete()
-      .eq("id", row.id);
-
-    if (deleteAttendeeError) {
-      setError(deleteAttendeeError.message);
-      setStatus("Could not delete attendee.");
-      return;
-    }
-
-    if (selectedAttendee?.id === row.id) {
-      setSelectedAttendee(null);
-      setEditForm(null);
-      setActivities([]);
-    }
-
-    if (eventId) await loadAttendees(eventId);
-    setStatus("Attendee deleted.");
-  }
-
-  async function handleAddActivity() {
-    if (!selectedAttendee?.entry_id || !eventId) {
-      setError("No attendee selected.");
-      return;
-    }
-
-    const activityName = newActivity.activity_name.trim();
-    const quantity = Number(newActivity.quantity || "0");
-    const price =
-      newActivity.price.trim() === "" ? null : Number(newActivity.price);
-
-    if (!activityName) {
-      setError("Activity name is required.");
-      return;
-    }
-
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setError("Quantity must be greater than zero.");
-      return;
-    }
-
-    if (price !== null && !Number.isFinite(price)) {
-      setError("Price must be a valid number.");
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    setStatus("Adding activity...");
-
-    const { error } = await supabase.from("attendee_activities").insert({
-      event_id: eventId,
-      entry_id: selectedAttendee.entry_id,
-      attendee_email: selectedAttendee.email,
-      activity_name: activityName,
-      quantity,
-      price,
-      raw_name: activityName,
-      source_column_prefix: `${activityName}-${Date.now()}`,
-    });
-
-    if (error) {
-      setError(error.message);
-      setStatus("Could not add activity.");
-      setSaving(false);
-      return;
-    }
-
-    await loadActivities(selectedAttendee);
-    setNewActivity({
-      activity_name: "",
-      quantity: "1",
-      price: "",
-    });
-    setSaving(false);
-    setStatus("Activity added.");
-  }
-
-  async function handleDeleteActivity(activityId: string) {
-    if (!selectedAttendee) return;
-
-    const confirmed = window.confirm("Delete this activity?");
-    if (!confirmed) return;
-
-    setError(null);
-    setStatus("Deleting activity...");
-
-    const { error } = await supabase
-      .from("attendee_activities")
-      .delete()
-      .eq("id", activityId);
-
-    if (error) {
-      setError(error.message);
-      setStatus("Could not delete activity.");
-      return;
-    }
-
-    await loadActivities(selectedAttendee);
-    setStatus("Activity deleted.");
   }
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Attendees</h1>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Attendees</h1>
 
         <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
           {currentEvent?.name || currentEvent?.eventName || "No event selected"}
@@ -515,699 +580,209 @@ export default function AdminAttendeesPage() {
           <div style={{ marginBottom: 12, fontSize: 14 }}>{status}</div>
         ) : null}
 
-        {error ? (
+        {error ? <div style={errorBoxStyle}>{error}</div> : null}
+
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns:
+              "minmax(260px, 1.5fr) minmax(220px, 1fr) minmax(220px, 1fr) auto",
+            marginTop: 12,
+          }}
+        >
+          <div>
+            <label style={labelStyle}>Search</label>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search last name, first name, site, email..."
+              style={inputStyle}
+            />
+          </div>
+
+          <div>
+            <label style={labelStyle}>View</label>
+            <select
+              value={viewFilter}
+              onChange={(e) => setViewFilter(e.target.value as ViewFilter)}
+              style={inputStyle}
+            >
+              <option value="all">All</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="arrived">Arrived</option>
+              <option value="not_arrived">Not Arrived</option>
+              <option value="first_timers">First Timers</option>
+              <option value="volunteers">Volunteers</option>
+              <option value="vendors">Vendors</option>
+              <option value="staff_hosts_helpers">
+                Staff / Hosts / Helpers
+              </option>
+              <option value="needs_parking">Needs Parking</option>
+              <option value="assigned_site">Assigned Site</option>
+              <option value="unassigned_site">Unassigned Site</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Sort</label>
+            <select
+              value={sortType}
+              onChange={(e) => setSortType(e.target.value as SortType)}
+              style={inputStyle}
+            >
+              <option value="name_asc">Last Name A–Z</option>
+              <option value="name_desc">Last Name Z–A</option>
+              <option value="site_asc">Site 0–9 / A–Z</option>
+              <option value="site_desc">Site 9–0 / Z–A</option>
+            </select>
+          </div>
+
           <div
             style={{
-              marginBottom: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #e2b4b4",
-              background: "#fff3f3",
-              color: "#8a1f1f",
+              display: "flex",
+              gap: 10,
+              alignItems: "end",
+              flexWrap: "wrap",
             }}
           >
-            {error}
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              style={secondaryButtonStyle}
+              disabled={loading || !canExport}
+            >
+              Export CSV
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportXlsx}
+              style={primaryButtonStyle}
+              disabled={loading || !canExport}
+            >
+              Export XLSX
+            </button>
           </div>
-        ) : null}
+        </div>
       </div>
 
       <div
         style={{
           display: "grid",
-          gap: 18,
-          gridTemplateColumns: "minmax(320px, 430px) minmax(0, 1fr)",
-          alignItems: "start",
+          gap: 12,
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
         }}
       >
-        <div className="card" style={{ padding: 18 }}>
-          <h2 style={{ marginTop: 0 }}>Attendee List</h2>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Total</strong>
+          <div style={summaryValueStyle}>{summary.totalAttendees}</div>
+        </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Active</strong>
+          <div style={summaryValueStyle}>{summary.activeCount}</div>
+        </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Inactive</strong>
+          <div style={summaryValueStyle}>{summary.inactiveCount}</div>
+        </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Arrived</strong>
+          <div style={summaryValueStyle}>{summary.arrivedCount}</div>
+        </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>First Timers</strong>
+          <div style={summaryValueStyle}>{summary.firstTimers}</div>
+        </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Volunteers</strong>
+          <div style={summaryValueStyle}>{summary.volunteerCount}</div>
+        </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Needs Parking</strong>
+          <div style={summaryValueStyle}>{summary.needsParking}</div>
+        </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Unassigned Site</strong>
+          <div style={summaryValueStyle}>{summary.unassignedSiteCount}</div>
+        </div>
+      </div>
 
-          <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, email, city, membership..."
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ccc",
-              }}
-            />
-
-            <select
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as "all" | "active" | "inactive")
-              }
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ccc",
-                background: "white",
-              }}
-            >
-              <option value="active">Active Only</option>
-              <option value="inactive">Inactive Only</option>
-              <option value="all">All</option>
-            </select>
+      <div className="card" style={{ padding: 18 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+            Working Attendee List
+          </h2>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            {displayRows.length} attendee rows
           </div>
-
-          <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 10 }}>
-            Showing {filteredAttendees.length} of {attendees.length}
-          </div>
-
-          {loading ? (
-            <div>Loading...</div>
-          ) : filteredAttendees.length === 0 ? (
-            <div style={{ opacity: 0.8 }}>No attendees found.</div>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                maxHeight: 900,
-                overflowY: "auto",
-              }}
-            >
-              {filteredAttendees.map((row) => (
-                <button
-                  key={row.id}
-                  type="button"
-                  onClick={() => selectAttendee(row)}
-                  style={{
-                    textAlign: "left",
-                    padding: 12,
-                    borderRadius: 12,
-                    border:
-                      selectedAttendee?.id === row.id
-                        ? "2px solid #2563eb"
-                        : "1px solid #ddd",
-                    background: row.is_active ? "white" : "#f7f7f7",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                    {fullName(row)}
-                  </div>
-                  <div style={{ fontSize: 14, opacity: 0.85 }}>
-                    {row.email || "No email"}
-                  </div>
-                  <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4 }}>
-                    {row.city || "—"}
-                    {row.state ? `, ${row.state}` : ""}
-                    {row.assigned_site
-                      ? ` • Site ${row.assigned_site}`
-                      : " • Unassigned"}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      display: "flex",
-                      gap: 6,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 12,
-                        padding: "2px 8px",
-                        borderRadius: 999,
-                        background: row.is_active ? "#eefaf0" : "#f3f4f6",
-                        border: "1px solid #ddd",
-                      }}
-                    >
-                      {row.is_active ? "active" : "inactive"}
-                    </span>
-
-                    {row.has_arrived ? (
-                      <span
-                        style={{
-                          fontSize: 12,
-                          padding: "2px 8px",
-                          borderRadius: 999,
-                          background: "#fff7e6",
-                          border: "1px solid #ddd",
-                        }}
-                      >
-                        arrived
-                      </span>
-                    ) : null}
-
-                    {row.is_first_timer ? (
-                      <span
-                        style={{
-                          fontSize: 12,
-                          padding: "2px 8px",
-                          borderRadius: 999,
-                          background: "#eef5ff",
-                          border: "1px solid #ddd",
-                        }}
-                      >
-                        first timer
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
-        <div className="card" style={{ padding: 18 }}>
-          {!editForm || !selectedAttendee ? (
-            <div style={{ opacity: 0.8 }}>Select an attendee to edit.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 18 }}>
-              <div>
-                <h2 style={{ marginTop: 0, marginBottom: 6 }}>Edit Attendee</h2>
-                <div style={{ fontSize: 14, opacity: 0.8 }}>
-                  {fullName(selectedAttendee)}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gap: 12,
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                }}
-              >
-                <div>
-                  <label>Pilot First</label>
-                  <input
-                    value={editForm.pilot_first}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, pilot_first: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Pilot Last</label>
-                  <input
-                    value={editForm.pilot_last}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, pilot_last: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Co-Pilot First</label>
-                  <input
-                    value={editForm.copilot_first}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, copilot_first: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Co-Pilot Last</label>
-                  <input
-                    value={editForm.copilot_last}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, copilot_last: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Email</label>
-                  <input
-                    value={editForm.email}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) => prev && { ...prev, email: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Membership #</label>
-                  <input
-                    value={editForm.membership_number}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && {
-                            ...prev,
-                            membership_number: e.target.value,
-                          },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Nickname</label>
-                  <input
-                    value={editForm.nickname}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) => prev && { ...prev, nickname: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Co-Pilot Nickname</label>
-                  <input
-                    value={editForm.copilot_nickname}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, copilot_nickname: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Primary Phone</label>
-                  <input
-                    value={editForm.primary_phone}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, primary_phone: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Cell Phone</label>
-                  <input
-                    value={editForm.cell_phone}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, cell_phone: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>City</label>
-                  <input
-                    value={editForm.city}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) => prev && { ...prev, city: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>State</label>
-                  <input
-                    value={editForm.state}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) => prev && { ...prev, state: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Coach Manufacturer</label>
-                  <input
-                    value={editForm.coach_manufacturer}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && {
-                            ...prev,
-                            coach_manufacturer: e.target.value,
-                          },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Coach Model</label>
-                  <input
-                    value={editForm.coach_model}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, coach_model: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Assigned Site</label>
-                  <input
-                    value={editForm.assigned_site}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, assigned_site: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label>Entry ID</label>
-                  <input
-                    value={editForm.entry_id}
-                    disabled
-                    style={inputStyleDisabled}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label>Special Events / Notes</label>
-                <textarea
-                  rows={4}
-                  value={editForm.special_events_raw}
-                  onChange={(e) =>
-                    setEditForm(
-                      (prev) =>
-                        prev && { ...prev, special_events_raw: e.target.value },
-                    )
-                  }
-                  style={textareaStyle}
-                />
-              </div>
-
-              <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-                <label style={checkLabelStyle}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.wants_to_volunteer}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && {
-                            ...prev,
-                            wants_to_volunteer: e.target.checked,
-                          },
-                      )
-                    }
-                  />
-                  Volunteer
-                </label>
-
-                <label style={checkLabelStyle}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.is_first_timer}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, is_first_timer: e.target.checked },
-                      )
-                    }
-                  />
-                  First Timer
-                </label>
-
-                <label style={checkLabelStyle}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.share_with_attendees}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && {
-                            ...prev,
-                            share_with_attendees: e.target.checked,
-                          },
-                      )
-                    }
-                  />
-                  Share with Attendees
-                </label>
-
-                <label style={checkLabelStyle}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.has_arrived}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, has_arrived: e.target.checked },
-                      )
-                    }
-                  />
-                  Arrived
-                </label>
-
-                <label style={checkLabelStyle}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.is_active}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, is_active: e.target.checked },
-                      )
-                    }
-                  />
-                  Active
-                </label>
-              </div>
-
-              {!editForm.is_active && (
-                <div>
-                  <label>Inactive Reason</label>
-                  <input
-                    value={editForm.inactive_reason}
-                    onChange={(e) =>
-                      setEditForm(
-                        (prev) =>
-                          prev && { ...prev, inactive_reason: e.target.value },
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
-              )}
-
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  onClick={() => void handleSaveAttendee()}
-                  disabled={saving}
-                  style={primaryButtonStyle}
-                >
-                  {saving ? "Saving..." : "Save Attendee"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void handleToggleActive(selectedAttendee)}
-                  style={secondaryButtonStyle}
-                >
-                  {selectedAttendee.is_active ? "Set Inactive" : "Reactivate"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteAttendee(selectedAttendee)}
-                  style={dangerButtonStyle}
-                >
-                  Delete Attendee
-                </button>
-              </div>
-
-              <div
-                style={{
-                  borderTop: "1px solid #ddd",
-                  paddingTop: 18,
-                  display: "grid",
-                  gap: 12,
-                }}
-              >
-                <h3 style={{ margin: 0 }}>Activities</h3>
-
-                {loadingActivities ? (
-                  <div>Loading activities...</div>
-                ) : activities.length === 0 ? (
-                  <div style={{ opacity: 0.8 }}>
-                    No activities for this attendee.
-                  </div>
-                ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {activities.map((activity) => (
-                      <div
-                        key={activity.id}
-                        style={{
-                          border: "1px solid #ddd",
-                          borderRadius: 10,
-                          padding: 12,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 10,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontWeight: 700 }}>
-                            {activity.activity_name}
-                          </div>
-                          <div style={{ fontSize: 14, opacity: 0.8 }}>
-                            Qty {activity.quantity}
-                            {activity.price !== null
-                              ? ` • $${activity.price}`
-                              : ""}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteActivity(activity.id)}
-                          style={dangerButtonStyleSmall}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div
-                  style={{
-                    border: "1px solid #ddd",
-                    borderRadius: 12,
-                    padding: 14,
-                    background: "#fafafa",
-                    display: "grid",
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ fontWeight: 700 }}>Add Activity</div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 10,
-                      gridTemplateColumns:
-                        "minmax(180px, 1fr) 120px 120px auto",
-                    }}
-                  >
-                    <input
-                      placeholder="Activity name"
-                      value={newActivity.activity_name}
-                      onChange={(e) =>
-                        setNewActivity((prev) => ({
-                          ...prev,
-                          activity_name: e.target.value,
-                        }))
-                      }
-                      style={inputStyle}
-                    />
-                    <input
-                      placeholder="Qty"
-                      value={newActivity.quantity}
-                      onChange={(e) =>
-                        setNewActivity((prev) => ({
-                          ...prev,
-                          quantity: e.target.value,
-                        }))
-                      }
-                      style={inputStyle}
-                    />
-                    <input
-                      placeholder="Price"
-                      value={newActivity.price}
-                      onChange={(e) =>
-                        setNewActivity((prev) => ({
-                          ...prev,
-                          price: e.target.value,
-                        }))
-                      }
-                      style={inputStyle}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void handleAddActivity()}
-                      disabled={saving}
-                      style={primaryButtonStyle}
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        {loading ? (
+          <div>Loading...</div>
+        ) : displayRows.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>No attendees found for this view.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Site</th>
+                  <th style={thStyle}>Type</th>
+                  <th style={thStyle}>Pilot</th>
+                  <th style={thStyle}>Co-Pilot</th>
+                  <th style={thStyle}>Email</th>
+                  <th style={thStyle}>City / State</th>
+                  <th style={thStyle}>Arrived</th>
+                  <th style={thStyle}>Active</th>
+                  <th style={thStyle}>First Timer</th>
+                  <th style={thStyle}>Volunteer</th>
+                  <th style={thStyle}>Needs Parking</th>
+                  <th style={thStyle}>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayRows.map((row) => (
+                  <tr key={row.id}>
+                    <td style={tdStyle}>{row.site}</td>
+                    <td style={tdStyle}>{row.participantType}</td>
+                    <td style={tdStyle}>{row.pilot}</td>
+                    <td style={tdStyle}>{row.copilot}</td>
+                    <td style={tdStyle}>{row.email}</td>
+                    <td style={tdStyle}>{row.cityState}</td>
+                    <td style={tdStyle}>{row.arrived}</td>
+                    <td style={tdStyle}>{row.active}</td>
+                    <td style={tdStyle}>{row.firstTimer}</td>
+                    <td style={tdStyle}>{row.volunteer}</td>
+                    <td style={tdStyle}>{row.needsParking}</td>
+                    <td style={tdStyle}>{row.source}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-const inputStyle: React.CSSProperties = {
+const labelStyle: CSSProperties = {
+  display: "block",
+  marginBottom: 6,
+  fontWeight: 600,
+};
+
+const inputStyle: CSSProperties = {
   width: "100%",
   padding: "10px 12px",
   borderRadius: 10,
   border: "1px solid #ccc",
-  marginTop: 6,
+  background: "white",
 };
 
-const inputStyleDisabled: React.CSSProperties = {
-  ...inputStyle,
-  background: "#f3f4f6",
-};
-
-const textareaStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  marginTop: 6,
-  resize: "vertical",
-};
-
-const checkLabelStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-};
-
-const primaryButtonStyle: React.CSSProperties = {
+const primaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
   border: "none",
@@ -1217,7 +792,7 @@ const primaryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const secondaryButtonStyle: React.CSSProperties = {
+const secondaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
   border: "1px solid #ccc",
@@ -1226,22 +801,40 @@ const secondaryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const dangerButtonStyle: React.CSSProperties = {
-  padding: "10px 14px",
+const errorBoxStyle: CSSProperties = {
+  marginBottom: 12,
+  padding: "10px 12px",
   borderRadius: 10,
-  border: "1px solid #d7b1b1",
-  background: "#fff5f5",
+  border: "1px solid #e2b4b4",
+  background: "#fff3f3",
   color: "#8a1f1f",
-  fontWeight: 700,
-  cursor: "pointer",
 };
 
-const dangerButtonStyleSmall: React.CSSProperties = {
-  padding: "8px 12px",
-  borderRadius: 10,
-  border: "1px solid #d7b1b1",
-  background: "#fff5f5",
-  color: "#8a1f1f",
-  fontWeight: 700,
-  cursor: "pointer",
+const summaryCardStyle: CSSProperties = {
+  padding: 16,
+};
+
+const summaryValueStyle: CSSProperties = {
+  fontSize: 26,
+  fontWeight: 800,
+  marginTop: 8,
+};
+
+const tableStyle: CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+};
+
+const thStyle: CSSProperties = {
+  textAlign: "left",
+  padding: "10px 8px",
+  borderBottom: "2px solid #ddd",
+  whiteSpace: "nowrap",
+};
+
+const tdStyle: CSSProperties = {
+  textAlign: "left",
+  padding: "10px 8px",
+  borderTop: "1px solid #ddd",
+  verticalAlign: "top",
 };

@@ -1,33 +1,74 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
-type EventItem = {
-  id: string;
-  name: string | null;
+type EventContext = {
+  id?: string | null;
+  name?: string | null;
+  eventName?: string | null;
   venue_name?: string | null;
   location?: string | null;
   start_date?: string | null;
   end_date?: string | null;
 };
 
-type Attendee = {
+type AttendeeRow = {
   id: string;
   event_id: string;
+  entry_id: string | null;
+  email: string | null;
   pilot_first: string | null;
   pilot_last: string | null;
   copilot_first: string | null;
   copilot_last: string | null;
-  email: string | null;
+  nickname: string | null;
+  copilot_nickname: string | null;
+  membership_number: string | null;
+  primary_phone: string | null;
+  cell_phone: string | null;
+  city: string | null;
+  state: string | null;
+  wants_to_volunteer: boolean | null;
+  is_first_timer: boolean | null;
+  coach_manufacturer: string | null;
+  coach_model: string | null;
+  special_events_raw: string | null;
   assigned_site: string | null;
   has_arrived: boolean | null;
-  share_with_attendees?: boolean | null;
-  is_first_timer?: boolean | null;
+  share_with_attendees: boolean | null;
+  is_active: boolean;
+  inactive_reason: string | null;
+  participant_type?: string | null;
+  source_type?: string | null;
+  include_in_headcount?: boolean | null;
+  needs_name_tag?: boolean | null;
+  needs_coach_plate?: boolean | null;
+  needs_parking?: boolean | null;
+  notes?: string | null;
+  created_at?: string | null;
 };
 
-type ParkingSite = {
+type ActivityRow = {
+  id: string;
+  event_id: string;
+  entry_id: string;
+  attendee_email: string | null;
+  activity_name: string;
+  quantity: number;
+  price: number | null;
+  raw_name: string | null;
+  source_column_prefix: string;
+  created_at?: string | null;
+};
+
+type ParkingSiteRow = {
   id: string;
   event_id: string;
   site_number: string | null;
@@ -36,50 +77,67 @@ type ParkingSite = {
 };
 
 type ReportType =
-  | "all_attendees"
-  | "parking"
-  | "checked_in"
-  | "not_arrived"
-  | "first_time_attendees"
-  | "first_time_arrived"
-  | "first_time_not_arrived"
-  | "unassigned_sites"
-  | "site_assignments";
+  | "first_timers"
+  | "volunteers"
+  | "vendors"
+  | "staff_hosts_helpers"
+  | "parking_assignments"
+  | "unassigned_parking_needed"
+  | "activity_summary";
 
-type SortType = "site_asc" | "site_desc" | "name_asc" | "name_desc";
+type SortType = "name_asc" | "name_desc" | "site_asc" | "site_desc";
 
-type ReportRow = {
+type RosterRow = {
   site: string;
+  participantType: string;
   pilot: string;
   copilot: string;
   email: string;
+  cityState: string;
   arrived: string;
+  active: string;
   firstTimer: string;
+  volunteer: string;
+  source: string;
+  pilotFirst: string;
+  pilotLast: string;
+  copilotFirst: string;
+  copilotLast: string;
 };
 
-function getStoredAdminEventId(): string {
-  if (typeof window === "undefined") return "";
+const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
+
+function getStoredAdminEvent(): EventContext | null {
+  if (typeof window === "undefined") return null;
 
   try {
-    const raw = localStorage.getItem("fcoc-admin-event-context");
-    if (!raw) return "";
-    const parsed = JSON.parse(raw);
-    return parsed?.id || "";
+    const raw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
   } catch {
-    return "";
+    return null;
   }
 }
 
 function fullName(first?: string | null, last?: string | null) {
-  return `${first || ""} ${last || ""}`.trim();
+  return [first, last].filter(Boolean).join(" ").trim();
 }
 
-function pilotName(attendee: Attendee) {
-  return fullName(attendee.pilot_first, attendee.pilot_last);
+function pilotName(row: AttendeeRow) {
+  return fullName(row.pilot_first, row.pilot_last);
 }
 
-function coPilotName(attendee: Attendee) {
-  return fullName(attendee.copilot_first, attendee.copilot_last);
+function coPilotName(row: AttendeeRow) {
+  return fullName(row.copilot_first, row.copilot_last);
+}
+
+function cityState(row: AttendeeRow) {
+  return [row.city, row.state].filter(Boolean).join(", ");
+}
+
+function participantTypeLabel(value?: string | null) {
+  if (!value) return "attendee";
+  return value.replace(/_/g, " ");
 }
 
 function csvEscape(value: unknown) {
@@ -101,867 +159,732 @@ function downloadCsv(filename: string, rows: string[][]) {
 
   URL.revokeObjectURL(url);
 }
+
 function downloadXlsx(filename: string, sheetName: string, rows: string[][]) {
   const worksheet = XLSX.utils.aoa_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
-
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
   XLSX.writeFile(workbook, filename);
 }
 
-function siteLabel(site: ParkingSite) {
+function siteLabel(site: ParkingSiteRow) {
   return site.display_label || site.site_number || "";
 }
 
-function sortRows(rows: ReportRow[], sortType: SortType) {
-  const copy = [...rows];
+function normalizeSortValue(value?: string | null) {
+  return (value || "").trim().toLowerCase();
+}
 
-  copy.sort((a, b) => {
-    if (sortType === "site_asc") {
-      return a.site.localeCompare(b.site, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
+function attendeeToRosterRow(row: AttendeeRow): RosterRow {
+  return {
+    site: row.assigned_site || "",
+    participantType: participantTypeLabel(row.participant_type),
+    pilot: pilotName(row),
+    copilot: coPilotName(row),
+    email: row.email || "",
+    cityState: cityState(row),
+    arrived: row.has_arrived ? "YES" : "NO",
+    active: row.is_active ? "YES" : "NO",
+    firstTimer: row.is_first_timer ? "YES" : "NO",
+    volunteer: row.wants_to_volunteer ? "YES" : "NO",
+    source: row.source_type || "imported",
+    pilotFirst: row.pilot_first || "",
+    pilotLast: row.pilot_last || "",
+    copilotFirst: row.copilot_first || "",
+    copilotLast: row.copilot_last || "",
+  };
+}
+
+function sortRosterRows(rows: RosterRow[], sortType: SortType) {
+  return [...rows].sort((a, b) => {
+    const byName =
+      normalizeSortValue(a.pilotLast).localeCompare(
+        normalizeSortValue(b.pilotLast),
+        undefined,
+        { sensitivity: "base" },
+      ) ||
+      normalizeSortValue(a.pilotFirst).localeCompare(
+        normalizeSortValue(b.pilotFirst),
+        undefined,
+        { sensitivity: "base" },
+      ) ||
+      normalizeSortValue(a.copilotLast).localeCompare(
+        normalizeSortValue(b.copilotLast),
+        undefined,
+        { sensitivity: "base" },
+      ) ||
+      normalizeSortValue(a.copilotFirst).localeCompare(
+        normalizeSortValue(b.copilotFirst),
+        undefined,
+        { sensitivity: "base" },
+      ) ||
+      normalizeSortValue(a.site).localeCompare(
+        normalizeSortValue(b.site),
+        undefined,
+        { numeric: true, sensitivity: "base" },
+      );
+
+    const bySite =
+      normalizeSortValue(a.site).localeCompare(
+        normalizeSortValue(b.site),
+        undefined,
+        { numeric: true, sensitivity: "base" },
+      ) || byName;
+
+    switch (sortType) {
+      case "name_asc":
+        return byName;
+      case "name_desc":
+        return -byName;
+      case "site_asc":
+        return bySite;
+      case "site_desc":
+        return -bySite;
+      default:
+        return byName;
     }
-
-    if (sortType === "site_desc") {
-      return b.site.localeCompare(a.site, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
-    }
-
-    if (sortType === "name_asc") {
-      return a.pilot.localeCompare(b.pilot, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
-    }
-
-    return b.pilot.localeCompare(a.pilot, undefined, {
-      numeric: true,
-      sensitivity: "base",
-    });
   });
-
-  return copy;
 }
 
 export default function AdminReportsPage() {
-  const [events, setEvents] = useState<EventItem[]>([]);
-  const [selectedEventId, setSelectedEventId] = useState("");
-  const [reportType, setReportType] = useState<ReportType>("all_attendees");
-  const [sortType, setSortType] = useState<SortType>("site_asc");
-
-  const [attendees, setAttendees] = useState<Attendee[]>([]);
-  const [parkingSites, setParkingSites] = useState<ParkingSite[]>([]);
-
-  const [loadingEvents, setLoadingEvents] = useState(true);
-  const [loadingReport, setLoadingReport] = useState(false);
-  const [status, setStatus] = useState("Loading events...");
-  const [printStatus, setPrintStatus] = useState("");
+  const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
+  const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
+  const [activities, setActivities] = useState<ActivityRow[]>([]);
+  const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
+  const [reportType, setReportType] = useState<ReportType>(
+    "parking_assignments",
+  );
+  const [sortType, setSortType] = useState<SortType>("name_asc");
+  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState("Loading reports...");
+  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [canExport, setCanExport] = useState(false);
 
   useEffect(() => {
-    async function loadEvents() {
-      setLoadingEvents(true);
-      setStatus("Loading events...");
+    async function init() {
+      setLoading(true);
+      setError(null);
+      setStatus("Checking admin access...");
+      setAccessDenied(false);
+      setCanExport(false);
 
-      const { data, error } = await supabase
-        .from("events")
-        .select("id, name, venue_name, location, start_date, end_date")
-        .order("start_date", { ascending: false });
+      const admin = await getCurrentAdminAccess();
 
-      if (error) {
-        setStatus(`Could not load events: ${error.message}`);
-        setLoadingEvents(false);
+      if (!admin) {
+        setCurrentEvent(null);
+        setAttendees([]);
+        setActivities([]);
+        setParkingSites([]);
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
         return;
       }
 
-      const eventRows = (data || []) as EventItem[];
-      setEvents(eventRows);
+      if (!hasPermission(admin, "can_view_reports")) {
+        setCurrentEvent(null);
+        setAttendees([]);
+        setActivities([]);
+        setParkingSites([]);
+        setError("You do not have permission to view reports.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
 
-      const storedEventId = getStoredAdminEventId();
-      const defaultEventId =
-        (storedEventId &&
-          eventRows.find((event) => event.id === storedEventId)?.id) ||
-        eventRows[0]?.id ||
-        "";
+      setCanExport(hasPermission(admin, "can_export_reports"));
 
-      setSelectedEventId(defaultEventId);
-      setLoadingEvents(false);
-      setStatus(defaultEventId ? "Select a report." : "No events found.");
+      const event = getStoredAdminEvent();
+
+      if (!event?.id) {
+        setCurrentEvent(null);
+        setAttendees([]);
+        setActivities([]);
+        setParkingSites([]);
+        setStatus("No admin event selected.");
+        setLoading(false);
+        return;
+      }
+
+      if (!canAccessEvent(admin, event.id)) {
+        setCurrentEvent(null);
+        setAttendees([]);
+        setActivities([]);
+        setParkingSites([]);
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      setCurrentEvent(event);
+      await loadData(event.id);
     }
 
-    void loadEvents();
+    void init();
+
+    function handleStorage(e: StorageEvent) {
+      if (e.key === "fcoc-admin-event-changed") {
+        void init();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
   useEffect(() => {
-    async function loadReportData() {
-      if (!selectedEventId) {
-        setAttendees([]);
-        setParkingSites([]);
-        return;
-      }
+    if (reportType === "parking_assignments") {
+      setSortType("site_asc");
+    } else if (reportType === "unassigned_parking_needed") {
+      setSortType("name_asc");
+    }
+  }, [reportType]);
 
-      setLoadingReport(true);
-      setStatus("Loading report data...");
+  async function loadData(activeEventId: string) {
+    setLoading(true);
+    setError(null);
+    setStatus("Loading reports...");
 
-      const attendeeQuery = supabase
+    const [
+      { data: attendeeData, error: attendeeError },
+      { data: activityData, error: activityError },
+      { data: parkingData, error: parkingError },
+    ] = await Promise.all([
+      supabase
         .from("attendees")
-        .select(
-          "id, event_id, pilot_first, pilot_last, copilot_first, copilot_last, email, assigned_site, has_arrived, share_with_attendees, is_first_timer",
-        )
-        .eq("event_id", selectedEventId);
+        .select("*")
+        .eq("event_id", activeEventId)
+        .order("pilot_last", { ascending: true })
+        .order("pilot_first", { ascending: true }),
 
-      const parkingQuery = supabase
+      supabase
+        .from("attendee_activities")
+        .select("*")
+        .eq("event_id", activeEventId)
+        .order("activity_name", { ascending: true }),
+
+      supabase
         .from("parking_sites")
-        .select(
-          "id, event_id, site_number, display_label, assigned_attendee_id",
-        )
-        .eq("event_id", selectedEventId);
+        .select("*")
+        .eq("event_id", activeEventId)
+        .order("site_number", { ascending: true }),
+    ]);
 
-      const [
-        { data: attendeeData, error: attendeeError },
-        { data: parkingData, error: parkingError },
-      ] = await Promise.all([attendeeQuery, parkingQuery]);
-
-      if (attendeeError) {
-        setStatus(`Could not load attendees: ${attendeeError.message}`);
-        setLoadingReport(false);
-        return;
-      }
-
-      if (parkingError) {
-        setStatus(`Could not load parking sites: ${parkingError.message}`);
-        setLoadingReport(false);
-        return;
-      }
-
-      setAttendees((attendeeData || []) as Attendee[]);
-      setParkingSites((parkingData || []) as ParkingSite[]);
-      setStatus("Report ready.");
-      setLoadingReport(false);
+    if (attendeeError) {
+      setError(attendeeError.message);
+      setStatus("Could not load attendees.");
+      setLoading(false);
+      return;
     }
 
-    void loadReportData();
-  }, [selectedEventId]);
+    if (activityError) {
+      setError(activityError.message);
+      setStatus("Could not load activities.");
+      setLoading(false);
+      return;
+    }
 
-  const selectedEvent = useMemo(
-    () => events.find((event) => event.id === selectedEventId) || null,
-    [events, selectedEventId],
-  );
+    if (parkingError) {
+      setError(parkingError.message);
+      setStatus("Could not load parking sites.");
+      setLoading(false);
+      return;
+    }
+
+    setAttendees((attendeeData || []) as AttendeeRow[]);
+    setActivities((activityData || []) as ActivityRow[]);
+    setParkingSites((parkingData || []) as ParkingSiteRow[]);
+    setStatus("");
+    setLoading(false);
+  }
 
   const attendeeById = useMemo(() => {
-    const map = new Map<string, Attendee>();
+    const map = new Map<string, AttendeeRow>();
     for (const attendee of attendees) {
       map.set(attendee.id, attendee);
     }
     return map;
   }, [attendees]);
 
-  async function generateNameTagsFromEvent() {
-    if (!selectedEventId) return;
-
-    setPrintStatus("Loading name tags from event data...");
-
-    const { data, error } = await supabase
-      .from("event_import_rows")
-      .select("*")
-      .eq("event_id", selectedEventId)
-      .eq("import_type", "attendee_roster")
-      .order("pilot_last", { ascending: true });
-
-    if (error) {
-      console.error(error);
-      setPrintStatus("Could not load stored attendee import rows.");
-      return;
-    }
-
-    if (!data || data.length === 0) {
-      setPrintStatus("No stored attendee import data found for this event.");
-      return;
-    }
-
-    const people = data.flatMap((row: any) => {
-      const list: any[] = [];
-      const pilotLastName = String(row.pilot_last || "").trim();
-
-      if (row.pilot_first || row.pilot_last) {
-        list.push({
-          displayFirst: row.pilot_badge_nickname || row.pilot_first || "",
-          lastName: pilotLastName,
-          memberNumber: row.membership_number || "",
-          city: row.city || "",
-          state: row.state || "",
-          firstTimer: !!row.is_first_timer,
-          sortName: pilotLastName,
-        });
-      }
-
-      if (row.copilot_first || row.copilot_last) {
-        list.push({
-          displayFirst: row.copilot_badge_nickname || row.copilot_first || "",
-          lastName: pilotLastName || row.copilot_last || "",
-          memberNumber: row.membership_number || "",
-          city: row.city || "",
-          state: row.state || "",
-          firstTimer: !!row.is_first_timer,
-          sortName: pilotLastName || row.copilot_last || "",
-        });
-      }
-
-      if (row.additional_attendees) {
-        const extras = String(row.additional_attendees)
-          .replace(/\band\b/gi, ",")
-          .split(",")
-          .map((x: string) => x.trim())
-          .filter(Boolean);
-
-        extras.forEach((name: string) => {
-          list.push({
-            displayFirst: name,
-            lastName: pilotLastName,
-            memberNumber: row.membership_number || "",
-            city: row.city || "",
-            state: row.state || "",
-            firstTimer: !!row.is_first_timer,
-            sortName: pilotLastName,
-          });
-        });
-      }
-
-      return list;
-    });
-
-    people.sort((a, b) => {
-      if (a.firstTimer !== b.firstTimer) {
-        return a.firstTimer ? -1 : 1;
-      }
-
-      return String(a.sortName || "").localeCompare(
-        String(b.sortName || ""),
-        undefined,
-        {
-          sensitivity: "base",
-        },
-      );
-    });
-
-    sessionStorage.setItem("fcoc-name-tags", JSON.stringify(people));
-    sessionStorage.setItem(
-      "fcoc-name-tags-event",
-      selectedEvent?.name || "Event",
-    );
-
-    setPrintStatus(`Ready: ${people.length} name tags.`);
-    window.open("/admin/reports/name-tags/print", "_blank");
-  }
-  async function generateCoachPlatesFromEvent() {
-    if (!selectedEventId) return;
-
-    setPrintStatus("Loading coach plates from event data...");
-
-    const { data, error } = await supabase
-      .from("event_import_rows")
-      .select("*")
-      .eq("event_id", selectedEventId)
-      .eq("import_type", "attendee_roster")
-      .order("pilot_last", { ascending: true });
-
-    if (error) {
-      console.error(error);
-      setPrintStatus("Could not load stored attendee import rows.");
-      return;
-    }
-
-    if (!data || data.length === 0) {
-      setPrintStatus("No stored attendee import data found for this event.");
-      return;
-    }
-
-    const plates = data.map((row: any) => {
-      const pilotFirst = String(
-        row.pilot_badge_nickname || row.pilot_first || "",
-      ).trim();
-      const pilotLast = String(row.pilot_last || "").trim();
-
-      const copilotFirst = String(
-        row.copilot_badge_nickname || row.copilot_first || "",
-      ).trim();
-      const copilotLast = String(row.copilot_last || pilotLast || "").trim();
-
-      return {
-        eventName: selectedEvent?.name || "Event",
-        memberNumber: row.membership_number || "",
-        pilotDisplay: [pilotFirst, pilotLast].filter(Boolean).join(" "),
-        copilotDisplay: copilotFirst
-          ? [copilotFirst, copilotLast].filter(Boolean).join(" ")
-          : "",
-        city: row.city || "",
-        state: row.state || "",
-        firstTimer: !!row.is_first_timer,
-        sortName: pilotLast,
-      };
-    });
-
-    plates.sort((a, b) => {
-      if (a.firstTimer !== b.firstTimer) {
-        return a.firstTimer ? -1 : 1;
-      }
-
-      return String(a.sortName || "").localeCompare(
-        String(b.sortName || ""),
-        undefined,
-        {
-          sensitivity: "base",
-        },
-      );
-    });
-
-    sessionStorage.setItem("fcoc-coach-plates", JSON.stringify(plates));
-
-    setPrintStatus(`Ready: ${plates.length} coach plates.`);
-    window.open("/admin/reports/coach-plates/print", "_blank");
-  }
-
-  const reportTitle = useMemo(() => {
+  const rosterRows = useMemo(() => {
     switch (reportType) {
-      case "all_attendees":
-        return "All Attendees";
-      case "parking":
-        return "Parking Report";
-      case "checked_in":
-        return "Checked In";
-      case "not_arrived":
-        return "Not Arrived";
-      case "first_time_attendees":
-        return "First-Time Attendees";
-      case "first_time_arrived":
-        return "First-Time Arrived";
-      case "first_time_not_arrived":
-        return "First-Time Not Arrived";
-      case "unassigned_sites":
-        return "Unassigned Sites";
-      case "site_assignments":
-        return "Site Assignments";
-      default:
-        return "Report";
-    }
-  }, [reportType]);
-
-  const baseRows = useMemo<ReportRow[]>(() => {
-    switch (reportType) {
-      case "all_attendees":
-        return attendees.map((attendee) => ({
-          site: attendee.assigned_site || "",
-          pilot: pilotName(attendee),
-          copilot: coPilotName(attendee),
-          email: attendee.email || "",
-          arrived: attendee.has_arrived ? "YES" : "NO",
-          firstTimer: attendee.is_first_timer ? "YES" : "NO",
-        }));
-
-      case "checked_in":
+      case "first_timers":
         return attendees
-          .filter((attendee) => attendee.has_arrived)
-          .map((attendee) => ({
-            site: attendee.assigned_site || "",
-            pilot: pilotName(attendee),
-            copilot: coPilotName(attendee),
-            email: attendee.email || "",
-            arrived: "YES",
-            firstTimer: attendee.is_first_timer ? "YES" : "NO",
-          }));
+          .filter((row) => row.is_first_timer)
+          .map(attendeeToRosterRow);
 
-      case "not_arrived":
+      case "volunteers":
         return attendees
-          .filter((attendee) => !attendee.has_arrived)
-          .map((attendee) => ({
-            site: attendee.assigned_site || "",
-            pilot: pilotName(attendee),
-            copilot: coPilotName(attendee),
-            email: attendee.email || "",
-            arrived: "NO",
-            firstTimer: attendee.is_first_timer ? "YES" : "NO",
-          }));
+          .filter((row) => row.wants_to_volunteer)
+          .map(attendeeToRosterRow);
 
-      case "first_time_attendees":
+      case "vendors":
         return attendees
-          .filter((attendee) => attendee.is_first_timer)
-          .map((attendee) => ({
-            site: attendee.assigned_site || "",
-            pilot: pilotName(attendee),
-            copilot: coPilotName(attendee),
-            email: attendee.email || "",
-            arrived: attendee.has_arrived ? "YES" : "NO",
-            firstTimer: "YES",
-          }));
+          .filter((row) => (row.participant_type || "") === "vendor")
+          .map(attendeeToRosterRow);
 
-      case "first_time_arrived":
+      case "staff_hosts_helpers":
         return attendees
-          .filter((attendee) => attendee.is_first_timer && attendee.has_arrived)
-          .map((attendee) => ({
-            site: attendee.assigned_site || "",
-            pilot: pilotName(attendee),
-            copilot: coPilotName(attendee),
-            email: attendee.email || "",
-            arrived: "YES",
-            firstTimer: "YES",
-          }));
-
-      case "first_time_not_arrived":
-        return attendees
-          .filter(
-            (attendee) => attendee.is_first_timer && !attendee.has_arrived,
+          .filter((row) =>
+            ["staff", "host", "helper", "volunteer", "vip"].includes(
+              row.participant_type || "",
+            ),
           )
-          .map((attendee) => ({
-            site: attendee.assigned_site || "",
-            pilot: pilotName(attendee),
-            copilot: coPilotName(attendee),
-            email: attendee.email || "",
-            arrived: "NO",
-            firstTimer: "YES",
-          }));
+          .map(attendeeToRosterRow);
 
-      case "parking":
-        return parkingSites.map((site) => {
-          const assigned = site.assigned_attendee_id
-            ? attendeeById.get(site.assigned_attendee_id)
-            : null;
-
-          return {
-            site: siteLabel(site),
-            pilot: assigned ? pilotName(assigned) : "",
-            copilot: assigned ? coPilotName(assigned) : "",
-            email: assigned?.email || "",
-            arrived: assigned?.has_arrived ? "YES" : "NO",
-            firstTimer: assigned?.is_first_timer ? "YES" : "NO",
-          };
-        });
-
-      case "unassigned_sites":
+      case "parking_assignments":
         return parkingSites
-          .filter((site) => !site.assigned_attendee_id)
-          .map((site) => ({
-            site: siteLabel(site),
-            pilot: "",
-            copilot: "",
-            email: "",
-            arrived: "",
-            firstTimer: "",
-          }));
+          .filter((site) => !!site.assigned_attendee_id)
+          .map((site) => {
+            const assigned = site.assigned_attendee_id
+              ? attendeeById.get(site.assigned_attendee_id)
+              : null;
 
-      case "site_assignments":
-        return attendees.map((attendee) => ({
-          site: attendee.assigned_site || "",
-          pilot: pilotName(attendee),
-          copilot: coPilotName(attendee),
-          email: attendee.email || "",
-          arrived: attendee.has_arrived ? "YES" : "NO",
-          firstTimer: attendee.is_first_timer ? "YES" : "NO",
-        }));
+            return {
+              site: siteLabel(site),
+              participantType: assigned
+                ? participantTypeLabel(assigned.participant_type)
+                : "",
+              pilot: assigned ? pilotName(assigned) : "",
+              copilot: assigned ? coPilotName(assigned) : "",
+              email: assigned?.email || "",
+              cityState: assigned ? cityState(assigned) : "",
+              arrived: assigned?.has_arrived ? "YES" : assigned ? "NO" : "",
+              active: assigned?.is_active ? "YES" : assigned ? "NO" : "",
+              firstTimer: assigned?.is_first_timer
+                ? "YES"
+                : assigned
+                  ? "NO"
+                  : "",
+              volunteer: assigned?.wants_to_volunteer
+                ? "YES"
+                : assigned
+                  ? "NO"
+                  : "",
+              source: assigned?.source_type || "",
+              pilotFirst: assigned?.pilot_first || "",
+              pilotLast: assigned?.pilot_last || "",
+              copilotFirst: assigned?.copilot_first || "",
+              copilotLast: assigned?.copilot_last || "",
+            };
+          });
+
+      case "unassigned_parking_needed":
+        return attendees
+          .filter((row) => row.needs_parking && !row.assigned_site)
+          .map(attendeeToRosterRow);
 
       default:
         return [];
     }
   }, [reportType, attendees, parkingSites, attendeeById]);
 
-  const reportRows = useMemo(() => {
-    return sortRows(baseRows, sortType);
-  }, [baseRows, sortType]);
+  const sortedRosterRows = useMemo(() => {
+    if (reportType === "activity_summary") return [];
+    return sortRosterRows(rosterRows, sortType);
+  }, [rosterRows, sortType, reportType]);
+
+  const activitySummaryRows = useMemo(() => {
+    const summary = new Map<
+      string,
+      {
+        activityName: string;
+        totalQty: number;
+        participantCount: number;
+        totalRevenue: number;
+      }
+    >();
+
+    const uniqueParticipantsByActivity = new Map<string, Set<string>>();
+
+    for (const activity of activities) {
+      const key = activity.activity_name || "Unnamed Activity";
+
+      if (!summary.has(key)) {
+        summary.set(key, {
+          activityName: key,
+          totalQty: 0,
+          participantCount: 0,
+          totalRevenue: 0,
+        });
+      }
+
+      const row = summary.get(key)!;
+      row.totalQty += Number(activity.quantity || 0);
+      row.totalRevenue +=
+        (Number(activity.price || 0) || 0) *
+        (Number(activity.quantity || 0) || 0);
+
+      if (!uniqueParticipantsByActivity.has(key)) {
+        uniqueParticipantsByActivity.set(key, new Set());
+      }
+
+      const entryKey = activity.entry_id || activity.id;
+      uniqueParticipantsByActivity.get(key)!.add(entryKey);
+    }
+
+    for (const [key, set] of uniqueParticipantsByActivity.entries()) {
+      const row = summary.get(key);
+      if (row) row.participantCount = set.size;
+    }
+
+    return Array.from(summary.values()).sort((a, b) =>
+      a.activityName.localeCompare(b.activityName, undefined, {
+        sensitivity: "base",
+      }),
+    );
+  }, [activities]);
+
+  const reportTitle = useMemo(() => {
+    switch (reportType) {
+      case "first_timers":
+        return "First Timers";
+      case "volunteers":
+        return "Volunteers";
+      case "vendors":
+        return "Vendors";
+      case "staff_hosts_helpers":
+        return "Staff / Hosts / Helpers";
+      case "parking_assignments":
+        return "Parking Assignments";
+      case "unassigned_parking_needed":
+        return "Needs Parking / Unassigned";
+      case "activity_summary":
+        return "Activity Summary";
+      default:
+        return "Report";
+    }
+  }, [reportType]);
 
   const summary = useMemo(() => {
     const totalAttendees = attendees.length;
-    const arrived = attendees.filter((item) => item.has_arrived).length;
-    const notArrived = totalAttendees - arrived;
-    const firstTimers = attendees.filter((item) => item.is_first_timer).length;
-    const totalSites = parkingSites.length;
-    const assignedSites = parkingSites.filter(
-      (item) => !!item.assigned_attendee_id,
+    const activeCount = attendees.filter((x) => x.is_active).length;
+    const inactiveCount = attendees.filter((x) => !x.is_active).length;
+    const firstTimers = attendees.filter((x) => x.is_first_timer).length;
+    const volunteerCount = attendees.filter((x) => x.wants_to_volunteer).length;
+    const vendorCount = attendees.filter(
+      (x) => (x.participant_type || "") === "vendor",
     ).length;
-    const unassignedSites = totalSites - assignedSites;
+    const parkingAssigned = attendees.filter((x) => !!x.assigned_site).length;
+    const parkingNeededUnassigned = attendees.filter(
+      (x) => x.needs_parking && !x.assigned_site,
+    ).length;
 
     return {
       totalAttendees,
-      arrived,
-      notArrived,
+      activeCount,
+      inactiveCount,
       firstTimers,
-      totalSites,
-      assignedSites,
-      unassignedSites,
-      rows: reportRows.length,
+      volunteerCount,
+      vendorCount,
+      parkingAssigned,
+      parkingNeededUnassigned,
     };
-  }, [attendees, parkingSites, reportRows]);
+  }, [attendees]);
 
-  function handleExportCsv() {
-    if (!selectedEvent) return;
+  function buildExportRows(): string[][] {
+    if (reportType === "activity_summary") {
+      return [
+        [reportTitle],
+        ["Event", currentEvent?.name || currentEvent?.eventName || ""],
+        ["Location", currentEvent?.location || ""],
+        [],
+        ["Activity", "Participant Count", "Total Quantity", "Total Revenue"],
+        ...activitySummaryRows.map((row) => [
+          row.activityName,
+          String(row.participantCount),
+          String(row.totalQty),
+          row.totalRevenue.toFixed(2),
+        ]),
+      ];
+    }
 
-    const filenameBase =
-      `${selectedEvent.name || "event"}_${reportType}_${sortType}`
-        .replace(/\s+/g, "_")
-        .replace(/[^\w\-]+/g, "")
-        .toLowerCase();
-
-    const rows: string[][] = [
+    return [
       [reportTitle],
-      ["Event", selectedEvent.name || ""],
-      ["Venue", selectedEvent.venue_name || ""],
-      ["Location", selectedEvent.location || ""],
+      ["Event", currentEvent?.name || currentEvent?.eventName || ""],
+      ["Location", currentEvent?.location || ""],
       ["Sort", sortType],
       [],
-      ["Site", "Pilot", "Co-Pilot", "Email", "Arrived", "First Timer"],
-      ...reportRows.map((row) => [
+      [
+        "Site",
+        "Participant Type",
+        "Pilot",
+        "Co-Pilot",
+        "Email",
+        "City/State",
+        "Arrived",
+        "Active",
+        "First Timer",
+        "Volunteer",
+        "Source",
+      ],
+      ...sortedRosterRows.map((row) => [
         row.site,
+        row.participantType,
         row.pilot,
         row.copilot,
         row.email,
+        row.cityState,
         row.arrived,
+        row.active,
         row.firstTimer,
+        row.volunteer,
+        row.source,
       ]),
     ];
+  }
+
+  function handleExportCsv() {
+    if (!canExport) return;
+
+    const rows = buildExportRows();
+    const filenameBase = `${(
+      currentEvent?.name ||
+      currentEvent?.eventName ||
+      "event"
+    )
+      .replace(/\s+/g, "_")
+      .replace(/[^\w\-]+/g, "")
+      .toLowerCase()}_${reportType}`;
 
     downloadCsv(`${filenameBase}.csv`, rows);
   }
+
   function handleExportXlsx() {
-    if (!selectedEvent) return;
+    if (!canExport) return;
 
-    const filenameBase =
-      `${selectedEvent.name || "event"}_${reportType}_${sortType}`
-        .replace(/\s+/g, "_")
-        .replace(/[^\w\-]+/g, "")
-        .toLowerCase();
-
-    const rows: string[][] = [
-      [reportTitle],
-      ["Event", selectedEvent.name || ""],
-      ["Venue", selectedEvent.venue_name || ""],
-      ["Location", selectedEvent.location || ""],
-      ["Sort", sortType],
-      [],
-      ["Site", "Pilot", "Co-Pilot", "Email", "Arrived", "First Timer"],
-      ...reportRows.map((row) => [
-        row.site,
-        row.pilot,
-        row.copilot,
-        row.email,
-        row.arrived,
-        row.firstTimer,
-      ]),
-    ];
+    const rows = buildExportRows();
+    const filenameBase = `${(
+      currentEvent?.name ||
+      currentEvent?.eventName ||
+      "event"
+    )
+      .replace(/\s+/g, "_")
+      .replace(/[^\w\-]+/g, "")
+      .toLowerCase()}_${reportType}`;
 
     downloadXlsx(`${filenameBase}.xlsx`, reportTitle.slice(0, 31), rows);
   }
 
+  if (!loading && accessDenied) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Reports</h1>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          You do not have access to this page.
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="card">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <h1 style={{ marginBottom: 6 }}>Reports</h1>
-          <p style={{ marginTop: 0, opacity: 0.8 }}>
-            Select an event, report type, and sort order.
-          </p>
+    <div style={{ display: "grid", gap: 18 }}>
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Reports</h1>
+
+        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
+          {currentEvent?.name || currentEvent?.eventName || "No event selected"}
+          {currentEvent?.location ? ` • ${currentEvent.location}` : ""}
         </div>
+
+        {status ? (
+          <div style={{ marginBottom: 12, fontSize: 14 }}>{status}</div>
+        ) : null}
+
+        {error ? <div style={errorBoxStyle}>{error}</div> : null}
 
         <div
           style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            marginTop: 12,
           }}
         >
-          <button
-            onClick={handleExportCsv}
-            disabled={
-              !selectedEventId || loadingReport || reportRows.length === 0
-            }
-          >
-            Export CSV
-          </button>
-
-          <button
-            onClick={handleExportXlsx}
-            disabled={
-              !selectedEventId || loadingReport || reportRows.length === 0
-            }
-          >
-            Export XLSX
-          </button>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 16,
-          marginTop: 20,
-          marginBottom: 20,
-        }}
-      >
-        <div>
-          <label
-            htmlFor="report-event-select"
-            style={{ display: "block", marginBottom: 6 }}
-          >
-            Event
-          </label>
-          <select
-            id="report-event-select"
-            value={selectedEventId}
-            onChange={(e) => setSelectedEventId(e.target.value)}
-            style={{ width: "100%" }}
-            disabled={loadingEvents}
-          >
-            <option value="">Select event</option>
-            {events.map((event) => (
-              <option key={event.id} value={event.id}>
-                {event.name || "Untitled Event"}
-                {event.location ? ` — ${event.location}` : ""}
+          <div>
+            <label style={labelStyle}>Report Type</label>
+            <select
+              value={reportType}
+              onChange={(e) => setReportType(e.target.value as ReportType)}
+              style={inputStyle}
+            >
+              <option value="first_timers">First Timers</option>
+              <option value="volunteers">Volunteers</option>
+              <option value="vendors">Vendors</option>
+              <option value="staff_hosts_helpers">
+                Staff / Hosts / Helpers
               </option>
-            ))}
-          </select>
-        </div>
+              <option value="parking_assignments">Parking Assignments</option>
+              <option value="unassigned_parking_needed">
+                Needs Parking / Unassigned
+              </option>
+              <option value="activity_summary">Activity Summary</option>
+            </select>
+          </div>
 
-        <div>
-          <label
-            htmlFor="report-type-select"
-            style={{ display: "block", marginBottom: 6 }}
-          >
-            Report Type
-          </label>
-          <select
-            id="report-type-select"
-            value={reportType}
-            onChange={(e) => setReportType(e.target.value as ReportType)}
-            style={{ width: "100%" }}
-          >
-            <option value="all_attendees">All Attendees</option>
-            <option value="parking">Parking Report</option>
-            <option value="checked_in">Checked In</option>
-            <option value="not_arrived">Not Arrived</option>
-            <option value="first_time_attendees">First-Time Attendees</option>
-            <option value="first_time_arrived">First-Time Arrived</option>
-            <option value="first_time_not_arrived">
-              First-Time Not Arrived
-            </option>
-            <option value="unassigned_sites">Unassigned Sites</option>
-            <option value="site_assignments">Site Assignments</option>
-          </select>
-        </div>
+          <div>
+            <label style={labelStyle}>Sort</label>
+            <select
+              value={sortType}
+              onChange={(e) => setSortType(e.target.value as SortType)}
+              style={inputStyle}
+              disabled={reportType === "activity_summary"}
+            >
+              <option value="name_asc">Last Name A–Z</option>
+              <option value="name_desc">Last Name Z–A</option>
+              <option value="site_asc">Site 0–9 / A–Z</option>
+              <option value="site_desc">Site 9–0 / Z–A</option>
+            </select>
+          </div>
 
-        <div>
-          <label
-            htmlFor="report-sort-select"
-            style={{ display: "block", marginBottom: 6 }}
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "end",
+              flexWrap: "wrap",
+            }}
           >
-            Sort
-          </label>
-          <select
-            id="report-sort-select"
-            value={sortType}
-            onChange={(e) => setSortType(e.target.value as SortType)}
-            style={{ width: "100%" }}
-          >
-            <option value="site_asc">Site 0–9 / A–Z</option>
-            <option value="site_desc">Site 9–0 / Z–A</option>
-            <option value="name_asc">Pilot Name A–Z</option>
-            <option value="name_desc">Pilot Name Z–A</option>
-          </select>
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              style={secondaryButtonStyle}
+              disabled={loading || !canExport}
+            >
+              Export CSV
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportXlsx}
+              style={primaryButtonStyle}
+              disabled={loading || !canExport}
+            >
+              Export XLSX
+            </button>
+          </div>
         </div>
       </div>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
           gap: 12,
-          marginBottom: 20,
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
         }}
       >
-        <div className="card">
-          <strong>Total Attendees</strong>
-          <div style={{ fontSize: 24, marginTop: 6 }}>
-            {summary.totalAttendees}
-          </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Total Participants</strong>
+          <div style={summaryValueStyle}>{summary.totalAttendees}</div>
         </div>
-        <div className="card">
-          <strong>Arrived</strong>
-          <div style={{ fontSize: 24, marginTop: 6 }}>{summary.arrived}</div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Active</strong>
+          <div style={summaryValueStyle}>{summary.activeCount}</div>
         </div>
-        <div className="card">
-          <strong>Not Arrived</strong>
-          <div style={{ fontSize: 24, marginTop: 6 }}>{summary.notArrived}</div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Inactive</strong>
+          <div style={summaryValueStyle}>{summary.inactiveCount}</div>
         </div>
-        <div className="card">
+        <div className="card" style={summaryCardStyle}>
           <strong>First Timers</strong>
-          <div style={{ fontSize: 24, marginTop: 6 }}>
-            {summary.firstTimers}
-          </div>
+          <div style={summaryValueStyle}>{summary.firstTimers}</div>
         </div>
-        <div className="card">
-          <strong>Total Sites</strong>
-          <div style={{ fontSize: 24, marginTop: 6 }}>{summary.totalSites}</div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Volunteers</strong>
+          <div style={summaryValueStyle}>{summary.volunteerCount}</div>
         </div>
-        <div className="card">
-          <strong>Assigned Sites</strong>
-          <div style={{ fontSize: 24, marginTop: 6 }}>
-            {summary.assignedSites}
-          </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Vendors</strong>
+          <div style={summaryValueStyle}>{summary.vendorCount}</div>
         </div>
-        <div className="card">
-          <strong>Open Sites</strong>
-          <div style={{ fontSize: 24, marginTop: 6 }}>
-            {summary.unassignedSites}
-          </div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Parking Assigned</strong>
+          <div style={summaryValueStyle}>{summary.parkingAssigned}</div>
         </div>
-        <div className="card">
-          <strong>Rows in Report</strong>
-          <div style={{ fontSize: 24, marginTop: 6 }}>{summary.rows}</div>
+        <div className="card" style={summaryCardStyle}>
+          <strong>Parking Needed / Unassigned</strong>
+          <div style={summaryValueStyle}>{summary.parkingNeededUnassigned}</div>
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ marginBottom: 12 }}>
-          <strong>Name Tags / Coach Plates</strong>
-          <div style={{ marginTop: 6, opacity: 0.8 }}>
-            Use the attendee roster already imported for the selected event.
+      <div className="card" style={{ padding: 18 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 6 }}>{reportTitle}</h2>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            {reportType === "activity_summary"
+              ? `${activitySummaryRows.length} activity rows`
+              : `${sortedRosterRows.length} roster rows`}
           </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <button
-            onClick={generateNameTagsFromEvent}
-            disabled={!selectedEventId}
-          >
-            Open Name Tags Print / PDF
-          </button>
-
-          <button
-            onClick={generateCoachPlatesFromEvent}
-            disabled={!selectedEventId}
-          >
-            Open Coach Plates Print / PDF
-          </button>
-        </div>
-
-        {printStatus && (
-          <p style={{ marginTop: 12, marginBottom: 0 }}>{printStatus}</p>
-        )}
-      </div>
-
-      <div className="card">
-        <div style={{ marginBottom: 12 }}>
-          <strong>{reportTitle}</strong>
-          {selectedEvent ? (
-            <div style={{ marginTop: 6, opacity: 0.8 }}>
-              {selectedEvent.name || "Untitled Event"}
-              {selectedEvent.location ? ` — ${selectedEvent.location}` : ""}
+        {loading ? (
+          <div>Loading...</div>
+        ) : reportType === "activity_summary" ? (
+          activitySummaryRows.length === 0 ? (
+            <div style={{ opacity: 0.8 }}>No activity rows found.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Activity</th>
+                    <th style={thStyle}>Participants</th>
+                    <th style={thStyle}>Total Qty</th>
+                    <th style={thStyle}>Total Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activitySummaryRows.map((row) => (
+                    <tr key={row.activityName}>
+                      <td style={tdStyle}>{row.activityName}</td>
+                      <td style={tdStyle}>{row.participantCount}</td>
+                      <td style={tdStyle}>{row.totalQty}</td>
+                      <td style={tdStyle}>${row.totalRevenue.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ) : null}
-        </div>
-
-        {(loadingEvents || loadingReport) && <p>{status}</p>}
-
-        {!loadingEvents && !loadingReport && !selectedEventId && (
-          <p>Please select an event.</p>
-        )}
-
-        {!loadingEvents &&
-          !loadingReport &&
-          selectedEventId &&
-          reportRows.length === 0 && <p>No rows found for this report.</p>}
-
-        {!loadingEvents && !loadingReport && reportRows.length > 0 && (
+          )
+        ) : sortedRosterRows.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>No rows found for this report.</div>
+        ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>
-                    Site
-                  </th>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>
-                    Pilot
-                  </th>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>
-                    Co-Pilot
-                  </th>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>
-                    Email
-                  </th>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>
-                    Arrived
-                  </th>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>
-                    First Timer
-                  </th>
+                  <th style={thStyle}>Site</th>
+                  <th style={thStyle}>Type</th>
+                  <th style={thStyle}>Pilot</th>
+                  <th style={thStyle}>Co-Pilot</th>
+                  <th style={thStyle}>Email</th>
+                  <th style={thStyle}>City / State</th>
+                  <th style={thStyle}>Arrived</th>
+                  <th style={thStyle}>Active</th>
+                  <th style={thStyle}>First Timer</th>
+                  <th style={thStyle}>Volunteer</th>
+                  <th style={thStyle}>Source</th>
                 </tr>
               </thead>
               <tbody>
-                {reportRows.map((row, index) => (
+                {sortedRosterRows.map((row, index) => (
                   <tr key={`${row.site}-${row.email}-${index}`}>
-                    <td
-                      style={{
-                        padding: "10px 8px",
-                        borderTop: "1px solid #ddd",
-                      }}
-                    >
-                      {row.site}
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 8px",
-                        borderTop: "1px solid #ddd",
-                      }}
-                    >
-                      {row.pilot}
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 8px",
-                        borderTop: "1px solid #ddd",
-                      }}
-                    >
-                      {row.copilot}
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 8px",
-                        borderTop: "1px solid #ddd",
-                      }}
-                    >
-                      {row.email}
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 8px",
-                        borderTop: "1px solid #ddd",
-                      }}
-                    >
-                      {row.arrived}
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 8px",
-                        borderTop: "1px solid #ddd",
-                      }}
-                    >
-                      {row.firstTimer}
-                    </td>
+                    <td style={tdStyle}>{row.site}</td>
+                    <td style={tdStyle}>{row.participantType}</td>
+                    <td style={tdStyle}>{row.pilot}</td>
+                    <td style={tdStyle}>{row.copilot}</td>
+                    <td style={tdStyle}>{row.email}</td>
+                    <td style={tdStyle}>{row.cityState}</td>
+                    <td style={tdStyle}>{row.arrived}</td>
+                    <td style={tdStyle}>{row.active}</td>
+                    <td style={tdStyle}>{row.firstTimer}</td>
+                    <td style={tdStyle}>{row.volunteer}</td>
+                    <td style={tdStyle}>{row.source}</td>
                   </tr>
                 ))}
               </tbody>
@@ -972,3 +895,74 @@ export default function AdminReportsPage() {
     </div>
   );
 }
+
+const labelStyle: CSSProperties = {
+  display: "block",
+  marginBottom: 6,
+  fontWeight: 600,
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+};
+
+const primaryButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "none",
+  background: "#111827",
+  color: "white",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const errorBoxStyle: CSSProperties = {
+  marginBottom: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #e2b4b4",
+  background: "#fff3f3",
+  color: "#8a1f1f",
+};
+
+const summaryCardStyle: CSSProperties = {
+  padding: 16,
+};
+
+const summaryValueStyle: CSSProperties = {
+  fontSize: 26,
+  fontWeight: 800,
+  marginTop: 8,
+};
+
+const tableStyle: CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+};
+
+const thStyle: CSSProperties = {
+  textAlign: "left",
+  padding: "10px 8px",
+  borderBottom: "2px solid #ddd",
+  whiteSpace: "nowrap",
+};
+
+const tdStyle: CSSProperties = {
+  textAlign: "left",
+  padding: "10px 8px",
+  borderTop: "1px solid #ddd",
+  verticalAlign: "top",
+};

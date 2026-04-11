@@ -6,6 +6,11 @@ import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAgendaColor } from "@/lib/agendaColors";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type AgendaItem = {
   id: string;
@@ -174,35 +179,68 @@ function AdminAgendaPageInner() {
   const [templates, setTemplates] = useState<AgendaTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [assignedTemplateId, setAssignedTemplateId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
-    function handleResize() {
-      const userAgent = navigator.userAgent || "";
-      const platform = navigator.platform || "";
-      const isIOSLike = /iPhone|iPad|iPod/i.test(userAgent);
-      const isAndroid = /Android/i.test(userAgent);
-      const isIPadDesktopMode =
-        /Mac/.test(platform) && navigator.maxTouchPoints > 1;
-      const touchDevice = isIOSLike || isAndroid || isIPadDesktopMode;
+    async function init() {
+      setLoading(true);
+      setError(null);
+      setStatus("Checking admin access...");
+      setAccessDenied(false);
 
-      setIsMobile(touchDevice);
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setActiveEvent(null);
+        setItems([]);
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_manage_agenda")) {
+        setActiveEvent(null);
+        setItems([]);
+        setError("You do not have permission to manage agenda items.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      const adminEvent = getAdminEvent();
+
+      if (!adminEvent?.id) {
+        setActiveEvent(null);
+        setItems([]);
+        setStatus("No admin working event selected.");
+        setLoading(false);
+        return;
+      }
+
+      if (!canAccessEvent(admin, adminEvent.id)) {
+        setActiveEvent(null);
+        setItems([]);
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      await loadPage();
     }
 
-    handleResize();
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, []);
-
-  useEffect(() => {
-    void loadPage();
+    void init();
     void loadTemplates();
 
     function handleStorage(e: StorageEvent) {
       if (e.key === "fcoc-admin-event-changed") {
-        void loadPage();
+        void init();
         void loadTemplates();
       }
     }
@@ -212,6 +250,8 @@ function AdminAgendaPageInner() {
   }, []);
 
   async function loadPage() {
+    setLoading(true);
+    setError(null);
     setStatus("Loading...");
 
     const adminEvent = getAdminEvent();
@@ -220,6 +260,7 @@ function AdminAgendaPageInner() {
       setActiveEvent(null);
       setItems([]);
       setStatus("No admin working event selected.");
+      setLoading(false);
       return;
     }
 
@@ -235,16 +276,21 @@ function AdminAgendaPageInner() {
       .eq("id", selectedEvent.id)
       .maybeSingle();
 
-    if (!eventDataError) {
-      const assignedId =
-        (
-          eventData as {
-            assigned_agenda_template_id?: string | null;
-          } | null
-        )?.assigned_agenda_template_id || "";
-      setAssignedTemplateId(assignedId);
-      setSelectedTemplateId(assignedId);
+    if (eventDataError) {
+      setError(eventDataError.message);
+      setStatus(`Could not load event settings: ${eventDataError.message}`);
+      setLoading(false);
+      return;
     }
+
+    const assignedId =
+      (
+        eventData as {
+          assigned_agenda_template_id?: string | null;
+        } | null
+      )?.assigned_agenda_template_id || "";
+    setAssignedTemplateId(assignedId);
+    setSelectedTemplateId(assignedId);
 
     const { data, error } = await supabase
       .from("agenda_items")
@@ -259,11 +305,13 @@ function AdminAgendaPageInner() {
 
     if (error) {
       setStatus(`Could not load agenda items: ${error.message}`);
+      setLoading(false);
       return;
     }
 
     setItems((data || []) as AgendaItem[]);
     setStatus(`Loaded ${(data || []).length} items for ${selectedEvent.name}.`);
+    setLoading(false);
   }
   async function loadTemplates() {
     const { data, error } = await supabase
@@ -274,6 +322,7 @@ function AdminAgendaPageInner() {
 
     if (error) {
       console.error("loadTemplates error:", error);
+      setError(`Could not load agenda templates: ${error.message}`);
       return;
     }
 
@@ -353,6 +402,7 @@ function AdminAgendaPageInner() {
     };
 
     setSaving(true);
+    setError(null);
 
     try {
       if (form.id) {
@@ -407,6 +457,7 @@ function AdminAgendaPageInner() {
   async function deleteItem(id: string) {
     const confirmed = window.confirm("Delete this agenda item?");
     if (!confirmed) return;
+    setError(null);
 
     const { error } = await supabase.from("agenda_items").delete().eq("id", id);
 
@@ -424,6 +475,7 @@ function AdminAgendaPageInner() {
   }
 
   async function togglePublished(item: AgendaItem) {
+    setError(null);
     const { error } = await supabase
       .from("agenda_items")
       .update({
@@ -645,7 +697,16 @@ function AdminAgendaPageInner() {
   }
   const assignedTemplateName =
     templates.find((t) => t.id === assignedTemplateId)?.name || "None";
-
+  if (!loading && accessDenied) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Agenda</h1>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          You do not have access to this page.
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ padding: 24 }}>
       <div style={{ marginBottom: 16 }}>
@@ -666,6 +727,20 @@ function AdminAgendaPageInner() {
         </button>
       </div>
       <h1>Admin Agenda</h1>
+      {error ? (
+        <div
+          style={{
+            border: "1px solid #e2b4b4",
+            borderRadius: 10,
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
       <div
         style={{
           border: "1px solid #ddd",
@@ -681,7 +756,6 @@ function AdminAgendaPageInner() {
         <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
           {status}
         </div>
-
         <div style={{ fontSize: 13, color: "#666", marginTop: 6 }}>
           Assigned Template: {assignedTemplateName}
         </div>

@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type EventContext = {
   id?: string | null;
@@ -260,12 +265,46 @@ export default function AdminAttendeeImportsPage() {
   const [assetError, setAssetError] = useState<string | null>(null);
   const [savingNameTagBg, setSavingNameTagBg] = useState(false);
   const [savingCoachPlateBg, setSavingCoachPlateBg] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
     async function loadEvents() {
       setLoadingEvent(true);
+      setError(null);
+      setAccessDenied(false);
+      setStatus("Checking admin access...");
 
       try {
+        const admin = await getCurrentAdminAccess();
+
+        if (!admin) {
+          setCurrentEvent(null);
+          setAvailableEvents([]);
+          setSelectedImportEventId("");
+          setLoadedForEventId("");
+          setRows([]);
+          setHeaders([]);
+          setFileName("");
+          setError("No admin access.");
+          setStatus("Access denied.");
+          setAccessDenied(true);
+          return;
+        }
+
+        if (!hasPermission(admin, "can_import_attendees")) {
+          setCurrentEvent(null);
+          setAvailableEvents([]);
+          setSelectedImportEventId("");
+          setLoadedForEventId("");
+          setRows([]);
+          setHeaders([]);
+          setFileName("");
+          setError("You do not have permission to import attendees.");
+          setStatus("Access denied.");
+          setAccessDenied(true);
+          return;
+        }
+
         const stored = getStoredAdminEvent();
         setCurrentEvent(stored);
 
@@ -276,18 +315,33 @@ export default function AdminAttendeeImportsPage() {
 
         if (error) throw error;
 
-        const events = (data || []) as EventContext[];
-        setAvailableEvents(events);
+        const accessibleEvents = ((data || []) as EventContext[]).filter(
+          (event) => !!event.id && canAccessEvent(admin, event.id),
+        );
 
-        if (stored?.id) {
+        setAvailableEvents(accessibleEvents);
+
+        if (stored?.id && canAccessEvent(admin, stored.id)) {
           setSelectedImportEventId(stored.id);
-        } else if (events.length > 0 && events[0].id) {
-          setSelectedImportEventId(events[0].id);
+        } else if (accessibleEvents.length > 0 && accessibleEvents[0].id) {
+          setSelectedImportEventId(accessibleEvents[0].id);
         } else {
-          setStatus("No events available for import.");
+          setSelectedImportEventId("");
+          setLoadedForEventId("");
+          setRows([]);
+          setHeaders([]);
+          setFileName("");
+          setStatus("No accessible events available for import.");
         }
       } catch (err) {
         console.error("Error loading events:", err);
+        setCurrentEvent(null);
+        setAvailableEvents([]);
+        setSelectedImportEventId("");
+        setLoadedForEventId("");
+        setRows([]);
+        setHeaders([]);
+        setFileName("");
         setStatus("Could not load events.");
       } finally {
         setLoadingEvent(false);
@@ -295,6 +349,20 @@ export default function AdminAttendeeImportsPage() {
     }
 
     void loadEvents();
+
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
+        void loadEvents();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
   useEffect(() => {
@@ -363,6 +431,10 @@ export default function AdminAttendeeImportsPage() {
   async function handleFileChange(file: File) {
     if (!selectedImportEventId) {
       setError("Select a target event before loading a file.");
+      return;
+    }
+    if (accessDenied) {
+      setError("You do not have access to import into this event.");
       return;
     }
 
@@ -453,7 +525,7 @@ export default function AdminAttendeeImportsPage() {
   }
 
   async function handleUploadNameTagBackground() {
-    if (!selectedImportEventId || !nameTagFile) return;
+    if (!selectedImportEventId || !nameTagFile || accessDenied) return;
 
     try {
       setSavingNameTagBg(true);
@@ -477,7 +549,7 @@ export default function AdminAttendeeImportsPage() {
   }
 
   async function handleUploadCoachPlateBackground() {
-    if (!selectedImportEventId || !coachPlateFile) return;
+    if (!selectedImportEventId || !coachPlateFile || accessDenied) return;
 
     try {
       setSavingCoachPlateBg(true);
@@ -501,7 +573,7 @@ export default function AdminAttendeeImportsPage() {
   }
 
   async function clearNameTagBackground() {
-    if (!selectedImportEventId) return;
+    if (!selectedImportEventId || accessDenied) return;
 
     try {
       setAssetError(null);
@@ -516,7 +588,7 @@ export default function AdminAttendeeImportsPage() {
   }
 
   async function clearCoachPlateBackground() {
-    if (!selectedImportEventId) return;
+    if (!selectedImportEventId || accessDenied) return;
 
     try {
       setAssetError(null);
@@ -533,6 +605,11 @@ export default function AdminAttendeeImportsPage() {
   async function handleImport() {
     if (!selectedImportEventId) {
       setError("No target event selected.");
+      return;
+    }
+
+    if (accessDenied) {
+      setError("You do not have access to import into this event.");
       return;
     }
 
@@ -747,6 +824,17 @@ export default function AdminAttendeeImportsPage() {
     }
   }
 
+  if (!loadingEvent && accessDenied) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Imports</h1>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          You do not have access to this page.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
@@ -758,7 +846,7 @@ export default function AdminAttendeeImportsPage() {
           <select
             value={selectedImportEventId}
             onChange={(e) => setSelectedImportEventId(e.target.value)}
-            disabled={loadingEvent}
+            disabled={loadingEvent || accessDenied}
             style={{
               width: "100%",
               maxWidth: 560,
@@ -841,6 +929,7 @@ export default function AdminAttendeeImportsPage() {
             <input
               type="file"
               accept=".csv,.xlsx,.xls"
+              disabled={loadingEvent || accessDenied || !selectedImportEventId}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) void handleFileChange(file);
@@ -861,6 +950,7 @@ export default function AdminAttendeeImportsPage() {
               disabled={
                 importing ||
                 parsing ||
+                accessDenied ||
                 !selectedImportEventId ||
                 !validRows.length ||
                 eventChangedSinceLoad
@@ -876,6 +966,7 @@ export default function AdminAttendeeImportsPage() {
                 opacity:
                   importing ||
                   parsing ||
+                  accessDenied ||
                   !selectedImportEventId ||
                   !validRows.length ||
                   eventChangedSinceLoad
@@ -937,6 +1028,7 @@ export default function AdminAttendeeImportsPage() {
             <input
               type="file"
               accept="image/*"
+              disabled={loadingEvent || accessDenied || !selectedImportEventId}
               onChange={(e) => setNameTagFile(e.target.files?.[0] || null)}
             />
 
@@ -951,7 +1043,10 @@ export default function AdminAttendeeImportsPage() {
               <button
                 onClick={handleUploadNameTagBackground}
                 disabled={
-                  !selectedImportEventId || !nameTagFile || savingNameTagBg
+                  !selectedImportEventId ||
+                  !nameTagFile ||
+                  savingNameTagBg ||
+                  accessDenied
                 }
               >
                 {savingNameTagBg
@@ -962,7 +1057,9 @@ export default function AdminAttendeeImportsPage() {
               <button
                 onClick={clearNameTagBackground}
                 disabled={
-                  !selectedImportEventId || !printSettings?.name_tag_bg_url
+                  !selectedImportEventId ||
+                  !printSettings?.name_tag_bg_url ||
+                  accessDenied
                 }
               >
                 Remove Background
@@ -1007,6 +1104,7 @@ export default function AdminAttendeeImportsPage() {
             <input
               type="file"
               accept="image/*"
+              disabled={loadingEvent || accessDenied || !selectedImportEventId}
               onChange={(e) => setCoachPlateFile(e.target.files?.[0] || null)}
             />
 
@@ -1023,7 +1121,8 @@ export default function AdminAttendeeImportsPage() {
                 disabled={
                   !selectedImportEventId ||
                   !coachPlateFile ||
-                  savingCoachPlateBg
+                  savingCoachPlateBg ||
+                  accessDenied
                 }
               >
                 {savingCoachPlateBg
@@ -1034,7 +1133,9 @@ export default function AdminAttendeeImportsPage() {
               <button
                 onClick={clearCoachPlateBackground}
                 disabled={
-                  !selectedImportEventId || !printSettings?.coach_plate_bg_url
+                  !selectedImportEventId ||
+                  !printSettings?.coach_plate_bg_url ||
+                  accessDenied
                 }
               >
                 Remove Background

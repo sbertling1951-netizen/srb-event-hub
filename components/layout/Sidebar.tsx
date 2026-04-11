@@ -5,6 +5,10 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  getCurrentAdminAccess,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type NavItem = {
   label: string;
@@ -35,6 +39,63 @@ function formatDateRange(startDate?: string | null, endDate?: string | null) {
   return startDate || endDate || "";
 }
 
+function getPrivilegeBadge(value?: string | null) {
+  switch (value) {
+    case "super_admin":
+      return "SA";
+    case "event_admin":
+      return "EA";
+    case "checkin":
+      return "CI";
+    case "parking":
+      return "PK";
+    case "content_admin":
+      return "CA";
+    case "read_only":
+      return "RO";
+    default:
+      return "";
+  }
+}
+
+// 👇 ADD IT RIGHT HERE
+function getBadgeColor(value?: string | null) {
+  switch (value) {
+    case "super_admin":
+      return "#dc2626"; // red
+    case "event_admin":
+      return "#2563eb"; // blue
+    case "checkin":
+      return "#16a34a"; // green
+    case "parking":
+      return "#ea580c"; // orange
+    case "content_admin":
+      return "#7c3aed"; // purple
+    case "read_only":
+      return "#6b7280"; // gray
+    default:
+      return "#374151";
+  }
+}
+function formatPrivilegeGroup(value?: string | null) {
+  if (!value) return "";
+  switch (value) {
+    case "super_admin":
+      return "Super Admin";
+    case "event_admin":
+      return "Event Admin";
+    case "checkin":
+      return "Check-In";
+    case "parking":
+      return "Parking";
+    case "content_admin":
+      return "Content Admin";
+    case "read_only":
+      return "Read Only";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
 export default function Sidebar() {
   const pathname = usePathname();
 
@@ -46,6 +107,9 @@ export default function Sidebar() {
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [userMode, setUserMode] = useState<"member" | "admin" | "none">("none");
   const [isShortScreen, setIsShortScreen] = useState(false);
+  const [adminAccess, setAdminAccess] = useState<any>(null);
+  const [adminDisplayName, setAdminDisplayName] = useState("");
+  const [adminPrivilegeGroup, setAdminPrivilegeGroup] = useState("");
 
   const isAdminRoute = pathname.startsWith("/admin");
   const isMemberRoute =
@@ -183,6 +247,43 @@ export default function Sidebar() {
     };
   }, [isMobile, open, mounted]);
 
+  useEffect(() => {
+    if (!mounted) return;
+
+    async function loadAdminAccess() {
+      const admin = await getCurrentAdminAccess();
+      setAdminAccess(admin);
+      setAdminDisplayName(admin?.display_name || admin?.email || "");
+      setAdminPrivilegeGroup(admin?.privilege_group || "");
+    }
+
+    void loadAdminAccess();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void loadAdminAccess();
+    });
+
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
+        void loadAdminAccess();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [mounted]);
+
   async function handleSidebarExit() {
     if (showLoggedInLogout) {
       const eventName =
@@ -245,20 +346,35 @@ export default function Sidebar() {
         ];
   }, [isCheckedIn]);
 
+  const canManageEventStaff =
+    !!adminAccess &&
+    (hasPermission(adminAccess, "can_manage_admins") ||
+      hasPermission(adminAccess, "can_manage_event_admins"));
+
+  const canManageAdminUsers =
+    !!adminAccess && hasPermission(adminAccess, "can_manage_admins");
+
   const adminItems: NavItem[] = [
-    { label: "Dashboard", href: "/admin/dashboard" as Route },
-    { label: "Announcements", href: "/admin/announcements" as Route },
-    { label: "Check-In", href: "/admin/checkin" as Route },
-    { label: "Parking Admin", href: "/admin/parking" as Route },
-    { label: "Events", href: "/admin/events" as Route },
-    { label: "Master Maps", href: "/admin/master-maps" as Route },
+    { label: "Dashboard", href: "/admin/dashboard" },
+    { label: "Announcements", href: "/admin/announcements" },
+    { label: "Check-In", href: "/admin/checkin" },
+    { label: "Parking Admin", href: "/admin/parking" },
+    { label: "Events", href: "/admin/events" },
+    { label: "Master Maps", href: "/admin/master-maps" },
+    { label: "Map Locations", href: "/admin/locations" },
     { label: "Attendees", href: "/admin/attendees" },
     { label: "Reports", href: "/admin/reports" },
     { label: "Pre-Rally Checklist", href: "/admin/checklist" },
-    { label: "Nearby Admin", href: "/admin/nearby" as Route },
-    { label: "Agenda Admin", href: "/admin/agenda" as Route },
+    { label: "Nearby Admin", href: "/admin/nearby" },
+    { label: "Agenda Admin", href: "/admin/agenda" },
     { label: "Imports", href: "/admin/imports" },
-    { label: "Agenda Import", href: "/admin/agenda/import" as Route },
+    { label: "Agenda Import", href: "/admin/agenda/import" },
+    ...(canManageEventStaff
+      ? [{ label: "Event Staff", href: "/admin/event-staff" }]
+      : []),
+    ...(canManageAdminUsers
+      ? [{ label: "Admin Users", href: "/admin/admin-users" }]
+      : []),
   ];
 
   const sections: NavSection[] = useMemo(() => {
@@ -281,7 +397,7 @@ export default function Sidebar() {
     }
 
     return [];
-  }, [effectiveUserMode, memberItems]);
+  }, [effectiveUserMode, memberItems, adminItems]);
 
   function isActiveRoute(itemHref: string) {
     return pathname === itemHref || pathname.startsWith(itemHref + "/");
@@ -415,6 +531,68 @@ export default function Sidebar() {
               {currentEventDates && (
                 <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
                   {currentEventDates}
+                </div>
+              )}
+
+              {effectiveUserMode === "admin" && adminDisplayName && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    paddingTop: 8,
+                    borderTop: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      opacity: 0.7,
+                      marginBottom: 4,
+                    }}
+                  >
+                    Signed In As
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        lineHeight: 1.25,
+                        fontSize: isShortScreen ? 13 : 14,
+                      }}
+                    >
+                      {adminDisplayName}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: "2px 6px",
+                        borderRadius: 999,
+                        color: "#fff",
+                        whiteSpace: "nowrap",
+                        background: getBadgeColor(adminPrivilegeGroup),
+                      }}
+                    >
+                      {getPrivilegeBadge(adminPrivilegeGroup)}
+                    </div>
+                  </div>
+
+                  {adminPrivilegeGroup && (
+                    <div
+                      style={{ fontSize: 12, color: "#d1d5db", marginTop: 4 }}
+                    >
+                      {formatPrivilegeGroup(adminPrivilegeGroup)}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 import { fullName, preferredDisplayLine } from "@/lib/displayNames";
 
 type AttendeeRow = {
@@ -82,7 +86,7 @@ function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
   return members.find((m) => m.person_role === role) || null;
 }
 
-function AdminCheckinPageInner() {
+export default function AdminCheckinPage() {
   const [event, setEvent] = useState<AdminEventRow | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
@@ -93,13 +97,67 @@ function AdminCheckinPageInner() {
   const [status, setStatus] = useState("Loading check-in...");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<Record<string, EditState>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
-    void loadPage();
+    async function init() {
+      setLoading(true);
+      setError(null);
+      setStatus("Checking admin access...");
+      setAccessDenied(false);
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_mark_arrived")) {
+        setError("You do not have permission to manage check-in.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      const adminEvent = getAdminEvent();
+
+      if (!adminEvent?.id) {
+        setEvent(null);
+        setAttendees([]);
+        setHouseholdMembers([]);
+        setParkingSites([]);
+        setStatus("No admin working event selected.");
+        setLoading(false);
+        return;
+      }
+
+      if (!canAccessEvent(admin, adminEvent.id)) {
+        setEvent(null);
+        setAttendees([]);
+        setHouseholdMembers([]);
+        setParkingSites([]);
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      await loadPage();
+    }
+
+    void init();
 
     function handleStorage(e: StorageEvent) {
       if (e.key === "fcoc-admin-event-changed") {
-        void loadPage();
+        void init();
       }
     }
 
@@ -108,7 +166,7 @@ function AdminCheckinPageInner() {
   }, []);
 
   useEffect(() => {
-    if (!event?.id) return;
+    if (!event?.id || accessDenied) return;
 
     const parkingChannel = supabase
       .channel(`admin-checkin-parking-${event.id}`)
@@ -146,10 +204,12 @@ function AdminCheckinPageInner() {
       void supabase.removeChannel(parkingChannel);
       void supabase.removeChannel(attendeesChannel);
     };
-  }, [event?.id]);
+  }, [event?.id, accessDenied]);
 
   async function loadPage() {
     try {
+      setLoading(true);
+      setError(null);
       setStatus("Loading check-in...");
 
       const adminEvent = getAdminEvent();
@@ -159,6 +219,7 @@ function AdminCheckinPageInner() {
         setHouseholdMembers([]);
         setParkingSites([]);
         setStatus("No admin working event selected.");
+        setLoading(false);
         return;
       }
 
@@ -229,7 +290,10 @@ function AdminCheckinPageInner() {
       setStatus(`Loaded ${attendeeList.length} attendees for check-in.`);
     } catch (err: any) {
       console.error("loadPage error:", err);
+      setError(err?.message || "Failed to load admin check-in.");
       setStatus(err?.message || "Failed to load admin check-in.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -469,6 +533,26 @@ function AdminCheckinPageInner() {
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
+  if (!loading && accessDenied) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 18,
+          }}
+        >
+          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Check-In</h1>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            You do not have access to this page.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: 24, display: "grid", gap: 16 }}>
       <div
@@ -499,6 +583,20 @@ function AdminCheckinPageInner() {
           {status}
         </div>
       </div>
+
+      {error && !accessDenied ? (
+        <div
+          style={{
+            border: "1px solid #e2b4b4",
+            borderRadius: 10,
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            padding: 12,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -715,13 +813,5 @@ function AdminCheckinPageInner() {
         ) : null}
       </div>
     </div>
-  );
-}
-
-export default function AdminCheckinPage() {
-  return (
-    <AdminRouteGuard>
-      <AdminCheckinPageInner />
-    </AdminRouteGuard>
   );
 }

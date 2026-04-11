@@ -215,7 +215,12 @@ function MemberAgendaPageInner() {
     void loadAgenda();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-member-event-changed") {
+      if (
+        e.key === "fcoc-member-event-context" ||
+        e.key === "fcoc-member-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
         void loadAgenda();
       }
     }
@@ -237,6 +242,7 @@ function MemberAgendaPageInner() {
       setStatus("Loading agenda...");
 
       const memberEvent = getCurrentMemberEvent();
+      setItems([]);
       if (!memberEvent?.id) {
         setEvent(null);
         setItems([]);
@@ -258,6 +264,11 @@ function MemberAgendaPageInner() {
       if (error) throw error;
 
       const loaded = (data || []) as AgendaItem[];
+      loaded.sort((a, b) => {
+        const timeDiff = itemSortValue(a) - itemSortValue(b);
+        if (timeDiff !== 0) return timeDiff;
+        return (a.sort_order || 0) - (b.sort_order || 0);
+      });
       setItems(loaded);
       setStatus(
         loaded.length > 0
@@ -266,6 +277,7 @@ function MemberAgendaPageInner() {
       );
     } catch (err: any) {
       console.error("loadAgenda error:", err);
+      setEvent(null);
       setItems([]);
       setStatus(err?.message || "Failed to load agenda.");
     }

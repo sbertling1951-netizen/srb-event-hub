@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type AdminEventContext = {
   id: string | null;
@@ -69,7 +75,7 @@ function getTouchMidpoint(touches: TouchList) {
   };
 }
 
-export default function AdminLocationsPage() {
+function AdminLocationsPageInner() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const pinchRef = useRef<PinchState | null>(null);
@@ -93,6 +99,9 @@ export default function AdminLocationsPage() {
   const [formX, setFormX] = useState("");
   const [formY, setFormY] = useState("");
   const [isPlacing, setIsPlacing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
     zoomRef.current = zoom;
@@ -272,11 +281,64 @@ export default function AdminLocationsPage() {
   }, [isNarrow]);
 
   useEffect(() => {
-    void loadPage();
+    async function init() {
+      setLoading(true);
+      setError(null);
+      setStatus("Checking admin access...");
+      setAccessDenied(false);
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setEvent(null);
+        setLocations([]);
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_manage_master_maps")) {
+        setEvent(null);
+        setLocations([]);
+        setError("You do not have permission to manage map locations.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      const adminEvent = getAdminEvent() as AdminEventContext | null;
+
+      if (!adminEvent?.id) {
+        setEvent(null);
+        setLocations([]);
+        setStatus(
+          "No admin working event selected. Choose one on the Admin Dashboard.",
+        );
+        setLoading(false);
+        return;
+      }
+
+      if (!canAccessEvent(admin, adminEvent.id)) {
+        setEvent(null);
+        setLocations([]);
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      await loadPage();
+    }
+
+    void init();
 
     function handleStorage(e: StorageEvent) {
       if (e.key === "fcoc-admin-event-changed") {
-        void loadPage();
+        void init();
       }
     }
 
@@ -285,6 +347,8 @@ export default function AdminLocationsPage() {
   }, []);
 
   async function loadPage() {
+    setLoading(true);
+    setError(null);
     setStatus("Loading...");
 
     const adminEvent = getAdminEvent() as AdminEventContext | null;
@@ -295,6 +359,7 @@ export default function AdminLocationsPage() {
       setStatus(
         "No admin working event selected. Choose one on the Admin Dashboard.",
       );
+      setLoading(false);
       return;
     }
 
@@ -310,6 +375,7 @@ export default function AdminLocationsPage() {
       setStatus(
         `Could not load admin event: ${eventError?.message || "Selected event not found."}`,
       );
+      setLoading(false);
       return;
     }
 
@@ -323,6 +389,7 @@ export default function AdminLocationsPage() {
       setStatus(
         `Could not load event map settings: ${mapSettingsError.message}`,
       );
+      setLoading(false);
       return;
     }
 
@@ -342,6 +409,7 @@ export default function AdminLocationsPage() {
         setStatus(
           `Could not load selected master map: ${masterMapError.message}`,
         );
+        setLoading(false);
         return;
       }
 
@@ -381,11 +449,13 @@ export default function AdminLocationsPage() {
 
     if (locationError) {
       setStatus(`Could not load event locations: ${locationError.message}`);
+      setLoading(false);
       return;
     }
 
     setLocations((locationData || []) as EventLocation[]);
     setStatus(`Loaded ${(locationData || []).length} locations.`);
+    setLoading(false);
   }
 
   const filteredLocations = useMemo(() => {
@@ -595,11 +665,48 @@ export default function AdminLocationsPage() {
     resetForm();
   }
 
+  // Access denied return
+  if (!loading && accessDenied) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 18,
+          }}
+        >
+          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Map Locations</h1>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            You do not have access to this page.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Main page return
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
       <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
         Map Locations
       </h1>
+
+      {error ? (
+        <div
+          style={{
+            border: "1px solid #e2b4b4",
+            borderRadius: 10,
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -614,7 +721,9 @@ export default function AdminLocationsPage() {
           {event?.name || "No admin working event selected"}
         </div>
         <div style={{ color: "#555" }}>{event?.location || ""}</div>
-        <div style={{ fontSize: 13, marginTop: 6 }}>Status: {status}</div>
+        <div style={{ fontSize: 13, marginTop: 6 }}>
+          Status: {loading ? "Loading..." : status}
+        </div>
       </div>
 
       <div
@@ -956,5 +1065,13 @@ export default function AdminLocationsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AdminLocationsPage() {
+  return (
+    <AdminRouteGuard>
+      <AdminLocationsPageInner />
+    </AdminRouteGuard>
   );
 }

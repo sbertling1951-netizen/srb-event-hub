@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type EventContext = {
   id?: string | null;
@@ -82,16 +87,55 @@ export default function AdminAnnouncementsPage() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("Loading event...");
   const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const eventId = currentEvent?.id ?? null;
 
   useEffect(() => {
-    async function loadEvent() {
+    async function init() {
       setLoadingEvent(true);
       setError(null);
+      setStatus("Checking admin access...");
+      setAccessDenied(false);
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setCurrentEvent(null);
+        setAnnouncements([]);
+        resetForm();
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setLoadingEvent(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_manage_announcements")) {
+        setCurrentEvent(null);
+        setAnnouncements([]);
+        resetForm();
+        setError("You do not have permission to manage announcements.");
+        setStatus("Access denied.");
+        setLoadingEvent(false);
+        setAccessDenied(true);
+        return;
+      }
 
       const stored = getStoredAdminEvent();
+
       if (stored?.id) {
+        if (!canAccessEvent(admin, stored.id)) {
+          setCurrentEvent(null);
+          setAnnouncements([]);
+          resetForm();
+          setError("You do not have access to this event.");
+          setStatus("Access denied.");
+          setLoadingEvent(false);
+          setAccessDenied(true);
+          return;
+        }
+
         setCurrentEvent(stored);
         setStatus("");
         setLoadingEvent(false);
@@ -101,37 +145,59 @@ export default function AdminAnnouncementsPage() {
       const { data, error } = await supabase
         .from("events")
         .select("id, name, venue_name, location, start_date, end_date")
-        .order("start_date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order("start_date", { ascending: false });
 
       if (error) {
+        setCurrentEvent(null);
+        setAnnouncements([]);
+        resetForm();
         setError(error.message);
         setStatus("Could not load event.");
         setLoadingEvent(false);
         return;
       }
 
-      if (!data) {
-        setStatus("No event selected.");
+      const allowedEvent = (data || []).find((event) =>
+        canAccessEvent(admin, event.id),
+      );
+
+      if (!allowedEvent) {
+        setCurrentEvent(null);
+        setAnnouncements([]);
+        resetForm();
+        setStatus("No accessible event selected.");
         setLoadingEvent(false);
         return;
       }
 
       setCurrentEvent({
-        id: data.id,
-        name: data.name,
-        venue_name: data.venue_name,
-        location: data.location,
-        start_date: data.start_date,
-        end_date: data.end_date,
+        id: allowedEvent.id,
+        name: allowedEvent.name,
+        venue_name: allowedEvent.venue_name,
+        location: allowedEvent.location,
+        start_date: allowedEvent.start_date,
+        end_date: allowedEvent.end_date,
       });
 
       setStatus("");
       setLoadingEvent(false);
     }
 
-    loadEvent();
+    void init();
+
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
+        void init();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
   async function loadAnnouncements(activeEventId: string) {
@@ -161,13 +227,15 @@ export default function AdminAnnouncementsPage() {
   }
 
   useEffect(() => {
-    if (!eventId) {
+    if (!eventId || accessDenied) {
       setAnnouncements([]);
+      setLoadingAnnouncements(false);
+      resetForm();
       return;
     }
 
-    loadAnnouncements(eventId);
-  }, [eventId]);
+    void loadAnnouncements(eventId);
+  }, [eventId, accessDenied]);
 
   const sortedAnnouncements = useMemo(() => {
     return [...announcements].sort((a, b) => {
@@ -324,6 +392,17 @@ export default function AdminAnnouncementsPage() {
     if (eventId) await loadAnnouncements(eventId);
     setStatus(
       item.is_pinned ? "Announcement unpinned." : "Announcement pinned.",
+    );
+  }
+
+  if (!loadingEvent && accessDenied) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Announcements Admin</h1>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          You do not have access to this page.
+        </div>
+      </div>
     );
   }
 

@@ -5,6 +5,7 @@ import { getAdminEvent } from "@/lib/getAdminEvent";
 
 export default function ExportPage() {
   async function exportAttendees() {
+    console.log("Starting attendee export...");
     const adminEvent = getAdminEvent();
 
     if (!adminEvent?.id) {
@@ -17,7 +18,9 @@ export default function ExportPage() {
     const { data, error } = await supabase
       .from("attendees")
       .select("*")
-      .eq("event_id", adminEvent.id);
+      .eq("event_id", adminEvent.id)
+      .order("pilot_last", { ascending: true })
+      .order("pilot_first", { ascending: true });
 
     if (error) {
       alert(`Could not export attendees: ${error.message}`);
@@ -29,11 +32,13 @@ export default function ExportPage() {
       return;
     }
 
+    const headers = Object.keys(data[0]);
     const csv = [
-      Object.keys(data[0]).join(","),
+      headers.join(","),
       ...data.map((row) =>
-        Object.values(row)
-          .map((value) => {
+        headers
+          .map((key) => {
+            const value = row[key as keyof typeof row];
             if (value === null || value === undefined) return "";
             const text = String(value).replace(/"/g, '""');
             return /[",\n]/.test(text) ? `"${text}"` : text;
@@ -47,7 +52,12 @@ export default function ExportPage() {
 
     const a = document.createElement("a");
     a.href = url;
-    a.download = "attendees.csv";
+    const safeName = (adminEvent.name || "event")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
+    const date = new Date().toISOString().slice(0, 10);
+    a.download = `${safeName}-attendees-${date}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

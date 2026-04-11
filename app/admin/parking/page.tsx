@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type AdminEventContext = {
   id: string | null;
@@ -46,6 +51,7 @@ type ParkingSite = {
   map_y: number | null;
   assigned_attendee_id: string | null;
 };
+
 type ParkingAssignmentRow = {
   id: string;
   event_id: string;
@@ -76,6 +82,10 @@ export default function ParkingAdminPage() {
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading...");
+  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [loading, setLoading] = useState(true);
+
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
   const [showLabels, setShowLabels] = useState(true);
   const [isNarrow, setIsNarrow] = useState(false);
@@ -151,11 +161,76 @@ export default function ParkingAdminPage() {
   }, []);
 
   useEffect(() => {
-    void loadPage();
+    async function init() {
+      setLoading(true);
+      setError(null);
+      setStatus("Checking admin access...");
+      setAccessDenied(false);
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setEvent(null);
+        setSites([]);
+        setAttendees([]);
+        setSelectedAttendeeId("");
+        setSelectedSiteId("");
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      if (!hasPermission(admin, "can_assign_parking")) {
+        setEvent(null);
+        setSites([]);
+        setAttendees([]);
+        setSelectedAttendeeId("");
+        setSelectedSiteId("");
+        setError("You do not have permission to manage parking.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      const adminEvent = getAdminEvent() as AdminEventContext | null;
+
+      if (!adminEvent?.id) {
+        setEvent(null);
+        setSites([]);
+        setAttendees([]);
+        setSelectedAttendeeId("");
+        setSelectedSiteId("");
+        setStatus(
+          "No admin working event selected. Choose one on the Admin Dashboard.",
+        );
+        setLoading(false);
+        return;
+      }
+
+      if (!canAccessEvent(admin, adminEvent.id)) {
+        setEvent(null);
+        setSites([]);
+        setAttendees([]);
+        setSelectedAttendeeId("");
+        setSelectedSiteId("");
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        setLoading(false);
+        setAccessDenied(true);
+        return;
+      }
+
+      await loadPage();
+    }
+
+    void init();
 
     function handleStorage(e: StorageEvent) {
       if (e.key === "fcoc-admin-event-changed") {
-        void loadPage();
+        void init();
       }
     }
 
@@ -164,7 +239,7 @@ export default function ParkingAdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!event?.id) return;
+    if (!event?.id || accessDenied) return;
 
     const parkingChannel = supabase
       .channel(`parking-sites-${event.id}`)
@@ -202,9 +277,12 @@ export default function ParkingAdminPage() {
       void supabase.removeChannel(parkingChannel);
       void supabase.removeChannel(attendeesChannel);
     };
-  }, [event?.id]);
+  }, [event?.id, accessDenied]);
 
   async function loadPage() {
+    setLoading(true);
+    setError(null);
+    setAccessDenied(false);
     setStatus("Loading...");
 
     const adminEvent = getAdminEvent() as AdminEventContext | null;
@@ -213,9 +291,12 @@ export default function ParkingAdminPage() {
       setEvent(null);
       setSites([]);
       setAttendees([]);
+      setSelectedAttendeeId("");
+      setSelectedSiteId("");
       setStatus(
         "No admin working event selected. Choose one on the Admin Dashboard.",
       );
+      setLoading(false);
       return;
     }
 
@@ -229,9 +310,12 @@ export default function ParkingAdminPage() {
       setEvent(null);
       setSites([]);
       setAttendees([]);
+      setSelectedAttendeeId("");
+      setSelectedSiteId("");
       setStatus(
         `Could not load admin event: ${eventError?.message || "Event not found."}`,
       );
+      setLoading(false);
       return;
     }
 
@@ -245,6 +329,7 @@ export default function ParkingAdminPage() {
       setStatus(
         `Could not load event map settings: ${mapSettingsError.message}`,
       );
+      setLoading(false);
       return;
     }
 
@@ -264,6 +349,7 @@ export default function ParkingAdminPage() {
         setStatus(
           `Could not load selected master map: ${masterMapError.message}`,
         );
+        setLoading(false);
         return;
       }
 
@@ -271,8 +357,6 @@ export default function ParkingAdminPage() {
         null) as MasterMapRow | null;
       mapImageUrl = selectedMasterMap?.map_image_url || null;
     }
-    console.log("selected_master_map_id:", mapSettings?.selected_master_map_id);
-    console.log("resolved parking mapImageUrl:", mapImageUrl);
 
     const typedEvent: ActiveEvent = {
       id: String(eventRow.id),
@@ -320,6 +404,7 @@ export default function ParkingAdminPage() {
       setStatus(
         `Could not load master map sites: ${masterSitesResult.error.message}`,
       );
+      setLoading(false);
       return;
     }
 
@@ -327,11 +412,13 @@ export default function ParkingAdminPage() {
       setStatus(
         `Could not load parking assignments: ${assignmentResult.error.message}`,
       );
+      setLoading(false);
       return;
     }
 
     if (attendeeResult.error) {
       setStatus(`Could not load attendees: ${attendeeResult.error.message}`);
+      setLoading(false);
       return;
     }
 
@@ -359,6 +446,7 @@ export default function ParkingAdminPage() {
     setStatus(
       `Loaded ${mergedSites.length} sites and ${(attendeeResult.data || []).length} attendees.`,
     );
+    setLoading(false);
   }
 
   const attendeeById = useMemo(() => {
@@ -1011,6 +1099,17 @@ export default function ParkingAdminPage() {
     </div>
   );
 
+  if (!loading && accessDenied) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Parking Admin</h1>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          You do not have access to this page.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
       <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
@@ -1031,6 +1130,11 @@ export default function ParkingAdminPage() {
         </div>
         <div style={{ color: "#555" }}>{event?.location || ""}</div>
         <div style={{ fontSize: 13, marginTop: 6 }}>Status: {status}</div>
+        {error ? (
+          <div style={{ fontSize: 13, marginTop: 6, color: "#8a1f1f" }}>
+            Error: {error}
+          </div>
+        ) : null}
       </div>
 
       {isNarrow && (
