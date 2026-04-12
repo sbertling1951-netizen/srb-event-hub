@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type EventItem = {
   id: string;
@@ -19,11 +25,13 @@ type PrintSettingsRow = {
   coach_plate_bg_url: string | null;
 };
 
+const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
+
 function getStoredAdminEventId(): string {
   if (typeof window === "undefined") return "";
 
   try {
-    const raw = localStorage.getItem("fcoc-admin-event-context");
+    const raw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
     if (!raw) return "";
     const parsed = JSON.parse(raw);
     return parsed?.id || "";
@@ -32,7 +40,7 @@ function getStoredAdminEventId(): string {
   }
 }
 
-export default function AdminPrintSettingsPage() {
+function AdminPrintSettingsPageInner() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [settingsRow, setSettingsRow] = useState<PrintSettingsRow | null>(null);
@@ -44,42 +52,96 @@ export default function AdminPrintSettingsPage() {
   const [savingNameTag, setSavingNameTag] = useState(false);
   const [savingCoachPlate, setSavingCoachPlate] = useState(false);
   const [status, setStatus] = useState("Loading events...");
+  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
     async function loadEvents() {
       setLoading(true);
+      setError(null);
+      setAccessDenied(false);
+      setStatus("Checking admin access...");
 
-      const { data, error } = await supabase
-        .from("events")
-        .select("id, name, location, venue_name, start_date, end_date")
-        .order("start_date", { ascending: false });
+      try {
+        const admin = await getCurrentAdminAccess();
 
-      if (error) {
-        setStatus(`Could not load events: ${error.message}`);
+        if (!admin) {
+          setEvents([]);
+          setSelectedEventId("");
+          setSettingsRow(null);
+          setError("No admin access.");
+          setStatus("Access denied.");
+          setAccessDenied(true);
+          return;
+        }
+
+        if (!hasPermission(admin, "can_manage_print_settings")) {
+          setEvents([]);
+          setSelectedEventId("");
+          setSettingsRow(null);
+          setError("You do not have permission to manage print settings.");
+          setStatus("Access denied.");
+          setAccessDenied(true);
+          return;
+        }
+
+        setStatus("Loading accessible events...");
+
+        const { data, error } = await supabase
+          .from("events")
+          .select("id, name, location, venue_name, start_date, end_date")
+          .order("start_date", { ascending: false });
+
+        if (error) throw error;
+
+        const allEvents = (data || []) as EventItem[];
+        const accessibleEvents = allEvents.filter(
+          (event) => !!event.id && canAccessEvent(admin, event.id),
+        );
+
+        setEvents(accessibleEvents);
+
+        const storedEventId = getStoredAdminEventId();
+        const defaultEventId =
+          (storedEventId &&
+            accessibleEvents.find((event) => event.id === storedEventId)?.id) ||
+          accessibleEvents[0]?.id ||
+          "";
+
+        setSelectedEventId(defaultEventId);
+
+        setStatus(
+          defaultEventId
+            ? "Select or upload event print assets."
+            : "No accessible events found.",
+        );
+      } catch (err: any) {
+        console.error("loadEvents error:", err);
+        setEvents([]);
+        setSelectedEventId("");
+        setSettingsRow(null);
+        setError(err?.message || "Could not load events.");
+        setStatus("Load failed.");
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const eventRows = (data || []) as EventItem[];
-      setEvents(eventRows);
-
-      const storedEventId = getStoredAdminEventId();
-      const defaultEventId =
-        (storedEventId &&
-          eventRows.find((event) => event.id === storedEventId)?.id) ||
-        eventRows[0]?.id ||
-        "";
-
-      setSelectedEventId(defaultEventId);
-      setLoading(false);
-      setStatus(
-        defaultEventId
-          ? "Select or upload event print assets."
-          : "No events found.",
-      );
     }
 
     void loadEvents();
+
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
+        void loadEvents();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
   useEffect(() => {
@@ -89,30 +151,39 @@ export default function AdminPrintSettingsPage() {
         return;
       }
 
-      setStatus("Loading print settings...");
+      try {
+        setError(null);
+        setStatus("Loading print settings...");
 
-      const { data, error } = await supabase
-        .from("event_print_settings")
-        .select("*")
-        .eq("event_id", selectedEventId)
-        .maybeSingle();
+        const { data, error } = await supabase
+          .from("event_print_settings")
+          .select("*")
+          .eq("event_id", selectedEventId)
+          .maybeSingle();
 
-      if (error) {
-        setStatus(`Could not load print settings: ${error.message}`);
-        return;
-      }
+        if (error) throw error;
 
-      if (data) {
-        setSettingsRow(data as PrintSettingsRow);
-      } else {
+        if (data) {
+          setSettingsRow(data as PrintSettingsRow);
+        } else {
+          setSettingsRow({
+            event_id: selectedEventId,
+            name_tag_bg_url: null,
+            coach_plate_bg_url: null,
+          });
+        }
+
+        setStatus("Ready.");
+      } catch (err: any) {
+        console.error("loadSettings error:", err);
         setSettingsRow({
           event_id: selectedEventId,
           name_tag_bg_url: null,
           coach_plate_bg_url: null,
         });
+        setError(err?.message || "Could not load print settings.");
+        setStatus("Load failed.");
       }
-
-      setStatus("Ready.");
     }
 
     void loadSettings();
@@ -168,6 +239,7 @@ export default function AdminPrintSettingsPage() {
 
     try {
       setSavingNameTag(true);
+      setError(null);
       setStatus("Uploading name tag background...");
 
       const ext = nameTagFile.name.split(".").pop() || "png";
@@ -179,7 +251,8 @@ export default function AdminPrintSettingsPage() {
       setStatus("Name tag background saved.");
     } catch (err: any) {
       console.error(err);
-      setStatus(err?.message || "Could not save name tag background.");
+      setError(err?.message || "Could not save name tag background.");
+      setStatus("Save failed.");
     } finally {
       setSavingNameTag(false);
     }
@@ -190,6 +263,7 @@ export default function AdminPrintSettingsPage() {
 
     try {
       setSavingCoachPlate(true);
+      setError(null);
       setStatus("Uploading coach plate background...");
 
       const ext = coachPlateFile.name.split(".").pop() || "png";
@@ -201,7 +275,8 @@ export default function AdminPrintSettingsPage() {
       setStatus("Coach plate background saved.");
     } catch (err: any) {
       console.error(err);
-      setStatus(err?.message || "Could not save coach plate background.");
+      setError(err?.message || "Could not save coach plate background.");
+      setStatus("Save failed.");
     } finally {
       setSavingCoachPlate(false);
     }
@@ -211,12 +286,14 @@ export default function AdminPrintSettingsPage() {
     if (!selectedEventId) return;
 
     try {
+      setError(null);
       setStatus("Clearing name tag background...");
       await ensureSettingsRow({ name_tag_bg_url: null });
       setStatus("Name tag background cleared.");
     } catch (err: any) {
       console.error(err);
-      setStatus(err?.message || "Could not clear name tag background.");
+      setError(err?.message || "Could not clear name tag background.");
+      setStatus("Clear failed.");
     }
   }
 
@@ -224,13 +301,26 @@ export default function AdminPrintSettingsPage() {
     if (!selectedEventId) return;
 
     try {
+      setError(null);
       setStatus("Clearing coach plate background...");
       await ensureSettingsRow({ coach_plate_bg_url: null });
       setStatus("Coach plate background cleared.");
     } catch (err: any) {
       console.error(err);
-      setStatus(err?.message || "Could not clear coach plate background.");
+      setError(err?.message || "Could not clear coach plate background.");
+      setStatus("Clear failed.");
     }
+  }
+
+  if (!loading && accessDenied) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Print Settings</h1>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          You do not have access to this page.
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -270,6 +360,21 @@ export default function AdminPrintSettingsPage() {
         </div>
 
         <div style={{ fontSize: 14, marginTop: 12 }}>{status}</div>
+
+        {error ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #e2b4b4",
+              background: "#fff3f3",
+              color: "#8a1f1f",
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
       </div>
 
       <div className="card" style={{ padding: 18 }}>
@@ -280,6 +385,7 @@ export default function AdminPrintSettingsPage() {
             type="file"
             accept="image/*"
             onChange={(e) => setNameTagFile(e.target.files?.[0] || null)}
+            disabled={!selectedEventId}
           />
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -330,6 +436,7 @@ export default function AdminPrintSettingsPage() {
             type="file"
             accept="image/*"
             onChange={(e) => setCoachPlateFile(e.target.files?.[0] || null)}
+            disabled={!selectedEventId}
           />
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -372,5 +479,13 @@ export default function AdminPrintSettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AdminPrintSettingsPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_manage_print_settings">
+      <AdminPrintSettingsPageInner />
+    </AdminRouteGuard>
   );
 }

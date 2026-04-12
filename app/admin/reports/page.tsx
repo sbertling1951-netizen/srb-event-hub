@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
@@ -45,14 +46,14 @@ type AttendeeRow = {
   share_with_attendees: boolean | null;
   is_active: boolean;
   inactive_reason: string | null;
-  participant_type?: string | null;
-  source_type?: string | null;
-  include_in_headcount?: boolean | null;
-  needs_name_tag?: boolean | null;
-  needs_coach_plate?: boolean | null;
-  needs_parking?: boolean | null;
-  notes?: string | null;
-  created_at?: string | null;
+  participant_type: string | null;
+  source_type: string | null;
+  include_in_headcount: boolean | null;
+  needs_name_tag: boolean | null;
+  needs_coach_plate: boolean | null;
+  needs_parking: boolean | null;
+  notes: string | null;
+  created_at: string | null;
 };
 
 type ActivityRow = {
@@ -247,6 +248,14 @@ function sortRosterRows(rows: RosterRow[], sortType: SortType) {
 }
 
 export default function AdminReportsPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_manage_reports">
+      <AdminReportsPageInner />
+    </AdminRouteGuard>
+  );
+}
+
+function AdminReportsPageInner() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [activities, setActivities] = useState<ActivityRow[]>([]);
@@ -261,6 +270,15 @@ export default function AdminReportsPage() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [canExport, setCanExport] = useState(false);
 
+  function resetPageState() {
+    setCurrentEvent(null);
+    setAttendees([]);
+    setActivities([]);
+    setParkingSites([]);
+    setCanExport(false);
+    setAccessDenied(false);
+  }
+
   useEffect(() => {
     async function init() {
       setLoading(true);
@@ -272,10 +290,7 @@ export default function AdminReportsPage() {
       const admin = await getCurrentAdminAccess();
 
       if (!admin) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setActivities([]);
-        setParkingSites([]);
+        resetPageState();
         setError("No admin access.");
         setStatus("Access denied.");
         setLoading(false);
@@ -283,12 +298,9 @@ export default function AdminReportsPage() {
         return;
       }
 
-      if (!hasPermission(admin, "can_view_reports")) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setActivities([]);
-        setParkingSites([]);
-        setError("You do not have permission to view reports.");
+      if (!hasPermission(admin, "can_manage_reports")) {
+        resetPageState();
+        setError("You do not have permission to manage reports.");
         setStatus("Access denied.");
         setLoading(false);
         setAccessDenied(true);
@@ -300,20 +312,14 @@ export default function AdminReportsPage() {
       const event = getStoredAdminEvent();
 
       if (!event?.id) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setActivities([]);
-        setParkingSites([]);
+        resetPageState();
         setStatus("No admin event selected.");
         setLoading(false);
         return;
       }
 
       if (!canAccessEvent(admin, event.id)) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setActivities([]);
-        setParkingSites([]);
+        resetPageState();
         setError("You do not have access to this event.");
         setStatus("Access denied.");
         setLoading(false);
@@ -328,13 +334,33 @@ export default function AdminReportsPage() {
     void init();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-admin-event-changed") {
+      if (
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
         void init();
       }
     }
 
+    function handleAdminEventUpdated() {
+      void init();
+    }
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated as EventListener,
+      );
+    };
   }, []);
 
   useEffect(() => {
@@ -350,6 +376,37 @@ export default function AdminReportsPage() {
     setError(null);
     setStatus("Loading reports...");
 
+    const admin = await getCurrentAdminAccess();
+
+    if (!admin) {
+      resetPageState();
+      setError("No admin access.");
+      setStatus("Access denied.");
+      setLoading(false);
+      setAccessDenied(true);
+      return;
+    }
+
+    if (!hasPermission(admin, "can_manage_reports")) {
+      resetPageState();
+      setError("You do not have permission to manage reports.");
+      setStatus("Access denied.");
+      setLoading(false);
+      setAccessDenied(true);
+      return;
+    }
+
+    if (!canAccessEvent(admin, activeEventId)) {
+      resetPageState();
+      setError("You do not have access to this event.");
+      setStatus("Access denied.");
+      setLoading(false);
+      setAccessDenied(true);
+      return;
+    }
+
+    setCanExport(hasPermission(admin, "can_export_reports"));
+
     const [
       { data: attendeeData, error: attendeeError },
       { data: activityData, error: activityError },
@@ -357,7 +414,43 @@ export default function AdminReportsPage() {
     ] = await Promise.all([
       supabase
         .from("attendees")
-        .select("*")
+        .select(
+          `
+            id,
+            event_id,
+            entry_id,
+            email,
+            pilot_first,
+            pilot_last,
+            copilot_first,
+            copilot_last,
+            nickname,
+            copilot_nickname,
+            membership_number,
+            primary_phone,
+            cell_phone,
+            city,
+            state,
+            wants_to_volunteer,
+            is_first_timer,
+            coach_manufacturer,
+            coach_model,
+            special_events_raw,
+            assigned_site,
+            has_arrived,
+            share_with_attendees,
+            is_active,
+            inactive_reason,
+            participant_type,
+            source_type,
+            include_in_headcount,
+            needs_name_tag,
+            needs_coach_plate,
+            needs_parking,
+            notes,
+            created_at
+          `,
+        )
         .eq("event_id", activeEventId)
         .order("pilot_last", { ascending: true })
         .order("pilot_first", { ascending: true }),
@@ -370,7 +463,7 @@ export default function AdminReportsPage() {
 
       supabase
         .from("parking_sites")
-        .select("*")
+        .select("id,event_id,site_number,display_label,assigned_attendee_id")
         .eq("event_id", activeEventId)
         .order("site_number", { ascending: true }),
     ]);
@@ -399,7 +492,13 @@ export default function AdminReportsPage() {
     setAttendees((attendeeData || []) as AttendeeRow[]);
     setActivities((activityData || []) as ActivityRow[]);
     setParkingSites((parkingData || []) as ParkingSiteRow[]);
-    setStatus("");
+    setCurrentEvent((prev) =>
+      prev?.id === activeEventId
+        ? prev
+        : { ...(prev || {}), id: activeEventId },
+    );
+    setStatus("Reports ready.");
+    setAccessDenied(false);
     setLoading(false);
   }
 

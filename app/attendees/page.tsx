@@ -13,7 +13,8 @@ type Attendee = {
   copilot_first: string | null;
   copilot_last: string | null;
   email: string | null;
-  phone: string | null;
+  primary_phone: string | null;
+  cell_phone: string | null;
   coach_make: string | null;
   coach_model: string | null;
   coach_length: string | null;
@@ -50,6 +51,10 @@ type MemberEventRow = {
 
 function yesNo(value?: boolean | null) {
   return value ? "Yes" : "No";
+}
+
+function displayPhone(attendee: Attendee) {
+  return attendee.primary_phone || attendee.cell_phone || "";
 }
 
 function formatDateRange(
@@ -99,7 +104,7 @@ function AttendeesPageInner() {
     const { data, error } = await supabase
       .from("attendees")
       .select(
-        "id,pilot_first,pilot_last,copilot_first,copilot_last,email,phone,coach_make,coach_model,coach_length,first_time,volunteer,handicap_parking,assigned_site,share_with_attendees,has_arrived",
+        "id,pilot_first,pilot_last,copilot_first,copilot_last,email,primary_phone,cell_phone,coach_make:coach_manufacturer,coach_model,coach_length,first_time:is_first_timer,volunteer:wants_to_volunteer,handicap_parking,assigned_site,share_with_attendees,has_arrived",
       )
       .eq("event_id", currentEventId)
       .order("pilot_last", { ascending: true, nullsFirst: false })
@@ -187,7 +192,7 @@ function AttendeesPageInner() {
         .toLowerCase();
       const site = (a.assigned_site || "").toLowerCase();
       const email = (a.email || "").toLowerCase();
-      const phone = (a.phone || "").toLowerCase();
+      const phone = displayPhone(a).toLowerCase();
 
       const members = (householdByAttendee.get(a.id) || [])
         .map((m) =>
@@ -315,9 +320,9 @@ function AttendeesPageInner() {
                       {a.email}
                     </div>
                   ) : null}
-                  {a.phone ? (
+                  {displayPhone(a) ? (
                     <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      {a.phone}
+                      {displayPhone(a)}
                     </div>
                   ) : null}
                 </div>

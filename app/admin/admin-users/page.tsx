@@ -2,16 +2,11 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "@/lib/supabase";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   getCurrentAdminAccess,
-  hasPermission,
+  canAccessEvent,
 } from "@/lib/getCurrentAdminAccess";
-import {
-  type AdminPermissions,
-  type PrivilegeGroup,
-  PERMISSION_LABELS,
-  getPresetPermissions,
-} from "@/lib/adminPermissions";
 
 type AdminUserRow = {
   id: string;
@@ -20,10 +15,6 @@ type AdminUserRow = {
   is_active: boolean;
   privilege_group: PrivilegeGroup;
   user_id: string | null;
-};
-
-type AdminPermissionRow = AdminPermissions & {
-  admin_user_id: string;
 };
 
 type AdminUserWithPermissions = AdminUserRow & {
@@ -36,6 +27,157 @@ type EventRow = {
   start_date?: string | null;
   location?: string | null;
 };
+// --- New permission structure and presets ---
+
+type PrivilegeGroup =
+  | "super_admin"
+  | "event_admin"
+  | "checkin"
+  | "parking"
+  | "content_admin"
+  | "read_only";
+
+type AdminPermissions = {
+  can_manage_admins: boolean;
+  can_manage_event_admins: boolean;
+  can_view_admin_dashboard: boolean;
+  can_manage_events: boolean;
+  can_manage_checkin: boolean;
+  can_manage_parking: boolean;
+  can_manage_agenda: boolean;
+  can_manage_announcements: boolean;
+  can_manage_nearby: boolean;
+  can_manage_locations: boolean;
+  can_manage_reports: boolean;
+  can_manage_imports: boolean;
+  can_manage_event_staff: boolean;
+  can_manage_master_maps: boolean;
+};
+
+const PERMISSION_LABELS: Record<keyof AdminPermissions, string> = {
+  can_manage_admins: "Manage Admin Users",
+  can_manage_event_admins: "Manage Event Admins",
+  can_view_admin_dashboard: "View Admin Dashboard",
+  can_manage_events: "Manage Events",
+  can_manage_checkin: "Manage Check-In",
+  can_manage_parking: "Manage Parking",
+  can_manage_agenda: "Manage Agenda",
+  can_manage_announcements: "Manage Announcements",
+  can_manage_nearby: "Manage Nearby",
+  can_manage_locations: "Manage Locations",
+  can_manage_reports: "Manage Reports",
+  can_manage_imports: "Manage Imports",
+  can_manage_event_staff: "Manage Event Staff",
+  can_manage_master_maps: "Manage Master Maps",
+};
+
+function getPresetPermissions(group: PrivilegeGroup): AdminPermissions {
+  switch (group) {
+    case "super_admin":
+      return {
+        can_manage_admins: true,
+        can_manage_event_admins: true,
+        can_view_admin_dashboard: true,
+        can_manage_events: true,
+        can_manage_checkin: true,
+        can_manage_parking: true,
+        can_manage_agenda: true,
+        can_manage_announcements: true,
+        can_manage_nearby: true,
+        can_manage_locations: true,
+        can_manage_reports: true,
+        can_manage_imports: true,
+        can_manage_event_staff: true,
+        can_manage_master_maps: true,
+      };
+    case "event_admin":
+      return {
+        can_manage_admins: false,
+        can_manage_event_admins: true,
+        can_view_admin_dashboard: true,
+        can_manage_events: true,
+        can_manage_checkin: true,
+        can_manage_parking: true,
+        can_manage_agenda: true,
+        can_manage_announcements: true,
+        can_manage_nearby: true,
+        can_manage_locations: true,
+        can_manage_reports: true,
+        can_manage_imports: true,
+        can_manage_event_staff: true,
+        can_manage_master_maps: false,
+      };
+    case "checkin":
+      return {
+        can_manage_admins: false,
+        can_manage_event_admins: false,
+        can_view_admin_dashboard: true,
+        can_manage_events: false,
+        can_manage_checkin: true,
+        can_manage_parking: false,
+        can_manage_agenda: false,
+        can_manage_announcements: false,
+        can_manage_nearby: false,
+        can_manage_locations: false,
+        can_manage_reports: false,
+        can_manage_imports: false,
+        can_manage_event_staff: false,
+        can_manage_master_maps: false,
+      };
+    case "parking":
+      return {
+        can_manage_admins: false,
+        can_manage_event_admins: false,
+        can_view_admin_dashboard: true,
+        can_manage_events: false,
+        can_manage_checkin: false,
+        can_manage_parking: true,
+        can_manage_agenda: false,
+        can_manage_announcements: false,
+        can_manage_nearby: false,
+        can_manage_locations: false,
+        can_manage_reports: false,
+        can_manage_imports: false,
+        can_manage_event_staff: false,
+        can_manage_master_maps: false,
+      };
+    case "content_admin":
+      return {
+        can_manage_admins: false,
+        can_manage_event_admins: false,
+        can_view_admin_dashboard: true,
+        can_manage_events: false,
+        can_manage_checkin: false,
+        can_manage_parking: false,
+        can_manage_agenda: true,
+        can_manage_announcements: true,
+        can_manage_nearby: true,
+        can_manage_locations: true,
+        can_manage_reports: false,
+        can_manage_imports: false,
+        can_manage_event_staff: false,
+        can_manage_master_maps: false,
+      };
+    case "read_only":
+    default:
+      return {
+        can_manage_admins: false,
+        can_manage_event_admins: false,
+        can_view_admin_dashboard: true,
+        can_manage_events: false,
+        can_manage_checkin: false,
+        can_manage_parking: false,
+        can_manage_agenda: false,
+        can_manage_announcements: false,
+        can_manage_nearby: false,
+        can_manage_locations: false,
+        can_manage_reports: false,
+        can_manage_imports: false,
+        can_manage_event_staff: false,
+        can_manage_master_maps: false,
+      };
+  }
+}
 function getEventAccessRole(privilegeGroup: PrivilegeGroup) {
   switch (privilegeGroup) {
     case "super_admin":
@@ -76,6 +218,14 @@ function formatPrivilegeGroup(value?: string | null) {
 const defaultGroup: PrivilegeGroup = "event_admin";
 
 export default function AdminUsersPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_manage_admins">
+      <AdminUsersPageInner />
+    </AdminRouteGuard>
+  );
+}
+
+function AdminUsersPageInner() {
   const [rows, setRows] = useState<AdminUserWithPermissions[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,16 +257,8 @@ export default function AdminUsersPage() {
       if (!admin) {
         setError("No admin access.");
         setStatus("Access denied.");
-        setLoading(false);
         setAccessDenied(true);
-        return;
-      }
-
-      if (!hasPermission(admin, "can_manage_admins")) {
-        setError("You do not have permission to manage admin users.");
-        setStatus("Access denied.");
         setLoading(false);
-        setAccessDenied(true);
         return;
       }
 
@@ -130,18 +272,16 @@ export default function AdminUsersPage() {
     setLoading(true);
     setError(null);
     setStatus("Loading admin users...");
+    setAccessDenied(false);
 
     const [
       { data: adminUsers, error: adminError },
-      { data: permissionRows, error: permissionError },
       { data: eventRows, error: eventError },
     ] = await Promise.all([
       supabase
         .from("admin_users")
         .select("id, email, display_name, is_active, privilege_group, user_id")
         .order("email", { ascending: true }),
-
-      supabase.from("admin_permissions").select("*"),
 
       supabase
         .from("events")
@@ -152,13 +292,7 @@ export default function AdminUsersPage() {
     if (adminError) {
       setError(adminError.message);
       setStatus("Could not load admin users.");
-      setLoading(false);
-      return;
-    }
-
-    if (permissionError) {
-      setError(permissionError.message);
-      setStatus("Could not load admin permissions.");
+      setAccessDenied(false);
       setLoading(false);
       return;
     }
@@ -166,46 +300,25 @@ export default function AdminUsersPage() {
     if (eventError) {
       setError(eventError.message);
       setStatus("Could not load events.");
+      setAccessDenied(false);
       setLoading(false);
       return;
     }
 
-    const permissionMap = new Map<string, AdminPermissionRow>();
-    for (const row of (permissionRows || []) as AdminPermissionRow[]) {
-      permissionMap.set(row.admin_user_id, row);
-    }
+    const merged = ((adminUsers || []) as AdminUserRow[]).map((admin) => ({
+      ...admin,
+      permissions: getPresetPermissions(admin.privilege_group || defaultGroup),
+    }));
 
-    const merged = ((adminUsers || []) as AdminUserRow[]).map((admin) => {
-      const permissionRow = permissionMap.get(admin.id);
-
-      return {
-        ...admin,
-        permissions: permissionRow
-          ? {
-              can_manage_admins: !!permissionRow.can_manage_admins,
-              can_manage_event_admins: !!permissionRow.can_manage_event_admins,
-              can_manage_events: !!permissionRow.can_manage_events,
-              can_import_attendees: !!permissionRow.can_import_attendees,
-              can_edit_attendees: !!permissionRow.can_edit_attendees,
-              can_mark_arrived: !!permissionRow.can_mark_arrived,
-              can_assign_parking: !!permissionRow.can_assign_parking,
-              can_manage_agenda: !!permissionRow.can_manage_agenda,
-              can_manage_announcements:
-                !!permissionRow.can_manage_announcements,
-              can_manage_nearby: !!permissionRow.can_manage_nearby,
-              can_view_reports: !!permissionRow.can_view_reports,
-              can_export_reports: !!permissionRow.can_export_reports,
-              can_manage_master_maps: !!permissionRow.can_manage_master_maps,
-              can_manage_master_nearby:
-                !!permissionRow.can_manage_master_nearby,
-              can_manage_settings: !!permissionRow.can_manage_settings,
-            }
-          : getPresetPermissions(admin.privilege_group || defaultGroup),
-      };
-    });
+    const admin = await getCurrentAdminAccess();
+    const accessibleEvents = admin
+      ? ((eventRows || []) as EventRow[]).filter(
+          (event) => !!event.id && canAccessEvent(admin, event.id),
+        )
+      : [];
 
     setRows(merged);
-    setEvents((eventRows || []) as EventRow[]);
+    setEvents(accessibleEvents);
     setStatus("");
     setLoading(false);
   }
@@ -260,13 +373,6 @@ export default function AdminUsersPage() {
     if (nextGroup === "super_admin") {
       setAssignedEventIds([]);
     }
-  }
-
-  function handlePermissionToggle(permission: keyof AdminPermissions) {
-    setPermissions((prev) => ({
-      ...prev,
-      [permission]: !prev[permission],
-    }));
   }
 
   function toggleAssignedEvent(eventId: string) {
@@ -324,20 +430,6 @@ export default function AdminUsersPage() {
 
       adminUserId = inserted.id;
       setSelectedAdminId(inserted.id);
-    }
-
-    const { error: permissionError } = await supabase
-      .from("admin_permissions")
-      .upsert({
-        admin_user_id: adminUserId,
-        ...permissions,
-      });
-
-    if (permissionError) {
-      setSaveStatus(
-        `Saved admin user, but permissions failed: ${permissionError.message}`,
-      );
-      return;
     }
 
     if (privilegeGroup === "super_admin") {
@@ -419,8 +511,7 @@ export default function AdminUsersPage() {
         </div>
       ) : null}
 
-      {error && !accessDenied ? <div style={errorBoxStyle}>{error}</div> : null}
-
+      {error ? <div style={errorBoxStyle}>{error}</div> : null}
       <div
         style={{
           display: "grid",
@@ -555,8 +646,8 @@ export default function AdminUsersPage() {
                   marginBottom: 12,
                 }}
               >
-                Changing the privilege group resets the permissions to that
-                preset.
+                Permissions are derived from the selected privilege group. Use
+                Event Staff for event-specific permission assignments.
               </div>
 
               <div
@@ -575,7 +666,7 @@ export default function AdminUsersPage() {
                     <input
                       type="checkbox"
                       checked={!!permissions[key]}
-                      onChange={() => handlePermissionToggle(key)}
+                      readOnly
                     />
                     <span>{PERMISSION_LABELS[key]}</span>
                   </label>

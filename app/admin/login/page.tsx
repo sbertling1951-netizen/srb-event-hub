@@ -98,7 +98,11 @@ export default function AdminLoginPage() {
     <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Admin Login</h1>
 
-      <div
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleLogin();
+        }}
         style={{
           border: "1px solid #ddd",
           borderRadius: 10,
@@ -133,8 +137,7 @@ export default function AdminLoginPage() {
         </label>
 
         <button
-          type="button"
-          onClick={handleLogin}
+          type="submit"
           disabled={status === "Signing in..."}
           style={{
             padding: "10px 14px",
@@ -163,7 +166,7 @@ export default function AdminLoginPage() {
         </button>
 
         <div style={{ fontSize: 13, color: "#666" }}>{status}</div>
-      </div>
+      </form>
     </div>
   );
 }

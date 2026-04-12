@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
-  hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 
 type EventContext = {
@@ -60,6 +60,31 @@ function getStoredAdminEvent(): EventContext | null {
   }
 }
 
+function setStoredAdminEvent(event: EventContext | null) {
+  if (typeof window === "undefined") return;
+
+  if (!event?.id) {
+    localStorage.removeItem("fcoc-admin-event-context");
+    localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+    window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
+    return;
+  }
+
+  const payload = {
+    id: event.id,
+    name: event.name || event.eventName || null,
+    eventName: event.eventName || event.name || null,
+    venue_name: event.venue_name || null,
+    location: event.location || null,
+    start_date: event.start_date || null,
+    end_date: event.end_date || null,
+  };
+
+  localStorage.setItem("fcoc-admin-event-context", JSON.stringify(payload));
+  localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+  window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
+}
+
 function normalizeForInput(value?: string | null) {
   if (!value) return "";
   const date = new Date(value);
@@ -77,6 +102,14 @@ function formatDateTime(value?: string | null) {
 }
 
 export default function AdminAnnouncementsPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_manage_announcements">
+      <AdminAnnouncementsPageInner />
+    </AdminRouteGuard>
+  );
+}
+
+function AdminAnnouncementsPageInner() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -111,17 +144,6 @@ export default function AdminAnnouncementsPage() {
         return;
       }
 
-      if (!hasPermission(admin, "can_manage_announcements")) {
-        setCurrentEvent(null);
-        setAnnouncements([]);
-        resetForm();
-        setError("You do not have permission to manage announcements.");
-        setStatus("Access denied.");
-        setLoadingEvent(false);
-        setAccessDenied(true);
-        return;
-      }
-
       const stored = getStoredAdminEvent();
 
       if (stored?.id) {
@@ -137,7 +159,7 @@ export default function AdminAnnouncementsPage() {
         }
 
         setCurrentEvent(stored);
-        setStatus("");
+        setStatus("Using selected admin event.");
         setLoadingEvent(false);
         return;
       }
@@ -170,16 +192,19 @@ export default function AdminAnnouncementsPage() {
         return;
       }
 
-      setCurrentEvent({
+      const nextEvent: EventContext = {
         id: allowedEvent.id,
         name: allowedEvent.name,
+        eventName: allowedEvent.name,
         venue_name: allowedEvent.venue_name,
         location: allowedEvent.location,
         start_date: allowedEvent.start_date,
         end_date: allowedEvent.end_date,
-      });
+      };
 
-      setStatus("");
+      setCurrentEvent(nextEvent);
+      setStoredAdminEvent(nextEvent);
+      setStatus("Using first accessible event.");
       setLoadingEvent(false);
     }
 
@@ -196,8 +221,23 @@ export default function AdminAnnouncementsPage() {
       }
     }
 
+    function handleAdminEventUpdated() {
+      void init();
+    }
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated,
+      );
+    };
   }, []);
 
   async function loadAnnouncements(activeEventId: string) {
@@ -231,6 +271,7 @@ export default function AdminAnnouncementsPage() {
       setAnnouncements([]);
       setLoadingAnnouncements(false);
       resetForm();
+      setStatus(accessDenied ? "Access denied." : "No active event selected.");
       return;
     }
 
@@ -310,6 +351,7 @@ export default function AdminAnnouncementsPage() {
       }
 
       setStatus("Announcement updated.");
+      setEditingId(null);
     } else {
       const { error } = await supabase.from("announcements").insert(payload);
 
@@ -321,6 +363,7 @@ export default function AdminAnnouncementsPage() {
       }
 
       setStatus("Announcement created.");
+      setEditingId(null);
     }
 
     await loadAnnouncements(eventId);
@@ -418,6 +461,11 @@ export default function AdminAnnouncementsPage() {
               currentEvent?.eventName ||
               "No event selected"}
           {currentEvent?.location ? ` • ${currentEvent.location}` : ""}
+          {currentEvent?.start_date || currentEvent?.end_date
+            ? ` • ${[currentEvent?.start_date, currentEvent?.end_date]
+                .filter(Boolean)
+                .join(" – ")}`
+            : ""}
         </div>
 
         {status ? (
@@ -597,7 +645,7 @@ export default function AdminAnnouncementsPage() {
                 cursor: "pointer",
               }}
             >
-              Clear
+              {editingId ? "Cancel Edit" : "Clear"}
             </button>
           </div>
         </div>

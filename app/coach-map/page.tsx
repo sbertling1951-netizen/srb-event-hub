@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 
 function CoachMapPageInner() {
+  const router = useRouter();
+
   useEffect(() => {
-    window.location.href = "/coach-map/public";
-  }, []);
+    router.replace("/coach-map/public");
+  }, [router]);
 
   return (
     <div style={{ padding: 24 }}>

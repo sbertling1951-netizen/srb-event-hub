@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
@@ -236,7 +237,7 @@ function sortDisplayRows(rows: DisplayRow[], sortType: SortType) {
   });
 }
 
-export default function AdminAttendeesPage() {
+function AdminAttendeesPageInner() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
@@ -294,7 +295,6 @@ export default function AdminAttendeesPage() {
       const event = getStoredAdminEvent();
 
       if (!event?.id) {
-        setCanExport(false);
         setCurrentEvent(null);
         setAttendees([]);
         setParkingSites([]);
@@ -307,7 +307,6 @@ export default function AdminAttendeesPage() {
       }
 
       if (!canAccessEvent(admin, event.id)) {
-        setCanExport(false);
         setCurrentEvent(null);
         setAttendees([]);
         setParkingSites([]);
@@ -338,8 +337,23 @@ export default function AdminAttendeesPage() {
       }
     }
 
+    function handleAdminEventUpdated() {
+      void init();
+    }
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated,
+      );
+    };
   }, []);
 
   async function loadData(activeEventId: string) {
@@ -348,13 +362,89 @@ export default function AdminAttendeesPage() {
     setAccessDenied(false);
     setStatus("Loading attendees...");
 
+    const admin = await getCurrentAdminAccess();
+
+    if (!admin) {
+      setCanExport(false);
+      setCurrentEvent(null);
+      setAttendees([]);
+      setParkingSites([]);
+      setError("No admin access.");
+      setStatus("Access denied.");
+      setLoading(false);
+      setAccessDenied(true);
+      return;
+    }
+
+    if (!hasPermission(admin, "can_edit_attendees")) {
+      setCanExport(false);
+      setCurrentEvent(null);
+      setAttendees([]);
+      setParkingSites([]);
+      setError("You do not have permission to manage attendees.");
+      setStatus("Access denied.");
+      setLoading(false);
+      setAccessDenied(true);
+      return;
+    }
+
+    if (!canAccessEvent(admin, activeEventId)) {
+      setCanExport(false);
+      setCurrentEvent(null);
+      setAttendees([]);
+      setParkingSites([]);
+      setError("You do not have access to this event.");
+      setStatus("Access denied.");
+      setLoading(false);
+      setAccessDenied(true);
+      return;
+    }
+
+    setCanExport(hasPermission(admin, "can_export_reports"));
+
     const [
       { data: attendeeData, error: attendeeError },
       { data: parkingData, error: parkingError },
     ] = await Promise.all([
       supabase
         .from("attendees")
-        .select("*")
+        .select(
+          `
+            id,
+            event_id,
+            entry_id,
+            email,
+            pilot_first,
+            pilot_last,
+            copilot_first,
+            copilot_last,
+            nickname,
+            copilot_nickname,
+            membership_number,
+            primary_phone,
+            cell_phone,
+            city,
+            state,
+            wants_to_volunteer,
+            is_first_timer,
+            coach_manufacturer,
+            coach_model,
+            special_events_raw,
+            assigned_site,
+            has_arrived,
+            share_with_attendees,
+            is_active,
+            inactive_reason,
+            participant_type,
+            source_type,
+            include_in_headcount,
+            needs_name_tag,
+            needs_coach_plate,
+            needs_parking,
+            notes,
+            created_at
+          `,
+        )
         .eq("event_id", activeEventId)
         .order("pilot_last", { ascending: true })
         .order("pilot_first", { ascending: true }),
@@ -838,3 +928,11 @@ const tdStyle: CSSProperties = {
   borderTop: "1px solid #ddd",
   verticalAlign: "top",
 };
+
+export default function AdminAttendeesPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_edit_attendees">
+      <AdminAttendeesPageInner />
+    </AdminRouteGuard>
+  );
+}

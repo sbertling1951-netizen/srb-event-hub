@@ -21,14 +21,12 @@ function NewMasterMapPageInner() {
   );
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function init() {
       setLoading(true);
       setError(null);
-      setAccessDenied(false);
       setStatus("Checking admin access...");
 
       const admin = await getCurrentAdminAccess();
@@ -36,7 +34,6 @@ function NewMasterMapPageInner() {
       if (!admin) {
         setError("No admin access.");
         setStatus("Access denied.");
-        setAccessDenied(true);
         setLoading(false);
         return;
       }
@@ -44,7 +41,6 @@ function NewMasterMapPageInner() {
       if (!hasPermission(admin, "can_manage_master_maps")) {
         setError("You do not have permission to create master maps.");
         setStatus("Access denied.");
-        setAccessDenied(true);
         setLoading(false);
         return;
       }
@@ -57,7 +53,7 @@ function NewMasterMapPageInner() {
   }, []);
 
   async function createMasterMap() {
-    if (loading || accessDenied) return;
+    if (loading) return;
 
     if (!name.trim()) {
       setStatus("Enter a master map name.");
@@ -87,7 +83,6 @@ function NewMasterMapPageInner() {
       if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
         setError("You do not have permission to create master maps.");
         setStatus("Access denied.");
-        setAccessDenied(true);
         return;
       }
 
@@ -156,29 +151,6 @@ function NewMasterMapPageInner() {
     } finally {
       setBusy(false);
     }
-  }
-
-  if (!loading && accessDenied) {
-    return (
-      <div style={{ padding: 24 }}>
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 18,
-            maxWidth: 700,
-          }}
-        >
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>
-            Create New Master Map
-          </h1>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            You do not have access to this page.
-          </div>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -251,7 +223,7 @@ function NewMasterMapPageInner() {
         </div>
 
         <button
-          disabled={busy || loading || accessDenied}
+          disabled={busy || loading}
           onClick={() => void createMasterMap()}
         >
           {busy ? "Creating..." : "Create Master Map and Open Editor"}
@@ -267,7 +239,7 @@ function NewMasterMapPageInner() {
 
 export default function NewMasterMapPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredPermission="can_manage_master_maps">
       <NewMasterMapPageInner />
     </AdminRouteGuard>
   );

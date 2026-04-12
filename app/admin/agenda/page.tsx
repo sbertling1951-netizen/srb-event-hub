@@ -9,7 +9,6 @@ import { getAgendaColor } from "@/lib/agendaColors";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
-  hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 
 type AgendaItem = {
@@ -73,6 +72,7 @@ type AgendaTemplateItem = {
   is_published: boolean | null;
 };
 
+const MOBILE_BREAKPOINT = 900;
 const emptyForm: AgendaForm = {
   id: "",
   external_id: "",
@@ -184,6 +184,17 @@ function AdminAgendaPageInner() {
   const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    }
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
     async function init() {
       setLoading(true);
       setError(null);
@@ -196,16 +207,6 @@ function AdminAgendaPageInner() {
         setActiveEvent(null);
         setItems([]);
         setError("No admin access.");
-        setStatus("Access denied.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      if (!hasPermission(admin, "can_manage_agenda")) {
-        setActiveEvent(null);
-        setItems([]);
-        setError("You do not have permission to manage agenda items.");
         setStatus("Access denied.");
         setLoading(false);
         setAccessDenied(true);
@@ -239,14 +240,35 @@ function AdminAgendaPageInner() {
     void loadTemplates();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-admin-event-changed") {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
         void init();
         void loadTemplates();
       }
     }
 
+    function handleAdminEventUpdated() {
+      void init();
+      void loadTemplates();
+    }
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated,
+      );
+    };
   }, []);
 
   async function loadPage() {
@@ -304,6 +326,7 @@ function AdminAgendaPageInner() {
       .order("title", { ascending: true });
 
     if (error) {
+      setError(error.message);
       setStatus(`Could not load agenda items: ${error.message}`);
       setLoading(false);
       return;
@@ -412,6 +435,7 @@ function AdminAgendaPageInner() {
           .eq("id", form.id);
 
         if (error) {
+          setError(error.message);
           setStatus(`Could not update agenda item: ${error.message}`);
           return;
         }
@@ -426,6 +450,7 @@ function AdminAgendaPageInner() {
           .maybeSingle();
 
         if (findError) {
+          setError(findError.message);
           setStatus(`Could not check for duplicate item: ${findError.message}`);
           return;
         }
@@ -440,6 +465,7 @@ function AdminAgendaPageInner() {
         const { error } = await supabase.from("agenda_items").insert(payload);
 
         if (error) {
+          setError(error.message);
           setStatus(`Could not add agenda item: ${error.message}`);
           return;
         }
@@ -462,6 +488,7 @@ function AdminAgendaPageInner() {
     const { error } = await supabase.from("agenda_items").delete().eq("id", id);
 
     if (error) {
+      setError(error.message);
       setStatus(`Could not delete item: ${error.message}`);
       return;
     }
@@ -484,6 +511,7 @@ function AdminAgendaPageInner() {
       .eq("id", item.id);
 
     if (error) {
+      setError(error.message);
       setStatus(`Could not update publish status: ${error.message}`);
       return;
     }
@@ -574,6 +602,7 @@ function AdminAgendaPageInner() {
       await loadPage();
     } catch (err: any) {
       console.error("saveOrder error:", err);
+      setError(err?.message || "Failed to save order.");
       setStatus(err?.message || "Failed to save order.");
     } finally {
       setSavingOrder(false);
@@ -593,6 +622,7 @@ function AdminAgendaPageInner() {
       .eq("id", activeEvent.id);
 
     if (error) {
+      setError(error.message);
       setStatus(`Could not assign template: ${error.message}`);
       return;
     }
@@ -622,6 +652,7 @@ function AdminAgendaPageInner() {
       .order("sort_order", { ascending: true, nullsFirst: false });
 
     if (error) {
+      setError(error.message);
       setStatus(`Could not load template items: ${error.message}`);
       return;
     }
@@ -660,6 +691,7 @@ function AdminAgendaPageInner() {
       });
 
     if (upsertError) {
+      setError(upsertError.message);
       setStatus(`Could not copy template to event: ${upsertError.message}`);
       return;
     }
@@ -689,6 +721,7 @@ function AdminAgendaPageInner() {
       .eq("event_id", activeEvent.id);
 
     if (deleteError) {
+      setError(deleteError.message);
       setStatus(`Could not clear event agenda: ${deleteError.message}`);
       return;
     }
@@ -1300,7 +1333,7 @@ function AdminAgendaPageInner() {
 
 export default function AdminAgendaPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredPermission="can_manage_agenda">
       <AdminAgendaPageInner />
     </AdminRouteGuard>
   );

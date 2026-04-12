@@ -8,7 +8,6 @@ import { geocodeLocation } from "@/lib/geocodeLocation";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
-  hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 
 type AdminEventContext = {
@@ -134,6 +133,14 @@ function eventFormFromPlace(place: EventPlace): EventPlaceForm {
   };
 }
 
+export default function AdminNearbyPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_manage_nearby">
+      <AdminNearbyPageInner />
+    </AdminRouteGuard>
+  );
+}
+
 function AdminNearbyPageInner() {
   const [adminEvent, setAdminEvent] = useState<AdminEventContext | null>(null);
   const [status, setStatus] = useState("Loading nearby admin...");
@@ -161,6 +168,29 @@ function AdminNearbyPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(false);
+
+  function resetAllState() {
+    setAdminEvent(null);
+    setStoredAreas([]);
+    setStoredPlaces([]);
+    setEventPlaces([]);
+    setSelectedAreaId("");
+    setAreaName("");
+    setAreaDescription("");
+    setStoredForm(emptyStoredPlaceForm);
+    setEventForm(emptyEventPlaceForm);
+  }
+
+  useEffect(() => {
+    function handleResize() {
+      setIsNarrow(window.innerWidth < 1100);
+    }
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     async function init() {
@@ -172,29 +202,8 @@ function AdminNearbyPageInner() {
       const admin = await getCurrentAdminAccess();
 
       if (!admin) {
-        setAdminEvent(null);
-        setStoredAreas([]);
-        setStoredPlaces([]);
-        setEventPlaces([]);
-        setSelectedAreaId("");
-        setStoredForm(emptyStoredPlaceForm);
-        setEventForm(emptyEventPlaceForm);
+        resetAllState();
         setError("No admin access.");
-        setStatus("Access denied.");
-        setAccessDenied(true);
-        setLoading(false);
-        return;
-      }
-
-      if (!hasPermission(admin, "can_manage_nearby")) {
-        setAdminEvent(null);
-        setStoredAreas([]);
-        setStoredPlaces([]);
-        setEventPlaces([]);
-        setSelectedAreaId("");
-        setStoredForm(emptyStoredPlaceForm);
-        setEventForm(emptyEventPlaceForm);
-        setError("You do not have permission to manage nearby places.");
         setStatus("Access denied.");
         setAccessDenied(true);
         setLoading(false);
@@ -204,13 +213,7 @@ function AdminNearbyPageInner() {
       const evt = getAdminEvent() as AdminEventContext | null;
 
       if (evt?.id && !canAccessEvent(admin, evt.id)) {
-        setAdminEvent(null);
-        setStoredAreas([]);
-        setStoredPlaces([]);
-        setEventPlaces([]);
-        setSelectedAreaId("");
-        setStoredForm(emptyStoredPlaceForm);
-        setEventForm(emptyEventPlaceForm);
+        resetAllState();
         setError("You do not have access to this event.");
         setStatus("Access denied.");
         setAccessDenied(true);
@@ -265,28 +268,8 @@ function AdminNearbyPageInner() {
       const admin = await getCurrentAdminAccess();
 
       if (!admin) {
-        setAdminEvent(null);
-        setStoredAreas([]);
-        setStoredPlaces([]);
-        setEventPlaces([]);
-        setSelectedAreaId("");
-        setStoredForm(emptyStoredPlaceForm);
-        setEventForm(emptyEventPlaceForm);
+        resetAllState();
         setError("No admin access.");
-        setStatus("Access denied.");
-        setAccessDenied(true);
-        return;
-      }
-
-      if (!hasPermission(admin, "can_manage_nearby")) {
-        setAdminEvent(null);
-        setStoredAreas([]);
-        setStoredPlaces([]);
-        setEventPlaces([]);
-        setSelectedAreaId("");
-        setStoredForm(emptyStoredPlaceForm);
-        setEventForm(emptyEventPlaceForm);
-        setError("You do not have permission to manage nearby places.");
         setStatus("Access denied.");
         setAccessDenied(true);
         return;
@@ -295,11 +278,7 @@ function AdminNearbyPageInner() {
       const evt = getAdminEvent() as AdminEventContext | null;
 
       if (evt?.id && !canAccessEvent(admin, evt.id)) {
-        setAdminEvent(null);
-        setStoredPlaces([]);
-        setEventPlaces([]);
-        setStoredForm(emptyStoredPlaceForm);
-        setEventForm(emptyEventPlaceForm);
+        resetAllState();
         setError("You do not have access to this event.");
         setStatus("Access denied.");
         setAccessDenied(true);
@@ -322,8 +301,23 @@ function AdminNearbyPageInner() {
       }
     }
 
+    function handleAdminEventUpdated() {
+      void refreshAdminEvent();
+    }
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated as EventListener,
+      );
+    };
   }, []);
 
   const selectedArea =
@@ -476,23 +470,13 @@ function AdminNearbyPageInner() {
         description: areaDescription.trim() || null,
       };
 
-      console.log("createStoredArea payload:", payload);
-
       const { data, error } = await supabase
         .from("nearby_areas")
         .insert(payload)
         .select("id,name,description")
         .single();
 
-      if (error) {
-        console.error("createStoredArea Supabase error:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        throw error;
-      }
+      if (error) throw error;
 
       await loadStoredAreas();
 
@@ -502,12 +486,7 @@ function AdminNearbyPageInner() {
 
       setStatus(`Created stored area "${payload.name}".`);
     } catch (err: any) {
-      console.error("createStoredArea full error:", err);
-      console.error("createStoredArea message:", err?.message);
-      console.error("createStoredArea details:", err?.details);
-      console.error("createStoredArea hint:", err?.hint);
-      console.error("createStoredArea code:", err?.code);
-
+      console.error("createStoredArea error:", err);
       setStatus(
         err?.message ||
           err?.details ||
@@ -766,7 +745,7 @@ function AdminNearbyPageInner() {
           website: place.link ?? null,
           category: place.category ?? null,
           notes: place.description ?? null,
-          sort_order: index,
+          sort_order: index + 1,
           is_hidden: false,
           distance_miles: null,
           location_code: place.location_code ?? null,
@@ -784,6 +763,7 @@ function AdminNearbyPageInner() {
       }
 
       await loadEventPlaces(adminEvent.id);
+      setEventForm(emptyEventPlaceForm);
       setStatus(
         `Replaced event nearby list with ${payload.length} place${
           payload.length === 1 ? "" : "s"
@@ -847,7 +827,7 @@ function AdminNearbyPageInner() {
       } else {
         const { error } = await supabase.from("event_nearby_places").insert({
           ...payload,
-          sort_order: eventPlaces.length,
+          sort_order: eventPlaces.length + 1,
         });
 
         if (error) throw error;
@@ -887,7 +867,9 @@ function AdminNearbyPageInner() {
 
       if (error) throw error;
 
-      await loadEventPlaces(adminEvent!.id!);
+      if (adminEvent?.id) {
+        await loadEventPlaces(adminEvent.id);
+      }
       setEventForm(emptyEventPlaceForm);
       setStatus(`Deleted event place "${eventForm.name}".`);
     } catch (err: any) {
@@ -951,6 +933,7 @@ function AdminNearbyPageInner() {
           {error}
         </div>
       ) : null}
+
       <div
         style={{
           border: "1px solid #ddd",
@@ -973,7 +956,7 @@ function AdminNearbyPageInner() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(320px, 380px) 1fr",
+          gridTemplateColumns: isNarrow ? "1fr" : "minmax(320px, 380px) 1fr",
           gap: 18,
           alignItems: "start",
         }}
@@ -1093,7 +1076,9 @@ function AdminNearbyPageInner() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "minmax(260px, 360px) 1fr",
+                gridTemplateColumns: isNarrow
+                  ? "1fr"
+                  : "minmax(260px, 360px) 1fr",
                 gap: 18,
                 alignItems: "start",
               }}
@@ -1296,7 +1281,9 @@ function AdminNearbyPageInner() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "minmax(260px, 360px) 1fr",
+              gridTemplateColumns: isNarrow
+                ? "1fr"
+                : "minmax(260px, 360px) 1fr",
               gap: 18,
               alignItems: "start",
             }}
@@ -1430,7 +1417,7 @@ function AdminNearbyPageInner() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
                   gap: 8,
                 }}
               >
@@ -1503,13 +1490,5 @@ function AdminNearbyPageInner() {
         )}
       </div>
     </div>
-  );
-}
-
-export default function AdminNearbyPage() {
-  return (
-    <AdminRouteGuard>
-      <AdminNearbyPageInner />
-    </AdminRouteGuard>
   );
 }

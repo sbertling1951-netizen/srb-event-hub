@@ -22,6 +22,7 @@ export type AdminPermissions = {
   can_manage_master_maps: boolean;
   can_manage_master_nearby: boolean;
   can_manage_settings: boolean;
+  can_manage_print_settings: boolean;
 };
 
 export const EMPTY_PERMISSIONS: AdminPermissions = {
@@ -40,6 +41,7 @@ export const EMPTY_PERMISSIONS: AdminPermissions = {
   can_manage_master_maps: false,
   can_manage_master_nearby: false,
   can_manage_settings: false,
+  can_manage_print_settings: false,
 };
 
 export const PERMISSION_PRESETS: Record<PrivilegeGroup, AdminPermissions> = {
@@ -59,6 +61,7 @@ export const PERMISSION_PRESETS: Record<PrivilegeGroup, AdminPermissions> = {
     can_manage_master_maps: true,
     can_manage_master_nearby: true,
     can_manage_settings: true,
+    can_manage_print_settings: true,
   },
 
   event_admin: {
@@ -77,6 +80,7 @@ export const PERMISSION_PRESETS: Record<PrivilegeGroup, AdminPermissions> = {
     can_manage_master_maps: false,
     can_manage_master_nearby: false,
     can_manage_settings: false,
+    can_manage_print_settings: true,
   },
 
   checkin: {
@@ -95,6 +99,7 @@ export const PERMISSION_PRESETS: Record<PrivilegeGroup, AdminPermissions> = {
     can_manage_master_maps: false,
     can_manage_master_nearby: false,
     can_manage_settings: false,
+    can_manage_print_settings: false,
   },
 
   parking: {
@@ -113,6 +118,7 @@ export const PERMISSION_PRESETS: Record<PrivilegeGroup, AdminPermissions> = {
     can_manage_master_maps: false,
     can_manage_master_nearby: false,
     can_manage_settings: false,
+    can_manage_print_settings: false,
   },
 
   content_admin: {
@@ -131,6 +137,7 @@ export const PERMISSION_PRESETS: Record<PrivilegeGroup, AdminPermissions> = {
     can_manage_master_maps: false,
     can_manage_master_nearby: false,
     can_manage_settings: false,
+    can_manage_print_settings: false,
   },
 
   read_only: {
@@ -149,6 +156,7 @@ export const PERMISSION_PRESETS: Record<PrivilegeGroup, AdminPermissions> = {
     can_manage_master_maps: false,
     can_manage_master_nearby: false,
     can_manage_settings: false,
+    can_manage_print_settings: false,
   },
 };
 
@@ -168,6 +176,7 @@ export const PERMISSION_LABELS: Record<keyof AdminPermissions, string> = {
   can_manage_master_maps: "Manage Master Maps",
   can_manage_master_nearby: "Manage Master Nearby",
   can_manage_settings: "Manage Settings",
+  can_manage_print_settings: "Manage Print Settings",
 };
 
 export function getPresetPermissions(group: PrivilegeGroup): AdminPermissions {

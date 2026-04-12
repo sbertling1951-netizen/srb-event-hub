@@ -111,6 +111,30 @@ export default function Sidebar() {
   const [adminDisplayName, setAdminDisplayName] = useState("");
   const [adminPrivilegeGroup, setAdminPrivilegeGroup] = useState("");
 
+  function loadContextsFromStorage() {
+    try {
+      const rawMemberEvent = localStorage.getItem("fcoc-member-event-context");
+      const rawAdminEvent = localStorage.getItem("fcoc-admin-event-context");
+      const rawHasArrived = localStorage.getItem("fcoc-member-has-arrived");
+      const rawUserMode = localStorage.getItem("fcoc-user-mode");
+
+      setMemberEvent(rawMemberEvent ? JSON.parse(rawMemberEvent) : null);
+      setAdminEvent(rawAdminEvent ? JSON.parse(rawAdminEvent) : null);
+      setIsCheckedIn(rawHasArrived === "true");
+      setUserMode(
+        rawUserMode === "member" || rawUserMode === "admin"
+          ? rawUserMode
+          : "none",
+      );
+    } catch (err) {
+      console.error("Sidebar load error:", err);
+      setMemberEvent(null);
+      setAdminEvent(null);
+      setIsCheckedIn(false);
+      setUserMode("none");
+    }
+  }
+
   const isAdminRoute = pathname.startsWith("/admin");
   const isMemberRoute =
     pathname.startsWith("/member") ||
@@ -182,33 +206,7 @@ export default function Sidebar() {
   useEffect(() => {
     if (!mounted) return;
 
-    function loadContexts() {
-      try {
-        const rawMemberEvent = localStorage.getItem(
-          "fcoc-member-event-context",
-        );
-        const rawAdminEvent = localStorage.getItem("fcoc-admin-event-context");
-        const rawHasArrived = localStorage.getItem("fcoc-member-has-arrived");
-        const rawUserMode = localStorage.getItem("fcoc-user-mode");
-
-        setMemberEvent(rawMemberEvent ? JSON.parse(rawMemberEvent) : null);
-        setAdminEvent(rawAdminEvent ? JSON.parse(rawAdminEvent) : null);
-        setIsCheckedIn(rawHasArrived === "true");
-        setUserMode(
-          rawUserMode === "member" || rawUserMode === "admin"
-            ? rawUserMode
-            : "none",
-        );
-      } catch (err) {
-        console.error("Sidebar load error:", err);
-        setMemberEvent(null);
-        setAdminEvent(null);
-        setIsCheckedIn(false);
-        setUserMode("none");
-      }
-    }
-
-    loadContexts();
+    loadContextsFromStorage();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -220,18 +218,35 @@ export default function Sidebar() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        loadContexts();
+        loadContextsFromStorage();
       }
     }
 
+    function handleAdminEventUpdated() {
+      loadContextsFromStorage();
+    }
+
     window.addEventListener("storage", handleStorage);
-    window.addEventListener("popstate", loadContexts);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated,
+    );
+    window.addEventListener("popstate", loadContextsFromStorage);
 
     return () => {
       window.removeEventListener("storage", handleStorage);
-      window.removeEventListener("popstate", loadContexts);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated,
+      );
+      window.removeEventListener("popstate", loadContextsFromStorage);
     };
   }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    loadContextsFromStorage();
+  }, [mounted, pathname]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -253,8 +268,22 @@ export default function Sidebar() {
     async function loadAdminAccess() {
       const admin = await getCurrentAdminAccess();
       setAdminAccess(admin);
-      setAdminDisplayName(admin?.display_name || admin?.email || "");
-      setAdminPrivilegeGroup(admin?.privilege_group || "");
+
+      const adminRecord = admin as Record<string, unknown> | null;
+      const displayName =
+        typeof adminRecord?.display_name === "string"
+          ? adminRecord.display_name
+          : typeof adminRecord?.email === "string"
+            ? adminRecord.email
+            : "";
+
+      const privilegeGroup =
+        typeof adminRecord?.privilege_group === "string"
+          ? adminRecord.privilege_group
+          : "";
+
+      setAdminDisplayName(displayName);
+      setAdminPrivilegeGroup(privilegeGroup);
     }
 
     void loadAdminAccess();
@@ -276,11 +305,24 @@ export default function Sidebar() {
       }
     }
 
+    function handleAdminEventUpdated() {
+      void loadAdminAccess();
+      loadContextsFromStorage();
+    }
+
     window.addEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated,
+    );
 
     return () => {
       subscription.unsubscribe();
       window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated,
+      );
     };
   }, [mounted]);
 

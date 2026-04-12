@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 
 type ChecklistSection = {
   title: string;
@@ -58,6 +59,14 @@ const CHECKLIST_SECTIONS: ChecklistSection[] = [
 const STORAGE_KEY_BASE = "fcoc-pre-rally-checklist";
 
 export default function AdminChecklistPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_view_admin_dashboard">
+      <AdminChecklistPageInner />
+    </AdminRouteGuard>
+  );
+}
+
+function AdminChecklistPageInner() {
   const [storageKey, setStorageKey] = useState(STORAGE_KEY_BASE);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 

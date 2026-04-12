@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 
 type PrintTag = {
   displayFirst: string;
@@ -69,7 +70,7 @@ function AutoFitText({
   );
 }
 
-export default function NameTagsPrintPage() {
+function NameTagsPrintPageInner() {
   const [tags, setTags] = useState<PrintTag[]>([]);
   const [eventName, setEventName] = useState("");
   const [bgUrl, setBgUrl] = useState<string | null>(null);
@@ -309,5 +310,13 @@ export default function NameTagsPrintPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function NameTagsPrintPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_manage_print_settings">
+      <NameTagsPrintPageInner />
+    </AdminRouteGuard>
   );
 }

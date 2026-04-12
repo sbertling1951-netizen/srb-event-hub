@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 
 type CoachPlate = {
   eventName: string;
@@ -12,7 +13,7 @@ type CoachPlate = {
   firstTimer?: boolean;
 };
 
-export default function CoachPlatesPrintPage() {
+function CoachPlatesPrintPageInner() {
   const [plates, setPlates] = useState<CoachPlate[]>([]);
 
   useEffect(() => {
@@ -200,5 +201,13 @@ export default function CoachPlatesPrintPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function CoachPlatesPrintPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_view_reports">
+      <CoachPlatesPrintPageInner />
+    </AdminRouteGuard>
   );
 }

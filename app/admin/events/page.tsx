@@ -7,7 +7,6 @@ import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
-  hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 
 type EventRow = {
@@ -111,28 +110,18 @@ function EventAdminPageInner() {
         return;
       }
 
-      if (!hasPermission(admin, "can_manage_events")) {
-        setEvents([]);
-        setMasterMaps([]);
-        setNearbyLists([]);
-        setSelectedEventId("");
-        setForm(emptyForm);
-        setSelectedMasterMapId("");
-        setSelectedNearbyListId("");
-        setError("You do not have permission to manage events.");
-        setStatus("Access denied.");
-        setAccessDenied(true);
-        setLoading(false);
-        return;
-      }
-
       await loadPage();
     }
 
     void init();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-admin-event-changed") {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
         void init();
       }
     }
@@ -165,6 +154,7 @@ function EventAdminPageInner() {
     if (!event) {
       localStorage.removeItem("fcoc-admin-event-context");
       localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+      window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
       return;
     }
 
@@ -182,6 +172,7 @@ function EventAdminPageInner() {
     );
 
     localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+    window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
   }
 
   async function loadPage() {
@@ -239,10 +230,12 @@ function EventAdminPageInner() {
       setNearbyLists(loadedNearby);
 
       const adminEvent = getAdminEvent();
+      const storedAccessibleEvent = adminEvent?.id
+        ? loadedEvents.find((e) => e.id === adminEvent.id) || null
+        : null;
+
       const preferredEventId =
-        loadedEvents.find((e) => e.id === adminEvent?.id)?.id ||
-        loadedEvents[0]?.id ||
-        "";
+        storedAccessibleEvent?.id || loadedEvents[0]?.id || "";
 
       setSelectedEventId(preferredEventId);
 
@@ -250,7 +243,9 @@ function EventAdminPageInner() {
         loadedEvents.find((e) => e.id === preferredEventId) || null;
 
       if (preferredEvent) {
-        setWorkingAdminEvent(preferredEvent);
+        if (!storedAccessibleEvent) {
+          setWorkingAdminEvent(preferredEvent);
+        }
         setStatus("Event admin ready.");
       } else {
         setWorkingAdminEvent(null);
@@ -321,8 +316,8 @@ function EventAdminPageInner() {
 
       const admin = await getCurrentAdminAccess();
 
-      if (!admin || !hasPermission(admin, "can_manage_events")) {
-        setError("You do not have permission to manage events.");
+      if (!admin) {
+        setError("No admin access.");
         setStatus("Access denied.");
         return;
       }
@@ -385,8 +380,8 @@ function EventAdminPageInner() {
 
       const admin = await getCurrentAdminAccess();
 
-      if (!admin || !hasPermission(admin, "can_manage_events")) {
-        setError("You do not have permission to manage event assignments.");
+      if (!admin) {
+        setError("No admin access.");
         setStatus("Access denied.");
         return;
       }
@@ -525,9 +520,15 @@ function EventAdminPageInner() {
           onChange={(e) => {
             const newId = e.target.value;
             setSelectedEventId(newId);
+            setError(null);
 
             const evt = events.find((row) => row.id === newId) || null;
             setWorkingAdminEvent(evt);
+            setStatus(
+              evt
+                ? `Working event changed to ${evt.name || "Untitled event"}.`
+                : "No event selected.",
+            );
           }}
           disabled={loading}
           style={{
@@ -553,7 +554,9 @@ function EventAdminPageInner() {
             setForm(emptyForm);
             setSelectedMasterMapId("");
             setSelectedNearbyListId("");
+            setError(null);
             setWorkingAdminEvent(null);
+            setStatus("Creating a new event. No working event selected.");
           }}
           style={{ width: "fit-content" }}
         >
@@ -732,7 +735,7 @@ function EventAdminPageInner() {
 
 export default function EventAdminPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredPermission="can_manage_events">
       <EventAdminPageInner />
     </AdminRouteGuard>
   );

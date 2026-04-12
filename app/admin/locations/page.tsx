@@ -7,7 +7,6 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
-  hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 
 type AdminEventContext = {
@@ -99,9 +98,11 @@ function AdminLocationsPageInner() {
   const [formX, setFormX] = useState("");
   const [formY, setFormY] = useState("");
   const [isPlacing, setIsPlacing] = useState(false);
+
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
     zoomRef.current = zoom;
@@ -121,7 +122,7 @@ function AdminLocationsPageInner() {
     const el = mapRef.current;
     if (!el) return;
 
-    const container = el;
+    const container = el as HTMLDivElement;
 
     function onTouchStart(e: TouchEvent) {
       if (e.touches.length !== 2) return;
@@ -196,43 +197,7 @@ function AdminLocationsPageInner() {
     const el = mapRef.current;
     if (!el) return;
 
-    const container = el;
-
-    function onWheel(e: WheelEvent) {
-      if (isNarrow) return;
-
-      e.preventDefault();
-
-      const rect = container.getBoundingClientRect();
-      const viewportX = e.clientX - rect.left;
-      const viewportY = e.clientY - rect.top;
-
-      const currentZoom = zoomRef.current;
-      const nextZoom = clampZoom(currentZoom * (e.deltaY > 0 ? 0.92 : 1.08));
-
-      const contentX = (container.scrollLeft + viewportX) / currentZoom;
-      const contentY = (container.scrollTop + viewportY) / currentZoom;
-
-      setZoom(nextZoom);
-      zoomRef.current = nextZoom;
-
-      requestAnimationFrame(() => {
-        container.scrollLeft = Math.max(0, contentX * nextZoom - viewportX);
-        container.scrollTop = Math.max(0, contentY * nextZoom - viewportY);
-      });
-    }
-
-    container.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      container.removeEventListener("wheel", onWheel);
-    };
-  }, [isNarrow]);
-
-  useEffect(() => {
-    const el = mapRef.current;
-    if (!el) return;
-
-    const container = el;
+    const container = el as HTMLDivElement;
     container.style.cursor = isNarrow ? "auto" : "grab";
 
     function onMouseDown(e: MouseEvent) {
@@ -285,7 +250,6 @@ function AdminLocationsPageInner() {
       setLoading(true);
       setError(null);
       setStatus("Checking admin access...");
-      setAccessDenied(false);
 
       const admin = await getCurrentAdminAccess();
 
@@ -295,17 +259,6 @@ function AdminLocationsPageInner() {
         setError("No admin access.");
         setStatus("Access denied.");
         setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      if (!hasPermission(admin, "can_manage_master_maps")) {
-        setEvent(null);
-        setLocations([]);
-        setError("You do not have permission to manage map locations.");
-        setStatus("Access denied.");
-        setLoading(false);
-        setAccessDenied(true);
         return;
       }
 
@@ -327,7 +280,6 @@ function AdminLocationsPageInner() {
         setError("You do not have access to this event.");
         setStatus("Access denied.");
         setLoading(false);
-        setAccessDenied(true);
         return;
       }
 
@@ -337,13 +289,33 @@ function AdminLocationsPageInner() {
     void init();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-admin-event-changed") {
+      if (
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
         void init();
       }
     }
 
+    function handleAdminEventUpdated() {
+      void init();
+    }
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated as EventListener,
+      );
+    };
   }, []);
 
   async function loadPage() {
@@ -453,8 +425,21 @@ function AdminLocationsPageInner() {
       return;
     }
 
-    setLocations((locationData || []) as EventLocation[]);
-    setStatus(`Loaded ${(locationData || []).length} locations.`);
+    const nextLocations = (locationData || []) as EventLocation[];
+    setLocations(nextLocations);
+    setStatus(`Loaded ${nextLocations.length} locations.`);
+
+    if (selectedLocationId) {
+      const refreshed = nextLocations.find(
+        (loc) => loc.id === selectedLocationId,
+      );
+      if (refreshed) {
+        loadLocationIntoForm(refreshed);
+      } else {
+        setSelectedLocationId("");
+      }
+    }
+
     setLoading(false);
   }
 
@@ -478,8 +463,9 @@ function AdminLocationsPageInner() {
     location: EventLocation,
     targetZoom = zoomRef.current,
   ) {
-    if (!mapRef.current || location.map_x === null || location.map_y === null)
+    if (!mapRef.current || location.map_x === null || location.map_y === null) {
       return;
+    }
 
     const container = mapRef.current;
     const scaledWidth = naturalSize.width * targetZoom;
@@ -539,6 +525,7 @@ function AdminLocationsPageInner() {
     setFormX("");
     setFormY("");
     setIsPlacing(false);
+    setSelectedLocationId("");
   }
 
   function loadLocationIntoForm(location: EventLocation) {
@@ -611,31 +598,40 @@ function AdminLocationsPageInner() {
       return;
     }
 
-    if (formId) {
-      const { error } = await supabase
-        .from("event_locations")
-        .update(payload)
-        .eq("id", formId);
+    try {
+      setSaving(true);
+      setError(null);
 
-      if (error) {
-        setStatus(`Could not update location: ${error.message}`);
-        return;
+      if (formId) {
+        const { error } = await supabase
+          .from("event_locations")
+          .update(payload)
+          .eq("id", formId);
+
+        if (error) {
+          setStatus(`Could not update location: ${error.message}`);
+          return;
+        }
+
+        setStatus(`Updated ${payload.name}.`);
+      } else {
+        const { error } = await supabase
+          .from("event_locations")
+          .insert(payload);
+
+        if (error) {
+          setStatus(`Could not create location: ${error.message}`);
+          return;
+        }
+
+        setStatus(`Created ${payload.name}.`);
       }
 
-      setStatus(`Updated ${payload.name}.`);
-    } else {
-      const { error } = await supabase.from("event_locations").insert(payload);
-
-      if (error) {
-        setStatus(`Could not create location: ${error.message}`);
-        return;
-      }
-
-      setStatus(`Created ${payload.name}.`);
+      await loadPage();
+      resetForm();
+    } finally {
+      setSaving(false);
     }
-
-    await loadPage();
-    resetForm();
   }
 
   async function deleteLocation() {
@@ -647,48 +643,52 @@ function AdminLocationsPageInner() {
     const confirmed = window.confirm(`Delete "${formName}"?`);
     if (!confirmed) return;
 
-    const { error } = await supabase
-      .from("event_locations")
-      .delete()
-      .eq("id", formId);
+    try {
+      setDeleting(true);
+      const deletedName = formName;
 
-    if (error) {
-      setStatus(`Could not delete location: ${error.message}`);
-      return;
-    }
+      const { error } = await supabase
+        .from("event_locations")
+        .delete()
+        .eq("id", formId);
 
-    setStatus(`Deleted ${formName}.`);
-    if (selectedLocationId === formId) {
-      setSelectedLocationId("");
+      if (error) {
+        setStatus(`Could not delete location: ${error.message}`);
+        return;
+      }
+
+      if (selectedLocationId === formId) {
+        setSelectedLocationId("");
+      }
+
+      await loadPage();
+      resetForm();
+      setStatus(`Deleted ${deletedName}.`);
+    } finally {
+      setDeleting(false);
     }
-    await loadPage();
-    resetForm();
   }
 
-  // Access denied return
-  if (!loading && accessDenied) {
-    return (
-      <div style={{ padding: 24 }}>
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 18,
-          }}
-        >
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Map Locations</h1>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            You do not have access to this page.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Main page return
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
+      <div style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = "/admin/dashboard";
+          }}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "1px solid #cbd5e1",
+            background: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          ← Return to Dashboard
+        </button>
+      </div>
+
       <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
         Map Locations
       </h1>
@@ -824,15 +824,25 @@ function AdminLocationsPageInner() {
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" onClick={() => void saveLocation()}>
-                {formId ? "Update Location" : "Save Location"}
+              <button
+                type="button"
+                onClick={() => void saveLocation()}
+                disabled={saving}
+              >
+                {saving
+                  ? formId
+                    ? "Updating..."
+                    : "Saving..."
+                  : formId
+                    ? "Update Location"
+                    : "Save Location"}
               </button>
               <button
                 type="button"
                 onClick={() => void deleteLocation()}
-                disabled={!formId}
+                disabled={!formId || deleting}
               >
-                Delete
+                {deleting ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>
@@ -944,8 +954,9 @@ function AdminLocationsPageInner() {
                 )}
 
                 {locations.map((location) => {
-                  if (location.map_x === null || location.map_y === null)
+                  if (location.map_x === null || location.map_y === null) {
                     return null;
+                  }
 
                   return (
                     <div
@@ -1070,7 +1081,7 @@ function AdminLocationsPageInner() {
 
 export default function AdminLocationsPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredPermission="can_manage_locations">
       <AdminLocationsPageInner />
     </AdminRouteGuard>
   );

@@ -8,7 +8,6 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
-  hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 
 type MasterMapRow = {
@@ -69,11 +68,22 @@ function MasterMapsPageInner() {
   const [deletingMapId, setDeletingMapId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [savingScales, setSavingScales] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [canManageMaps, setCanManageMaps] = useState(false);
 
-  async function loadMasterMaps() {
+  const currentMaps = useMemo(() => {
+    return maps.filter((map) => map.status !== "archived");
+  }, [maps]);
+
+  const archivedMaps = useMemo(() => {
+    return maps.filter((map) => map.status === "archived");
+  }, [maps]);
+
+  const visibleMaps = showArchived ? archivedMaps : currentMaps;
+
+  async function loadMasterMaps(viewArchived = showArchived) {
     const { data, error } = await supabase
       .from("master_maps")
       .select(
@@ -99,7 +109,7 @@ function MasterMapsPageInner() {
     ).length;
 
     setStatus(
-      showArchived
+      viewArchived
         ? `Viewing ${archivedCount} archived map(s).`
         : `Viewing ${activeCount} active map(s).`,
     );
@@ -108,7 +118,7 @@ function MasterMapsPageInner() {
   async function loadSelectedEventSettings() {
     const currentEvent = getAdminEvent();
 
-    if (!currentEvent) {
+    if (!currentEvent?.id) {
       setSelectedEventId("");
       setSelectedEventName("");
       setCoachMapOpenScale("0.6");
@@ -118,11 +128,8 @@ function MasterMapsPageInner() {
     }
 
     const admin = await getCurrentAdminAccess();
-    if (
-      !admin ||
-      !currentEvent.id ||
-      !canAccessEvent(admin, String(currentEvent.id))
-    ) {
+
+    if (!admin || !canAccessEvent(admin, String(currentEvent.id))) {
       setSelectedEventId("");
       setSelectedEventName("");
       setCoachMapOpenScale("0.6");
@@ -131,19 +138,20 @@ function MasterMapsPageInner() {
       return;
     }
 
-    setSelectedEventId(String(currentEvent.id));
-    setSelectedEventName(String(currentEvent.name || ""));
-
     const { data: eventRow, error: eventError } = await supabase
       .from("events")
       .select(
         "id,name,coach_map_open_scale,parking_map_open_scale,locations_map_open_scale",
       )
       .eq("id", currentEvent.id)
-      .limit(1)
       .single();
 
     if (eventError || !eventRow) {
+      setSelectedEventId("");
+      setSelectedEventName("");
+      setCoachMapOpenScale("0.6");
+      setParkingMapOpenScale("0.6");
+      setLocationsMapOpenScale("0.6");
       setStatus(
         `No selected event settings loaded: ${eventError?.message || "No selected event found."}`,
       );
@@ -152,7 +160,7 @@ function MasterMapsPageInner() {
 
     const event = eventRow as AdminEventSettings;
     setSelectedEventId(event.id);
-    setSelectedEventName(event.name);
+    setSelectedEventName(event.name || "");
     setCoachMapOpenScale(String(event.coach_map_open_scale ?? 0.6));
     setParkingMapOpenScale(String(event.parking_map_open_scale ?? 0.6));
     setLocationsMapOpenScale(String(event.locations_map_open_scale ?? 0.6));
@@ -167,9 +175,8 @@ function MasterMapsPageInner() {
     }
 
     const admin = await getCurrentAdminAccess();
-
-    if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
-      setError("You do not have permission to manage master maps.");
+    if (!admin) {
+      setError("No admin access.");
       setStatus("Access denied.");
       return;
     }
@@ -193,29 +200,35 @@ function MasterMapsPageInner() {
       return;
     }
 
-    const { error } = await supabase
-      .from("events")
-      .update({
-        coach_map_open_scale: coach,
-        parking_map_open_scale: parking,
-        locations_map_open_scale: locations,
-      })
-      .eq("id", selectedEventId);
+    try {
+      setSavingScales(true);
 
-    if (error) {
-      setStatus(`Could not save map scale settings: ${error.message}`);
-      return;
+      const { error } = await supabase
+        .from("events")
+        .update({
+          coach_map_open_scale: coach,
+          parking_map_open_scale: parking,
+          locations_map_open_scale: locations,
+        })
+        .eq("id", selectedEventId);
+
+      if (error) {
+        setStatus(`Could not save map scale settings: ${error.message}`);
+        return;
+      }
+
+      setStatus("Map opening scale settings saved.");
+      await loadSelectedEventSettings();
+    } finally {
+      setSavingScales(false);
     }
-
-    setStatus("Map opening scale settings saved.");
   }
 
   async function handleEditMap(map: MasterMapRow) {
     try {
       const admin = await getCurrentAdminAccess();
-
-      if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
-        setError("You do not have permission to manage master maps.");
+      if (!admin) {
+        setError("No admin access.");
         setStatus("Access denied.");
         return;
       }
@@ -331,9 +344,8 @@ function MasterMapsPageInner() {
   async function handleRestoreMap(map: MasterMapRow) {
     try {
       const admin = await getCurrentAdminAccess();
-
-      if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
-        setError("You do not have permission to manage master maps.");
+      if (!admin) {
+        setError("No admin access.");
         setStatus("Access denied.");
         return;
       }
@@ -416,7 +428,7 @@ function MasterMapsPageInner() {
         return;
       }
 
-      await loadMasterMaps();
+      await loadMasterMaps(showArchived);
       setStatus(`Restored ${map.name} as the current map.`);
     } catch (err: any) {
       console.error("handleRestoreMap error:", err);
@@ -435,9 +447,8 @@ function MasterMapsPageInner() {
 
     try {
       const admin = await getCurrentAdminAccess();
-
-      if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
-        setError("You do not have permission to manage master maps.");
+      if (!admin) {
+        setError("No admin access.");
         setStatus("Access denied.");
         return;
       }
@@ -465,7 +476,7 @@ function MasterMapsPageInner() {
         return;
       }
 
-      await loadMasterMaps();
+      await loadMasterMaps(showArchived);
       setStatus(`Deleted archived map: ${map.name}`);
     } catch (err: any) {
       console.error("handleDeleteArchivedMap error:", err);
@@ -495,60 +506,51 @@ function MasterMapsPageInner() {
         return;
       }
 
-      if (!hasPermission(admin, "can_manage_master_maps")) {
-        setMaps([]);
-        setSelectedEventId("");
-        setSelectedEventName("");
-        setError("You do not have permission to manage master maps.");
-        setStatus("Access denied.");
-        setAccessDenied(true);
-        setLoading(false);
-        return;
-      }
-
       setCanManageMaps(true);
 
-      await loadMasterMaps();
-      await loadSelectedEventSettings();
+      await Promise.all([
+        loadMasterMaps(showArchived),
+        loadSelectedEventSettings(),
+      ]);
       setLoading(false);
     }
 
     void init();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-admin-event-changed") {
+      if (
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
         void loadSelectedEventSettings();
       }
     }
 
+    function handleAdminEventUpdated() {
+      void loadSelectedEventSettings();
+    }
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated as EventListener,
+      );
+    };
   }, []);
 
   useEffect(() => {
     if (loading) return;
-
-    const activeCount = maps.filter((map) => map.status !== "archived").length;
-    const archivedCount = maps.filter(
-      (map) => map.status === "archived",
-    ).length;
-
-    setStatus(
-      showArchived
-        ? `Viewing ${archivedCount} archived map(s).`
-        : `Viewing ${activeCount} active map(s).`,
-    );
-  }, [showArchived, maps, loading]);
-
-  const currentMaps = useMemo(() => {
-    return maps.filter((map) => map.status !== "archived");
-  }, [maps]);
-
-  const archivedMaps = useMemo(() => {
-    return maps.filter((map) => map.status === "archived");
-  }, [maps]);
-
-  const visibleMaps = showArchived ? archivedMaps : currentMaps;
+    void loadMasterMaps(showArchived);
+  }, [showArchived]);
 
   if (!loading && accessDenied) {
     return (
@@ -572,6 +574,24 @@ function MasterMapsPageInner() {
 
   return (
     <div style={{ padding: 24 }}>
+      <div style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = "/admin/dashboard";
+          }}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "1px solid #cbd5e1",
+            background: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          ← Return to Dashboard
+        </button>
+      </div>
+
       <h1>Master Maps</h1>
       <p>Create and maintain protected campground map templates.</p>
 
@@ -663,9 +683,9 @@ function MasterMapsPageInner() {
           <button
             type="button"
             onClick={() => void saveMapScales()}
-            disabled={!canManageMaps || loading}
+            disabled={!canManageMaps || loading || savingScales}
           >
-            Save Map Scale Settings
+            {savingScales ? "Saving..." : "Save Map Scale Settings"}
           </button>
         </div>
 
@@ -808,7 +828,7 @@ function MasterMapsPageInner() {
 
 export default function MasterMapsPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredPermission="can_manage_master_maps">
       <MasterMapsPageInner />
     </AdminRouteGuard>
   );

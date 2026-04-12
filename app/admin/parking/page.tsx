@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
-  hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 
 type AdminEventContext = {
@@ -71,7 +71,7 @@ type Attendee = {
   has_arrived: boolean | null;
 };
 
-export default function ParkingAdminPage() {
+function ParkingAdminPageInner() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const lastDistanceRef = useRef<number | null>(null);
 
@@ -182,19 +182,6 @@ export default function ParkingAdminPage() {
         return;
       }
 
-      if (!hasPermission(admin, "can_assign_parking")) {
-        setEvent(null);
-        setSites([]);
-        setAttendees([]);
-        setSelectedAttendeeId("");
-        setSelectedSiteId("");
-        setError("You do not have permission to manage parking.");
-        setStatus("Access denied.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
       const adminEvent = getAdminEvent() as AdminEventContext | null;
 
       if (!adminEvent?.id) {
@@ -229,7 +216,12 @@ export default function ParkingAdminPage() {
     void init();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-admin-event-changed") {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
         void init();
       }
     }
@@ -394,7 +386,7 @@ export default function ParkingAdminPage() {
         supabase
           .from("attendees")
           .select(
-            "id,event_id,pilot_first,pilot_last,coach_make,coach_model,assigned_site,arrival_status,has_arrived",
+            "id,event_id,pilot_first,pilot_last,coach_make:coach_manufacturer,coach_model,assigned_site,arrival_status,has_arrived",
           )
           .eq("event_id", typedEvent.id)
           .order("pilot_last"),
@@ -499,8 +491,8 @@ export default function ParkingAdminPage() {
 
   const selectedAttendee =
     attendees.find((a) => a.id === selectedAttendeeId) || null;
-  const selectedSite = sites.find((s) => s.id === selectedSiteId) || null;
-
+  const selectedSite =
+    sites.find((s) => (s.id || s.master_site_id) === selectedSiteId) || null;
   function focusSite(site: ParkingSite, targetZoom = zoom) {
     if (!mapRef.current || site.map_x === null || site.map_y === null) return;
 
@@ -706,7 +698,7 @@ export default function ParkingAdminPage() {
   }
 
   function handleSiteClick(site: ParkingSite) {
-    setSelectedSiteId(site.id || "");
+    setSelectedSiteId(site.id || site.master_site_id);
     focusSite(site);
 
     if (site.assigned_attendee_id) {
@@ -730,7 +722,7 @@ export default function ParkingAdminPage() {
   }
 
   function getSiteColor(site: ParkingSite) {
-    if (site.id === selectedSiteId) return "gold";
+    if ((site.id || site.master_site_id) === selectedSiteId) return "gold";
     if (!site.assigned_attendee_id) return "green";
 
     const attendee = attendeeById.get(site.assigned_attendee_id);
@@ -752,6 +744,17 @@ export default function ParkingAdminPage() {
       : "assigned attendee";
 
     return `${site.display_label || site.site_number} - ${name}`;
+  }
+
+  if (!loading && accessDenied) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Parking Admin</h1>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          You do not have access to this page.
+        </div>
+      </div>
+    );
   }
 
   const queuePanel = (
@@ -1098,18 +1101,6 @@ export default function ParkingAdminPage() {
       })}
     </div>
   );
-
-  if (!loading && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Parking Admin</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
       <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
@@ -1398,5 +1389,13 @@ export default function ParkingAdminPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ParkingAdminPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_manage_parking">
+      <ParkingAdminPageInner />
+    </AdminRouteGuard>
   );
 }

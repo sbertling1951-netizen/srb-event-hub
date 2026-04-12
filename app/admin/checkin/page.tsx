@@ -1,7 +1,9 @@
+// replaced file contents
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   getCurrentAdminAccess,
@@ -87,6 +89,14 @@ function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
 }
 
 export default function AdminCheckinPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_mark_arrived">
+      <AdminCheckinPageInner />
+    </AdminRouteGuard>
+  );
+}
+
+function AdminCheckinPageInner() {
   const [event, setEvent] = useState<AdminEventRow | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
@@ -119,6 +129,10 @@ export default function AdminCheckinPage() {
       }
 
       if (!hasPermission(admin, "can_mark_arrived")) {
+        setEvent(null);
+        setAttendees([]);
+        setHouseholdMembers([]);
+        setParkingSites([]);
         setError("You do not have permission to manage check-in.");
         setStatus("Access denied.");
         setLoading(false);
@@ -156,13 +170,33 @@ export default function AdminCheckinPage() {
     void init();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-admin-event-changed") {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
         void init();
       }
     }
 
+    function handleAdminEventUpdated() {
+      void init();
+    }
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated,
+      );
+    };
   }, []);
 
   useEffect(() => {
@@ -238,7 +272,25 @@ export default function AdminCheckinPage() {
         supabase
           .from("attendees")
           .select(
-            "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,coach_make,coach_model,coach_length,assigned_site,share_with_attendees,has_arrived,arrival_status,handicap_parking,volunteer,first_time",
+            `
+  id,
+  entry_id,
+  email,
+  pilot_first,
+  pilot_last,
+  copilot_first,
+  copilot_last,
+  coach_make:coach_manufacturer,
+  coach_model,
+  coach_length,
+  assigned_site,
+  share_with_attendees,
+  has_arrived,
+  arrival_status,
+  handicap_parking,
+  volunteer:wants_to_volunteer,
+  first_time:is_first_timer
+`,
           )
           .eq("event_id", loadedEvent.id)
           .order("pilot_last", { ascending: true, nullsFirst: false })
@@ -584,7 +636,7 @@ export default function AdminCheckinPage() {
         </div>
       </div>
 
-      {error && !accessDenied ? (
+      {error ? (
         <div
           style={{
             border: "1px solid #e2b4b4",

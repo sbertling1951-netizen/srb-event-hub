@@ -19,9 +19,9 @@ export async function getAdminAllowedEvents(): Promise<AdminAllowedEvent[]> {
     .select("id, name, venue_name, location, start_date, end_date")
     .order("start_date", { ascending: false });
 
-  if (admin.privilege_group !== "super_admin") {
-    if (admin.event_ids.length === 0) return [];
-    query = query.in("id", admin.event_ids);
+  if (admin.privilegeGroup !== "super_admin") {
+    if (admin.eventIds.length === 0) return [];
+    query = query.in("id", admin.eventIds);
   }
 
   const { data, error } = await query;

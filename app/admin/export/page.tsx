@@ -2,8 +2,17 @@
 
 import { supabase } from "@/lib/supabase";
 import { getAdminEvent } from "@/lib/getAdminEvent";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 
 export default function ExportPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_export_reports">
+      <ExportPageInner />
+    </AdminRouteGuard>
+  );
+}
+
+function ExportPageInner() {
   async function exportAttendees() {
     console.log("Starting attendee export...");
     const adminEvent = getAdminEvent();

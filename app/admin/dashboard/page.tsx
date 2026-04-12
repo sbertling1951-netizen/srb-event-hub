@@ -4,6 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminAccess,
+  canAccessEvent,
+  hasPermission,
+  type AdminAccessResult,
+} from "@/lib/getCurrentAdminAccess";
 
 type EventRow = {
   id: string;
@@ -70,37 +76,77 @@ const adminCards = [
     title: "Events",
     description: "Create, edit, activate, and manage event records.",
     href: "/admin/events",
+    permission: "can_manage_events",
   },
   {
     title: "Parking",
     description: "Assign sites, track arrivals, and manage coach parking.",
     href: "/admin/parking",
+    permission: "can_manage_parking",
   },
   {
     title: "Announcements",
     description: "Post updates, alerts, and member-facing notices.",
     href: "/admin/announcements",
+    permission: "can_manage_announcements",
   },
   {
     title: "Nearby",
     description: "Manage nearby places shown to members for this event.",
     href: "/admin/nearby",
+    permission: "can_manage_nearby",
   },
   {
     title: "Master Maps",
     description: "Manage map images and reusable master map layouts.",
     href: "/admin/master-maps",
+    permission: "can_manage_master_maps",
   },
   {
     title: "Agenda",
     description: "Build and manage the event schedule and published items.",
     href: "/admin/agenda",
+    permission: "can_manage_agenda",
   },
-];
+  {
+    title: "Check-In",
+    description: "Manage arrivals, check-in flow, and site-ready coaches.",
+    href: "/admin/checkin",
+    permission: "can_manage_checkin",
+  },
+  {
+    title: "Reports",
+    description:
+      "View and export event rosters, parking, and activity reports.",
+    href: "/admin/reports",
+    permission: "can_manage_reports",
+  },
+  {
+    title: "Event Staff",
+    description: "Assign event staff and manage role-based permissions.",
+    href: "/admin/event-staff",
+    permission: "can_manage_event_staff",
+  },
+  {
+    title: "Locations",
+    description: "Manage event locations and map-linked place details.",
+    href: "/admin/locations",
+    permission: "can_manage_locations",
+  },
+  {
+    title: "Imports",
+    description: "Import attendee, registration, and event source data.",
+    href: "/admin/imports",
+    permission: "can_manage_imports",
+  },
+] as const;
 
 function AdminDashboardPageInner() {
   const initialEvent = getInitialAdminEvent();
 
+  const [adminAccess, setAdminAccess] = useState<AdminAccessResult | null>(
+    null,
+  );
   const [events, setEvents] = useState<EventRow[]>([]);
   const [selectedEventId, setSelectedEventId] = useState(
     initialEvent?.id || "",
@@ -148,13 +194,14 @@ function AdminDashboardPageInner() {
       if (currentValue !== nextValue) {
         localStorage.setItem("fcoc-admin-event-context", nextValue);
         localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+        window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
       }
     } catch (err) {
       console.error("Could not persist admin event context:", err);
     }
   }
 
-  async function loadEvents() {
+  async function loadEvents(admin: AdminAccessResult | null) {
     const { data, error } = await supabase
       .from("events")
       .select("id,name,location,start_date,end_date,status")
@@ -164,7 +211,12 @@ function AdminDashboardPageInner() {
 
     if (error) throw error;
 
-    return (data || []) as EventRow[];
+    const allEvents = (data || []) as EventRow[];
+
+    if (!admin) return [];
+    if (admin.isSuperAdmin) return allEvents;
+
+    return allEvents.filter((evt) => canAccessEvent(admin, evt.id));
   }
 
   async function loadDashboardForEvent(selected: EventRow | null) {
@@ -221,7 +273,21 @@ function AdminDashboardPageInner() {
         setStatus("Loading dashboard...");
       }
 
-      const loadedEvents = await loadEvents();
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setAdminAccess(null);
+        setSelectedEventId("");
+        setActiveEvent(null);
+        setAttendees([]);
+        setHouseholdMembers([]);
+        setStatus("No admin access.");
+        return;
+      }
+
+      setAdminAccess(admin);
+
+      const loadedEvents = await loadEvents(admin);
       setEvents(loadedEvents);
 
       if (loadedEvents.length === 0) {
@@ -343,6 +409,14 @@ function AdminDashboardPageInner() {
       assignedPercent: percent(assignedCount, registeredCoaches),
     };
   }, [attendees, householdMembers]);
+
+  const visibleAdminCards = useMemo(() => {
+    if (!adminAccess) return [];
+
+    return adminCards.filter((card) =>
+      hasPermission(adminAccess, card.permission),
+    );
+  }, [adminAccess]);
 
   function goTo(href: string) {
     window.location.href = href;
@@ -593,7 +667,7 @@ function AdminDashboardPageInner() {
           gap: 16,
         }}
       >
-        {adminCards.map((card) => (
+        {visibleAdminCards.map((card) => (
           <button
             key={card.href}
             type="button"
@@ -616,6 +690,19 @@ function AdminDashboardPageInner() {
             </div>
           </button>
         ))}
+        {visibleAdminCards.length === 0 ? (
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              background: "white",
+              padding: 18,
+              color: "#555",
+            }}
+          >
+            No admin tools are enabled for your current permissions.
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -623,7 +710,7 @@ function AdminDashboardPageInner() {
 
 export default function AdminDashboardPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredPermission="can_view_admin_dashboard">
       <AdminDashboardPageInner />
     </AdminRouteGuard>
   );

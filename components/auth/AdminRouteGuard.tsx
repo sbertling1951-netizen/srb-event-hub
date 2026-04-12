@@ -2,10 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import {
+  getCurrentAdminAccess,
+  hasPermission,
+} from "@/lib/getCurrentAdminAccess";
 
 type Props = {
   children: React.ReactNode;
+  requiredPermission?: string;
+  fallbackPath?: string;
 };
 
 type CachedAdminState = {
@@ -56,10 +61,15 @@ function clearCachedAdminState() {
   } catch {}
 }
 
-export default function AdminRouteGuard({ children }: Props) {
+export default function AdminRouteGuard({
+  children,
+  requiredPermission,
+  fallbackPath = "/admin/login",
+}: Props) {
   const router = useRouter();
   const [allowed, setAllowed] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [deniedMessage, setDeniedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -67,75 +77,42 @@ export default function AdminRouteGuard({ children }: Props) {
     async function verifyAdmin() {
       try {
         setChecking(true);
+        setDeniedMessage(null);
 
-        let {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
+        const admin = await getCurrentAdminAccess();
 
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        if (!session?.user) {
-          const { data: refreshed, error: refreshError } =
-            await supabase.auth.refreshSession();
-
-          if (refreshError) {
-            throw refreshError;
-          }
-
-          session = refreshed.session;
-        }
-
-        const user = session?.user;
-
-        if (!user) {
+        if (!admin?.adminUser?.user_id) {
           clearCachedAdminState();
           if (mounted) {
             setAllowed(false);
             setChecking(false);
-            router.replace("/admin/login");
+            router.replace(fallbackPath);
           }
           return;
         }
 
         const cached = readCachedAdminState();
-        if (cached && cached.userId === user.id && cached.isAdmin) {
-          if (!mounted) return;
-          setAllowed(true);
-          setChecking(false);
-          return;
+        if (
+          !cached ||
+          cached.userId !== admin.adminUser.user_id ||
+          !cached.isAdmin
+        ) {
+          writeCachedAdminState({
+            userId: admin.adminUser.user_id,
+            isAdmin: true,
+            checkedAt: Date.now(),
+          });
         }
 
-        const { data, error } = await supabase
-          .from("admin_users")
-          .select("id,is_active,is_super_admin")
-          .eq("user_id", user.id)
-          .eq("is_active", true)
-          .limit(1);
-
-        if (error) {
-          throw error;
-        }
-
-        const isAdmin = !!(data && data.length > 0);
-
-        if (!isAdmin) {
+        if (requiredPermission && !hasPermission(admin, requiredPermission)) {
           clearCachedAdminState();
           if (mounted) {
             setAllowed(false);
             setChecking(false);
-            router.replace("/admin/login");
+            setDeniedMessage("You do not have permission to view this page.");
           }
           return;
         }
-
-        writeCachedAdminState({
-          userId: user.id,
-          isAdmin: true,
-          checkedAt: Date.now(),
-        });
 
         if (!mounted) return;
         setAllowed(true);
@@ -145,7 +122,7 @@ export default function AdminRouteGuard({ children }: Props) {
         if (mounted) {
           setAllowed(false);
           setChecking(false);
-          router.replace("/admin/login");
+          router.replace(fallbackPath);
         }
         return;
       } finally {
@@ -157,30 +134,24 @@ export default function AdminRouteGuard({ children }: Props) {
 
     void verifyAdmin();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      const currentUserId = session?.user?.id ?? null;
-      const cached = readCachedAdminState();
-
-      if (!currentUserId) {
-        clearCachedAdminState();
-        if (mounted) {
-          setAllowed(false);
-        }
-        return;
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
+        void verifyAdmin();
       }
+    }
 
-      if (cached && cached.userId !== currentUserId) {
-        clearCachedAdminState();
-      }
-    });
+    window.addEventListener("storage", handleStorage);
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      window.removeEventListener("storage", handleStorage);
     };
-  }, [router]);
+  }, [router, requiredPermission, fallbackPath]);
 
   if (checking && !allowed) {
     return (
@@ -194,6 +165,24 @@ export default function AdminRouteGuard({ children }: Props) {
           }}
         >
           Checking access...
+        </div>
+      </div>
+    );
+  }
+
+  if (!allowed && deniedMessage) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            border: "1px solid #e2b4b4",
+            borderRadius: 10,
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            padding: 18,
+          }}
+        >
+          {deniedMessage}
         </div>
       </div>
     );

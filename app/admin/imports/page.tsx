@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   getCurrentAdminAccess,
   canAccessEvent,
-  hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 
 type EventContext = {
@@ -85,12 +85,56 @@ function getStoredAdminEvent(): EventContext | null {
 }
 
 function normalizeKey(value: string) {
-  return value.trim();
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'");
 }
 
 function text(value: unknown) {
   if (value === null || value === undefined) return "";
   return String(value).trim();
+}
+
+function digitsOnly(value: string) {
+  return value.replace(/\D+/g, "");
+}
+
+function normalizePhone(value: unknown) {
+  const raw = text(value);
+  if (!raw) return "";
+  const digits = digitsOnly(raw);
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    const local = digits.slice(1);
+    return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`;
+  }
+  return raw;
+}
+
+function normalizedRowEntries(row: RawRow) {
+  return Object.entries(row).map(
+    ([key, value]) => [normalizeKey(key), value] as const,
+  );
+}
+
+function getValueByAliases(row: RawRow, aliases: readonly string[]) {
+  const normalizedEntries = normalizedRowEntries(row);
+
+  for (const alias of aliases) {
+    const target = normalizeKey(alias);
+    const direct = row[alias];
+    if (direct !== undefined) return direct;
+
+    const found = normalizedEntries.find(([key]) => key === target);
+    if (found) return found[1];
+  }
+
+  return "";
 }
 
 function parseMoney(value: unknown): number | null {
@@ -114,8 +158,103 @@ function parseBoolYesNo(value: unknown) {
 }
 
 function getValue(row: RawRow, key: string) {
-  return row[key] ?? row[normalizeKey(key)] ?? "";
+  return getValueByAliases(row, [key]);
 }
+const FIELD_ALIASES = {
+  entry_id: ["Entry Id", "Entry ID", "EntryId", "Order Id", "Order ID"],
+  email: ["Email Address", "Email", "E-mail", "Email address"],
+  pilot_first: [
+    "Pilot Name (First)",
+    "Pilot First Name",
+    "Pilot First",
+    "First Name",
+  ],
+  pilot_last: [
+    "Pilot Name (Last)",
+    "Pilot Last Name",
+    "Pilot Last",
+    "Last Name",
+  ],
+  copilot_first: [
+    "Co-Pilot Name (First)",
+    "Copilot Name (First)",
+    "Co-Pilot First Name",
+    "Copilot First Name",
+    "Co-Pilot First",
+    "Copilot First",
+  ],
+  copilot_last: [
+    "Co-Pilot Name (Last)",
+    "Copilot Name (Last)",
+    "Co-Pilot Last Name",
+    "Copilot Last Name",
+    "Co-Pilot Last",
+    "Copilot Last",
+  ],
+  nickname: [
+    "Nickname for Badge",
+    "Pilot Nickname for Badge",
+    "Pilot Badge Nickname",
+    "Badge Nickname",
+  ],
+  copilot_nickname: [
+    "Nickname for Badge.1",
+    "Co-Pilot Nickname for Badge",
+    "Copilot Nickname for Badge",
+    "Co-Pilot Badge Nickname",
+    "Copilot Badge Nickname",
+  ],
+  additional_attendees: [
+    "Additional attendees, if so give name(s) and age(s)",
+    "Additional Attendees",
+    "Additional Guests",
+    "Additional Household Members",
+  ],
+  membership_number: [
+    "FCOC Membership Number",
+    "Membership Number",
+    "Member Number",
+  ],
+  primary_phone: ["Primary Phone #", "Primary Phone", "Phone", "Phone Number"],
+  cell_phone: ["Cell Phone #", "Cell Phone", "Mobile Phone", "Mobile"],
+  city: ["Address (City)", "City", "Mailing City"],
+  state: [
+    "Address (State / Province)",
+    "State",
+    "State / Province",
+    "Province",
+  ],
+  coach_manufacturer: [
+    "Coach Manufacturer",
+    "Coach Make",
+    "Motorhome Manufacturer",
+    "RV Manufacturer",
+  ],
+  coach_model: ["Coach Model", "Model", "RV Model"],
+  special_events_raw: [
+    "Special Events",
+    "Special Event Selections",
+    "Activities",
+  ],
+  share_with_attendees: [
+    "Ok to share your email with other attendees?",
+    "OK to share your email with other attendees?",
+    "Share email with attendees",
+    "Share with attendees",
+  ],
+  wants_to_volunteer: [
+    "Would you like to volunteer to help with the event?",
+    "Volunteer to help with event",
+    "Would you like to volunteer?",
+    "Volunteer",
+  ],
+  is_first_timer: [
+    "First time at an FCOC event?",
+    "First Timer",
+    "First time attendee",
+    "Is First Timer",
+  ],
+} as const;
 
 function detectActivityGroups(headers: string[]) {
   const defs: Record<
@@ -177,33 +316,47 @@ function buildActivities(row: RawRow, groups: ActivityGroup[]) {
 }
 
 function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
-  const entry_id = text(getValue(row, "Entry Id"));
-  const email = text(getValue(row, "Email Address")).toLowerCase();
-  const pilot_first = text(getValue(row, "Pilot Name (First)"));
-  const pilot_last = text(getValue(row, "Pilot Name (Last)"));
-  const copilot_first = text(getValue(row, "Co-Pilot Name (First)"));
-  const copilot_last = text(getValue(row, "Co-Pilot Name (Last)"));
-  const nickname = text(getValue(row, "Nickname for Badge"));
-  const copilot_nickname = text(getValue(row, "Nickname for Badge.1"));
-  const additional_attendees = text(
-    getValue(row, "Additional attendees, if so give name(s) and age(s)"),
+  const entry_id = text(getValueByAliases(row, FIELD_ALIASES.entry_id));
+  const email = text(getValueByAliases(row, FIELD_ALIASES.email)).toLowerCase();
+  const pilot_first = text(getValueByAliases(row, FIELD_ALIASES.pilot_first));
+  const pilot_last = text(getValueByAliases(row, FIELD_ALIASES.pilot_last));
+  const copilot_first = text(
+    getValueByAliases(row, FIELD_ALIASES.copilot_first),
   );
-  const membership_number = text(getValue(row, "FCOC Membership Number"));
-  const primary_phone = text(getValue(row, "Primary Phone #"));
-  const cell_phone = text(getValue(row, "Cell Phone #"));
-  const city = text(getValue(row, "Address (City)"));
-  const state = text(getValue(row, "Address (State / Province)"));
-  const coach_manufacturer = text(getValue(row, "Coach Manufacturer"));
-  const coach_model = text(getValue(row, "Coach Model"));
-  const special_events_raw = text(getValue(row, "Special Events"));
+  const copilot_last = text(getValueByAliases(row, FIELD_ALIASES.copilot_last));
+  const nickname = text(getValueByAliases(row, FIELD_ALIASES.nickname));
+  const copilot_nickname = text(
+    getValueByAliases(row, FIELD_ALIASES.copilot_nickname),
+  );
+  const additional_attendees = text(
+    getValueByAliases(row, FIELD_ALIASES.additional_attendees),
+  );
+  const membership_number = text(
+    getValueByAliases(row, FIELD_ALIASES.membership_number),
+  );
+  const primary_phone = normalizePhone(
+    getValueByAliases(row, FIELD_ALIASES.primary_phone),
+  );
+  const cell_phone = normalizePhone(
+    getValueByAliases(row, FIELD_ALIASES.cell_phone),
+  );
+  const city = text(getValueByAliases(row, FIELD_ALIASES.city));
+  const state = text(getValueByAliases(row, FIELD_ALIASES.state));
+  const coach_manufacturer = text(
+    getValueByAliases(row, FIELD_ALIASES.coach_manufacturer),
+  );
+  const coach_model = text(getValueByAliases(row, FIELD_ALIASES.coach_model));
+  const special_events_raw = text(
+    getValueByAliases(row, FIELD_ALIASES.special_events_raw),
+  );
   const share_with_attendees = parseBoolYesNo(
-    getValue(row, "Ok to share your email with other attendees?"),
+    getValueByAliases(row, FIELD_ALIASES.share_with_attendees),
   );
   const wants_to_volunteer = parseBoolYesNo(
-    getValue(row, "Would you like to volunteer to help with the event?"),
+    getValueByAliases(row, FIELD_ALIASES.wants_to_volunteer),
   );
   const is_first_timer = parseBoolYesNo(
-    getValue(row, "First time at an FCOC event?"),
+    getValueByAliases(row, FIELD_ALIASES.is_first_timer),
   );
 
   const warnings: string[] = [];
@@ -211,6 +364,13 @@ function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
   if (!entry_id) warnings.push("Missing Entry Id");
   if (!email) warnings.push("Missing Email Address");
   if (!pilot_first && !pilot_last) warnings.push("Missing pilot name");
+  if (!coach_manufacturer && !coach_model) {
+    warnings.push("Missing coach information");
+  }
+
+  if (!primary_phone && !cell_phone) {
+    warnings.push("Missing phone number");
+  }
 
   return {
     rowNumber,
@@ -241,6 +401,14 @@ function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
 }
 
 export default function AdminAttendeeImportsPage() {
+  return (
+    <AdminRouteGuard requiredPermission="can_manage_imports">
+      <AdminAttendeeImportsPageInner />
+    </AdminRouteGuard>
+  );
+}
+
+function AdminAttendeeImportsPageInner() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [availableEvents, setAvailableEvents] = useState<EventContext[]>([]);
   const [selectedImportEventId, setSelectedImportEventId] = useState("");
@@ -265,13 +433,12 @@ export default function AdminAttendeeImportsPage() {
   const [assetError, setAssetError] = useState<string | null>(null);
   const [savingNameTagBg, setSavingNameTagBg] = useState(false);
   const [savingCoachPlateBg, setSavingCoachPlateBg] = useState(false);
-  const [accessDenied, setAccessDenied] = useState(false);
+  const [showFullImportTable, setShowFullImportTable] = useState(false);
 
   useEffect(() => {
     async function loadEvents() {
       setLoadingEvent(true);
       setError(null);
-      setAccessDenied(false);
       setStatus("Checking admin access...");
 
       try {
@@ -287,21 +454,6 @@ export default function AdminAttendeeImportsPage() {
           setFileName("");
           setError("No admin access.");
           setStatus("Access denied.");
-          setAccessDenied(true);
-          return;
-        }
-
-        if (!hasPermission(admin, "can_import_attendees")) {
-          setCurrentEvent(null);
-          setAvailableEvents([]);
-          setSelectedImportEventId("");
-          setLoadedForEventId("");
-          setRows([]);
-          setHeaders([]);
-          setFileName("");
-          setError("You do not have permission to import attendees.");
-          setStatus("Access denied.");
-          setAccessDenied(true);
           return;
         }
 
@@ -414,6 +566,11 @@ export default function AdminAttendeeImportsPage() {
 
   const previewRows = useMemo(() => rows.slice(0, 12), [rows]);
 
+  const sortedRows = useMemo(
+    () => [...rows].sort((a, b) => a.rowNumber - b.rowNumber),
+    [rows],
+  );
+
   const activityCount = useMemo(
     () => rows.reduce((sum, row) => sum + row.activities.length, 0),
     [rows],
@@ -433,15 +590,12 @@ export default function AdminAttendeeImportsPage() {
       setError("Select a target event before loading a file.");
       return;
     }
-    if (accessDenied) {
-      setError("You do not have access to import into this event.");
-      return;
-    }
 
     setParsing(true);
     setError(null);
     setStatus(`Reading ${file.name}...`);
     setFileName(file.name);
+    setShowFullImportTable(false);
 
     try {
       const buffer = await file.arrayBuffer();
@@ -467,6 +621,8 @@ export default function AdminAttendeeImportsPage() {
       const parsed = json.map((row, index) => mapRow(row, index + 2, groups));
 
       setHeaders(foundHeaders);
+      console.log("Detected import headers:", foundHeaders);
+      console.log("Detected activity groups:", groups);
       setRows(parsed);
       setLoadedForEventId(selectedImportEventId);
       setStatus(
@@ -525,7 +681,7 @@ export default function AdminAttendeeImportsPage() {
   }
 
   async function handleUploadNameTagBackground() {
-    if (!selectedImportEventId || !nameTagFile || accessDenied) return;
+    if (!selectedImportEventId || !nameTagFile) return;
 
     try {
       setSavingNameTagBg(true);
@@ -549,7 +705,7 @@ export default function AdminAttendeeImportsPage() {
   }
 
   async function handleUploadCoachPlateBackground() {
-    if (!selectedImportEventId || !coachPlateFile || accessDenied) return;
+    if (!selectedImportEventId || !coachPlateFile) return;
 
     try {
       setSavingCoachPlateBg(true);
@@ -573,7 +729,7 @@ export default function AdminAttendeeImportsPage() {
   }
 
   async function clearNameTagBackground() {
-    if (!selectedImportEventId || accessDenied) return;
+    if (!selectedImportEventId) return;
 
     try {
       setAssetError(null);
@@ -588,7 +744,7 @@ export default function AdminAttendeeImportsPage() {
   }
 
   async function clearCoachPlateBackground() {
-    if (!selectedImportEventId || accessDenied) return;
+    if (!selectedImportEventId) return;
 
     try {
       setAssetError(null);
@@ -605,11 +761,6 @@ export default function AdminAttendeeImportsPage() {
   async function handleImport() {
     if (!selectedImportEventId) {
       setError("No target event selected.");
-      return;
-    }
-
-    if (accessDenied) {
-      setError("You do not have access to import into this event.");
       return;
     }
 
@@ -824,17 +975,6 @@ export default function AdminAttendeeImportsPage() {
     }
   }
 
-  if (!loadingEvent && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Imports</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
@@ -846,7 +986,7 @@ export default function AdminAttendeeImportsPage() {
           <select
             value={selectedImportEventId}
             onChange={(e) => setSelectedImportEventId(e.target.value)}
-            disabled={loadingEvent || accessDenied}
+            disabled={loadingEvent}
             style={{
               width: "100%",
               maxWidth: 560,
@@ -929,7 +1069,7 @@ export default function AdminAttendeeImportsPage() {
             <input
               type="file"
               accept=".csv,.xlsx,.xls"
-              disabled={loadingEvent || accessDenied || !selectedImportEventId}
+              disabled={loadingEvent || !selectedImportEventId}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) void handleFileChange(file);
@@ -950,7 +1090,6 @@ export default function AdminAttendeeImportsPage() {
               disabled={
                 importing ||
                 parsing ||
-                accessDenied ||
                 !selectedImportEventId ||
                 !validRows.length ||
                 eventChangedSinceLoad
@@ -966,7 +1105,6 @@ export default function AdminAttendeeImportsPage() {
                 opacity:
                   importing ||
                   parsing ||
-                  accessDenied ||
                   !selectedImportEventId ||
                   !validRows.length ||
                   eventChangedSinceLoad
@@ -1028,7 +1166,7 @@ export default function AdminAttendeeImportsPage() {
             <input
               type="file"
               accept="image/*"
-              disabled={loadingEvent || accessDenied || !selectedImportEventId}
+              disabled={loadingEvent || !selectedImportEventId}
               onChange={(e) => setNameTagFile(e.target.files?.[0] || null)}
             />
 
@@ -1043,10 +1181,7 @@ export default function AdminAttendeeImportsPage() {
               <button
                 onClick={handleUploadNameTagBackground}
                 disabled={
-                  !selectedImportEventId ||
-                  !nameTagFile ||
-                  savingNameTagBg ||
-                  accessDenied
+                  !selectedImportEventId || !nameTagFile || savingNameTagBg
                 }
               >
                 {savingNameTagBg
@@ -1057,9 +1192,7 @@ export default function AdminAttendeeImportsPage() {
               <button
                 onClick={clearNameTagBackground}
                 disabled={
-                  !selectedImportEventId ||
-                  !printSettings?.name_tag_bg_url ||
-                  accessDenied
+                  !selectedImportEventId || !printSettings?.name_tag_bg_url
                 }
               >
                 Remove Background
@@ -1104,7 +1237,7 @@ export default function AdminAttendeeImportsPage() {
             <input
               type="file"
               accept="image/*"
-              disabled={loadingEvent || accessDenied || !selectedImportEventId}
+              disabled={loadingEvent || !selectedImportEventId}
               onChange={(e) => setCoachPlateFile(e.target.files?.[0] || null)}
             />
 
@@ -1121,8 +1254,7 @@ export default function AdminAttendeeImportsPage() {
                 disabled={
                   !selectedImportEventId ||
                   !coachPlateFile ||
-                  savingCoachPlateBg ||
-                  accessDenied
+                  savingCoachPlateBg
                 }
               >
                 {savingCoachPlateBg
@@ -1133,9 +1265,7 @@ export default function AdminAttendeeImportsPage() {
               <button
                 onClick={clearCoachPlateBackground}
                 disabled={
-                  !selectedImportEventId ||
-                  !printSettings?.coach_plate_bg_url ||
-                  accessDenied
+                  !selectedImportEventId || !printSettings?.coach_plate_bg_url
                 }
               >
                 Remove Background
@@ -1169,6 +1299,42 @@ export default function AdminAttendeeImportsPage() {
 
       <div className="card" style={{ padding: 18 }}>
         <h2 style={{ marginTop: 0, marginBottom: 12 }}>Import Summary</h2>
+
+        <div style={{ marginBottom: 14 }}>
+          <button
+            type="button"
+            onClick={() => setShowFullImportTable((prev) => !prev)}
+            disabled={!rows.length}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #ccc",
+              background: rows.length ? "white" : "#f3f4f6",
+              fontWeight: 700,
+              cursor: rows.length ? "pointer" : "default",
+              opacity: rows.length ? 1 : 0.7,
+            }}
+          >
+            {showFullImportTable
+              ? "Hide Full Import Table"
+              : "Show Full Import Table"}
+          </button>
+        </div>
+        {showFullImportTable ? (
+          <div
+            style={{
+              marginBottom: 14,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #bfdbfe",
+              background: "#eff6ff",
+              color: "#1d4ed8",
+              fontSize: 14,
+            }}
+          >
+            Full parsed import table is shown below in its own section.
+          </div>
+        ) : null}
 
         <div
           style={{
@@ -1209,6 +1375,102 @@ export default function AdminAttendeeImportsPage() {
             </div>
           </div>
         </div>
+        {showFullImportTable ? (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 12 }}>
+              Full Parsed Import View
+            </h3>
+
+            {!rows.length ? (
+              <div style={{ opacity: 0.8 }}>No file loaded yet.</div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    minWidth: 1300,
+                  }}
+                >
+                  <thead>
+                    <tr>
+                      <th style={tableHeadStyle}>Row</th>
+                      <th style={tableHeadStyle}>Entry ID</th>
+                      <th style={tableHeadStyle}>Pilot</th>
+                      <th style={tableHeadStyle}>Co-Pilot</th>
+                      <th style={tableHeadStyle}>Email</th>
+                      <th style={tableHeadStyle}>Phones</th>
+                      <th style={tableHeadStyle}>City / State</th>
+                      <th style={tableHeadStyle}>Coach</th>
+                      <th style={tableHeadStyle}>Share</th>
+                      <th style={tableHeadStyle}>Volunteer</th>
+                      <th style={tableHeadStyle}>First Timer</th>
+                      <th style={tableHeadStyle}>Activities</th>
+                      <th style={tableHeadStyle}>Warnings</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRows.map((row) => (
+                      <tr key={`${row.entry_id || "missing"}-${row.rowNumber}`}>
+                        <td style={tableCellStyle}>{row.rowNumber}</td>
+                        <td style={tableCellStyle}>{row.entry_id || "—"}</td>
+                        <td style={tableCellStyle}>
+                          {[row.pilot_first, row.pilot_last]
+                            .filter(Boolean)
+                            .join(" ") || "—"}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {[row.copilot_first, row.copilot_last]
+                            .filter(Boolean)
+                            .join(" ") || "—"}
+                        </td>
+                        <td style={tableCellStyle}>{row.email || "—"}</td>
+                        <td style={tableCellStyle}>
+                          {[row.primary_phone, row.cell_phone]
+                            .filter(Boolean)
+                            .join(" / ") || "—"}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {[row.city, row.state].filter(Boolean).join(", ") ||
+                            "—"}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {[row.coach_manufacturer, row.coach_model]
+                            .filter(Boolean)
+                            .join(" ") || "—"}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {row.share_with_attendees ? "Yes" : "No"}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {row.wants_to_volunteer ? "Yes" : "No"}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {row.is_first_timer ? "Yes" : "No"}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {row.activities.length
+                            ? row.activities
+                                .map(
+                                  (activity) =>
+                                    `${activity.activity_name} x${activity.quantity}${activity.price !== null ? ` ($${activity.price})` : ""}`,
+                                )
+                                .join(" • ")
+                            : "—"}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {row.warnings.length
+                            ? row.warnings.join(" • ")
+                            : "None"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <div className="card" style={{ padding: 18 }}>
@@ -1264,6 +1526,16 @@ export default function AdminAttendeeImportsPage() {
                     Volunteer: {row.wants_to_volunteer ? "Yes" : "No"} • First
                     Timer: {row.is_first_timer ? "Yes" : "No"}
                   </div>
+                  <div>
+                    Coach:{" "}
+                    {[row.coach_manufacturer, row.coach_model]
+                      .filter(Boolean)
+                      .join(" ") || "—"}
+                  </div>
+                  <div>
+                    Share with attendees:{" "}
+                    {row.share_with_attendees ? "Yes" : "No"}
+                  </div>
                   {row.additional_attendees ? (
                     <div>Additional attendees: {row.additional_attendees}</div>
                   ) : null}
@@ -1294,9 +1566,15 @@ export default function AdminAttendeeImportsPage() {
                   <div
                     style={{ marginTop: 10, color: "#8a1f1f", fontSize: 13 }}
                   >
-                    {row.warnings.join(" • ")}
+                    Warnings: {row.warnings.join(" • ")}
                   </div>
-                ) : null}
+                ) : (
+                  <div
+                    style={{ marginTop: 10, color: "#166534", fontSize: 13 }}
+                  >
+                    No warnings detected.
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1305,3 +1583,20 @@ export default function AdminAttendeeImportsPage() {
     </div>
   );
 }
+
+const tableHeadStyle = {
+  textAlign: "left" as const,
+  padding: "10px 8px",
+  borderBottom: "2px solid #ddd",
+  background: "#f8f9fb",
+  whiteSpace: "nowrap" as const,
+  fontSize: 13,
+};
+
+const tableCellStyle = {
+  textAlign: "left" as const,
+  padding: "10px 8px",
+  borderBottom: "1px solid #eee",
+  verticalAlign: "top" as const,
+  fontSize: 13,
+};
