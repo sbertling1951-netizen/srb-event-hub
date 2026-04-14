@@ -31,6 +31,16 @@ type PrintSettingsRow = {
   coach_plate_bg_url: string | null;
 };
 
+function extractStoragePath(publicUrl: string | null | undefined) {
+  if (!publicUrl) return null;
+
+  const marker = "/storage/v1/object/public/event-assets/";
+  const index = publicUrl.indexOf(marker);
+  if (index === -1) return null;
+
+  return publicUrl.slice(index + marker.length).split("?")[0] || null;
+}
+
 function withCacheBust(url: string | null | undefined) {
   if (!url) return null;
   const joiner = url.includes("?") ? "&" : "?";
@@ -180,6 +190,7 @@ function AdminPrintSettingsPageInner() {
         coach_plate_bg_url: null,
       };
 
+      console.log("Loaded print settings row:", settingsRow);
       setEvent(eventRow);
       setSettings(settingsRow);
       setPreviewNonce(Date.now());
@@ -208,15 +219,24 @@ function AdminPrintSettingsPageInner() {
           : (settings?.coach_plate_bg_url ?? null),
     };
 
-    const { data, error } = await supabase
+    console.log("Saving print settings payload:", payload);
+
+    const { error: upsertError } = await supabase
       .from("event_print_settings")
-      .upsert(payload, { onConflict: "event_id" })
+      .upsert(payload, { onConflict: "event_id" });
+
+    if (upsertError) throw upsertError;
+
+    const { data: freshData, error: freshError } = await supabase
+      .from("event_print_settings")
       .select("*")
+      .eq("event_id", event.id)
       .single();
 
-    if (error) throw error;
+    if (freshError) throw freshError;
 
-    const row = data as PrintSettingsRow;
+    const row = freshData as PrintSettingsRow;
+    console.log("Fresh print settings row after save:", row);
     setSettings(row);
     setPreviewNonce(Date.now());
     return row;
@@ -248,6 +268,7 @@ function AdminPrintSettingsPageInner() {
       const path = `${event.id}/name-tag-bg-${Date.now()}.${ext}`;
       const publicUrl = await uploadFileToBucket(nameTagFile, path);
 
+      console.log("Uploaded name tag background URL:", publicUrl);
       await ensurePrintSettingsRow({ name_tag_bg_url: publicUrl });
       setNameTagFile(null);
       setNameTagInputKey((v) => v + 1);
@@ -273,6 +294,7 @@ function AdminPrintSettingsPageInner() {
       const path = `${event.id}/coach-plate-bg-${Date.now()}.${ext}`;
       const publicUrl = await uploadFileToBucket(coachPlateFile, path);
 
+      console.log("Uploaded coach plate background URL:", publicUrl);
       await ensurePrintSettingsRow({ coach_plate_bg_url: publicUrl });
       setCoachPlateFile(null);
       setCoachPlateInputKey((v) => v + 1);
@@ -290,9 +312,23 @@ function AdminPrintSettingsPageInner() {
     try {
       setError(null);
       setStatus("Removing name tag background...");
+
+      const oldPath = extractStoragePath(settings?.name_tag_bg_url);
       await ensurePrintSettingsRow({ name_tag_bg_url: null });
+
+      if (oldPath) {
+        const { error: removeError } = await supabase.storage
+          .from("event-assets")
+          .remove([oldPath]);
+
+        if (removeError) {
+          console.warn("Name tag background file remove warning:", removeError);
+        }
+      }
+
       setNameTagFile(null);
       setNameTagInputKey((v) => v + 1);
+      setPreviewNonce(Date.now());
       setStatus("Name tag background removed.");
     } catch (err: any) {
       console.error(err);
@@ -305,9 +341,26 @@ function AdminPrintSettingsPageInner() {
     try {
       setError(null);
       setStatus("Removing coach plate background...");
+
+      const oldPath = extractStoragePath(settings?.coach_plate_bg_url);
       await ensurePrintSettingsRow({ coach_plate_bg_url: null });
+
+      if (oldPath) {
+        const { error: removeError } = await supabase.storage
+          .from("event-assets")
+          .remove([oldPath]);
+
+        if (removeError) {
+          console.warn(
+            "Coach plate background file remove warning:",
+            removeError,
+          );
+        }
+      }
+
       setCoachPlateFile(null);
       setCoachPlateInputKey((v) => v + 1);
+      setPreviewNonce(Date.now());
       setStatus("Coach plate background removed.");
     } catch (err: any) {
       console.error(err);
@@ -401,6 +454,16 @@ function AdminPrintSettingsPageInner() {
               ? `Selected: ${nameTagFile.name}`
               : "No new file selected."}
           </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              color: "#666",
+              wordBreak: "break-all",
+            }}
+          >
+            Saved URL: {settings?.name_tag_bg_url || "(none)"}
+          </div>
 
           {nameTagPreviewUrl ? (
             <div style={{ marginTop: 14 }}>
@@ -470,6 +533,16 @@ function AdminPrintSettingsPageInner() {
             {coachPlateFile
               ? `Selected: ${coachPlateFile.name}`
               : "No new file selected."}
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              color: "#666",
+              wordBreak: "break-all",
+            }}
+          >
+            Saved URL: {settings?.coach_plate_bg_url || "(none)"}
           </div>
 
           {coachPlatePreviewUrl ? (
