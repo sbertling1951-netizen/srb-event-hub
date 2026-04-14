@@ -199,9 +199,13 @@ function AdminPrintSettingsPageInner() {
     const payload = {
       event_id: event.id,
       name_tag_bg_url:
-        nextValues.name_tag_bg_url ?? settings?.name_tag_bg_url ?? null,
+        "name_tag_bg_url" in nextValues
+          ? (nextValues.name_tag_bg_url ?? null)
+          : (settings?.name_tag_bg_url ?? null),
       coach_plate_bg_url:
-        nextValues.coach_plate_bg_url ?? settings?.coach_plate_bg_url ?? null,
+        "coach_plate_bg_url" in nextValues
+          ? (nextValues.coach_plate_bg_url ?? null)
+          : (settings?.coach_plate_bg_url ?? null),
     };
 
     const { data, error } = await supabase
