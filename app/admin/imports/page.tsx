@@ -922,7 +922,41 @@ function AdminAttendeeImportsPageInner() {
         })),
       );
 
-      const importedEntryIds = validRows.map((row) => row.entry_id);
+      const importedEntryIds = validRows
+        .map((row) => row.entry_id)
+        .filter(Boolean);
+
+      const headerMetadataEntryId = `__headers__${selectedImportEventId}`;
+
+      const headerMetadataRow = {
+        event_id: selectedImportEventId,
+        import_type: "attendee_roster_headers",
+        source_filename: fileName || null,
+        row_number: 1,
+        entry_id: headerMetadataEntryId,
+        email: null,
+        membership_number: null,
+        pilot_first: null,
+        pilot_last: null,
+        pilot_badge_nickname: null,
+        copilot_first: null,
+        copilot_last: null,
+        copilot_badge_nickname: null,
+        additional_attendees: null,
+        city: null,
+        state: null,
+        primary_phone: null,
+        cell_phone: null,
+        share_with_attendees: false,
+        wants_to_volunteer: false,
+        is_first_timer: false,
+        coach_manufacturer: null,
+        coach_model: null,
+        special_events_raw: null,
+        raw_import: {
+          __source_headers: headers,
+        },
+      };
 
       if (importedEntryIds.length) {
         const { error: deleteImportRowsError } = await supabase
@@ -935,6 +969,15 @@ function AdminAttendeeImportsPageInner() {
         if (deleteImportRowsError) throw deleteImportRowsError;
       }
 
+      const { error: deleteHeaderMetadataError } = await supabase
+        .from("event_import_rows")
+        .delete()
+        .eq("event_id", selectedImportEventId)
+        .eq("import_type", "attendee_roster_headers")
+        .eq("entry_id", headerMetadataEntryId);
+
+      if (deleteHeaderMetadataError) throw deleteHeaderMetadataError;
+
       if (importRowPayload.length) {
         const { error: importRowsError } = await supabase
           .from("event_import_rows")
@@ -942,6 +985,12 @@ function AdminAttendeeImportsPageInner() {
 
         if (importRowsError) throw importRowsError;
       }
+
+      const { error: headerMetadataInsertError } = await supabase
+        .from("event_import_rows")
+        .insert(headerMetadataRow);
+
+      if (headerMetadataInsertError) throw headerMetadataInsertError;
 
       if (importedEntryIds.length) {
         const { error: deleteError } = await supabase

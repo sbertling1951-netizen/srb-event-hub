@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "@/lib/supabase";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
@@ -57,6 +57,19 @@ type AttendeeRow = {
 type PrintMode = "name_tags" | "coach_plates";
 type PrintFilter = "all" | "arrived" | "first_timers";
 
+type NameTagRow = {
+  key: string;
+  attendeeId: string;
+  eventName: string;
+  memberNumber: string;
+  firstName: string;
+  lastName: string;
+  cityState: string;
+  isFirstTimer: boolean;
+  pilotSortLast: string;
+  pilotSortFirst: string;
+};
+
 function fullName(first?: string | null, last?: string | null) {
   return [first, last].filter(Boolean).join(" ").trim();
 }
@@ -90,9 +103,61 @@ function coachText(row: AttendeeRow) {
     .filter(Boolean)
     .join(" ")
     .trim();
+
   if (!coach && !row.coach_length) return "";
   if (coach && row.coach_length) return `${coach} • ${row.coach_length} ft`;
   return coach || `${row.coach_length} ft`;
+}
+
+function firstNonEmpty(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const trimmed = String(value || "").trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+function buildNameParts(
+  first?: string | null,
+  last?: string | null,
+  nickname?: string | null,
+) {
+  const trimmedNickname = String(nickname || "").trim();
+  const trimmedFirst = String(first || "").trim();
+  const trimmedLast = String(last || "").trim();
+
+  if (trimmedNickname) {
+    return {
+      firstName: trimmedNickname,
+      lastName: trimmedLast,
+    };
+  }
+
+  if (trimmedFirst && trimmedLast) {
+    return {
+      firstName: trimmedFirst,
+      lastName: trimmedLast,
+    };
+  }
+
+  if (trimmedFirst) {
+    return {
+      firstName: trimmedFirst,
+      lastName: "",
+    };
+  }
+
+  if (trimmedLast) {
+    return {
+      firstName: trimmedLast,
+      lastName: "",
+    };
+  }
+
+  return {
+    firstName: "Guest",
+    lastName: "",
+  };
 }
 
 function AdminPrintPageInner() {
@@ -108,6 +173,10 @@ function AdminPrintPageInner() {
   const [printFilter, setPrintFilter] = useState<PrintFilter>("all");
   const [includeInactive, setIncludeInactive] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showFirstTimerOnNameTags, setShowFirstTimerOnNameTags] =
+    useState(true);
+  const [nameTagTextColor, setNameTagTextColor] = useState("#000000");
+  const [coachPlateTextColor, setCoachPlateTextColor] = useState("#000000");
 
   useEffect(() => {
     async function init() {
@@ -284,7 +353,6 @@ function AdminPrintPageInner() {
       case "first_timers":
         rows = rows.filter((row) => row.is_first_timer);
         break;
-      case "all":
       default:
         break;
     }
@@ -295,6 +363,97 @@ function AdminPrintPageInner() {
   const printableRows = useMemo(() => {
     return filteredAttendees.filter((row) => selectedIds.includes(row.id));
   }, [filteredAttendees, selectedIds]);
+
+  const printableNameTags = useMemo<NameTagRow[]>(() => {
+    const rawEventName = event?.name?.trim() || "FCOC Event";
+    const eventYear = (event?.start_date || "").slice(0, 4).trim();
+    const eventName = eventYear
+      ? `${rawEventName.replace(new RegExp(`\\s*${eventYear}$`), "").trim()} ${eventYear}`.trim()
+      : rawEventName;
+
+    const tags = printableRows.flatMap((row) => {
+      const nextTags: NameTagRow[] = [];
+      const memberNumber = row.membership_number || "";
+      const place = cityState(row);
+      const pilotSortLast = String(row.pilot_last || "")
+        .trim()
+        .toLowerCase();
+      const pilotSortFirst = String(row.nickname || row.pilot_first || "")
+        .trim()
+        .toLowerCase();
+      const isFirstTimer = !!row.is_first_timer;
+
+      const pilotHasName = !!String(
+        row.pilot_first || row.pilot_last || row.nickname || "",
+      ).trim();
+
+      if (pilotHasName) {
+        const pilotName = buildNameParts(
+          row.pilot_first,
+          row.pilot_last,
+          row.nickname,
+        );
+
+        nextTags.push({
+          key: `${row.id}-pilot`,
+          attendeeId: row.id,
+          eventName,
+          memberNumber,
+          firstName: pilotName.firstName,
+          lastName: pilotName.lastName,
+          cityState: place,
+          isFirstTimer,
+          pilotSortLast,
+          pilotSortFirst,
+        });
+      }
+
+      const copilotHasName = !!String(
+        row.copilot_nickname || row.copilot_first || row.copilot_last || "",
+      ).trim();
+
+      if (copilotHasName) {
+        const copilotName = {
+          firstName:
+            (row.copilot_nickname || "").trim() ||
+            (row.copilot_first || "").trim() ||
+            "Guest",
+          lastName: (row.copilot_last || "").trim(),
+        };
+
+        nextTags.push({
+          key: `${row.id}-copilot`,
+          attendeeId: row.id,
+          eventName,
+          memberNumber,
+          firstName: copilotName.firstName,
+          lastName: copilotName.lastName,
+          cityState: place,
+          isFirstTimer,
+          pilotSortLast,
+          pilotSortFirst,
+        });
+      }
+
+      return nextTags;
+    });
+
+    return tags.sort((a, b) => {
+      if (a.isFirstTimer !== b.isFirstTimer) {
+        return a.isFirstTimer ? -1 : 1;
+      }
+
+      return (
+        a.pilotSortLast.localeCompare(b.pilotSortLast, undefined, {
+          sensitivity: "base",
+        }) ||
+        a.pilotSortFirst.localeCompare(b.pilotSortFirst, undefined, {
+          sensitivity: "base",
+        }) ||
+        a.key.localeCompare(b.key, undefined, { sensitivity: "base" })
+      );
+    });
+  }, [event?.name, event?.start_date, printableRows]);
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
@@ -331,6 +490,9 @@ function AdminPrintPageInner() {
     printMode === "name_tags"
       ? settings?.name_tag_bg_url || null
       : settings?.coach_plate_bg_url || null;
+  const clubLogoUrl = "/fcoc-logo.png";
+  const activeTextColor =
+    printMode === "name_tags" ? nameTagTextColor : coachPlateTextColor;
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -357,8 +519,27 @@ function AdminPrintPageInner() {
           }
 
           @page {
-            size: auto;
-            margin: 0.35in;
+            size: letter portrait;
+            margin: 0.2in;
+          }
+
+          .name-tag-sheet {
+            display: grid !important;
+            grid-template-columns: repeat(2, 4in) !important;
+            grid-auto-rows: 3in !important;
+            justify-content: center !important;
+            gap: 0.1in !important;
+          }
+
+          .name-tag-card {
+            width: 4in !important;
+            height: 3in !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+
+          .name-tag-card:nth-child(6n) {
+            page-break-after: always;
           }
         }
       `}</style>
@@ -374,20 +555,7 @@ function AdminPrintPageInner() {
 
         <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
 
-        {error ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #e2b4b4",
-              background: "#fff3f3",
-              color: "#8a1f1f",
-            }}
-          >
-            {error}
-          </div>
-        ) : null}
+        {error ? <div style={errorBoxStyle}>{error}</div> : null}
       </div>
 
       <div className="card no-print" style={{ padding: 18 }}>
@@ -396,6 +564,7 @@ function AdminPrintPageInner() {
             display: "grid",
             gap: 14,
             gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            alignItems: "end",
           }}
         >
           <div>
@@ -423,7 +592,44 @@ function AdminPrintPageInner() {
             </select>
           </div>
 
-          <div style={{ display: "flex", alignItems: "end" }}>
+          <div>
+            <label style={labelStyle}>Font Color</label>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "center",
+                minHeight: 42,
+              }}
+            >
+              <input
+                type="color"
+                value={activeTextColor}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (printMode === "name_tags") {
+                    setNameTagTextColor(next);
+                  } else {
+                    setCoachPlateTextColor(next);
+                  }
+                }}
+                style={{
+                  width: 52,
+                  height: 42,
+                  padding: 0,
+                  border: "1px solid #ccc",
+                  borderRadius: 8,
+                  background: "white",
+                  cursor: "pointer",
+                }}
+              />
+              <div style={{ fontSize: 13, color: "#555" }}>
+                {activeTextColor}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 8, alignItems: "end" }}>
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
                 type="checkbox"
@@ -432,6 +638,19 @@ function AdminPrintPageInner() {
               />
               Include inactive attendees
             </label>
+
+            {printMode === "name_tags" ? (
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={showFirstTimerOnNameTags}
+                  onChange={(e) =>
+                    setShowFirstTimerOnNameTags(e.target.checked)
+                  }
+                />
+                Print FIRST TIMER on name tags
+              </label>
+            ) : null}
           </div>
 
           <div
@@ -470,26 +689,9 @@ function AdminPrintPageInner() {
         <div style={{ marginTop: 14, fontSize: 13, color: "#666" }}>
           Selected {printableRows.length} of {filteredAttendees.length} filtered
           attendees.
-        </div>
-
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>
-            Background Status
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              color: backgroundUrl ? "#166534" : "#92400e",
-            }}
-          >
-            {backgroundUrl
-              ? printMode === "name_tags"
-                ? "Using saved name tag background."
-                : "Using saved coach plate background."
-              : printMode === "name_tags"
-                ? "No name tag background set. Printing text-only layout."
-                : "No coach plate background set. Printing text-only layout."}
-          </div>
+          {printMode === "name_tags"
+            ? ` This will print ${printableNameTags.length} name tag${printableNameTags.length === 1 ? "" : "s"}.`
+            : ""}
         </div>
       </div>
 
@@ -553,25 +755,24 @@ function AdminPrintPageInner() {
       <div className="print-area">
         {printMode === "name_tags" ? (
           <div
+            className="name-tag-sheet"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap: 16,
+              gridTemplateColumns: "repeat(2, 4in)",
+              gridAutoRows: "3in",
+              justifyContent: "center",
+              gap: "0.1in",
             }}
           >
-            {printableRows.map((row) => {
-              const pilot = displayPilotName(row) || "Guest";
-              const copilot = displayCopilotName(row);
-              const site = row.assigned_site || "";
-              const place = cityState(row);
-              const memberNo = row.membership_number || "";
-
+            {printableNameTags.map((tag) => {
               return (
                 <div
-                  key={row.id}
+                  key={tag.key}
+                  className="name-tag-card"
                   style={{
                     position: "relative",
-                    height: 220,
+                    width: "4in",
+                    height: "3in",
                     border: "1px solid #ddd",
                     borderRadius: 12,
                     overflow: "hidden",
@@ -599,84 +800,110 @@ function AdminPrintPageInner() {
                       position: "relative",
                       zIndex: 1,
                       height: "100%",
-                      padding: 18,
+                      padding: 14,
                       display: "grid",
-                      alignContent: "space-between",
-                      background: backgroundUrl
-                        ? "rgba(255,255,255,0.10)"
-                        : "transparent",
+                      gridTemplateRows: "auto auto auto 1fr auto auto auto",
+                      alignItems: "center",
+                      textAlign: "center",
+                      color: nameTagTextColor,
                     }}
                   >
-                    <div>
+                    <div
+                      style={{
+                        fontSize: 22,
+                        fontWeight: 800,
+                        lineHeight: 1.05,
+                        color: nameTagTextColor,
+                      }}
+                    >
+                      {tag.eventName}
+                    </div>
+
+                    <div style={{ height: 6 }} />
+
+                    <div style={{ display: "flex", justifyContent: "center" }}>
+                      <img
+                        src={clubLogoUrl}
+                        alt="FCOC logo"
+                        style={{
+                          width: 120,
+                          maxHeight: 64,
+                          objectFit: "contain",
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                    </div>
+
+                    <div />
+
+                    <div
+                      style={{
+                        fontSize: 18,
+                        lineHeight: 1,
+                        fontWeight: 500,
+                        color: nameTagTextColor,
+                      }}
+                    >
+                      {tag.memberNumber || " "}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 48,
+                        fontWeight: 800,
+                        lineHeight: 0.95,
+                        marginTop: 2,
+                        color: nameTagTextColor,
+                      }}
+                    >
+                      {tag.firstName}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 500,
+                        lineHeight: 1.1,
+                        marginTop: 4,
+                        color: nameTagTextColor,
+                      }}
+                    >
+                      {tag.lastName || " "}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 16,
+                        lineHeight: 1.15,
+                        marginTop: 4,
+                        color: nameTagTextColor,
+                      }}
+                    >
+                      {tag.cityState || " "}
+                    </div>
+
+                    {showFirstTimerOnNameTags && tag.isFirstTimer ? (
                       <div
                         style={{
-                          fontSize: 30,
+                          fontSize: 14,
                           fontWeight: 800,
-                          lineHeight: 1.05,
-                          textAlign: "center",
+                          lineHeight: 1.1,
+                          marginTop: 4,
+                          color: nameTagTextColor,
                         }}
                       >
-                        {pilot}
+                        FIRST TIMER
                       </div>
-
-                      {copilot ? (
-                        <div
-                          style={{
-                            marginTop: 10,
-                            fontSize: 22,
-                            fontWeight: 700,
-                            lineHeight: 1.1,
-                            textAlign: "center",
-                          }}
-                        >
-                          {copilot}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div style={{ textAlign: "center" }}>
-                      {memberNo ? (
-                        <div style={{ fontSize: 14, fontWeight: 700 }}>
-                          Member #{memberNo}
-                        </div>
-                      ) : null}
-
-                      {place ? (
-                        <div style={{ fontSize: 14, marginTop: 4 }}>
-                          {place}
-                        </div>
-                      ) : null}
-
-                      <div
-                        style={{ fontSize: 16, fontWeight: 800, marginTop: 6 }}
-                      >
-                        {site ? `Site ${site}` : " "}
-                      </div>
-
-                      {row.is_first_timer ? (
-                        <div
-                          style={{
-                            marginTop: 8,
-                            fontSize: 14,
-                            fontWeight: 800,
-                          }}
-                        >
-                          FIRST TIMER
-                        </div>
-                      ) : null}
-                    </div>
+                    ) : null}
                   </div>
                 </div>
               );
             })}
           </div>
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gap: 20,
-            }}
-          >
+          <div style={{ display: "grid", gap: 20 }}>
             {printableRows.map((row) => {
               const pilot = displayPilotName(row) || "Guest";
               const copilot = displayCopilotName(row);
@@ -719,9 +946,7 @@ function AdminPrintPageInner() {
                       padding: 24,
                       display: "grid",
                       alignContent: "space-between",
-                      background: backgroundUrl
-                        ? "rgba(255,255,255,0.06)"
-                        : "transparent",
+                      color: coachPlateTextColor,
                     }}
                   >
                     <div>
@@ -731,6 +956,7 @@ function AdminPrintPageInner() {
                           fontWeight: 900,
                           lineHeight: 1.05,
                           textAlign: "center",
+                          color: coachPlateTextColor,
                         }}
                       >
                         {pilot}
@@ -743,6 +969,7 @@ function AdminPrintPageInner() {
                             fontSize: 28,
                             fontWeight: 700,
                             textAlign: "center",
+                            color: coachPlateTextColor,
                           }}
                         >
                           {copilot}
@@ -752,13 +979,24 @@ function AdminPrintPageInner() {
 
                     <div style={{ textAlign: "center" }}>
                       {coach ? (
-                        <div style={{ fontSize: 18, fontWeight: 700 }}>
+                        <div
+                          style={{
+                            fontSize: 18,
+                            fontWeight: 700,
+                            color: coachPlateTextColor,
+                          }}
+                        >
                           {coach}
                         </div>
                       ) : null}
 
                       <div
-                        style={{ fontSize: 28, fontWeight: 900, marginTop: 10 }}
+                        style={{
+                          fontSize: 28,
+                          fontWeight: 900,
+                          marginTop: 10,
+                          color: coachPlateTextColor,
+                        }}
                       >
                         {site ? `SITE ${site}` : " "}
                       </div>
@@ -769,6 +1007,7 @@ function AdminPrintPageInner() {
                             marginTop: 8,
                             fontSize: 16,
                             fontWeight: 800,
+                            color: coachPlateTextColor,
                           }}
                         >
                           FIRST TIMER
@@ -786,13 +1025,13 @@ function AdminPrintPageInner() {
   );
 }
 
-const labelStyle: React.CSSProperties = {
+const labelStyle: CSSProperties = {
   display: "block",
   marginBottom: 6,
   fontWeight: 600,
 };
 
-const inputStyle: React.CSSProperties = {
+const inputStyle: CSSProperties = {
   width: "100%",
   padding: "10px 12px",
   borderRadius: 10,
@@ -800,7 +1039,7 @@ const inputStyle: React.CSSProperties = {
   background: "white",
 };
 
-const primaryButtonStyle: React.CSSProperties = {
+const primaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
   border: "none",
@@ -810,7 +1049,7 @@ const primaryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const secondaryButtonStyle: React.CSSProperties = {
+const secondaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
   border: "1px solid #ccc",
@@ -819,9 +1058,18 @@ const secondaryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const errorBoxStyle: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #e2b4b4",
+  background: "#fff3f3",
+  color: "#8a1f1f",
+};
+
 export default function AdminPrintPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_print_settings">
+    <AdminRouteGuard requiredPermission="can_manage_reports">
       <AdminPrintPageInner />
     </AdminRouteGuard>
   );

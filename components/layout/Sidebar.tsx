@@ -407,6 +407,7 @@ export default function Sidebar() {
     { label: "Attendees", href: "/admin/attendees" },
     { label: "Reports", href: "/admin/reports" },
     { label: "Pre-Rally Checklist", href: "/admin/checklist" },
+    { label: "Print Center", href: "/admin/print" },
     { label: "Nearby Admin", href: "/admin/nearby" },
     { label: "Agenda Admin", href: "/admin/agenda" },
     { label: "Imports", href: "/admin/imports" },

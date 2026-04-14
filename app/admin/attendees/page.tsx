@@ -236,6 +236,120 @@ function sortDisplayRows(rows: DisplayRow[], sortType: SortType) {
     }
   });
 }
+function importHeaderLabel(header: string) {
+  const map: Record<string, string> = {
+    "Additional attendees, if so give name(s) and age(s)":
+      "Additional Attendees",
+    "Ok to share your email with other attendees?": "Share Email",
+    "OK to share your email with other attendees?": "Share Email",
+    "Would you like to volunteer to help with the event?": "Volunteer",
+    "First time at an FCOC event?": "First Timer",
+    "Address (State / Province)": "State",
+    "Address (City)": "City",
+    "Primary Phone #": "Primary Phone",
+    "Cell Phone #": "Cell Phone",
+    "FCOC Membership Number": "Member #",
+    "Coach Manufacturer": "Coach Make",
+    "Coach Model": "Coach Model",
+    "Special Events": "Special Events",
+    "Email Address": "Email",
+    "Pilot Name (First)": "Pilot First",
+    "Pilot Name (Last)": "Pilot Last",
+    "Co-Pilot Name (First)": "Co-Pilot First",
+    "Co-Pilot Name (Last)": "Co-Pilot Last",
+    "Nickname for Badge": "Pilot Nickname",
+    "Nickname for Badge.1": "Co-Pilot Nickname",
+    "Entry Id": "Entry ID",
+    "Entry ID": "Entry ID",
+  };
+
+  return map[header] || header;
+}
+
+const labelStyle: CSSProperties = {
+  display: "block",
+  marginBottom: 6,
+  fontWeight: 600,
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+};
+
+const primaryButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "none",
+  background: "#111827",
+  color: "white",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const errorBoxStyle: CSSProperties = {
+  marginBottom: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #e2b4b4",
+  background: "#fff3f3",
+  color: "#8a1f1f",
+};
+
+const summaryCardStyle: CSSProperties = {
+  padding: 16,
+};
+
+const summaryValueStyle: CSSProperties = {
+  fontSize: 26,
+  fontWeight: 800,
+  marginTop: 8,
+};
+
+const tableStyle: CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+};
+
+const thStyle: CSSProperties = {
+  textAlign: "left",
+  padding: "8px 10px",
+  borderBottom: "2px solid #ddd",
+  whiteSpace: "nowrap",
+  verticalAlign: "top",
+  fontSize: 12,
+  lineHeight: 1.2,
+};
+
+const tdStyle: CSSProperties = {
+  textAlign: "left",
+  padding: "10px 8px",
+  borderTop: "1px solid #ddd",
+  verticalAlign: "top",
+  whiteSpace: "nowrap",
+};
+
+const importTdStyle: CSSProperties = {
+  textAlign: "left",
+  padding: "8px 10px",
+  borderTop: "1px solid #ddd",
+  verticalAlign: "top",
+  fontSize: 12,
+  lineHeight: 1.2,
+  whiteSpace: "nowrap",
+};
 
 function AdminAttendeesPageInner() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
@@ -249,6 +363,13 @@ function AdminAttendeesPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [canExport, setCanExport] = useState(false);
+  const [showImportFileViewer, setShowImportFileViewer] = useState(false);
+  const [importFileRows, setImportFileRows] = useState<
+    Record<string, unknown>[]
+  >([]);
+  const [importFileHeaders, setImportFileHeaders] = useState<string[]>([]);
+  const [importFileName, setImportFileName] = useState("");
+  const [loadingImportFile, setLoadingImportFile] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -256,6 +377,10 @@ function AdminAttendeesPageInner() {
       setLoading(true);
       setError(null);
       setStatus("Checking admin access...");
+      setShowImportFileViewer(false);
+      setImportFileRows([]);
+      setImportFileHeaders([]);
+      setImportFileName("");
       setAccessDenied(false);
 
       const admin = await getCurrentAdminAccess();
@@ -270,6 +395,10 @@ function AdminAttendeesPageInner() {
         setSortType("name_asc");
         setError("No admin access.");
         setStatus("Access denied.");
+        setShowImportFileViewer(false);
+        setImportFileRows([]);
+        setImportFileHeaders([]);
+        setImportFileName("");
         setLoading(false);
         setAccessDenied(true);
         return;
@@ -302,6 +431,10 @@ function AdminAttendeesPageInner() {
         setViewFilter("all");
         setSortType("name_asc");
         setStatus("No admin event selected.");
+        setShowImportFileViewer(false);
+        setImportFileRows([]);
+        setImportFileHeaders([]);
+        setImportFileName("");
         setLoading(false);
         return;
       }
@@ -315,6 +448,10 @@ function AdminAttendeesPageInner() {
         setSortType("name_asc");
         setError("You do not have access to this event.");
         setStatus("Access denied.");
+        setShowImportFileViewer(false);
+        setImportFileRows([]);
+        setImportFileHeaders([]);
+        setImportFileName("");
         setLoading(false);
         setAccessDenied(true);
         return;
@@ -475,6 +612,101 @@ function AdminAttendeesPageInner() {
     setStatus("");
     setLoading(false);
   }
+  async function handleShowImportFile() {
+    if (!currentEvent?.id) {
+      setError("No event selected.");
+      return;
+    }
+
+    try {
+      setLoadingImportFile(true);
+      setError(null);
+
+      if (showImportFileViewer) {
+        setShowImportFileViewer(false);
+        setLoadingImportFile(false);
+        return;
+      }
+
+      const [importRowsResult, headerMetadataResult] = await Promise.all([
+        supabase
+          .from("event_import_rows")
+          .select("raw_import, source_filename, row_number")
+          .eq("event_id", currentEvent.id)
+          .eq("import_type", "attendee_roster")
+          .order("row_number", { ascending: true }),
+        supabase
+          .from("event_import_rows")
+          .select("raw_import, source_filename")
+          .eq("event_id", currentEvent.id)
+          .eq("import_type", "attendee_roster_headers")
+          .maybeSingle(),
+      ]);
+
+      const { data, error } = importRowsResult;
+      const { data: headerMetadata, error: headerMetadataError } =
+        headerMetadataResult;
+
+      if (error) throw error;
+      if (headerMetadataError) throw headerMetadataError;
+
+      const rows = (data || [])
+        .map((row) => row.raw_import)
+        .filter(
+          (row): row is Record<string, unknown> =>
+            !!row && typeof row === "object",
+        );
+
+      const rawImportObject =
+        headerMetadata &&
+        typeof headerMetadata.raw_import === "object" &&
+        headerMetadata.raw_import !== null
+          ? (headerMetadata.raw_import as Record<string, unknown>)
+          : null;
+
+      const savedHeadersRaw: unknown[] = Array.isArray(
+        rawImportObject?.__source_headers,
+      )
+        ? rawImportObject.__source_headers
+        : [];
+
+      const savedHeaders = savedHeadersRaw.filter(
+        (value): value is string => typeof value === "string",
+      );
+
+      const firstRowHeaders = rows.length > 0 ? Object.keys(rows[0]) : [];
+      const baseHeaders =
+        savedHeaders.length > 0 ? savedHeaders : firstRowHeaders;
+      const extraHeaders: string[] = [];
+
+      rows.forEach((row) => {
+        Object.keys(row).forEach((key) => {
+          if (!baseHeaders.includes(key) && !extraHeaders.includes(key)) {
+            extraHeaders.push(key);
+          }
+        });
+      });
+
+      setImportFileRows(rows);
+      setImportFileHeaders([...baseHeaders, ...extraHeaders]);
+      setImportFileName(
+        data?.[0]?.source_filename ||
+          headerMetadata?.source_filename ||
+          "Imported attendee file",
+      );
+      setShowImportFileViewer(true);
+    } catch (err: any) {
+      console.error("handleShowImportFile error:", err);
+      setError(err?.message || "Could not load imported file.");
+    } finally {
+      setLoadingImportFile(false);
+    }
+  }
+  const visibleImportFileHeaders = useMemo(() => {
+    return importFileHeaders.filter((header) =>
+      importFileRows.some((row) => String(row[header] ?? "").trim() !== ""),
+    );
+  }, [importFileHeaders, importFileRows]);
 
   const filteredAttendees = useMemo(() => {
     let rows = [...attendees];
@@ -739,6 +971,16 @@ function AdminAttendeesPageInner() {
           >
             <button
               type="button"
+              onClick={() => void handleShowImportFile()}
+              style={secondaryButtonStyle}
+              disabled={loading || loadingImportFile || !currentEvent?.id}
+            >
+              {showImportFileViewer
+                ? "Hide Full Import File"
+                : "Show Full Import File"}
+            </button>
+            <button
+              type="button"
               onClick={handleExportCsv}
               style={secondaryButtonStyle}
               disabled={loading || !canExport}
@@ -798,6 +1040,73 @@ function AdminAttendeesPageInner() {
           <div style={summaryValueStyle}>{summary.unassignedSiteCount}</div>
         </div>
       </div>
+      {showImportFileViewer ? (
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ marginBottom: 14 }}>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+              Imported File Viewer
+            </h2>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>
+              {importFileName || "Imported attendee file"}
+            </div>
+            <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4 }}>
+              {importFileRows.length} imported row
+              {importFileRows.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          {loadingImportFile ? (
+            <div>Loading imported file...</div>
+          ) : importFileRows.length === 0 ? (
+            <div style={{ opacity: 0.8 }}>
+              No imported file rows were found for this event.
+            </div>
+          ) : (
+            <div
+              style={{
+                overflowX: "auto",
+                maxHeight: "70vh",
+                border: "1px solid #eee",
+                borderRadius: 10,
+                background: "white",
+                padding: 4,
+              }}
+            >
+              <table
+                style={{
+                  ...tableStyle,
+                  width: "auto",
+                  minWidth: "100%",
+                  tableLayout: "auto",
+                }}
+              >
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Row</th>{" "}
+                    {visibleImportFileHeaders.map((header) => (
+                      <th key={header} style={thStyle}>
+                        {importHeaderLabel(header)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {importFileRows.map((row, index) => (
+                    <tr key={`import-row-${index}`}>
+                      <td style={importTdStyle}>{index + 1}</td>
+                      {visibleImportFileHeaders.map((header) => (
+                        <td key={`${index}-${header}`} style={importTdStyle}>
+                          {String(row[header] ?? "")}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <div className="card" style={{ padding: 18 }}>
         <div style={{ marginBottom: 14 }}>
@@ -857,77 +1166,6 @@ function AdminAttendeesPageInner() {
     </div>
   );
 }
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: 6,
-  fontWeight: 600,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#111827",
-  color: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const errorBoxStyle: CSSProperties = {
-  marginBottom: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #e2b4b4",
-  background: "#fff3f3",
-  color: "#8a1f1f",
-};
-
-const summaryCardStyle: CSSProperties = {
-  padding: 16,
-};
-
-const summaryValueStyle: CSSProperties = {
-  fontSize: 26,
-  fontWeight: 800,
-  marginTop: 8,
-};
-
-const tableStyle: CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-
-const thStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "10px 8px",
-  borderBottom: "2px solid #ddd",
-  whiteSpace: "nowrap",
-};
-
-const tdStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "10px 8px",
-  borderTop: "1px solid #ddd",
-  verticalAlign: "top",
-};
 
 export default function AdminAttendeesPage() {
   return (
