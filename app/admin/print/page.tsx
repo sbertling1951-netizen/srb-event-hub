@@ -1038,8 +1038,8 @@ function AdminPrintPageInner() {
                         src={clubLogoUrl}
                         alt="FCOC logo"
                         style={{
-                          width: "5.5in",
-                          maxHeight: "2.5in",
+                          width: "7in",
+                          maxHeight: "3.2in",
                           objectFit: "contain",
                         }}
                         onError={(e) => {
@@ -1065,6 +1065,7 @@ function AdminPrintPageInner() {
                         alignContent: "center",
                         justifyItems: "center",
                         gap: 8,
+                        marginTop: "0.5in",
                       }}
                     >
                       <div
