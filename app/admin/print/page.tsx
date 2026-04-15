@@ -1,3 +1,4 @@
+// REPLACED BY REQUEST
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
@@ -56,6 +57,20 @@ type AttendeeRow = {
 
 type PrintMode = "name_tags" | "coach_plates";
 type PrintFilter = "all" | "arrived" | "first_timers";
+type SortType = "alpha" | "first_timers_first_alpha" | "returnees_first_alpha";
+
+type PrintEditOverride = {
+  pilot_first?: string;
+  pilot_last?: string;
+  nickname?: string;
+  copilot_first?: string;
+  copilot_last?: string;
+  copilot_nickname?: string;
+  membership_number?: string;
+  city?: string;
+  state?: string;
+  is_first_timer?: boolean;
+};
 
 type NameTagRow = {
   key: string;
@@ -66,8 +81,6 @@ type NameTagRow = {
   lastName: string;
   cityState: string;
   isFirstTimer: boolean;
-  pilotSortLast: string;
-  pilotSortFirst: string;
 };
 
 function fullName(first?: string | null, last?: string | null) {
@@ -109,13 +122,6 @@ function coachText(row: AttendeeRow) {
   return coach || `${row.coach_length} ft`;
 }
 
-function firstNonEmpty(...values: Array<string | null | undefined>) {
-  for (const value of values) {
-    const trimmed = String(value || "").trim();
-    if (trimmed) return trimmed;
-  }
-  return "";
-}
 function sameLastName(row: AttendeeRow) {
   const pilotLast = (row.pilot_last || "").trim();
   const copilotLast = (row.copilot_last || "").trim();
@@ -198,6 +204,70 @@ function buildNameParts(
   };
 }
 
+function applyPrintOverride(
+  row: AttendeeRow,
+  overrides?: PrintEditOverride,
+): AttendeeRow {
+  if (!overrides) return row;
+
+  return {
+    ...row,
+    pilot_first: overrides.pilot_first ?? row.pilot_first,
+    pilot_last: overrides.pilot_last ?? row.pilot_last,
+    nickname: overrides.nickname ?? row.nickname,
+    copilot_first: overrides.copilot_first ?? row.copilot_first,
+    copilot_last: overrides.copilot_last ?? row.copilot_last,
+    copilot_nickname: overrides.copilot_nickname ?? row.copilot_nickname,
+    membership_number: overrides.membership_number ?? row.membership_number,
+    city: overrides.city ?? row.city,
+    state: overrides.state ?? row.state,
+    is_first_timer: overrides.is_first_timer ?? row.is_first_timer,
+  };
+}
+
+function compareRowsByAlpha(a: AttendeeRow, b: AttendeeRow) {
+  const aLast = String(a.pilot_last || "")
+    .trim()
+    .toLowerCase();
+  const bLast = String(b.pilot_last || "")
+    .trim()
+    .toLowerCase();
+  const aFirst = String(a.nickname || a.pilot_first || "")
+    .trim()
+    .toLowerCase();
+  const bFirst = String(b.nickname || b.pilot_first || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    aLast.localeCompare(bLast, undefined, { sensitivity: "base" }) ||
+    aFirst.localeCompare(bFirst, undefined, { sensitivity: "base" }) ||
+    String(a.id).localeCompare(String(b.id), undefined, { sensitivity: "base" })
+  );
+}
+
+function sortRowsForPrint(rows: AttendeeRow[], sortType: SortType) {
+  const sorted = [...rows];
+
+  sorted.sort((a, b) => {
+    if (sortType === "first_timers_first_alpha") {
+      const aFirst = a.is_first_timer ? 0 : 1;
+      const bFirst = b.is_first_timer ? 0 : 1;
+      if (aFirst !== bFirst) return aFirst - bFirst;
+    }
+
+    if (sortType === "returnees_first_alpha") {
+      const aReturnee = a.is_first_timer ? 1 : 0;
+      const bReturnee = b.is_first_timer ? 1 : 0;
+      if (aReturnee !== bReturnee) return aReturnee - bReturnee;
+    }
+
+    return compareRowsByAlpha(a, b);
+  });
+
+  return sorted;
+}
+
 function AdminPrintPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
   const [settings, setSettings] = useState<PrintSettingsRow | null>(null);
@@ -206,13 +276,18 @@ function AdminPrintPageInner() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading print center...");
+  const [editAttendeeId, setEditAttendeeId] = useState<string | null>(null);
+  const [printOverrides, setPrintOverrides] = useState<
+    Record<string, PrintEditOverride>
+  >({});
 
   const [printMode, setPrintMode] = useState<PrintMode>("name_tags");
   const [printFilter, setPrintFilter] = useState<PrintFilter>("all");
+  const [sortType, setSortType] = useState<SortType>("alpha");
   const [includeInactive, setIncludeInactive] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showFirstTimerOnNameTags, setShowFirstTimerOnNameTags] =
-    useState(true);
+    useState(false);
   const [nameTagTextColor, setNameTagTextColor] = useState("#000000");
   const [coachPlateTextColor, setCoachPlateTextColor] = useState("#000000");
 
@@ -398,9 +473,18 @@ function AdminPrintPageInner() {
     return rows;
   }, [attendees, printFilter, includeInactive]);
 
+  const sortedFilteredAttendees = useMemo(() => {
+    const rowsWithOverrides = filteredAttendees.map((row) =>
+      applyPrintOverride(row, printOverrides[row.id]),
+    );
+    return sortRowsForPrint(rowsWithOverrides, sortType);
+  }, [filteredAttendees, printOverrides, sortType]);
+
   const printableRows = useMemo(() => {
-    return filteredAttendees.filter((row) => selectedIds.includes(row.id));
-  }, [filteredAttendees, selectedIds]);
+    return sortedFilteredAttendees.filter((row) =>
+      selectedIds.includes(row.id),
+    );
+  }, [sortedFilteredAttendees, selectedIds]);
 
   const printableNameTags = useMemo<NameTagRow[]>(() => {
     const rawEventName = event?.name?.trim() || "FCOC Event";
@@ -409,16 +493,10 @@ function AdminPrintPageInner() {
       ? `${rawEventName.replace(new RegExp(`\\s*${eventYear}$`), "").trim()} ${eventYear}`.trim()
       : rawEventName;
 
-    const tags = printableRows.flatMap((row) => {
+    return printableRows.flatMap((row) => {
       const nextTags: NameTagRow[] = [];
       const memberNumber = row.membership_number || "";
       const place = cityState(row);
-      const pilotSortLast = String(row.pilot_last || "")
-        .trim()
-        .toLowerCase();
-      const pilotSortFirst = String(row.nickname || row.pilot_first || "")
-        .trim()
-        .toLowerCase();
       const isFirstTimer = !!row.is_first_timer;
 
       const pilotHasName = !!String(
@@ -441,8 +519,6 @@ function AdminPrintPageInner() {
           lastName: pilotName.lastName,
           cityState: place,
           isFirstTimer,
-          pilotSortLast,
-          pilotSortFirst,
         });
       }
 
@@ -468,32 +544,24 @@ function AdminPrintPageInner() {
           lastName: copilotName.lastName,
           cityState: place,
           isFirstTimer,
-          pilotSortLast,
-          pilotSortFirst,
         });
       }
 
       return nextTags;
     });
-
-    return tags.sort((a, b) => {
-      if (a.isFirstTimer !== b.isFirstTimer) {
-        return a.isFirstTimer ? -1 : 1;
-      }
-
-      return (
-        a.pilotSortLast.localeCompare(b.pilotSortLast, undefined, {
-          sensitivity: "base",
-        }) ||
-        a.pilotSortFirst.localeCompare(b.pilotSortFirst, undefined, {
-          sensitivity: "base",
-        }) ||
-        a.key.localeCompare(b.key, undefined, { sensitivity: "base" })
-      );
-    });
   }, [event?.name, event?.start_date, printableRows]);
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
+
+  const editRow = useMemo(() => {
+    if (!editAttendeeId) return null;
+    return attendees.find((row) => row.id === editAttendeeId) || null;
+  }, [attendees, editAttendeeId]);
+
+  const editPreviewRow = useMemo(() => {
+    if (!editRow) return null;
+    return applyPrintOverride(editRow, printOverrides[editRow.id]);
+  }, [editRow, printOverrides]);
 
   function toggleSelected(id: string) {
     setSelectedIds((prev) =>
@@ -502,11 +570,33 @@ function AdminPrintPageInner() {
   }
 
   function selectAllFiltered() {
-    setSelectedIds(filteredAttendees.map((row) => row.id));
+    setSelectedIds(sortedFilteredAttendees.map((row) => row.id));
   }
 
   function clearSelected() {
     setSelectedIds([]);
+  }
+
+  function updatePrintOverride(
+    attendeeId: string,
+    field: keyof PrintEditOverride,
+    value: string | boolean,
+  ) {
+    setPrintOverrides((prev) => ({
+      ...prev,
+      [attendeeId]: {
+        ...prev[attendeeId],
+        [field]: value,
+      },
+    }));
+  }
+
+  function clearPrintOverride(attendeeId: string) {
+    setPrintOverrides((prev) => {
+      const next = { ...prev };
+      delete next[attendeeId];
+      return next;
+    });
   }
 
   function handlePrint() {
@@ -558,7 +648,7 @@ function AdminPrintPageInner() {
 
     @page {
       size: ${printMode === "coach_plates" ? "letter landscape" : "letter portrait"};
-      margin: 0.2in;
+      margin: ${printMode === "coach_plates" ? "0" : "0.2in"};
     }
 
     .name-tag-sheet {
@@ -582,6 +672,7 @@ function AdminPrintPageInner() {
 
     .coach-plate-sheet {
       display: block !important;
+      page-break-before: auto !important;
     }
 
     .coach-plate-card {
@@ -590,12 +681,14 @@ function AdminPrintPageInner() {
       margin: 0 !important;
       border: none !important;
       border-radius: 0 !important;
+      break-after: page !important;
       page-break-after: always !important;
       page-break-inside: avoid !important;
-      break-inside: avoid !important;
+      break-inside: avoid-page !important;
     }
 
     .coach-plate-card:last-child {
+      break-after: auto !important;
       page-break-after: auto !important;
     }
   }
@@ -646,6 +739,23 @@ function AdminPrintPageInner() {
               <option value="all">All Attendees</option>
               <option value="arrived">Arrived Only</option>
               <option value="first_timers">First Timers Only</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Sort</label>
+            <select
+              value={sortType}
+              onChange={(e) => setSortType(e.target.value as SortType)}
+              style={inputStyle}
+            >
+              <option value="alpha">Alphabetical</option>
+              <option value="first_timers_first_alpha">
+                First Timers, Then Returnees
+              </option>
+              <option value="returnees_first_alpha">
+                Returnees, Then First Timers
+              </option>
             </select>
           </div>
 
@@ -744,8 +854,8 @@ function AdminPrintPageInner() {
         </div>
 
         <div style={{ marginTop: 14, fontSize: 13, color: "#666" }}>
-          Selected {printableRows.length} of {filteredAttendees.length} filtered
-          attendees.
+          Selected {printableRows.length} of {sortedFilteredAttendees.length}{" "}
+          filtered attendees.
           {printMode === "name_tags"
             ? ` This will print ${printableNameTags.length} name tag${printableNameTags.length === 1 ? "" : "s"}.`
             : ""}
@@ -757,13 +867,13 @@ function AdminPrintPageInner() {
 
         {loading ? (
           <div>Loading...</div>
-        ) : filteredAttendees.length === 0 ? (
+        ) : sortedFilteredAttendees.length === 0 ? (
           <div style={{ opacity: 0.8 }}>
             No attendees found for this filter.
           </div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
-            {filteredAttendees.map((row) => {
+            {sortedFilteredAttendees.map((row) => {
               const pilot = displayPilotName(row) || "Unnamed";
               const copilot = displayCopilotName(row);
 
@@ -801,6 +911,15 @@ function AdminPrintPageInner() {
                       {row.has_arrived ? " • Arrived" : ""}
                       {row.is_first_timer ? " • First Timer" : ""}
                     </div>
+                    <div style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditAttendeeId(row.id)}
+                        style={secondaryButtonStyle}
+                      >
+                        Edit For Print
+                      </button>
+                    </div>
                   </div>
                 </label>
               );
@@ -808,6 +927,198 @@ function AdminPrintPageInner() {
           </div>
         )}
       </div>
+
+      {editPreviewRow ? (
+        <div className="card no-print" style={{ padding: 18 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 12 }}>Print Editor</h2>
+          <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 14 }}>
+            Session-only print overrides for{" "}
+            {displayPilotName(editPreviewRow) || "Guest"}
+            {displayCopilotName(editPreviewRow)
+              ? ` / ${displayCopilotName(editPreviewRow)}`
+              : ""}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
+            <div>
+              <label style={labelStyle}>Pilot First</label>
+              <input
+                value={editPreviewRow.pilot_first || ""}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "pilot_first",
+                    e.target.value,
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Pilot Last</label>
+              <input
+                value={editPreviewRow.pilot_last || ""}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "pilot_last",
+                    e.target.value,
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Pilot Nickname</label>
+              <input
+                value={editPreviewRow.nickname || ""}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "nickname",
+                    e.target.value,
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Co-Pilot First</label>
+              <input
+                value={editPreviewRow.copilot_first || ""}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "copilot_first",
+                    e.target.value,
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Co-Pilot Last</label>
+              <input
+                value={editPreviewRow.copilot_last || ""}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "copilot_last",
+                    e.target.value,
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Co-Pilot Nickname</label>
+              <input
+                value={editPreviewRow.copilot_nickname || ""}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "copilot_nickname",
+                    e.target.value,
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Member Number</label>
+              <input
+                value={editPreviewRow.membership_number || ""}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "membership_number",
+                    e.target.value,
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>City</label>
+              <input
+                value={editPreviewRow.city || ""}
+                onChange={(e) =>
+                  updatePrintOverride(editPreviewRow.id, "city", e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>State</label>
+              <input
+                value={editPreviewRow.state || ""}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "state",
+                    e.target.value,
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 14,
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={!!editPreviewRow.is_first_timer}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "is_first_timer",
+                    e.target.checked,
+                  )
+                }
+              />
+              First Timer for print
+            </label>
+          </div>
+
+          <div
+            style={{
+              marginTop: 14,
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => clearPrintOverride(editPreviewRow.id)}
+              style={secondaryButtonStyle}
+            >
+              Clear Overrides
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditAttendeeId(null)}
+              style={secondaryButtonStyle}
+            >
+              Close Editor
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="print-area">
         {printMode === "name_tags" ? (
@@ -974,7 +1285,6 @@ function AdminPrintPageInner() {
               const memberNumber = row.membership_number || "";
               const place = cityState(row);
               const nameLines = buildCoachPlateNameLines(row);
-              const clubLogoUrl = "/fcoc-logo.svg";
 
               return (
                 <div
@@ -990,7 +1300,7 @@ function AdminPrintPageInner() {
                     overflow: "hidden",
                     background: "#fff",
                     pageBreakInside: "avoid",
-                    breakInside: "avoid",
+                    breakInside: "avoid-page",
                   }}
                 >
                   {backgroundUrl ? (
@@ -1011,15 +1321,17 @@ function AdminPrintPageInner() {
                     style={{
                       position: "relative",
                       zIndex: 1,
-                      minHeight: "8.5in",
-                      padding: "0.45in 0.75in",
+                      height: "100%",
+                      minHeight: "0",
+                      padding: "0.35in 0.6in",
                       display: "grid",
                       gridTemplateRows: "auto auto auto auto 1fr auto",
-                      rowGap: "0.25in",
+                      rowGap: "0.12in",
                       alignItems: "center",
                       justifyItems: "center",
                       textAlign: "center",
                       color: coachPlateTextColor,
+                      boxSizing: "border-box",
                     }}
                   >
                     <div
