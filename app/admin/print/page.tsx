@@ -878,7 +878,7 @@ function AdminPrintPageInner() {
               const copilot = displayCopilotName(row);
 
               return (
-                <label
+                <div
                   key={row.id}
                   style={{
                     display: "flex",
@@ -921,7 +921,7 @@ function AdminPrintPageInner() {
                       </button>
                     </div>
                   </div>
-                </label>
+                </div>
               );
             })}
           </div>
