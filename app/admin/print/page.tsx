@@ -1,7 +1,13 @@
 // REPLACED BY REQUEST
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { supabase } from "@/lib/supabase";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
@@ -323,6 +329,7 @@ function AdminPrintPageInner() {
     useState(false);
   const [nameTagTextColor, setNameTagTextColor] = useState("#000000");
   const [coachPlateTextColor, setCoachPlateTextColor] = useState("#000000");
+  const printEditorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function init() {
@@ -600,6 +607,17 @@ function AdminPrintPageInner() {
     if (!editRow) return null;
     return applyPrintOverride(editRow, printOverrides[editRow.id]);
   }, [editRow, printOverrides]);
+
+  useEffect(() => {
+    if (!editPreviewRow || !printEditorRef.current) return;
+
+    requestAnimationFrame(() => {
+      printEditorRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [editPreviewRow]);
 
   function toggleSelected(id: string) {
     setSelectedIds((prev) =>
@@ -994,7 +1012,11 @@ function AdminPrintPageInner() {
                     >
                       <button
                         type="button"
-                        onClick={() => setEditAttendeeId(row.id)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setEditAttendeeId(row.id);
+                        }}
                         style={secondaryButtonStyle}
                       >
                         Edit For Print
@@ -1002,7 +1024,11 @@ function AdminPrintPageInner() {
                       {row.id.startsWith("manual-") ? (
                         <button
                           type="button"
-                          onClick={() => removeManualEntry(row.id)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeManualEntry(row.id);
+                          }}
                           style={secondaryButtonStyle}
                         >
                           Delete Manual
@@ -1018,7 +1044,11 @@ function AdminPrintPageInner() {
       </div>
 
       {editPreviewRow ? (
-        <div className="card no-print" style={{ padding: 18 }}>
+        <div
+          ref={printEditorRef}
+          className="card no-print"
+          style={{ padding: 18 }}
+        >
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>Print Editor</h2>
           <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 14 }}>
             {editPreviewRow.id.startsWith("manual-")
