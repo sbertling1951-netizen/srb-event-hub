@@ -365,6 +365,7 @@ function AdminPrintPageInner() {
         setEvent(null);
         setSettings(null);
         setAttendees([]);
+        setManualAttendees([]);
         setSelectedIds([]);
         setStatus("No admin working event selected.");
         setLoading(false);
@@ -662,6 +663,14 @@ function AdminPrintPageInner() {
     setSelectedIds((prev) => [...prev, nextRow.id]);
     setEditAttendeeId(nextRow.id);
     setPrintMode(kind === "name_tag" ? "name_tags" : "coach_plates");
+  }
+
+  function printOnlyAttendee(attendeeId: string) {
+    setSelectedIds([attendeeId]);
+
+    requestAnimationFrame(() => {
+      window.print();
+    });
   }
 
   function removeManualEntry(attendeeId: string) {
@@ -977,9 +986,11 @@ function AdminPrintPageInner() {
                     padding: "10px 12px",
                     border: "1px solid #ddd",
                     borderRadius: 10,
-                    background: selectedIds.includes(row.id)
-                      ? "#f8fafc"
-                      : "white",
+                    background: row.id.startsWith("manual-")
+                      ? "#fff7ed"
+                      : selectedIds.includes(row.id)
+                        ? "#f8fafc"
+                        : "white",
                   }}
                 >
                   <input
@@ -1020,6 +1031,17 @@ function AdminPrintPageInner() {
                         style={secondaryButtonStyle}
                       >
                         Edit For Print
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          printOnlyAttendee(row.id);
+                        }}
+                        style={secondaryButtonStyle}
+                      >
+                        Print This Only
                       </button>
                       {row.id.startsWith("manual-") ? (
                         <button
@@ -1239,6 +1261,13 @@ function AdminPrintPageInner() {
                 Delete Manual Entry
               </button>
             ) : null}
+            <button
+              type="button"
+              onClick={() => printOnlyAttendee(editPreviewRow.id)}
+              style={primaryButtonStyle}
+            >
+              Print This Only
+            </button>
             <button
               type="button"
               onClick={() => setEditAttendeeId(null)}
