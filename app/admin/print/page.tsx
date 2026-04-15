@@ -497,52 +497,69 @@ function AdminPrintPageInner() {
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <style>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
+  @media print {
+    body * {
+      visibility: hidden;
+    }
 
-          .print-area, .print-area * {
-            visibility: visible;
-          }
+    .print-area, .print-area * {
+      visibility: visible;
+    }
 
-          .print-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white;
-          }
+    .print-area {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      background: white;
+    }
 
-          .no-print {
-            display: none !important;
-          }
+    .no-print {
+      display: none !important;
+    }
 
-          @page {
-            size: letter portrait;
-            margin: 0.2in;
-          }
+    @page {
+      size: ${printMode === "coach_plates" ? "letter landscape" : "letter portrait"};
+      margin: 0.2in;
+    }
 
-          .name-tag-sheet {
-            display: grid !important;
-            grid-template-columns: repeat(2, 4in) !important;
-            grid-auto-rows: 3in !important;
-            justify-content: center !important;
-            gap: 0.1in !important;
-          }
+    .name-tag-sheet {
+      display: grid !important;
+      grid-template-columns: repeat(2, 4in) !important;
+      grid-auto-rows: 3in !important;
+      justify-content: center !important;
+      gap: 0.1in !important;
+    }
 
-          .name-tag-card {
-            width: 4in !important;
-            height: 3in !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
+    .name-tag-card {
+      width: 4in !important;
+      height: 3in !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
 
-          .name-tag-card:nth-child(6n) {
-            page-break-after: always;
-          }
-        }
-      `}</style>
+    .name-tag-card:nth-child(6n) {
+      page-break-after: always;
+    }
+
+    .coach-plate-sheet {
+      display: block !important;
+    }
+
+    .coach-plate-card {
+      width: 10.6in !important;
+      height: 7.9in !important;
+      page-break-after: always !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      margin: 0 auto !important;
+    }
+
+    .coach-plate-card:last-child {
+      page-break-after: auto !important;
+    }
+  }
+`}</style>
 
       <div className="card no-print" style={{ padding: 18 }}>
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Print Center</h1>
@@ -903,7 +920,11 @@ function AdminPrintPageInner() {
             })}
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 20 }}>
+          <div
+            className="coach-plate-sheet"
+            style={{ display: "grid", gap: 20 }}
+          >
+            {" "}
             {printableRows.map((row) => {
               const pilot = displayPilotName(row) || "Guest";
               const copilot = displayCopilotName(row);
@@ -913,9 +934,10 @@ function AdminPrintPageInner() {
               return (
                 <div
                   key={row.id}
+                  className="coach-plate-card"
                   style={{
                     position: "relative",
-                    minHeight: 250,
+                    minHeight: "7.9in",
                     border: "1px solid #ddd",
                     borderRadius: 12,
                     overflow: "hidden",
@@ -942,8 +964,8 @@ function AdminPrintPageInner() {
                     style={{
                       position: "relative",
                       zIndex: 1,
-                      minHeight: 250,
-                      padding: 24,
+                      minHeight: "7.9in",
+                      padding: "0.45in 0.6in",
                       display: "grid",
                       alignContent: "space-between",
                       color: coachPlateTextColor,
@@ -952,7 +974,7 @@ function AdminPrintPageInner() {
                     <div>
                       <div
                         style={{
-                          fontSize: 42,
+                          fontSize: 72,
                           fontWeight: 900,
                           lineHeight: 1.05,
                           textAlign: "center",
@@ -966,7 +988,7 @@ function AdminPrintPageInner() {
                         <div
                           style={{
                             marginTop: 10,
-                            fontSize: 28,
+                            fontSize: 46,
                             fontWeight: 700,
                             textAlign: "center",
                             color: coachPlateTextColor,
@@ -981,7 +1003,7 @@ function AdminPrintPageInner() {
                       {coach ? (
                         <div
                           style={{
-                            fontSize: 18,
+                            fontSize: 30,
                             fontWeight: 700,
                             color: coachPlateTextColor,
                           }}
@@ -992,7 +1014,7 @@ function AdminPrintPageInner() {
 
                       <div
                         style={{
-                          fontSize: 28,
+                          fontSize: 54,
                           fontWeight: 900,
                           marginTop: 10,
                           color: coachPlateTextColor,
