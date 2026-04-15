@@ -1033,8 +1033,8 @@ function AdminPrintPageInner() {
                         src={clubLogoUrl}
                         alt="FCOC logo"
                         style={{
-                          width: 170,
-                          maxHeight: 90,
+                          width: 500,
+                          maxHeight: 260,
                           objectFit: "contain",
                         }}
                         onError={(e) => {
