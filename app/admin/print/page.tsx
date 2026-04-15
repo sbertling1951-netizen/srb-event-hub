@@ -72,6 +72,8 @@ type PrintEditOverride = {
   is_first_timer?: boolean;
 };
 
+type ManualPrintEntryKind = "name_tag" | "coach_plate";
+
 type NameTagRow = {
   key: string;
   attendeeId: string;
@@ -82,6 +84,36 @@ type NameTagRow = {
   cityState: string;
   isFirstTimer: boolean;
 };
+
+function createEmptyManualAttendee(kind: ManualPrintEntryKind): AttendeeRow {
+  const uniqueId =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  return {
+    id: `manual-${kind}-${uniqueId}`,
+    event_id: "manual",
+    entry_id: null,
+    email: null,
+    pilot_first: kind === "coach_plate" ? "Guest" : "",
+    pilot_last: "",
+    copilot_first: "",
+    copilot_last: "",
+    nickname: "",
+    copilot_nickname: "",
+    membership_number: "",
+    city: "",
+    state: "",
+    assigned_site: null,
+    has_arrived: null,
+    is_first_timer: false,
+    coach_manufacturer: null,
+    coach_model: null,
+    coach_length: null,
+    is_active: true,
+  };
+}
 
 function fullName(first?: string | null, last?: string | null) {
   return [first, last].filter(Boolean).join(" ").trim();
@@ -280,6 +312,7 @@ function AdminPrintPageInner() {
   const [printOverrides, setPrintOverrides] = useState<
     Record<string, PrintEditOverride>
   >({});
+  const [manualAttendees, setManualAttendees] = useState<AttendeeRow[]>([]);
 
   const [printMode, setPrintMode] = useState<PrintMode>("name_tags");
   const [printFilter, setPrintFilter] = useState<PrintFilter>("all");
@@ -441,6 +474,7 @@ function AdminPrintPageInner() {
       setEvent(eventRow);
       setSettings(settingsRow);
       setAttendees(attendeeRows);
+      setManualAttendees([]);
       setSelectedIds(attendeeRows.map((row) => row.id));
       setStatus(`Loaded ${attendeeRows.length} attendees.`);
     } catch (err: any) {
@@ -453,7 +487,7 @@ function AdminPrintPageInner() {
   }
 
   const filteredAttendees = useMemo(() => {
-    let rows = [...attendees];
+    let rows = [...attendees, ...manualAttendees];
 
     if (!includeInactive) {
       rows = rows.filter((row) => row.is_active);
@@ -471,7 +505,7 @@ function AdminPrintPageInner() {
     }
 
     return rows;
-  }, [attendees, printFilter, includeInactive]);
+  }, [attendees, manualAttendees, printFilter, includeInactive]);
 
   const sortedFilteredAttendees = useMemo(() => {
     const rowsWithOverrides = filteredAttendees.map((row) =>
@@ -555,8 +589,12 @@ function AdminPrintPageInner() {
 
   const editRow = useMemo(() => {
     if (!editAttendeeId) return null;
-    return attendees.find((row) => row.id === editAttendeeId) || null;
-  }, [attendees, editAttendeeId]);
+    return (
+      [...attendees, ...manualAttendees].find(
+        (row) => row.id === editAttendeeId,
+      ) || null
+    );
+  }, [attendees, manualAttendees, editAttendeeId]);
 
   const editPreviewRow = useMemo(() => {
     if (!editRow) return null;
@@ -597,6 +635,26 @@ function AdminPrintPageInner() {
       delete next[attendeeId];
       return next;
     });
+  }
+
+  function createManualEntry(kind: ManualPrintEntryKind) {
+    const nextRow = createEmptyManualAttendee(kind);
+
+    setManualAttendees((prev) => [...prev, nextRow]);
+    setSelectedIds((prev) => [...prev, nextRow.id]);
+    setEditAttendeeId(nextRow.id);
+    setPrintMode(kind === "name_tag" ? "name_tags" : "coach_plates");
+  }
+
+  function removeManualEntry(attendeeId: string) {
+    setManualAttendees((prev) => prev.filter((row) => row.id !== attendeeId));
+    setSelectedIds((prev) => prev.filter((id) => id !== attendeeId));
+    setPrintOverrides((prev) => {
+      const next = { ...prev };
+      delete next[attendeeId];
+      return next;
+    });
+    setEditAttendeeId((prev) => (prev === attendeeId ? null : prev));
   }
 
   function handlePrint() {
@@ -844,6 +902,20 @@ function AdminPrintPageInner() {
             </button>
             <button
               type="button"
+              onClick={() => createManualEntry("name_tag")}
+              style={secondaryButtonStyle}
+            >
+              Create Name Tag
+            </button>
+            <button
+              type="button"
+              onClick={() => createManualEntry("coach_plate")}
+              style={secondaryButtonStyle}
+            >
+              Create Coach Plate
+            </button>
+            <button
+              type="button"
               onClick={handlePrint}
               style={primaryButtonStyle}
               disabled={printableRows.length === 0}
@@ -910,8 +982,16 @@ function AdminPrintPageInner() {
                         : ""}
                       {row.has_arrived ? " • Arrived" : ""}
                       {row.is_first_timer ? " • First Timer" : ""}
+                      {row.id.startsWith("manual-") ? " • Manual" : ""}
                     </div>
-                    <div style={{ marginTop: 8 }}>
+                    <div
+                      style={{
+                        marginTop: 8,
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <button
                         type="button"
                         onClick={() => setEditAttendeeId(row.id)}
@@ -919,6 +999,15 @@ function AdminPrintPageInner() {
                       >
                         Edit For Print
                       </button>
+                      {row.id.startsWith("manual-") ? (
+                        <button
+                          type="button"
+                          onClick={() => removeManualEntry(row.id)}
+                          style={secondaryButtonStyle}
+                        >
+                          Delete Manual
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -932,7 +1021,9 @@ function AdminPrintPageInner() {
         <div className="card no-print" style={{ padding: 18 }}>
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>Print Editor</h2>
           <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 14 }}>
-            Session-only print overrides for{" "}
+            {editPreviewRow.id.startsWith("manual-")
+              ? "Manual print entry"
+              : "Session-only print overrides for"}{" "}
             {displayPilotName(editPreviewRow) || "Guest"}
             {displayCopilotName(editPreviewRow)
               ? ` / ${displayCopilotName(editPreviewRow)}`
@@ -1109,6 +1200,15 @@ function AdminPrintPageInner() {
             >
               Clear Overrides
             </button>
+            {editPreviewRow.id.startsWith("manual-") ? (
+              <button
+                type="button"
+                onClick={() => removeManualEntry(editPreviewRow.id)}
+                style={secondaryButtonStyle}
+              >
+                Delete Manual Entry
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setEditAttendeeId(null)}
