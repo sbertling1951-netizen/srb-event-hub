@@ -528,7 +528,7 @@ function AdminPrintPageInner() {
     printMode === "name_tags"
       ? settings?.name_tag_bg_url || null
       : settings?.coach_plate_bg_url || null;
-  const clubLogoUrl = "/fcoc-logo.png";
+  const clubLogoUrl = "/fcoc-logo.svg";
   const activeTextColor =
     printMode === "name_tags" ? nameTagTextColor : coachPlateTextColor;
 
@@ -585,9 +585,11 @@ function AdminPrintPageInner() {
     }
 
     .coach-plate-card {
-      width: 10.6in !important;
-      height: 7.9in !important;
-      margin: 0 auto !important;
+      width: 11in !important;
+      height: 8.5in !important;
+      margin: 0 !important;
+      border: none !important;
+      border-radius: 0 !important;
       page-break-after: always !important;
       page-break-inside: avoid !important;
       break-inside: avoid !important;
@@ -881,8 +883,8 @@ function AdminPrintPageInner() {
                         src={clubLogoUrl}
                         alt="FCOC logo"
                         style={{
-                          width: 120,
-                          maxHeight: 64,
+                          width: 150,
+                          maxHeight: 80,
                           objectFit: "contain",
                         }}
                         onError={(e) => {
@@ -972,7 +974,7 @@ function AdminPrintPageInner() {
               const memberNumber = row.membership_number || "";
               const place = cityState(row);
               const nameLines = buildCoachPlateNameLines(row);
-              const clubLogoUrl = "/fcoc-logo.png";
+              const clubLogoUrl = "/fcoc-logo.svg";
 
               return (
                 <div
@@ -980,9 +982,11 @@ function AdminPrintPageInner() {
                   className="coach-plate-card"
                   style={{
                     position: "relative",
-                    minHeight: "7.9in",
-                    border: "1px solid #ddd",
-                    borderRadius: 12,
+                    width: "11in",
+                    height: "8.5in",
+                    minHeight: "8.5in",
+                    border: "none",
+                    borderRadius: 0,
                     overflow: "hidden",
                     background: "#fff",
                     pageBreakInside: "avoid",
@@ -1007,10 +1011,11 @@ function AdminPrintPageInner() {
                     style={{
                       position: "relative",
                       zIndex: 1,
-                      minHeight: "7.9in",
-                      padding: "0.35in 0.6in",
+                      minHeight: "8.5in",
+                      padding: "0.45in 0.75in",
                       display: "grid",
-                      gridTemplateRows: "auto auto auto 1fr auto auto",
+                      gridTemplateRows: "auto auto auto auto 1fr auto",
+                      rowGap: "0.25in",
                       alignItems: "center",
                       justifyItems: "center",
                       textAlign: "center",
@@ -1019,7 +1024,7 @@ function AdminPrintPageInner() {
                   >
                     <div
                       style={{
-                        fontSize: 30,
+                        fontSize: 36,
                         fontWeight: 800,
                         lineHeight: 1.05,
                         color: coachPlateTextColor,
@@ -1033,8 +1038,8 @@ function AdminPrintPageInner() {
                         src={clubLogoUrl}
                         alt="FCOC logo"
                         style={{
-                          width: 500,
-                          maxHeight: 260,
+                          width: "5.5in",
+                          maxHeight: "2.5in",
                           objectFit: "contain",
                         }}
                         onError={(e) => {
@@ -1045,7 +1050,7 @@ function AdminPrintPageInner() {
 
                     <div
                       style={{
-                        fontSize: 28,
+                        fontSize: 34,
                         fontWeight: 700,
                         lineHeight: 1,
                         color: coachPlateTextColor,
@@ -1064,7 +1069,7 @@ function AdminPrintPageInner() {
                     >
                       <div
                         style={{
-                          fontSize: 64,
+                          fontSize: 100,
                           fontWeight: 900,
                           lineHeight: 0.95,
                           color: coachPlateTextColor,
@@ -1075,7 +1080,7 @@ function AdminPrintPageInner() {
 
                       <div
                         style={{
-                          fontSize: 44,
+                          fontSize: 64,
                           fontWeight: 700,
                           lineHeight: 1.05,
                           color: coachPlateTextColor,
@@ -1087,7 +1092,7 @@ function AdminPrintPageInner() {
 
                     <div
                       style={{
-                        fontSize: 28,
+                        fontSize: 34,
                         fontWeight: 600,
                         lineHeight: 1.1,
                         marginTop: 10,
