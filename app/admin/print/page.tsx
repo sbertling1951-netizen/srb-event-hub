@@ -116,6 +116,44 @@ function firstNonEmpty(...values: Array<string | null | undefined>) {
   }
   return "";
 }
+function sameLastName(row: AttendeeRow) {
+  const pilotLast = (row.pilot_last || "").trim();
+  const copilotLast = (row.copilot_last || "").trim();
+
+  return (
+    !!pilotLast &&
+    !!copilotLast &&
+    pilotLast.toLowerCase() === copilotLast.toLowerCase()
+  );
+}
+
+function buildCoachPlateNameLines(row: AttendeeRow) {
+  const pilotFirst = (row.nickname || row.pilot_first || "").trim();
+  const pilotLast = (row.pilot_last || "").trim();
+
+  const copilotFirst = (row.copilot_nickname || row.copilot_first || "").trim();
+  const copilotLast = (row.copilot_last || "").trim();
+
+  if (pilotFirst && copilotFirst && sameLastName(row)) {
+    return {
+      line1: `${pilotFirst} & ${copilotFirst}`,
+      line2: pilotLast || copilotLast,
+    };
+  }
+
+  if (pilotFirst || pilotLast || copilotFirst || copilotLast) {
+    return {
+      line1:
+        [pilotFirst, pilotLast].filter(Boolean).join(" ").trim() || "Guest",
+      line2: [copilotFirst, copilotLast].filter(Boolean).join(" ").trim(),
+    };
+  }
+
+  return {
+    line1: "Guest",
+    line2: "",
+  };
+}
 
 function buildNameParts(
   first?: string | null,
@@ -549,10 +587,10 @@ function AdminPrintPageInner() {
     .coach-plate-card {
       width: 10.6in !important;
       height: 7.9in !important;
+      margin: 0 auto !important;
       page-break-after: always !important;
       page-break-inside: avoid !important;
       break-inside: avoid !important;
-      margin: 0 auto !important;
     }
 
     .coach-plate-card:last-child {
@@ -924,12 +962,17 @@ function AdminPrintPageInner() {
             className="coach-plate-sheet"
             style={{ display: "grid", gap: 20 }}
           >
-            {" "}
             {printableRows.map((row) => {
-              const pilot = displayPilotName(row) || "Guest";
-              const copilot = displayCopilotName(row);
-              const site = row.assigned_site || "";
-              const coach = coachText(row);
+              const rawEventName = event?.name?.trim() || "FCOC Event";
+              const eventYear = (event?.start_date || "").slice(0, 4).trim();
+              const eventName = eventYear
+                ? `${rawEventName.replace(new RegExp(`\\s*${eventYear}$`), "").trim()} ${eventYear}`.trim()
+                : rawEventName;
+
+              const memberNumber = row.membership_number || "";
+              const place = cityState(row);
+              const nameLines = buildCoachPlateNameLines(row);
+              const clubLogoUrl = "/fcoc-logo.png";
 
               return (
                 <div
@@ -965,76 +1008,93 @@ function AdminPrintPageInner() {
                       position: "relative",
                       zIndex: 1,
                       minHeight: "7.9in",
-                      padding: "0.45in 0.6in",
+                      padding: "0.35in 0.6in",
                       display: "grid",
-                      alignContent: "space-between",
+                      gridTemplateRows: "auto auto auto 1fr auto auto",
+                      alignItems: "center",
+                      justifyItems: "center",
+                      textAlign: "center",
                       color: coachPlateTextColor,
                     }}
                   >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 72,
-                          fontWeight: 900,
-                          lineHeight: 1.05,
-                          textAlign: "center",
-                          color: coachPlateTextColor,
-                        }}
-                      >
-                        {pilot}
-                      </div>
-
-                      {copilot ? (
-                        <div
-                          style={{
-                            marginTop: 10,
-                            fontSize: 46,
-                            fontWeight: 700,
-                            textAlign: "center",
-                            color: coachPlateTextColor,
-                          }}
-                        >
-                          {copilot}
-                        </div>
-                      ) : null}
+                    <div
+                      style={{
+                        fontSize: 30,
+                        fontWeight: 800,
+                        lineHeight: 1.05,
+                        color: coachPlateTextColor,
+                      }}
+                    >
+                      {eventName}
                     </div>
 
-                    <div style={{ textAlign: "center" }}>
-                      {coach ? (
-                        <div
-                          style={{
-                            fontSize: 30,
-                            fontWeight: 700,
-                            color: coachPlateTextColor,
-                          }}
-                        >
-                          {coach}
-                        </div>
-                      ) : null}
+                    <div style={{ display: "flex", justifyContent: "center" }}>
+                      <img
+                        src={clubLogoUrl}
+                        alt="FCOC logo"
+                        style={{
+                          width: 170,
+                          maxHeight: 90,
+                          objectFit: "contain",
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                    </div>
 
+                    <div
+                      style={{
+                        fontSize: 28,
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        color: coachPlateTextColor,
+                      }}
+                    >
+                      {memberNumber || " "}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        alignContent: "center",
+                        justifyItems: "center",
+                        gap: 8,
+                      }}
+                    >
                       <div
                         style={{
-                          fontSize: 54,
+                          fontSize: 64,
                           fontWeight: 900,
-                          marginTop: 10,
+                          lineHeight: 0.95,
                           color: coachPlateTextColor,
                         }}
                       >
-                        {site ? `SITE ${site}` : " "}
+                        {nameLines.line1 || " "}
                       </div>
 
-                      {row.is_first_timer ? (
-                        <div
-                          style={{
-                            marginTop: 8,
-                            fontSize: 16,
-                            fontWeight: 800,
-                            color: coachPlateTextColor,
-                          }}
-                        >
-                          FIRST TIMER
-                        </div>
-                      ) : null}
+                      <div
+                        style={{
+                          fontSize: 44,
+                          fontWeight: 700,
+                          lineHeight: 1.05,
+                          color: coachPlateTextColor,
+                        }}
+                      >
+                        {nameLines.line2 || " "}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 28,
+                        fontWeight: 600,
+                        lineHeight: 1.1,
+                        marginTop: 10,
+                        color: coachPlateTextColor,
+                      }}
+                    >
+                      {place || " "}
                     </div>
                   </div>
                 </div>
