@@ -72,6 +72,7 @@ function MasterMapsPageInner() {
   const [replaceImageFiles, setReplaceImageFiles] = useState<
     Record<string, File | null>
   >({});
+  const [archivingMapId, setArchivingMapId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [savingScales, setSavingScales] = useState(false);
@@ -344,6 +345,47 @@ function MasterMapsPageInner() {
       );
     } finally {
       setOpeningMapId(null);
+    }
+  }
+  async function handleArchiveMap(map: MasterMapRow) {
+    const confirmed = window.confirm(
+      `Archive this map?\n\n${map.name}\n\nIt will be moved out of the active list and can be restored later.`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const admin = await getCurrentAdminAccess();
+      if (!admin) {
+        setError("No admin access.");
+        setStatus("Access denied.");
+        return;
+      }
+
+      setArchivingMapId(map.id);
+      setStatus(`Archiving ${map.name}...`);
+
+      const { error: archiveError } = await supabase
+        .from("master_maps")
+        .update({
+          status: "archived",
+          is_read_only: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", map.id);
+
+      if (archiveError) {
+        setStatus(`Could not archive map: ${archiveError.message}`);
+        return;
+      }
+
+      await loadMasterMaps(showArchived);
+      setStatus(`Archived map: ${map.name}`);
+    } catch (err: any) {
+      console.error("handleArchiveMap error:", err);
+      setStatus(err?.message || "Failed to archive map.");
+    } finally {
+      setArchivingMapId(null);
     }
   }
 
@@ -898,6 +940,12 @@ function MasterMapsPageInner() {
                   style={{ fontSize: 12 }}
                 />
 
+                <div style={{ fontSize: 12, color: "#666" }}>
+                  {replaceImageFiles[map.id]
+                    ? `Selected: ${replaceImageFiles[map.id]?.name}`
+                    : "Choose a new image file to enable Replace Image."}
+                </div>
+
                 <button
                   type="button"
                   onClick={() => void handleReplaceMapImage(map)}
@@ -919,13 +967,32 @@ function MasterMapsPageInner() {
                   gap: 8,
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => void handleEditMap(map)}
-                  disabled={openingMapId === map.id || !canManageMaps}
-                >
-                  {openingMapId === map.id ? "Opening..." : "Edit Map"}
-                </button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => void handleEditMap(map)}
+                    disabled={openingMapId === map.id || !canManageMaps}
+                  >
+                    {openingMapId === map.id ? "Opening..." : "Edit Map"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleArchiveMap(map)}
+                    disabled={archivingMapId === map.id || !canManageMaps}
+                    style={{
+                      background: "#fff7ed",
+                      color: "#9a3412",
+                      border: "1px solid #ea580c",
+                      borderRadius: 8,
+                      padding: "8px 10px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {archivingMapId === map.id ? "Archiving..." : "Archive"}
+                  </button>
+                </div>
 
                 <input
                   type="file"
@@ -940,6 +1007,12 @@ function MasterMapsPageInner() {
                   disabled={replacingImageMapId === map.id || !canManageMaps}
                   style={{ fontSize: 12 }}
                 />
+
+                <div style={{ fontSize: 12, color: "#666" }}>
+                  {replaceImageFiles[map.id]
+                    ? `Selected: ${replaceImageFiles[map.id]?.name}`
+                    : "Choose a new image file to enable Replace Image."}
+                </div>
 
                 <button
                   type="button"
