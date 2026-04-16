@@ -1050,7 +1050,6 @@ function CoachMapPublicPageInner() {
                   touchAction: "none",
                   userSelect: "none",
                   WebkitUserSelect: "none",
-                  WebkitUserDrag: "none",
                 }}
               />
               {renderedSites.map((site) => {
