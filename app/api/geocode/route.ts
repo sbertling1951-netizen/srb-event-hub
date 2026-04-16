@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
     async function tryGeocode(q: string) {
       const url = new URL("https://nominatim.openstreetmap.org/search");
-      url.searchParams.set("q", q);
+      url.searchParams.set("q", q + ", USA");
       url.searchParams.set("format", "jsonv2");
       url.searchParams.set("limit", "1");
 
@@ -60,7 +60,6 @@ export async function POST(req: NextRequest) {
     };
     let queryUsed: string | null = null;
 
-    // 1) Try plus code first
     if (code) {
       result = await tryGeocode(code);
       if (result.lat !== null && result.lng !== null) {
@@ -68,7 +67,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2) Fallback to address
     if ((result.lat === null || result.lng === null) && addr) {
       const fallback = await tryGeocode(addr);
       if (fallback.lat !== null && fallback.lng !== null) {

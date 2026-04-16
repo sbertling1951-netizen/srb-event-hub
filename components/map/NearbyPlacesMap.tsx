@@ -22,9 +22,7 @@ type Place = {
 };
 
 function appleMapsUrl(place: Place) {
-  const safeAddress = encodeURIComponent(
-    place.address || place.name || "Destination",
-  );
+  const safeLabel = encodeURIComponent(place.name || "Destination");
 
   if (
     typeof place.lat === "number" &&
@@ -32,10 +30,13 @@ function appleMapsUrl(place: Place) {
     typeof place.lng === "number" &&
     Number.isFinite(place.lng)
   ) {
-    return `https://maps.apple.com/?q=${safeAddress}&ll=${place.lat},${place.lng}`;
+    return `https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d&q=${safeLabel}`;
   }
 
-  return `https://maps.apple.com/?q=${safeAddress}`;
+  const safeAddress = encodeURIComponent(
+    place.address || place.name || "Destination",
+  );
+  return `https://maps.apple.com/?daddr=${safeAddress}&dirflg=d`;
 }
 
 function googleMapsUrl(place: Place) {
