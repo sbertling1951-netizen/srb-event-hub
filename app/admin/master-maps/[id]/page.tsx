@@ -1013,6 +1013,84 @@ function MasterMapEditorPageInner() {
     }
   }
 
+  async function alignVerticalSelected() {
+    if (readOnlyMarkers) {
+      setStatus(
+        "Published master maps are read-only. Create a draft copy to edit markers.",
+      );
+      return;
+    }
+
+    if (selectedSites.length < 2) {
+      setStatus("Select at least 2 markers to align vertically.");
+      return;
+    }
+
+    const validSites = selectedSites.filter(
+      (s) => typeof s.map_x === "number" && typeof s.map_y === "number",
+    );
+
+    if (validSites.length < 2) {
+      setStatus("Selected markers must have valid coordinates.");
+      return;
+    }
+
+    const averageX =
+      validSites.reduce((sum, site) => sum + Number(site.map_x), 0) /
+      validSites.length;
+
+    const updates = validSites.map((site) => ({
+      id: site.id,
+      map_x: Number(averageX.toFixed(2)),
+      map_y: Number(site.map_y),
+    }));
+
+    const ok = await applyBulkPositions(updates);
+    if (ok) {
+      setStatus(`Aligned ${updates.length} markers vertically.`);
+    }
+  }
+
+  async function distributeVerticallySelected() {
+    if (readOnlyMarkers) {
+      setStatus(
+        "Published master maps are read-only. Create a draft copy to edit markers.",
+      );
+      return;
+    }
+
+    if (selectedSites.length < 3) {
+      setStatus("Select at least 3 markers to distribute vertically.");
+      return;
+    }
+
+    const validSites = selectedSites
+      .filter((s) => typeof s.map_x === "number" && typeof s.map_y === "number")
+      .sort((a, b) => Number(a.map_y) - Number(b.map_y));
+
+    if (validSites.length < 3) {
+      setStatus("Selected markers must have valid coordinates.");
+      return;
+    }
+
+    const first = validSites[0];
+    const last = validSites[validSites.length - 1];
+    const startY = Number(first.map_y);
+    const endY = Number(last.map_y);
+    const step = (endY - startY) / (validSites.length - 1);
+
+    const updates = validSites.map((site, index) => ({
+      id: site.id,
+      map_x: Number(site.map_x),
+      map_y: Number((startY + step * index).toFixed(2)),
+    }));
+
+    const ok = await applyBulkPositions(updates);
+    if (ok) {
+      setStatus(`Distributed ${updates.length} markers vertically.`);
+    }
+  }
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (readOnlyMarkers) return;
@@ -1564,6 +1642,26 @@ function MasterMapEditorPageInner() {
                   style={{ flex: 1 }}
                 >
                   Distribute Horizontally
+                </button>
+
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || selectedSiteIds.length < 2
+                  }
+                  onClick={() => void alignVerticalSelected()}
+                  style={{ flex: 1 }}
+                >
+                  Align Vertical
+                </button>
+
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || selectedSiteIds.length < 3
+                  }
+                  onClick={() => void distributeVerticallySelected()}
+                  style={{ flex: 1 }}
+                >
+                  Distribute Vertically
                 </button>
               </div>
 
