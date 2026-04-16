@@ -22,21 +22,19 @@ type Place = {
 };
 
 function appleMapsUrl(place: Place) {
-  const safeLabel = encodeURIComponent(place.name || "Destination");
-
   if (
     typeof place.lat === "number" &&
     Number.isFinite(place.lat) &&
     typeof place.lng === "number" &&
     Number.isFinite(place.lng)
   ) {
-    return `https://maps.apple.com/?ll=${place.lat},${place.lng}&q=${safeLabel}`;
+    return `https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d`;
   }
 
   const safeAddress = encodeURIComponent(
     place.address || place.name || "Destination",
   );
-  return `https://maps.apple.com/?q=${safeAddress}`;
+  return `https://maps.apple.com/?daddr=${safeAddress}&dirflg=d`;
 }
 
 function googleMapsUrl(place: Place) {
