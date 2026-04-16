@@ -179,7 +179,11 @@ function CoachMapPublicPageInner() {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const pinchStartDistanceRef = useRef<number | null>(null);
   const pinchStartZoomRef = useRef(1);
-  const pinchCenterPercentRef = useRef<{ x: number; y: number } | null>(null);
+  const pinchAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const zoomRef = useRef(1);
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(
+    null,
+  );
 
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
   const renderedMapWidth = naturalSize.width * zoom;
@@ -221,6 +225,9 @@ function CoachMapPublicPageInner() {
 
     return () => clearTimeout(t);
   }, [zoom, isNarrow, event?.map_image_url]);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
   useEffect(() => {
     if (!pulseKey) return;
 
@@ -269,13 +276,17 @@ function CoachMapPublicPageInner() {
       const centerY = (touchA.clientY + touchB.clientY) / 2 - rect.top;
 
       pinchStartDistanceRef.current = getTouchDistance(touchA, touchB);
-      pinchStartZoomRef.current = zoom;
-      pinchCenterPercentRef.current = {
-        x: rect.width > 0 ? centerX / rect.width : 0.5,
-        y: rect.height > 0 ? centerY / rect.height : 0.5,
+      pinchStartZoomRef.current = zoomRef.current;
+      pinchAnchorRef.current = {
+        x:
+          (viewport.scrollLeft + centerX) /
+          Math.max(pinchStartZoomRef.current, 0.001),
+        y:
+          (viewport.scrollTop + centerY) /
+          Math.max(pinchStartZoomRef.current, 0.001),
       };
     },
-    [zoom],
+    [],
   );
 
   const handleViewportTouchMove = useCallback(
@@ -291,53 +302,106 @@ function CoachMapPublicPageInner() {
       e.preventDefault();
 
       const viewport = viewportRef.current;
-      const currentDistance = getTouchDistance(
-        {
-          clientX: e.touches[0].clientX,
-          clientY: e.touches[0].clientY,
-        },
-        {
-          clientX: e.touches[1].clientX,
-          clientY: e.touches[1].clientY,
-        },
-      );
+      const rect = viewport.getBoundingClientRect();
+      const touchA = {
+        clientX: e.touches[0].clientX,
+        clientY: e.touches[0].clientY,
+      };
+      const touchB = {
+        clientX: e.touches[1].clientX,
+        clientY: e.touches[1].clientY,
+      };
+      const centerX = (touchA.clientX + touchB.clientX) / 2 - rect.left;
+      const centerY = (touchA.clientY + touchB.clientY) / 2 - rect.top;
+      const currentDistance = getTouchDistance(touchA, touchB);
       const scaleRatio = currentDistance / pinchStartDistanceRef.current;
-      const nextZoom = clamp(
-        Number((pinchStartZoomRef.current * scaleRatio).toFixed(2)),
-        0.35,
-        3,
-      );
-
-      const anchor = pinchCenterPercentRef.current || { x: 0.5, y: 0.5 };
-      const nextWidth = naturalSize.width * nextZoom;
-      const nextHeight = naturalSize.height * nextZoom;
-
-      const targetLeft = clamp(
-        nextWidth * anchor.x - viewport.clientWidth * anchor.x,
-        0,
-        Math.max(0, nextWidth - viewport.clientWidth),
-      );
-
-      const targetTop = clamp(
-        nextHeight * anchor.y - viewport.clientHeight * anchor.y,
-        0,
-        Math.max(0, nextHeight - viewport.clientHeight),
-      );
+      const nextZoom = clamp(pinchStartZoomRef.current * scaleRatio, 0.35, 3);
+      const anchor = pinchAnchorRef.current || {
+        x: (viewport.scrollLeft + centerX) / Math.max(zoomRef.current, 0.001),
+        y: (viewport.scrollTop + centerY) / Math.max(zoomRef.current, 0.001),
+      };
 
       setZoom(nextZoom);
 
       requestAnimationFrame(() => {
-        viewport.scrollLeft = targetLeft;
-        viewport.scrollTop = targetTop;
+        const nextWidth = naturalSize.width * nextZoom;
+        const nextHeight = naturalSize.height * nextZoom;
+
+        viewport.scrollLeft = clamp(
+          anchor.x * nextZoom - centerX,
+          0,
+          Math.max(0, nextWidth - viewport.clientWidth),
+        );
+        viewport.scrollTop = clamp(
+          anchor.y * nextZoom - centerY,
+          0,
+          Math.max(0, nextHeight - viewport.clientHeight),
+        );
       });
     },
     [naturalSize.height, naturalSize.width],
   );
 
-  const handleViewportTouchEnd = useCallback(() => {
-    pinchStartDistanceRef.current = null;
-    pinchCenterPercentRef.current = null;
-  }, []);
+  const handleViewportTouchEnd = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (e.touches.length === 0) {
+        pinchStartDistanceRef.current = null;
+        pinchAnchorRef.current = null;
+      }
+
+      if (e.changedTouches.length !== 1 || !viewportRef.current) return;
+
+      const viewport = viewportRef.current;
+      const rect = viewport.getBoundingClientRect();
+      const touch = e.changedTouches[0];
+      const tapX = touch.clientX - rect.left;
+      const tapY = touch.clientY - rect.top;
+      const now = Date.now();
+      const lastTap = lastTapRef.current;
+
+      if (
+        lastTap &&
+        now - lastTap.time < 300 &&
+        Math.abs(lastTap.x - tapX) < 24 &&
+        Math.abs(lastTap.y - tapY) < 24
+      ) {
+        const currentZoom = zoomRef.current;
+        const nextZoom = clamp(
+          currentZoom < 1.4 ? currentZoom * 1.5 : currentZoom * 1.35,
+          0.35,
+          3,
+        );
+        const anchorX =
+          (viewport.scrollLeft + tapX) / Math.max(currentZoom, 0.001);
+        const anchorY =
+          (viewport.scrollTop + tapY) / Math.max(currentZoom, 0.001);
+
+        setZoom(nextZoom);
+
+        requestAnimationFrame(() => {
+          const nextWidth = naturalSize.width * nextZoom;
+          const nextHeight = naturalSize.height * nextZoom;
+
+          viewport.scrollLeft = clamp(
+            anchorX * nextZoom - tapX,
+            0,
+            Math.max(0, nextWidth - viewport.clientWidth),
+          );
+          viewport.scrollTop = clamp(
+            anchorY * nextZoom - tapY,
+            0,
+            Math.max(0, nextHeight - viewport.clientHeight),
+          );
+        });
+
+        lastTapRef.current = null;
+        return;
+      }
+
+      lastTapRef.current = { time: now, x: tapX, y: tapY };
+    },
+    [naturalSize.height, naturalSize.width],
+  );
 
   async function loadMap() {
     try {
@@ -1033,7 +1097,7 @@ function CoachMapPublicPageInner() {
               overflow: "auto",
               maxHeight: "62vh",
               minHeight: 260,
-              touchAction: "none",
+              touchAction: "manipulation",
               WebkitOverflowScrolling: "touch",
               background: "#f8f9fb",
             }}
