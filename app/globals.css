@@ -4,7 +4,7 @@ body {
   margin: 0;
   padding: 0;
   width: 100%;
-  overflow-x: hidden;
+  min-height: 100%;
   font-family:
     system-ui,
     -apple-system,
@@ -15,11 +15,22 @@ body {
     Arial,
     sans-serif;
   background: #f3f4f6;
+  overflow-x: hidden;
+}
+body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* Prevent weird width bugs */
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ===== APP LAYOUT ===== */
@@ -73,6 +84,12 @@ button {
   font-family: inherit;
 }
 
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
 /* ===== INPUTS ===== */
 input,
 select {
@@ -105,10 +122,6 @@ div {
   min-width: 0;
 }
 
-/* ===== OPTIONAL: SMOOTH SCROLL ===== */
-html {
-  scroll-behavior: smooth;
-}
 /* ===== FORCE MOBILE FULL-WIDTH LAYOUT ===== */
 @media (max-width: 899px) {
   .app-body {

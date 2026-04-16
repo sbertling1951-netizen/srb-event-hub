@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
@@ -149,6 +149,11 @@ function getStoredViewerAttendeeId() {
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
+function getTouchDistance(touchA: Touch, touchB: Touch) {
+  const dx = touchA.clientX - touchB.clientX;
+  const dy = touchA.clientY - touchB.clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
 
 function CoachMapPublicPageInner() {
   const [event, setEvent] = useState<ActiveEvent | null>(null);
@@ -169,6 +174,9 @@ function CoachMapPublicPageInner() {
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const pinchStartDistanceRef = useRef<number | null>(null);
+  const pinchStartZoomRef = useRef(1);
+  const pinchCenterPercentRef = useRef<{ x: number; y: number } | null>(null);
 
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
   const renderedMapWidth = naturalSize.width * zoom;
@@ -229,17 +237,88 @@ function CoachMapPublicPageInner() {
     });
   }
 
-  function zoomIn() {
-    setZoom((z) => clamp(Number((z + 0.2).toFixed(2)), 0.6, 2.5));
-  }
+  const zoomIn = useCallback(() => {
+    setZoom((z) => clamp(Number((z + 0.2).toFixed(2)), 0.35, 3));
+  }, []);
 
-  function zoomOut() {
-    setZoom((z) => clamp(Number((z - 0.2).toFixed(2)), 0.6, 2.5));
-  }
+  const zoomOut = useCallback(() => {
+    setZoom((z) => clamp(Number((z - 0.2).toFixed(2)), 0.35, 3));
+  }, []);
 
-  function resetZoom() {
+  const resetZoom = useCallback(() => {
     setZoom(1);
-  }
+  }, []);
+  const handleViewportTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (e.touches.length !== 2 || !viewportRef.current) return;
+
+      const viewport = viewportRef.current;
+      const rect = viewport.getBoundingClientRect();
+      const [touchA, touchB] = [e.touches[0], e.touches[1]];
+      const centerX = (touchA.clientX + touchB.clientX) / 2 - rect.left;
+      const centerY = (touchA.clientY + touchB.clientY) / 2 - rect.top;
+
+      pinchStartDistanceRef.current = getTouchDistance(touchA, touchB);
+      pinchStartZoomRef.current = zoom;
+      pinchCenterPercentRef.current = {
+        x: rect.width > 0 ? centerX / rect.width : 0.5,
+        y: rect.height > 0 ? centerY / rect.height : 0.5,
+      };
+    },
+    [zoom],
+  );
+
+  const handleViewportTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (
+        e.touches.length !== 2 ||
+        !viewportRef.current ||
+        !pinchStartDistanceRef.current
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+
+      const viewport = viewportRef.current;
+      const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
+      const scaleRatio = currentDistance / pinchStartDistanceRef.current;
+      const nextZoom = clamp(
+        Number((pinchStartZoomRef.current * scaleRatio).toFixed(2)),
+        0.35,
+        3,
+      );
+
+      const anchor = pinchCenterPercentRef.current || { x: 0.5, y: 0.5 };
+      const nextWidth = naturalSize.width * nextZoom;
+      const nextHeight = naturalSize.height * nextZoom;
+
+      const targetLeft = clamp(
+        nextWidth * anchor.x - viewport.clientWidth * anchor.x,
+        0,
+        Math.max(0, nextWidth - viewport.clientWidth),
+      );
+
+      const targetTop = clamp(
+        nextHeight * anchor.y - viewport.clientHeight * anchor.y,
+        0,
+        Math.max(0, nextHeight - viewport.clientHeight),
+      );
+
+      setZoom(nextZoom);
+
+      requestAnimationFrame(() => {
+        viewport.scrollLeft = targetLeft;
+        viewport.scrollTop = targetTop;
+      });
+    },
+    [naturalSize.height, naturalSize.width],
+  );
+
+  const handleViewportTouchEnd = useCallback(() => {
+    pinchStartDistanceRef.current = null;
+    pinchCenterPercentRef.current = null;
+  }, []);
 
   async function loadMap() {
     try {
@@ -651,7 +730,10 @@ function CoachMapPublicPageInner() {
     : null;
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 16 }}>
+    <div
+      className="app-shell"
+      style={{ padding: 24, display: "grid", gap: 16 }}
+    >
       <style>
         {`
       @keyframes fcoc-pulse {
@@ -911,12 +993,17 @@ function CoachMapPublicPageInner() {
 
           <div
             ref={viewportRef}
+            onTouchStart={handleViewportTouchStart}
+            onTouchMove={handleViewportTouchMove}
+            onTouchEnd={handleViewportTouchEnd}
+            onTouchCancel={handleViewportTouchEnd}
             style={{
               position: "relative",
               width: "100%",
               overflow: "auto",
-              maxHeight: "78vh",
-              touchAction: "pan-x pan-y",
+              maxHeight: "62vh",
+              minHeight: 260,
+              touchAction: "none",
               WebkitOverflowScrolling: "touch",
               background: "#f8f9fb",
             }}
@@ -927,6 +1014,7 @@ function CoachMapPublicPageInner() {
                 width: `${renderedMapWidth}px`,
                 height: `${renderedMapHeight}px`,
                 minWidth: `${renderedMapWidth}px`,
+                minHeight: `${renderedMapHeight}px`,
               }}
             >
               <img
@@ -939,7 +1027,11 @@ function CoachMapPublicPageInner() {
                   maxWidth: "none",
                   display: "block",
                   borderRadius: 8,
-                  height: "auto",
+                  height: `${renderedMapHeight}px`,
+                  touchAction: "none",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  WebkitUserDrag: "none",
                 }}
               />
               {renderedSites.map((site) => {

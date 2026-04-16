@@ -251,14 +251,24 @@ export default function Sidebar() {
   useEffect(() => {
     if (!mounted) return;
 
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyTouchAction = document.body.style.touchAction;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
     if (isMobile && open) {
       document.body.style.overflow = "hidden";
+      document.body.style.touchAction = "none";
+      document.documentElement.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
+      document.body.style.touchAction = "";
+      document.documentElement.style.overflow = "";
     }
 
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.touchAction = previousBodyTouchAction;
+      document.documentElement.style.overflow = previousHtmlOverflow;
     };
   }, [isMobile, open, mounted]);
 
@@ -478,6 +488,7 @@ export default function Sidebar() {
             borderRadius: 999,
             cursor: "pointer",
             boxShadow: "0 3px 10px rgba(0,0,0,0.25)",
+            WebkitTapHighlightColor: "transparent",
             fontSize: 22,
             fontWeight: 700,
             display: "flex",
@@ -497,6 +508,7 @@ export default function Sidebar() {
             inset: 0,
             background: "rgba(0,0,0,0.35)",
             zIndex: 1090,
+            touchAction: "none",
           }}
         />
       )}
@@ -507,11 +519,11 @@ export default function Sidebar() {
           top: 0,
           left: isMobile ? (open ? 0 : -SIDEBAR_WIDTH - 16) : 0,
           width: SIDEBAR_WIDTH,
+          height: "100vh",
           height: "100dvh",
           maxHeight: "100dvh",
           background: "#1f2937",
           color: "white",
-          padding: isShortScreen ? 12 : 16,
           transition: isMobile ? "left 0.25s ease" : "none",
           zIndex: 1100,
           boxSizing: "border-box",
@@ -519,6 +531,19 @@ export default function Sidebar() {
           flexDirection: "column",
           boxShadow: isMobile && open ? "6px 0 18px rgba(0,0,0,0.25)" : "none",
           overflow: "hidden",
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
+          paddingTop: isMobile
+            ? "calc(env(safe-area-inset-top, 0px) + 12px)"
+            : isShortScreen
+              ? 12
+              : 16,
+          paddingBottom: isMobile
+            ? "calc(env(safe-area-inset-bottom, 0px) + 12px)"
+            : isShortScreen
+              ? 12
+              : 16,
+          willChange: isMobile ? "left" : undefined,
         }}
       >
         {!isPreAuthPage ? (
@@ -647,8 +672,10 @@ export default function Sidebar() {
             flex: 1,
             minHeight: 0,
             overflowY: "auto",
+            overflowX: "hidden",
             paddingRight: 4,
             WebkitOverflowScrolling: "touch",
+            overscrollBehavior: "contain",
           }}
         >
           {sections.map((section) => (
@@ -713,6 +740,7 @@ export default function Sidebar() {
               color: "#fff",
               cursor: "pointer",
               fontWeight: 600,
+              WebkitTapHighlightColor: "transparent",
               fontSize: isShortScreen ? 13 : 14,
             }}
           >
