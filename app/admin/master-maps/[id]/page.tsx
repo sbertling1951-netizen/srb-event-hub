@@ -1855,7 +1855,11 @@ function MasterMapEditorPageInner() {
             }}
           >
             <div
-              onMouseDown={handleMapMouseDown}
+              tabIndex={0}
+              onMouseDown={(e) => {
+                (e.currentTarget as HTMLDivElement).focus();
+                handleMapMouseDown(e);
+              }}
               onMouseMove={handleMapMouseMove}
               onMouseUp={handleMapMouseUp}
               onMouseLeave={handleMapMouseUp}
