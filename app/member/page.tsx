@@ -83,7 +83,7 @@ export default function MemberDashboardPage() {
         }}
       >
         <Link
-          href="/agenda"
+          href="/member/agenda"
           style={{
             display: "block",
             padding: "16px 18px",

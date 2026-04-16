@@ -22,19 +22,20 @@ type Place = {
 };
 
 function appleMapsUrl(place: Place) {
+  const safeAddress = encodeURIComponent(
+    place.address || place.name || "Destination",
+  );
+
   if (
     typeof place.lat === "number" &&
     Number.isFinite(place.lat) &&
     typeof place.lng === "number" &&
     Number.isFinite(place.lng)
   ) {
-    return `https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d`;
+    return `https://maps.apple.com/?q=${safeAddress}&ll=${place.lat},${place.lng}`;
   }
 
-  const safeAddress = encodeURIComponent(
-    place.address || place.name || "Destination",
-  );
-  return `https://maps.apple.com/?daddr=${safeAddress}&dirflg=d`;
+  return `https://maps.apple.com/?q=${safeAddress}`;
 }
 
 function googleMapsUrl(place: Place) {
@@ -184,7 +185,7 @@ export default function NearbyPlacesMap({
                     fontWeight: 600,
                   }}
                 >
-                  Apple Maps
+                  Open in Apple Maps
                 </a>
                 <a
                   href={googleMapsUrl(place)}
@@ -201,8 +202,23 @@ export default function NearbyPlacesMap({
                     fontWeight: 600,
                   }}
                 >
-                  Google Maps
+                  Navigate
                 </a>
+                {typeof place.lat === "number" &&
+                Number.isFinite(place.lat) &&
+                typeof place.lng === "number" &&
+                Number.isFinite(place.lng) ? (
+                  <div
+                    style={{
+                      width: "100%",
+                      fontSize: 12,
+                      color: "#4b5563",
+                      marginTop: 2,
+                    }}
+                  >
+                    Coordinates: {place.lat}, {place.lng}
+                  </div>
+                ) : null}
               </div>
             </Popup>
           </Marker>
