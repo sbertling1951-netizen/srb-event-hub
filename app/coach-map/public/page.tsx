@@ -149,9 +149,12 @@ function getStoredViewerAttendeeId() {
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
-function getTouchDistance(touchA: Touch, touchB: Touch) {
-  const dx = touchA.clientX - touchB.clientX;
-  const dy = touchA.clientY - touchB.clientY;
+function getTouchDistance(
+  touchA: { clientX: number; clientY: number },
+  touchB: { clientX: number; clientY: number },
+) {
+  const dx = Number(touchA.clientX) - Number(touchB.clientX);
+  const dy = Number(touchA.clientY) - Number(touchB.clientY);
   return Math.sqrt(dx * dx + dy * dy);
 }
 
@@ -254,7 +257,14 @@ function CoachMapPublicPageInner() {
 
       const viewport = viewportRef.current;
       const rect = viewport.getBoundingClientRect();
-      const [touchA, touchB] = [e.touches[0], e.touches[1]];
+      const touchA = {
+        clientX: e.touches[0].clientX,
+        clientY: e.touches[0].clientY,
+      };
+      const touchB = {
+        clientX: e.touches[1].clientX,
+        clientY: e.touches[1].clientY,
+      };
       const centerX = (touchA.clientX + touchB.clientX) / 2 - rect.left;
       const centerY = (touchA.clientY + touchB.clientY) / 2 - rect.top;
 
@@ -281,7 +291,16 @@ function CoachMapPublicPageInner() {
       e.preventDefault();
 
       const viewport = viewportRef.current;
-      const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
+      const currentDistance = getTouchDistance(
+        {
+          clientX: e.touches[0].clientX,
+          clientY: e.touches[0].clientY,
+        },
+        {
+          clientX: e.touches[1].clientX,
+          clientY: e.touches[1].clientY,
+        },
+      );
       const scaleRatio = currentDistance / pinchStartDistanceRef.current;
       const nextZoom = clamp(
         Number((pinchStartZoomRef.current * scaleRatio).toFixed(2)),
