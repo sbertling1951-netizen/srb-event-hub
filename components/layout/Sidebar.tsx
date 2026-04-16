@@ -139,11 +139,10 @@ export default function Sidebar() {
   const isMemberRoute =
     pathname.startsWith("/member") ||
     pathname.startsWith("/coach-map") ||
-    pathname.startsWith("/agenda") ||
-    pathname.startsWith("/announcements") ||
-    pathname.startsWith("/attendees") ||
-    pathname.startsWith("/nearby") ||
-    pathname === "/";
+    pathname.startsWith("/member/agenda") ||
+    pathname.startsWith("/member/announcements") ||
+    pathname.startsWith("/member/attendees") ||
+    pathname.startsWith("/member/nearby");
 
   const isPreAuthPage =
     pathname === "/" ||
@@ -379,22 +378,22 @@ export default function Sidebar() {
   const memberItems: NavItem[] = useMemo(() => {
     return isCheckedIn
       ? [
-          { label: "Home", href: "/" },
-          { label: "Agenda", href: "/agenda" },
-          { label: "Announcements", href: "/announcements" },
+          { label: "Home", href: "/member" },
+          { label: "Agenda", href: "/member/agenda" },
+          { label: "Announcements", href: "/member/announcements" },
           { label: "Coach Map", href: "/coach-map" },
-          { label: "Attendee Locator", href: "/attendees" },
-          { label: "Nearby", href: "/nearby" },
+          { label: "Attendee Locator", href: "/member/attendees" },
+          { label: "Nearby", href: "/member/nearby" },
           { label: "My Check-In", href: "/member/checkin" },
         ]
       : [
           { label: "My Check-In", href: "/member/checkin" },
-          { label: "Home", href: "/" },
-          { label: "Agenda", href: "/agenda" },
-          { label: "Announcements", href: "/announcements" },
+          { label: "Home", href: "/member" },
+          { label: "Agenda", href: "/member/agenda" },
+          { label: "Announcements", href: "/member/announcements" },
           { label: "Coach Map", href: "/coach-map" },
-          { label: "Attendee Locator", href: "/attendees" },
-          { label: "Nearby", href: "/nearby" },
+          { label: "Attendee Locator", href: "/member/attendees" },
+          { label: "Nearby", href: "/member/nearby" },
         ];
   }, [isCheckedIn]);
 

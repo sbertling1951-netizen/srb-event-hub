@@ -238,7 +238,7 @@ function MemberCheckinPageInner() {
       setSuccessBanner(banner);
 
       if (hasArrived) {
-        window.location.href = "/agenda";
+        window.location.href = "/member/agenda";
         return;
       }
 
