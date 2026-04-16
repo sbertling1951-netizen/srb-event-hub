@@ -519,7 +519,6 @@ export default function Sidebar() {
           top: 0,
           left: isMobile ? (open ? 0 : -SIDEBAR_WIDTH - 16) : 0,
           width: SIDEBAR_WIDTH,
-          height: "100vh",
           height: "100dvh",
           maxHeight: "100dvh",
           background: "#1f2937",
