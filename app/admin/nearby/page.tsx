@@ -31,6 +31,8 @@ type StoredPlace = {
   website: string | null;
   notes: string | null;
   location_code: string | null;
+  lat: number | null;
+  lng: number | null;
 };
 
 type EventPlace = {
@@ -43,6 +45,8 @@ type EventPlace = {
   notes: string | null;
   distance_miles: number | null;
   location_code: string | null;
+  lat: number | null;
+  lng: number | null;
   sort_order: number | null;
   is_hidden: boolean | null;
 };
@@ -56,6 +60,8 @@ type StoredPlaceForm = {
   website: string;
   notes: string;
   location_code: string;
+  lat: string;
+  lng: string;
 };
 
 type EventPlaceForm = {
@@ -68,6 +74,8 @@ type EventPlaceForm = {
   notes: string;
   distance_miles: string;
   location_code: string;
+  lat: string;
+  lng: string;
   is_hidden: boolean;
 };
 
@@ -80,6 +88,8 @@ const emptyStoredPlaceForm: StoredPlaceForm = {
   website: "",
   notes: "",
   location_code: "",
+  lat: "",
+  lng: "",
 };
 
 const emptyEventPlaceForm: EventPlaceForm = {
@@ -92,10 +102,19 @@ const emptyEventPlaceForm: EventPlaceForm = {
   notes: "",
   distance_miles: "",
   location_code: "",
+  lat: "",
+  lng: "",
   is_hidden: false,
 };
 
 function toNullableNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function toNullableCoordinate(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const parsed = Number(trimmed);
@@ -112,6 +131,8 @@ function storedFormFromPlace(place: StoredPlace): StoredPlaceForm {
     website: place.website || "",
     notes: place.notes || "",
     location_code: place.location_code || "",
+    lat: place.lat === null || place.lat === undefined ? "" : String(place.lat),
+    lng: place.lng === null || place.lng === undefined ? "" : String(place.lng),
   };
 }
 
@@ -129,6 +150,8 @@ function eventFormFromPlace(place: EventPlace): EventPlaceForm {
         ? ""
         : String(place.distance_miles),
     location_code: place.location_code || "",
+    lat: place.lat === null || place.lat === undefined ? "" : String(place.lat),
+    lng: place.lng === null || place.lng === undefined ? "" : String(place.lng),
     is_hidden: !!place.is_hidden,
   };
 }
@@ -407,6 +430,8 @@ function AdminNearbyPageInner() {
         website: row.link ?? null,
         notes: row.description ?? null,
         location_code: row.location_code ?? null,
+        lat: row.lat ?? null,
+        lng: row.lng ?? null,
       })) as StoredPlace[];
 
       setStoredPlaces(mapped);
@@ -430,7 +455,7 @@ function AdminNearbyPageInner() {
       const { data, error } = await supabase
         .from("event_nearby_places")
         .select(
-          "id,name,address,phone,website,category,notes,sort_order,is_hidden,distance_miles,location_code",
+          "id,name,address,phone,website,category,notes,sort_order,is_hidden,distance_miles,location_code,lat,lng",
         )
         .eq("event_id", eventId)
         .order("sort_order", { ascending: true })
@@ -592,12 +617,53 @@ function AdminNearbyPageInner() {
 
     try {
       setSavingStoredPlace(true);
-      setStatus("Resolving map location...");
 
-      const resolved = await geocodeLocation({
-        location_code: storedForm.location_code || null,
-        address: storedForm.address || null,
-      });
+      let resolvedLat = toNullableCoordinate(storedForm.lat);
+      let resolvedLng = toNullableCoordinate(storedForm.lng);
+      let locationSource = "manual coordinates";
+
+      if (resolvedLat === null || resolvedLng === null) {
+        if (storedForm.location_code.trim()) {
+          setStatus("Resolving coordinates from plus code...");
+          const plusResolved = await geocodeLocation({
+            location_code: storedForm.location_code.trim(),
+            address: null,
+          });
+
+          if (plusResolved.lat !== null && plusResolved.lng !== null) {
+            resolvedLat = plusResolved.lat;
+            resolvedLng = plusResolved.lng;
+            locationSource = "plus code";
+            setStoredForm((prev) => ({
+              ...prev,
+              lat: String(plusResolved.lat),
+              lng: String(plusResolved.lng),
+            }));
+          }
+        }
+
+        if (
+          (resolvedLat === null || resolvedLng === null) &&
+          storedForm.address.trim()
+        ) {
+          setStatus("Resolving coordinates from address...");
+          const addressResolved = await geocodeLocation({
+            location_code: null,
+            address: storedForm.address.trim(),
+          });
+
+          if (addressResolved.lat !== null && addressResolved.lng !== null) {
+            resolvedLat = addressResolved.lat;
+            resolvedLng = addressResolved.lng;
+            locationSource = "address";
+            setStoredForm((prev) => ({
+              ...prev,
+              lat: String(addressResolved.lat),
+              lng: String(addressResolved.lng),
+            }));
+          }
+        }
+      }
 
       const payload = {
         area_id: selectedAreaId,
@@ -608,8 +674,8 @@ function AdminNearbyPageInner() {
         description: storedForm.notes.trim() || null,
         link: storedForm.website.trim() || null,
         location_code: storedForm.location_code.trim() || null,
-        lat: resolved.lat,
-        lng: resolved.lng,
+        lat: resolvedLat,
+        lng: resolvedLng,
       };
 
       if (storedForm.id) {
@@ -619,12 +685,16 @@ function AdminNearbyPageInner() {
           .eq("id", storedForm.id);
 
         if (error) throw error;
-        setStatus(`Updated stored place "${storedForm.name.trim()}".`);
+        setStatus(
+          `Updated stored place "${storedForm.name.trim()}" using ${locationSource}.`,
+        );
       } else {
         const { error } = await supabase.from("nearby_master").insert(payload);
 
         if (error) throw error;
-        setStatus(`Created stored place "${storedForm.name.trim()}".`);
+        setStatus(
+          `Created stored place "${storedForm.name.trim()}" using ${locationSource}.`,
+        );
       }
 
       await loadStoredPlaces(selectedAreaId);
@@ -794,12 +864,53 @@ function AdminNearbyPageInner() {
 
     try {
       setSavingEventPlace(true);
-      setStatus("Resolving map location...");
 
-      const resolved = await geocodeLocation({
-        location_code: eventForm.location_code || null,
-        address: eventForm.address || null,
-      });
+      let resolvedLat = toNullableCoordinate(eventForm.lat);
+      let resolvedLng = toNullableCoordinate(eventForm.lng);
+      let locationSource = "manual coordinates";
+
+      if (resolvedLat === null || resolvedLng === null) {
+        if (eventForm.location_code.trim()) {
+          setStatus("Resolving coordinates from plus code...");
+          const plusResolved = await geocodeLocation({
+            location_code: eventForm.location_code.trim(),
+            address: null,
+          });
+
+          if (plusResolved.lat !== null && plusResolved.lng !== null) {
+            resolvedLat = plusResolved.lat;
+            resolvedLng = plusResolved.lng;
+            locationSource = "plus code";
+            setEventForm((prev) => ({
+              ...prev,
+              lat: String(plusResolved.lat),
+              lng: String(plusResolved.lng),
+            }));
+          }
+        }
+
+        if (
+          (resolvedLat === null || resolvedLng === null) &&
+          eventForm.address.trim()
+        ) {
+          setStatus("Resolving coordinates from address...");
+          const addressResolved = await geocodeLocation({
+            location_code: null,
+            address: eventForm.address.trim(),
+          });
+
+          if (addressResolved.lat !== null && addressResolved.lng !== null) {
+            resolvedLat = addressResolved.lat;
+            resolvedLng = addressResolved.lng;
+            locationSource = "address";
+            setEventForm((prev) => ({
+              ...prev,
+              lat: String(addressResolved.lat),
+              lng: String(addressResolved.lng),
+            }));
+          }
+        }
+      }
 
       const payload = {
         event_id: adminEvent.id,
@@ -812,8 +923,8 @@ function AdminNearbyPageInner() {
         distance_miles: toNullableNumber(eventForm.distance_miles),
         location_code: eventForm.location_code.trim() || null,
         is_hidden: eventForm.is_hidden,
-        lat: resolved.lat,
-        lng: resolved.lng,
+        lat: resolvedLat,
+        lng: resolvedLng,
       };
 
       if (eventForm.id) {
@@ -823,7 +934,9 @@ function AdminNearbyPageInner() {
           .eq("id", eventForm.id);
 
         if (error) throw error;
-        setStatus(`Updated event place "${eventForm.name.trim()}".`);
+        setStatus(
+          `Updated event place "${eventForm.name.trim()}" using ${locationSource}.`,
+        );
       } else {
         const { error } = await supabase.from("event_nearby_places").insert({
           ...payload,
@@ -831,7 +944,9 @@ function AdminNearbyPageInner() {
         });
 
         if (error) throw error;
-        setStatus(`Created event place "${eventForm.name.trim()}".`);
+        setStatus(
+          `Created event place "${eventForm.name.trim()}" using ${locationSource}.`,
+        );
       }
 
       await loadEventPlaces(adminEvent.id);
@@ -1221,6 +1336,39 @@ function AdminNearbyPageInner() {
                   disabled={accessDenied || savingStoredPlace}
                 />
 
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
+                    gap: 8,
+                  }}
+                >
+                  <input
+                    value={storedForm.lat}
+                    onChange={(e) =>
+                      setStoredForm((prev) => ({
+                        ...prev,
+                        lat: e.target.value,
+                      }))
+                    }
+                    placeholder="Latitude"
+                    style={{ padding: 10 }}
+                    disabled={accessDenied || savingStoredPlace}
+                  />
+                  <input
+                    value={storedForm.lng}
+                    onChange={(e) =>
+                      setStoredForm((prev) => ({
+                        ...prev,
+                        lng: e.target.value,
+                      }))
+                    }
+                    placeholder="Longitude"
+                    style={{ padding: 10 }}
+                    disabled={accessDenied || savingStoredPlace}
+                  />
+                </div>
+
                 <input
                   value={storedForm.location_code}
                   onChange={(e) =>
@@ -1413,6 +1561,39 @@ function AdminNearbyPageInner() {
                 style={{ padding: 10, resize: "vertical" }}
                 disabled={accessDenied || savingEventPlace}
               />
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
+                  gap: 8,
+                }}
+              >
+                <input
+                  value={eventForm.lat}
+                  onChange={(e) =>
+                    setEventForm((prev) => ({
+                      ...prev,
+                      lat: e.target.value,
+                    }))
+                  }
+                  placeholder="Latitude"
+                  style={{ padding: 10 }}
+                  disabled={accessDenied || savingEventPlace}
+                />
+                <input
+                  value={eventForm.lng}
+                  onChange={(e) =>
+                    setEventForm((prev) => ({
+                      ...prev,
+                      lng: e.target.value,
+                    }))
+                  }
+                  placeholder="Longitude"
+                  style={{ padding: 10 }}
+                  disabled={accessDenied || savingEventPlace}
+                />
+              </div>
 
               <div
                 style={{
