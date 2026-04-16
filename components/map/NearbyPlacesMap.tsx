@@ -21,6 +21,40 @@ type Place = {
   lng?: number | null;
 };
 
+function appleMapsUrl(place: Place) {
+  const safeLabel = encodeURIComponent(place.name || "Destination");
+
+  if (
+    typeof place.lat === "number" &&
+    Number.isFinite(place.lat) &&
+    typeof place.lng === "number" &&
+    Number.isFinite(place.lng)
+  ) {
+    return `https://maps.apple.com/?ll=${place.lat},${place.lng}&q=${safeLabel}`;
+  }
+
+  const safeAddress = encodeURIComponent(
+    place.address || place.name || "Destination",
+  );
+  return `https://maps.apple.com/?q=${safeAddress}`;
+}
+
+function googleMapsUrl(place: Place) {
+  if (
+    typeof place.lat === "number" &&
+    Number.isFinite(place.lat) &&
+    typeof place.lng === "number" &&
+    Number.isFinite(place.lng)
+  ) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`;
+  }
+
+  const safeAddress = encodeURIComponent(
+    place.address || place.name || "Destination",
+  );
+  return `https://www.google.com/maps/dir/?api=1&destination=${safeAddress}`;
+}
+
 const markerIcon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   iconRetinaUrl:
@@ -129,6 +163,49 @@ export default function NearbyPlacesMap({
                   {place.location_code}
                 </>
               ) : null}
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <a
+                  href={appleMapsUrl(place)}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    background: "#f8fafc",
+                    color: "#111827",
+                    textDecoration: "none",
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Apple Maps
+                </a>
+                <a
+                  href={googleMapsUrl(place)}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    background: "#f8fafc",
+                    color: "#111827",
+                    textDecoration: "none",
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Google Maps
+                </a>
+              </div>
             </Popup>
           </Marker>
         ))}
