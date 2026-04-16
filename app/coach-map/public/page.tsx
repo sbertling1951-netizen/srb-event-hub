@@ -437,68 +437,79 @@ function CoachMapPublicPageInner() {
         lng: loadedEvent.lng || null,
       });
 
-      const [masterSitesResult, masterLocationsResult, assignmentResult] =
-        await Promise.all([
-          resolvedMapId
-            ? supabase
-                .from("master_map_sites")
-                .select(
-                  "id,master_map_id,site_number,display_label,map_x,map_y",
-                )
-                .eq("master_map_id", resolvedMapId)
-                .order("site_number")
-            : Promise.resolve({ data: [], error: null }),
-          resolvedMapId
-            ? supabase
-                .from("master_map_locations")
-                .select(
-                  "id,master_map_id,name,category,description,map_x,map_y",
-                )
-                .eq("master_map_id", resolvedMapId)
-                .order("name")
-            : Promise.resolve({ data: [], error: null }),
-          supabase
-            .from("parking_sites")
-            .select("id,event_id,master_site_id,assigned_attendee_id")
-            .eq("event_id", memberEvent.id),
-        ]);
+      const [
+        masterSitesResult,
+        masterLocationsResult,
+        assignmentResult,
+        attendeeRowsResult,
+      ] = await Promise.all([
+        resolvedMapId
+          ? supabase
+              .from("master_map_sites")
+              .select("id,master_map_id,site_number,display_label,map_x,map_y")
+              .eq("master_map_id", resolvedMapId)
+              .order("site_number")
+          : Promise.resolve({ data: [], error: null }),
+        resolvedMapId
+          ? supabase
+              .from("master_map_locations")
+              .select("id,master_map_id,name,category,description,map_x,map_y")
+              .eq("master_map_id", resolvedMapId)
+              .order("name")
+          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from("parking_sites")
+          .select("id,event_id,master_site_id,assigned_attendee_id")
+          .eq("event_id", memberEvent.id),
+        supabase
+          .from("attendees")
+          .select(
+            "id,pilot_first,pilot_last,copilot_first,copilot_last,share_with_attendees,assigned_site,coach_make,coach_model,coach_length,has_arrived,arrival_status",
+          )
+          .eq("event_id", memberEvent.id),
+      ]);
 
       if (masterSitesResult.error) throw masterSitesResult.error;
       if (masterLocationsResult.error) throw masterLocationsResult.error;
       if (assignmentResult.error) throw assignmentResult.error;
+      if (attendeeRowsResult.error) throw attendeeRowsResult.error;
 
       const masterSites = (masterSitesResult.data || []) as MasterMapSite[];
       const assignments = (assignmentResult.data ||
         []) as ParkingAssignmentRow[];
+      const attendeeList = (attendeeRowsResult.data || []) as Attendee[];
 
       const mergedSites: MapSite[] = masterSites.map((site) => {
-        const assignment =
+        const directAssignment =
           assignments.find((a) => a.master_site_id === site.id) || null;
 
+        const fallbackAttendee = attendeeList.find((attendee) => {
+          const normalizedAssignedSite = normalizeSiteKey(
+            attendee.assigned_site,
+          );
+          return (
+            normalizedAssignedSite &&
+            (normalizedAssignedSite === normalizeSiteKey(site.site_number) ||
+              normalizedAssignedSite === normalizeSiteKey(site.display_label))
+          );
+        });
+
         return {
-          id: assignment?.id || site.id,
+          id: directAssignment?.id || site.id,
           master_site_id: site.id,
           site_number: site.site_number,
           display_label: site.display_label,
           map_x: site.map_x,
           map_y: site.map_y,
-          assigned_attendee_id: assignment?.assigned_attendee_id || null,
+          assigned_attendee_id:
+            directAssignment?.assigned_attendee_id ||
+            fallbackAttendee?.id ||
+            null,
         };
       });
 
       setSites(mergedSites);
       setLocations((masterLocationsResult.data || []) as MasterMapLocation[]);
-
-      const { data: attendeeRows, error: attendeeError } = await supabase
-        .from("attendees")
-        .select(
-          "id,pilot_first,pilot_last,copilot_first,copilot_last,share_with_attendees,assigned_site,coach_make,coach_model,coach_length,has_arrived,arrival_status",
-        )
-        .eq("event_id", memberEvent.id);
-
-      if (attendeeError) throw attendeeError;
-
-      const attendeeList = (attendeeRows || []) as Attendee[];
       setAttendees(attendeeList);
 
       const attendeeIds = attendeeList.map((a) => a.id);
