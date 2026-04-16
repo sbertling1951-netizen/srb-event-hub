@@ -89,6 +89,8 @@ function MasterMapEditorPageInner() {
   const [isDraggingSelect, setIsDraggingSelect] = useState(false);
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [dragCurrent, setDragCurrent] = useState<Point | null>(null);
+  const [replaceImageFile, setReplaceImageFile] = useState<File | null>(null);
+  const [replacingImage, setReplacingImage] = useState(false);
 
   const [mapName, setMapName] = useState("");
   const [parkName, setParkName] = useState("");
@@ -185,6 +187,69 @@ function MasterMapEditorPageInner() {
       setStatus("Load failed.");
     } finally {
       setLoading(false);
+    }
+  }
+  async function replaceMasterMapImage() {
+    if (!masterMap) {
+      setStatus("No master map loaded.");
+      return;
+    }
+
+    if (!replaceImageFile) {
+      setStatus("Choose a new image first.");
+      return;
+    }
+
+    try {
+      setReplacingImage(true);
+      setStatus("Uploading replacement image...");
+
+      const safeName = replaceImageFile.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+      const filePath = `master-maps/${masterMap.id}-${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("master-maps")
+        .upload(filePath, replaceImageFile, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        setStatus(`Could not upload image: ${uploadError.message}`);
+        return;
+      }
+
+      const { data: publicData } = supabase.storage
+        .from("master-maps")
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicData?.publicUrl || null;
+
+      if (!publicUrl) {
+        setStatus("Upload succeeded, but no public URL was returned.");
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("master_maps")
+        .update({
+          map_image_url: publicUrl,
+        })
+        .eq("id", masterMap.id);
+
+      if (updateError) {
+        setStatus(`Could not update master map image: ${updateError.message}`);
+        return;
+      }
+
+      setReplaceImageFile(null);
+      await loadMasterMap();
+      setStatus("Master map image replaced successfully.");
+    } catch (err: any) {
+      console.error("replaceMasterMapImage error:", err);
+      setStatus(err?.message || "Failed to replace master map image.");
+    } finally {
+      setReplacingImage(false);
     }
   }
 

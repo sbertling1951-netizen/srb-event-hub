@@ -419,7 +419,7 @@ export default function Sidebar() {
     { label: "Print Center", href: "/admin/print" },
     { label: "Nearby Admin", href: "/admin/nearby" },
     { label: "Agenda Admin", href: "/admin/agenda" },
-    { label: "Imports", href: "/admin/imports" },
+    { label: "Attendee Imports", href: "/admin/imports" },
     { label: "Agenda Import", href: "/admin/agenda/import" },
     ...(canManageEventStaff
       ? [{ label: "Event Staff", href: "/admin/event-staff" }]

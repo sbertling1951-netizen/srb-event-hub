@@ -66,6 +66,12 @@ function MasterMapsPageInner() {
   const [showArchived, setShowArchived] = useState(false);
   const [restoringMapId, setRestoringMapId] = useState<string | null>(null);
   const [deletingMapId, setDeletingMapId] = useState<string | null>(null);
+  const [replacingImageMapId, setReplacingImageMapId] = useState<string | null>(
+    null,
+  );
+  const [replaceImageFiles, setReplaceImageFiles] = useState<
+    Record<string, File | null>
+  >({});
 
   const [loading, setLoading] = useState(true);
   const [savingScales, setSavingScales] = useState(false);
@@ -438,6 +444,79 @@ function MasterMapsPageInner() {
     }
   }
 
+  async function handleReplaceMapImage(map: MasterMapRow) {
+    const file = replaceImageFiles[map.id] || null;
+
+    if (!file) {
+      setStatus("Choose a replacement image first.");
+      return;
+    }
+
+    try {
+      const admin = await getCurrentAdminAccess();
+      if (!admin) {
+        setError("No admin access.");
+        setStatus("Access denied.");
+        return;
+      }
+
+      setReplacingImageMapId(map.id);
+      setStatus(`Uploading replacement image for ${map.name}...`);
+
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+      const filePath = `master-maps/${map.id}-${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("master-maps")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        setStatus(`Could not upload replacement image: ${uploadError.message}`);
+        return;
+      }
+
+      const { data: publicData } = supabase.storage
+        .from("master-maps")
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicData?.publicUrl || null;
+
+      if (!publicUrl) {
+        setStatus("Upload succeeded, but no public URL was returned.");
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("master_maps")
+        .update({
+          map_image_url: publicUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", map.id);
+
+      if (updateError) {
+        setStatus(`Could not update master map image: ${updateError.message}`);
+        return;
+      }
+
+      setReplaceImageFiles((prev) => ({
+        ...prev,
+        [map.id]: null,
+      }));
+
+      await loadMasterMaps(showArchived);
+      setStatus(`Replaced map image for ${map.name}.`);
+    } catch (err: any) {
+      console.error("handleReplaceMapImage error:", err);
+      setStatus(err?.message || "Failed to replace map image.");
+    } finally {
+      setReplacingImageMapId(null);
+    }
+  }
+
   async function handleDeleteArchivedMap(map: MasterMapRow) {
     const confirmed = window.confirm(
       `Delete this archived map permanently?\n\n${map.name}\n\nThis will also delete its stored site markers.`,
@@ -772,40 +851,108 @@ function MasterMapsPageInner() {
             <div>{map.site_count}</div>
 
             {showArchived ? (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  onClick={() => void handleRestoreMap(map)}
-                  disabled={restoringMapId === map.id || !canManageMaps}
-                >
-                  {restoringMapId === map.id ? "Restoring..." : "Restore"}
-                </button>
+              <div
+                style={{
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => void handleRestoreMap(map)}
+                    disabled={restoringMapId === map.id || !canManageMaps}
+                  >
+                    {restoringMapId === map.id ? "Restoring..." : "Restore"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteArchivedMap(map)}
+                    disabled={deletingMapId === map.id || !canManageMaps}
+                    style={{
+                      background: "#fff1f2",
+                      color: "#991b1b",
+                      border: "1px solid #dc2626",
+                      borderRadius: 8,
+                      padding: "8px 10px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {deletingMapId === map.id ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setReplaceImageFiles((prev) => ({
+                      ...prev,
+                      [map.id]: file,
+                    }));
+                  }}
+                  disabled={replacingImageMapId === map.id || !canManageMaps}
+                  style={{ fontSize: 12 }}
+                />
 
                 <button
                   type="button"
-                  onClick={() => void handleDeleteArchivedMap(map)}
-                  disabled={deletingMapId === map.id || !canManageMaps}
-                  style={{
-                    background: "#fff1f2",
-                    color: "#991b1b",
-                    border: "1px solid #dc2626",
-                    borderRadius: 8,
-                    padding: "8px 10px",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
+                  onClick={() => void handleReplaceMapImage(map)}
+                  disabled={
+                    replacingImageMapId === map.id ||
+                    !canManageMaps ||
+                    !replaceImageFiles[map.id]
+                  }
                 >
-                  {deletingMapId === map.id ? "Deleting..." : "Delete"}
+                  {replacingImageMapId === map.id
+                    ? "Replacing Image..."
+                    : "Replace Image"}
                 </button>
               </div>
             ) : (
-              <div>
+              <div
+                style={{
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => void handleEditMap(map)}
                   disabled={openingMapId === map.id || !canManageMaps}
                 >
                   {openingMapId === map.id ? "Opening..." : "Edit Map"}
+                </button>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setReplaceImageFiles((prev) => ({
+                      ...prev,
+                      [map.id]: file,
+                    }));
+                  }}
+                  disabled={replacingImageMapId === map.id || !canManageMaps}
+                  style={{ fontSize: 12 }}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => void handleReplaceMapImage(map)}
+                  disabled={
+                    replacingImageMapId === map.id ||
+                    !canManageMaps ||
+                    !replaceImageFiles[map.id]
+                  }
+                >
+                  {replacingImageMapId === map.id
+                    ? "Replacing Image..."
+                    : "Replace Image"}
                 </button>
               </div>
             )}
