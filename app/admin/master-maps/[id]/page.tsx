@@ -1008,6 +1008,72 @@ function MasterMapEditorPageInner() {
     setUndoStack((prev) => prev.slice(0, -1));
   }
 
+  async function undoAllPositionChanges() {
+    if (readOnlyMarkers) {
+      setStatus(
+        "Published master maps are read-only. Create a draft copy to edit markers.",
+      );
+      return;
+    }
+
+    if (undoStack.length === 0) {
+      setStatus("No position changes to undo.");
+      return;
+    }
+
+    const latestById = new Map<
+      string,
+      { id: string; map_x: number | null; map_y: number | null }
+    >();
+
+    for (const snapshot of undoStack) {
+      for (const item of snapshot) {
+        if (!latestById.has(item.id)) {
+          latestById.set(item.id, item);
+        }
+      }
+    }
+
+    const restoreItems = Array.from(latestById.values());
+
+    for (const item of restoreItems) {
+      const { error } = await supabase
+        .from("master_map_sites")
+        .update({
+          map_x: item.map_x,
+          map_y: item.map_y,
+        })
+        .eq("id", item.id);
+
+      if (error) {
+        setStatus(`Could not undo all position changes: ${error.message}`);
+        return;
+      }
+    }
+
+    setSites((prev) =>
+      prev.map((site) => {
+        const prior = latestById.get(site.id);
+        return prior
+          ? { ...site, map_x: prior.map_x, map_y: prior.map_y }
+          : site;
+      }),
+    );
+
+    if (primarySelectedSiteId) {
+      const primary = latestById.get(primarySelectedSiteId);
+      if (primary) {
+        setEditX(primary.map_x);
+        setEditY(primary.map_y);
+      }
+    }
+
+    setStatus(
+      `Undid all position changes for ${restoreItems.length} marker(s).`,
+    );
+    setUndoStack([]);
+  }
+
   async function alignHorizontalSelected() {
     if (readOnlyMarkers) {
       setStatus(
@@ -1750,6 +1816,16 @@ function MasterMapEditorPageInner() {
                 </button>
 
                 <button
+                  disabled={
+                    readOnlyMarkers || loading || undoStack.length === 0
+                  }
+                  onClick={() => void undoAllPositionChanges()}
+                  style={{ width: "100%" }}
+                >
+                  Undo All Moves
+                </button>
+
+                <button
                   disabled={loading || selectedSiteIds.length === 0}
                   onClick={() => {
                     setSelectedSiteIds([]);
@@ -2131,4 +2207,3 @@ export default function MasterMapEditorPage() {
     </AdminRouteGuard>
   );
 }
-// Remove any remaining references to lastPositionSnapshot
