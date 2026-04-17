@@ -207,6 +207,7 @@ function EventAdminPageInner() {
         supabase
           .from("master_maps")
           .select("id,name,map_image_url")
+          .eq("status", "published")
           .order("name", { ascending: true }),
 
         supabase

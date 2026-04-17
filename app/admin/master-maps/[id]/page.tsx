@@ -91,6 +91,9 @@ function MasterMapEditorPageInner() {
   const [dragCurrent, setDragCurrent] = useState<Point | null>(null);
   const [replaceImageFile, setReplaceImageFile] = useState<File | null>(null);
   const [replacingImage, setReplacingImage] = useState(false);
+  const [undoStack, setUndoStack] = useState<
+    Array<Array<{ id: string; map_x: number | null; map_y: number | null }>>
+  >([]);
 
   const [mapName, setMapName] = useState("");
   const [parkName, setParkName] = useState("");
@@ -450,6 +453,21 @@ function MasterMapEditorPageInner() {
     });
   }
 
+  function capturePositionSnapshot(siteIds: string[]) {
+    const idSet = new Set(siteIds);
+    const snapshot = sites
+      .filter((site) => idSet.has(site.id))
+      .map((site) => ({
+        id: site.id,
+        map_x: site.map_x,
+        map_y: site.map_y,
+      }));
+
+    if (snapshot.length === 0) return;
+
+    setUndoStack((prev) => [...prev, snapshot]);
+  }
+
   function clearNativeSelection() {
     if (typeof window !== "undefined") {
       window.getSelection()?.removeAllRanges();
@@ -794,6 +812,7 @@ function MasterMapEditorPageInner() {
 
     const baseX = editX ?? primarySelectedSite.map_x ?? 0;
     const baseY = editY ?? primarySelectedSite.map_y ?? 0;
+    capturePositionSnapshot([primarySelectedSiteId]);
 
     const nextX = clampPercent(Number((baseX + dx).toFixed(2)));
     const nextY = clampPercent(Number((baseY + dy).toFixed(2)));
@@ -844,6 +863,7 @@ function MasterMapEditorPageInner() {
       setStatus("No changed position to save.");
       return;
     }
+    capturePositionSnapshot([primarySelectedSiteId]);
 
     const { error } = await supabase
       .from("master_map_sites")
@@ -900,6 +920,8 @@ function MasterMapEditorPageInner() {
   ) {
     if (updates.length === 0) return false;
 
+    capturePositionSnapshot(updates.map((update) => update.id));
+
     for (const update of updates) {
       const { error } = await supabase
         .from("master_map_sites")
@@ -933,6 +955,57 @@ function MasterMapEditorPageInner() {
     }
 
     return true;
+  }
+
+  async function undoLastPositionChange() {
+    if (readOnlyMarkers) {
+      setStatus(
+        "Published master maps are read-only. Create a draft copy to edit markers.",
+      );
+      return;
+    }
+
+    const snapshot = undoStack[undoStack.length - 1] || [];
+
+    if (snapshot.length === 0) {
+      setStatus("No position change to undo.");
+      return;
+    }
+
+    for (const item of snapshot) {
+      const { error } = await supabase
+        .from("master_map_sites")
+        .update({
+          map_x: item.map_x,
+          map_y: item.map_y,
+        })
+        .eq("id", item.id);
+
+      if (error) {
+        setStatus(`Could not undo position change: ${error.message}`);
+        return;
+      }
+    }
+
+    setSites((prev) =>
+      prev.map((site) => {
+        const prior = snapshot.find((p) => p.id === site.id);
+        return prior
+          ? { ...site, map_x: prior.map_x, map_y: prior.map_y }
+          : site;
+      }),
+    );
+
+    if (primarySelectedSiteId) {
+      const primary = snapshot.find((p) => p.id === primarySelectedSiteId);
+      if (primary) {
+        setEditX(primary.map_x);
+        setEditY(primary.map_y);
+      }
+    }
+
+    setStatus(`Undid position change for ${snapshot.length} marker(s).`);
+    setUndoStack((prev) => prev.slice(0, -1));
   }
 
   async function alignHorizontalSelected() {
@@ -1665,7 +1738,17 @@ function MasterMapEditorPageInner() {
                 </button>
               </div>
 
-              <div style={{ marginTop: 8 }}>
+              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || undoStack.length === 0
+                  }
+                  onClick={() => void undoLastPositionChange()}
+                  style={{ width: "100%" }}
+                >
+                  Undo Last Move ({undoStack.length})
+                </button>
+
                 <button
                   disabled={loading || selectedSiteIds.length === 0}
                   onClick={() => {
@@ -2048,3 +2131,4 @@ export default function MasterMapEditorPage() {
     </AdminRouteGuard>
   );
 }
+// Remove any remaining references to lastPositionSnapshot
