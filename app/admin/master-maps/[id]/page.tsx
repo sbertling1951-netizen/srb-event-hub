@@ -67,6 +67,19 @@ function MasterMapEditorPageInner() {
   const masterMapId = params?.id as string;
 
   const siteNumberRef = useRef<HTMLInputElement | null>(null);
+  const mapCanvasRef = useRef<HTMLDivElement | null>(null);
+  const ignoreCanvasClickUntilRef = useRef(0);
+  const suppressNextClickRef = useRef(false);
+  const suppressCanvasMouseUpUntilRef = useRef(0);
+  const readOnlyMarkersRef = useRef(false);
+  const primarySelectedSiteIdRef = useRef<string | null>(null);
+  const pendingPointRef = useRef<{ x: number | null; y: number | null }>({
+    x: null,
+    y: null,
+  });
+  const undoStackRef = useRef<
+    Array<Array<{ id: string; map_x: number | null; map_y: number | null }>>
+  >([]);
 
   const [masterMap, setMasterMap] = useState<MasterMapRow | null>(null);
   const [sites, setSites] = useState<MasterMapSiteRow[]>([]);
@@ -105,6 +118,21 @@ function MasterMapEditorPageInner() {
 
   const readOnlyMarkers =
     masterMap?.status === "published" || masterMap?.is_read_only === true;
+  useEffect(() => {
+    readOnlyMarkersRef.current = !!readOnlyMarkers;
+  }, [readOnlyMarkers]);
+
+  useEffect(() => {
+    primarySelectedSiteIdRef.current = primarySelectedSiteId;
+  }, [primarySelectedSiteId]);
+
+  useEffect(() => {
+    pendingPointRef.current = { x: pendingX, y: pendingY };
+  }, [pendingX, pendingY]);
+
+  useEffect(() => {
+    undoStackRef.current = undoStack;
+  }, [undoStack]);
 
   async function loadMasterMap() {
     const { data, error } = await supabase
@@ -412,6 +440,15 @@ function MasterMapEditorPageInner() {
     if (!masterMapId) return;
     void loadPage();
   }, [masterMapId]);
+  useEffect(() => {
+    if (!loading && !accessDenied) {
+      focusMapCanvasNow();
+      focusMapCanvas();
+      setTimeout(() => {
+        focusMapCanvasNow();
+      }, 0);
+    }
+  }, [loading, accessDenied]);
 
   const primarySelectedSite = useMemo(() => {
     return sites.find((s) => s.id === primarySelectedSiteId) || null;
@@ -451,6 +488,15 @@ function MasterMapEditorPageInner() {
       siteNumberRef.current?.focus();
       siteNumberRef.current?.select();
     });
+  }
+
+  function focusMapCanvas() {
+    requestAnimationFrame(() => {
+      mapCanvasRef.current?.focus({ preventScroll: true });
+    });
+  }
+  function focusMapCanvasNow() {
+    mapCanvasRef.current?.focus({ preventScroll: true });
   }
 
   function capturePositionSnapshot(siteIds: string[]) {
@@ -511,6 +557,7 @@ function MasterMapEditorPageInner() {
   function handleMapMouseDown(e: React.MouseEvent<HTMLDivElement>) {
     if (readOnlyMarkers) return;
     if (e.button !== 0) return;
+    if (e.target !== e.currentTarget) return;
 
     e.preventDefault();
     clearNativeSelection();
@@ -539,8 +586,30 @@ function MasterMapEditorPageInner() {
       setDragCurrent(point);
     }
   }
-
+  function placePendingMarkerFromPoint(point: Point) {
+    setPendingX(point.x);
+    setPendingY(point.y);
+    setSelectedSiteIds([]);
+    setPrimarySelectedSiteId(null);
+    setEditX(null);
+    setEditY(null);
+    setSiteNumber("");
+    setStatus(
+      "Marker position selected. Type site number and press Enter to save.",
+    );
+    focusSiteNumber();
+  }
   function handleMapMouseUp(e: React.MouseEvent<HTMLDivElement>) {
+    const now = Date.now();
+
+    if (now < suppressCanvasMouseUpUntilRef.current) {
+      setIsPointerDown(false);
+      setIsDraggingSelect(false);
+      setDragStart(null);
+      setDragCurrent(null);
+      return;
+    }
+
     if (!isPointerDown) return;
 
     e.preventDefault();
@@ -585,7 +654,18 @@ function MasterMapEditorPageInner() {
       setStatus(
         `Selected ${selected.length} marker${selected.length === 1 ? "" : "s"}.`,
       );
+      suppressNextClickRef.current = true;
       setSuppressNextClick(true);
+    } else if (
+      !readOnlyMarkers &&
+      e.target === e.currentTarget &&
+      !(suppressNextClickRef.current || suppressNextClick)
+    ) {
+      const point = getRelativePoint(e);
+      placePendingMarkerFromPoint(point);
+    } else if (suppressNextClickRef.current || suppressNextClick) {
+      suppressNextClickRef.current = false;
+      setSuppressNextClick(false);
     }
 
     setIsPointerDown(false);
@@ -594,41 +674,16 @@ function MasterMapEditorPageInner() {
     setDragCurrent(null);
   }
 
-  function handleMapClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (readOnlyMarkers) return;
-
-    if (suppressNextClick) {
-      e.preventDefault();
-      setSuppressNextClick(false);
-      return;
-    }
-
-    if (isDraggingSelect) return;
-    if (isPointerDown) return;
-
-    e.preventDefault();
-
-    const point = getRelativePoint(e);
-
-    setPendingX(point.x);
-    setPendingY(point.y);
-    setSelectedSiteIds([]);
-    setPrimarySelectedSiteId(null);
-    setEditX(null);
-    setEditY(null);
-    setSiteNumber("");
-    setStatus(
-      "Marker position selected. Type site number and press Enter to save.",
-    );
-    focusSiteNumber();
-  }
-
   function handleMarkerSelect(
     site: MasterMapSiteRow,
     e: React.MouseEvent<HTMLButtonElement>,
   ) {
+    e.preventDefault();
     e.stopPropagation();
-
+    ignoreCanvasClickUntilRef.current = Date.now() + 500;
+    suppressCanvasMouseUpUntilRef.current = Date.now() + 500;
+    suppressNextClickRef.current = true;
+    setSuppressNextClick(true);
     setPendingX(null);
     setPendingY(null);
 
@@ -648,7 +703,10 @@ function MasterMapEditorPageInner() {
     setSiteNumber(site.site_number);
     setEditX(site.map_x);
     setEditY(site.map_y);
-    focusSiteNumber();
+    setPendingX(null);
+    setPendingY(null);
+    focusMapCanvasNow();
+    focusMapCanvas();
   }
 
   async function saveNewMarkerInternal(nextMode: boolean) {
@@ -1232,7 +1290,7 @@ function MasterMapEditorPageInner() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (readOnlyMarkers) return;
+      if (readOnlyMarkersRef.current) return;
 
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
@@ -1240,20 +1298,39 @@ function MasterMapEditorPageInner() {
       if (tag === "input" || tag === "textarea" || target?.isContentEditable)
         return;
 
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          void undoAllPositionChanges();
+        } else {
+          void undoLastPositionChange();
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        void undoAllPositionChanges();
+        return;
+      }
+
       if (e.key === "Escape") {
-        if (pendingX !== null || pendingY !== null) {
+        if (
+          pendingPointRef.current.x !== null ||
+          pendingPointRef.current.y !== null
+        ) {
           e.preventDefault();
           setPendingX(null);
           setPendingY(null);
           setSiteNumber("");
           setStatus("Pending marker canceled.");
-          focusSiteNumber();
+          focusMapCanvasNow();
           return;
         }
       }
 
       if (e.key === "Delete" || e.key === "Backspace") {
-        if (primarySelectedSiteId) {
+        if (primarySelectedSiteIdRef.current) {
           e.preventDefault();
           void deleteSelectedMarker();
           return;
@@ -1264,28 +1341,28 @@ function MasterMapEditorPageInner() {
 
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        if (primarySelectedSiteId) {
+        if (primarySelectedSiteIdRef.current) {
           void nudgeSelected(-step, 0);
         } else {
           nudgePending(-step, 0);
         }
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        if (primarySelectedSiteId) {
+        if (primarySelectedSiteIdRef.current) {
           void nudgeSelected(step, 0);
         } else {
           nudgePending(step, 0);
         }
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        if (primarySelectedSiteId) {
+        if (primarySelectedSiteIdRef.current) {
           void nudgeSelected(0, -step);
         } else {
           nudgePending(0, -step);
         }
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
-        if (primarySelectedSiteId) {
+        if (primarySelectedSiteIdRef.current) {
           void nudgeSelected(0, step);
         } else {
           nudgePending(0, step);
@@ -1293,17 +1370,9 @@ function MasterMapEditorPageInner() {
       }
     }
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    readOnlyMarkers,
-    primarySelectedSiteId,
-    pendingX,
-    pendingY,
-    editX,
-    editY,
-    primarySelectedSite,
-  ]);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, []);
 
   async function publishToSelectedEvent() {
     if (!masterMap) {
@@ -2014,15 +2083,8 @@ function MasterMapEditorPageInner() {
             }}
           >
             <div
+              ref={mapCanvasRef}
               tabIndex={0}
-              onMouseDown={(e) => {
-                (e.currentTarget as HTMLDivElement).focus();
-                handleMapMouseDown(e);
-              }}
-              onMouseMove={handleMapMouseMove}
-              onMouseUp={handleMapMouseUp}
-              onMouseLeave={handleMapMouseUp}
-              onClick={handleMapClick}
               style={{
                 position: "relative",
                 width: naturalSize.width * zoom,
@@ -2030,6 +2092,7 @@ function MasterMapEditorPageInner() {
                 cursor: readOnlyMarkers ? "default" : "crosshair",
                 userSelect: "none",
                 WebkitUserSelect: "none",
+                outline: "none",
               }}
             >
               {masterMap?.map_image_url && (
@@ -2050,6 +2113,23 @@ function MasterMapEditorPageInner() {
                     display: "block",
                     userSelect: "none",
                     pointerEvents: "none",
+                  }}
+                />
+              )}
+              {!readOnlyMarkers && (
+                <div
+                  onMouseDown={(e) => {
+                    focusMapCanvasNow();
+                    handleMapMouseDown(e as React.MouseEvent<HTMLDivElement>);
+                  }}
+                  onMouseMove={handleMapMouseMove}
+                  onMouseUp={handleMapMouseUp}
+                  onMouseLeave={handleMapMouseUp}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    zIndex: 1,
+                    background: "transparent",
                   }}
                 />
               )}
@@ -2081,12 +2161,26 @@ function MasterMapEditorPageInner() {
                       left: `${site.map_x}%`,
                       top: `${site.map_y}%`,
                       transform: "translate(-50%, -50%)",
-                      pointerEvents: "none",
+                      pointerEvents: "auto",
+                      zIndex: 2,
                     }}
                   >
                     <button
                       type="button"
-                      onClick={(e) => handleMarkerSelect(site, e)}
+                      tabIndex={-1}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        ignoreCanvasClickUntilRef.current = Date.now() + 500;
+                        suppressCanvasMouseUpUntilRef.current =
+                          Date.now() + 500;
+                        focusMapCanvasNow();
+                        handleMarkerSelect(site, e);
+                      }}
+                      onMouseUp={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
                       title={site.site_number}
                       style={{
                         width: 14,
@@ -2114,7 +2208,20 @@ function MasterMapEditorPageInner() {
                     {showLabels && (
                       <button
                         type="button"
-                        onClick={(e) => handleMarkerSelect(site, e)}
+                        tabIndex={-1}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          ignoreCanvasClickUntilRef.current = Date.now() + 500;
+                          suppressCanvasMouseUpUntilRef.current =
+                            Date.now() + 500;
+                          focusMapCanvasNow();
+                          handleMarkerSelect(site, e);
+                        }}
+                        onMouseUp={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
                         title={`Site ${site.site_number}`}
                         style={{
                           marginTop: 4,
