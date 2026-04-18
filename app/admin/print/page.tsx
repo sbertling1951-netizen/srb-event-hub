@@ -1,13 +1,7 @@
 // REPLACED BY REQUEST
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "@/lib/supabase";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
@@ -329,7 +323,6 @@ function AdminPrintPageInner() {
     useState(false);
   const [nameTagTextColor, setNameTagTextColor] = useState("#000000");
   const [coachPlateTextColor, setCoachPlateTextColor] = useState("#000000");
-  const printEditorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function init() {
@@ -593,6 +586,10 @@ function AdminPrintPageInner() {
     });
   }, [event?.name, event?.start_date, printableRows]);
 
+  const printableNameTagSheetCount = useMemo(() => {
+    return Math.ceil(printableNameTags.length / 6);
+  }, [printableNameTags.length]);
+
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
   const editRow = useMemo(() => {
@@ -609,17 +606,6 @@ function AdminPrintPageInner() {
     return applyPrintOverride(editRow, printOverrides[editRow.id]);
   }, [editRow, printOverrides]);
 
-  useEffect(() => {
-    if (!editPreviewRow || !printEditorRef.current) return;
-
-    requestAnimationFrame(() => {
-      printEditorRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
-  }, [editPreviewRow]);
-
   function toggleSelected(id: string) {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -632,6 +618,23 @@ function AdminPrintPageInner() {
 
   function clearSelected() {
     setSelectedIds([]);
+  }
+
+  function openPrintEditor(attendeeId: string) {
+    setSelectedIds((prev) =>
+      prev.includes(attendeeId) ? prev : [...prev, attendeeId],
+    );
+    setEditAttendeeId(attendeeId);
+  }
+
+  function addToPrintQueue(attendeeId: string) {
+    setSelectedIds((prev) =>
+      prev.includes(attendeeId) ? prev : [...prev, attendeeId],
+    );
+  }
+
+  function removeFromPrintQueue(attendeeId: string) {
+    setSelectedIds((prev) => prev.filter((id) => id !== attendeeId));
   }
 
   function updatePrintOverride(
@@ -953,10 +956,10 @@ function AdminPrintPageInner() {
         </div>
 
         <div style={{ marginTop: 14, fontSize: 13, color: "#666" }}>
-          Selected {printableRows.length} of {sortedFilteredAttendees.length}{" "}
-          filtered attendees.
+          Print queue contains {printableRows.length} of{" "}
+          {sortedFilteredAttendees.length} filtered attendees.
           {printMode === "name_tags"
-            ? ` This will print ${printableNameTags.length} name tag${printableNameTags.length === 1 ? "" : "s"}.`
+            ? ` This will print ${printableNameTags.length} name tag${printableNameTags.length === 1 ? "" : "s"} on ${printableNameTagSheetCount} Avery 5164 sheet${printableNameTagSheetCount === 1 ? "" : "s"}.`
             : ""}
         </div>
       </div>
@@ -1026,11 +1029,22 @@ function AdminPrintPageInner() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          setEditAttendeeId(row.id);
+                          openPrintEditor(row.id);
                         }}
                         style={secondaryButtonStyle}
                       >
                         Edit For Print
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          addToPrintQueue(row.id);
+                        }}
+                        style={secondaryButtonStyle}
+                      >
+                        Add To Print Queue
                       </button>
                       <button
                         type="button"
@@ -1067,214 +1081,270 @@ function AdminPrintPageInner() {
 
       {editPreviewRow ? (
         <div
-          ref={printEditorRef}
-          className="card no-print"
-          style={{ padding: 18 }}
+          className="no-print"
+          style={printEditorOverlayStyle}
+          onClick={() => setEditAttendeeId(null)}
         >
-          <h2 style={{ marginTop: 0, marginBottom: 12 }}>Print Editor</h2>
-          <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 14 }}>
-            {editPreviewRow.id.startsWith("manual-")
-              ? "Manual print entry"
-              : "Session-only print overrides for"}{" "}
-            {displayPilotName(editPreviewRow) || "Guest"}
-            {displayCopilotName(editPreviewRow)
-              ? ` / ${displayCopilotName(editPreviewRow)}`
-              : ""}
-          </div>
-
           <div
-            style={{
-              display: "grid",
-              gap: 14,
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            }}
+            className="card"
+            style={printEditorModalStyle}
+            onClick={(e) => e.stopPropagation()}
           >
-            <div>
-              <label style={labelStyle}>Pilot First</label>
-              <input
-                value={editPreviewRow.pilot_first || ""}
-                onChange={(e) =>
-                  updatePrintOverride(
-                    editPreviewRow.id,
-                    "pilot_first",
-                    e.target.value,
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Pilot Last</label>
-              <input
-                value={editPreviewRow.pilot_last || ""}
-                onChange={(e) =>
-                  updatePrintOverride(
-                    editPreviewRow.id,
-                    "pilot_last",
-                    e.target.value,
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Pilot Nickname</label>
-              <input
-                value={editPreviewRow.nickname || ""}
-                onChange={(e) =>
-                  updatePrintOverride(
-                    editPreviewRow.id,
-                    "nickname",
-                    e.target.value,
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Co-Pilot First</label>
-              <input
-                value={editPreviewRow.copilot_first || ""}
-                onChange={(e) =>
-                  updatePrintOverride(
-                    editPreviewRow.id,
-                    "copilot_first",
-                    e.target.value,
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Co-Pilot Last</label>
-              <input
-                value={editPreviewRow.copilot_last || ""}
-                onChange={(e) =>
-                  updatePrintOverride(
-                    editPreviewRow.id,
-                    "copilot_last",
-                    e.target.value,
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Co-Pilot Nickname</label>
-              <input
-                value={editPreviewRow.copilot_nickname || ""}
-                onChange={(e) =>
-                  updatePrintOverride(
-                    editPreviewRow.id,
-                    "copilot_nickname",
-                    e.target.value,
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Member Number</label>
-              <input
-                value={editPreviewRow.membership_number || ""}
-                onChange={(e) =>
-                  updatePrintOverride(
-                    editPreviewRow.id,
-                    "membership_number",
-                    e.target.value,
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>City</label>
-              <input
-                value={editPreviewRow.city || ""}
-                onChange={(e) =>
-                  updatePrintOverride(editPreviewRow.id, "city", e.target.value)
-                }
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>State</label>
-              <input
-                value={editPreviewRow.state || ""}
-                onChange={(e) =>
-                  updatePrintOverride(
-                    editPreviewRow.id,
-                    "state",
-                    e.target.value,
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              marginTop: 14,
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={!!editPreviewRow.is_first_timer}
-                onChange={(e) =>
-                  updatePrintOverride(
-                    editPreviewRow.id,
-                    "is_first_timer",
-                    e.target.checked,
-                  )
-                }
-              />
-              First Timer for print
-            </label>
-          </div>
-
-          <div
-            style={{
-              marginTop: 14,
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => clearPrintOverride(editPreviewRow.id)}
-              style={secondaryButtonStyle}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "start",
+                marginBottom: 14,
+              }}
             >
-              Clear Overrides
-            </button>
-            {editPreviewRow.id.startsWith("manual-") ? (
+              <div>
+                <h2 style={{ marginTop: 0, marginBottom: 12 }}>Print Editor</h2>
+                <div style={{ fontSize: 14, opacity: 0.8 }}>
+                  {editPreviewRow.id.startsWith("manual-")
+                    ? "Manual print entry"
+                    : "Session-only print overrides for"}{" "}
+                  {displayPilotName(editPreviewRow) || "Guest"}
+                  {displayCopilotName(editPreviewRow)
+                    ? ` / ${displayCopilotName(editPreviewRow)}`
+                    : ""}
+                </div>
+                <div style={{ fontSize: 13, color: "#666", marginTop: 8 }}>
+                  Edits stay in this session and remain in the current print
+                  queue until you clear or print them.
+                </div>
+              </div>
+
               <button
                 type="button"
-                onClick={() => removeManualEntry(editPreviewRow.id)}
+                onClick={() => setEditAttendeeId(null)}
                 style={secondaryButtonStyle}
               >
-                Delete Manual Entry
+                Close
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => printOnlyAttendee(editPreviewRow.id)}
-              style={primaryButtonStyle}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 14,
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              }}
             >
-              Print This Only
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditAttendeeId(null)}
-              style={secondaryButtonStyle}
+              <div>
+                <label style={labelStyle}>Pilot First</label>
+                <input
+                  value={editPreviewRow.pilot_first || ""}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "pilot_first",
+                      e.target.value,
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Pilot Last</label>
+                <input
+                  value={editPreviewRow.pilot_last || ""}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "pilot_last",
+                      e.target.value,
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Pilot Nickname</label>
+                <input
+                  value={editPreviewRow.nickname || ""}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "nickname",
+                      e.target.value,
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Co-Pilot First</label>
+                <input
+                  value={editPreviewRow.copilot_first || ""}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "copilot_first",
+                      e.target.value,
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Co-Pilot Last</label>
+                <input
+                  value={editPreviewRow.copilot_last || ""}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "copilot_last",
+                      e.target.value,
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Co-Pilot Nickname</label>
+                <input
+                  value={editPreviewRow.copilot_nickname || ""}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "copilot_nickname",
+                      e.target.value,
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Member Number</label>
+                <input
+                  value={editPreviewRow.membership_number || ""}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "membership_number",
+                      e.target.value,
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>City</label>
+                <input
+                  value={editPreviewRow.city || ""}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "city",
+                      e.target.value,
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>State</label>
+                <input
+                  value={editPreviewRow.state || ""}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "state",
+                      e.target.value,
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 14,
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
             >
-              Close Editor
-            </button>
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={!!editPreviewRow.is_first_timer}
+                  onChange={(e) =>
+                    updatePrintOverride(
+                      editPreviewRow.id,
+                      "is_first_timer",
+                      e.target.checked,
+                    )
+                  }
+                />
+                First Timer for print
+              </label>
+
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(editPreviewRow.id)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      addToPrintQueue(editPreviewRow.id);
+                    } else {
+                      removeFromPrintQueue(editPreviewRow.id);
+                    }
+                  }}
+                />
+                Keep in print queue
+              </label>
+            </div>
+
+            <div
+              style={{
+                marginTop: 18,
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => clearPrintOverride(editPreviewRow.id)}
+                style={secondaryButtonStyle}
+              >
+                Clear Overrides
+              </button>
+              {editPreviewRow.id.startsWith("manual-") ? (
+                <button
+                  type="button"
+                  onClick={() => removeManualEntry(editPreviewRow.id)}
+                  style={secondaryButtonStyle}
+                >
+                  Delete Manual Entry
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => addToPrintQueue(editPreviewRow.id)}
+                style={secondaryButtonStyle}
+              >
+                Add To Print Queue
+              </button>
+              <button
+                type="button"
+                onClick={() => printOnlyAttendee(editPreviewRow.id)}
+                style={secondaryButtonStyle}
+              >
+                Print This Only
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditAttendeeId(null)}
+                style={primaryButtonStyle}
+              >
+                Save and Close
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -1583,6 +1653,28 @@ function AdminPrintPageInner() {
     </div>
   );
 }
+
+const printEditorOverlayStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(17, 24, 39, 0.7)",
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "center",
+  padding: "32px 16px",
+  overflowY: "auto",
+  zIndex: 99999,
+};
+
+const printEditorModalStyle: CSSProperties = {
+  width: "min(100%, 980px)",
+  maxHeight: "calc(100vh - 64px)",
+  overflowY: "auto",
+  padding: 18,
+  margin: "0 auto",
+  boxShadow: "0 24px 60px rgba(0, 0, 0, 0.35)",
+  border: "1px solid #d1d5db",
+};
 
 const labelStyle: CSSProperties = {
   display: "block",
