@@ -152,7 +152,6 @@ function formatPrivilegeGroup(value?: string | null) {
 function buildPermissionMap(
   role: EventAccessRole,
   explicitKeys?: string[],
-  hasExplicitPermissions = false,
 ): Record<string, boolean> {
   const map: Record<string, boolean> = {};
 
@@ -190,9 +189,9 @@ function buildPermissionMap(
     map[key] = true;
   });
 
-  if (hasExplicitPermissions) {
+  if (explicitKeys && explicitKeys.length > 0) {
     ALL_PERMISSION_KEYS.forEach((key) => {
-      map[key] = !!explicitKeys?.includes(key);
+      map[key] = explicitKeys.includes(key);
     });
   }
 
@@ -362,10 +361,6 @@ function EventStaffPageInner() {
         permissionsByAccessId.set(row.admin_event_access_id, existing);
       });
 
-      const explicitPermissionAccessIds = new Set(
-        permissionRows.map((row) => row.admin_event_access_id),
-      );
-
       const adminById = new Map(adminUsers.map((row) => [row.id, row]));
 
       const mergedRows: StaffRow[] = accessRows.map((access) => {
@@ -381,11 +376,7 @@ function EventStaffPageInner() {
           displayName: adminUser?.display_name || "",
           privilegeGroup: adminUser?.privilege_group || null,
           role,
-          permissions: buildPermissionMap(
-            role,
-            explicitKeys,
-            explicitPermissionAccessIds.has(access.id),
-          ),
+          permissions: buildPermissionMap(role, explicitKeys),
         };
       });
 
@@ -838,7 +829,6 @@ function EventStaffPageInner() {
           <div>
             <label style={labelStyle}>Email</label>
             <input
-              type="email"
               value={quickEmail}
               onChange={(e) => setQuickEmail(e.target.value)}
               style={inputStyle}
