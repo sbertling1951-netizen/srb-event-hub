@@ -128,18 +128,39 @@ function formatDateRange(
   return startDate || endDate || "";
 }
 
+function toTitleCase(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (match) => match.toUpperCase());
+}
+
+function normalizeStateCode(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .replace(/[^a-z]/gi, "")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 function cityState(row: AttendeeRow) {
-  return [row.city, row.state].filter(Boolean).join(", ");
+  const city = toTitleCase(row.city);
+  const state = normalizeStateCode(row.state);
+  return [city, state].filter(Boolean).join(", ");
 }
 
 function displayPilotName(row: AttendeeRow) {
-  return row.nickname?.trim() || fullName(row.pilot_first, row.pilot_last);
+  const nickname = toTitleCase(row.nickname);
+  if (nickname) return nickname;
+  return fullName(toTitleCase(row.pilot_first), toTitleCase(row.pilot_last));
 }
 
 function displayCopilotName(row: AttendeeRow) {
-  return (
-    row.copilot_nickname?.trim() ||
-    fullName(row.copilot_first, row.copilot_last)
+  const nickname = toTitleCase(row.copilot_nickname);
+  if (nickname) return nickname;
+  return fullName(
+    toTitleCase(row.copilot_first),
+    toTitleCase(row.copilot_last),
   );
 }
 
@@ -166,11 +187,13 @@ function sameLastName(row: AttendeeRow) {
 }
 
 function buildCoachPlateNameLines(row: AttendeeRow) {
-  const pilotFirst = (row.nickname || row.pilot_first || "").trim();
-  const pilotLast = (row.pilot_last || "").trim();
+  const pilotFirst = toTitleCase(row.nickname || row.pilot_first || "");
+  const pilotLast = toTitleCase(row.pilot_last || "");
 
-  const copilotFirst = (row.copilot_nickname || row.copilot_first || "").trim();
-  const copilotLast = (row.copilot_last || "").trim();
+  const copilotFirst = toTitleCase(
+    row.copilot_nickname || row.copilot_first || "",
+  );
+  const copilotLast = toTitleCase(row.copilot_last || "");
 
   if (pilotFirst && copilotFirst && sameLastName(row)) {
     return {
@@ -198,9 +221,9 @@ function buildNameParts(
   last?: string | null,
   nickname?: string | null,
 ) {
-  const trimmedNickname = String(nickname || "").trim();
-  const trimmedFirst = String(first || "").trim();
-  const trimmedLast = String(last || "").trim();
+  const trimmedNickname = toTitleCase(nickname);
+  const trimmedFirst = toTitleCase(first);
+  const trimmedLast = toTitleCase(last);
 
   if (trimmedNickname) {
     return {
@@ -1140,7 +1163,7 @@ function AdminPrintPageInner() {
                     updatePrintOverride(
                       editPreviewRow.id,
                       "pilot_first",
-                      e.target.value,
+                      toTitleCase(e.target.value),
                     )
                   }
                   style={inputStyle}
@@ -1154,7 +1177,7 @@ function AdminPrintPageInner() {
                     updatePrintOverride(
                       editPreviewRow.id,
                       "pilot_last",
-                      e.target.value,
+                      toTitleCase(e.target.value),
                     )
                   }
                   style={inputStyle}
@@ -1168,7 +1191,7 @@ function AdminPrintPageInner() {
                     updatePrintOverride(
                       editPreviewRow.id,
                       "nickname",
-                      e.target.value,
+                      toTitleCase(e.target.value),
                     )
                   }
                   style={inputStyle}
@@ -1182,7 +1205,7 @@ function AdminPrintPageInner() {
                     updatePrintOverride(
                       editPreviewRow.id,
                       "copilot_first",
-                      e.target.value,
+                      toTitleCase(e.target.value),
                     )
                   }
                   style={inputStyle}
@@ -1196,7 +1219,7 @@ function AdminPrintPageInner() {
                     updatePrintOverride(
                       editPreviewRow.id,
                       "copilot_last",
-                      e.target.value,
+                      toTitleCase(e.target.value),
                     )
                   }
                   style={inputStyle}
@@ -1210,7 +1233,7 @@ function AdminPrintPageInner() {
                     updatePrintOverride(
                       editPreviewRow.id,
                       "copilot_nickname",
-                      e.target.value,
+                      toTitleCase(e.target.value),
                     )
                   }
                   style={inputStyle}
@@ -1238,7 +1261,7 @@ function AdminPrintPageInner() {
                     updatePrintOverride(
                       editPreviewRow.id,
                       "city",
-                      e.target.value,
+                      toTitleCase(e.target.value),
                     )
                   }
                   style={inputStyle}
@@ -1247,14 +1270,15 @@ function AdminPrintPageInner() {
               <div>
                 <label style={labelStyle}>State</label>
                 <input
-                  value={editPreviewRow.state || ""}
+                  value={normalizeStateCode(editPreviewRow.state)}
                   onChange={(e) =>
                     updatePrintOverride(
                       editPreviewRow.id,
                       "state",
-                      e.target.value,
+                      normalizeStateCode(e.target.value),
                     )
                   }
+                  maxLength={2}
                   style={inputStyle}
                 />
               </div>
