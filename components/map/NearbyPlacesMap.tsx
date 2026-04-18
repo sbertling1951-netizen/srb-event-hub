@@ -16,10 +16,29 @@ type Place = {
   id: string;
   name: string;
   address: string | null;
+  phone?: string | null;
+  website?: string | null;
+  notes?: string | null;
+  category?: string | null;
   location_code?: string | null;
   lat?: number | null;
   lng?: number | null;
 };
+
+function cleanPhone(phone?: string | null) {
+  if (!phone) return "";
+  return phone.replace(/[^\d+]/g, "");
+}
+
+function normalizeWebsite(url?: string | null) {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}
 
 function appleMapsUrl(place: Place) {
   const safeLabel = encodeURIComponent(place.name || "Destination");
@@ -54,6 +73,20 @@ function googleMapsUrl(place: Place) {
   );
   return `https://www.google.com/maps/dir/?api=1&destination=${safeAddress}`;
 }
+
+const popupButtonStyle: React.CSSProperties = {
+  padding: "6px 10px",
+  borderRadius: 999,
+  border: "1px solid #d1d5db",
+  background: "#f8fafc",
+  color: "#111827",
+  textDecoration: "none",
+  fontSize: 12,
+  fontWeight: 600,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
 
 const markerIcon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -143,87 +176,119 @@ export default function NearbyPlacesMap({
 
         <MapResizer eventLat={eventLat} eventLng={eventLng} />
 
-        {validPlaces.map((place) => (
-          <Marker
-            key={place.id}
-            position={[place.lat as number, place.lng as number]}
-            icon={markerIcon}
-          >
-            <Tooltip direction="top" offset={[0, -10]} opacity={1}>
-              {place.name}
-            </Tooltip>
+        {validPlaces.map((place) => {
+          const phoneHref = cleanPhone(place.phone);
+          const websiteHref = normalizeWebsite(place.website);
 
-            <Popup>
-              <strong>{place.name}</strong>
-              <br />
-              {place.address}
-              {place.location_code ? (
-                <>
-                  <br />
-                  {place.location_code}
-                </>
-              ) : null}
-              <div
-                style={{
-                  marginTop: 10,
-                  display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                <a
-                  href={appleMapsUrl(place)}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 8,
-                    border: "1px solid #d1d5db",
-                    background: "#f8fafc",
-                    color: "#111827",
-                    textDecoration: "none",
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  Open in Apple Maps
-                </a>
-                <a
-                  href={googleMapsUrl(place)}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 8,
-                    border: "1px solid #d1d5db",
-                    background: "#f8fafc",
-                    color: "#111827",
-                    textDecoration: "none",
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  Navigate
-                </a>
-                {typeof place.lat === "number" &&
-                Number.isFinite(place.lat) &&
-                typeof place.lng === "number" &&
-                Number.isFinite(place.lng) ? (
+          return (
+            <Marker
+              key={place.id}
+              position={[place.lat as number, place.lng as number]}
+              icon={markerIcon}
+              eventHandlers={{
+                click: (e) => {
+                  e.target.openPopup();
+                },
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -10]} opacity={1}>
+                {place.name}
+              </Tooltip>
+
+              <Popup>
+                <div style={{ minWidth: 240 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    {place.name}
+                  </div>
+                  {place.category ? (
+                    <div
+                      style={{ fontSize: 12, color: "#666", marginBottom: 4 }}
+                    >
+                      {place.category}
+                    </div>
+                  ) : null}
+                  {place.address ? (
+                    <div style={{ fontSize: 13, marginBottom: 4 }}>
+                      {place.address}
+                    </div>
+                  ) : null}
+                  {place.location_code ? (
+                    <div
+                      style={{ fontSize: 12, color: "#666", marginBottom: 4 }}
+                    >
+                      📍 {place.location_code}
+                    </div>
+                  ) : null}
+                  {place.notes ? (
+                    <div
+                      style={{ fontSize: 12, color: "#555", marginBottom: 8 }}
+                    >
+                      <strong>RV note:</strong> {place.notes}
+                    </div>
+                  ) : null}
                   <div
                     style={{
-                      width: "100%",
-                      fontSize: 12,
-                      color: "#4b5563",
-                      marginTop: 2,
+                      marginTop: 12,
+                      display: "flex",
+                      gap: 6,
+                      flexWrap: "wrap",
                     }}
                   >
-                    Coordinates: {place.lat}, {place.lng}
+                    <a
+                      href={appleMapsUrl(place)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={popupButtonStyle}
+                    >
+                      Apple Maps
+                    </a>
+
+                    <a
+                      href={googleMapsUrl(place)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={popupButtonStyle}
+                    >
+                      Google Maps
+                    </a>
+
+                    {phoneHref ? (
+                      <a href={`tel:${phoneHref}`} style={popupButtonStyle}>
+                        Call
+                      </a>
+                    ) : null}
+
+                    {websiteHref ? (
+                      <a
+                        href={websiteHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={popupButtonStyle}
+                      >
+                        Website
+                      </a>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+                  {typeof place.lat === "number" &&
+                  Number.isFinite(place.lat) &&
+                  typeof place.lng === "number" &&
+                  Number.isFinite(place.lng) ? (
+                    <div
+                      style={{
+                        width: "100%",
+                        fontSize: 12,
+                        color: "#4b5563",
+                        marginTop: 8,
+                      }}
+                    >
+                      Coordinates: {place.lat}, {place.lng}
+                    </div>
+                  ) : null}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
       </MapContainer>
     </div>
   );

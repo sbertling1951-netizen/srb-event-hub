@@ -13,6 +13,21 @@ interface Props {
   locationCode?: string;
 }
 
+function cleanPhone(phone?: string) {
+  if (!phone) return "";
+  return phone.replace(/[^\d+]/g, "");
+}
+
+function normalizeWebsite(url?: string) {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}
+
 export default function LocationCard(props: Props) {
   const mapQuery = getBestLocationQuery({
     location_code: props.locationCode,
@@ -20,16 +35,19 @@ export default function LocationCard(props: Props) {
   });
 
   const appleMaps = buildAppleMapsUrl(
-    mapQuery || props.address,
+    mapQuery || props.address || props.name,
     props.latitude,
     props.longitude,
   );
 
   const googleMaps = buildGoogleMapsUrl(
-    mapQuery || props.address,
+    mapQuery || props.address || props.name,
     props.latitude,
     props.longitude,
   );
+
+  const phoneHref = cleanPhone(props.phone);
+  const websiteHref = normalizeWebsite(props.website);
 
   return (
     <div className="card">
@@ -73,16 +91,16 @@ export default function LocationCard(props: Props) {
           Google Maps
         </a>
 
-        {props.phone ? (
-          <a className="button-secondary" href={`tel:${props.phone}`}>
+        {phoneHref ? (
+          <a className="button-secondary" href={`tel:${phoneHref}`}>
             Call
           </a>
         ) : null}
 
-        {props.website ? (
+        {websiteHref ? (
           <a
             className="button-secondary"
-            href={props.website}
+            href={websiteHref}
             target="_blank"
             rel="noreferrer"
           >
