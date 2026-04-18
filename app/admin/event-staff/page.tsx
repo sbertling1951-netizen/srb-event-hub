@@ -21,6 +21,7 @@ type EventRow = {
   location: string | null;
   start_date: string | null;
   end_date: string | null;
+  visible_to_members?: boolean | null;
 };
 
 type PrivilegeGroup =
@@ -201,6 +202,8 @@ function buildPermissionMap(
 
 function EventStaffPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [availableAdmins, setAvailableAdmins] = useState<AdminUserRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,6 +257,8 @@ function EventStaffPageInner() {
 
       if (!adminEvent?.id) {
         setEvent(null);
+        setEvents([]);
+        setSelectedEventId("");
         setRows([]);
         setAvailableAdmins([]);
         setStatus("No admin working event selected.");
@@ -312,6 +317,7 @@ function EventStaffPageInner() {
 
       const [
         { data: eventData, error: eventError },
+        { data: eventsData, error: eventsError },
         { data: adminUsersData, error: adminUsersError },
         { data: accessData, error: accessError },
       ] = await Promise.all([
@@ -320,6 +326,11 @@ function EventStaffPageInner() {
           .select("id,name,location,start_date,end_date")
           .eq("id", eventId)
           .single(),
+        supabase
+          .from("events")
+          .select("id,name,location,start_date,end_date,visible_to_members")
+          .order("start_date", { ascending: false })
+          .order("name", { ascending: true }),
         supabase
           .from("admin_users")
           .select("id,email,display_name,is_active,privilege_group")
@@ -333,10 +344,12 @@ function EventStaffPageInner() {
       ]);
 
       if (eventError) throw eventError;
+      if (eventsError) throw eventsError;
       if (adminUsersError) throw adminUsersError;
       if (accessError) throw accessError;
 
       const eventRow = eventData as EventRow;
+      const allEvents = (eventsData || []) as EventRow[];
       const adminUsers = (adminUsersData || []) as AdminUserRow[];
       const accessRows = (accessData || []) as AdminEventAccessRow[];
 
@@ -401,6 +414,8 @@ function EventStaffPageInner() {
       );
 
       setEvent(eventRow);
+      setEvents(allEvents);
+      setSelectedEventId(eventRow.id);
       setRows(mergedRows);
       setAvailableAdmins(available);
       setStatus(`Loaded ${mergedRows.length} staff assignments.`);
@@ -411,6 +426,32 @@ function EventStaffPageInner() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleEventChange(nextEventId: string) {
+    setSelectedEventId(nextEventId);
+
+    if (!nextEventId) {
+      setEvent(null);
+      setRows([]);
+      setAvailableAdmins([]);
+      setStatus("No event selected.");
+      return;
+    }
+
+    const selected = events.find((item) => item.id === nextEventId);
+
+    localStorage.setItem(
+      "fcoc-admin-event-context",
+      JSON.stringify({
+        id: nextEventId,
+        name: selected?.name || null,
+      }),
+    );
+    localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+    window.dispatchEvent(new Event("fcoc-admin-event-updated"));
+
+    await loadPage(nextEventId);
   }
 
   async function createPermissionRows(
@@ -728,8 +769,27 @@ function EventStaffPageInner() {
       <div style={cardStyle}>
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Event Staff</h1>
 
-        <div style={{ fontWeight: 700 }}>
+        <div style={{ fontWeight: 700, marginBottom: 10 }}>
           Working event: {event?.name || "No working event selected"}
+        </div>
+
+        <div style={{ maxWidth: 420 }}>
+          <label style={labelStyle}>Select Event</label>
+          <select
+            value={selectedEventId}
+            onChange={(e) => void handleEventChange(e.target.value)}
+            style={inputStyle}
+            disabled={loading || events.length === 0}
+          >
+            <option value="">Select event</option>
+            {events.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name || "Untitled Event"}
+                {item.start_date ? ` • ${item.start_date}` : ""}
+                {item.location ? ` • ${item.location}` : ""}
+              </option>
+            ))}
+          </select>
         </div>
 
         {event?.location ? (
