@@ -279,6 +279,32 @@ function applyPrintOverride(
     is_first_timer: overrides.is_first_timer ?? row.is_first_timer,
   };
 }
+function getPrintComparableSnapshot(row: AttendeeRow) {
+  return {
+    pilot_first: toTitleCase(row.pilot_first),
+    pilot_last: toTitleCase(row.pilot_last),
+    nickname: toTitleCase(row.nickname),
+    copilot_first: toTitleCase(row.copilot_first),
+    copilot_last: toTitleCase(row.copilot_last),
+    copilot_nickname: toTitleCase(row.copilot_nickname),
+    membership_number: String(row.membership_number || "").trim(),
+    city: toTitleCase(row.city),
+    state: normalizeStateCode(row.state),
+    is_first_timer: !!row.is_first_timer,
+  };
+}
+
+function hasPrintChanges(
+  baseRow: AttendeeRow | null,
+  previewRow: AttendeeRow | null,
+) {
+  if (!baseRow || !previewRow) return false;
+
+  return (
+    JSON.stringify(getPrintComparableSnapshot(baseRow)) !==
+    JSON.stringify(getPrintComparableSnapshot(previewRow))
+  );
+}
 
 function compareRowsByAlpha(a: AttendeeRow, b: AttendeeRow) {
   const aLast = String(a.pilot_last || "")
@@ -628,6 +654,9 @@ function AdminPrintPageInner() {
     if (!editRow) return null;
     return applyPrintOverride(editRow, printOverrides[editRow.id]);
   }, [editRow, printOverrides]);
+  const editHasUnsavedChanges = useMemo(() => {
+    return hasPrintChanges(editRow, editPreviewRow);
+  }, [editRow, editPreviewRow]);
 
   function toggleSelected(id: string) {
     setSelectedIds((prev) =>
@@ -1364,9 +1393,13 @@ function AdminPrintPageInner() {
               <button
                 type="button"
                 onClick={() => setEditAttendeeId(null)}
-                style={primaryButtonStyle}
+                style={
+                  editHasUnsavedChanges
+                    ? dirtyPrimaryButtonStyle
+                    : primaryButtonStyle
+                }
               >
-                Save and Close
+                {editHasUnsavedChanges ? "Save Changes" : "Close"}
               </button>
             </div>
           </div>
@@ -1722,6 +1755,11 @@ const primaryButtonStyle: CSSProperties = {
   color: "white",
   fontWeight: 700,
   cursor: "pointer",
+};
+const dirtyPrimaryButtonStyle: CSSProperties = {
+  ...primaryButtonStyle,
+  background: "#d97706",
+  boxShadow: "0 0 0 3px rgba(217, 119, 6, 0.2)",
 };
 
 const secondaryButtonStyle: CSSProperties = {
