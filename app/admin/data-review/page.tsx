@@ -52,6 +52,80 @@ type ReviewItem = {
   severity: ReviewSeverity;
 };
 
+type ValidationRule = {
+  id: string;
+  field_name: string;
+  rule_type: string;
+  rule_value: string | null;
+  message: string;
+  severity: ReviewSeverity;
+  is_active: boolean;
+  priority: number;
+  applies_to_event_id: string | null;
+};
+
+function ruleAppliesToEvent(rule: ValidationRule, eventId?: string | null) {
+  if (!rule.is_active) return false;
+  if (!rule.applies_to_event_id) return true;
+  return rule.applies_to_event_id === eventId;
+}
+
+function validateField(
+  fieldName: string,
+  value: string | null | undefined,
+  rules: ValidationRule[],
+  eventId?: string | null,
+): { issue: string; severity: ReviewSeverity } | null {
+  const normalizedValue = String(value || "").trim();
+  const activeRules = rules
+    .filter((rule) => rule.field_name === fieldName)
+    .filter((rule) => ruleAppliesToEvent(rule, eventId))
+    .sort((a, b) => a.priority - b.priority);
+
+  for (const rule of activeRules) {
+    const ruleValue = String(rule.rule_value || "").trim();
+
+    if (rule.rule_type === "required") {
+      if (!normalizedValue) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
+
+    if (rule.rule_type === "starts_with") {
+      if (!normalizedValue.startsWith(ruleValue)) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
+
+    if (rule.rule_type === "contains") {
+      if (!normalizedValue.includes(ruleValue)) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
+
+    if (rule.rule_type === "min_length") {
+      const minLength = Number(ruleValue);
+      if (Number.isFinite(minLength) && normalizedValue.length < minLength) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 type PageSize = "10" | "25" | "50" | "100" | "all";
 
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
@@ -88,17 +162,6 @@ function normalizeMemberNumber(value?: string | null) {
   return String(value || "")
     .trim()
     .toUpperCase();
-}
-
-function getMembershipIssue(value?: string | null): string | null {
-  const normalized = normalizeMemberNumber(value);
-
-  if (!normalized) return "Missing membership number";
-  if (!normalized.startsWith("F")) {
-    return "Invalid membership number (must begin with F)";
-  }
-
-  return null;
 }
 
 function attendeeMatchesSearch(row: AttendeeRow, term: string) {
@@ -170,6 +233,7 @@ function AdminDataReviewPageInner() {
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState<PageSize>("25");
   const [showResolvedInfo, setShowResolvedInfo] = useState(true);
+  const [rules, setRules] = useState<ValidationRule[]>([]);
 
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
@@ -269,42 +333,59 @@ function AdminDataReviewPageInner() {
       setError(null);
       setStatus("Loading review queue...");
 
-      const { data, error } = await supabase
-        .from("attendees")
-        .select(
-          `
-            id,
-            event_id,
-            entry_id,
-            email,
-            pilot_first,
-            pilot_last,
-            copilot_first,
-            copilot_last,
-            nickname,
-            copilot_nickname,
-            membership_number,
-            city,
-            state,
-            assigned_site,
-            has_arrived,
-            is_first_timer,
-            wants_to_volunteer,
-            participant_type,
-            source_type,
-            is_active,
-            created_at
-          `,
-        )
-        .eq("event_id", eventId)
-        .order("pilot_last", { ascending: true })
-        .order("pilot_first", { ascending: true });
+      const [
+        { data: attendeeData, error: attendeeError },
+        { data: rulesData, error: rulesError },
+      ] = await Promise.all([
+        supabase
+          .from("attendees")
+          .select(
+            `
+              id,
+              event_id,
+              entry_id,
+              email,
+              pilot_first,
+              pilot_last,
+              copilot_first,
+              copilot_last,
+              nickname,
+              copilot_nickname,
+              membership_number,
+              city,
+              state,
+              assigned_site,
+              has_arrived,
+              is_first_timer,
+              wants_to_volunteer,
+              participant_type,
+              source_type,
+              is_active,
+              created_at
+            `,
+          )
+          .eq("event_id", eventId)
+          .order("pilot_last", { ascending: true })
+          .order("pilot_first", { ascending: true }),
 
-      if (error) throw error;
+        supabase
+          .from("validation_rules")
+          .select("*")
+          .order("priority", { ascending: true })
+          .order("created_at", { ascending: true }),
+      ]);
 
-      const nextAttendees = (data || []) as AttendeeRow[];
+      if (attendeeError) throw attendeeError;
+      if (rulesError) throw rulesError;
+
+      const nextAttendees = (attendeeData || []) as AttendeeRow[];
+      const nextRules = (rulesData || []) as ValidationRule[];
+
       setAttendees(nextAttendees);
-      setStatus(`Loaded ${nextAttendees.length} attendees for review.`);
+      setRules(nextRules);
+      setStatus(
+        `Loaded ${nextAttendees.length} attendees and ${nextRules.length} validation rules.`,
+      );
     } catch (err: any) {
       console.error("loadQueue error:", err);
       setError(err?.message || "Could not load data review queue.");
@@ -331,19 +412,25 @@ function AdminDataReviewPageInner() {
 
   const reviewItems = useMemo(() => {
     return attendees.flatMap((attendee) => {
-      const issue = getMembershipIssue(attendee.membership_number);
-      if (!issue) return [];
+      const membershipValidation = validateField(
+        "membership_number",
+        attendee.membership_number,
+        rules,
+        currentEvent?.id || null,
+      );
+
+      if (!membershipValidation) return [];
 
       return [
         {
-          id: attendee.id,
+          id: `${attendee.id}-membership_number`,
           attendee,
-          issue,
-          severity: "error" as const,
-        },
+          issue: membershipValidation.issue,
+          severity: membershipValidation.severity,
+        } satisfies ReviewItem,
       ];
     });
-  }, [attendees]);
+  }, [attendees, rules, currentEvent?.id]);
 
   const filteredReviewItems = useMemo(() => {
     const term = search.trim().toLowerCase();
