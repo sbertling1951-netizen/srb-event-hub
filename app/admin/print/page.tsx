@@ -372,6 +372,7 @@ function AdminPrintPageInner() {
     useState(false);
   const [nameTagTextColor, setNameTagTextColor] = useState("#000000");
   const [coachPlateTextColor, setCoachPlateTextColor] = useState("#000000");
+  const [flashMessage, setFlashMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function init() {
@@ -666,10 +667,14 @@ function AdminPrintPageInner() {
 
   function selectAllFiltered() {
     setSelectedIds(sortedFilteredAttendees.map((row) => row.id));
+    showFlashMessage(
+      `${sortedFilteredAttendees.length} attendee${sortedFilteredAttendees.length === 1 ? "" : "s"} added to print queue.`,
+    );
   }
 
   function clearSelected() {
     setSelectedIds([]);
+    showFlashMessage("Print queue cleared.");
   }
 
   function openPrintEditor(attendeeId: string) {
@@ -680,13 +685,44 @@ function AdminPrintPageInner() {
   }
 
   function addToPrintQueue(attendeeId: string) {
-    setSelectedIds((prev) =>
-      prev.includes(attendeeId) ? prev : [...prev, attendeeId],
+    const row = [...attendees, ...manualAttendees].find(
+      (item) => item.id === attendeeId,
     );
+    const label = row ? displayPilotName(row) || "Attendee" : "Attendee";
+
+    setSelectedIds((prev) => {
+      if (prev.includes(attendeeId)) {
+        showFlashMessage(`${label} is already in the print queue.`);
+        return prev;
+      }
+
+      showFlashMessage(`${label} added to print queue.`);
+      return [...prev, attendeeId];
+    });
   }
 
   function removeFromPrintQueue(attendeeId: string) {
-    setSelectedIds((prev) => prev.filter((id) => id !== attendeeId));
+    const row = [...attendees, ...manualAttendees].find(
+      (item) => item.id === attendeeId,
+    );
+    const label = row ? displayPilotName(row) || "Attendee" : "Attendee";
+
+    setSelectedIds((prev) => {
+      if (!prev.includes(attendeeId)) {
+        showFlashMessage(`${label} is not currently in the print queue.`);
+        return prev;
+      }
+
+      showFlashMessage(`${label} removed from print queue.`);
+      return prev.filter((id) => id !== attendeeId);
+    });
+  }
+
+  function showFlashMessage(message: string) {
+    setFlashMessage(message);
+    window.setTimeout(() => {
+      setFlashMessage((current) => (current === message ? null : current));
+    }, 1600);
   }
 
   function updatePrintOverride(
@@ -709,6 +745,7 @@ function AdminPrintPageInner() {
       delete next[attendeeId];
       return next;
     });
+    showFlashMessage("Print overrides cleared.");
   }
 
   function createManualEntry(kind: ManualPrintEntryKind) {
@@ -718,6 +755,11 @@ function AdminPrintPageInner() {
     setSelectedIds((prev) => [...prev, nextRow.id]);
     setEditAttendeeId(nextRow.id);
     setPrintMode(kind === "name_tag" ? "name_tags" : "coach_plates");
+    showFlashMessage(
+      kind === "name_tag"
+        ? "Manual name tag created and added to print queue."
+        : "Manual coach plate created and added to print queue.",
+    );
   }
 
   function printOnlyAttendee(attendeeId: string) {
@@ -736,6 +778,7 @@ function AdminPrintPageInner() {
       delete next[attendeeId];
       return next;
     });
+    showFlashMessage("Manual print entry deleted.");
     setEditAttendeeId((prev) => (prev === attendeeId ? null : prev));
   }
 
@@ -844,6 +887,9 @@ function AdminPrintPageInner() {
         </div>
 
         <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
+        {flashMessage ? (
+          <div style={flashMessageStyle}>{flashMessage}</div>
+        ) : null}
 
         {error ? <div style={errorBoxStyle}>{error}</div> : null}
       </div>
@@ -1092,11 +1138,21 @@ function AdminPrintPageInner() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          addToPrintQueue(row.id);
+                          if (selectedIds.includes(row.id)) {
+                            removeFromPrintQueue(row.id);
+                          } else {
+                            addToPrintQueue(row.id);
+                          }
                         }}
-                        style={secondaryButtonStyle}
+                        style={
+                          selectedIds.includes(row.id)
+                            ? activeSecondaryButtonStyle
+                            : secondaryButtonStyle
+                        }
                       >
-                        Add To Print Queue
+                        {selectedIds.includes(row.id)
+                          ? "In Print Queue"
+                          : "Add To Print Queue"}
                       </button>
                       <button
                         type="button"
@@ -1378,10 +1434,22 @@ function AdminPrintPageInner() {
               ) : null}
               <button
                 type="button"
-                onClick={() => addToPrintQueue(editPreviewRow.id)}
-                style={secondaryButtonStyle}
+                onClick={() => {
+                  if (selectedIds.includes(editPreviewRow.id)) {
+                    removeFromPrintQueue(editPreviewRow.id);
+                  } else {
+                    addToPrintQueue(editPreviewRow.id);
+                  }
+                }}
+                style={
+                  selectedIds.includes(editPreviewRow.id)
+                    ? activeSecondaryButtonStyle
+                    : secondaryButtonStyle
+                }
               >
-                Add To Print Queue
+                {selectedIds.includes(editPreviewRow.id)
+                  ? "In Print Queue"
+                  : "Add To Print Queue"}
               </button>
               <button
                 type="button"
@@ -1769,6 +1837,24 @@ const secondaryButtonStyle: CSSProperties = {
   background: "white",
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const activeSecondaryButtonStyle: CSSProperties = {
+  ...secondaryButtonStyle,
+  background: "#dcfce7",
+  border: "1px solid #16a34a",
+  color: "#166534",
+};
+
+const flashMessageStyle: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontSize: 13,
+  fontWeight: 600,
 };
 
 const errorBoxStyle: CSSProperties = {
