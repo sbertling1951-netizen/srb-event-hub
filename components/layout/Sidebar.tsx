@@ -414,6 +414,7 @@ export default function Sidebar() {
     { label: "Master Maps", href: "/admin/master-maps" },
     { label: "Map Locations", href: "/admin/locations" },
     { label: "Attendee Management", href: "/admin/imports" },
+    { label: "Data Review", href: "/admin/data-review" },
     { label: "Reports", href: "/admin/reports" },
     { label: "Pre-Rally Checklist", href: "/admin/checklist" },
     { label: "Print Center", href: "/admin/print" },
