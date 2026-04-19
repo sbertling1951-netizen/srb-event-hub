@@ -62,6 +62,41 @@ type ParsedRegistration = {
   activities: ActivityPreview[];
   warnings: string[];
 };
+type AttendeeRow = {
+  id: string;
+  event_id: string;
+  entry_id: string | null;
+  email: string | null;
+  pilot_first: string | null;
+  pilot_last: string | null;
+  copilot_first: string | null;
+  copilot_last: string | null;
+  nickname: string | null;
+  copilot_nickname: string | null;
+  membership_number: string | null;
+  primary_phone: string | null;
+  cell_phone: string | null;
+  city: string | null;
+  state: string | null;
+  wants_to_volunteer: boolean | null;
+  is_first_timer: boolean | null;
+  coach_manufacturer: string | null;
+  coach_model: string | null;
+  special_events_raw: string | null;
+  assigned_site: string | null;
+  has_arrived: boolean | null;
+  share_with_attendees: boolean | null;
+  is_active: boolean;
+  inactive_reason: string | null;
+  participant_type?: string | null;
+  source_type?: string | null;
+  include_in_headcount?: boolean | null;
+  needs_name_tag?: boolean | null;
+  needs_coach_plate?: boolean | null;
+  needs_parking?: boolean | null;
+  notes?: string | null;
+  created_at?: string | null;
+};
 
 type PrintSettingsRow = {
   id?: string;
@@ -74,6 +109,8 @@ const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
 
 type SavedAttendeeManagementView = {
   showFullImportTable: boolean;
+  savedAttendeePageSize: "25" | "50" | "100" | "all";
+  importPreviewPageSize: "25" | "50" | "100" | "all";
 };
 
 function getAttendeeManagementViewStorageKey(eventId: string) {
@@ -122,6 +159,13 @@ function getStoredAdminEvent(): EventContext | null {
   } catch {
     return null;
   }
+}
+function fullName(first?: string | null, last?: string | null) {
+  return [first, last].filter(Boolean).join(" ").trim();
+}
+
+function cityStateFromAttendee(row: AttendeeRow) {
+  return [row.city, row.state].filter(Boolean).join(", ");
 }
 
 function normalizeKey(value: string) {
@@ -464,6 +508,16 @@ function AdminAttendeeImportsPageInner() {
   const [headers, setHeaders] = useState<string[]>([]);
   const [fileName, setFileName] = useState("");
 
+  const [savedAttendees, setSavedAttendees] = useState<AttendeeRow[]>([]);
+  const [loadingSavedAttendees, setLoadingSavedAttendees] = useState(false);
+  const [savedAttendeePageSize, setSavedAttendeePageSize] = useState<
+    "25" | "50" | "100" | "all"
+  >("all");
+
+  const [importPreviewPageSize, setImportPreviewPageSize] = useState<
+    "25" | "50" | "100" | "all"
+  >("all");
+
   const [loadingEvent, setLoadingEvent] = useState(true);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -614,10 +668,22 @@ function AdminAttendeeImportsPageInner() {
     const saved = loadSavedAttendeeManagementView(selectedImportEventId);
     if (!saved) {
       setShowFullImportTable(false);
+      setSavedAttendeePageSize("all");
+      setImportPreviewPageSize("all");
       return;
     }
 
     setShowFullImportTable(!!saved.showFullImportTable);
+    setSavedAttendeePageSize(saved.savedAttendeePageSize || "all");
+    setImportPreviewPageSize(saved.importPreviewPageSize || "all");
+  }, [selectedImportEventId]);
+  useEffect(() => {
+    if (!selectedImportEventId) {
+      setSavedAttendees([]);
+      return;
+    }
+
+    void loadSavedAttendees(selectedImportEventId);
   }, [selectedImportEventId]);
 
   useEffect(() => {
@@ -625,16 +691,29 @@ function AdminAttendeeImportsPageInner() {
 
     saveAttendeeManagementView(selectedImportEventId, {
       showFullImportTable,
+      savedAttendeePageSize,
+      importPreviewPageSize,
     });
-  }, [selectedImportEventId, showFullImportTable]);
+  }, [
+    selectedImportEventId,
+    showFullImportTable,
+    savedAttendeePageSize,
+    importPreviewPageSize,
+  ]);
 
   const validRows = useMemo(
     () => rows.filter((row) => row.entry_id && row.email),
     [rows],
   );
 
-  const previewRows = useMemo(() => rows.slice(0, 12), [rows]);
+  const visiblePreviewRows = useMemo(() => {
+    if (importPreviewPageSize === "all") return rows;
 
+    const limit = Number(importPreviewPageSize);
+    return rows.slice(0, limit);
+  }, [rows, importPreviewPageSize]);
+
+  const previewRows = useMemo(() => visiblePreviewRows, [visiblePreviewRows]);
   const sortedRows = useMemo(
     () => [...rows].sort((a, b) => a.rowNumber - b.rowNumber),
     [rows],
@@ -644,6 +723,71 @@ function AdminAttendeeImportsPageInner() {
     () => rows.reduce((sum, row) => sum + row.activities.length, 0),
     [rows],
   );
+  const visibleSavedAttendees = useMemo(() => {
+    if (savedAttendeePageSize === "all") return savedAttendees;
+
+    const limit = Number(savedAttendeePageSize);
+    return savedAttendees.slice(0, limit);
+  }, [savedAttendees, savedAttendeePageSize]);
+
+  async function loadSavedAttendees(eventId: string) {
+    try {
+      setLoadingSavedAttendees(true);
+
+      const { data, error } = await supabase
+        .from("attendees")
+        .select(
+          `
+            id,
+            event_id,
+            entry_id,
+            email,
+            pilot_first,
+            pilot_last,
+            copilot_first,
+            copilot_last,
+            nickname,
+            copilot_nickname,
+            membership_number,
+            primary_phone,
+            cell_phone,
+            city,
+            state,
+            wants_to_volunteer,
+            is_first_timer,
+            coach_manufacturer,
+            coach_model,
+            special_events_raw,
+            assigned_site,
+            has_arrived,
+            share_with_attendees,
+            is_active,
+            inactive_reason,
+            participant_type,
+            source_type,
+            include_in_headcount,
+            needs_name_tag,
+            needs_coach_plate,
+            needs_parking,
+            notes,
+            created_at
+          `,
+        )
+        .eq("event_id", eventId)
+        .order("pilot_last", { ascending: true })
+        .order("pilot_first", { ascending: true });
+
+      if (error) throw error;
+
+      setSavedAttendees((data || []) as AttendeeRow[]);
+    } catch (err: any) {
+      console.error("loadSavedAttendees error:", err);
+      setSavedAttendees([]);
+      setError(err?.message || "Could not load saved attendees.");
+    } finally {
+      setLoadingSavedAttendees(false);
+    }
+  }
 
   const selectedImportEvent =
     availableEvents.find((event) => event.id === selectedImportEventId) || null;
@@ -1079,6 +1223,7 @@ function AdminAttendeeImportsPageInner() {
 
         if (activityError) throw activityError;
       }
+      await loadSavedAttendees(selectedImportEventId);
 
       setStatus(
         `Imported ${validRows.length} attendees, ${importRowPayload.length} source rows, and ${activityPayload.length} activity rows into ${
@@ -1601,14 +1746,203 @@ function AdminAttendeeImportsPageInner() {
           </div>
         ) : null}
       </div>
+      <div className="card" style={{ padding: 18 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "end",
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+              Saved Attendee List
+            </h2>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>
+              {savedAttendees.length} saved attendee
+              {savedAttendees.length === 1 ? "" : "s"} for this event
+            </div>
+          </div>
+
+          <div style={{ minWidth: 180 }}>
+            <label
+              style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
+            >
+              Rows to Show
+            </label>
+            <select
+              value={savedAttendeePageSize}
+              onChange={(e) =>
+                setSavedAttendeePageSize(
+                  e.target.value as "25" | "50" | "100" | "all",
+                )
+              }
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ccc",
+                background: "white",
+              }}
+            >
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">Entire List</option>
+            </select>
+          </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => void loadSavedAttendees(selectedImportEventId)}
+              disabled={!selectedImportEventId || loadingSavedAttendees}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #ccc",
+                background: "white",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Refresh Saved List
+            </button>
+          </div>
+        </div>
+
+        {loadingSavedAttendees ? (
+          <div>Loading saved attendees...</div>
+        ) : savedAttendees.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>
+            No saved attendees found for this event yet.
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 10 }}>
+              Showing {visibleSavedAttendees.length} of {savedAttendees.length}
+            </div>
+
+            <div style={{ overflowX: "auto" }}>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  minWidth: 1200,
+                }}
+              >
+                <thead>
+                  <tr>
+                    <th style={tableHeadStyle}>Pilot</th>
+                    <th style={tableHeadStyle}>Co-Pilot</th>
+                    <th style={tableHeadStyle}>Email</th>
+                    <th style={tableHeadStyle}>City / State</th>
+                    <th style={tableHeadStyle}>Member #</th>
+                    <th style={tableHeadStyle}>Site</th>
+                    <th style={tableHeadStyle}>Arrived</th>
+                    <th style={tableHeadStyle}>First Timer</th>
+                    <th style={tableHeadStyle}>Volunteer</th>
+                    <th style={tableHeadStyle}>Source</th>
+                    <th style={tableHeadStyle}>Active</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleSavedAttendees.map((row) => (
+                    <tr key={row.id}>
+                      <td style={tableCellStyle}>
+                        {fullName(row.pilot_first, row.pilot_last) || "—"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {fullName(row.copilot_first, row.copilot_last) || "—"}
+                      </td>
+                      <td style={tableCellStyle}>{row.email || "—"}</td>
+                      <td style={tableCellStyle}>
+                        {cityStateFromAttendee(row) || "—"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {row.membership_number || "—"}
+                      </td>
+                      <td style={tableCellStyle}>{row.assigned_site || "—"}</td>
+                      <td style={tableCellStyle}>
+                        {row.has_arrived ? "Yes" : "No"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {row.is_first_timer ? "Yes" : "No"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {row.wants_to_volunteer ? "Yes" : "No"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {row.source_type || "imported"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {row.is_active ? "Yes" : "No"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
 
       <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Import Preview</h2>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "end",
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Import Preview</h2>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>
+              {rows.length} imported row{rows.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          <div style={{ minWidth: 180 }}>
+            <label
+              style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
+            >
+              Rows to Show
+            </label>
+            <select
+              value={importPreviewPageSize}
+              onChange={(e) =>
+                setImportPreviewPageSize(
+                  e.target.value as "25" | "50" | "100" | "all",
+                )
+              }
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ccc",
+                background: "white",
+              }}
+            >
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">Entire List</option>
+            </select>
+          </div>
+        </div>
 
         {!rows.length ? (
           <div style={{ opacity: 0.8 }}>No file loaded yet.</div>
         ) : (
           <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 10 }}>
+              Showing {previewRows.length} of {rows.length}
+            </div>
             {previewRows.map((row) => (
               <div
                 key={`${row.entry_id}-${row.rowNumber}`}
