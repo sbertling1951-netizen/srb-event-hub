@@ -72,6 +72,46 @@ type PrintSettingsRow = {
 
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
 
+type SavedAttendeeManagementView = {
+  showFullImportTable: boolean;
+};
+
+function getAttendeeManagementViewStorageKey(eventId: string) {
+  return `fcoc-attendee-management-view::${eventId}`;
+}
+
+function loadSavedAttendeeManagementView(
+  eventId: string,
+): SavedAttendeeManagementView | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem(
+      getAttendeeManagementViewStorageKey(eventId),
+    );
+    if (!raw) return null;
+    return JSON.parse(raw) as SavedAttendeeManagementView;
+  } catch {
+    return null;
+  }
+}
+
+function saveAttendeeManagementView(
+  eventId: string,
+  view: SavedAttendeeManagementView,
+) {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(
+      getAttendeeManagementViewStorageKey(eventId),
+      JSON.stringify(view),
+    );
+  } catch {
+    // ignore storage errors
+  }
+}
+
 function getStoredAdminEvent(): EventContext | null {
   if (typeof window === "undefined") return null;
 
@@ -106,13 +146,16 @@ function normalizePhone(value: unknown) {
   const raw = text(value);
   if (!raw) return "";
   const digits = digitsOnly(raw);
+
   if (digits.length === 10) {
     return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
+
   if (digits.length === 11 && digits.startsWith("1")) {
     const local = digits.slice(1);
     return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`;
   }
+
   return raw;
 }
 
@@ -140,6 +183,7 @@ function getValueByAliases(row: RawRow, aliases: readonly string[]) {
 function parseMoney(value: unknown): number | null {
   const raw = text(value).replace(/[$,]/g, "");
   if (!raw) return null;
+
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -147,8 +191,10 @@ function parseMoney(value: unknown): number | null {
 function parseInteger(value: unknown): number | null {
   const raw = text(value);
   if (!raw) return null;
+
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return null;
+
   return Math.round(parsed);
 }
 
@@ -160,6 +206,7 @@ function parseBoolYesNo(value: unknown) {
 function getValue(row: RawRow, key: string) {
   return getValueByAliases(row, [key]);
 }
+
 const FIELD_ALIASES = {
   entry_id: ["Entry Id", "Entry ID", "EntryId", "Order Id", "Order ID"],
   email: ["Email Address", "Email", "E-mail", "Email address"],
@@ -367,7 +414,6 @@ function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
   if (!coach_manufacturer && !coach_model) {
     warnings.push("Missing coach information");
   }
-
   if (!primary_phone && !cell_phone) {
     warnings.push("Missing phone number");
   }
@@ -452,6 +498,7 @@ function AdminAttendeeImportsPageInner() {
           setRows([]);
           setHeaders([]);
           setFileName("");
+          setShowFullImportTable(false);
           setError("No admin access.");
           setStatus("Access denied.");
           return;
@@ -483,6 +530,7 @@ function AdminAttendeeImportsPageInner() {
           setRows([]);
           setHeaders([]);
           setFileName("");
+          setShowFullImportTable(false);
           setStatus("No accessible events available for import.");
         }
       } catch (err) {
@@ -494,6 +542,7 @@ function AdminAttendeeImportsPageInner() {
         setRows([]);
         setHeaders([]);
         setFileName("");
+        setShowFullImportTable(false);
         setStatus("Could not load events.");
       } finally {
         setLoadingEvent(false);
@@ -558,6 +607,26 @@ function AdminAttendeeImportsPageInner() {
 
     void loadPrintSettings();
   }, [selectedImportEventId]);
+
+  useEffect(() => {
+    if (!selectedImportEventId) return;
+
+    const saved = loadSavedAttendeeManagementView(selectedImportEventId);
+    if (!saved) {
+      setShowFullImportTable(false);
+      return;
+    }
+
+    setShowFullImportTable(!!saved.showFullImportTable);
+  }, [selectedImportEventId]);
+
+  useEffect(() => {
+    if (!selectedImportEventId) return;
+
+    saveAttendeeManagementView(selectedImportEventId, {
+      showFullImportTable,
+    });
+  }, [selectedImportEventId, showFullImportTable]);
 
   const validRows = useMemo(
     () => rows.filter((row) => row.entry_id && row.email),
@@ -634,6 +703,7 @@ function AdminAttendeeImportsPageInner() {
       setRows([]);
       setHeaders([]);
       setLoadedForEventId("");
+      setShowFullImportTable(false);
       setStatus("Parse failed.");
     } finally {
       setParsing(false);
@@ -1066,12 +1136,12 @@ function AdminAttendeeImportsPageInner() {
               : ""}
           </div>
 
-          {currentEvent?.id && (
+          {currentEvent?.id ? (
             <div style={{ fontSize: 12, opacity: 0.7 }}>
               Current admin event:{" "}
               {currentEvent.name || currentEvent.eventName || "Unknown"}
             </div>
-          )}
+          ) : null}
         </div>
 
         <div style={{ fontSize: 14, marginBottom: 12 }}>{status}</div>
@@ -1091,7 +1161,7 @@ function AdminAttendeeImportsPageInner() {
           </div>
         ) : null}
 
-        {eventChangedSinceLoad && (
+        {eventChangedSinceLoad ? (
           <div
             style={{
               marginBottom: 12,
@@ -1106,7 +1176,7 @@ function AdminAttendeeImportsPageInner() {
             Target event changed after file load. Reload the file before
             importing to avoid importing into the wrong event.
           </div>
-        )}
+        ) : null}
 
         <div style={{ display: "grid", gap: 12 }}>
           <div>
@@ -1228,7 +1298,8 @@ function AdminAttendeeImportsPageInner() {
               }}
             >
               <button
-                onClick={handleUploadNameTagBackground}
+                type="button"
+                onClick={() => void handleUploadNameTagBackground()}
                 disabled={
                   !selectedImportEventId || !nameTagFile || savingNameTagBg
                 }
@@ -1239,7 +1310,8 @@ function AdminAttendeeImportsPageInner() {
               </button>
 
               <button
-                onClick={clearNameTagBackground}
+                type="button"
+                onClick={() => void clearNameTagBackground()}
                 disabled={
                   !selectedImportEventId || !printSettings?.name_tag_bg_url
                 }
@@ -1299,7 +1371,8 @@ function AdminAttendeeImportsPageInner() {
               }}
             >
               <button
-                onClick={handleUploadCoachPlateBackground}
+                type="button"
+                onClick={() => void handleUploadCoachPlateBackground()}
                 disabled={
                   !selectedImportEventId ||
                   !coachPlateFile ||
@@ -1312,7 +1385,8 @@ function AdminAttendeeImportsPageInner() {
               </button>
 
               <button
-                onClick={clearCoachPlateBackground}
+                type="button"
+                onClick={() => void clearCoachPlateBackground()}
                 disabled={
                   !selectedImportEventId || !printSettings?.coach_plate_bg_url
                 }
@@ -1369,6 +1443,7 @@ function AdminAttendeeImportsPageInner() {
               : "Show Imported Data Preview"}
           </button>
         </div>
+
         {showFullImportTable ? (
           <div
             style={{
@@ -1424,6 +1499,7 @@ function AdminAttendeeImportsPageInner() {
             </div>
           </div>
         </div>
+
         {showFullImportTable ? (
           <div style={{ marginTop: 16 }}>
             <h3 style={{ marginTop: 0, marginBottom: 12 }}>
@@ -1502,7 +1578,11 @@ function AdminAttendeeImportsPageInner() {
                             ? row.activities
                                 .map(
                                   (activity) =>
-                                    `${activity.activity_name} x${activity.quantity}${activity.price !== null ? ` ($${activity.price})` : ""}`,
+                                    `${activity.activity_name} x${activity.quantity}${
+                                      activity.price !== null
+                                        ? ` ($${activity.price})`
+                                        : ""
+                                    }`,
                                 )
                                 .join(" • ")
                             : "—"}
