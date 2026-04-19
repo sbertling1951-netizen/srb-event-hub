@@ -1027,7 +1027,7 @@ function AdminAttendeeImportsPageInner() {
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Imports</h1>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Attendee Management</h1>
 
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
           <div style={{ fontWeight: 600 }}>Target Event</div>
@@ -1347,7 +1347,7 @@ function AdminAttendeeImportsPageInner() {
       </div>
 
       <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Import Summary</h2>
+        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Import Results</h2>
 
         <div style={{ marginBottom: 14 }}>
           <button
@@ -1365,8 +1365,8 @@ function AdminAttendeeImportsPageInner() {
             }}
           >
             {showFullImportTable
-              ? "Hide Full Import Table"
-              : "Show Full Import Table"}
+              ? "Hide Imported Data Preview"
+              : "Show Imported Data Preview"}
           </button>
         </div>
         {showFullImportTable ? (
@@ -1381,7 +1381,7 @@ function AdminAttendeeImportsPageInner() {
               fontSize: 14,
             }}
           >
-            Full parsed import table is shown below in its own section.
+            Imported data preview is shown below in its own section.
           </div>
         ) : null}
 
@@ -1427,7 +1427,7 @@ function AdminAttendeeImportsPageInner() {
         {showFullImportTable ? (
           <div style={{ marginTop: 16 }}>
             <h3 style={{ marginTop: 0, marginBottom: 12 }}>
-              Full Parsed Import View
+              Imported Data Preview
             </h3>
 
             {!rows.length ? (
@@ -1523,7 +1523,7 @@ function AdminAttendeeImportsPageInner() {
       </div>
 
       <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Preview</h2>
+        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Import Preview</h2>
 
         {!rows.length ? (
           <div style={{ opacity: 0.8 }}>No file loaded yet.</div>
