@@ -169,7 +169,17 @@ function validateField(
 }
 
 type PageSize = "10" | "25" | "50" | "100" | "all";
+
 type DataStatusFilter = "all" | "pending" | "corrected" | "reviewed" | "locked";
+
+type ParticipantTypeFilter =
+  | "all"
+  | "attendee"
+  | "vendor"
+  | "staff"
+  | "speaker"
+  | "volunteer"
+  | "event_host";
 
 function emptyAttendeeEditorState(): AttendeeEditorState {
   return {
@@ -291,8 +301,83 @@ function formatDateRange(
 }
 
 function participantTypeLabel(value?: string | null) {
-  if (!value) return "attendee";
-  return value.replace(/_/g, " ");
+  if (!value) return "Attendee";
+
+  const map: Record<string, string> = {
+    attendee: "Attendee",
+    vendor: "Vendor",
+    staff: "Staff",
+    speaker: "Speaker",
+    volunteer: "Volunteer",
+    event_host: "Event Host",
+  };
+
+  return map[value] || value.replace(/_/g, " ");
+}
+
+function participantTypeBadgeStyle(value?: string | null): CSSProperties {
+  switch (value) {
+    case "vendor":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#ede9fe",
+        color: "#5b21b6",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    case "staff":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#dcfce7",
+        color: "#166534",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    case "speaker":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#dbeafe",
+        color: "#1d4ed8",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    case "volunteer":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#fef3c7",
+        color: "#92400e",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    case "event_host":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#fee2e2",
+        color: "#991b1b",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    default:
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#e5e7eb",
+        color: "#374151",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+  }
 }
 
 function sortReviewItems(items: ReviewItem[]) {
@@ -329,6 +414,8 @@ function AdminDataReviewPageInner() {
   const [pageSize, setPageSize] = useState<PageSize>("25");
   const [dataStatusFilter, setDataStatusFilter] =
     useState<DataStatusFilter>("all");
+  const [participantTypeFilter, setParticipantTypeFilter] =
+    useState<ParticipantTypeFilter>("all");
   const [showResolvedInfo, setShowResolvedInfo] = useState(true);
   const [rules, setRules] = useState<ValidationRule[]>([]);
 
@@ -549,11 +636,17 @@ function AdminDataReviewPageInner() {
         const status = dataStatusLabel(item.attendee.data_status);
         const matchesStatus =
           dataStatusFilter === "all" ? true : status === dataStatusFilter;
+        const participantType = (item.attendee.participant_type ||
+          "attendee") as ParticipantTypeFilter;
+        const matchesParticipantType =
+          participantTypeFilter === "all"
+            ? true
+            : participantType === participantTypeFilter;
 
-        return matchesSearch && matchesStatus;
+        return matchesSearch && matchesStatus && matchesParticipantType;
       }),
     );
-  }, [reviewItems, search, dataStatusFilter]);
+  }, [reviewItems, search, dataStatusFilter, participantTypeFilter]);
 
   const visibleReviewItems = useMemo(() => {
     if (pageSize === "all") return filteredReviewItems;
@@ -944,7 +1037,7 @@ function AdminDataReviewPageInner() {
             display: "grid",
             gap: 14,
             gridTemplateColumns:
-              "minmax(260px, 1.5fr) minmax(220px, 220px) minmax(220px, 220px) auto",
+              "minmax(260px, 1.5fr) minmax(220px, 220px) minmax(220px, 220px) minmax(220px, 220px) auto",
             alignItems: "end",
           }}
         >
@@ -990,6 +1083,27 @@ function AdminDataReviewPageInner() {
             </select>
           </div>
 
+          <div>
+            <label style={labelStyle}>Participant Type</label>
+            <select
+              value={participantTypeFilter}
+              onChange={(e) =>
+                setParticipantTypeFilter(
+                  e.target.value as ParticipantTypeFilter,
+                )
+              }
+              style={inputStyle}
+            >
+              <option value="all">All Types</option>
+              <option value="attendee">Attendee</option>
+              <option value="vendor">Vendor</option>
+              <option value="staff">Staff</option>
+              <option value="speaker">Speaker</option>
+              <option value="volunteer">Volunteer</option>
+              <option value="event_host">Event Host</option>
+            </select>
+          </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
@@ -1019,7 +1133,11 @@ function AdminDataReviewPageInner() {
             Status filter:{" "}
             {dataStatusFilter === "all"
               ? "All Statuses"
-              : dataStatusLabel(dataStatusFilter)}
+              : dataStatusLabel(dataStatusFilter)}{" "}
+            • Participant type:{" "}
+            {participantTypeFilter === "all"
+              ? "All Types"
+              : participantTypeLabel(participantTypeFilter)}
           </div>
         </div>
 
@@ -1066,14 +1184,30 @@ function AdminDataReviewPageInner() {
                       </div>
 
                       <div
-                        style={{ fontSize: 13, color: "#555", marginTop: 4 }}
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                          fontSize: 13,
+                          color: "#555",
+                          marginTop: 4,
+                        }}
                       >
-                        {participantTypeLabel(attendee.participant_type)}
-                        {attendee.email ? ` • ${attendee.email}` : ""}
-                        {attendee.assigned_site
-                          ? ` • Site ${attendee.assigned_site}`
-                          : ""}
-                        {cityState(attendee) ? ` • ${cityState(attendee)}` : ""}
+                        <span
+                          style={participantTypeBadgeStyle(
+                            attendee.participant_type,
+                          )}
+                        >
+                          {participantTypeLabel(attendee.participant_type)}
+                        </span>
+                        {attendee.email ? <span>{attendee.email}</span> : null}
+                        {attendee.assigned_site ? (
+                          <span>{`Site ${attendee.assigned_site}`}</span>
+                        ) : null}
+                        {cityState(attendee) ? (
+                          <span>{cityState(attendee)}</span>
+                        ) : null}
                       </div>
                     </div>
 
@@ -1353,13 +1487,20 @@ function AdminDataReviewPageInner() {
 
               <div>
                 <label style={labelStyle}>Participant Type</label>
-                <input
+                <select
                   value={editorState.participant_type}
                   onChange={(e) =>
                     updateEditorField("participant_type", e.target.value)
                   }
                   style={inputStyle}
-                />
+                >
+                  <option value="attendee">Attendee</option>
+                  <option value="vendor">Vendor</option>
+                  <option value="staff">Staff</option>
+                  <option value="speaker">Speaker</option>
+                  <option value="volunteer">Volunteer</option>
+                  <option value="event_host">Event Host</option>
+                </select>
               </div>
 
               <div>
