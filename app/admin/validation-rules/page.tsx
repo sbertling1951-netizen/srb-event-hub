@@ -558,6 +558,7 @@ function AdminValidationRulesPageInner() {
               <option value="starts_with">Starts With</option>
               <option value="contains">Contains</option>
               <option value="min_length">Minimum Length</option>
+              <option value="starts_with_any">Starts With Any</option>
             </select>
           </div>
 

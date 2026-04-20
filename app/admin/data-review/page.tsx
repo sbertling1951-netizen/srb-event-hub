@@ -102,6 +102,19 @@ function validateField(
         };
       }
     }
+    if (rule.rule_type === "starts_with_any") {
+      const allowed = ruleValue
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean);
+
+      if (!allowed.some((prefix) => normalizedValue.startsWith(prefix))) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
 
     if (rule.rule_type === "contains") {
       if (!normalizedValue.includes(ruleValue)) {
