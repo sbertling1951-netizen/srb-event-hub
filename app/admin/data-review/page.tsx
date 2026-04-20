@@ -579,7 +579,7 @@ function AdminDataReviewPageInner() {
     }
 
     if (!draftValue.startsWith("F")) {
-      setError("Membership number must begin with F.");
+      setError("Membership number must begin with F or C.");
       return;
     }
 
@@ -1005,7 +1005,7 @@ function AdminDataReviewPageInner() {
         {showResolvedInfo ? (
           <div style={infoBoxStyle}>
             Once a membership number is corrected so it begins with{" "}
-            <strong>F</strong>, it automatically drops out of this queue.
+            <strong>F or C</strong>, it automatically drops out of this queue.
           </div>
         ) : null}
       </div>
