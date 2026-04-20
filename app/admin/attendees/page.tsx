@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "@/lib/supabase";
-import * as XLSX from "xlsx";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   getCurrentAdminAccess,
@@ -29,79 +28,223 @@ type AttendeeRow = {
   pilot_last: string | null;
   copilot_first: string | null;
   copilot_last: string | null;
+  primary_phone?: string | null;
+  cell_phone?: string | null;
   nickname: string | null;
   copilot_nickname: string | null;
   membership_number: string | null;
-  primary_phone: string | null;
-  cell_phone: string | null;
   city: string | null;
   state: string | null;
-  wants_to_volunteer: boolean | null;
-  is_first_timer: boolean | null;
-  coach_manufacturer: string | null;
-  coach_model: string | null;
-  special_events_raw: string | null;
   assigned_site: string | null;
   has_arrived: boolean | null;
-  share_with_attendees: boolean | null;
-  is_active: boolean;
-  inactive_reason: string | null;
+  is_first_timer: boolean | null;
+  wants_to_volunteer: boolean | null;
+  share_with_attendees?: boolean | null;
   participant_type?: string | null;
-  source_type?: string | null;
-  include_in_headcount?: boolean | null;
-  needs_name_tag?: boolean | null;
-  needs_coach_plate?: boolean | null;
-  needs_parking?: boolean | null;
   notes?: string | null;
+  source_type?: string | null;
+  is_active: boolean;
+  data_status?: string | null;
   created_at?: string | null;
 };
 
-type ParkingSiteRow = {
-  id: string;
-  event_id: string;
-  site_number: string | null;
-  display_label: string | null;
-  assigned_attendee_id: string | null;
+type ReviewSeverity = "error" | "warning";
+
+type ReviewFieldIssue = {
+  field: string;
+  issue: string;
+  severity: ReviewSeverity;
 };
 
-type ViewFilter =
-  | "all"
-  | "active"
-  | "inactive"
-  | "arrived"
-  | "not_arrived"
-  | "first_timers"
-  | "volunteers"
-  | "vendors"
-  | "staff_hosts_helpers"
-  | "needs_parking"
-  | "assigned_site"
-  | "unassigned_site";
-
-type SortType = "name_asc" | "name_desc" | "site_asc" | "site_desc";
-
-type DisplayRow = {
+type ReviewItem = {
   id: string;
-  site: string;
-  participantType: string;
-  pilot: string;
-  copilot: string;
+  attendee: AttendeeRow;
+  issues: ReviewFieldIssue[];
+  severity: ReviewSeverity;
+};
+
+type AttendeeEditorState = {
+  id: string | null;
+  pilot_first: string;
+  pilot_last: string;
+  copilot_first: string;
+  copilot_last: string;
   email: string;
-  cityState: string;
-  arrived: string;
-  active: string;
-  firstTimer: string;
-  volunteer: string;
-  source: string;
-  pilotFirst: string;
-  pilotLast: string;
-  copilotFirst: string;
-  copilotLast: string;
-  membershipNumber: string;
-  needsParking: string;
+  membership_number: string;
+  city: string;
+  state: string;
+  assigned_site: string;
+  participant_type: string;
+  primary_phone: string;
+  cell_phone: string;
+  wants_to_volunteer: boolean;
+  is_first_timer: boolean;
+  has_arrived: boolean;
+  share_with_attendees: boolean;
+  is_active: boolean;
+  data_status: string;
+  entry_id: string;
+  notes: string;
 };
+
+type ValidationRule = {
+  id: string;
+  field_name: string;
+  rule_type: string;
+  rule_value: string | null;
+  message: string;
+  severity: ReviewSeverity;
+  is_active: boolean;
+  priority: number;
+  applies_to_event_id: string | null;
+};
+
+type PageSize = "10" | "25" | "50" | "100" | "all";
+
+type DataStatusFilter = "all" | "pending" | "corrected" | "reviewed" | "locked";
+
+type ParticipantTypeFilter =
+  | "all"
+  | "attendee"
+  | "vendor"
+  | "staff"
+  | "speaker"
+  | "volunteer"
+  | "event_host";
+
+type ViewMode = "all" | "review";
 
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
+
+function ruleAppliesToEvent(rule: ValidationRule, eventId?: string | null) {
+  if (!rule.is_active) return false;
+  if (!rule.applies_to_event_id) return true;
+  return rule.applies_to_event_id === eventId;
+}
+
+function validateField(
+  fieldName: string,
+  value: string | null | undefined,
+  rules: ValidationRule[],
+  eventId?: string | null,
+): { issue: string; severity: ReviewSeverity } | null {
+  const normalizedValue = String(value || "").trim();
+  const activeRules = rules
+    .filter(
+      (rule) =>
+        rule.field_name === fieldName && ruleAppliesToEvent(rule, eventId),
+    )
+    .sort((a, b) => a.priority - b.priority);
+
+  for (const rule of activeRules) {
+    const ruleValue = String(rule.rule_value || "").trim();
+
+    if (rule.rule_type === "required") {
+      if (!normalizedValue) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
+
+    if (rule.rule_type === "starts_with") {
+      if (!normalizedValue.startsWith(ruleValue)) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
+
+    if (rule.rule_type === "starts_with_any") {
+      const allowed = ruleValue
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean);
+
+      if (!allowed.some((prefix) => normalizedValue.startsWith(prefix))) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
+
+    if (rule.rule_type === "contains") {
+      if (!normalizedValue.includes(ruleValue)) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
+
+    if (rule.rule_type === "min_length") {
+      const minLength = Number(ruleValue);
+      if (Number.isFinite(minLength) && normalizedValue.length < minLength) {
+        return {
+          issue: rule.message,
+          severity: rule.severity,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function emptyAttendeeEditorState(): AttendeeEditorState {
+  return {
+    id: null,
+    pilot_first: "",
+    pilot_last: "",
+    copilot_first: "",
+    copilot_last: "",
+    email: "",
+    membership_number: "",
+    city: "",
+    state: "",
+    assigned_site: "",
+    participant_type: "attendee",
+    primary_phone: "",
+    cell_phone: "",
+    wants_to_volunteer: false,
+    is_first_timer: false,
+    has_arrived: false,
+    share_with_attendees: false,
+    is_active: true,
+    data_status: "pending",
+    entry_id: "",
+    notes: "",
+  };
+}
+
+function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
+  return {
+    id: attendee.id,
+    pilot_first: attendee.pilot_first || "",
+    pilot_last: attendee.pilot_last || "",
+    copilot_first: attendee.copilot_first || "",
+    copilot_last: attendee.copilot_last || "",
+    email: attendee.email || "",
+    membership_number: attendee.membership_number || "",
+    city: attendee.city || "",
+    state: attendee.state || "",
+    assigned_site: attendee.assigned_site || "",
+    participant_type: attendee.participant_type || "attendee",
+    primary_phone: attendee.primary_phone || "",
+    cell_phone: attendee.cell_phone || "",
+    wants_to_volunteer: !!attendee.wants_to_volunteer,
+    is_first_timer: !!attendee.is_first_timer,
+    has_arrived: !!attendee.has_arrived,
+    share_with_attendees: !!attendee.share_with_attendees,
+    is_active: attendee.is_active,
+    data_status: attendee.data_status || "pending",
+    entry_id: attendee.entry_id || "",
+    notes: attendee.notes || "",
+  };
+}
 
 function getStoredAdminEvent(): EventContext | null {
   if (typeof window === "undefined") return null;
@@ -119,11 +262,11 @@ function fullName(first?: string | null, last?: string | null) {
   return [first, last].filter(Boolean).join(" ").trim();
 }
 
-function pilotName(row: AttendeeRow) {
-  return fullName(row.pilot_first, row.pilot_last);
+function displayPilotName(row: AttendeeRow) {
+  return fullName(row.pilot_first, row.pilot_last) || "Unnamed";
 }
 
-function coPilotName(row: AttendeeRow) {
+function displayCopilotName(row: AttendeeRow) {
   return fullName(row.copilot_first, row.copilot_last);
 }
 
@@ -131,310 +274,229 @@ function cityState(row: AttendeeRow) {
   return [row.city, row.state].filter(Boolean).join(", ");
 }
 
+function normalizeMemberNumber(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+}
+
+function attendeeMatchesSearch(row: AttendeeRow, term: string) {
+  if (!term) return true;
+
+  const haystack = [
+    row.pilot_first,
+    row.pilot_last,
+    row.copilot_first,
+    row.copilot_last,
+    row.email,
+    row.membership_number,
+    row.assigned_site,
+    row.city,
+    row.state,
+    row.entry_id,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes(term);
+}
+
+function formatDateRange(
+  startDate?: string | null,
+  endDate?: string | null,
+): string {
+  if (!startDate && !endDate) return "";
+  if (startDate && endDate) return `${startDate} – ${endDate}`;
+  return startDate || endDate || "";
+}
+
 function participantTypeLabel(value?: string | null) {
-  if (!value) return "attendee";
-  return value.replace(/_/g, " ");
-}
+  if (!value) return "Attendee";
 
-function normalize(value?: string | null) {
-  return (value || "").trim().toLowerCase();
-}
-
-function csvEscape(value: unknown) {
-  const text = String(value ?? "");
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function downloadCsv(filename: string, rows: string[][]) {
-  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  URL.revokeObjectURL(url);
-}
-
-function downloadXlsx(filename: string, sheetName: string, rows: string[][]) {
-  const worksheet = XLSX.utils.aoa_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-  XLSX.writeFile(workbook, filename);
-}
-
-function attendeeToDisplayRow(row: AttendeeRow): DisplayRow {
-  return {
-    id: row.id,
-    site: row.assigned_site || "",
-    participantType: participantTypeLabel(row.participant_type),
-    pilot: pilotName(row),
-    copilot: coPilotName(row),
-    email: row.email || "",
-    cityState: cityState(row),
-    arrived: row.has_arrived ? "YES" : "NO",
-    active: row.is_active ? "YES" : "NO",
-    firstTimer: row.is_first_timer ? "YES" : "NO",
-    volunteer: row.wants_to_volunteer ? "YES" : "NO",
-    source: row.source_type || "imported",
-    pilotFirst: row.pilot_first || "",
-    pilotLast: row.pilot_last || "",
-    copilotFirst: row.copilot_first || "",
-    copilotLast: row.copilot_last || "",
-    membershipNumber: row.membership_number || "",
-    needsParking: row.needs_parking ? "YES" : "NO",
+  const map: Record<string, string> = {
+    attendee: "Attendee",
+    vendor: "Vendor",
+    staff: "Staff",
+    speaker: "Speaker",
+    volunteer: "Volunteer",
+    event_host: "Event Host",
   };
+
+  return map[value] || value.replace(/_/g, " ");
 }
 
-function sortDisplayRows(rows: DisplayRow[], sortType: SortType) {
-  return [...rows].sort((a, b) => {
-    const byName =
-      normalize(a.pilotLast).localeCompare(normalize(b.pilotLast), undefined, {
-        sensitivity: "base",
-      }) ||
-      normalize(a.pilotFirst).localeCompare(
-        normalize(b.pilotFirst),
-        undefined,
-        { sensitivity: "base" },
-      ) ||
-      normalize(a.copilotLast).localeCompare(
-        normalize(b.copilotLast),
-        undefined,
-        { sensitivity: "base" },
-      ) ||
-      normalize(a.copilotFirst).localeCompare(
-        normalize(b.copilotFirst),
-        undefined,
-        { sensitivity: "base" },
-      ) ||
-      normalize(a.site).localeCompare(normalize(b.site), undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
+function participantTypeBadgeStyle(value?: string | null): CSSProperties {
+  switch (value) {
+    case "vendor":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#ede9fe",
+        color: "#5b21b6",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    case "staff":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#dcfce7",
+        color: "#166534",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    case "speaker":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#dbeafe",
+        color: "#1d4ed8",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    case "volunteer":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#fef3c7",
+        color: "#92400e",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    case "event_host":
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#fee2e2",
+        color: "#991b1b",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+    default:
+      return {
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: "#e5e7eb",
+        color: "#374151",
+        fontSize: 12,
+        fontWeight: 700,
+      };
+  }
+}
 
-    const bySite =
-      normalize(a.site).localeCompare(normalize(b.site), undefined, {
-        numeric: true,
-        sensitivity: "base",
-      }) || byName;
+function reviewFieldLabel(field: string) {
+  const map: Record<string, string> = {
+    membership_number: "Membership Number",
+    email: "Email",
+    assigned_site: "Assigned Site",
+    pilot_first: "Pilot First",
+    pilot_last: "Pilot Last",
+    city: "City",
+    state: "State",
+  };
 
-    switch (sortType) {
-      case "name_asc":
-        return byName;
-      case "name_desc":
-        return -byName;
-      case "site_asc":
-        return bySite;
-      case "site_desc":
-        return -bySite;
-      default:
-        return byName;
-    }
+  return map[field] || field.replace(/_/g, " ");
+}
+
+function sortReviewItems(items: ReviewItem[]) {
+  return [...items].sort((a, b) => {
+    const aLast = String(a.attendee.pilot_last || "")
+      .trim()
+      .toLowerCase();
+    const bLast = String(b.attendee.pilot_last || "")
+      .trim()
+      .toLowerCase();
+    const aFirst = String(a.attendee.pilot_first || "")
+      .trim()
+      .toLowerCase();
+    const bFirst = String(b.attendee.pilot_first || "")
+      .trim()
+      .toLowerCase();
+
+    return (
+      aLast.localeCompare(bLast, undefined, { sensitivity: "base" }) ||
+      aFirst.localeCompare(bFirst, undefined, { sensitivity: "base" }) ||
+      String(a.issues[0]?.issue || "").localeCompare(
+        String(b.issues[0]?.issue || ""),
+        undefined,
+        { sensitivity: "base" },
+      )
+    );
   });
 }
-function importHeaderLabel(header: string) {
-  const map: Record<string, string> = {
-    "Additional attendees, if so give name(s) and age(s)":
-      "Additional Attendees",
-    "Ok to share your email with other attendees?": "Share Email",
-    "OK to share your email with other attendees?": "Share Email",
-    "Would you like to volunteer to help with the event?": "Volunteer",
-    "First time at an FCOC event?": "First Timer",
-    "Address (State / Province)": "State",
-    "Address (City)": "City",
-    "Primary Phone #": "Primary Phone",
-    "Cell Phone #": "Cell Phone",
-    "FCOC Membership Number": "Member #",
-    "Coach Manufacturer": "Coach Make",
-    "Coach Model": "Coach Model",
-    "Special Events": "Special Events",
-    "Email Address": "Email",
-    "Pilot Name (First)": "Pilot First",
-    "Pilot Name (Last)": "Pilot Last",
-    "Co-Pilot Name (First)": "Co-Pilot First",
-    "Co-Pilot Name (Last)": "Co-Pilot Last",
-    "Nickname for Badge": "Pilot Nickname",
-    "Nickname for Badge.1": "Co-Pilot Nickname",
-    "Entry Id": "Entry ID",
-    "Entry ID": "Entry ID",
-  };
 
-  return map[header] || header;
-}
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: 6,
-  fontWeight: 600,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#111827",
-  color: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const errorBoxStyle: CSSProperties = {
-  marginBottom: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #e2b4b4",
-  background: "#fff3f3",
-  color: "#8a1f1f",
-};
-
-const summaryCardStyle: CSSProperties = {
-  padding: 16,
-};
-
-const summaryValueStyle: CSSProperties = {
-  fontSize: 26,
-  fontWeight: 800,
-  marginTop: 8,
-};
-
-const tableStyle: CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-
-const thStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "8px 10px",
-  borderBottom: "2px solid #ddd",
-  whiteSpace: "nowrap",
-  verticalAlign: "top",
-  fontSize: 12,
-  lineHeight: 1.2,
-};
-
-const tdStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "10px 8px",
-  borderTop: "1px solid #ddd",
-  verticalAlign: "top",
-  whiteSpace: "nowrap",
-};
-
-const importTdStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "8px 10px",
-  borderTop: "1px solid #ddd",
-  verticalAlign: "top",
-  fontSize: 12,
-  lineHeight: 1.2,
-  whiteSpace: "nowrap",
-};
-
-function AdminAttendeesPageInner() {
+function AdminDataReviewPageInner() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
-  const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
-  const [search, setSearch] = useState("");
-  const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
-  const [sortType, setSortType] = useState<SortType>("name_asc");
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState("Loading attendees...");
-  const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
-  const [canExport, setCanExport] = useState(false);
-  const [showImportFileViewer, setShowImportFileViewer] = useState(false);
-  const [importFileRows, setImportFileRows] = useState<
-    Record<string, unknown>[]
-  >([]);
-  const [importFileHeaders, setImportFileHeaders] = useState<string[]>([]);
-  const [importFileName, setImportFileName] = useState("");
-  const [loadingImportFile, setLoadingImportFile] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState("Loading review queue...");
+  const [search, setSearch] = useState("");
+  const [pageSize, setPageSize] = useState<PageSize>("25");
+  const [dataStatusFilter, setDataStatusFilter] =
+    useState<DataStatusFilter>("all");
+  const [participantTypeFilter, setParticipantTypeFilter] =
+    useState<ParticipantTypeFilter>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("all");
+  const [showResolvedInfo, setShowResolvedInfo] = useState(true);
+  const [rules, setRules] = useState<ValidationRule[]>([]);
+
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
+  const [flashMessage, setFlashMessage] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
+  const [editorState, setEditorState] = useState<AttendeeEditorState>(
+    emptyAttendeeEditorState(),
+  );
+  const [editorSaving, setEditorSaving] = useState(false);
 
   useEffect(() => {
     async function init() {
-      setCanExport(false);
       setLoading(true);
+      setAccessDenied(false);
       setError(null);
       setStatus("Checking admin access...");
-      setShowImportFileViewer(false);
-      setImportFileRows([]);
-      setImportFileHeaders([]);
-      setImportFileName("");
-      setAccessDenied(false);
 
       const admin = await getCurrentAdminAccess();
 
       if (!admin) {
-        setCanExport(false);
         setCurrentEvent(null);
         setAttendees([]);
-        setParkingSites([]);
-        setSearch("");
-        setViewFilter("all");
-        setSortType("name_asc");
+        setAccessDenied(true);
         setError("No admin access.");
         setStatus("Access denied.");
-        setShowImportFileViewer(false);
-        setImportFileRows([]);
-        setImportFileHeaders([]);
-        setImportFileName("");
         setLoading(false);
-        setAccessDenied(true);
         return;
       }
 
-      if (!hasPermission(admin, "can_edit_attendees")) {
-        setCanExport(false);
+      if (
+        !hasPermission(admin, "can_edit_attendees") &&
+        !hasPermission(admin, "can_manage_imports")
+      ) {
         setCurrentEvent(null);
         setAttendees([]);
-        setParkingSites([]);
-        setSearch("");
-        setViewFilter("all");
-        setSortType("name_asc");
-        setError("You do not have permission to manage attendees.");
+        setAccessDenied(true);
+        setError("You do not have permission to use Data Review.");
         setStatus("Access denied.");
         setLoading(false);
-        setAccessDenied(true);
         return;
       }
-
-      setCanExport(hasPermission(admin, "can_export_reports"));
 
       const event = getStoredAdminEvent();
 
       if (!event?.id) {
         setCurrentEvent(null);
         setAttendees([]);
-        setParkingSites([]);
-        setSearch("");
-        setViewFilter("all");
-        setSortType("name_asc");
         setStatus("No admin event selected.");
-        setShowImportFileViewer(false);
-        setImportFileRows([]);
-        setImportFileHeaders([]);
-        setImportFileName("");
         setLoading(false);
         return;
       }
@@ -442,23 +504,15 @@ function AdminAttendeesPageInner() {
       if (!canAccessEvent(admin, event.id)) {
         setCurrentEvent(null);
         setAttendees([]);
-        setParkingSites([]);
-        setSearch("");
-        setViewFilter("all");
-        setSortType("name_asc");
+        setAccessDenied(true);
         setError("You do not have access to this event.");
         setStatus("Access denied.");
-        setShowImportFileViewer(false);
-        setImportFileRows([]);
-        setImportFileHeaders([]);
-        setImportFileName("");
         setLoading(false);
-        setAccessDenied(true);
         return;
       }
 
       setCurrentEvent(event);
-      await loadData(event.id);
+      await loadQueue(event.id);
     }
 
     void init();
@@ -493,394 +547,439 @@ function AdminAttendeesPageInner() {
     };
   }, []);
 
-  async function loadData(activeEventId: string) {
-    setLoading(true);
-    setError(null);
-    setAccessDenied(false);
-    setStatus("Loading attendees...");
+  async function loadQueue(eventId: string) {
+    try {
+      setLoading(true);
+      setError(null);
+      setStatus("Loading review queue...");
 
-    const admin = await getCurrentAdminAccess();
+      const [
+        { data: attendeeData, error: attendeeError },
+        { data: rulesData, error: rulesError },
+      ] = await Promise.all([
+        supabase
+          .from("attendees")
+          .select(
+            `
+        id,
+        event_id,
+        entry_id,
+        email,
+        pilot_first,
+        pilot_last,
+        copilot_first,
+        copilot_last,
+        primary_phone,
+        cell_phone,
+        nickname,
+        copilot_nickname,
+        membership_number,
+        city,
+        state,
+        assigned_site,
+        has_arrived,
+        is_first_timer,
+        wants_to_volunteer,
+        share_with_attendees,
+        participant_type,
+        notes,
+        source_type,
+        is_active,
+        data_status,
+        created_at
+      `,
+          )
+          .eq("event_id", eventId)
+          .order("pilot_last", { ascending: true })
+          .order("pilot_first", { ascending: true }),
 
-    if (!admin) {
-      setCanExport(false);
-      setCurrentEvent(null);
+        supabase
+          .from("validation_rules")
+          .select("*")
+          .order("priority", { ascending: true })
+          .order("created_at", { ascending: true }),
+      ]);
+
+      if (attendeeError) throw attendeeError;
+      if (rulesError) throw rulesError;
+
+      const nextAttendees = (attendeeData || []) as AttendeeRow[];
+      const nextRules = (rulesData || []) as ValidationRule[];
+
+      setAttendees(nextAttendees);
+      setRules(nextRules);
+      setStatus(
+        `Loaded ${nextAttendees.length} attendees and ${nextRules.length} validation rules.`,
+      );
+    } catch (err: any) {
+      console.error("loadQueue error:", err);
+      setError(err?.message || "Could not load data review queue.");
+      setStatus("Could not load data review queue.");
       setAttendees([]);
-      setParkingSites([]);
-      setError("No admin access.");
-      setStatus("Access denied.");
+    } finally {
       setLoading(false);
-      setAccessDenied(true);
-      return;
     }
-
-    if (!hasPermission(admin, "can_edit_attendees")) {
-      setCanExport(false);
-      setCurrentEvent(null);
-      setAttendees([]);
-      setParkingSites([]);
-      setError("You do not have permission to manage attendees.");
-      setStatus("Access denied.");
-      setLoading(false);
-      setAccessDenied(true);
-      return;
-    }
-
-    if (!canAccessEvent(admin, activeEventId)) {
-      setCanExport(false);
-      setCurrentEvent(null);
-      setAttendees([]);
-      setParkingSites([]);
-      setError("You do not have access to this event.");
-      setStatus("Access denied.");
-      setLoading(false);
-      setAccessDenied(true);
-      return;
-    }
-
-    setCanExport(hasPermission(admin, "can_export_reports"));
-
-    const [
-      { data: attendeeData, error: attendeeError },
-      { data: parkingData, error: parkingError },
-    ] = await Promise.all([
-      supabase
-        .from("attendees")
-        .select(
-          `
-            id,
-            event_id,
-            entry_id,
-            email,
-            pilot_first,
-            pilot_last,
-            copilot_first,
-            copilot_last,
-            nickname,
-            copilot_nickname,
-            membership_number,
-            primary_phone,
-            cell_phone,
-            city,
-            state,
-            wants_to_volunteer,
-            is_first_timer,
-            coach_manufacturer,
-            coach_model,
-            special_events_raw,
-            assigned_site,
-            has_arrived,
-            share_with_attendees,
-            is_active,
-            inactive_reason,
-            participant_type,
-            source_type,
-            include_in_headcount,
-            needs_name_tag,
-            needs_coach_plate,
-            needs_parking,
-            notes,
-            created_at
-          `,
-        )
-        .eq("event_id", activeEventId)
-        .order("pilot_last", { ascending: true })
-        .order("pilot_first", { ascending: true }),
-
-      supabase
-        .from("parking_sites")
-        .select("*")
-        .eq("event_id", activeEventId)
-        .order("site_number", { ascending: true }),
-    ]);
-
-    if (attendeeError) {
-      setError(attendeeError.message);
-      setStatus("Could not load attendees.");
-      setLoading(false);
-      return;
-    }
-
-    if (parkingError) {
-      setError(parkingError.message);
-      setStatus("Could not load parking sites.");
-      setLoading(false);
-      return;
-    }
-
-    setAttendees((attendeeData || []) as AttendeeRow[]);
-    setParkingSites((parkingData || []) as ParkingSiteRow[]);
-    setStatus("");
-    setLoading(false);
   }
-  async function handleShowImportFile() {
+
+  function showFlash(message: string) {
+    setFlashMessage(message);
+    window.setTimeout(() => {
+      setFlashMessage((current) => (current === message ? null : current));
+    }, 1800);
+  }
+
+  function updateDraft(attendeeId: string, value: string) {
+    setDrafts((prev) => ({
+      ...prev,
+      [attendeeId]: value.toUpperCase(),
+    }));
+  }
+
+  const reviewItems = useMemo(() => {
+    const fieldsToCheck: Array<keyof AttendeeRow> = [
+      "membership_number",
+      "email",
+      "assigned_site",
+      "pilot_first",
+      "pilot_last",
+      "city",
+      "state",
+    ];
+
+    return attendees.flatMap((attendee) => {
+      const issues = fieldsToCheck.flatMap((field) => {
+        const result = validateField(
+          field,
+          attendee[field] as string | null | undefined,
+          rules,
+          currentEvent?.id || null,
+        );
+
+        if (!result) return [];
+
+        return [
+          {
+            field,
+            issue: result.issue,
+            severity: result.severity,
+          } satisfies ReviewFieldIssue,
+        ];
+      });
+
+      if (!issues.length) return [];
+
+      const severity: ReviewSeverity = issues.some(
+        (issue) => issue.severity === "error",
+      )
+        ? "error"
+        : "warning";
+
+      return [
+        {
+          id: attendee.id,
+          attendee,
+          issues,
+          severity,
+        } satisfies ReviewItem,
+      ];
+    });
+  }, [attendees, rules, currentEvent?.id]);
+
+  const filteredReviewItems = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    return sortReviewItems(
+      reviewItems.filter((item) => {
+        const matchesSearch = attendeeMatchesSearch(item.attendee, term);
+        const status = dataStatusLabel(item.attendee.data_status);
+        const matchesStatus =
+          dataStatusFilter === "all" ? true : status === dataStatusFilter;
+        const participantType = (item.attendee.participant_type ||
+          "attendee") as ParticipantTypeFilter;
+        const matchesParticipantType =
+          participantTypeFilter === "all"
+            ? true
+            : participantType === participantTypeFilter;
+
+        return matchesSearch && matchesStatus && matchesParticipantType;
+      }),
+    );
+  }, [reviewItems, search, dataStatusFilter, participantTypeFilter]);
+
+  const visibleReviewItems = useMemo(() => {
+    if (pageSize === "all") return filteredReviewItems;
+    return filteredReviewItems.slice(0, Number(pageSize));
+  }, [filteredReviewItems, pageSize]);
+
+  const filteredAttendees = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    return attendees.filter((row) => {
+      const matchesSearch = attendeeMatchesSearch(row, term);
+      const status = dataStatusLabel(row.data_status);
+      const matchesStatus =
+        dataStatusFilter === "all" ? true : status === dataStatusFilter;
+
+      const participantType = (row.participant_type ||
+        "attendee") as ParticipantTypeFilter;
+      const matchesParticipantType =
+        participantTypeFilter === "all"
+          ? true
+          : participantType === participantTypeFilter;
+
+      return matchesSearch && matchesStatus && matchesParticipantType;
+    });
+  }, [attendees, search, dataStatusFilter, participantTypeFilter]);
+
+  const visibleAttendees = useMemo(() => {
+    if (pageSize === "all") return filteredAttendees;
+    return filteredAttendees.slice(0, Number(pageSize));
+  }, [filteredAttendees, pageSize]);
+
+  const totalAttendees = attendees.length;
+  const activeCount = attendees.filter((row) => row.is_active).length;
+  const arrivedCount = attendees.filter((row) => !!row.has_arrived).length;
+  const vendorCount = attendees.filter(
+    (row) => (row.participant_type || "attendee") === "vendor",
+  ).length;
+  const firstTimerCount = attendees.filter(
+    (row) => !!row.is_first_timer,
+  ).length;
+  const volunteerCount = attendees.filter(
+    (row) => !!row.wants_to_volunteer,
+  ).length;
+
+  const correctedCount = useMemo(() => {
+    return attendees.filter((row) => {
+      const validation = validateField(
+        "membership_number",
+        row.membership_number,
+        rules,
+        currentEvent?.id || null,
+      );
+
+      return !validation;
+    }).length;
+  }, [attendees, rules, currentEvent?.id]);
+
+  async function saveMembershipNumber(item: ReviewItem) {
+    const draftValue = normalizeMemberNumber(
+      drafts[item.attendee.id] ?? item.attendee.membership_number,
+    );
+
+    if (!draftValue) {
+      setError("Membership number cannot be blank.");
+      return;
+    }
+
+    if (!(draftValue.startsWith("F") || draftValue.startsWith("C"))) {
+      setError("Membership number must begin with F or C.");
+      return;
+    }
+
+    try {
+      setSavingRowId(item.attendee.id);
+      setError(null);
+      setStatus(`Saving correction for ${displayPilotName(item.attendee)}...`);
+
+      const { error: attendeeError } = await supabase
+        .from("attendees")
+        .update({
+          membership_number: draftValue,
+          data_status: "corrected",
+        })
+        .eq("id", item.attendee.id);
+
+      if (attendeeError) throw attendeeError;
+
+      setAttendees((prev) =>
+        prev.map((row) =>
+          row.id === item.attendee.id
+            ? {
+                ...row,
+                membership_number: draftValue,
+                data_status: "corrected",
+              }
+            : row,
+        ),
+      );
+
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[item.attendee.id];
+        return next;
+      });
+
+      setStatus(`Saved correction for ${displayPilotName(item.attendee)}.`);
+      showFlash("Membership number saved.");
+    } catch (err: any) {
+      console.error("saveMembershipNumber error:", err);
+      setError(err?.message || "Could not save membership number.");
+      setStatus("Save failed.");
+    } finally {
+      setSavingRowId(null);
+    }
+  }
+
+  async function updateDataStatus(attendeeId: string, nextStatus: string) {
+    try {
+      setError(null);
+      setStatus(`Updating attendee status to ${nextStatus}...`);
+
+      const { error: attendeeError } = await supabase
+        .from("attendees")
+        .update({ data_status: nextStatus })
+        .eq("id", attendeeId);
+
+      if (attendeeError) throw attendeeError;
+
+      setAttendees((prev) =>
+        prev.map((row) =>
+          row.id === attendeeId
+            ? {
+                ...row,
+                data_status: nextStatus,
+              }
+            : row,
+        ),
+      );
+
+      setStatus(`Attendee status updated to ${nextStatus}.`);
+      showFlash(`Status set to ${nextStatus}.`);
+    } catch (err: any) {
+      console.error("updateDataStatus error:", err);
+      setError(err?.message || "Could not update attendee status.");
+      setStatus("Status update failed.");
+    }
+  }
+
+  function dataStatusLabel(value?: string | null) {
+    if (!value) return "pending";
+    switch (value) {
+      case "pending":
+        return "pending";
+      case "reviewed":
+        return "reviewed";
+      case "corrected":
+        return "corrected";
+      case "locked":
+        return "locked";
+      default:
+        return value;
+    }
+  }
+
+  function openCreateAttendeeEditor() {
+    setEditorMode("create");
+    setEditorState(emptyAttendeeEditorState());
+    setEditorOpen(true);
+  }
+
+  function openEditAttendeeEditor(attendee: AttendeeRow) {
+    setEditorMode("edit");
+    setEditorState(attendeeToEditorState(attendee));
+    setEditorOpen(true);
+  }
+
+  function closeAttendeeEditor() {
+    setEditorOpen(false);
+    setEditorMode("create");
+    setEditorState(emptyAttendeeEditorState());
+  }
+
+  function updateEditorField<K extends keyof AttendeeEditorState>(
+    key: K,
+    value: AttendeeEditorState[K],
+  ) {
+    setEditorState((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  async function handleSaveAttendeeRecord() {
     if (!currentEvent?.id) {
       setError("No event selected.");
       return;
     }
 
-    try {
-      setLoadingImportFile(true);
-      setError(null);
+    const pilotFirst = editorState.pilot_first.trim();
+    const pilotLast = editorState.pilot_last.trim();
+    const email = editorState.email.trim().toLowerCase();
+    const membershipNumber = editorState.membership_number.trim().toUpperCase();
 
-      if (showImportFileViewer) {
-        setShowImportFileViewer(false);
-        setLoadingImportFile(false);
-        return;
+    if (!pilotFirst && !pilotLast) {
+      setError("Pilot first or last name is required.");
+      return;
+    }
+
+    try {
+      setEditorSaving(true);
+      setError(null);
+      setStatus(
+        editorMode === "create"
+          ? "Creating attendee record..."
+          : "Saving attendee record...",
+      );
+
+      const payload = {
+        event_id: currentEvent.id,
+        entry_id: editorState.entry_id.trim() || null,
+        pilot_first: pilotFirst || null,
+        pilot_last: pilotLast || null,
+        copilot_first: editorState.copilot_first.trim() || null,
+        copilot_last: editorState.copilot_last.trim() || null,
+        email: email || null,
+        membership_number: membershipNumber || null,
+        city: editorState.city.trim() || null,
+        state: editorState.state.trim() || null,
+        assigned_site: editorState.assigned_site.trim() || null,
+        participant_type: editorState.participant_type.trim() || "attendee",
+        primary_phone: editorState.primary_phone.trim() || null,
+        cell_phone: editorState.cell_phone.trim() || null,
+        wants_to_volunteer: editorState.wants_to_volunteer,
+        is_first_timer: editorState.is_first_timer,
+        has_arrived: editorState.has_arrived,
+        share_with_attendees: editorState.share_with_attendees,
+        is_active: editorState.is_active,
+        data_status: editorState.data_status || "pending",
+        notes: editorState.notes.trim() || null,
+      };
+
+      if (editorMode === "create") {
+        const { error: insertError } = await supabase
+          .from("attendees")
+          .insert(payload);
+
+        if (insertError) throw insertError;
+
+        showFlash("Attendee record created.");
+      } else {
+        const { error: updateError } = await supabase
+          .from("attendees")
+          .update(payload)
+          .eq("id", editorState.id);
+
+        if (updateError) throw updateError;
+
+        showFlash("Attendee record updated.");
       }
 
-      const [importRowsResult, headerMetadataResult] = await Promise.all([
-        supabase
-          .from("event_import_rows")
-          .select("raw_import, source_filename, row_number")
-          .eq("event_id", currentEvent.id)
-          .eq("import_type", "attendee_roster")
-          .order("row_number", { ascending: true }),
-        supabase
-          .from("event_import_rows")
-          .select("raw_import, source_filename")
-          .eq("event_id", currentEvent.id)
-          .eq("import_type", "attendee_roster_headers")
-          .maybeSingle(),
-      ]);
-
-      const { data, error } = importRowsResult;
-      const { data: headerMetadata, error: headerMetadataError } =
-        headerMetadataResult;
-
-      if (error) throw error;
-      if (headerMetadataError) throw headerMetadataError;
-
-      const rows = (data || [])
-        .map((row) => row.raw_import)
-        .filter(
-          (row): row is Record<string, unknown> =>
-            !!row && typeof row === "object",
-        );
-
-      const rawImportObject =
-        headerMetadata &&
-        typeof headerMetadata.raw_import === "object" &&
-        headerMetadata.raw_import !== null
-          ? (headerMetadata.raw_import as Record<string, unknown>)
-          : null;
-
-      const savedHeadersRaw: unknown[] = Array.isArray(
-        rawImportObject?.__source_headers,
-      )
-        ? rawImportObject.__source_headers
-        : [];
-
-      const savedHeaders = savedHeadersRaw.filter(
-        (value): value is string => typeof value === "string",
-      );
-
-      const firstRowHeaders = rows.length > 0 ? Object.keys(rows[0]) : [];
-      const baseHeaders =
-        savedHeaders.length > 0 ? savedHeaders : firstRowHeaders;
-      const extraHeaders: string[] = [];
-
-      rows.forEach((row) => {
-        Object.keys(row).forEach((key) => {
-          if (!baseHeaders.includes(key) && !extraHeaders.includes(key)) {
-            extraHeaders.push(key);
-          }
-        });
-      });
-
-      setImportFileRows(rows);
-      setImportFileHeaders([...baseHeaders, ...extraHeaders]);
-      setImportFileName(
-        data?.[0]?.source_filename ||
-          headerMetadata?.source_filename ||
-          "Imported attendee file",
-      );
-      setShowImportFileViewer(true);
+      closeAttendeeEditor();
+      await loadQueue(currentEvent.id);
     } catch (err: any) {
-      console.error("handleShowImportFile error:", err);
-      setError(err?.message || "Could not load imported file.");
+      console.error("handleSaveAttendeeRecord error:", err);
+      setError(err?.message || "Could not save attendee record.");
+      setStatus("Save failed.");
     } finally {
-      setLoadingImportFile(false);
+      setEditorSaving(false);
     }
-  }
-  const visibleImportFileHeaders = useMemo(() => {
-    return importFileHeaders.filter((header) =>
-      importFileRows.some((row) => String(row[header] ?? "").trim() !== ""),
-    );
-  }, [importFileHeaders, importFileRows]);
-
-  const filteredAttendees = useMemo(() => {
-    let rows = [...attendees];
-
-    switch (viewFilter) {
-      case "active":
-        rows = rows.filter((row) => row.is_active);
-        break;
-      case "inactive":
-        rows = rows.filter((row) => !row.is_active);
-        break;
-      case "arrived":
-        rows = rows.filter((row) => row.has_arrived);
-        break;
-      case "not_arrived":
-        rows = rows.filter((row) => !row.has_arrived);
-        break;
-      case "first_timers":
-        rows = rows.filter((row) => row.is_first_timer);
-        break;
-      case "volunteers":
-        rows = rows.filter((row) => row.wants_to_volunteer);
-        break;
-      case "vendors":
-        rows = rows.filter((row) => (row.participant_type || "") === "vendor");
-        break;
-      case "staff_hosts_helpers":
-        rows = rows.filter((row) =>
-          ["staff", "host", "helper", "volunteer", "vip"].includes(
-            row.participant_type || "",
-          ),
-        );
-        break;
-      case "needs_parking":
-        rows = rows.filter((row) => row.needs_parking);
-        break;
-      case "assigned_site":
-        rows = rows.filter((row) => !!row.assigned_site);
-        break;
-      case "unassigned_site":
-        rows = rows.filter((row) => !row.assigned_site);
-        break;
-      default:
-        break;
-    }
-
-    const term = search.trim().toLowerCase();
-    if (!term) return rows;
-
-    return rows.filter((row) =>
-      [
-        row.pilot_first,
-        row.pilot_last,
-        row.copilot_first,
-        row.copilot_last,
-        row.email,
-        row.assigned_site,
-        row.city,
-        row.state,
-        row.membership_number,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
-  }, [attendees, viewFilter, search]);
-
-  const displayRows = useMemo(() => {
-    return sortDisplayRows(
-      filteredAttendees.map(attendeeToDisplayRow),
-      sortType,
-    );
-  }, [filteredAttendees, sortType]);
-
-  const summary = useMemo(() => {
-    const totalAttendees = attendees.length;
-    const activeCount = attendees.filter((x) => x.is_active).length;
-    const inactiveCount = attendees.filter((x) => !x.is_active).length;
-    const arrivedCount = attendees.filter((x) => x.has_arrived).length;
-    const firstTimers = attendees.filter((x) => x.is_first_timer).length;
-    const volunteerCount = attendees.filter((x) => x.wants_to_volunteer).length;
-    const needsParking = attendees.filter((x) => x.needs_parking).length;
-    const unassignedSiteCount = attendees.filter(
-      (x) => !x.assigned_site,
-    ).length;
-
-    return {
-      totalAttendees,
-      activeCount,
-      inactiveCount,
-      arrivedCount,
-      firstTimers,
-      volunteerCount,
-      needsParking,
-      unassignedSiteCount,
-      totalSites: parkingSites.length,
-    };
-  }, [attendees, parkingSites]);
-
-  function buildExportRows(): string[][] {
-    return [
-      ["Attendees"],
-      ["Event", currentEvent?.name || currentEvent?.eventName || ""],
-      ["Location", currentEvent?.location || ""],
-      ["View", viewFilter],
-      ["Sort", sortType],
-      ["Search", search],
-      [],
-      [
-        "Site",
-        "Participant Type",
-        "Pilot",
-        "Co-Pilot",
-        "Email",
-        "City/State",
-        "Arrived",
-        "Active",
-        "First Timer",
-        "Volunteer",
-        "Needs Parking",
-        "Membership Number",
-        "Source",
-      ],
-      ...displayRows.map((row) => [
-        row.site,
-        row.participantType,
-        row.pilot,
-        row.copilot,
-        row.email,
-        row.cityState,
-        row.arrived,
-        row.active,
-        row.firstTimer,
-        row.volunteer,
-        row.needsParking,
-        row.membershipNumber,
-        row.source,
-      ]),
-    ];
-  }
-
-  function handleExportCsv() {
-    const rows = buildExportRows();
-    const filenameBase = `${(
-      currentEvent?.name ||
-      currentEvent?.eventName ||
-      "event"
-    )
-      .replace(/\s+/g, "_")
-      .replace(/[^\w\-]+/g, "")
-      .toLowerCase()}_attendees`;
-
-    downloadCsv(`${filenameBase}.csv`, rows);
-  }
-
-  function handleExportXlsx() {
-    const rows = buildExportRows();
-    const filenameBase = `${(
-      currentEvent?.name ||
-      currentEvent?.eventName ||
-      "event"
-    )
-      .replace(/\s+/g, "_")
-      .replace(/[^\w\-]+/g, "")
-      .toLowerCase()}_attendees`;
-
-    downloadXlsx(`${filenameBase}.xlsx`, "Attendees", rows);
   }
 
   if (!loading && accessDenied) {
     return (
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Attendees</h1>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Attendee Operations</h1>
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           You do not have access to this page.
         </div>
@@ -888,115 +987,42 @@ function AdminAttendeesPageInner() {
     );
   }
 
+  const eventName =
+    currentEvent?.name || currentEvent?.eventName || "No event selected";
+  const eventLocation = currentEvent?.location || "";
+  const eventDates = formatDateRange(
+    currentEvent?.start_date,
+    currentEvent?.end_date,
+  );
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Attendees</h1>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Attendee Operations</h1>
 
-        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
-          {currentEvent?.name || currentEvent?.eventName || "No event selected"}
-          {currentEvent?.location ? ` • ${currentEvent.location}` : ""}
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          {eventName}
+          {eventLocation ? ` • ${eventLocation}` : ""}
+          {eventDates ? ` • ${eventDates}` : ""}
         </div>
 
-        {status ? (
-          <div style={{ marginBottom: 12, fontSize: 14 }}>{status}</div>
-        ) : null}
+        <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
 
+        {flashMessage ? (
+          <div style={successBoxStyle}>{flashMessage}</div>
+        ) : null}
         {error ? <div style={errorBoxStyle}>{error}</div> : null}
 
         <div
-          style={{
-            display: "grid",
-            gap: 14,
-            gridTemplateColumns:
-              "minmax(260px, 1.5fr) minmax(220px, 1fr) minmax(220px, 1fr) auto",
-            marginTop: 12,
-          }}
+          style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}
         >
-          <div>
-            <label style={labelStyle}>Search</label>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search last name, first name, site, email..."
-              style={inputStyle}
-            />
-          </div>
-
-          <div>
-            <label style={labelStyle}>View</label>
-            <select
-              value={viewFilter}
-              onChange={(e) => setViewFilter(e.target.value as ViewFilter)}
-              style={inputStyle}
-            >
-              <option value="all">All</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="arrived">Arrived</option>
-              <option value="not_arrived">Not Arrived</option>
-              <option value="first_timers">First Timers</option>
-              <option value="volunteers">Volunteers</option>
-              <option value="vendors">Vendors</option>
-              <option value="staff_hosts_helpers">
-                Staff / Hosts / Helpers
-              </option>
-              <option value="needs_parking">Needs Parking</option>
-              <option value="assigned_site">Assigned Site</option>
-              <option value="unassigned_site">Unassigned Site</option>
-            </select>
-          </div>
-
-          <div>
-            <label style={labelStyle}>Sort</label>
-            <select
-              value={sortType}
-              onChange={(e) => setSortType(e.target.value as SortType)}
-              style={inputStyle}
-            >
-              <option value="name_asc">Last Name A–Z</option>
-              <option value="name_desc">Last Name Z–A</option>
-              <option value="site_asc">Site 0–9 / A–Z</option>
-              <option value="site_desc">Site 9–0 / Z–A</option>
-            </select>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              alignItems: "end",
-              flexWrap: "wrap",
-            }}
+          <button
+            type="button"
+            onClick={openCreateAttendeeEditor}
+            style={primaryButtonStyle}
           >
-            <button
-              type="button"
-              onClick={() => void handleShowImportFile()}
-              style={secondaryButtonStyle}
-              disabled={loading || loadingImportFile || !currentEvent?.id}
-            >
-              {showImportFileViewer
-                ? "Hide Full Import File"
-                : "Show Full Import File"}
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              style={secondaryButtonStyle}
-              disabled={loading || !canExport}
-            >
-              Export CSV
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExportXlsx}
-              style={primaryButtonStyle}
-              disabled={loading || !canExport}
-            >
-              Export XLSX
-            </button>
-          </div>
+            Add Attendee Record
+          </button>
         </div>
       </div>
 
@@ -1004,173 +1030,1029 @@ function AdminAttendeesPageInner() {
         style={{
           display: "grid",
           gap: 12,
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
         }}
       >
         <div className="card" style={summaryCardStyle}>
-          <strong>Total</strong>
-          <div style={summaryValueStyle}>{summary.totalAttendees}</div>
+          <strong>Total Attendees</strong>
+          <div style={summaryValueStyle}>{totalAttendees}</div>
         </div>
+
         <div className="card" style={summaryCardStyle}>
           <strong>Active</strong>
-          <div style={summaryValueStyle}>{summary.activeCount}</div>
+          <div style={summaryValueStyle}>{activeCount}</div>
         </div>
-        <div className="card" style={summaryCardStyle}>
-          <strong>Inactive</strong>
-          <div style={summaryValueStyle}>{summary.inactiveCount}</div>
-        </div>
+
         <div className="card" style={summaryCardStyle}>
           <strong>Arrived</strong>
-          <div style={summaryValueStyle}>{summary.arrivedCount}</div>
+          <div style={summaryValueStyle}>{arrivedCount}</div>
         </div>
+
+        <div className="card" style={summaryCardStyle}>
+          <strong>Vendors</strong>
+          <div style={summaryValueStyle}>{vendorCount}</div>
+        </div>
+
         <div className="card" style={summaryCardStyle}>
           <strong>First Timers</strong>
-          <div style={summaryValueStyle}>{summary.firstTimers}</div>
+          <div style={summaryValueStyle}>{firstTimerCount}</div>
         </div>
+
         <div className="card" style={summaryCardStyle}>
           <strong>Volunteers</strong>
-          <div style={summaryValueStyle}>{summary.volunteerCount}</div>
+          <div style={summaryValueStyle}>{volunteerCount}</div>
         </div>
+
         <div className="card" style={summaryCardStyle}>
-          <strong>Needs Parking</strong>
-          <div style={summaryValueStyle}>{summary.needsParking}</div>
+          <strong>Flagged</strong>
+          <div style={summaryValueStyle}>{reviewItems.length}</div>
         </div>
+
         <div className="card" style={summaryCardStyle}>
-          <strong>Unassigned Site</strong>
-          <div style={summaryValueStyle}>{summary.unassignedSiteCount}</div>
+          <strong>Membership Corrected</strong>
+          <div style={summaryValueStyle}>{correctedCount}</div>
+        </div>
+
+        <div className="card" style={summaryCardStyle}>
+          <strong>Fully Valid</strong>
+          <div style={summaryValueStyle}>
+            {
+              attendees.filter((row) => {
+                const fields = [
+                  "membership_number",
+                  "email",
+                  "assigned_site",
+                  "pilot_first",
+                  "pilot_last",
+                  "city",
+                  "state",
+                ];
+
+                return fields.every(
+                  (field) =>
+                    !validateField(
+                      field,
+                      (row as any)[field],
+                      rules,
+                      currentEvent?.id || null,
+                    ),
+                );
+              }).length
+            }
+          </div>
         </div>
       </div>
-      {showImportFileViewer ? (
+
+      <div className="card" style={{ padding: 18 }}>
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns:
+              "minmax(260px, 1.5fr) minmax(160px, 160px) minmax(160px, 160px) minmax(220px, 220px) minmax(220px, 220px) auto",
+            alignItems: "end",
+          }}
+        >
+          <div>
+            <label style={labelStyle}>Search</label>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, email, member #, site..."
+              style={inputStyle}
+            />
+          </div>
+
+          <div>
+            <label style={labelStyle}>View</label>
+            <select
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value as ViewMode)}
+              style={inputStyle}
+            >
+              <option value="all">All Attendees</option>
+              <option value="review">Review Queue</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Rows to Show</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(e.target.value as PageSize)}
+              style={inputStyle}
+            >
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">Entire List</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Data Status</label>
+            <select
+              value={dataStatusFilter}
+              onChange={(e) =>
+                setDataStatusFilter(e.target.value as DataStatusFilter)
+              }
+              style={inputStyle}
+            >
+              <option value="all">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="corrected">Corrected</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="locked">Locked</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Participant Type</label>
+            <select
+              value={participantTypeFilter}
+              onChange={(e) =>
+                setParticipantTypeFilter(
+                  e.target.value as ParticipantTypeFilter,
+                )
+              }
+              style={inputStyle}
+            >
+              <option value="all">All Types</option>
+              <option value="attendee">Attendee</option>
+              <option value="vendor">Vendor</option>
+              <option value="staff">Staff</option>
+              <option value="speaker">Speaker</option>
+              <option value="volunteer">Volunteer</option>
+              <option value="event_host">Event Host</option>
+            </select>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={showResolvedInfo}
+                onChange={(e) => setShowResolvedInfo(e.target.checked)}
+              />
+              Show auto-resolve note
+            </label>
+          </div>
+        </div>
+
+        {showResolvedInfo ? (
+          <div style={infoBoxStyle}>
+            Once a membership number is corrected so it begins with{" "}
+            <strong>F or C</strong>, it automatically drops out of this queue.
+          </div>
+        ) : null}
+      </div>
+
+      {viewMode === "review" && (
         <div className="card" style={{ padding: 18 }}>
           <div style={{ marginBottom: 14 }}>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-              Imported File Viewer
-            </h2>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Review Queue</h2>
             <div style={{ fontSize: 14, opacity: 0.8 }}>
-              {importFileName || "Imported attendee file"}
-            </div>
-            <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4 }}>
-              {importFileRows.length} imported row
-              {importFileRows.length === 1 ? "" : "s"}
+              Showing {visibleReviewItems.length} of{" "}
+              {filteredReviewItems.length} flagged attendee
+              {filteredReviewItems.length === 1 ? "" : "s"} • Status filter:{" "}
+              {dataStatusFilter === "all"
+                ? "All Statuses"
+                : dataStatusLabel(dataStatusFilter)}{" "}
+              • Participant type:{" "}
+              {participantTypeFilter === "all"
+                ? "All Types"
+                : participantTypeLabel(participantTypeFilter)}
             </div>
           </div>
 
-          {loadingImportFile ? (
-            <div>Loading imported file...</div>
-          ) : importFileRows.length === 0 ? (
+          {loading ? (
+            <div>Loading...</div>
+          ) : filteredReviewItems.length === 0 ? (
             <div style={{ opacity: 0.8 }}>
-              No imported file rows were found for this event.
+              No flagged records for this event.
             </div>
           ) : (
-            <div
-              style={{
-                overflowX: "auto",
-                maxHeight: "70vh",
-                border: "1px solid #eee",
-                borderRadius: 10,
-                background: "white",
-                padding: 4,
-              }}
-            >
-              <table
-                style={{
-                  ...tableStyle,
-                  width: "auto",
-                  minWidth: "100%",
-                  tableLayout: "auto",
-                }}
-              >
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Row</th>{" "}
-                    {visibleImportFileHeaders.map((header) => (
-                      <th key={header} style={thStyle}>
-                        {importHeaderLabel(header)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {importFileRows.map((row, index) => (
-                    <tr key={`import-row-${index}`}>
-                      <td style={importTdStyle}>{index + 1}</td>
-                      {visibleImportFileHeaders.map((header) => (
-                        <td key={`${index}-${header}`} style={importTdStyle}>
-                          {String(row[header] ?? "")}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ display: "grid", gap: 12 }}>
+              {visibleReviewItems.map((item) => {
+                const attendee = item.attendee;
+                const draftValue =
+                  drafts[attendee.id] ??
+                  normalizeMemberNumber(attendee.membership_number);
+                const saving = savingRowId === attendee.id;
+
+                return (
+                  <div
+                    key={attendee.id}
+                    style={{
+                      border: "1px solid #fca5a5",
+                      background: "#fef2f2",
+                      borderRadius: 12,
+                      padding: 14,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        marginBottom: 10,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: 16 }}>
+                          {displayPilotName(attendee)}
+                          {displayCopilotName(attendee)
+                            ? ` / ${displayCopilotName(attendee)}`
+                            : ""}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            fontSize: 13,
+                            color: "#555",
+                            marginTop: 4,
+                          }}
+                        >
+                          <span
+                            style={participantTypeBadgeStyle(
+                              attendee.participant_type,
+                            )}
+                          >
+                            {participantTypeLabel(attendee.participant_type)}
+                          </span>
+                          {attendee.email ? (
+                            <span>{attendee.email}</span>
+                          ) : null}
+                          {attendee.assigned_site ? (
+                            <span>{`Site ${attendee.assigned_site}`}</span>
+                          ) : null}
+                          {cityState(attendee) ? (
+                            <span>{cityState(attendee)}</span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          background: "#fee2e2",
+                          color: "#991b1b",
+                          alignSelf: "start",
+                        }}
+                      >
+                        {item.severity.toUpperCase()}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 10 }}>
+                      <div
+                        style={{
+                          marginBottom: 6,
+                          fontSize: 14,
+                          fontWeight: 700,
+                          color:
+                            item.severity === "error" ? "#991b1b" : "#92400e",
+                        }}
+                      >
+                        {item.issues.length} issue
+                        {item.issues.length === 1 ? "" : "s"} found
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        {item.issues.map((issue, index) => (
+                          <div
+                            key={`${attendee.id}-${issue.field}-${index}`}
+                            style={{
+                              fontSize: 14,
+                              color:
+                                issue.severity === "error"
+                                  ? "#991b1b"
+                                  : "#92400e",
+                            }}
+                          >
+                            <strong>{reviewFieldLabel(issue.field)}:</strong>{" "}
+                            {issue.issue}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 12,
+                        gridTemplateColumns: "minmax(220px, 1fr) auto",
+                        alignItems: "end",
+                      }}
+                    >
+                      <div>
+                        <label style={labelStyle}>Correct Member Number</label>
+                        <input
+                          value={draftValue}
+                          onChange={(e) =>
+                            updateDraft(attendee.id, e.target.value)
+                          }
+                          placeholder="Must begin with F or C"
+                          style={inputStyle}
+                          disabled={saving}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => void saveMembershipNumber(item)}
+                        style={primaryButtonStyle}
+                        disabled={saving}
+                      >
+                        {saving ? "Saving..." : "Save Correction"}
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
+                      Current stored value:{" "}
+                      <strong>{attendee.membership_number || "—"}</strong>
+                      {attendee.entry_id
+                        ? ` • Entry ID: ${attendee.entry_id}`
+                        : ""}
+                      {attendee.source_type
+                        ? ` • Source: ${attendee.source_type}`
+                        : ""}
+                      {` • Data Status: ${dataStatusLabel(attendee.data_status)}`}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 12,
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openEditAttendeeEditor(attendee)}
+                        style={secondaryButtonStyle}
+                      >
+                        Edit Record
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void updateDataStatus(attendee.id, "reviewed")
+                        }
+                        style={secondaryButtonStyle}
+                      >
+                        Mark Reviewed
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void updateDataStatus(attendee.id, "locked")
+                        }
+                        style={secondaryButtonStyle}
+                      >
+                        Lock Record
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void updateDataStatus(attendee.id, "pending")
+                        }
+                        style={secondaryButtonStyle}
+                      >
+                        Back To Pending
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
-      ) : null}
+      )}
 
-      <div className="card" style={{ padding: 18 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-            Working Attendee List
-          </h2>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            {displayRows.length} attendee rows
+      {viewMode === "all" && (
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ marginBottom: 14 }}>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Attendee List</h2>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>
+              Showing {visibleAttendees.length} of {filteredAttendees.length}{" "}
+              attendee{filteredAttendees.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          {loading ? (
+            <div>Loading...</div>
+          ) : visibleAttendees.length === 0 ? (
+            <div style={{ opacity: 0.8 }}>
+              No attendee records match the current filters.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {visibleAttendees.map((attendee) => {
+                const attendeeIssues = reviewItems.find(
+                  (item) => item.attendee.id === attendee.id,
+                );
+
+                return (
+                  <div
+                    key={attendee.id}
+                    style={{
+                      border: "1px solid #ddd",
+                      borderRadius: 12,
+                      padding: 14,
+                      background: "white",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        marginBottom: 10,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: 16 }}>
+                          {displayPilotName(attendee)}
+                          {displayCopilotName(attendee)
+                            ? ` / ${displayCopilotName(attendee)}`
+                            : ""}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            fontSize: 13,
+                            color: "#555",
+                            marginTop: 4,
+                          }}
+                        >
+                          <span
+                            style={participantTypeBadgeStyle(
+                              attendee.participant_type,
+                            )}
+                          >
+                            {participantTypeLabel(attendee.participant_type)}
+                          </span>
+                          {attendee.email ? (
+                            <span>{attendee.email}</span>
+                          ) : null}
+                          {attendee.assigned_site ? (
+                            <span>{`Site ${attendee.assigned_site}`}</span>
+                          ) : null}
+                          {cityState(attendee) ? (
+                            <span>{cityState(attendee)}</span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+                      >
+                        <span style={secondaryBadgeStyle}>
+                          {dataStatusLabel(attendee.data_status)}
+                        </span>
+                        {attendeeIssues ? (
+                          <span style={issueBadgeStyle}>
+                            {attendeeIssues.issues.length} issue
+                            {attendeeIssues.issues.length === 1 ? "" : "s"}
+                          </span>
+                        ) : (
+                          <span style={okBadgeStyle}>OK</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 12,
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openEditAttendeeEditor(attendee)}
+                        style={secondaryButtonStyle}
+                      >
+                        Edit Record
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void updateDataStatus(attendee.id, "reviewed")
+                        }
+                        style={secondaryButtonStyle}
+                      >
+                        Mark Reviewed
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void updateDataStatus(attendee.id, "locked")
+                        }
+                        style={secondaryButtonStyle}
+                      >
+                        Lock Record
+                      </button>
+                    </div>
+
+                    {attendeeIssues ? (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          background: "#fff7ed",
+                          border: "1px solid #fed7aa",
+                          fontSize: 13,
+                        }}
+                      >
+                        {attendeeIssues.issues.map((issue, index) => (
+                          <div key={`${attendee.id}-${issue.field}-${index}`}>
+                            <strong>{reviewFieldLabel(issue.field)}:</strong>{" "}
+                            {issue.issue}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {editorOpen ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 2000,
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: "min(980px, 100%)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              padding: 18,
+              background: "white",
+              borderRadius: 14,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "center",
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+                  {editorMode === "create"
+                    ? "Add Attendee Record"
+                    : "Edit Attendee Record"}
+                </h2>
+                <div style={{ fontSize: 14, opacity: 0.8 }}>
+                  {editorMode === "create"
+                    ? "Create a new attendee manually."
+                    : "Update this attendee record."}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeAttendeeEditor}
+                style={secondaryButtonStyle}
+                disabled={editorSaving}
+              >
+                Close
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 14,
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              }}
+            >
+              <div>
+                <label style={labelStyle}>Pilot First</label>
+                <input
+                  value={editorState.pilot_first}
+                  onChange={(e) =>
+                    updateEditorField("pilot_first", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Pilot Last</label>
+                <input
+                  value={editorState.pilot_last}
+                  onChange={(e) =>
+                    updateEditorField("pilot_last", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Co-Pilot First</label>
+                <input
+                  value={editorState.copilot_first}
+                  onChange={(e) =>
+                    updateEditorField("copilot_first", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Co-Pilot Last</label>
+                <input
+                  value={editorState.copilot_last}
+                  onChange={(e) =>
+                    updateEditorField("copilot_last", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Email</label>
+                <input
+                  value={editorState.email}
+                  onChange={(e) => updateEditorField("email", e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Membership Number</label>
+                <input
+                  value={editorState.membership_number}
+                  onChange={(e) =>
+                    updateEditorField(
+                      "membership_number",
+                      e.target.value.toUpperCase(),
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>City</label>
+                <input
+                  value={editorState.city}
+                  onChange={(e) => updateEditorField("city", e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>State</label>
+                <input
+                  value={editorState.state}
+                  onChange={(e) => updateEditorField("state", e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Assigned Site</label>
+                <input
+                  value={editorState.assigned_site}
+                  onChange={(e) =>
+                    updateEditorField("assigned_site", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Participant Type</label>
+                <select
+                  value={editorState.participant_type}
+                  onChange={(e) =>
+                    updateEditorField("participant_type", e.target.value)
+                  }
+                  style={inputStyle}
+                >
+                  <option value="attendee">Attendee</option>
+                  <option value="vendor">Vendor</option>
+                  <option value="staff">Staff</option>
+                  <option value="speaker">Speaker</option>
+                  <option value="volunteer">Volunteer</option>
+                  <option value="event_host">Event Host</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Primary Phone</label>
+                <input
+                  value={editorState.primary_phone}
+                  onChange={(e) =>
+                    updateEditorField("primary_phone", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Cell Phone</label>
+                <input
+                  value={editorState.cell_phone}
+                  onChange={(e) =>
+                    updateEditorField("cell_phone", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Entry ID</label>
+                <input
+                  value={editorState.entry_id}
+                  onChange={(e) =>
+                    updateEditorField("entry_id", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Data Status</label>
+                <select
+                  value={editorState.data_status}
+                  onChange={(e) =>
+                    updateEditorField("data_status", e.target.value)
+                  }
+                  style={inputStyle}
+                >
+                  <option value="pending">Pending</option>
+                  <option value="corrected">Corrected</option>
+                  <option value="reviewed">Reviewed</option>
+                  <option value="locked">Locked</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.wants_to_volunteer}
+                  onChange={(e) =>
+                    updateEditorField("wants_to_volunteer", e.target.checked)
+                  }
+                />
+                Volunteer
+              </label>
+
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.is_first_timer}
+                  onChange={(e) =>
+                    updateEditorField("is_first_timer", e.target.checked)
+                  }
+                />
+                First Timer
+              </label>
+
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.has_arrived}
+                  onChange={(e) =>
+                    updateEditorField("has_arrived", e.target.checked)
+                  }
+                />
+                Has Arrived
+              </label>
+
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.share_with_attendees}
+                  onChange={(e) =>
+                    updateEditorField("share_with_attendees", e.target.checked)
+                  }
+                />
+                Share With Attendees
+              </label>
+
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.is_active}
+                  onChange={(e) =>
+                    updateEditorField("is_active", e.target.checked)
+                  }
+                />
+                Active Record
+              </label>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <label style={labelStyle}>Notes</label>
+              <textarea
+                value={editorState.notes}
+                onChange={(e) => updateEditorField("notes", e.target.value)}
+                style={textareaStyle}
+                rows={4}
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: 18,
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => void handleSaveAttendeeRecord()}
+                style={primaryButtonStyle}
+                disabled={editorSaving}
+              >
+                {editorSaving
+                  ? "Saving..."
+                  : editorMode === "create"
+                    ? "Create Attendee"
+                    : "Save Changes"}
+              </button>
+
+              <button
+                type="button"
+                onClick={closeAttendeeEditor}
+                style={secondaryButtonStyle}
+                disabled={editorSaving}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
-
-        {loading ? (
-          <div>Loading...</div>
-        ) : displayRows.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No attendees found for this view.</div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Site</th>
-                  <th style={thStyle}>Type</th>
-                  <th style={thStyle}>Pilot</th>
-                  <th style={thStyle}>Co-Pilot</th>
-                  <th style={thStyle}>Email</th>
-                  <th style={thStyle}>City / State</th>
-                  <th style={thStyle}>Arrived</th>
-                  <th style={thStyle}>Active</th>
-                  <th style={thStyle}>First Timer</th>
-                  <th style={thStyle}>Volunteer</th>
-                  <th style={thStyle}>Needs Parking</th>
-                  <th style={thStyle}>Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayRows.map((row) => (
-                  <tr key={row.id}>
-                    <td style={tdStyle}>{row.site}</td>
-                    <td style={tdStyle}>{row.participantType}</td>
-                    <td style={tdStyle}>{row.pilot}</td>
-                    <td style={tdStyle}>{row.copilot}</td>
-                    <td style={tdStyle}>{row.email}</td>
-                    <td style={tdStyle}>{row.cityState}</td>
-                    <td style={tdStyle}>{row.arrived}</td>
-                    <td style={tdStyle}>{row.active}</td>
-                    <td style={tdStyle}>{row.firstTimer}</td>
-                    <td style={tdStyle}>{row.volunteer}</td>
-                    <td style={tdStyle}>{row.needsParking}</td>
-                    <td style={tdStyle}>{row.source}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      ) : null}
     </div>
   );
 }
 
-export default function AdminAttendeesPage() {
+const labelStyle: CSSProperties = {
+  display: "block",
+  marginBottom: 6,
+  fontWeight: 600,
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+};
+
+const textareaStyle: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+  resize: "vertical",
+};
+
+const checkLabelStyle: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  alignItems: "center",
+};
+
+const primaryButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "none",
+  background: "#111827",
+  color: "white",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const errorBoxStyle: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #e2b4b4",
+  background: "#fff3f3",
+  color: "#8a1f1f",
+};
+
+const successBoxStyle: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #bbf7d0",
+  background: "#f0fdf4",
+  color: "#166534",
+};
+
+const infoBoxStyle: CSSProperties = {
+  marginTop: 14,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontSize: 14,
+};
+
+const summaryCardStyle: CSSProperties = {
+  padding: 16,
+};
+
+const summaryValueStyle: CSSProperties = {
+  fontSize: 26,
+  fontWeight: 800,
+  marginTop: 8,
+};
+
+const secondaryBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#e5e7eb",
+  color: "#374151",
+  fontSize: 12,
+  fontWeight: 700,
+  textTransform: "capitalize",
+};
+
+const issueBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#fff7ed",
+  color: "#9a3412",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const okBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#dcfce7",
+  color: "#166534",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+export default function AdminDataReviewPage() {
   return (
     <AdminRouteGuard requiredPermission="can_edit_attendees">
-      <AdminAttendeesPageInner />
+      <AdminDataReviewPageInner />
     </AdminRouteGuard>
   );
 }

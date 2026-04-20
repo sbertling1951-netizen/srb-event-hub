@@ -50,13 +50,18 @@ type AttendeeRow = {
 
 type ReviewSeverity = "error" | "warning";
 
-type ReviewItem = {
-  id: string;
-  attendee: AttendeeRow;
+type ReviewFieldIssue = {
+  field: string;
   issue: string;
   severity: ReviewSeverity;
 };
 
+type ReviewItem = {
+  id: string;
+  attendee: AttendeeRow;
+  issues: ReviewFieldIssue[];
+  severity: ReviewSeverity;
+};
 type AttendeeEditorState = {
   id: string | null;
   pilot_first: string;
@@ -379,6 +384,19 @@ function participantTypeBadgeStyle(value?: string | null): CSSProperties {
       };
   }
 }
+function reviewFieldLabel(field: string) {
+  const map: Record<string, string> = {
+    membership_number: "Membership Number",
+    email: "Email",
+    assigned_site: "Assigned Site",
+    pilot_first: "Pilot First",
+    pilot_last: "Pilot Last",
+    city: "City",
+    state: "State",
+  };
+
+  return map[field] || field.replace(/_/g, " ");
+}
 
 function sortReviewItems(items: ReviewItem[]) {
   return [...items].sort((a, b) => {
@@ -398,7 +416,11 @@ function sortReviewItems(items: ReviewItem[]) {
     return (
       aLast.localeCompare(bLast, undefined, { sensitivity: "base" }) ||
       aFirst.localeCompare(bFirst, undefined, { sensitivity: "base" }) ||
-      a.issue.localeCompare(b.issue, undefined, { sensitivity: "base" })
+      String(a.issues[0]?.issue || "").localeCompare(
+        String(b.issues[0]?.issue || ""),
+        undefined,
+        { sensitivity: "base" },
+      )
     );
   });
 }
@@ -606,22 +628,50 @@ function AdminDataReviewPageInner() {
   }
 
   const reviewItems = useMemo(() => {
-    return attendees.flatMap((attendee) => {
-      const membershipValidation = validateField(
-        "membership_number",
-        attendee.membership_number,
-        rules,
-        currentEvent?.id || null,
-      );
+    const fieldsToCheck: Array<keyof AttendeeRow> = [
+      "membership_number",
+      "email",
+      "assigned_site",
+      "pilot_first",
+      "pilot_last",
+      "city",
+      "state",
+    ];
 
-      if (!membershipValidation) return [];
+    return attendees.flatMap((attendee) => {
+      const issues = fieldsToCheck.flatMap((field) => {
+        const result = validateField(
+          field,
+          attendee[field] as string | null | undefined,
+          rules,
+          currentEvent?.id || null,
+        );
+
+        if (!result) return [];
+
+        return [
+          {
+            field,
+            issue: result.issue,
+            severity: result.severity,
+          } satisfies ReviewFieldIssue,
+        ];
+      });
+
+      if (!issues.length) return [];
+
+      const severity: ReviewSeverity = issues.some(
+        (issue) => issue.severity === "error",
+      )
+        ? "error"
+        : "warning";
 
       return [
         {
-          id: `${attendee.id}-membership_number`,
+          id: attendee.id,
           attendee,
-          issue: membershipValidation.issue,
-          severity: membershipValidation.severity,
+          issues,
+          severity,
         } satisfies ReviewItem,
       ];
     });
@@ -654,12 +704,18 @@ function AdminDataReviewPageInner() {
   }, [filteredReviewItems, pageSize]);
 
   const correctedCount = useMemo(() => {
-    return attendees.filter(
-      (row) =>
-        !!row.membership_number &&
-        normalizeMemberNumber(row.membership_number).startsWith("F"),
-    ).length;
-  }, [attendees]);
+    return attendees.filter((row) => {
+      const validation = validateField(
+        "membership_number",
+        row.membership_number,
+        rules,
+        currentEvent?.id || null,
+      );
+
+      // If no validation error, it's considered valid
+      return !validation;
+    }).length;
+  }, [attendees, rules, currentEvent?.id]);
 
   async function saveMembershipNumber(item: ReviewItem) {
     const draftValue = normalizeMemberNumber(
@@ -671,7 +727,7 @@ function AdminDataReviewPageInner() {
       return;
     }
 
-    if (!draftValue.startsWith("F")) {
+    if (!(draftValue.startsWith("F") || draftValue.startsWith("C"))) {
       setError("Membership number must begin with F or C.");
       return;
     }
@@ -982,7 +1038,7 @@ function AdminDataReviewPageInner() {
         </div>
 
         <div className="card" style={summaryCardStyle}>
-          <strong>Currently Valid</strong>
+          <strong>Membership Valid</strong>{" "}
           <div style={summaryValueStyle}>{correctedCount}</div>
         </div>
 
@@ -1145,7 +1201,7 @@ function AdminDataReviewPageInner() {
           <div>Loading...</div>
         ) : filteredReviewItems.length === 0 ? (
           <div style={{ opacity: 0.8 }}>
-            No flagged membership numbers for this event.
+            No flagged records for this event.{" "}
           </div>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
@@ -1226,10 +1282,37 @@ function AdminDataReviewPageInner() {
                     </div>
                   </div>
 
-                  <div
-                    style={{ marginBottom: 10, fontSize: 14, color: "#991b1b" }}
-                  >
-                    {item.issue}
+                  <div style={{ marginBottom: 10 }}>
+                    <div
+                      style={{
+                        marginBottom: 6,
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color:
+                          item.severity === "error" ? "#991b1b" : "#92400e",
+                      }}
+                    >
+                      {item.issues.length} issue
+                      {item.issues.length === 1 ? "" : "s"} found
+                    </div>
+
+                    <div style={{ display: "grid", gap: 6 }}>
+                      {item.issues.map((issue, index) => (
+                        <div
+                          key={`${attendee.id}-${issue.field}-${index}`}
+                          style={{
+                            fontSize: 14,
+                            color:
+                              issue.severity === "error"
+                                ? "#991b1b"
+                                : "#92400e",
+                          }}
+                        >
+                          <strong>{reviewFieldLabel(issue.field)}:</strong>{" "}
+                          {issue.issue}
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                   <div
