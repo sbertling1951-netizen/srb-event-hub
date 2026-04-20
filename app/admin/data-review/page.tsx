@@ -141,6 +141,7 @@ function validateField(
 }
 
 type PageSize = "10" | "25" | "50" | "100" | "all";
+type DataStatusFilter = "all" | "pending" | "corrected" | "reviewed" | "locked";
 
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
 
@@ -246,6 +247,8 @@ function AdminDataReviewPageInner() {
   const [status, setStatus] = useState("Loading review queue...");
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState<PageSize>("25");
+  const [dataStatusFilter, setDataStatusFilter] =
+    useState<DataStatusFilter>("all");
   const [showResolvedInfo, setShowResolvedInfo] = useState(true);
   const [rules, setRules] = useState<ValidationRule[]>([]);
 
@@ -451,9 +454,16 @@ function AdminDataReviewPageInner() {
     const term = search.trim().toLowerCase();
 
     return sortReviewItems(
-      reviewItems.filter((item) => attendeeMatchesSearch(item.attendee, term)),
+      reviewItems.filter((item) => {
+        const matchesSearch = attendeeMatchesSearch(item.attendee, term);
+        const status = dataStatusLabel(item.attendee.data_status);
+        const matchesStatus =
+          dataStatusFilter === "all" ? true : status === dataStatusFilter;
+
+        return matchesSearch && matchesStatus;
+      }),
     );
-  }, [reviewItems, search]);
+  }, [reviewItems, search, dataStatusFilter]);
 
   const visibleReviewItems = useMemo(() => {
     if (pageSize === "all") return filteredReviewItems;
@@ -673,6 +683,50 @@ function AdminDataReviewPageInner() {
           <strong>Currently Valid</strong>
           <div style={summaryValueStyle}>{correctedCount}</div>
         </div>
+
+        <div className="card" style={summaryCardStyle}>
+          <strong>Pending</strong>
+          <div style={summaryValueStyle}>
+            {
+              attendees.filter(
+                (row) => dataStatusLabel(row.data_status) === "pending",
+              ).length
+            }
+          </div>
+        </div>
+
+        <div className="card" style={summaryCardStyle}>
+          <strong>Corrected</strong>
+          <div style={summaryValueStyle}>
+            {
+              attendees.filter(
+                (row) => dataStatusLabel(row.data_status) === "corrected",
+              ).length
+            }
+          </div>
+        </div>
+
+        <div className="card" style={summaryCardStyle}>
+          <strong>Reviewed</strong>
+          <div style={summaryValueStyle}>
+            {
+              attendees.filter(
+                (row) => dataStatusLabel(row.data_status) === "reviewed",
+              ).length
+            }
+          </div>
+        </div>
+
+        <div className="card" style={summaryCardStyle}>
+          <strong>Locked</strong>
+          <div style={summaryValueStyle}>
+            {
+              attendees.filter(
+                (row) => dataStatusLabel(row.data_status) === "locked",
+              ).length
+            }
+          </div>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 18 }}>
@@ -681,7 +735,7 @@ function AdminDataReviewPageInner() {
             display: "grid",
             gap: 14,
             gridTemplateColumns:
-              "minmax(260px, 1.5fr) minmax(220px, 220px) auto",
+              "minmax(260px, 1.5fr) minmax(220px, 220px) minmax(220px, 220px) auto",
             alignItems: "end",
           }}
         >
@@ -710,6 +764,23 @@ function AdminDataReviewPageInner() {
             </select>
           </div>
 
+          <div>
+            <label style={labelStyle}>Data Status</label>
+            <select
+              value={dataStatusFilter}
+              onChange={(e) =>
+                setDataStatusFilter(e.target.value as DataStatusFilter)
+              }
+              style={inputStyle}
+            >
+              <option value="all">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="corrected">Corrected</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="locked">Locked</option>
+            </select>
+          </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
@@ -735,7 +806,11 @@ function AdminDataReviewPageInner() {
           <h2 style={{ marginTop: 0, marginBottom: 6 }}>Review Queue</h2>
           <div style={{ fontSize: 14, opacity: 0.8 }}>
             Showing {visibleReviewItems.length} of {filteredReviewItems.length}{" "}
-            flagged attendee{filteredReviewItems.length === 1 ? "" : "s"}
+            flagged attendee{filteredReviewItems.length === 1 ? "" : "s"} •
+            Status filter:{" "}
+            {dataStatusFilter === "all"
+              ? "All Statuses"
+              : dataStatusLabel(dataStatusFilter)}
           </div>
         </div>
 
