@@ -40,6 +40,7 @@ type AttendeeRow = {
   participant_type?: string | null;
   source_type?: string | null;
   is_active: boolean;
+  data_status?: string | null;
   created_at?: string | null;
 };
 
@@ -354,28 +355,29 @@ function AdminDataReviewPageInner() {
           .from("attendees")
           .select(
             `
-              id,
-              event_id,
-              entry_id,
-              email,
-              pilot_first,
-              pilot_last,
-              copilot_first,
-              copilot_last,
-              nickname,
-              copilot_nickname,
-              membership_number,
-              city,
-              state,
-              assigned_site,
-              has_arrived,
-              is_first_timer,
-              wants_to_volunteer,
-              participant_type,
-              source_type,
-              is_active,
-              created_at
-            `,
+        id,
+        event_id,
+        entry_id,
+        email,
+        pilot_first,
+        pilot_last,
+        copilot_first,
+        copilot_last,
+        nickname,
+        copilot_nickname,
+        membership_number,
+        city,
+        state,
+        assigned_site,
+        has_arrived,
+        is_first_timer,
+        wants_to_volunteer,
+        participant_type,
+        source_type,
+        is_active,
+        data_status,
+        created_at
+      `,
           )
           .eq("event_id", eventId)
           .order("pilot_last", { ascending: true })
@@ -490,6 +492,7 @@ function AdminDataReviewPageInner() {
         .from("attendees")
         .update({
           membership_number: draftValue,
+          data_status: "corrected",
         })
         .eq("id", item.attendee.id);
 
@@ -536,6 +539,7 @@ function AdminDataReviewPageInner() {
             ? {
                 ...row,
                 membership_number: draftValue,
+                data_status: "corrected",
               }
             : row,
         ),
@@ -555,6 +559,53 @@ function AdminDataReviewPageInner() {
       setStatus("Save failed.");
     } finally {
       setSavingRowId(null);
+    }
+  }
+  async function updateDataStatus(attendeeId: string, nextStatus: string) {
+    try {
+      setError(null);
+      setStatus(`Updating attendee status to ${nextStatus}...`);
+
+      const { error: attendeeError } = await supabase
+        .from("attendees")
+        .update({ data_status: nextStatus })
+        .eq("id", attendeeId);
+
+      if (attendeeError) throw attendeeError;
+
+      setAttendees((prev) =>
+        prev.map((row) =>
+          row.id === attendeeId
+            ? {
+                ...row,
+                data_status: nextStatus,
+              }
+            : row,
+        ),
+      );
+
+      setStatus(`Attendee status updated to ${nextStatus}.`);
+      showFlash(`Status set to ${nextStatus}.`);
+    } catch (err: any) {
+      console.error("updateDataStatus error:", err);
+      setError(err?.message || "Could not update attendee status.");
+      setStatus("Status update failed.");
+    }
+  }
+
+  function dataStatusLabel(value?: string | null) {
+    if (!value) return "pending";
+    switch (value) {
+      case "pending":
+        return "pending";
+      case "reviewed":
+        return "reviewed";
+      case "corrected":
+        return "corrected";
+      case "locked":
+        return "locked";
+      default:
+        return value;
     }
   }
 
@@ -803,6 +854,46 @@ function AdminDataReviewPageInner() {
                     {attendee.source_type
                       ? ` • Source: ${attendee.source_type}`
                       : ""}
+                    {` • Data Status: ${dataStatusLabel(attendee.data_status)}`}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void updateDataStatus(attendee.id, "reviewed")
+                      }
+                      style={secondaryButtonStyle}
+                    >
+                      Mark Reviewed
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void updateDataStatus(attendee.id, "locked")
+                      }
+                      style={secondaryButtonStyle}
+                    >
+                      Lock Record
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void updateDataStatus(attendee.id, "pending")
+                      }
+                      style={secondaryButtonStyle}
+                    >
+                      Back To Pending
+                    </button>
                   </div>
                 </div>
               );
@@ -834,6 +925,15 @@ const primaryButtonStyle: CSSProperties = {
   border: "none",
   background: "#111827",
   color: "white",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
   fontWeight: 700,
   cursor: "pointer",
 };
