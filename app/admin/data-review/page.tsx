@@ -28,6 +28,8 @@ type AttendeeRow = {
   pilot_last: string | null;
   copilot_first: string | null;
   copilot_last: string | null;
+  primary_phone?: string | null;
+  cell_phone?: string | null;
   nickname: string | null;
   copilot_nickname: string | null;
   membership_number: string | null;
@@ -37,7 +39,9 @@ type AttendeeRow = {
   has_arrived: boolean | null;
   is_first_timer: boolean | null;
   wants_to_volunteer: boolean | null;
+  share_with_attendees?: boolean | null;
   participant_type?: string | null;
+  notes?: string | null;
   source_type?: string | null;
   is_active: boolean;
   data_status?: string | null;
@@ -51,6 +55,30 @@ type ReviewItem = {
   attendee: AttendeeRow;
   issue: string;
   severity: ReviewSeverity;
+};
+
+type AttendeeEditorState = {
+  id: string | null;
+  pilot_first: string;
+  pilot_last: string;
+  copilot_first: string;
+  copilot_last: string;
+  email: string;
+  membership_number: string;
+  city: string;
+  state: string;
+  assigned_site: string;
+  participant_type: string;
+  primary_phone: string;
+  cell_phone: string;
+  wants_to_volunteer: boolean;
+  is_first_timer: boolean;
+  has_arrived: boolean;
+  share_with_attendees: boolean;
+  is_active: boolean;
+  data_status: string;
+  entry_id: string;
+  notes: string;
 };
 
 type ValidationRule = {
@@ -142,6 +170,58 @@ function validateField(
 
 type PageSize = "10" | "25" | "50" | "100" | "all";
 type DataStatusFilter = "all" | "pending" | "corrected" | "reviewed" | "locked";
+
+function emptyAttendeeEditorState(): AttendeeEditorState {
+  return {
+    id: null,
+    pilot_first: "",
+    pilot_last: "",
+    copilot_first: "",
+    copilot_last: "",
+    email: "",
+    membership_number: "",
+    city: "",
+    state: "",
+    assigned_site: "",
+    participant_type: "attendee",
+    primary_phone: "",
+    cell_phone: "",
+    wants_to_volunteer: false,
+    is_first_timer: false,
+    has_arrived: false,
+    share_with_attendees: false,
+    is_active: true,
+    data_status: "pending",
+    entry_id: "",
+    notes: "",
+  };
+}
+
+function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
+  return {
+    id: attendee.id,
+    pilot_first: attendee.pilot_first || "",
+    pilot_last: attendee.pilot_last || "",
+    copilot_first: attendee.copilot_first || "",
+    copilot_last: attendee.copilot_last || "",
+    email: attendee.email || "",
+    membership_number: attendee.membership_number || "",
+    city: attendee.city || "",
+    state: attendee.state || "",
+    assigned_site: attendee.assigned_site || "",
+    participant_type: attendee.participant_type || "attendee",
+    primary_phone: attendee.primary_phone || "",
+    cell_phone: attendee.cell_phone || "",
+    wants_to_volunteer: !!attendee.wants_to_volunteer,
+    is_first_timer: !!attendee.is_first_timer,
+    has_arrived: !!attendee.has_arrived,
+    share_with_attendees: !!attendee.share_with_attendees,
+    is_active: attendee.is_active,
+    data_status: attendee.data_status || "pending",
+    entry_id: attendee.entry_id || "",
+    notes: attendee.notes || "",
+  };
+}
 
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
 
@@ -255,6 +335,12 @@ function AdminDataReviewPageInner() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
+  const [editorState, setEditorState] = useState<AttendeeEditorState>(
+    emptyAttendeeEditorState(),
+  );
+  const [editorSaving, setEditorSaving] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -366,6 +452,8 @@ function AdminDataReviewPageInner() {
         pilot_last,
         copilot_first,
         copilot_last,
+        primary_phone,
+        cell_phone,
         nickname,
         copilot_nickname,
         membership_number,
@@ -375,7 +463,9 @@ function AdminDataReviewPageInner() {
         has_arrived,
         is_first_timer,
         wants_to_volunteer,
+        share_with_attendees,
         participant_type,
+        notes,
         source_type,
         is_active,
         data_status,
@@ -619,6 +709,113 @@ function AdminDataReviewPageInner() {
     }
   }
 
+  function openCreateAttendeeEditor() {
+    setEditorMode("create");
+    setEditorState(emptyAttendeeEditorState());
+    setEditorOpen(true);
+  }
+
+  function openEditAttendeeEditor(attendee: AttendeeRow) {
+    setEditorMode("edit");
+    setEditorState(attendeeToEditorState(attendee));
+    setEditorOpen(true);
+  }
+
+  function closeAttendeeEditor() {
+    setEditorOpen(false);
+    setEditorMode("create");
+    setEditorState(emptyAttendeeEditorState());
+  }
+
+  function updateEditorField<K extends keyof AttendeeEditorState>(
+    key: K,
+    value: AttendeeEditorState[K],
+  ) {
+    setEditorState((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  async function handleSaveAttendeeRecord() {
+    if (!currentEvent?.id) {
+      setError("No event selected.");
+      return;
+    }
+
+    const pilotFirst = editorState.pilot_first.trim();
+    const pilotLast = editorState.pilot_last.trim();
+    const email = editorState.email.trim().toLowerCase();
+    const membershipNumber = editorState.membership_number.trim().toUpperCase();
+
+    if (!pilotFirst && !pilotLast) {
+      setError("Pilot first or last name is required.");
+      return;
+    }
+
+    try {
+      setEditorSaving(true);
+      setError(null);
+      setStatus(
+        editorMode === "create"
+          ? "Creating attendee record..."
+          : "Saving attendee record...",
+      );
+
+      const payload = {
+        event_id: currentEvent.id,
+        entry_id: editorState.entry_id.trim() || null,
+        pilot_first: pilotFirst || null,
+        pilot_last: pilotLast || null,
+        copilot_first: editorState.copilot_first.trim() || null,
+        copilot_last: editorState.copilot_last.trim() || null,
+        email: email || null,
+        membership_number: membershipNumber || null,
+        city: editorState.city.trim() || null,
+        state: editorState.state.trim() || null,
+        assigned_site: editorState.assigned_site.trim() || null,
+        participant_type: editorState.participant_type.trim() || "attendee",
+        primary_phone: editorState.primary_phone.trim() || null,
+        cell_phone: editorState.cell_phone.trim() || null,
+        wants_to_volunteer: editorState.wants_to_volunteer,
+        is_first_timer: editorState.is_first_timer,
+        has_arrived: editorState.has_arrived,
+        share_with_attendees: editorState.share_with_attendees,
+        is_active: editorState.is_active,
+        data_status: editorState.data_status || "pending",
+        notes: editorState.notes.trim() || null,
+      };
+
+      if (editorMode === "create") {
+        const { error: insertError } = await supabase
+          .from("attendees")
+          .insert(payload);
+
+        if (insertError) throw insertError;
+
+        showFlash("Attendee record created.");
+      } else {
+        const { error: updateError } = await supabase
+          .from("attendees")
+          .update(payload)
+          .eq("id", editorState.id);
+
+        if (updateError) throw updateError;
+
+        showFlash("Attendee record updated.");
+      }
+
+      closeAttendeeEditor();
+      await loadQueue(currentEvent.id);
+    } catch (err: any) {
+      console.error("handleSaveAttendeeRecord error:", err);
+      setError(err?.message || "Could not save attendee record.");
+      setStatus("Save failed.");
+    } finally {
+      setEditorSaving(false);
+    }
+  }
+
   if (!loading && accessDenied) {
     return (
       <div className="card" style={{ padding: 18 }}>
@@ -655,6 +852,18 @@ function AdminDataReviewPageInner() {
           <div style={successBoxStyle}>{flashMessage}</div>
         ) : null}
         {error ? <div style={errorBoxStyle}>{error}</div> : null}
+
+        <div
+          style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}
+        >
+          <button
+            type="button"
+            onClick={openCreateAttendeeEditor}
+            style={primaryButtonStyle}
+          >
+            Add Attendee Record
+          </button>
+        </div>
       </div>
 
       <div
@@ -942,6 +1151,13 @@ function AdminDataReviewPageInner() {
                   >
                     <button
                       type="button"
+                      onClick={() => openEditAttendeeEditor(attendee)}
+                      style={secondaryButtonStyle}
+                    >
+                      Edit Record
+                    </button>
+                    <button
+                      type="button"
                       onClick={() =>
                         void updateDataStatus(attendee.id, "reviewed")
                       }
@@ -976,6 +1192,326 @@ function AdminDataReviewPageInner() {
           </div>
         )}
       </div>
+      {editorOpen ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 2000,
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: "min(980px, 100%)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              padding: 18,
+              background: "white",
+              borderRadius: 14,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "center",
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+                  {editorMode === "create"
+                    ? "Add Attendee Record"
+                    : "Edit Attendee Record"}
+                </h2>
+                <div style={{ fontSize: 14, opacity: 0.8 }}>
+                  {editorMode === "create"
+                    ? "Create a new attendee manually."
+                    : "Update this attendee record."}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeAttendeeEditor}
+                style={secondaryButtonStyle}
+                disabled={editorSaving}
+              >
+                Close
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 14,
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              }}
+            >
+              <div>
+                <label style={labelStyle}>Pilot First</label>
+                <input
+                  value={editorState.pilot_first}
+                  onChange={(e) =>
+                    updateEditorField("pilot_first", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Pilot Last</label>
+                <input
+                  value={editorState.pilot_last}
+                  onChange={(e) =>
+                    updateEditorField("pilot_last", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Co-Pilot First</label>
+                <input
+                  value={editorState.copilot_first}
+                  onChange={(e) =>
+                    updateEditorField("copilot_first", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Co-Pilot Last</label>
+                <input
+                  value={editorState.copilot_last}
+                  onChange={(e) =>
+                    updateEditorField("copilot_last", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Email</label>
+                <input
+                  value={editorState.email}
+                  onChange={(e) => updateEditorField("email", e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Membership Number</label>
+                <input
+                  value={editorState.membership_number}
+                  onChange={(e) =>
+                    updateEditorField(
+                      "membership_number",
+                      e.target.value.toUpperCase(),
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>City</label>
+                <input
+                  value={editorState.city}
+                  onChange={(e) => updateEditorField("city", e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>State</label>
+                <input
+                  value={editorState.state}
+                  onChange={(e) => updateEditorField("state", e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Assigned Site</label>
+                <input
+                  value={editorState.assigned_site}
+                  onChange={(e) =>
+                    updateEditorField("assigned_site", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Participant Type</label>
+                <input
+                  value={editorState.participant_type}
+                  onChange={(e) =>
+                    updateEditorField("participant_type", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Primary Phone</label>
+                <input
+                  value={editorState.primary_phone}
+                  onChange={(e) =>
+                    updateEditorField("primary_phone", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Cell Phone</label>
+                <input
+                  value={editorState.cell_phone}
+                  onChange={(e) =>
+                    updateEditorField("cell_phone", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Entry ID</label>
+                <input
+                  value={editorState.entry_id}
+                  onChange={(e) =>
+                    updateEditorField("entry_id", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Data Status</label>
+                <select
+                  value={editorState.data_status}
+                  onChange={(e) =>
+                    updateEditorField("data_status", e.target.value)
+                  }
+                  style={inputStyle}
+                >
+                  <option value="pending">Pending</option>
+                  <option value="corrected">Corrected</option>
+                  <option value="reviewed">Reviewed</option>
+                  <option value="locked">Locked</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.wants_to_volunteer}
+                  onChange={(e) =>
+                    updateEditorField("wants_to_volunteer", e.target.checked)
+                  }
+                />
+                Volunteer
+              </label>
+
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.is_first_timer}
+                  onChange={(e) =>
+                    updateEditorField("is_first_timer", e.target.checked)
+                  }
+                />
+                First Timer
+              </label>
+
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.has_arrived}
+                  onChange={(e) =>
+                    updateEditorField("has_arrived", e.target.checked)
+                  }
+                />
+                Has Arrived
+              </label>
+
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.share_with_attendees}
+                  onChange={(e) =>
+                    updateEditorField("share_with_attendees", e.target.checked)
+                  }
+                />
+                Share With Attendees
+              </label>
+
+              <label style={checkLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={editorState.is_active}
+                  onChange={(e) =>
+                    updateEditorField("is_active", e.target.checked)
+                  }
+                />
+                Active Record
+              </label>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <label style={labelStyle}>Notes</label>
+              <textarea
+                value={editorState.notes}
+                onChange={(e) => updateEditorField("notes", e.target.value)}
+                style={textareaStyle}
+                rows={4}
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: 18,
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => void handleSaveAttendeeRecord()}
+                style={primaryButtonStyle}
+                disabled={editorSaving}
+              >
+                {editorSaving
+                  ? "Saving..."
+                  : editorMode === "create"
+                    ? "Create Attendee"
+                    : "Save Changes"}
+              </button>
+
+              <button
+                type="button"
+                onClick={closeAttendeeEditor}
+                style={secondaryButtonStyle}
+                disabled={editorSaving}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -992,6 +1528,21 @@ const inputStyle: CSSProperties = {
   borderRadius: 10,
   border: "1px solid #ccc",
   background: "white",
+};
+
+const textareaStyle: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+  resize: "vertical",
+};
+
+const checkLabelStyle: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  alignItems: "center",
 };
 
 const primaryButtonStyle: CSSProperties = {
