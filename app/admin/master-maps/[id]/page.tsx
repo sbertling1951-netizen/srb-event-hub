@@ -104,6 +104,7 @@ function MasterMapEditorPageInner() {
   const [dragCurrent, setDragCurrent] = useState<Point | null>(null);
   const [replaceImageFile, setReplaceImageFile] = useState<File | null>(null);
   const [replacingImage, setReplacingImage] = useState(false);
+  const [isSavingMarker, setIsSavingMarker] = useState(false);
   const [undoStack, setUndoStack] = useState<
     Array<Array<{ id: string; map_x: number | null; map_y: number | null }>>
   >([]);
@@ -529,6 +530,7 @@ function MasterMapEditorPageInner() {
   }
 
   function resetForNextMarker() {
+    pendingPointRef.current = { x: null, y: null };
     clearFormFieldsOnly();
     setPendingX(null);
     setPendingY(null);
@@ -589,6 +591,7 @@ function MasterMapEditorPageInner() {
     }
   }
   function placePendingMarkerFromPoint(point: Point) {
+    pendingPointRef.current = { x: point.x, y: point.y };
     setPendingX(point.x);
     setPendingY(point.y);
     setSelectedSiteIds([]);
@@ -607,8 +610,9 @@ function MasterMapEditorPageInner() {
     if (now < suppressCanvasMouseUpUntilRef.current) {
       setIsPointerDown(false);
       setIsDraggingSelect(false);
-      setDragStart(null);
-      setDragCurrent(null);
+      pendingPointRef.current = { x: null, y: null };
+      setPendingX(null);
+      setPendingY(null);
       return;
     }
 
@@ -651,6 +655,7 @@ function MasterMapEditorPageInner() {
         setEditY(null);
       }
 
+      pendingPointRef.current = { x: null, y: null };
       setPendingX(null);
       setPendingY(null);
       setStatus(
@@ -660,11 +665,15 @@ function MasterMapEditorPageInner() {
       setSuppressNextClick(true);
     } else if (
       !readOnlyMarkers &&
-      e.target === e.currentTarget &&
       !(suppressNextClickRef.current || suppressNextClick)
     ) {
-      const point = getRelativePoint(e);
-      placePendingMarkerFromPoint(point);
+      const target = e.target as HTMLElement | null;
+      const clickedMarker = !!target?.closest("button");
+
+      if (!clickedMarker) {
+        const point = getRelativePoint(e);
+        placePendingMarkerFromPoint(point);
+      }
     } else if (suppressNextClickRef.current || suppressNextClick) {
       suppressNextClickRef.current = false;
       setSuppressNextClick(false);
@@ -686,6 +695,7 @@ function MasterMapEditorPageInner() {
     suppressCanvasMouseUpUntilRef.current = Date.now() + 500;
     suppressNextClickRef.current = true;
     setSuppressNextClick(true);
+    pendingPointRef.current = { x: null, y: null };
     setPendingX(null);
     setPendingY(null);
 
@@ -705,6 +715,7 @@ function MasterMapEditorPageInner() {
     setSiteNumber(site.site_number);
     setEditX(site.map_x);
     setEditY(site.map_y);
+    pendingPointRef.current = { x: null, y: null };
     setPendingX(null);
     setPendingY(null);
     focusMapCanvasNow();
@@ -719,10 +730,24 @@ function MasterMapEditorPageInner() {
       return;
     }
 
-    if (pendingX === null || pendingY === null) {
+    if (isSavingMarker) {
+      return;
+    }
+
+    const pendingPoint = pendingPointRef.current;
+    const nextPendingX = pendingPoint.x ?? pendingX;
+    const nextPendingY = pendingPoint.y ?? pendingY;
+
+    if (nextPendingX === null || nextPendingY === null) {
       setStatus("Click on the map first.");
       return;
     }
+    console.log("marker save attempt", {
+      nextPendingX,
+      nextPendingY,
+      siteNumber,
+      primarySelectedSiteId,
+    });
 
     const trimmedSiteNumber = siteNumber.trim();
     if (!trimmedSiteNumber) {
@@ -741,34 +766,56 @@ function MasterMapEditorPageInner() {
     }
 
     try {
-      // insert the new site, awaiting completion
-      const { error } = await supabase.from("master_map_sites").insert({
-        master_map_id: masterMapId,
-        site_number: trimmedSiteNumber,
-        display_label: trimmedSiteNumber,
-        map_x: pendingX,
-        map_y: pendingY,
-      });
+      setIsSavingMarker(true);
+      setStatus("Saving marker...");
+
+      const { data: insertedSite, error } = await supabase
+        .from("master_map_sites")
+        .insert({
+          master_map_id: masterMapId,
+          site_number: trimmedSiteNumber,
+          display_label: trimmedSiteNumber,
+          map_x: nextPendingX,
+          map_y: nextPendingY,
+        })
+        .select("id,master_map_id,site_number,display_label,map_x,map_y")
+        .single();
 
       if (error) {
         throw error;
       }
 
-      // reload the site list after inserting
-      await loadSites();
+      const savedSite = insertedSite as MasterMapSiteRow;
 
-      // reset or prepare for next site based on nextMode
+      setSites((prev) => {
+        const exists = prev.some((site) => site.id === savedSite.id);
+        if (exists) return prev;
+        return [...prev, savedSite].sort((a, b) =>
+          a.site_number.localeCompare(b.site_number, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          }),
+        );
+      });
+
       if (nextMode) {
         resetForNextMarker();
         setStatus("Marker saved. Click the map to place the next marker.");
       } else {
+        pendingPointRef.current = { x: null, y: null };
         setPendingX(null);
         setPendingY(null);
         setSiteNumber("");
-        setStatus("Marker saved.");
+        setPrimarySelectedSiteId(savedSite.id);
+        setSelectedSiteIds([savedSite.id]);
+        setEditX(savedSite.map_x);
+        setEditY(savedSite.map_y);
+        setStatus(`Marker ${trimmedSiteNumber} saved.`);
       }
     } catch (err: any) {
       setStatus(`Could not save marker: ${err.message}`);
+    } finally {
+      setIsSavingMarker(false);
     }
   }
 
@@ -853,6 +900,7 @@ function MasterMapEditorPageInner() {
     const nextX = clampPercent(Number((pendingX + dx).toFixed(2)));
     const nextY = clampPercent(Number((pendingY + dy).toFixed(2)));
 
+    pendingPointRef.current = { x: nextX, y: nextY };
     setPendingX(nextX);
     setPendingY(nextY);
     setStatus(
@@ -1325,6 +1373,7 @@ function MasterMapEditorPageInner() {
           pendingPointRef.current.y !== null
         ) {
           e.preventDefault();
+          pendingPointRef.current = { x: null, y: null };
           setPendingX(null);
           setPendingY(null);
           setSiteNumber("");
@@ -1793,7 +1842,7 @@ function MasterMapEditorPageInner() {
                 }
               }}
               placeholder="Site number"
-              disabled={readOnlyMarkers || loading}
+              disabled={readOnlyMarkers || loading || isSavingMarker}
               style={{ padding: 8 }}
             />
 
@@ -1804,21 +1853,21 @@ function MasterMapEditorPageInner() {
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
-                disabled={readOnlyMarkers || loading}
+                disabled={readOnlyMarkers || loading || isSavingMarker}
                 onClick={() => void saveNewMarker()}
                 style={{ flex: 1 }}
               >
                 Save New
               </button>
               <button
-                disabled={readOnlyMarkers || loading}
+                disabled={readOnlyMarkers || loading || isSavingMarker}
                 onClick={() => void saveAndNextMarker()}
                 style={{ flex: 1 }}
               >
                 Save + Next
               </button>
               <button
-                disabled={readOnlyMarkers || loading}
+                disabled={readOnlyMarkers || loading || isSavingMarker}
                 onClick={() => void updateSelectedMarker()}
                 style={{ flex: 1 }}
               >
