@@ -1831,7 +1831,7 @@ function AdminAttendeesPageInner() {
         }}
       >
         <div className="card" style={summaryCardStyle}>
-          <strong>Visible Flagged</strong>
+          <strong>Visible Flagged</strong>{" "}
           <div style={summaryValueStyle}>{filteredReviewItems.length}</div>
         </div>
         <div className="card" style={summaryCardStyle}>

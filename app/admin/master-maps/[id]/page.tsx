@@ -557,7 +557,9 @@ function MasterMapEditorPageInner() {
   function handleMapMouseDown(e: React.MouseEvent<HTMLDivElement>) {
     if (readOnlyMarkers) return;
     if (e.button !== 0) return;
-    if (e.target !== e.currentTarget) return;
+
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("button")) return;
 
     e.preventDefault();
     clearNativeSelection();
@@ -2085,6 +2087,13 @@ function MasterMapEditorPageInner() {
             <div
               ref={mapCanvasRef}
               tabIndex={0}
+              onMouseDown={(e) => {
+                focusMapCanvasNow();
+                handleMapMouseDown(e);
+              }}
+              onMouseMove={handleMapMouseMove}
+              onMouseUp={handleMapMouseUp}
+              onMouseLeave={handleMapMouseUp}
               style={{
                 position: "relative",
                 width: naturalSize.width * zoom,
@@ -2113,23 +2122,6 @@ function MasterMapEditorPageInner() {
                     display: "block",
                     userSelect: "none",
                     pointerEvents: "none",
-                  }}
-                />
-              )}
-              {!readOnlyMarkers && (
-                <div
-                  onMouseDown={(e) => {
-                    focusMapCanvasNow();
-                    handleMapMouseDown(e as React.MouseEvent<HTMLDivElement>);
-                  }}
-                  onMouseMove={handleMapMouseMove}
-                  onMouseUp={handleMapMouseUp}
-                  onMouseLeave={handleMapMouseUp}
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    zIndex: 1,
-                    background: "transparent",
                   }}
                 />
               )}
