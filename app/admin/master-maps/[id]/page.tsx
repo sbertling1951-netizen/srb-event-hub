@@ -714,7 +714,7 @@ function MasterMapEditorPageInner() {
   async function saveNewMarkerInternal(nextMode: boolean) {
     if (readOnlyMarkers) {
       setStatus(
-        "Published master maps are read-only. Create a draft copy to edit markers.",
+        "Published master maps are read‑only. Create a draft copy to edit markers.",
       );
       return;
     }
@@ -725,7 +725,6 @@ function MasterMapEditorPageInner() {
     }
 
     const trimmedSiteNumber = siteNumber.trim();
-
     if (!trimmedSiteNumber) {
       setStatus("Enter a site number.");
       focusSiteNumber();
@@ -741,32 +740,36 @@ function MasterMapEditorPageInner() {
       return;
     }
 
-    const { error } = await supabase.from("master_map_sites").insert({
-      master_map_id: masterMapId,
-      site_number: trimmedSiteNumber,
-      display_label: trimmedSiteNumber,
-      map_x: pendingX,
-      map_y: pendingY,
-    });
+    try {
+      // insert the new site, awaiting completion
+      const { error } = await supabase.from("master_map_sites").insert({
+        master_map_id: masterMapId,
+        site_number: trimmedSiteNumber,
+        display_label: trimmedSiteNumber,
+        map_x: pendingX,
+        map_y: pendingY,
+      });
 
-    if (error) {
-      setStatus(`Could not save marker: ${error.message}`);
-      return;
+      if (error) {
+        throw error;
+      }
+
+      // reload the site list after inserting
+      await loadSites();
+
+      // reset or prepare for next site based on nextMode
+      if (nextMode) {
+        resetForNextMarker();
+        setStatus("Marker saved. Click the map to place the next marker.");
+      } else {
+        setPendingX(null);
+        setPendingY(null);
+        setSiteNumber("");
+        setStatus("Marker saved.");
+      }
+    } catch (err: any) {
+      setStatus(`Could not save marker: ${err.message}`);
     }
-
-    await loadSites();
-
-    if (nextMode) {
-      resetForNextMarker();
-      setStatus("Marker saved. Click the map to place the next marker.");
-      return;
-    }
-
-    setPendingX(null);
-    setPendingY(null);
-    setSiteNumber("");
-    setStatus("Marker saved.");
-    focusSiteNumber();
   }
 
   async function saveNewMarker() {
