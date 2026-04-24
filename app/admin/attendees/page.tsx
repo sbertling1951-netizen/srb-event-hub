@@ -2453,6 +2453,15 @@ function AdminAttendeesPageInner() {
           >
             Imports
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = "/admin/data-review";
+            }}
+            style={secondaryButtonStyle}
+          >
+            Open Data Review Page
+          </button>
 
           <button
             type="button"
