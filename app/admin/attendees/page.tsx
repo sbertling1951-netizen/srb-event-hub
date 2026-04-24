@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -575,8 +576,7 @@ function FilterBar(props: {
         style={{
           display: "grid",
           gap: 14,
-          gridTemplateColumns:
-            "minmax(260px, 1.5fr) minmax(160px, 160px) minmax(160px, 160px) minmax(220px, 220px) minmax(220px, 220px) auto",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
           alignItems: "end",
         }}
       >
@@ -715,7 +715,7 @@ function QuickActionBar(props: {
           onClick={onSetReviewMode}
           style={secondaryButtonStyle}
         >
-          Review Mode
+          Focus Review
         </button>
 
         <button
@@ -723,7 +723,7 @@ function QuickActionBar(props: {
           onClick={onSetAllMode}
           style={secondaryButtonStyle}
         >
-          Full List
+          View All Attendees
         </button>
 
         <button type="button" onClick={onRefresh} style={secondaryButtonStyle}>
@@ -762,9 +762,18 @@ function ReviewQueue(props: {
   } = props;
 
   return (
-    <div className="card" style={{ padding: 18 }}>
+    <div
+      className="card"
+      style={{
+        padding: 18,
+        border: "2px solid #fca5a5",
+        background: "#fff7f7",
+      }}
+    >
       <div style={{ marginBottom: 14 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Review Queue</h2>
+        <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+          Command Center — Data Review
+        </h2>
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           Showing {visibleReviewItems.length} of {filteredReviewItems.length}{" "}
           flagged attendee
@@ -1020,9 +1029,16 @@ function AttendeeList(props: {
   } = props;
 
   return (
-    <div className="card" style={{ padding: 18 }}>
+    <div
+      className="card"
+      style={{
+        padding: 18,
+        border: "1px solid #ddd",
+        background: "#fafafa",
+      }}
+    >
       <div style={{ marginBottom: 14 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Attendee List</h2>
+        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Full Attendee Roster</h2>
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           Showing {visibleAttendees.length} of {filteredAttendees.length}{" "}
           attendee
@@ -1712,6 +1728,7 @@ function ValidationRulesEmbedPanel() {
 }
 
 function AdminAttendeesPageInner() {
+  const searchParams = useSearchParams();
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
@@ -1738,6 +1755,29 @@ function AdminAttendeesPageInner() {
   const [editorSaving, setEditorSaving] = useState(false);
   const [commandCenterTab, setCommandCenterTab] =
     useState<CommandCenterTab>("attendees");
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const mode = searchParams.get("mode");
+
+    if (
+      tab === "attendees" ||
+      tab === "reports" ||
+      tab === "imports" ||
+      tab === "validation"
+    ) {
+      setCommandCenterTab(tab);
+    }
+
+    if (mode === "review") {
+      setViewMode("review");
+    }
+
+    if (mode === "all") {
+      setViewMode("all");
+    }
+  }, [searchParams]);
+
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   const [inlineEditState, setInlineEditState] = useState<InlineEditState>(
     emptyInlineEditState(),
@@ -2421,7 +2461,10 @@ function AdminAttendeesPageInner() {
         >
           <button
             type="button"
-            onClick={() => setCommandCenterTab("attendees")}
+            onClick={() => {
+              setCommandCenterTab("attendees");
+              setViewMode("all");
+            }}
             style={
               commandCenterTab === "attendees"
                 ? primaryButtonStyle
@@ -2456,11 +2499,14 @@ function AdminAttendeesPageInner() {
           <button
             type="button"
             onClick={() => {
-              window.location.href = "/admin/data-review";
+              setCommandCenterTab("attendees");
+              setViewMode("review");
             }}
-            style={secondaryButtonStyle}
+            style={
+              viewMode === "review" ? primaryButtonStyle : secondaryButtonStyle
+            }
           >
-            Open Data Review Page
+            Review Queue
           </button>
 
           <button
