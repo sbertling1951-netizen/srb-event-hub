@@ -1,0 +1,19 @@
+# Node
+node_modules/
+.next/
+
+# Env (VERY important)
+.env
+.env.local
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+
+# Logs
+npm-debug.log*
+
+# Build
+out/
