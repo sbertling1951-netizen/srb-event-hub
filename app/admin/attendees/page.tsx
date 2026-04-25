@@ -223,6 +223,16 @@ const okBadgeStyle: CSSProperties = {
   fontWeight: 700,
 };
 
+const cleanAttendeeRowStyle: CSSProperties = {
+  border: "1px solid #86efac",
+  background: "#f0fdf4",
+};
+
+const reviewAttendeeRowStyle: CSSProperties = {
+  border: "1px solid #fca5a5",
+  background: "#fff7f7",
+};
+
 const savedBadgeStyle: CSSProperties = {
   display: "inline-block",
   padding: "3px 8px",
@@ -669,10 +679,10 @@ function FilterBar(props: {
           <select
             value={viewMode}
             onChange={(e) => setViewMode(e.target.value as ViewMode)}
-            style={inputStyle}
+            style={viewMode === "review" ? reviewModeInputStyle : inputStyle}
           >
             <option value="all">All Attendees</option>
-            <option value="review">Review Queue</option>
+            <option value="review">Review Queue / Needs Review</option>
           </select>
         </div>
 
@@ -1112,7 +1122,9 @@ function AttendeeList(props: {
       }}
     >
       <div style={{ marginBottom: 14 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Full Attendee Roster</h2>
+        <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+          Persistent Attendee Roster — Green = Good / Red = Needs Review
+        </h2>
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           Showing {visibleAttendees.length} of {filteredAttendees.length}{" "}
           attendee
@@ -1138,14 +1150,23 @@ function AttendeeList(props: {
               <div
                 key={attendee.id}
                 style={{
+                  ...(attendeeIssues
+                    ? reviewAttendeeRowStyle
+                    : cleanAttendeeRowStyle),
                   border:
                     attendee.id === recentlySavedId
                       ? "1px solid #86efac"
-                      : "1px solid #ddd",
+                      : attendeeIssues
+                        ? reviewAttendeeRowStyle.border
+                        : cleanAttendeeRowStyle.border,
                   borderRadius: 12,
                   padding: 14,
                   background:
-                    attendee.id === recentlySavedId ? "#f0fdf4" : "white",
+                    attendee.id === recentlySavedId
+                      ? "#f0fdf4"
+                      : attendeeIssues
+                        ? reviewAttendeeRowStyle.background
+                        : cleanAttendeeRowStyle.background,
                   transition: "background 0.2s ease, border-color 0.2s ease",
                 }}
               >
@@ -2137,12 +2158,24 @@ function AdminAttendeesPageInner() {
     });
   }, [attendees, search, dataStatusFilter, participantTypeFilter]);
 
-  const visibleAttendees = useMemo(() => {
-    if (pageSize === "all") {
+  const workbenchAttendees = useMemo(() => {
+    if (viewMode !== "review") {
       return filteredAttendees;
     }
-    return filteredAttendees.slice(0, Number(pageSize));
-  }, [filteredAttendees, pageSize]);
+
+    const reviewAttendeeIds = new Set(
+      filteredReviewItems.map((item) => item.attendee.id),
+    );
+
+    return filteredAttendees.filter((row) => reviewAttendeeIds.has(row.id));
+  }, [filteredAttendees, filteredReviewItems, viewMode]);
+
+  const visibleAttendees = useMemo(() => {
+    if (pageSize === "all") {
+      return workbenchAttendees;
+    }
+    return workbenchAttendees.slice(0, Number(pageSize));
+  }, [workbenchAttendees, pageSize]);
 
   const correctedCount = useMemo(() => {
     return attendees.filter(
@@ -2579,7 +2612,9 @@ function AdminAttendeesPageInner() {
               setViewMode("review");
             }}
             style={
-              viewMode === "review" ? primaryButtonStyle : secondaryButtonStyle
+              commandCenterTab === "attendees" && viewMode === "review"
+                ? primaryButtonStyle
+                : secondaryButtonStyle
             }
           >
             Review Queue
@@ -2742,7 +2777,7 @@ function AdminAttendeesPageInner() {
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <span style={secondaryBadgeStyle}>
-                  {filteredAttendees.length} visible attendees
+                  {workbenchAttendees.length} visible attendees
                 </span>
                 <span style={issueBadgeStyle}>
                   {filteredReviewItems.length} flagged
@@ -2800,7 +2835,7 @@ function AdminAttendeesPageInner() {
 
             <AttendeeList
               loading={loading}
-              filteredAttendees={filteredAttendees}
+              filteredAttendees={workbenchAttendees}
               visibleAttendees={visibleAttendees}
               reviewItems={reviewItems}
               inlineEditId={inlineEditId}
@@ -2854,6 +2889,16 @@ const inputStyle: CSSProperties = {
   borderRadius: 10,
   border: "1px solid #ccc",
   background: "white",
+};
+const reviewModeInputStyle: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #fca5a5",
+  marginTop: 6,
+  background: "#fff7f7",
+  color: "#991b1b",
+  fontWeight: 700,
 };
 
 const textareaStyle: CSSProperties = {
