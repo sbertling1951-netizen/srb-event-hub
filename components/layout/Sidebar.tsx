@@ -430,14 +430,11 @@ export default function Sidebar() {
         { label: "Check-In", href: "/admin/checkin" },
         { label: "Parking Admin", href: "/admin/parking" },
         { label: "Events", href: "/admin/events" },
-        { label: "Master Maps", href: "/admin/master-maps" },
-        { label: "Map Locations", href: "/admin/locations" },
+        { label: "Map Admin", href: "/admin/map-admin" },
         { label: "Attendees Management", href: "/admin/attendees" },
         { label: "Pre-Rally Checklist", href: "/admin/checklist" },
         { label: "Print Center", href: "/admin/print" },
-        { label: "Nearby Admin", href: "/admin/nearby" },
         { label: "Agenda Admin", href: "/admin/agenda" },
-        { label: "Agenda Import", href: "/admin/agenda/import" },
         ...(canManageEventStaff
           ? [{ label: "Event Staff", href: "/admin/event-staff" }]
           : []),

@@ -718,6 +718,25 @@ function AdminLocationsPageInner() {
         </button>
       </div>
 
+<div style={{ marginBottom: 16 }}>
+  <button
+    type="button"
+    onClick={() => {
+      window.location.href = "/admin/map-admin";
+    }}
+    style={{
+      padding: "8px 12px",
+      borderRadius: 8,
+      border: "1px solid #cbd5e1",
+      background: "#fff",
+      cursor: "pointer",
+    }}
+  >
+    ← Back to Map Admin
+  </button>
+</div>
+
+
       <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
         Map Locations
       </h1>

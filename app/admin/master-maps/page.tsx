@@ -691,6 +691,25 @@ function MasterMapsPageInner() {
             padding: 18,
           }}
         >
+<div style={{ marginBottom: 16 }}>
+  <button
+    type="button"
+    onClick={() => {
+      window.location.href = "/admin/map-admin";
+    }}
+    style={{
+      padding: "8px 12px",
+      borderRadius: 8,
+      border: "1px solid #cbd5e1",
+      background: "#fff",
+      cursor: "pointer",
+    }}
+  >
+    ← Back to Map Admin
+  </button>
+</div>
+
+
           <h1 style={{ marginTop: 0, marginBottom: 8 }}>Master Maps</h1>
           <div style={{ fontSize: 14, opacity: 0.8 }}>
             You do not have access to this page.
