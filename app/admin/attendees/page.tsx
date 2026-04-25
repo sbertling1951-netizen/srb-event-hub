@@ -182,6 +182,80 @@ const STATUS_LABELS: Record<Exclude<DataStatusFilter, "all">, string> = {
   locked: "Locked",
 };
 
+const infoBoxStyle: CSSProperties = {
+  marginTop: 14,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontSize: 14,
+};
+
+const secondaryBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#e5e7eb",
+  color: "#374151",
+  fontSize: 12,
+  fontWeight: 700,
+  textTransform: "capitalize",
+};
+
+const issueBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#fff7ed",
+  color: "#9a3412",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const okBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#dcfce7",
+  color: "#166534",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const savedBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#dcfce7",
+  color: "#166534",
+  fontSize: 12,
+  fontWeight: 700,
+  border: "1px solid #86efac",
+};
+
+const successBoxStyle: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #86efac",
+  background: "#f0fdf4",
+  color: "#166534",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const errorBoxStyle: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #fecaca",
+  background: "#fef2f2",
+  color: "#991b1b",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
 function dataStatusOptionLabel(value: Exclude<DataStatusFilter, "all">) {
   return STATUS_LABELS[value];
 }
@@ -2485,6 +2559,7 @@ function AdminAttendeesPageInner() {
           >
             Reports
           </button>
+
           <button
             type="button"
             onClick={() => setCommandCenterTab("imports")}
@@ -2496,6 +2571,7 @@ function AdminAttendeesPageInner() {
           >
             Imports
           </button>
+
           <button
             type="button"
             onClick={() => {
@@ -2636,20 +2712,14 @@ function AdminAttendeesPageInner() {
                     }
                   </div>
                 </div>
-                <div className="card" style={summaryCardStyle}>
-                  <strong>Fully Valid</strong>
-                  <div style={summaryValueStyle}>{fullyValidCount}</div>
-                </div>
-              </div>
-
-              <div style={{ fontSize: 13, color: "#555" }}>
-                {viewMode === "review"
-                  ? "Review focus is on. The attendee list remains visible below while the review queue stays available on the same page."
-                  : "The attendee list stays visible below, with the review queue available on the same page."}
               </div>
             </div>
           </div>
+        </>
+      ) : null}
 
+      {commandCenterTab === "attendees" ? (
+        <>
           <FilterBar
             search={search}
             setSearch={setSearch}
@@ -2664,6 +2734,22 @@ function AdminAttendeesPageInner() {
             showResolvedInfo={showResolvedInfo}
             setShowResolvedInfo={setShowResolvedInfo}
           />
+
+          {viewMode === "review" ? (
+            <ReviewQueue
+              loading={loading}
+              filteredReviewItems={filteredReviewItems}
+              visibleReviewItems={visibleReviewItems}
+              drafts={drafts}
+              savingRowId={savingRowId}
+              dataStatusFilter={dataStatusFilter}
+              participantTypeFilter={participantTypeFilter}
+              onDraftChange={updateDraft}
+              onSaveMembership={saveMembershipNumber}
+              onOpenEdit={openEditAttendeeEditor}
+              onUpdateDataStatus={updateDataStatus}
+            />
+          ) : null}
 
           <AttendeeList
             loading={loading}
@@ -2681,29 +2767,12 @@ function AdminAttendeesPageInner() {
             onSaveInlineEdit={handleSaveInlineEdit}
             onUpdateDataStatus={updateDataStatus}
           />
-
-          <ReviewQueue
-            loading={loading}
-            filteredReviewItems={filteredReviewItems}
-            visibleReviewItems={visibleReviewItems}
-            drafts={drafts}
-            savingRowId={savingRowId}
-            dataStatusFilter={dataStatusFilter}
-            participantTypeFilter={participantTypeFilter}
-            onDraftChange={updateDraft}
-            onSaveMembership={saveMembershipNumber}
-            onOpenEdit={openEditAttendeeEditor}
-            onUpdateDataStatus={updateDataStatus}
-          />
         </>
-      ) : commandCenterTab === "reports" ? (
-        <ReportsEmbedPanel />
-      ) : commandCenterTab === "imports" ? (
-        <ImportsEmbedPanel />
-      ) : (
-        <ValidationRulesEmbedPanel />
-      )}
+      ) : null}
 
+      {commandCenterTab === "reports" ? <ReportsEmbedPanel /> : null}
+      {commandCenterTab === "imports" ? <ImportsEmbedPanel /> : null}
+      {commandCenterTab === "validation" ? <ValidationRulesEmbedPanel /> : null}
       <AttendeeEditorModal
         open={editorOpen}
         mode={editorMode}
@@ -2716,7 +2785,15 @@ function AdminAttendeesPageInner() {
     </div>
   );
 }
+const summaryCardStyle: CSSProperties = {
+  padding: 16,
+};
 
+const summaryValueStyle: CSSProperties = {
+  fontSize: 26,
+  fontWeight: 800,
+  marginTop: 8,
+};
 const labelStyle: CSSProperties = {
   display: "block",
   marginBottom: 6,
@@ -2763,86 +2840,6 @@ const secondaryButtonStyle: CSSProperties = {
   background: "white",
   fontWeight: 700,
   cursor: "pointer",
-};
-
-const errorBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #e2b4b4",
-  background: "#fff3f3",
-  color: "#8a1f1f",
-};
-
-const successBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #bbf7d0",
-  background: "#f0fdf4",
-  color: "#166534",
-};
-
-const infoBoxStyle: CSSProperties = {
-  marginTop: 14,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #bfdbfe",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontSize: 14,
-};
-
-const summaryCardStyle: CSSProperties = {
-  padding: 16,
-};
-
-const summaryValueStyle: CSSProperties = {
-  fontSize: 26,
-  fontWeight: 800,
-  marginTop: 8,
-};
-
-const secondaryBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#e5e7eb",
-  color: "#374151",
-  fontSize: 12,
-  fontWeight: 700,
-  textTransform: "capitalize",
-};
-
-const issueBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#fff7ed",
-  color: "#9a3412",
-  fontSize: 12,
-  fontWeight: 700,
-};
-
-const okBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#dcfce7",
-  color: "#166534",
-  fontSize: 12,
-  fontWeight: 700,
-};
-
-const savedBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#dcfce7",
-  color: "#166534",
-  fontSize: 12,
-  fontWeight: 700,
-  border: "1px solid #86efac",
 };
 
 export default function AdminAttendeesPage() {
