@@ -27,6 +27,12 @@ type Attendee = {
   assigned_site: string | null;
 };
 
+type SystemStatus = {
+  status: string;
+  commit: string | null;
+  lastDeployedAt: string | null;
+};
+
 type HouseholdMember = {
   id: string;
   attendee_id: string;
@@ -203,6 +209,7 @@ function AdminDashboardPageInner() {
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [isWide, setIsWide] = useState(false);
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
 
   const didInitialLoad = useRef(false);
 
@@ -375,6 +382,18 @@ function AdminDashboardPageInner() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!adminAccess?.isSuperAdmin) {
+      setSystemStatus(null);
+      return;
+    }
+
+    fetch("/api/admin/system-status")
+      .then((res) => res.json())
+      .then((data) => setSystemStatus(data as SystemStatus))
+      .catch(() => setSystemStatus(null));
+  }, [adminAccess?.isSuperAdmin]);
 
   useEffect(() => {
     if (didInitialLoad.current) {
@@ -597,6 +616,38 @@ function AdminDashboardPageInner() {
           footer={`${metrics.assignedCount} of ${metrics.registeredCoaches}`}
         />
       </div>
+
+      {adminAccess?.isSuperAdmin && systemStatus ? (
+        <div className="card" style={sectionCardStyle}>
+          <div style={sectionTitleStyle}>Super Admin System Status</div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: 10,
+              fontSize: 14,
+            }}
+          >
+            <div>
+              <strong>App Health:</strong> {systemStatus.status}
+            </div>
+
+            <div>
+              <strong>Last Good Deploy:</strong>{" "}
+              {systemStatus.lastDeployedAt
+                ? new Date(systemStatus.lastDeployedAt).toLocaleString()
+                : "Unknown"}
+            </div>
+
+            <div>
+              <strong>Version:</strong>{" "}
+              {systemStatus.commit
+                ? systemStatus.commit.slice(0, 7)
+                : "Unknown"}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="card" style={sectionCardStyle}>
         <div style={sectionTitleStyle}>Admin Tools</div>
