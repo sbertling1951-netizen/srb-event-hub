@@ -1,6 +1,8 @@
 
 "use client";
 
+import Link from "next/link";
+
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 
 const cardStyle = {
@@ -95,11 +97,11 @@ function MapAdminPageInner() {
 
           <p>Manage master park maps, site markers, and published park maps.</p>
 
-          <a href="/admin/master-maps" style={primaryButtonStyle}>
+          <Link href="/admin/master-maps" style={primaryButtonStyle}>
 
             Open Park Maps
 
-          </a>
+          </Link>
 
         </div>
 
@@ -109,11 +111,11 @@ function MapAdminPageInner() {
 
           <p>Manage event map locations and marker placement.</p>
 
-          <a href="/admin/locations" style={secondaryButtonStyle}>
+          <Link href="/admin/locations" style={secondaryButtonStyle}>
 
             Open Map Locations
 
-          </a>
+          </Link>
 
         </div>
 
@@ -123,11 +125,11 @@ function MapAdminPageInner() {
 
           <p>Manage nearby places, stored area lists, and event nearby lists.</p>
 
-          <a href="/admin/nearby" style={secondaryButtonStyle}>
+          <Link href="/admin/nearby" style={secondaryButtonStyle}>
 
             Open Nearby Admin
 
-          </a>
+          </Link>
 
         </div>
 
