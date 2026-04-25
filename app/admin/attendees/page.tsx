@@ -2764,6 +2764,16 @@ function AdminAttendeesPageInner() {
           >
             Validation Rules
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = "/admin/print";
+            }}
+            style={secondaryButtonStyle}
+          >
+            Print Center
+          </button>
         </div>
       </div>
 
