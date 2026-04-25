@@ -1166,6 +1166,12 @@ function AdminReportsPageInner() {
     <>
       <ReportsPrintStyles />
       <div style={{ display: "grid", gap: 18 }}>
+        {!isEmbedded ? (
+          <a href="/admin/attendees" style={backLinkStyle}>
+            ← Back to Attendee Management
+          </a>
+        ) : null}
+
         <div className="card" style={{ padding: 18 }}>
           {isEmbedded ? (
             <h2 style={{ marginTop: 0, marginBottom: 8 }}>Reports</h2>
@@ -1779,6 +1785,18 @@ function SavedPresetsCard(props: {
     </div>
   );
 }
+
+const backLinkStyle: CSSProperties = {
+  display: "inline-block",
+  width: "fit-content",
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+  color: "#111827",
+  fontWeight: 700,
+  textDecoration: "none",
+};
 
 const labelStyle: CSSProperties = {
   display: "block",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -1475,6 +1475,12 @@ function AdminAttendeeImportsPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
+      {!isEmbedded ? (
+        <a href="/admin/attendees" style={backLinkStyle}>
+          ← Back to Attendee Management
+        </a>
+      ) : null}
+
       <div className="card" style={{ padding: 18 }}>
         <div
           style={{
@@ -2360,6 +2366,18 @@ function AdminAttendeeImportsPageInner() {
     </div>
   );
 }
+
+const backLinkStyle: CSSProperties = {
+  display: "inline-block",
+  width: "fit-content",
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+  color: "#111827",
+  fontWeight: 700,
+  textDecoration: "none",
+};
 
 const tableHeadStyle = {
   textAlign: "left" as const,

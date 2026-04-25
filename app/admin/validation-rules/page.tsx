@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type CSSProperties,useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
@@ -58,11 +58,15 @@ type RuleFormState = {
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
 
 function getStoredAdminEvent(): EventContext | null {
-  if (typeof window === "undefined") {return null;}
+  if (typeof window === "undefined") {
+    return null;
+  }
 
   try {
     const raw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
-    if (!raw) {return null;}
+    if (!raw) {
+      return null;
+    }
     return JSON.parse(raw);
   } catch {
     return null;
@@ -91,7 +95,9 @@ function formatEventLabel(event: EventOption) {
 }
 
 function normalizeRuleValue(form: RuleFormState) {
-  if (form.rule_type === "required") {return null;}
+  if (form.rule_type === "required") {
+    return null;
+  }
   const trimmed = form.rule_value.trim();
   return trimmed || null;
 }
@@ -137,7 +143,9 @@ function ruleTypeLabel(value: string) {
 }
 
 function scopeLabel(rule: ValidationRule, events: EventOption[]) {
-  if (!rule.applies_to_event_id) {return "All Events";}
+  if (!rule.applies_to_event_id) {
+    return "All Events";
+  }
   const found = events.find((event) => event.id === rule.applies_to_event_id);
   return found ? found.name || "Specific Event" : "Specific Event";
 }
@@ -256,8 +264,12 @@ function AdminValidationRulesPageInner() {
           .order("start_date", { ascending: false }),
       ]);
 
-      if (rulesError) {throw rulesError;}
-      if (eventsError) {throw eventsError;}
+      if (rulesError) {
+        throw rulesError;
+      }
+      if (eventsError) {
+        throw eventsError;
+      }
 
       const accessibleEvents = ((eventsData || []) as EventOption[]).filter(
         (event) => !!event.id && canAccessEvent(resolvedAdmin, event.id),
@@ -367,7 +379,9 @@ function AdminValidationRulesPageInner() {
           .update(payload)
           .eq("id", form.id);
 
-        if (error) {throw error;}
+        if (error) {
+          throw error;
+        }
 
         setStatus("Rule updated.");
         showFlash("Rule updated.");
@@ -376,7 +390,9 @@ function AdminValidationRulesPageInner() {
           .from("validation_rules")
           .insert(payload);
 
-        if (error) {throw error;}
+        if (error) {
+          throw error;
+        }
 
         setStatus("Rule created.");
         showFlash("Rule created.");
@@ -397,7 +413,9 @@ function AdminValidationRulesPageInner() {
     const confirmed = window.confirm(
       "Delete this validation rule? This cannot be undone.",
     );
-    if (!confirmed) {return;}
+    if (!confirmed) {
+      return;
+    }
 
     try {
       setDeletingRuleId(ruleId);
@@ -409,7 +427,9 @@ function AdminValidationRulesPageInner() {
         .delete()
         .eq("id", ruleId);
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       if (form.id === ruleId) {
         setForm(createEmptyForm());
@@ -437,7 +457,9 @@ function AdminValidationRulesPageInner() {
         .update({ is_active: !rule.is_active })
         .eq("id", rule.id);
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       showFlash(rule.is_active ? "Rule disabled." : "Rule enabled.");
       await loadPage();
@@ -450,7 +472,9 @@ function AdminValidationRulesPageInner() {
 
   const filteredRules = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) {return rules;}
+    if (!term) {
+      return rules;
+    }
 
     return rules.filter((rule) =>
       [
@@ -484,6 +508,12 @@ function AdminValidationRulesPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
+      {!isEmbedded ? (
+        <a href="/admin/attendees" style={backLinkStyle}>
+          ← Back to Attendee Management
+        </a>
+      ) : null}
+
       <div className="card" style={{ padding: 18 }}>
         {isEmbedded ? (
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h2>
@@ -809,6 +839,18 @@ function AdminValidationRulesPageInner() {
     </div>
   );
 }
+
+const backLinkStyle: CSSProperties = {
+  display: "inline-block",
+  width: "fit-content",
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+  color: "#111827",
+  fontWeight: 700,
+  textDecoration: "none",
+};
 
 const labelStyle: CSSProperties = {
   display: "block",
