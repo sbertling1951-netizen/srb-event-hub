@@ -1,22 +1,25 @@
 #!/bin/bash
 
-ssh root@167.71.97.103
+echo "🚀 Deploying SRB Event Hub to DigitalOcean..."
 
-wowtum-8qaxpi-nopKoq
+ssh -tt root@167.71.97.103 << 'EOF'
 
-cd /root/srb-event-hub
+echo "📂 Navigating to project directory..."
+cd /var/www/srb-event-hub || cd /root/srb-event-hub || exit
 
-echo "Pulling latest code..."
-git pull
+echo "📥 Pulling latest code from GitHub..."
+git pull origin main
 
-echo "Installing dependencies..."
+echo "📦 Installing dependencies..."
 npm install
 
-echo "Building app..."
+echo "🏗️ Building Next.js app..."
 npm run build
 
-echo "Restarting app..."
-pm2 restart srb-event-hub
+echo "🔁 Restarting app with PM2..."
+pm2 reload all || pm2 start npm --name "srb-event-hub" -- start
 
-echo "Done."
+echo "✅ Deployment complete!"
+
+exit
 EOF
