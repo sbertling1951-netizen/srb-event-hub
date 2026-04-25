@@ -2611,6 +2611,7 @@ function AdminAttendeesPageInner() {
               }
             }}
           />
+
           <div
             style={{
               display: "grid",
@@ -2715,58 +2716,105 @@ function AdminAttendeesPageInner() {
               </div>
             </div>
           </div>
-        </>
-      ) : null}
 
-      {commandCenterTab === "attendees" ? (
-        <>
-          <FilterBar
-            search={search}
-            setSearch={setSearch}
-            viewMode={viewMode}
-            setViewMode={setViewMode}
-            pageSize={pageSize}
-            setPageSize={setPageSize}
-            dataStatusFilter={dataStatusFilter}
-            setDataStatusFilter={setDataStatusFilter}
-            participantTypeFilter={participantTypeFilter}
-            setParticipantTypeFilter={setParticipantTypeFilter}
-            showResolvedInfo={showResolvedInfo}
-            setShowResolvedInfo={setShowResolvedInfo}
-          />
+          <div
+            className="card"
+            style={{ padding: 18, display: "grid", gap: 16 }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+                  Attendee Workbench
+                </h2>
+                <div style={{ fontSize: 14, opacity: 0.8 }}>
+                  Data review and attendee management are combined in one
+                  workflow.
+                </div>
+              </div>
 
-          {viewMode === "review" ? (
-            <ReviewQueue
-              loading={loading}
-              filteredReviewItems={filteredReviewItems}
-              visibleReviewItems={visibleReviewItems}
-              drafts={drafts}
-              savingRowId={savingRowId}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <span style={secondaryBadgeStyle}>
+                  {filteredAttendees.length} visible attendees
+                </span>
+                <span style={issueBadgeStyle}>
+                  {filteredReviewItems.length} flagged
+                </span>
+              </div>
+            </div>
+
+            <FilterBar
+              search={search}
+              setSearch={setSearch}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              pageSize={pageSize}
+              setPageSize={setPageSize}
               dataStatusFilter={dataStatusFilter}
+              setDataStatusFilter={setDataStatusFilter}
               participantTypeFilter={participantTypeFilter}
-              onDraftChange={updateDraft}
-              onSaveMembership={saveMembershipNumber}
+              setParticipantTypeFilter={setParticipantTypeFilter}
+              showResolvedInfo={showResolvedInfo}
+              setShowResolvedInfo={setShowResolvedInfo}
+            />
+
+            {viewMode === "review" ? (
+              <div style={{ display: "grid", gap: 12 }}>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #fed7aa",
+                    background: "#fff7ed",
+                    color: "#9a3412",
+                    fontSize: 14,
+                    fontWeight: 700,
+                  }}
+                >
+                  Review focus is on. Flagged records appear first, and the full
+                  attendee roster remains directly below.
+                </div>
+
+                <ReviewQueue
+                  loading={loading}
+                  filteredReviewItems={filteredReviewItems}
+                  visibleReviewItems={visibleReviewItems}
+                  drafts={drafts}
+                  savingRowId={savingRowId}
+                  dataStatusFilter={dataStatusFilter}
+                  participantTypeFilter={participantTypeFilter}
+                  onDraftChange={updateDraft}
+                  onSaveMembership={saveMembershipNumber}
+                  onOpenEdit={openEditAttendeeEditor}
+                  onUpdateDataStatus={updateDataStatus}
+                />
+              </div>
+            ) : null}
+
+            <AttendeeList
+              loading={loading}
+              filteredAttendees={filteredAttendees}
+              visibleAttendees={visibleAttendees}
+              reviewItems={reviewItems}
+              inlineEditId={inlineEditId}
+              inlineEditState={inlineEditState}
+              inlineSaving={inlineSaving}
+              recentlySavedId={recentlySavedId}
               onOpenEdit={openEditAttendeeEditor}
+              onStartInlineEdit={startInlineEdit}
+              onCancelInlineEdit={cancelInlineEdit}
+              onInlineEditChange={updateInlineEditField}
+              onSaveInlineEdit={handleSaveInlineEdit}
               onUpdateDataStatus={updateDataStatus}
             />
-          ) : null}
-
-          <AttendeeList
-            loading={loading}
-            filteredAttendees={filteredAttendees}
-            visibleAttendees={visibleAttendees}
-            reviewItems={reviewItems}
-            inlineEditId={inlineEditId}
-            inlineEditState={inlineEditState}
-            inlineSaving={inlineSaving}
-            recentlySavedId={recentlySavedId}
-            onOpenEdit={openEditAttendeeEditor}
-            onStartInlineEdit={startInlineEdit}
-            onCancelInlineEdit={cancelInlineEdit}
-            onInlineEditChange={updateInlineEditField}
-            onSaveInlineEdit={handleSaveInlineEdit}
-            onUpdateDataStatus={updateDataStatus}
-          />
+          </div>
         </>
       ) : null}
 
