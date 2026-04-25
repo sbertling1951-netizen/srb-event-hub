@@ -2722,24 +2722,20 @@ function AdminAttendeesPageInner() {
 
           <button
             type="button"
-            onClick={() => setCommandCenterTab("reports")}
-            style={
-              commandCenterTab === "reports"
-                ? primaryButtonStyle
-                : secondaryButtonStyle
-            }
+            onClick={() => {
+              window.location.href = "/admin/reports";
+            }}
+            style={secondaryButtonStyle}
           >
             Reports
           </button>
 
           <button
             type="button"
-            onClick={() => setCommandCenterTab("imports")}
-            style={
-              commandCenterTab === "imports"
-                ? primaryButtonStyle
-                : secondaryButtonStyle
-            }
+            onClick={() => {
+              window.location.href = "/admin/imports";
+            }}
+            style={secondaryButtonStyle}
           >
             Imports
           </button>
@@ -2761,12 +2757,10 @@ function AdminAttendeesPageInner() {
 
           <button
             type="button"
-            onClick={() => setCommandCenterTab("validation")}
-            style={
-              commandCenterTab === "validation"
-                ? primaryButtonStyle
-                : secondaryButtonStyle
-            }
+            onClick={() => {
+              window.location.href = "/admin/validation-rules";
+            }}
+            style={secondaryButtonStyle}
           >
             Validation Rules
           </button>
@@ -2985,37 +2979,6 @@ function AdminAttendeesPageInner() {
         </>
       ) : null}
 
-      {commandCenterTab === "reports" ? (
-        <div className="card" style={{ padding: 18 }}>
-          <h2 style={{ marginTop: 0 }}>Reports</h2>
-          <p>Open the full Reports workspace without a double sidebar.</p>
-          <a href="/admin/reports" style={linkButtonStyle}>
-            Open Reports
-          </a>
-        </div>
-      ) : null}
-
-      {commandCenterTab === "imports" ? (
-        <div className="card" style={{ padding: 18 }}>
-          <h2 style={{ marginTop: 0 }}>Imports</h2>
-          <p>Open the full Imports workspace without a double sidebar.</p>
-          <a href="/admin/imports" style={linkButtonStyle}>
-            Open Imports
-          </a>
-        </div>
-      ) : null}
-
-      {commandCenterTab === "validation" ? (
-        <div className="card" style={{ padding: 18 }}>
-          <h2 style={{ marginTop: 0 }}>Validation Rules</h2>
-          <p>
-            Open the full Validation Rules workspace without a double sidebar.
-          </p>
-          <a href="/admin/validation-rules" style={linkButtonStyle}>
-            Open Validation Rules
-          </a>
-        </div>
-      ) : null}
       <AttendeeEditorModal
         open={editorOpen}
         mode={editorMode}
@@ -3085,12 +3048,6 @@ const primaryButtonStyle: CSSProperties = {
   fontWeight: 700,
   cursor: "pointer",
 };
-const linkButtonStyle: CSSProperties = {
-  ...primaryButtonStyle,
-  display: "inline-block",
-  textDecoration: "none",
-};
-
 const secondaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
