@@ -128,6 +128,7 @@ type ParticipantTypeFilter =
   | "volunteer"
   | "event_host";
 type ViewMode = "all" | "review";
+type SortMode = "name" | "site" | "review" | "recent";
 type CommandCenterTab = "attendees" | "reports" | "imports" | "validation";
 type SummaryCardItem = {
   label: string;
@@ -630,6 +631,8 @@ function FilterBar(props: {
   setSearch: (value: string) => void;
   viewMode: ViewMode;
   setViewMode: (value: ViewMode) => void;
+  sortMode: SortMode;
+  setSortMode: (value: SortMode) => void;
   pageSize: PageSize;
   setPageSize: (value: PageSize) => void;
   dataStatusFilter: DataStatusFilter;
@@ -644,6 +647,8 @@ function FilterBar(props: {
     setSearch,
     viewMode,
     setViewMode,
+    sortMode,
+    setSortMode,
     pageSize,
     setPageSize,
     dataStatusFilter,
@@ -655,7 +660,17 @@ function FilterBar(props: {
   } = props;
 
   return (
-    <div className="card" style={{ padding: 18 }}>
+    <div
+      className="card"
+      style={{
+        position: "sticky",
+        top: 86,
+        zIndex: 900,
+        padding: 18,
+        background: "white",
+        border: "1px solid #eee",
+      }}
+    >
       <div
         style={{
           display: "grid",
@@ -738,6 +753,21 @@ function FilterBar(props: {
                 </option>
               ),
             )}
+          </select>
+        </div>
+
+        {/* Sort By dropdown UI */}
+        <div>
+          <label style={labelStyle}>Sort By</label>
+          <select
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as SortMode)}
+            style={inputStyle}
+          >
+            <option value="name">A–Z Last Name</option>
+            <option value="site">Site Number</option>
+            <option value="review">Needs Review First</option>
+            <option value="recent">Recently Added</option>
           </select>
         </div>
 
@@ -1121,7 +1151,17 @@ function AttendeeList(props: {
         background: "#fafafa",
       }}
     >
-      <div style={{ marginBottom: 14 }}>
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          background: "#fafafa",
+          paddingBottom: 8,
+          borderBottom: "1px solid #e5e7eb",
+          marginBottom: 14,
+        }}
+      >
         <h2 style={{ marginTop: 0, marginBottom: 6 }}>
           Persistent Attendee Roster — Green = Good / Red = Needs Review
         </h2>
@@ -1838,6 +1878,7 @@ function AdminAttendeesPageInner() {
   const [participantTypeFilter, setParticipantTypeFilter] =
     useState<ParticipantTypeFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("name");
   const [showResolvedInfo, setShowResolvedInfo] = useState(true);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
@@ -2149,21 +2190,65 @@ function AdminAttendeesPageInner() {
   const filteredAttendees = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    return attendees.filter((row) => {
-      const matchesSearch = attendeeMatchesSearch(row, term);
-      const statusValue = dataStatusLabel(row.data_status);
-      const matchesStatus =
-        dataStatusFilter === "all" ? true : statusValue === dataStatusFilter;
-      const participantType = (row.participant_type ||
-        "attendee") as ParticipantTypeFilter;
-      const matchesParticipantType =
-        participantTypeFilter === "all"
-          ? true
-          : participantType === participantTypeFilter;
+    return [...attendees]
+      .sort((a, b) => {
+        if (sortMode === "site") {
+          return String(a.assigned_site || "").localeCompare(
+            String(b.assigned_site || ""),
+            undefined,
+            { numeric: true, sensitivity: "base" },
+          );
+        }
 
-      return matchesSearch && matchesStatus && matchesParticipantType;
-    });
-  }, [attendees, search, dataStatusFilter, participantTypeFilter]);
+        if (sortMode === "recent") {
+          return (
+            new Date(b.created_at || 0).getTime() -
+            new Date(a.created_at || 0).getTime()
+          );
+        }
+
+        if (sortMode === "review") {
+          const aHasIssue = reviewItems.some(
+            (item) => item.attendee.id === a.id,
+          );
+          const bHasIssue = reviewItems.some(
+            (item) => item.attendee.id === b.id,
+          );
+
+          if (aHasIssue !== bHasIssue) {
+            return aHasIssue ? -1 : 1;
+          }
+        }
+
+        const aLast = String(a.pilot_last || "").toLowerCase();
+        const bLast = String(b.pilot_last || "").toLowerCase();
+        const aFirst = String(a.pilot_first || "").toLowerCase();
+        const bFirst = String(b.pilot_first || "").toLowerCase();
+
+        return aLast.localeCompare(bLast) || aFirst.localeCompare(bFirst);
+      })
+      .filter((row) => {
+        const matchesSearch = attendeeMatchesSearch(row, term);
+        const statusValue = dataStatusLabel(row.data_status);
+        const matchesStatus =
+          dataStatusFilter === "all" ? true : statusValue === dataStatusFilter;
+        const participantType = (row.participant_type ||
+          "attendee") as ParticipantTypeFilter;
+        const matchesParticipantType =
+          participantTypeFilter === "all"
+            ? true
+            : participantType === participantTypeFilter;
+
+        return matchesSearch && matchesStatus && matchesParticipantType;
+      });
+  }, [
+    attendees,
+    search,
+    dataStatusFilter,
+    participantTypeFilter,
+    sortMode,
+    reviewItems,
+  ]);
 
   const workbenchAttendees = useMemo(() => {
     if (viewMode !== "review" || filteredReviewItems.length === 0) {
@@ -2797,6 +2882,8 @@ function AdminAttendeesPageInner() {
               setSearch={setSearch}
               viewMode={viewMode}
               setViewMode={setViewMode}
+              sortMode={sortMode}
+              setSortMode={setSortMode}
               pageSize={pageSize}
               setPageSize={setPageSize}
               dataStatusFilter={dataStatusFilter}
