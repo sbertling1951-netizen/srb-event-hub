@@ -3,9 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-
-function AdminDataReviewPageInner() {
+export default function DataReviewRedirectPage() {
   const router = useRouter();
 
   useEffect(() => {
@@ -14,18 +12,11 @@ function AdminDataReviewPageInner() {
 
   return (
     <div className="card" style={{ padding: 18 }}>
-      <h1 style={{ marginTop: 0, marginBottom: 8 }}>Data Review</h1>
+      <h1 style={{ marginTop: 0, marginBottom: 8 }}>Data Review Moved</h1>
       <div style={{ fontSize: 14, opacity: 0.8 }}>
-        Opening the merged Attendee Management review queue...
+        Data Review is now part of Attendee Management. Redirecting to the
+        unified attendee workbench...
       </div>
     </div>
-  );
-}
-
-export default function AdminDataReviewPage() {
-  return (
-    <AdminRouteGuard requiredPermission="can_edit_attendees">
-      <AdminDataReviewPageInner />
-    </AdminRouteGuard>
   );
 }
