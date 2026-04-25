@@ -2139,6 +2139,13 @@ function AdminAttendeesPageInner() {
     return filteredReviewItems.slice(0, Number(pageSize));
   }, [filteredReviewItems, pageSize]);
 
+  useEffect(() => {
+    if (!loading && viewMode === "review" && filteredReviewItems.length === 0) {
+      setViewMode("all");
+      showFlash("Review queue is clear. Showing all attendees.");
+    }
+  }, [filteredReviewItems.length, loading, viewMode]);
+
   const filteredAttendees = useMemo(() => {
     const term = search.trim().toLowerCase();
 
@@ -2159,7 +2166,7 @@ function AdminAttendeesPageInner() {
   }, [attendees, search, dataStatusFilter, participantTypeFilter]);
 
   const workbenchAttendees = useMemo(() => {
-    if (viewMode !== "review") {
+    if (viewMode !== "review" || filteredReviewItems.length === 0) {
       return filteredAttendees;
     }
 
@@ -2800,36 +2807,24 @@ function AdminAttendeesPageInner() {
               setShowResolvedInfo={setShowResolvedInfo}
             />
 
-            {viewMode === "review" ? (
-              <div style={{ display: "grid", gap: 12 }}>
-                <div
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #fed7aa",
-                    background: "#fff7ed",
-                    color: "#9a3412",
-                    fontSize: 14,
-                    fontWeight: 700,
-                  }}
-                >
-                  Review focus is on. Flagged records appear first, and the full
-                  attendee roster remains directly below.
-                </div>
-
-                <ReviewQueue
-                  loading={loading}
-                  filteredReviewItems={filteredReviewItems}
-                  visibleReviewItems={visibleReviewItems}
-                  drafts={drafts}
-                  savingRowId={savingRowId}
-                  dataStatusFilter={dataStatusFilter}
-                  participantTypeFilter={participantTypeFilter}
-                  onDraftChange={updateDraft}
-                  onSaveMembership={saveMembershipNumber}
-                  onOpenEdit={openEditAttendeeEditor}
-                  onUpdateDataStatus={updateDataStatus}
-                />
+            {viewMode === "review" && filteredReviewItems.length > 0 ? (
+              <ReviewQueue
+                loading={loading}
+                filteredReviewItems={filteredReviewItems}
+                visibleReviewItems={visibleReviewItems}
+                drafts={drafts}
+                savingRowId={savingRowId}
+                dataStatusFilter={dataStatusFilter}
+                participantTypeFilter={participantTypeFilter}
+                onDraftChange={updateDraft}
+                onSaveMembership={saveMembershipNumber}
+                onOpenEdit={openEditAttendeeEditor}
+                onUpdateDataStatus={updateDataStatus}
+              />
+            ) : viewMode === "review" ? (
+              <div className="card" style={successBoxStyle}>
+                All clear — no flagged attendee records match the current
+                filters. The full attendee roster is shown below.
               </div>
             ) : null}
 
