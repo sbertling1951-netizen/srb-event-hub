@@ -3059,9 +3059,37 @@ function AdminAttendeesPageInner() {
         </>
       ) : null}
 
-      {commandCenterTab === "reports" ? <ReportsEmbedPanel /> : null}
-      {commandCenterTab === "imports" ? <ImportsEmbedPanel /> : null}
-      {commandCenterTab === "validation" ? <ValidationRulesEmbedPanel /> : null}
+      {commandCenterTab === "reports" ? (
+        <div className="card" style={{ padding: 18 }}>
+          <h2 style={{ marginTop: 0 }}>Reports</h2>
+          <p>Open the full Reports workspace without a double sidebar.</p>
+          <a href="/admin/reports" style={linkButtonStyle}>
+            Open Reports
+          </a>
+        </div>
+      ) : null}
+
+      {commandCenterTab === "imports" ? (
+        <div className="card" style={{ padding: 18 }}>
+          <h2 style={{ marginTop: 0 }}>Imports</h2>
+          <p>Open the full Imports workspace without a double sidebar.</p>
+          <a href="/admin/imports" style={linkButtonStyle}>
+            Open Imports
+          </a>
+        </div>
+      ) : null}
+
+      {commandCenterTab === "validation" ? (
+        <div className="card" style={{ padding: 18 }}>
+          <h2 style={{ marginTop: 0 }}>Validation Rules</h2>
+          <p>
+            Open the full Validation Rules workspace without a double sidebar.
+          </p>
+          <a href="/admin/validation-rules" style={linkButtonStyle}>
+            Open Validation Rules
+          </a>
+        </div>
+      ) : null}
       <AttendeeEditorModal
         open={editorOpen}
         mode={editorMode}
@@ -3130,6 +3158,11 @@ const primaryButtonStyle: CSSProperties = {
   color: "white",
   fontWeight: 700,
   cursor: "pointer",
+};
+const linkButtonStyle: CSSProperties = {
+  ...primaryButtonStyle,
+  display: "inline-block",
+  textDecoration: "none",
 };
 
 const secondaryButtonStyle: CSSProperties = {
