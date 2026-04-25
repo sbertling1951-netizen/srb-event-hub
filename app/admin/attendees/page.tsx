@@ -567,6 +567,48 @@ function reviewFieldLabel(field: string) {
 
   return map[field] || field.replace(/_/g, " ");
 }
+function siteSortKey(site?: string | null) {
+  const value = String(site || "").trim();
+
+  if (!value) {
+    return { group: 0, num: 999999 };
+  }
+
+  const match = value.match(/\d+/);
+  if (!match) {
+    return { group: 1, num: 999998 };
+  }
+
+  return { group: 1, num: Number(match[0]) };
+}
+
+function groupBySite(attendees: AttendeeRow[]) {
+  const map = new Map<string, AttendeeRow[]>();
+
+  attendees.forEach((attendee) => {
+    const key = attendee.assigned_site?.trim() || "Unassigned";
+
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+
+    map.get(key)!.push(attendee);
+  });
+
+  return Array.from(map.entries()).sort(([a], [b]) => {
+    const siteA = siteSortKey(a);
+    const siteB = siteSortKey(b);
+
+    return (
+      siteA.group - siteB.group ||
+      siteA.num - siteB.num ||
+      a.localeCompare(b, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      })
+    );
+  });
+}
 
 function sortReviewItems(items: ReviewItem[]) {
   return [...items].sort((a, b) => {
@@ -641,6 +683,9 @@ function FilterBar(props: {
   setParticipantTypeFilter: (value: ParticipantTypeFilter) => void;
   showResolvedInfo: boolean;
   setShowResolvedInfo: (value: boolean) => void;
+
+  attendeeListMode: "list" | "campground";
+  setAttendeeListMode: (value: "list" | "campground") => void;
 }) {
   const {
     search,
@@ -657,6 +702,8 @@ function FilterBar(props: {
     setParticipantTypeFilter,
     showResolvedInfo,
     setShowResolvedInfo,
+    attendeeListMode,
+    setAttendeeListMode,
   } = props;
 
   return (
@@ -768,6 +815,20 @@ function FilterBar(props: {
             <option value="site">Site Number</option>
             <option value="review">Needs Review First</option>
             <option value="recent">Recently Added</option>
+          </select>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Roster Layout</label>
+          <select
+            value={attendeeListMode}
+            onChange={(e) =>
+              setAttendeeListMode(e.target.value as "list" | "campground")
+            }
+            style={inputStyle}
+          >
+            <option value="list">Standard List</option>
+            <option value="campground">Campground / Site Groups</option>
           </select>
         </div>
 
@@ -1113,6 +1174,7 @@ function AttendeeList(props: {
   loading: boolean;
   filteredAttendees: AttendeeRow[];
   visibleAttendees: AttendeeRow[];
+  attendeeListMode: "list" | "campground";
   reviewItems: ReviewItem[];
   inlineEditId: string | null;
   inlineEditState: InlineEditState;
@@ -1129,6 +1191,7 @@ function AttendeeList(props: {
     loading,
     filteredAttendees,
     visibleAttendees,
+    attendeeListMode,
     reviewItems,
     inlineEditId,
     inlineEditState,
@@ -1141,6 +1204,27 @@ function AttendeeList(props: {
     onSaveInlineEdit,
     onUpdateDataStatus,
   } = props;
+
+  const rosterItems = useMemo(() => {
+    if (attendeeListMode !== "campground") {
+      return visibleAttendees.map((attendee) => ({
+        type: "attendee" as const,
+        attendee,
+      }));
+    }
+
+    return groupBySite(visibleAttendees).flatMap(([site, siteAttendees]) => [
+      {
+        type: "site-header" as const,
+        site,
+        count: siteAttendees.length,
+      },
+      ...siteAttendees.map((attendee) => ({
+        type: "attendee" as const,
+        attendee,
+      })),
+    ]);
+  }, [attendeeListMode, visibleAttendees]);
 
   return (
     <div
@@ -1180,7 +1264,41 @@ function AttendeeList(props: {
         </div>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
-          {visibleAttendees.map((attendee) => {
+          {rosterItems.map((item) => {
+            if (item.type === "site-header") {
+              const siteLabel =
+                item.site === "Unassigned" ? "Unassigned" : `Site ${item.site}`;
+
+              return (
+                <div
+                  key={`site-header-${item.site}`}
+                  style={{
+                    position: "sticky",
+                    top: 72,
+                    zIndex: 6,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    border: "1px solid #d1d5db",
+                    background: "#f9fafb",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                  }}
+                >
+                  <div style={{ fontWeight: 900, fontSize: 16 }}>
+                    {siteLabel}
+                  </div>
+                  <span style={secondaryBadgeStyle}>
+                    {item.count} attendee{item.count === 1 ? "" : "s"}
+                  </span>
+                </div>
+              );
+            }
+
+            const attendee = item.attendee;
             const attendeeIssues = reviewItems.find(
               (item) => item.attendee.id === attendee.id,
             );
@@ -1879,6 +1997,9 @@ function AdminAttendeesPageInner() {
     useState<ParticipantTypeFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [sortMode, setSortMode] = useState<SortMode>("name");
+  const [attendeeListMode, setAttendeeListMode] = useState<
+    "list" | "campground"
+  >("list");
   const [showResolvedInfo, setShowResolvedInfo] = useState(true);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
@@ -2892,6 +3013,8 @@ function AdminAttendeesPageInner() {
               setParticipantTypeFilter={setParticipantTypeFilter}
               showResolvedInfo={showResolvedInfo}
               setShowResolvedInfo={setShowResolvedInfo}
+              attendeeListMode={attendeeListMode}
+              setAttendeeListMode={setAttendeeListMode}
             />
 
             {viewMode === "review" && filteredReviewItems.length > 0 ? (
@@ -2919,6 +3042,7 @@ function AdminAttendeesPageInner() {
               loading={loading}
               filteredAttendees={workbenchAttendees}
               visibleAttendees={visibleAttendees}
+              attendeeListMode={attendeeListMode}
               reviewItems={reviewItems}
               inlineEditId={inlineEditId}
               inlineEditState={inlineEditState}
