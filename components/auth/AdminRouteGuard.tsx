@@ -24,14 +24,20 @@ const ADMIN_CACHE_KEY = "fcoc-admin-access";
 const ADMIN_CACHE_MAX_AGE_MS = 1000 * 60 * 15; // 15 minutes
 
 function readCachedAdminState(): CachedAdminState | null {
-  if (typeof window === "undefined") {return null;}
+  if (typeof window === "undefined") {
+    return null;
+  }
 
   try {
     const raw = sessionStorage.getItem(ADMIN_CACHE_KEY);
-    if (!raw) {return null;}
+    if (!raw) {
+      return null;
+    }
 
     const parsed = JSON.parse(raw) as CachedAdminState;
-    if (!parsed?.userId) {return null;}
+    if (!parsed?.userId) {
+      return null;
+    }
 
     const isFresh = Date.now() - parsed.checkedAt < ADMIN_CACHE_MAX_AGE_MS;
     if (!isFresh) {
@@ -47,7 +53,9 @@ function readCachedAdminState(): CachedAdminState | null {
 }
 
 function writeCachedAdminState(value: CachedAdminState) {
-  if (typeof window === "undefined") {return;}
+  if (typeof window === "undefined") {
+    return;
+  }
 
   try {
     sessionStorage.setItem(ADMIN_CACHE_KEY, JSON.stringify(value));
@@ -55,7 +63,9 @@ function writeCachedAdminState(value: CachedAdminState) {
 }
 
 function clearCachedAdminState() {
-  if (typeof window === "undefined") {return;}
+  if (typeof window === "undefined") {
+    return;
+  }
 
   try {
     sessionStorage.removeItem(ADMIN_CACHE_KEY);
@@ -79,6 +89,16 @@ export default function AdminRouteGuard({
       try {
         setChecking(true);
         setDeniedMessage(null);
+        const mode = localStorage.getItem("fcoc-user-mode");
+        if (mode !== "admin") {
+          clearCachedAdminState();
+          if (mounted) {
+            setAllowed(false);
+            setChecking(false);
+            router.replace("/");
+          }
+          return;
+        }
 
         const admin = await getCurrentAdminAccess();
 
@@ -115,7 +135,9 @@ export default function AdminRouteGuard({
           return;
         }
 
-        if (!mounted) {return;}
+        if (!mounted) {
+          return;
+        }
         setAllowed(true);
       } catch (err) {
         console.error("AdminRouteGuard error:", err);
@@ -146,11 +168,17 @@ export default function AdminRouteGuard({
       }
     }
 
+    function handlePageShow() {
+      void verifyAdmin();
+    }
+
     window.addEventListener("storage", handleStorage);
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
       mounted = false;
       window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, [router, requiredPermission, fallbackPath]);
 
@@ -189,7 +217,9 @@ export default function AdminRouteGuard({
     );
   }
 
-  if (!allowed) {return null;}
+  if (!allowed) {
+    return null;
+  }
 
   return <>{children}</>;
 }

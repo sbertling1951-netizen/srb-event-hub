@@ -14,27 +14,61 @@ export default function MemberRouteGuard({
   );
 
   useEffect(() => {
-    try {
-      const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
-      const entryId = localStorage.getItem("fcoc-member-entry-id");
-      const email = localStorage.getItem("fcoc-member-email");
-      const eventContext = localStorage.getItem("fcoc-member-event-context");
+    function verifyMember() {
+      try {
+        const mode = localStorage.getItem("fcoc-user-mode");
+        if (mode !== "member") {
+          setStatus("denied");
+          router.replace("/");
+          return;
+        }
 
-      const hasIdentity = !!(attendeeId || entryId || email);
-      const hasEvent = !!eventContext;
+        const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
+        const entryId = localStorage.getItem("fcoc-member-entry-id");
+        const email = localStorage.getItem("fcoc-member-email");
+        const eventContext = localStorage.getItem("fcoc-member-event-context");
 
-      if (hasIdentity && hasEvent) {
-        setStatus("allowed");
-        return;
+        const hasIdentity = !!(attendeeId || entryId || email);
+        const hasEvent = !!eventContext;
+
+        if (hasIdentity && hasEvent) {
+          setStatus("allowed");
+          return;
+        }
+
+        setStatus("denied");
+        router.replace("/member/login");
+      } catch (err) {
+        console.error("MemberRouteGuard error:", err);
+        setStatus("denied");
+        router.replace("/member/login");
       }
-
-      setStatus("denied");
-      router.replace("/member/login");
-    } catch (err) {
-      console.error("MemberRouteGuard error:", err);
-      setStatus("denied");
-      router.replace("/member/login");
     }
+
+    verifyMember();
+
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-member-event-context" ||
+        e.key === "fcoc-member-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
+        verifyMember();
+      }
+    }
+
+    function handlePageShow() {
+      verifyMember();
+    }
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("pageshow", handlePageShow);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("pageshow", handlePageShow);
+    };
   }, [router]);
 
   if (status === "checking") {

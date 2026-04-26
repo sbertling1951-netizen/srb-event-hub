@@ -156,15 +156,7 @@ export default function Sidebar() {
     pathname === "/member/login" ||
     pathname === "/admin/login";
 
-  const effectiveUserMode = mounted
-    ? userMode !== "none"
-      ? userMode
-      : !isPreAuthPage && isAdminRoute
-        ? "admin"
-        : !isPreAuthPage && isMemberRoute
-          ? "member"
-          : "none"
-    : "none";
+  const effectiveUserMode = mounted ? userMode : "none";
 
   const showLoggedInLogout = !isPreAuthPage && effectiveUserMode !== "none";
 
@@ -234,12 +226,34 @@ export default function Sidebar() {
       loadContextsFromStorage();
     }
 
+    function clearVisibleSidebarStateIfLoggedOut() {
+      const mode = localStorage.getItem("fcoc-user-mode");
+      if (mode === "admin" || mode === "member") {
+        loadContextsFromStorage();
+        return;
+      }
+
+      setMemberEvent(null);
+      setAdminEvent(null);
+      setIsCheckedIn(false);
+      setUserMode("none");
+      setAdminAccess(null);
+      setAdminDisplayName("");
+      setAdminPrivilegeGroup("");
+      setOpen(false);
+    }
+
+    function handlePageShow() {
+      clearVisibleSidebarStateIfLoggedOut();
+    }
+
     window.addEventListener("storage", handleStorage);
     window.addEventListener(
       "fcoc-admin-event-updated",
       handleAdminEventUpdated,
     );
     window.addEventListener("popstate", loadContextsFromStorage);
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
       window.removeEventListener("storage", handleStorage);
@@ -248,6 +262,7 @@ export default function Sidebar() {
         handleAdminEventUpdated,
       );
       window.removeEventListener("popstate", loadContextsFromStorage);
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, [mounted]);
 
@@ -350,6 +365,27 @@ export default function Sidebar() {
     };
   }, [mounted]);
 
+  function clearAllAppState() {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+
+      setMemberEvent(null);
+      setAdminEvent(null);
+      setIsCheckedIn(false);
+      setUserMode("none");
+      setAdminAccess(null);
+      setAdminDisplayName("");
+      setAdminPrivilegeGroup("");
+      setOpen(false);
+
+      window.dispatchEvent(new Event("fcoc-admin-event-updated"));
+      window.dispatchEvent(new Event("fcoc-member-event-updated"));
+    } catch (err) {
+      console.error("Failed to clear app state:", err);
+    }
+  }
+
   async function handleSidebarExit() {
     if (showLoggedInLogout) {
       const eventName =
@@ -372,24 +408,13 @@ export default function Sidebar() {
         console.error("Supabase signOut failed:", err);
       }
 
-      localStorage.clear();
-      window.location.href = "/";
+      clearAllAppState();
+      window.location.replace("/");
       return;
     }
 
-    localStorage.removeItem("fcoc-user-mode");
-    localStorage.removeItem("fcoc-user-mode-changed");
-    localStorage.removeItem("fcoc-member-event-context");
-    localStorage.removeItem("fcoc-member-event-changed");
-    localStorage.removeItem("fcoc-admin-event-context");
-    localStorage.removeItem("fcoc-admin-event-changed");
-    localStorage.removeItem("fcoc-member-attendee-id");
-    localStorage.removeItem("fcoc-member-email");
-    localStorage.removeItem("fcoc-member-entry-id");
-    localStorage.removeItem("fcoc-member-has-arrived");
-    localStorage.removeItem("fcoc-admin-email");
-
-    window.location.href = "/";
+    clearAllAppState();
+    window.location.replace("/");
   }
 
   const memberItems: NavItem[] = useMemo(() => {
