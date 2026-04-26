@@ -391,6 +391,9 @@ export default function Sidebar() {
       setAdminDisplayName("");
       setAdminPrivilegeGroup("");
       setOpen(false);
+      document.body.style.overflow = "";
+      document.body.style.touchAction = "";
+      document.documentElement.style.overflow = "";
 
       window.dispatchEvent(new Event("fcoc-admin-event-updated"));
       window.dispatchEvent(new Event("fcoc-member-event-updated"));
@@ -510,7 +513,40 @@ export default function Sidebar() {
     return pathname === itemHref || pathname.startsWith(itemHref + "/");
   }
 
-  if (!mounted || userMode === "none") {
+  if (!mounted) {
+    return null;
+  }
+
+  if (userMode === "none") {
+    if (pathname === "/member/login" || pathname === "/admin/login") {
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            clearAllAppState();
+            window.location.replace("/");
+          }}
+          style={{
+            position: "fixed",
+            top: "calc(env(safe-area-inset-top, 0px) + 12px)",
+            right: "calc(env(safe-area-inset-right, 0px) + 12px)",
+            zIndex: 9999,
+            padding: "10px 14px",
+            borderRadius: 999,
+            border: "1px solid #cbd5e1",
+            background: "white",
+            color: "#111827",
+            fontWeight: 700,
+            cursor: "pointer",
+            boxShadow: "0 3px 10px rgba(0,0,0,0.18)",
+            WebkitTapHighlightColor: "transparent",
+          }}
+        >
+          Change Login Type
+        </button>
+      );
+    }
+
     return null;
   }
 
