@@ -195,18 +195,27 @@ function EventAdminPageInner() {
       );
 
       const loadedEvents = accessibleEvents.filter((event) => {
-        const normalizedStatus = String(event.status || "Draft").toLowerCase();
+        const normalizedStatus = String(event.status || "")
+          .trim()
+          .toLowerCase();
 
         if (eventStatusFilter === "all") {
           return true;
         }
 
         if (eventStatusFilter === "active") {
-          return event.is_active !== false && normalizedStatus !== "archived";
+          if (normalizedStatus) {
+            return normalizedStatus === "active";
+          }
+          return event.is_active !== false;
         }
 
         if (eventStatusFilter === "inactive") {
-          return event.is_active === false && normalizedStatus !== "archived";
+          return normalizedStatus === "inactive" || event.is_active === false;
+        }
+
+        if (eventStatusFilter === "draft") {
+          return normalizedStatus === "draft" || !normalizedStatus;
         }
 
         return normalizedStatus === eventStatusFilter;
@@ -362,6 +371,7 @@ function EventAdminPageInner() {
       }
 
       const nextStatus = form.status || "Draft";
+      const nextIsActive = nextStatus === "Active";
 
       const payload = {
         name: form.name.trim(),
@@ -369,20 +379,40 @@ function EventAdminPageInner() {
         start_date: form.start_date || null,
         end_date: form.end_date || null,
         status: nextStatus,
-        is_active: nextStatus === "Active",
+        is_active: nextIsActive,
       };
 
       if (form.id) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from("events")
           .update(payload)
-          .eq("id", form.id);
+          .eq("id", form.id)
+          .select("id,name,location,start_date,end_date,status,is_active")
+          .single();
 
         if (error) {
           throw error;
         }
 
-        setStatus(`Updated event "${payload.name}".`);
+        const updatedEvent = data as EventRow;
+
+        setEvents((prev) =>
+          prev.map((event) =>
+            event.id === updatedEvent.id ? updatedEvent : event,
+          ),
+        );
+
+        if (updatedEvent.status === "Active") {
+          setSelectedEventId(updatedEvent.id);
+          setWorkingAdminEvent(updatedEvent);
+        } else {
+          setSelectedEventId("");
+          setWorkingAdminEvent(null);
+        }
+
+        setStatus(
+          `Updated event "${payload.name}" to ${updatedEvent.status || "Draft"}.`,
+        );
       } else {
         const { data, error } = await supabase
           .from("events")
