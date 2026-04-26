@@ -59,11 +59,31 @@ function formatEventLabel(evt: EventRow) {
   const name = evt.name || "Untitled event";
   const dates = [evt.start_date, evt.end_date].filter(Boolean).join(" – ");
   const loc = evt.location || "";
-  return [name, dates, loc].filter(Boolean).join(" — ");
+  const status = evt.status || "Draft";
+  return [name, dates, loc, `Status: ${status}`].filter(Boolean).join(" — ");
 }
 
 function toInputDate(value: string | null | undefined) {
   return value || "";
+}
+
+type EventStatusFilter = "active" | "inactive" | "archived" | "draft" | "all";
+
+function filterForStatus(status: string | null | undefined): EventStatusFilter {
+  const normalized = String(status || "Draft")
+    .trim()
+    .toLowerCase();
+
+  if (
+    normalized === "active" ||
+    normalized === "inactive" ||
+    normalized === "archived" ||
+    normalized === "draft"
+  ) {
+    return normalized;
+  }
+
+  return "draft";
 }
 
 function EventAdminPageInner() {
@@ -83,9 +103,8 @@ function EventAdminPageInner() {
   const [status, setStatus] = useState("Loading event admin...");
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
-  const [eventStatusFilter, setEventStatusFilter] = useState<
-    "active" | "inactive" | "archived" | "draft" | "all"
-  >("active");
+  const [eventStatusFilter, setEventStatusFilter] =
+    useState<EventStatusFilter>("active");
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
@@ -195,27 +214,12 @@ function EventAdminPageInner() {
       );
 
       const loadedEvents = accessibleEvents.filter((event) => {
-        const normalizedStatus = String(event.status || "")
+        const normalizedStatus = String(event.status || "Draft")
           .trim()
           .toLowerCase();
 
         if (eventStatusFilter === "all") {
           return true;
-        }
-
-        if (eventStatusFilter === "active") {
-          if (normalizedStatus) {
-            return normalizedStatus === "active";
-          }
-          return event.is_active !== false;
-        }
-
-        if (eventStatusFilter === "inactive") {
-          return normalizedStatus === "inactive" || event.is_active === false;
-        }
-
-        if (eventStatusFilter === "draft") {
-          return normalizedStatus === "draft" || !normalizedStatus;
         }
 
         return normalizedStatus === eventStatusFilter;
@@ -226,6 +230,16 @@ function EventAdminPageInner() {
       setEvents(loadedEvents);
       setMasterMaps(loadedMaps);
       setNearbyLists(loadedNearby);
+
+      if (loadedEvents.length === 0) {
+        setSelectedEventId("");
+        setForm(emptyForm);
+        setSelectedMasterMapId("");
+        setSelectedNearbyListId("");
+        setWorkingAdminEvent(null);
+        setStatus("No events match this filter.");
+        return;
+      }
 
       const adminEvent = getAdminEvent();
       const storedAccessibleEvent = adminEvent?.id
@@ -388,10 +402,16 @@ function EventAdminPageInner() {
           .update(payload)
           .eq("id", form.id)
           .select("id,name,location,start_date,end_date,status,is_active")
-          .single();
+          .maybeSingle();
 
         if (error) {
           throw error;
+        }
+
+        if (!data?.id) {
+          throw new Error(
+            "Event update did not persist. Check Supabase RLS/update policy for the events table.",
+          );
         }
 
         const updatedEvent = data as EventRow;
@@ -402,11 +422,22 @@ function EventAdminPageInner() {
           ),
         );
 
+        setSelectedEventId(updatedEvent.id);
+        setForm({
+          id: updatedEvent.id,
+          name: updatedEvent.name || "",
+          location: updatedEvent.location || "",
+          start_date: toInputDate(updatedEvent.start_date),
+          end_date: toInputDate(updatedEvent.end_date),
+          status: updatedEvent.status || "Draft",
+        });
+        const nextFilter = filterForStatus(updatedEvent.status);
+        setEventStatusFilter(nextFilter);
+        setEvents([updatedEvent]);
+
         if (updatedEvent.status === "Active") {
-          setSelectedEventId(updatedEvent.id);
           setWorkingAdminEvent(updatedEvent);
         } else {
-          setSelectedEventId("");
           setWorkingAdminEvent(null);
         }
 
@@ -424,14 +455,20 @@ function EventAdminPageInner() {
           throw error;
         }
 
-        setSelectedEventId(data.id);
-        setWorkingAdminEvent(data as EventRow);
+        const createdEvent = data as EventRow;
+        setSelectedEventId(createdEvent.id);
+        setEventStatusFilter(filterForStatus(createdEvent.status));
+        setEvents([createdEvent]);
+        if (createdEvent.status === "Active") {
+          setWorkingAdminEvent(createdEvent);
+        } else {
+          setWorkingAdminEvent(null);
+        }
         setStatus(`Created event "${payload.name}".`);
       }
-
-      await loadPage();
     } catch (err: any) {
       console.error("saveEvent error:", err);
+      setError(err?.message || "Failed to save event.");
       setStatus(err?.message || "Failed to save event.");
     } finally {
       setSavingEvent(false);
@@ -593,16 +630,17 @@ function EventAdminPageInner() {
           Event Filter
           <select
             value={eventStatusFilter}
-            onChange={(e) =>
-              setEventStatusFilter(
-                e.target.value as
-                  | "active"
-                  | "inactive"
-                  | "archived"
-                  | "draft"
-                  | "all",
-              )
-            }
+            onChange={(e) => {
+              const nextFilter = e.target.value as EventStatusFilter;
+              setEventStatusFilter(nextFilter);
+              setEvents([]);
+              setSelectedEventId("");
+              setForm(emptyForm);
+              setSelectedMasterMapId("");
+              setSelectedNearbyListId("");
+              setWorkingAdminEvent(null);
+              setStatus("Loading filtered events...");
+            }}
             style={{
               padding: "10px 12px",
               border: "1px solid #cbd5e1",
