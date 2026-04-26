@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties,useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
@@ -198,7 +198,9 @@ function getEventAccessRole(privilegeGroup: PrivilegeGroup) {
   }
 }
 function formatPrivilegeGroup(value?: string | null) {
-  if (!value) {return "";}
+  if (!value) {
+    return "";
+  }
   switch (value) {
     case "super_admin":
       return "Super Admin";
@@ -330,7 +332,9 @@ function AdminUsersPageInner() {
   );
 
   useEffect(() => {
-    if (!selectedRow) {return;}
+    if (!selectedRow) {
+      return;
+    }
 
     setEmail(selectedRow.email || "");
     setDisplayName(selectedRow.display_name || "");
@@ -528,7 +532,7 @@ function AdminUsersPageInner() {
               marginBottom: 12,
             }}
           >
-            <strong>Existing Admins</strong>
+            <strong>Existing Admins — click one to edit</strong>
             <button
               type="button"
               onClick={startNewAdmin}
@@ -572,6 +576,17 @@ function AdminUsersPageInner() {
         </div>
 
         <div className="card" style={{ padding: 18 }}>
+          <div style={{ marginBottom: 14 }}>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+              {selectedAdminId ? "Edit Admin User" : "New Admin User"}
+            </h2>
+            <div style={{ fontSize: 14, opacity: 0.75 }}>
+              {selectedAdminId
+                ? "Update this admin user, privilege group, and event access."
+                : "Create a new admin user and assign event access."}
+            </div>
+          </div>
+
           <div style={{ display: "grid", gap: 14 }}>
             <div
               style={{
@@ -733,7 +748,7 @@ function AdminUsersPageInner() {
                 onClick={handleSave}
                 style={primaryButtonStyle}
               >
-                Save Admin User
+                {selectedAdminId ? "Save Changes" : "Create Admin User"}
               </button>
               {saveStatus ? (
                 <span style={{ fontSize: 14 }}>{saveStatus}</span>
