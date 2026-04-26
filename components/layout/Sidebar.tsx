@@ -305,6 +305,13 @@ export default function Sidebar() {
     }
 
     async function loadAdminAccess() {
+      const mode = localStorage.getItem("fcoc-user-mode");
+      if (mode !== "admin") {
+        setAdminAccess(null);
+        setAdminDisplayName("");
+        setAdminPrivilegeGroup("");
+        return;
+      }
       const admin = await getCurrentAdminAccess();
       setAdminAccess(admin);
 
@@ -349,11 +356,16 @@ export default function Sidebar() {
       loadContextsFromStorage();
     }
 
+    function handlePageShow() {
+      void loadAdminAccess();
+    }
+
     window.addEventListener("storage", handleStorage);
     window.addEventListener(
       "fcoc-admin-event-updated",
       handleAdminEventUpdated,
     );
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
       subscription.unsubscribe();
@@ -362,6 +374,7 @@ export default function Sidebar() {
         "fcoc-admin-event-updated",
         handleAdminEventUpdated,
       );
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, [mounted]);
 
