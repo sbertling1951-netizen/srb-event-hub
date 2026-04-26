@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties,useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
@@ -126,13 +126,19 @@ function formatDateRange(
   startDate: string | null | undefined,
   endDate: string | null | undefined,
 ) {
-  if (!startDate && !endDate) {return "";}
-  if (startDate && endDate) {return `${startDate} – ${endDate}`;}
+  if (!startDate && !endDate) {
+    return "";
+  }
+  if (startDate && endDate) {
+    return `${startDate} – ${endDate}`;
+  }
   return startDate || endDate || "";
 }
 
 function formatPrivilegeGroup(value?: string | null) {
-  if (!value) {return "—";}
+  if (!value) {
+    return "—";
+  }
   switch (value) {
     case "super_admin":
       return "Super Admin";
@@ -344,10 +350,18 @@ function EventStaffPageInner() {
           .order("created_at", { ascending: true }),
       ]);
 
-      if (eventError) {throw eventError;}
-      if (eventsError) {throw eventsError;}
-      if (adminUsersError) {throw adminUsersError;}
-      if (accessError) {throw accessError;}
+      if (eventError) {
+        throw eventError;
+      }
+      if (eventsError) {
+        throw eventsError;
+      }
+      if (adminUsersError) {
+        throw adminUsersError;
+      }
+      if (accessError) {
+        throw accessError;
+      }
 
       const eventRow = eventData as EventRow;
       const allEvents = (eventsData || []) as EventRow[];
@@ -363,13 +377,17 @@ function EventStaffPageInner() {
           .select("id,admin_event_access_id,permission_key,is_enabled")
           .in("admin_event_access_id", accessIds);
 
-        if (error) {throw error;}
+        if (error) {
+          throw error;
+        }
         permissionRows = (data || []) as AdminEventPermissionRow[];
       }
 
       const permissionsByAccessId = new Map<string, string[]>();
       permissionRows.forEach((row) => {
-        if (!row.is_enabled) {return;}
+        if (!row.is_enabled) {
+          return;
+        }
         const existing =
           permissionsByAccessId.get(row.admin_event_access_id) || [];
         existing.push(row.permission_key);
@@ -471,7 +489,9 @@ function EventStaffPageInner() {
       .from("admin_event_permissions")
       .insert(permissionRows);
 
-    if (error) {throw error;}
+    if (error) {
+      throw error;
+    }
   }
 
   async function handleAddStaff() {
@@ -544,7 +564,9 @@ function EventStaffPageInner() {
         .eq("email", email)
         .maybeSingle();
 
-      if (existingError) {throw existingError;}
+      if (existingError) {
+        throw existingError;
+      }
 
       let adminUserId: string;
 
@@ -563,7 +585,9 @@ function EventStaffPageInner() {
           })
           .eq("id", adminUserId);
 
-        if (updateError) {throw updateError;}
+        if (updateError) {
+          throw updateError;
+        }
       } else {
         const { data: insertedUser, error: insertUserError } = await supabase
           .from("admin_users")
@@ -593,7 +617,9 @@ function EventStaffPageInner() {
           .eq("event_id", event.id)
           .maybeSingle();
 
-      if (existingAccessError) {throw existingAccessError;}
+      if (existingAccessError) {
+        throw existingAccessError;
+      }
 
       if (existingAccess?.id) {
         setStatus("That staff user is already assigned to this event.");
@@ -668,7 +694,9 @@ function EventStaffPageInner() {
   }
 
   async function handleSaveRow(row: StaffRow) {
-    if (!event?.id) {return;}
+    if (!event?.id) {
+      return;
+    }
 
     try {
       setSavingAccessId(row.accessId);
@@ -680,14 +708,18 @@ function EventStaffPageInner() {
         .update({ role: row.role })
         .eq("id", row.accessId);
 
-      if (roleError) {throw roleError;}
+      if (roleError) {
+        throw roleError;
+      }
 
       const { error: deleteError } = await supabase
         .from("admin_event_permissions")
         .delete()
         .eq("admin_event_access_id", row.accessId);
 
-      if (deleteError) {throw deleteError;}
+      if (deleteError) {
+        throw deleteError;
+      }
 
       const permissionRows = ALL_PERMISSION_KEYS.map((key) => ({
         admin_event_access_id: row.accessId,
@@ -699,7 +731,9 @@ function EventStaffPageInner() {
         .from("admin_event_permissions")
         .insert(permissionRows);
 
-      if (insertError) {throw insertError;}
+      if (insertError) {
+        throw insertError;
+      }
 
       await loadPage(event.id);
       setStatus(`${row.displayName || row.email} saved.`);
@@ -713,12 +747,16 @@ function EventStaffPageInner() {
   }
 
   async function handleRemoveRow(row: StaffRow) {
-    if (!event?.id) {return;}
+    if (!event?.id) {
+      return;
+    }
 
     const confirmed = window.confirm(
       `Remove ${row.displayName || row.email} from this event staff list?`,
     );
-    if (!confirmed) {return;}
+    if (!confirmed) {
+      return;
+    }
 
     try {
       setRemovingAccessId(row.accessId);
@@ -730,14 +768,18 @@ function EventStaffPageInner() {
         .delete()
         .eq("admin_event_access_id", row.accessId);
 
-      if (deletePermissionsError) {throw deletePermissionsError;}
+      if (deletePermissionsError) {
+        throw deletePermissionsError;
+      }
 
       const { error: deleteAccessError } = await supabase
         .from("admin_event_access")
         .delete()
         .eq("id", row.accessId);
 
-      if (deleteAccessError) {throw deleteAccessError;}
+      if (deleteAccessError) {
+        throw deleteAccessError;
+      }
 
       await loadPage(event.id);
       setStatus(`${row.displayName || row.email} removed from event staff.`);
@@ -809,6 +851,52 @@ function EventStaffPageInner() {
       </div>
 
       {error ? <div style={errorBoxStyle}>{error}</div> : null}
+
+      <div style={cardStyle}>
+        <h2 style={{ marginTop: 0, marginBottom: 12 }}>
+          Selected Event Staff List
+        </h2>
+
+        <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
+          Choose an event above to view its assigned staff. Super Admins are not
+          listed here because they automatically have access to all events.
+        </div>
+
+        {!event ? (
+          <div style={{ opacity: 0.8 }}>Select an event to view staff.</div>
+        ) : rows.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>
+            No staff assigned to {event.name || "this event"}.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {rows.map((person) => (
+              <div
+                key={person.accessId}
+                style={{
+                  border: "1px solid #eee",
+                  borderRadius: 10,
+                  padding: 12,
+                  background: "#fafafa",
+                }}
+              >
+                <div style={{ fontWeight: 700 }}>
+                  {person.displayName || person.email}
+                </div>
+
+                <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
+                  {person.email}
+                </div>
+
+                <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
+                  Event Role: {formatPrivilegeGroup(person.role)} • Base Group:{" "}
+                  {formatPrivilegeGroup(person.privilegeGroup)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div style={cardStyle}>
         <h2 style={{ marginTop: 0, marginBottom: 12 }}>Add Existing Admin</h2>
