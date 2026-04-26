@@ -83,7 +83,9 @@ function EventAdminPageInner() {
   const [status, setStatus] = useState("Loading event admin...");
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  const [eventStatusFilter, setEventStatusFilter] = useState<
+    "active" | "inactive" | "archived" | "draft" | "all"
+  >("active");
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
@@ -192,11 +194,23 @@ function EventAdminPageInner() {
         (event) => !!event.id && canAccessEvent(admin, event.id),
       );
 
-      const loadedEvents = showArchived
-        ? accessibleEvents
-        : accessibleEvents.filter(
-            (event) => event.status !== "Archived" && event.is_active !== false,
-          );
+      const loadedEvents = accessibleEvents.filter((event) => {
+        const normalizedStatus = String(event.status || "Draft").toLowerCase();
+
+        if (eventStatusFilter === "all") {
+          return true;
+        }
+
+        if (eventStatusFilter === "active") {
+          return event.is_active !== false && normalizedStatus !== "archived";
+        }
+
+        if (eventStatusFilter === "inactive") {
+          return event.is_active === false && normalizedStatus !== "archived";
+        }
+
+        return normalizedStatus === eventStatusFilter;
+      });
       const loadedMaps = (mapsResult.data || []) as MasterMapRow[];
       const loadedNearby = (nearbyResult.data || []) as NearbyAreaRow[];
 
@@ -232,7 +246,7 @@ function EventAdminPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [showArchived]);
+  }, [eventStatusFilter]);
 
   useEffect(() => {
     async function init() {
@@ -545,20 +559,34 @@ function EventAdminPageInner() {
       >
         <div style={{ fontWeight: 700 }}>Select Event</div>
 
-        <label
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            fontSize: 14,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={showArchived}
-            onChange={(e) => setShowArchived(e.target.checked)}
-          />
-          Show inactive / archived events
+        <label style={{ display: "grid", gap: 6, maxWidth: 260 }}>
+          Event Filter
+          <select
+            value={eventStatusFilter}
+            onChange={(e) =>
+              setEventStatusFilter(
+                e.target.value as
+                  | "active"
+                  | "inactive"
+                  | "archived"
+                  | "draft"
+                  | "all",
+              )
+            }
+            style={{
+              padding: "10px 12px",
+              border: "1px solid #cbd5e1",
+              borderRadius: 10,
+              background: "#fff",
+              fontSize: 14,
+            }}
+          >
+            <option value="active">Active events</option>
+            <option value="inactive">Inactive events</option>
+            <option value="archived">Archived events</option>
+            <option value="draft">Draft events</option>
+            <option value="all">All events</option>
+          </select>
         </label>
 
         <select
@@ -585,7 +613,11 @@ function EventAdminPageInner() {
             fontSize: 14,
           }}
         >
-          <option value="">Select an event</option>
+          <option value="">
+            {events.length === 0
+              ? "No events match this filter"
+              : "Select an event"}
+          </option>
           {events.map((evt) => (
             <option key={evt.id} value={evt.id}>
               {formatEventLabel(evt)}
