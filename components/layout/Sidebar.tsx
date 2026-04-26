@@ -63,7 +63,6 @@ function getPrivilegeBadge(value?: string | null) {
   }
 }
 
-// 👇 ADD IT RIGHT HERE
 function getBadgeColor(value?: string | null) {
   switch (value) {
     case "super_admin":
@@ -141,15 +140,6 @@ export default function Sidebar() {
       setUserMode("none");
     }
   }
-
-  const isAdminRoute = pathname.startsWith("/admin");
-  const isMemberRoute =
-    pathname.startsWith("/member") ||
-    pathname.startsWith("/coach-map") ||
-    pathname.startsWith("/member/agenda") ||
-    pathname.startsWith("/member/announcements") ||
-    pathname.startsWith("/member/attendees") ||
-    pathname.startsWith("/member/nearby");
 
   const isPreAuthPage =
     pathname === "/" ||
