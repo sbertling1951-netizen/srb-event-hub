@@ -17,6 +17,8 @@ type EventRow = {
   lat: number | null;
   lng: number | null;
   visible_to_members?: boolean | null;
+  status?: string | null;
+  is_active?: boolean | null;
 };
 
 type AttendeeRow = {
@@ -31,8 +33,12 @@ type AttendeeRow = {
 };
 
 function formatDateRange(startDate: string | null, endDate: string | null) {
-  if (!startDate && !endDate) {return "";}
-  if (startDate && endDate) {return `${startDate} – ${endDate}`;}
+  if (!startDate && !endDate) {
+    return "";
+  }
+  if (startDate && endDate) {
+    return `${startDate} – ${endDate}`;
+  }
   return startDate || endDate || "";
 }
 
@@ -65,19 +71,29 @@ export default function MemberLoginPage() {
 
   async function loadEvents() {
     try {
+      const today = new Date().toISOString().slice(0, 10);
+
       const { data, error } = await supabase
         .from("events")
         .select(
-          "id,name,venue_name,location,start_date,end_date,event_code,lat,lng,visible_to_members",
+          "id,name,venue_name,location,start_date,end_date,event_code,lat,lng,visible_to_members,status,is_active",
         )
         .eq("visible_to_members", true)
+        .eq("status", "Active")
+        .eq("is_active", true)
+        .or(`end_date.is.null,end_date.gte.${today}`)
         .order("start_date", { ascending: true, nullsFirst: false });
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
-      setEvents((data || []) as EventRow[]);
+      const activeEvents = (data || []) as EventRow[];
+      setEvents(activeEvents);
       setStatus(
-        "Select an event, enter code, and use your registration email.",
+        activeEvents.length > 0
+          ? "Select an event, enter code, and use your registration email."
+          : "No active member events are available right now.",
       );
     } catch (err: any) {
       console.error(err);
@@ -130,7 +146,9 @@ export default function MemberLoginPage() {
         .eq("email", normalizedEmail)
         .maybeSingle();
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       const attendee = data as AttendeeRow | null;
 
