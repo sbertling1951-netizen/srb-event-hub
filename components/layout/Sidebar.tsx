@@ -497,7 +497,7 @@ export default function Sidebar() {
     return pathname === itemHref || pathname.startsWith(itemHref + "/");
   }
 
-  if (!mounted) {
+  if (!mounted || userMode === "none") {
     return null;
   }
 
