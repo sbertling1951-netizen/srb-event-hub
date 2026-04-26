@@ -1,6 +1,5 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -128,7 +127,6 @@ type ParticipantTypeFilter =
   | "volunteer"
   | "event_host";
 type ViewMode = "all" | "review";
-type SortMode = "name" | "site" | "review" | "recent";
 type CommandCenterTab = "attendees" | "reports" | "imports" | "validation";
 type SummaryCardItem = {
   label: string;
@@ -181,90 +179,6 @@ const STATUS_LABELS: Record<Exclude<DataStatusFilter, "all">, string> = {
   corrected: "Corrected",
   reviewed: "Reviewed",
   locked: "Locked",
-};
-
-const infoBoxStyle: CSSProperties = {
-  marginTop: 14,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #bfdbfe",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontSize: 14,
-};
-
-const secondaryBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#e5e7eb",
-  color: "#374151",
-  fontSize: 12,
-  fontWeight: 700,
-  textTransform: "capitalize",
-};
-
-const issueBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#fff7ed",
-  color: "#9a3412",
-  fontSize: 12,
-  fontWeight: 700,
-};
-
-const okBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#dcfce7",
-  color: "#166534",
-  fontSize: 12,
-  fontWeight: 700,
-};
-
-const cleanAttendeeRowStyle: CSSProperties = {
-  border: "1px solid #86efac",
-  background: "#f0fdf4",
-};
-
-const reviewAttendeeRowStyle: CSSProperties = {
-  border: "1px solid #fca5a5",
-  background: "#fff7f7",
-};
-
-const savedBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#dcfce7",
-  color: "#166534",
-  fontSize: 12,
-  fontWeight: 700,
-  border: "1px solid #86efac",
-};
-
-const successBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #86efac",
-  background: "#f0fdf4",
-  color: "#166534",
-  fontSize: 14,
-  fontWeight: 600,
-};
-
-const errorBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #fecaca",
-  background: "#fef2f2",
-  color: "#991b1b",
-  fontSize: 14,
-  fontWeight: 600,
 };
 
 function dataStatusOptionLabel(value: Exclude<DataStatusFilter, "all">) {
@@ -567,48 +481,6 @@ function reviewFieldLabel(field: string) {
 
   return map[field] || field.replace(/_/g, " ");
 }
-function siteSortKey(site?: string | null) {
-  const value = String(site || "").trim();
-
-  if (!value) {
-    return { group: 0, num: 999999 };
-  }
-
-  const match = value.match(/\d+/);
-  if (!match) {
-    return { group: 1, num: 999998 };
-  }
-
-  return { group: 1, num: Number(match[0]) };
-}
-
-function groupBySite(attendees: AttendeeRow[]) {
-  const map = new Map<string, AttendeeRow[]>();
-
-  attendees.forEach((attendee) => {
-    const key = attendee.assigned_site?.trim() || "Unassigned";
-
-    if (!map.has(key)) {
-      map.set(key, []);
-    }
-
-    map.get(key)!.push(attendee);
-  });
-
-  return Array.from(map.entries()).sort(([a], [b]) => {
-    const siteA = siteSortKey(a);
-    const siteB = siteSortKey(b);
-
-    return (
-      siteA.group - siteB.group ||
-      siteA.num - siteB.num ||
-      a.localeCompare(b, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      })
-    );
-  });
-}
 
 function sortReviewItems(items: ReviewItem[]) {
   return [...items].sort((a, b) => {
@@ -673,8 +545,6 @@ function FilterBar(props: {
   setSearch: (value: string) => void;
   viewMode: ViewMode;
   setViewMode: (value: ViewMode) => void;
-  sortMode: SortMode;
-  setSortMode: (value: SortMode) => void;
   pageSize: PageSize;
   setPageSize: (value: PageSize) => void;
   dataStatusFilter: DataStatusFilter;
@@ -683,17 +553,12 @@ function FilterBar(props: {
   setParticipantTypeFilter: (value: ParticipantTypeFilter) => void;
   showResolvedInfo: boolean;
   setShowResolvedInfo: (value: boolean) => void;
-
-  attendeeListMode: "list" | "campground";
-  setAttendeeListMode: (value: "list" | "campground") => void;
 }) {
   const {
     search,
     setSearch,
     viewMode,
     setViewMode,
-    sortMode,
-    setSortMode,
     pageSize,
     setPageSize,
     dataStatusFilter,
@@ -702,27 +567,16 @@ function FilterBar(props: {
     setParticipantTypeFilter,
     showResolvedInfo,
     setShowResolvedInfo,
-    attendeeListMode,
-    setAttendeeListMode,
   } = props;
 
   return (
-    <div
-      className="card"
-      style={{
-        position: "sticky",
-        top: 86,
-        zIndex: 900,
-        padding: 18,
-        background: "white",
-        border: "1px solid #eee",
-      }}
-    >
+    <div className="card" style={{ padding: 18 }}>
       <div
         style={{
           display: "grid",
           gap: 14,
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gridTemplateColumns:
+            "minmax(260px, 1.5fr) minmax(160px, 160px) minmax(160px, 160px) minmax(220px, 220px) minmax(220px, 220px) auto",
           alignItems: "end",
         }}
       >
@@ -741,10 +595,10 @@ function FilterBar(props: {
           <select
             value={viewMode}
             onChange={(e) => setViewMode(e.target.value as ViewMode)}
-            style={viewMode === "review" ? reviewModeInputStyle : inputStyle}
+            style={inputStyle}
           >
             <option value="all">All Attendees</option>
-            <option value="review">Review Queue / Needs Review</option>
+            <option value="review">Review Queue</option>
           </select>
         </div>
 
@@ -800,35 +654,6 @@ function FilterBar(props: {
                 </option>
               ),
             )}
-          </select>
-        </div>
-
-        {/* Sort By dropdown UI */}
-        <div>
-          <label style={labelStyle}>Sort By</label>
-          <select
-            value={sortMode}
-            onChange={(e) => setSortMode(e.target.value as SortMode)}
-            style={inputStyle}
-          >
-            <option value="name">A–Z Last Name</option>
-            <option value="site">Site Number</option>
-            <option value="review">Needs Review First</option>
-            <option value="recent">Recently Added</option>
-          </select>
-        </div>
-
-        <div>
-          <label style={labelStyle}>Roster Layout</label>
-          <select
-            value={attendeeListMode}
-            onChange={(e) =>
-              setAttendeeListMode(e.target.value as "list" | "campground")
-            }
-            style={inputStyle}
-          >
-            <option value="list">Standard List</option>
-            <option value="campground">Campground / Site Groups</option>
           </select>
         </div>
 
@@ -890,7 +715,7 @@ function QuickActionBar(props: {
           onClick={onSetReviewMode}
           style={secondaryButtonStyle}
         >
-          Focus Review
+          Review Mode
         </button>
 
         <button
@@ -898,7 +723,7 @@ function QuickActionBar(props: {
           onClick={onSetAllMode}
           style={secondaryButtonStyle}
         >
-          View All Attendees
+          Full List
         </button>
 
         <button type="button" onClick={onRefresh} style={secondaryButtonStyle}>
@@ -937,18 +762,9 @@ function ReviewQueue(props: {
   } = props;
 
   return (
-    <div
-      className="card"
-      style={{
-        padding: 18,
-        border: "2px solid #fca5a5",
-        background: "#fff7f7",
-      }}
-    >
+    <div className="card" style={{ padding: 18 }}>
       <div style={{ marginBottom: 14 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-          Command Center — Data Review
-        </h2>
+        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Review Queue</h2>
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           Showing {visibleReviewItems.length} of {filteredReviewItems.length}{" "}
           flagged attendee
@@ -1174,7 +990,6 @@ function AttendeeList(props: {
   loading: boolean;
   filteredAttendees: AttendeeRow[];
   visibleAttendees: AttendeeRow[];
-  attendeeListMode: "list" | "campground";
   reviewItems: ReviewItem[];
   inlineEditId: string | null;
   inlineEditState: InlineEditState;
@@ -1191,7 +1006,6 @@ function AttendeeList(props: {
     loading,
     filteredAttendees,
     visibleAttendees,
-    attendeeListMode,
     reviewItems,
     inlineEditId,
     inlineEditState,
@@ -1205,50 +1019,10 @@ function AttendeeList(props: {
     onUpdateDataStatus,
   } = props;
 
-  const rosterItems = useMemo(() => {
-    if (attendeeListMode !== "campground") {
-      return visibleAttendees.map((attendee) => ({
-        type: "attendee" as const,
-        attendee,
-      }));
-    }
-
-    return groupBySite(visibleAttendees).flatMap(([site, siteAttendees]) => [
-      {
-        type: "site-header" as const,
-        site,
-        count: siteAttendees.length,
-      },
-      ...siteAttendees.map((attendee) => ({
-        type: "attendee" as const,
-        attendee,
-      })),
-    ]);
-  }, [attendeeListMode, visibleAttendees]);
-
   return (
-    <div
-      className="card"
-      style={{
-        padding: 18,
-        border: "1px solid #ddd",
-        background: "#fafafa",
-      }}
-    >
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          background: "#fafafa",
-          paddingBottom: 8,
-          borderBottom: "1px solid #e5e7eb",
-          marginBottom: 14,
-        }}
-      >
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-          Persistent Attendee Roster — Green = Good / Red = Needs Review
-        </h2>
+    <div className="card" style={{ padding: 18 }}>
+      <div style={{ marginBottom: 14 }}>
+        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Attendee List</h2>
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           Showing {visibleAttendees.length} of {filteredAttendees.length}{" "}
           attendee
@@ -1264,41 +1038,7 @@ function AttendeeList(props: {
         </div>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
-          {rosterItems.map((item) => {
-            if (item.type === "site-header") {
-              const siteLabel =
-                item.site === "Unassigned" ? "Unassigned" : `Site ${item.site}`;
-
-              return (
-                <div
-                  key={`site-header-${item.site}`}
-                  style={{
-                    position: "sticky",
-                    top: 72,
-                    zIndex: 6,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    padding: "12px 14px",
-                    borderRadius: 12,
-                    border: "1px solid #d1d5db",
-                    background: "#f9fafb",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-                  }}
-                >
-                  <div style={{ fontWeight: 900, fontSize: 16 }}>
-                    {siteLabel}
-                  </div>
-                  <span style={secondaryBadgeStyle}>
-                    {item.count} attendee{item.count === 1 ? "" : "s"}
-                  </span>
-                </div>
-              );
-            }
-
-            const attendee = item.attendee;
+          {visibleAttendees.map((attendee) => {
             const attendeeIssues = reviewItems.find(
               (item) => item.attendee.id === attendee.id,
             );
@@ -1308,23 +1048,14 @@ function AttendeeList(props: {
               <div
                 key={attendee.id}
                 style={{
-                  ...(attendeeIssues
-                    ? reviewAttendeeRowStyle
-                    : cleanAttendeeRowStyle),
                   border:
                     attendee.id === recentlySavedId
                       ? "1px solid #86efac"
-                      : attendeeIssues
-                        ? reviewAttendeeRowStyle.border
-                        : cleanAttendeeRowStyle.border,
+                      : "1px solid #ddd",
                   borderRadius: 12,
                   padding: 14,
                   background:
-                    attendee.id === recentlySavedId
-                      ? "#f0fdf4"
-                      : attendeeIssues
-                        ? reviewAttendeeRowStyle.background
-                        : cleanAttendeeRowStyle.background,
+                    attendee.id === recentlySavedId ? "#f0fdf4" : "white",
                   transition: "background 0.2s ease, border-color 0.2s ease",
                 }}
               >
@@ -1906,8 +1637,81 @@ function AttendeeEditorModal(props: {
   );
 }
 
+function ReportsEmbedPanel() {
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
+        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Reports</h2>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          Reporting and exports for the selected event.
+        </div>
+      </div>
+
+      <iframe
+        title="Reports"
+        src="/admin/reports?embedded=1"
+        style={{
+          width: "100%",
+          minHeight: "1600px",
+          border: "none",
+          display: "block",
+          background: "white",
+        }}
+      />
+    </div>
+  );
+}
+function ImportsEmbedPanel() {
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
+        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Imports</h2>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          Import attendee and registration data for the selected event.
+        </div>
+      </div>
+
+      <iframe
+        title="Imports"
+        src="/admin/imports?embedded=1"
+        style={{
+          width: "100%",
+          minHeight: "1600px",
+          border: "none",
+          display: "block",
+          background: "white",
+        }}
+      />
+    </div>
+  );
+}
+
+function ValidationRulesEmbedPanel() {
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
+        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Validation Rules</h2>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          Review and maintain the rules used to flag attendee data.
+        </div>
+      </div>
+
+      <iframe
+        title="Validation Rules"
+        src="/admin/validation-rules?embedded=1"
+        style={{
+          width: "100%",
+          minHeight: "1600px",
+          border: "none",
+          display: "block",
+          background: "white",
+        }}
+      />
+    </div>
+  );
+}
+
 function AdminAttendeesPageInner() {
-  const searchParams = useSearchParams();
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
@@ -1922,10 +1726,6 @@ function AdminAttendeesPageInner() {
   const [participantTypeFilter, setParticipantTypeFilter] =
     useState<ParticipantTypeFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("all");
-  const [sortMode, setSortMode] = useState<SortMode>("name");
-  const [attendeeListMode, setAttendeeListMode] = useState<
-    "list" | "campground"
-  >("list");
   const [showResolvedInfo, setShowResolvedInfo] = useState(true);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
@@ -1938,29 +1738,6 @@ function AdminAttendeesPageInner() {
   const [editorSaving, setEditorSaving] = useState(false);
   const [commandCenterTab, setCommandCenterTab] =
     useState<CommandCenterTab>("attendees");
-
-  useEffect(() => {
-    const tab = searchParams.get("tab");
-    const mode = searchParams.get("mode");
-
-    if (
-      tab === "attendees" ||
-      tab === "reports" ||
-      tab === "imports" ||
-      tab === "validation"
-    ) {
-      setCommandCenterTab(tab);
-    }
-
-    if (mode === "review") {
-      setViewMode("review");
-    }
-
-    if (mode === "all") {
-      setViewMode("all");
-    }
-  }, [searchParams]);
-
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   const [inlineEditState, setInlineEditState] = useState<InlineEditState>(
     emptyInlineEditState(),
@@ -2227,94 +2004,31 @@ function AdminAttendeesPageInner() {
     return filteredReviewItems.slice(0, Number(pageSize));
   }, [filteredReviewItems, pageSize]);
 
-  useEffect(() => {
-    if (!loading && viewMode === "review" && filteredReviewItems.length === 0) {
-      setViewMode("all");
-      showFlash("Review queue is clear. Showing all attendees.");
-    }
-  }, [filteredReviewItems.length, loading, viewMode]);
-
   const filteredAttendees = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    return [...attendees]
-      .sort((a, b) => {
-        if (sortMode === "site") {
-          return String(a.assigned_site || "").localeCompare(
-            String(b.assigned_site || ""),
-            undefined,
-            { numeric: true, sensitivity: "base" },
-          );
-        }
+    return attendees.filter((row) => {
+      const matchesSearch = attendeeMatchesSearch(row, term);
+      const statusValue = dataStatusLabel(row.data_status);
+      const matchesStatus =
+        dataStatusFilter === "all" ? true : statusValue === dataStatusFilter;
+      const participantType = (row.participant_type ||
+        "attendee") as ParticipantTypeFilter;
+      const matchesParticipantType =
+        participantTypeFilter === "all"
+          ? true
+          : participantType === participantTypeFilter;
 
-        if (sortMode === "recent") {
-          return (
-            new Date(b.created_at || 0).getTime() -
-            new Date(a.created_at || 0).getTime()
-          );
-        }
-
-        if (sortMode === "review") {
-          const aHasIssue = reviewItems.some(
-            (item) => item.attendee.id === a.id,
-          );
-          const bHasIssue = reviewItems.some(
-            (item) => item.attendee.id === b.id,
-          );
-
-          if (aHasIssue !== bHasIssue) {
-            return aHasIssue ? -1 : 1;
-          }
-        }
-
-        const aLast = String(a.pilot_last || "").toLowerCase();
-        const bLast = String(b.pilot_last || "").toLowerCase();
-        const aFirst = String(a.pilot_first || "").toLowerCase();
-        const bFirst = String(b.pilot_first || "").toLowerCase();
-
-        return aLast.localeCompare(bLast) || aFirst.localeCompare(bFirst);
-      })
-      .filter((row) => {
-        const matchesSearch = attendeeMatchesSearch(row, term);
-        const statusValue = dataStatusLabel(row.data_status);
-        const matchesStatus =
-          dataStatusFilter === "all" ? true : statusValue === dataStatusFilter;
-        const participantType = (row.participant_type ||
-          "attendee") as ParticipantTypeFilter;
-        const matchesParticipantType =
-          participantTypeFilter === "all"
-            ? true
-            : participantType === participantTypeFilter;
-
-        return matchesSearch && matchesStatus && matchesParticipantType;
-      });
-  }, [
-    attendees,
-    search,
-    dataStatusFilter,
-    participantTypeFilter,
-    sortMode,
-    reviewItems,
-  ]);
-
-  const workbenchAttendees = useMemo(() => {
-    if (viewMode !== "review" || filteredReviewItems.length === 0) {
-      return filteredAttendees;
-    }
-
-    const reviewAttendeeIds = new Set(
-      filteredReviewItems.map((item) => item.attendee.id),
-    );
-
-    return filteredAttendees.filter((row) => reviewAttendeeIds.has(row.id));
-  }, [filteredAttendees, filteredReviewItems, viewMode]);
+      return matchesSearch && matchesStatus && matchesParticipantType;
+    });
+  }, [attendees, search, dataStatusFilter, participantTypeFilter]);
 
   const visibleAttendees = useMemo(() => {
     if (pageSize === "all") {
-      return workbenchAttendees;
+      return filteredAttendees;
     }
-    return workbenchAttendees.slice(0, Number(pageSize));
-  }, [workbenchAttendees, pageSize]);
+    return filteredAttendees.slice(0, Number(pageSize));
+  }, [filteredAttendees, pageSize]);
 
   const correctedCount = useMemo(() => {
     return attendees.filter(
@@ -2708,9 +2422,15 @@ function AdminAttendeesPageInner() {
           <button
             type="button"
             onClick={() => {
-              setCommandCenterTab("attendees");
-              setViewMode("all");
+              window.location.href = "/admin/attendees";
             }}
+            style={secondaryButtonStyle}
+          >
+            Open Command Center
+          </button>
+          <button
+            type="button"
+            onClick={() => setCommandCenterTab("attendees")}
             style={
               commandCenterTab === "attendees"
                 ? primaryButtonStyle
@@ -2722,57 +2442,46 @@ function AdminAttendeesPageInner() {
 
           <button
             type="button"
-            onClick={() => {
-              window.location.href = "/admin/reports";
-            }}
-            style={secondaryButtonStyle}
-          >
-            Reports
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              window.location.href = "/admin/imports";
-            }}
-            style={secondaryButtonStyle}
-          >
-            Imports
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setCommandCenterTab("attendees");
-              setViewMode("review");
-            }}
+            onClick={() => setCommandCenterTab("reports")}
             style={
-              commandCenterTab === "attendees" && viewMode === "review"
+              commandCenterTab === "reports"
                 ? primaryButtonStyle
                 : secondaryButtonStyle
             }
           >
-            Review Queue
+            Reports
+          </button>
+          <button
+            type="button"
+            onClick={() => setCommandCenterTab("imports")}
+            style={
+              commandCenterTab === "imports"
+                ? primaryButtonStyle
+                : secondaryButtonStyle
+            }
+          >
+            Imports
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = "/admin/data-review";
+            }}
+            style={secondaryButtonStyle}
+          >
+            Open Data Review Page
           </button>
 
           <button
             type="button"
-            onClick={() => {
-              window.location.href = "/admin/validation-rules";
-            }}
-            style={secondaryButtonStyle}
+            onClick={() => setCommandCenterTab("validation")}
+            style={
+              commandCenterTab === "validation"
+                ? primaryButtonStyle
+                : secondaryButtonStyle
+            }
           >
             Validation Rules
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              window.location.href = "/admin/print";
-            }}
-            style={secondaryButtonStyle}
-          >
-            Print Center
           </button>
         </div>
       </div>
@@ -2789,7 +2498,6 @@ function AdminAttendeesPageInner() {
               }
             }}
           />
-
           <div
             style={{
               display: "grid",
@@ -2891,103 +2599,73 @@ function AdminAttendeesPageInner() {
                     }
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className="card"
-            style={{ padding: 18, display: "grid", gap: 16 }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                gap: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <div>
-                <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-                  Attendee Workbench
-                </h2>
-                <div style={{ fontSize: 14, opacity: 0.8 }}>
-                  Data review and attendee management are combined in one
-                  workflow.
+                <div className="card" style={summaryCardStyle}>
+                  <strong>Fully Valid</strong>
+                  <div style={summaryValueStyle}>{fullyValidCount}</div>
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <span style={secondaryBadgeStyle}>
-                  {workbenchAttendees.length} visible attendees
-                </span>
-                <span style={issueBadgeStyle}>
-                  {filteredReviewItems.length} flagged
-                </span>
+              <div style={{ fontSize: 13, color: "#555" }}>
+                {viewMode === "review"
+                  ? "Review focus is on. The attendee list remains visible below while the review queue stays available on the same page."
+                  : "The attendee list stays visible below, with the review queue available on the same page."}
               </div>
             </div>
-
-            <FilterBar
-              search={search}
-              setSearch={setSearch}
-              viewMode={viewMode}
-              setViewMode={setViewMode}
-              sortMode={sortMode}
-              setSortMode={setSortMode}
-              pageSize={pageSize}
-              setPageSize={setPageSize}
-              dataStatusFilter={dataStatusFilter}
-              setDataStatusFilter={setDataStatusFilter}
-              participantTypeFilter={participantTypeFilter}
-              setParticipantTypeFilter={setParticipantTypeFilter}
-              showResolvedInfo={showResolvedInfo}
-              setShowResolvedInfo={setShowResolvedInfo}
-              attendeeListMode={attendeeListMode}
-              setAttendeeListMode={setAttendeeListMode}
-            />
-
-            {viewMode === "review" && filteredReviewItems.length > 0 ? (
-              <ReviewQueue
-                loading={loading}
-                filteredReviewItems={filteredReviewItems}
-                visibleReviewItems={visibleReviewItems}
-                drafts={drafts}
-                savingRowId={savingRowId}
-                dataStatusFilter={dataStatusFilter}
-                participantTypeFilter={participantTypeFilter}
-                onDraftChange={updateDraft}
-                onSaveMembership={saveMembershipNumber}
-                onOpenEdit={openEditAttendeeEditor}
-                onUpdateDataStatus={updateDataStatus}
-              />
-            ) : viewMode === "review" ? (
-              <div className="card" style={successBoxStyle}>
-                All clear — no flagged attendee records match the current
-                filters. The full attendee roster is shown below.
-              </div>
-            ) : null}
-
-            <AttendeeList
-              loading={loading}
-              filteredAttendees={workbenchAttendees}
-              visibleAttendees={visibleAttendees}
-              attendeeListMode={attendeeListMode}
-              reviewItems={reviewItems}
-              inlineEditId={inlineEditId}
-              inlineEditState={inlineEditState}
-              inlineSaving={inlineSaving}
-              recentlySavedId={recentlySavedId}
-              onOpenEdit={openEditAttendeeEditor}
-              onStartInlineEdit={startInlineEdit}
-              onCancelInlineEdit={cancelInlineEdit}
-              onInlineEditChange={updateInlineEditField}
-              onSaveInlineEdit={handleSaveInlineEdit}
-              onUpdateDataStatus={updateDataStatus}
-            />
           </div>
+
+          <FilterBar
+            search={search}
+            setSearch={setSearch}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+            dataStatusFilter={dataStatusFilter}
+            setDataStatusFilter={setDataStatusFilter}
+            participantTypeFilter={participantTypeFilter}
+            setParticipantTypeFilter={setParticipantTypeFilter}
+            showResolvedInfo={showResolvedInfo}
+            setShowResolvedInfo={setShowResolvedInfo}
+          />
+
+          <AttendeeList
+            loading={loading}
+            filteredAttendees={filteredAttendees}
+            visibleAttendees={visibleAttendees}
+            reviewItems={reviewItems}
+            inlineEditId={inlineEditId}
+            inlineEditState={inlineEditState}
+            inlineSaving={inlineSaving}
+            recentlySavedId={recentlySavedId}
+            onOpenEdit={openEditAttendeeEditor}
+            onStartInlineEdit={startInlineEdit}
+            onCancelInlineEdit={cancelInlineEdit}
+            onInlineEditChange={updateInlineEditField}
+            onSaveInlineEdit={handleSaveInlineEdit}
+            onUpdateDataStatus={updateDataStatus}
+          />
+
+          <ReviewQueue
+            loading={loading}
+            filteredReviewItems={filteredReviewItems}
+            visibleReviewItems={visibleReviewItems}
+            drafts={drafts}
+            savingRowId={savingRowId}
+            dataStatusFilter={dataStatusFilter}
+            participantTypeFilter={participantTypeFilter}
+            onDraftChange={updateDraft}
+            onSaveMembership={saveMembershipNumber}
+            onOpenEdit={openEditAttendeeEditor}
+            onUpdateDataStatus={updateDataStatus}
+          />
         </>
-      ) : null}
+      ) : commandCenterTab === "reports" ? (
+        <ReportsEmbedPanel />
+      ) : commandCenterTab === "imports" ? (
+        <ImportsEmbedPanel />
+      ) : (
+        <ValidationRulesEmbedPanel />
+      )}
 
       <AttendeeEditorModal
         open={editorOpen}
@@ -3001,15 +2679,7 @@ function AdminAttendeesPageInner() {
     </div>
   );
 }
-const summaryCardStyle: CSSProperties = {
-  padding: 16,
-};
 
-const summaryValueStyle: CSSProperties = {
-  fontSize: 26,
-  fontWeight: 800,
-  marginTop: 8,
-};
 const labelStyle: CSSProperties = {
   display: "block",
   marginBottom: 6,
@@ -3022,16 +2692,6 @@ const inputStyle: CSSProperties = {
   borderRadius: 10,
   border: "1px solid #ccc",
   background: "white",
-};
-const reviewModeInputStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #fca5a5",
-  marginTop: 6,
-  background: "#fff7f7",
-  color: "#991b1b",
-  fontWeight: 700,
 };
 
 const textareaStyle: CSSProperties = {
@@ -3058,6 +2718,7 @@ const primaryButtonStyle: CSSProperties = {
   fontWeight: 700,
   cursor: "pointer",
 };
+
 const secondaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
@@ -3065,6 +2726,86 @@ const secondaryButtonStyle: CSSProperties = {
   background: "white",
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const errorBoxStyle: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #e2b4b4",
+  background: "#fff3f3",
+  color: "#8a1f1f",
+};
+
+const successBoxStyle: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #bbf7d0",
+  background: "#f0fdf4",
+  color: "#166534",
+};
+
+const infoBoxStyle: CSSProperties = {
+  marginTop: 14,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontSize: 14,
+};
+
+const summaryCardStyle: CSSProperties = {
+  padding: 16,
+};
+
+const summaryValueStyle: CSSProperties = {
+  fontSize: 26,
+  fontWeight: 800,
+  marginTop: 8,
+};
+
+const secondaryBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#e5e7eb",
+  color: "#374151",
+  fontSize: 12,
+  fontWeight: 700,
+  textTransform: "capitalize",
+};
+
+const issueBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#fff7ed",
+  color: "#9a3412",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const okBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#dcfce7",
+  color: "#166534",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const savedBadgeStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#dcfce7",
+  color: "#166534",
+  fontSize: 12,
+  fontWeight: 700,
+  border: "1px solid #86efac",
 };
 
 export default function AdminAttendeesPage() {

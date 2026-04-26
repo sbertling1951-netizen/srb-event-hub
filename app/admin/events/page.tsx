@@ -83,6 +83,7 @@ function EventAdminPageInner() {
   const [status, setStatus] = useState("Loading event admin...");
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
@@ -187,9 +188,15 @@ function EventAdminPageInner() {
         throw nearbyResult.error;
       }
 
-      const loadedEvents = ((eventsResult.data || []) as EventRow[]).filter(
+      const accessibleEvents = ((eventsResult.data || []) as EventRow[]).filter(
         (event) => !!event.id && canAccessEvent(admin, event.id),
       );
+
+      const loadedEvents = showArchived
+        ? accessibleEvents
+        : accessibleEvents.filter(
+            (event) => event.status !== "Archived" && event.is_active !== false,
+          );
       const loadedMaps = (mapsResult.data || []) as MasterMapRow[];
       const loadedNearby = (nearbyResult.data || []) as NearbyAreaRow[];
 
@@ -225,7 +232,7 @@ function EventAdminPageInner() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => {
     async function init() {
@@ -340,12 +347,15 @@ function EventAdminPageInner() {
         return;
       }
 
+      const nextStatus = form.status || "Draft";
+
       const payload = {
         name: form.name.trim(),
         location: form.location.trim() || null,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
-        status: form.status || "Draft",
+        status: nextStatus,
+        is_active: nextStatus === "Active",
       };
 
       if (form.id) {
@@ -535,6 +545,22 @@ function EventAdminPageInner() {
       >
         <div style={{ fontWeight: 700 }}>Select Event</div>
 
+        <label
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            fontSize: 14,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+          />
+          Show inactive / archived events
+        </label>
+
         <select
           value={selectedEventId}
           onChange={(e) => {
@@ -646,14 +672,21 @@ function EventAdminPageInner() {
             />
           </label>
 
-          <input
-            value={form.status}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, status: e.target.value }))
-            }
-            placeholder="Status"
-            style={{ padding: 10 }}
-          />
+          <label>
+            Status
+            <select
+              value={form.status}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, status: e.target.value }))
+              }
+              style={{ padding: 10, display: "block", width: "100%" }}
+            >
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+              <option value="Archived">Archived</option>
+              <option value="Draft">Draft</option>
+            </select>
+          </label>
 
           <button
             type="button"
