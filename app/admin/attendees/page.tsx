@@ -1893,13 +1893,12 @@ function AdminAttendeesPageInner() {
       // Always load events to validate active status
       const { data: eventsData, error: eventsError } = await supabase
         .from("events")
-        .select(
-          "id, name, eventName, location, venue_name, start_date, end_date, status",
-        )
+        .select("id, name, location, start_date, end_date, status")
         .order("start_date", { ascending: false });
 
       if (eventsError) {
         console.error("Error loading events:", eventsError);
+        throw eventsError;
       }
 
       const activeEvents = (eventsData || []).filter((e: any) =>
@@ -1923,11 +1922,7 @@ function AdminAttendeesPageInner() {
             eventName:
               matched.name || storedEvent.eventName || storedEvent.name || null,
             location: matched.location || storedEvent.location || null,
-            venue_name:
-              matched.venue_name ||
-              storedEvent.venue_name ||
-              matched.location ||
-              null,
+            venue_name: storedEvent.venue_name || matched.location || null,
             start_date: matched.start_date || storedEvent.start_date || null,
             end_date: matched.end_date || storedEvent.end_date || null,
           };
@@ -1942,7 +1937,7 @@ function AdminAttendeesPageInner() {
           name: fallback.name || "Selected Event",
           eventName: fallback.name || "Selected Event",
           location: fallback.location || null,
-          venue_name: fallback.venue_name || fallback.location || null,
+          venue_name: fallback.location || null,
           start_date: fallback.start_date || null,
           end_date: fallback.end_date || null,
         };
