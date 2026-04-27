@@ -56,6 +56,83 @@ function formatDateRange(
   return startDate || endDate || "";
 }
 
+function getNearbyCardColor(category: string | null | undefined) {
+  const normalized = (category || "").trim().toLowerCase();
+
+  const colorMap: Record<string, string> = {
+    food: "#fef3c7",
+    restaurant: "#fef3c7",
+    restaurants: "#fef3c7",
+    dining: "#fef3c7",
+    fuel: "#fee2e2",
+    gas: "#fee2e2",
+    diesel: "#fee2e2",
+    grocery: "#e0f2fe",
+    groceries: "#e0f2fe",
+    shopping: "#ffedd5",
+    pharmacy: "#ede9fe",
+    medical: "#ffe4e6",
+    "urgent care": "#ffe4e6",
+    hospital: "#ffe4e6",
+    attraction: "#f5e8ff",
+    attractions: "#f5e8ff",
+    park: "#e0f2fe",
+    parks: "#e0f2fe",
+    service: "#f1f5f9",
+    services: "#f1f5f9",
+    nearby: "#f8fafc",
+  };
+
+  return colorMap[normalized] || "#f8fafc";
+}
+
+function sanitizeNearbyCardColor(color: string | null | undefined) {
+  const fallback = "#f8fafc";
+  const value = (color || "").trim().toLowerCase();
+
+  if (!value) {
+    return fallback;
+  }
+
+  // Green is reserved for active/current items only, not regular nearby categories.
+  const reservedGreens = new Set([
+    "green",
+    "#f0fdf4",
+    "#dcfce7",
+    "#bbf7d0",
+    "#86efac",
+    "#4ade80",
+    "#22c55e",
+    "#16a34a",
+    "#15803d",
+    "#166534",
+    "rgb(240, 253, 244)",
+    "rgb(220, 252, 231)",
+    "rgb(187, 247, 208)",
+    "rgb(134, 239, 172)",
+    "rgb(74, 222, 128)",
+    "rgb(34, 197, 94)",
+    "rgb(22, 163, 74)",
+  ]);
+
+  if (reservedGreens.has(value)) {
+    return fallback;
+  }
+
+  return color || fallback;
+}
+
+function nearbyCardStyle(place: Place) {
+  return {
+    border: "1px solid rgba(17,24,39,0.14)",
+    background: sanitizeNearbyCardColor(getNearbyCardColor(place.category)),
+    borderRadius: 14,
+    padding: 10,
+    boxShadow: "0 2px 10px rgba(15,23,42,0.06)",
+    color: "#111827",
+  };
+}
+
 function NearbyPageInner() {
   const searchParams = useSearchParams();
   const urlEventId = searchParams.get("event");
@@ -258,7 +335,7 @@ function NearbyPageInner() {
       {viewMode === "list" ? (
         <div className="grid grid-2">
           {filteredPlaces.map((place) => (
-            <div key={place.id}>
+            <div key={place.id} style={nearbyCardStyle(place)}>
               <LocationCard
                 name={place.name}
                 address={place.address || ""}
@@ -272,7 +349,19 @@ function NearbyPageInner() {
               />
               {place.distance_miles !== null &&
               place.distance_miles !== undefined ? (
-                <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
+                <div
+                  style={{
+                    display: "inline-block",
+                    marginTop: 8,
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    background: "rgba(255,255,255,0.82)",
+                    border: "1px solid rgba(0,0,0,0.08)",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#111827",
+                  }}
+                >
                   {place.distance_miles} mi
                 </div>
               ) : null}

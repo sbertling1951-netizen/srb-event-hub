@@ -192,8 +192,8 @@ function groupAgenda(items: AgendaItem[]): GroupedAgenda[] {
 }
 
 function categoryStyle(
-  category: string | null | undefined,
-  color: string | null | undefined,
+  _category: string | null | undefined,
+  _color: string | null | undefined,
 ) {
   return {
     display: "inline-block",
@@ -201,7 +201,7 @@ function categoryStyle(
     borderRadius: 999,
     fontSize: 12,
     fontWeight: 700,
-    background: getAgendaColor(category, color),
+    background: "rgba(255,255,255,0.82)",
     color: "#111827",
     border: "1px solid rgba(0,0,0,0.08)",
   } as const;
@@ -211,27 +211,71 @@ function normalizeCategory(value: string | null | undefined) {
   return (value || "").trim();
 }
 
-function highlightStyle(status: "now" | "upcoming" | "past" | "unknown") {
+function sanitizeAgendaCardColor(color: string | null | undefined) {
+  const fallback = "#f8fafc";
+  const value = (color || "").trim().toLowerCase();
+
+  if (!value) {
+    return fallback;
+  }
+
+  // Green is reserved only for the active/current agenda item.
+  const reservedGreens = new Set([
+    "green",
+    "#f0fdf4",
+    "#dcfce7",
+    "#bbf7d0",
+    "#86efac",
+    "#4ade80",
+    "#22c55e",
+    "#16a34a",
+    "#15803d",
+    "#166534",
+    "rgb(240, 253, 244)",
+    "rgb(220, 252, 231)",
+    "rgb(187, 247, 208)",
+    "rgb(134, 239, 172)",
+    "rgb(74, 222, 128)",
+    "rgb(34, 197, 94)",
+    "rgb(22, 163, 74)",
+  ]);
+
+  if (reservedGreens.has(value)) {
+    return fallback;
+  }
+
+  return color || fallback;
+}
+
+function agendaCardStyle(
+  item: AgendaItem,
+  status: "now" | "upcoming" | "past" | "unknown",
+) {
   if (status === "now") {
     return {
-      border: "1px solid #86efac",
-      background: "#f0fdf4",
-      boxShadow: "0 2px 10px rgba(34,197,94,0.08)",
+      border: "2px solid #16a34a",
+      background: "#dcfce7",
+      boxShadow: "0 3px 12px rgba(34,197,94,0.18)",
+      color: "#064e3b",
     };
   }
 
-  if (status === "upcoming") {
+  if (status === "past") {
     return {
-      border: "1px solid #bfdbfe",
-      background: "#eff6ff",
-      boxShadow: "0 2px 10px rgba(59,130,246,0.06)",
+      border: "1px solid #d1d5db",
+      background: "#f3f4f6",
+      boxShadow: "none",
+      color: "#4b5563",
     };
   }
 
   return {
-    border: "1px solid #e5e7eb",
-    background: "white",
-    boxShadow: "none",
+    border: "1px solid rgba(17,24,39,0.14)",
+    background: sanitizeAgendaCardColor(
+      getAgendaColor(item.category, item.color),
+    ),
+    boxShadow: "0 2px 10px rgba(15,23,42,0.06)",
+    color: "#111827",
   };
 }
 
@@ -241,6 +285,9 @@ function MemberAgendaPageInner() {
   const [status, setStatus] = useState("Loading agenda...");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [expandedPastItems, setExpandedPastItems] = useState<
+    Record<string, boolean>
+  >({});
 
   const loadAgenda = useCallback(async () => {
     try {
@@ -319,6 +366,13 @@ function MemberAgendaPageInner() {
 
     return () => window.clearInterval(timer);
   }, []);
+
+  function togglePastItem(itemId: string) {
+    setExpandedPastItems((prev) => ({
+      ...prev,
+      [itemId]: !prev[itemId],
+    }));
+  }
 
   const categories = useMemo(() => {
     const values = Array.from(
@@ -527,15 +581,35 @@ function MemberAgendaPageInner() {
               <div style={{ display: "grid", gap: 10 }}>
                 {group.items.map((item) => {
                   const itemStatus = getItemStatus(item, now);
-                  const cardStyle = highlightStyle(itemStatus);
+                  const cardStyle = agendaCardStyle(item, itemStatus);
+                  const isPast = itemStatus === "past";
+                  const isExpanded = !isPast || !!expandedPastItems[item.id];
 
                   return (
                     <div
                       key={item.id}
+                      role={isPast ? "button" : undefined}
+                      tabIndex={isPast ? 0 : undefined}
+                      aria-expanded={isPast ? isExpanded : undefined}
+                      onClick={
+                        isPast ? () => togglePastItem(item.id) : undefined
+                      }
+                      onKeyDown={
+                        isPast
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                togglePastItem(item.id);
+                              }
+                            }
+                          : undefined
+                      }
                       style={{
                         ...cardStyle,
                         borderRadius: 10,
-                        padding: 14,
+                        padding: isExpanded ? 14 : "10px 14px",
+                        cursor: isPast ? "pointer" : "default",
+                        opacity: isPast && !isExpanded ? 0.88 : 1,
                       }}
                     >
                       <div
@@ -548,11 +622,18 @@ function MemberAgendaPageInner() {
                         }}
                       >
                         <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontWeight: 800, fontSize: 17 }}>
+                          <div
+                            style={{
+                              fontWeight: 800,
+                              fontSize: 17,
+                              color:
+                                itemStatus === "now" ? "#064e3b" : "#111827",
+                            }}
+                          >
                             {item.title || "Untitled item"}
                           </div>
 
-                          {item.location ? (
+                          {isExpanded && item.location ? (
                             <div
                               style={{
                                 fontSize: 12,
@@ -566,7 +647,7 @@ function MemberAgendaPageInner() {
                             </div>
                           ) : null}
 
-                          {item.description ? (
+                          {isExpanded && item.description ? (
                             <div
                               style={{
                                 marginTop: 8,
@@ -584,7 +665,7 @@ function MemberAgendaPageInner() {
                           style={{
                             textAlign: "right",
                             minWidth: 110,
-                            color: "#111827",
+                            color: itemStatus === "now" ? "#064e3b" : "#111827",
                             fontWeight: 700,
                           }}
                         >
@@ -592,55 +673,73 @@ function MemberAgendaPageInner() {
                         </div>
                       </div>
 
-                      <div
-                        style={{
-                          marginTop: 10,
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          alignItems: "center",
-                        }}
-                      >
-                        {item.category ? (
-                          <span
-                            style={categoryStyle(item.category, item.color)}
-                          >
-                            {item.category}
-                          </span>
-                        ) : null}
+                      {isExpanded ? (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          {item.category ? (
+                            <span
+                              style={categoryStyle(item.category, item.color)}
+                            >
+                              {item.category}
+                            </span>
+                          ) : null}
 
-                        {itemStatus === "now" ? (
-                          <span
-                            style={{
-                              display: "inline-block",
-                              padding: "3px 8px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                              fontWeight: 800,
-                              background: "#dcfce7",
-                              color: "#166534",
-                            }}
-                          >
-                            Happening now
-                          </span>
-                        ) : null}
+                          {itemStatus === "now" ? (
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "3px 8px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                                fontWeight: 800,
+                                background: "#dcfce7",
+                                color: "#166534",
+                              }}
+                            >
+                              Happening now
+                            </span>
+                          ) : null}
 
-                        {itemStatus === "upcoming" ? (
-                          <span
-                            style={{
-                              display: "inline-block",
-                              padding: "3px 8px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                              fontWeight: 800,
-                              background: "#dbeafe",
-                              color: "#1d4ed8",
-                            }}
-                          >
-                            Up next
-                          </span>
-                        ) : null}
-                      </div>
+                          {itemStatus === "upcoming" ? (
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "3px 8px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                                fontWeight: 800,
+                                background: "#dbeafe",
+                                color: "#1d4ed8",
+                              }}
+                            >
+                              Upcoming
+                            </span>
+                          ) : null}
+
+                          {isPast ? (
+                            <span style={{ fontSize: 12, color: "#6b7280" }}>
+                              Tap to collapse
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 12,
+                            color: "#6b7280",
+                          }}
+                        >
+                          Past item · tap to expand
+                        </div>
+                      )}
                     </div>
                   );
                 })}
