@@ -55,12 +55,49 @@ const emptyForm: EventFormState = {
   status: "Draft",
 };
 
+function normalizeEventStatus(status?: string | null) {
+  return String(status || "")
+    .trim()
+    .toLowerCase();
+}
+
+function isActiveEventStatus(status?: string | null) {
+  const normalized = normalizeEventStatus(status);
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    normalized === "inactive" ||
+    normalized === "complete" ||
+    normalized === "completed" ||
+    normalized === "closed" ||
+    normalized === "archived" ||
+    normalized === "draft"
+  ) {
+    return false;
+  }
+
+  return (
+    normalized === "active" ||
+    normalized === "live" ||
+    normalized === "open" ||
+    normalized === "current" ||
+    normalized.includes("active")
+  );
+}
+
 function formatEventLabel(evt: EventRow) {
   const name = evt.name || "Untitled event";
   const dates = [evt.start_date, evt.end_date].filter(Boolean).join(" – ");
   const loc = evt.location || "";
   const status = evt.status || "Draft";
-  return [name, dates, loc, `Status: ${status}`].filter(Boolean).join(" — ");
+  const statusIcon = isActiveEventStatus(evt.status) ? "🟢" : "🟡";
+
+  return [statusIcon, name, dates, loc, `Status: ${status}`]
+    .filter(Boolean)
+    .join(" — ");
 }
 
 function toInputDate(value: string | null | undefined) {
@@ -70,9 +107,7 @@ function toInputDate(value: string | null | undefined) {
 type EventStatusFilter = "active" | "inactive" | "archived" | "draft" | "all";
 
 function filterForStatus(status: string | null | undefined): EventStatusFilter {
-  const normalized = String(status || "Draft")
-    .trim()
-    .toLowerCase();
+  const normalized = normalizeEventStatus(status || "Draft");
 
   if (
     normalized === "active" ||
@@ -214,12 +249,14 @@ function EventAdminPageInner() {
       );
 
       const loadedEvents = accessibleEvents.filter((event) => {
-        const normalizedStatus = String(event.status || "Draft")
-          .trim()
-          .toLowerCase();
+        const normalizedStatus = normalizeEventStatus(event.status || "Draft");
 
         if (eventStatusFilter === "all") {
           return true;
+        }
+
+        if (eventStatusFilter === "active") {
+          return isActiveEventStatus(event.status);
         }
 
         return normalizedStatus === eventStatusFilter;
@@ -385,7 +422,7 @@ function EventAdminPageInner() {
       }
 
       const nextStatus = form.status || "Draft";
-      const nextIsActive = nextStatus === "Active";
+      const nextIsActive = isActiveEventStatus(nextStatus);
 
       const payload = {
         name: form.name.trim(),
@@ -435,7 +472,7 @@ function EventAdminPageInner() {
         setEventStatusFilter(nextFilter);
         setEvents([updatedEvent]);
 
-        if (updatedEvent.status === "Active") {
+        if (isActiveEventStatus(updatedEvent.status)) {
           setWorkingAdminEvent(updatedEvent);
         } else {
           setWorkingAdminEvent(null);
@@ -459,7 +496,7 @@ function EventAdminPageInner() {
         setSelectedEventId(createdEvent.id);
         setEventStatusFilter(filterForStatus(createdEvent.status));
         setEvents([createdEvent]);
-        if (createdEvent.status === "Active") {
+        if (isActiveEventStatus(createdEvent.status)) {
           setWorkingAdminEvent(createdEvent);
         } else {
           setWorkingAdminEvent(null);

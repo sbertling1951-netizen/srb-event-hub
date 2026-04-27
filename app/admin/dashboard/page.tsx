@@ -49,7 +49,9 @@ function formatEventLabel(evt: EventRow) {
   const name = evt.name || "Untitled event";
   const dates = [evt.start_date, evt.end_date].filter(Boolean).join(" – ");
   const loc = evt.location || "";
-  return [name, dates, loc].filter(Boolean).join(" — ");
+  // Status icon logic always shows an icon (green for active, yellow otherwise)
+  const statusIcon = isActiveEventStatus(evt.status) ? "🟢" : "🟡";
+  return [statusIcon, name, dates, loc].filter(Boolean).join(" — ");
 }
 
 function formatEventDateRange(evt: EventRow | null) {
@@ -60,6 +62,38 @@ function formatEventDateRange(evt: EventRow | null) {
     return `${evt.start_date} – ${evt.end_date}`;
   }
   return evt.start_date || evt.end_date || "";
+}
+
+function normalizeEventStatus(status?: string | null) {
+  return String(status || "")
+    .trim()
+    .toLowerCase();
+}
+
+function isActiveEventStatus(status?: string | null) {
+  const normalized = normalizeEventStatus(status);
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    normalized === "inactive" ||
+    normalized === "complete" ||
+    normalized === "completed" ||
+    normalized === "closed" ||
+    normalized === "archived"
+  ) {
+    return false;
+  }
+
+  return (
+    normalized === "active" ||
+    normalized === "live" ||
+    normalized === "open" ||
+    normalized === "current" ||
+    normalized.includes("active")
+  );
 }
 
 function getInitialAdminEvent(): EventRow | null {
@@ -245,7 +279,6 @@ function AdminDashboardPageInner() {
     const { data, error } = await supabase
       .from("events")
       .select("id,name,location,start_date,end_date,status")
-      .neq("status", "Archived")
       .order("start_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false });
 
@@ -253,7 +286,9 @@ function AdminDashboardPageInner() {
       throw error;
     }
 
-    const allEvents = (data || []) as EventRow[];
+    const allEvents = ((data || []) as EventRow[]).filter(
+      (evt) => normalizeEventStatus(evt.status) !== "archived",
+    );
 
     if (!admin) {
       return [];
@@ -346,11 +381,21 @@ function AdminDashboardPageInner() {
       }
 
       const stored = getAdminEvent();
+      const activeEvents = loadedEvents.filter((e) =>
+        isActiveEventStatus(e.status),
+      );
+      const storedEvent = loadedEvents.find((e) => e.id === stored?.id) || null;
+      const currentEvent =
+        loadedEvents.find((e) => e.id === activeEvent?.id) || null;
+
       const preferred =
-        loadedEvents.find((e) => e.id === stored?.id) ||
-        loadedEvents.find((e) => e.id === activeEvent?.id) ||
-        loadedEvents.find((e) => e.status !== "Archived") ||
-        loadedEvents[0];
+        activeEvents.length > 0
+          ? isActiveEventStatus(currentEvent?.status)
+            ? currentEvent
+            : isActiveEventStatus(storedEvent?.status)
+              ? storedEvent
+              : activeEvents[0]
+          : storedEvent || currentEvent || loadedEvents[0];
 
       if (!preferred) {
         setSelectedEventId("");

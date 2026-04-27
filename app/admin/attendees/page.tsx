@@ -127,7 +127,9 @@ type ParticipantTypeFilter =
   | "volunteer"
   | "event_host";
 type ViewMode = "all" | "review";
+type AttendeeSortMode = "last_name" | "site";
 type CommandCenterTab = "attendees" | "reports" | "imports" | "validation";
+
 type SummaryCardItem = {
   label: string;
   value: number;
@@ -144,7 +146,19 @@ type InlineEditState = {
   data_status: string;
 };
 
+type AttendeeCommandCenterPrefs = {
+  search?: string;
+  pageSize?: PageSize;
+  dataStatusFilter?: DataStatusFilter;
+  participantTypeFilter?: ParticipantTypeFilter;
+  viewMode?: ViewMode;
+  attendeeSortMode?: AttendeeSortMode;
+  showResolvedInfo?: boolean;
+  commandCenterTab?: CommandCenterTab;
+};
+
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
+const ATTENDEE_COMMAND_CENTER_PREFS_KEY = "fcoc-attendee-command-center-prefs";
 
 const REVIEW_FIELDS: Array<keyof AttendeeRow> = [
   "membership_number",
@@ -359,6 +373,37 @@ function getStoredAdminEvent(): EventContext | null {
   }
 }
 
+function getStoredAttendeeCommandCenterPrefs(): AttendeeCommandCenterPrefs {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = localStorage.getItem(ATTENDEE_COMMAND_CENTER_PREFS_KEY);
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw) as AttendeeCommandCenterPrefs;
+  } catch {
+    return {};
+  }
+}
+
+function saveAttendeeCommandCenterPrefs(prefs: AttendeeCommandCenterPrefs) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      ATTENDEE_COMMAND_CENTER_PREFS_KEY,
+      JSON.stringify(prefs),
+    );
+  } catch {
+    // Ignore localStorage failures so the page continues to work.
+  }
+}
+
 function fullName(first?: string | null, last?: string | null) {
   return [first, last].filter(Boolean).join(" ").trim();
 }
@@ -551,6 +596,8 @@ function FilterBar(props: {
   setDataStatusFilter: (value: DataStatusFilter) => void;
   participantTypeFilter: ParticipantTypeFilter;
   setParticipantTypeFilter: (value: ParticipantTypeFilter) => void;
+  attendeeSortMode: AttendeeSortMode;
+  setAttendeeSortMode: (value: AttendeeSortMode) => void;
   showResolvedInfo: boolean;
   setShowResolvedInfo: (value: boolean) => void;
 }) {
@@ -565,6 +612,8 @@ function FilterBar(props: {
     setDataStatusFilter,
     participantTypeFilter,
     setParticipantTypeFilter,
+    attendeeSortMode,
+    setAttendeeSortMode,
     showResolvedInfo,
     setShowResolvedInfo,
   } = props;
@@ -614,6 +663,19 @@ function FilterBar(props: {
             <option value="50">50</option>
             <option value="100">100</option>
             <option value="all">Entire List</option>
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Sort</label>
+          <select
+            value={attendeeSortMode}
+            onChange={(e) =>
+              setAttendeeSortMode(e.target.value as AttendeeSortMode)
+            }
+            style={inputStyle}
+          >
+            <option value="last_name">A–Z by Last Name</option>
+            <option value="site">Group by Site</option>
           </select>
         </div>
 
@@ -1712,6 +1774,7 @@ function ValidationRulesEmbedPanel() {
 }
 
 function AdminAttendeesPageInner() {
+  const storedPrefs = getStoredAttendeeCommandCenterPrefs();
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
@@ -1719,14 +1782,25 @@ function AdminAttendeesPageInner() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading review queue...");
-  const [search, setSearch] = useState("");
-  const [pageSize, setPageSize] = useState<PageSize>("25");
-  const [dataStatusFilter, setDataStatusFilter] =
-    useState<DataStatusFilter>("all");
+  const [search, setSearch] = useState(storedPrefs.search || "");
+  const [pageSize, setPageSize] = useState<PageSize>(
+    storedPrefs.pageSize || "25",
+  );
+  const [attendeeSortMode, setAttendeeSortMode] = useState<AttendeeSortMode>(
+    storedPrefs.attendeeSortMode || "last_name",
+  );
+  const [dataStatusFilter, setDataStatusFilter] = useState<DataStatusFilter>(
+    storedPrefs.dataStatusFilter || "all",
+  );
   const [participantTypeFilter, setParticipantTypeFilter] =
-    useState<ParticipantTypeFilter>("all");
-  const [viewMode, setViewMode] = useState<ViewMode>("all");
-  const [showResolvedInfo, setShowResolvedInfo] = useState(true);
+    useState<ParticipantTypeFilter>(storedPrefs.participantTypeFilter || "all");
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    storedPrefs.viewMode || "all",
+  );
+
+  const [showResolvedInfo, setShowResolvedInfo] = useState(
+    storedPrefs.showResolvedInfo ?? true,
+  );
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
@@ -1736,8 +1810,9 @@ function AdminAttendeesPageInner() {
     emptyAttendeeEditorState(),
   );
   const [editorSaving, setEditorSaving] = useState(false);
-  const [commandCenterTab, setCommandCenterTab] =
-    useState<CommandCenterTab>("attendees");
+  const [commandCenterTab, setCommandCenterTab] = useState<CommandCenterTab>(
+    storedPrefs.commandCenterTab || "attendees",
+  );
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   const [inlineEditState, setInlineEditState] = useState<InlineEditState>(
     emptyInlineEditState(),
@@ -1779,16 +1854,59 @@ function AdminAttendeesPageInner() {
         return;
       }
 
-      const event = getStoredAdminEvent();
-      if (!event?.id) {
+      const storedEvent = getStoredAdminEvent();
+
+      // Always load events to validate active status
+      const { data: eventsData, error: eventsError } = await supabase
+        .from("events")
+        .select("id, name, status")
+        .order("start_date", { ascending: false });
+
+      if (eventsError) {
+        console.error("Error loading events:", eventsError);
+      }
+
+      const activeEvents = (eventsData || []).filter(
+        (e: any) => e.status === "active",
+      );
+
+      let eventToUse: EventContext | null = null;
+
+      if (storedEvent?.id) {
+        const matched = (eventsData || []).find(
+          (e: any) => e.id === storedEvent.id,
+        );
+
+        // Only use stored event if it's still active
+        if (matched && matched.status === "active") {
+          eventToUse = storedEvent;
+        }
+      }
+
+      // Fallback to first active event if stored one is inactive
+      if (!eventToUse && activeEvents.length > 0) {
+        const fallback = activeEvents[0];
+        eventToUse = {
+          id: fallback.id,
+          name: fallback.name,
+        };
+
+        // Update localStorage so app stays consistent
+        localStorage.setItem(
+          ADMIN_EVENT_STORAGE_KEY,
+          JSON.stringify(eventToUse),
+        );
+      }
+
+      if (!eventToUse) {
         setCurrentEvent(null);
         setAttendees([]);
-        setStatus("No admin event selected.");
+        setStatus("No active event available.");
         setLoading(false);
         return;
       }
 
-      if (!canAccessEvent(admin, event.id)) {
+      if (!canAccessEvent(admin, eventToUse.id!)) {
         setCurrentEvent(null);
         setAttendees([]);
         setAccessDenied(true);
@@ -1798,8 +1916,8 @@ function AdminAttendeesPageInner() {
         return;
       }
 
-      setCurrentEvent(event);
-      await loadQueue(event.id);
+      setCurrentEvent(eventToUse);
+      await loadQueue(eventToUse.id!);
     }
 
     void init();
@@ -1833,6 +1951,28 @@ function AdminAttendeesPageInner() {
       );
     };
   }, []);
+
+  useEffect(() => {
+    saveAttendeeCommandCenterPrefs({
+      search,
+      pageSize,
+      dataStatusFilter,
+      participantTypeFilter,
+      viewMode,
+      attendeeSortMode,
+      showResolvedInfo,
+      commandCenterTab,
+    });
+  }, [
+    search,
+    pageSize,
+    dataStatusFilter,
+    participantTypeFilter,
+    viewMode,
+    attendeeSortMode,
+    showResolvedInfo,
+    commandCenterTab,
+  ]);
 
   async function loadQueue(eventId: string) {
     try {
@@ -2007,7 +2147,7 @@ function AdminAttendeesPageInner() {
   const filteredAttendees = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    return attendees.filter((row) => {
+    const rows = attendees.filter((row) => {
       const matchesSearch = attendeeMatchesSearch(row, term);
       const statusValue = dataStatusLabel(row.data_status);
       const matchesStatus =
@@ -2021,7 +2161,52 @@ function AdminAttendeesPageInner() {
 
       return matchesSearch && matchesStatus && matchesParticipantType;
     });
-  }, [attendees, search, dataStatusFilter, participantTypeFilter]);
+
+    return [...rows].sort((a, b) => {
+      if (attendeeSortMode === "site") {
+        const siteA = String(a.assigned_site || "ZZZ").trim();
+        const siteB = String(b.assigned_site || "ZZZ").trim();
+
+        return (
+          siteA.localeCompare(siteB, undefined, { numeric: true }) ||
+          String(a.pilot_last || "").localeCompare(
+            String(b.pilot_last || ""),
+            undefined,
+            { sensitivity: "base" },
+          ) ||
+          String(a.pilot_first || "").localeCompare(
+            String(b.pilot_first || ""),
+            undefined,
+            { sensitivity: "base" },
+          )
+        );
+      }
+
+      return (
+        String(a.pilot_last || "").localeCompare(
+          String(b.pilot_last || ""),
+          undefined,
+          { sensitivity: "base" },
+        ) ||
+        String(a.pilot_first || "").localeCompare(
+          String(b.pilot_first || ""),
+          undefined,
+          { sensitivity: "base" },
+        ) ||
+        String(a.assigned_site || "").localeCompare(
+          String(b.assigned_site || ""),
+          undefined,
+          { numeric: true },
+        )
+      );
+    });
+  }, [
+    attendees,
+    search,
+    dataStatusFilter,
+    participantTypeFilter,
+    attendeeSortMode,
+  ]);
 
   const visibleAttendees = useMemo(() => {
     if (pageSize === "all") {
@@ -2462,15 +2647,6 @@ function AdminAttendeesPageInner() {
           >
             Imports
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              window.location.href = "/admin/data-review";
-            }}
-            style={secondaryButtonStyle}
-          >
-            Open Data Review Page
-          </button>
 
           <button
             type="button"
@@ -2612,6 +2788,21 @@ function AdminAttendeesPageInner() {
               </div>
             </div>
           </div>
+          <div>
+            <label style={labelStyle}>Sort</label>
+            <select
+              value={attendeeSortMode}
+              onChange={(e) =>
+                setAttendeeSortMode(e.target.value as AttendeeSortMode)
+              }
+              style={inputStyle}
+            >
+              <option value="last_asc">Last Name A–Z</option>
+              <option value="last_desc">Last Name Z–A</option>
+              <option value="first_asc">First Name A–Z</option>
+              <option value="site_asc">Site Number</option>
+            </select>
+          </div>
 
           <FilterBar
             search={search}
@@ -2624,6 +2815,8 @@ function AdminAttendeesPageInner() {
             setDataStatusFilter={setDataStatusFilter}
             participantTypeFilter={participantTypeFilter}
             setParticipantTypeFilter={setParticipantTypeFilter}
+            attendeeSortMode={attendeeSortMode}
+            setAttendeeSortMode={setAttendeeSortMode}
             showResolvedInfo={showResolvedInfo}
             setShowResolvedInfo={setShowResolvedInfo}
           />

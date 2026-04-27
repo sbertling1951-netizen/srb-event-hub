@@ -1,7 +1,7 @@
 "use client";
 
-import type React from "react";
 import Papa from "papaparse";
+import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
@@ -16,6 +16,7 @@ import { supabase } from "@/lib/supabase";
 
 type AgendaItem = {
   id: string;
+  event_id: string;
   external_id: string | null;
   title: string;
   description: string | null;
@@ -263,7 +264,9 @@ function normalizeImportTimeOnly(value: unknown) {
 }
 
 function yesNoToBool(value: unknown) {
-  const raw = String(value ?? "").trim().toLowerCase();
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
   return raw === "yes" || raw === "y" || raw === "true" || raw === "1";
 }
 
@@ -388,11 +391,16 @@ function AdminAgendaPageInner() {
   const [templates, setTemplates] = useState<AgendaTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [assignedTemplateId, setAssignedTemplateId] = useState("");
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateDescription, setNewTemplateDescription] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [agendaMode, setAgendaMode] = useState<AgendaAdminMode>("items");
-  const [importStatus, setImportStatus] = useState("No agenda import file selected.");
+  const [importStatus, setImportStatus] = useState(
+    "No agenda import file selected.",
+  );
   const [importBusy, setImportBusy] = useState(false);
 
   const loadPage = useCallback(async () => {
@@ -441,7 +449,7 @@ function AdminAgendaPageInner() {
     const { data, error } = await supabase
       .from("agenda_items")
       .select(
-        "id,external_id,title,description,location,speaker,category,color,agenda_date,start_time,end_time,sort_order,is_published,source",
+        "id,event_id,external_id,title,description,location,speaker,category,color,agenda_date,start_time,end_time,sort_order,is_published,source",
       )
       .eq("event_id", selectedEvent.id)
       .order("agenda_date", { ascending: true, nullsFirst: false })
@@ -646,14 +654,24 @@ function AdminAgendaPageInner() {
 
     try {
       if (form.id) {
-        const { error } = await supabase
+        const { data: updatedRows, error } = await supabase
           .from("agenda_items")
           .update(payload)
-          .eq("id", form.id);
+          .eq("id", form.id)
+          .eq("event_id", activeEvent.id)
+          .select("id,title");
 
         if (error) {
           setError(error.message);
           setStatus(`Could not update agenda item: ${error.message}`);
+          return;
+        }
+
+        if (!updatedRows || updatedRows.length === 0) {
+          setError(
+            "No agenda item was updated. This usually means the row is blocked by RLS or does not belong to the selected event.",
+          );
+          setStatus("Agenda item was not saved.");
           return;
         }
 
@@ -698,13 +716,35 @@ function AdminAgendaPageInner() {
   }
 
   async function deleteItem(id: string) {
-    const confirmed = window.confirm("Delete this agenda item?");
+    const itemToDelete = items.find((item) => item.id === id);
+    const itemTitle = itemToDelete?.title || "this agenda item";
+
+    const confirmed = window.confirm(`Delete "${itemTitle}"?`);
     if (!confirmed) {
       return;
     }
-    setError(null);
 
-    const { error } = await supabase.from("agenda_items").delete().eq("id", id);
+    setError(null);
+    setStatus(`Deleting "${itemTitle}"...`);
+
+    console.log("AGENDA DELETE DEBUG start", {
+      id,
+      activeEventId: activeEvent?.id || null,
+      itemEventId: itemToDelete?.event_id || null,
+      itemTitle,
+    });
+
+    const { data: deletedRows, error } = await supabase
+      .from("agenda_items")
+      .delete()
+      .eq("id", id)
+      .select("id,title,event_id");
+
+    console.log("AGENDA DELETE DEBUG result", {
+      id,
+      deletedRows,
+      error,
+    });
 
     if (error) {
       setError(error.message);
@@ -712,12 +752,29 @@ function AdminAgendaPageInner() {
       return;
     }
 
+    if (!deletedRows || deletedRows.length === 0) {
+      const message = [
+        "No agenda item was deleted.",
+        `Item ID: ${id}`,
+        `Item event_id: ${itemToDelete?.event_id || "unknown"}`,
+        `Admin event_id: ${activeEvent?.id || "unknown"}`,
+        "Most likely cause: Supabase RLS does not allow DELETE for this logged-in admin, or this item is stale/mismatched data.",
+      ].join(" ");
+
+      setError(message);
+      setStatus(
+        "Agenda item was not deleted. Check the red error message and browser console.",
+      );
+      return;
+    }
+
     if (form.id === id) {
       setForm(emptyForm);
     }
 
+    setItems((prev) => prev.filter((item) => item.id !== id));
     await loadPage();
-    setStatus("Agenda item deleted.");
+    setStatus(`Deleted "${deletedRows[0]?.title || itemTitle}".`);
   }
 
   async function togglePublished(item: AgendaItem) {
@@ -855,6 +912,107 @@ function AdminAgendaPageInner() {
       templates.find((t) => t.id === selectedTemplateId)?.name || "None";
     setStatus(`Assigned agenda template: ${templateName}.`);
   }
+
+  async function saveCurrentAgendaAsTemplate() {
+    if (!activeEvent?.id) {
+      setStatus("No admin working event selected.");
+      return;
+    }
+
+    const templateName = newTemplateName.trim();
+    const templateDescription = newTemplateDescription.trim();
+
+    if (!templateName) {
+      setStatus(
+        "Enter a template name before saving this agenda as a template.",
+      );
+      return;
+    }
+
+    if (items.length === 0) {
+      setStatus("There are no agenda items to save as a template.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Save the current agenda for ${activeEvent.name} as template "${templateName}"?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setSavingTemplate(true);
+      setError(null);
+      setStatus("Saving agenda template...");
+
+      const { data: insertedTemplate, error: templateError } = await supabase
+        .from("agenda_templates")
+        .insert({
+          name: templateName,
+          description: templateDescription || null,
+          status: "active",
+        })
+        .select("id,name,description,status")
+        .single();
+
+      if (templateError || !insertedTemplate?.id) {
+        throw templateError || new Error("Could not create agenda template.");
+      }
+
+      const templateId = insertedTemplate.id;
+
+      const templateItems = items.map((item, index) => ({
+        template_id: templateId,
+        template_set_id: templateId,
+        external_id:
+          item.external_id ||
+          [
+            "template",
+            templateId,
+            String(index + 1),
+            slugify(item.title || "agenda-item"),
+          ].join("-"),
+        title: item.title || "Untitled item",
+        description: item.description,
+        location: item.location,
+        speaker: item.speaker,
+        category: item.category,
+        color: item.color,
+        agenda_date: item.agenda_date,
+        start_time: item.start_time,
+        end_time: item.end_time,
+        sort_order: item.sort_order ?? index + 1,
+        is_published: item.is_published ?? true,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from("agenda_template_items")
+        .insert(templateItems);
+
+      if (itemsError) {
+        throw itemsError;
+      }
+
+      setTemplates((prev) => [
+        insertedTemplate as AgendaTemplate,
+        ...prev.filter((template) => template.id !== templateId),
+      ]);
+      setSelectedTemplateId(templateId);
+      setNewTemplateName("");
+      setNewTemplateDescription("");
+      setStatus(
+        `Saved "${templateName}" with ${templateItems.length} agenda items.`,
+      );
+    } catch (err: any) {
+      console.error("saveCurrentAgendaAsTemplate error:", err);
+      setError(err?.message || "Could not save agenda template.");
+      setStatus(err?.message || "Could not save agenda template.");
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
   async function copyTemplateToEvent() {
     if (!activeEvent?.id) {
       setStatus("No admin working event selected.");
@@ -972,7 +1130,9 @@ function AdminAgendaPageInner() {
       }
 
       const payloads = rows.map((row, index) => {
-        const title = normalizeImportText(getImportField(row, ["Title", "title"]));
+        const title = normalizeImportText(
+          getImportField(row, ["Title", "title"]),
+        );
         const description = normalizeImportText(
           getImportField(row, ["Description", "description"]),
         );
@@ -1021,7 +1181,9 @@ function AdminAgendaPageInner() {
         const category = normalizeImportText(
           getImportField(row, ["Category", "category"]),
         );
-        const color = normalizeImportText(getImportField(row, ["Color", "color"]));
+        const color = normalizeImportText(
+          getImportField(row, ["Color", "color"]),
+        );
         const published = yesNoToBool(
           getImportField(row, [
             "Published",
@@ -1074,7 +1236,9 @@ function AdminAgendaPageInner() {
         };
       });
 
-      setImportStatus(`Importing ${payloads.length} rows into ${activeEvent.name}...`);
+      setImportStatus(
+        `Importing ${payloads.length} rows into ${activeEvent.name}...`,
+      );
 
       const { error: importError } = await supabase
         .from("agenda_items")
@@ -1131,8 +1295,9 @@ function AdminAgendaPageInner() {
         </button>
       </div>
       <h1>Admin Agenda</h1>
-
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+      <div
+        style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}
+      >
         <button
           type="button"
           onClick={() => setAgendaMode("items")}
@@ -1216,7 +1381,8 @@ function AdminAgendaPageInner() {
               Import Agenda
             </div>
             <div style={{ fontSize: 14, color: "#555" }}>
-              Import CSV or XLSX agenda rows into the selected admin working event.
+              Import CSV or XLSX agenda rows into the selected admin working
+              event.
             </div>
           </div>
 
@@ -1288,7 +1454,6 @@ function AdminAgendaPageInner() {
           </div>
         </div>
       ) : null}
-
       <div
         style={{
           border: "1px solid #ddd",
@@ -1296,41 +1461,103 @@ function AdminAgendaPageInner() {
           background: "white",
           padding: 16,
           display: "grid",
-          gap: 12,
+          gap: 14,
           marginBottom: 20,
         }}
       >
-        <div style={{ fontWeight: 700 }}>Agenda Template</div>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>Agenda Templates</div>
+          <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
+            Save reusable agenda templates, assign one to this event, or copy a
+            saved template into the current event agenda.
+          </div>
+        </div>
 
-        <select
-          value={selectedTemplateId}
-          onChange={(e) => setSelectedTemplateId(e.target.value)}
-          style={{ padding: 8, maxWidth: 420 }}
+        <div
+          style={{
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
+            background: "#f8fafc",
+            padding: 12,
+            display: "grid",
+            gap: 10,
+          }}
         >
-          <option value="">Select template</option>
-          {templates.map((template) => (
-            <option key={template.id} value={template.id}>
-              {template.name}
-            </option>
-          ))}
-        </select>
+          <div style={{ fontWeight: 700 }}>Save Current Agenda as Template</div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" onClick={() => void assignTemplate()}>
-            Assign Template
-          </button>
+          <input
+            value={newTemplateName}
+            onChange={(e) => setNewTemplateName(e.target.value)}
+            placeholder="Template name, e.g. Spring Rally Standard Agenda"
+            style={{ padding: 8, maxWidth: 520 }}
+            disabled={savingTemplate}
+          />
 
-          <button type="button" onClick={() => void copyTemplateToEvent()}>
-            Copy Template to Event
-          </button>
+          <textarea
+            value={newTemplateDescription}
+            onChange={(e) => setNewTemplateDescription(e.target.value)}
+            placeholder="Optional template notes or description"
+            style={{ padding: 8, minHeight: 70, maxWidth: 720 }}
+            disabled={savingTemplate}
+          />
 
-          <button type="button" onClick={() => void replaceEventFromTemplate()}>
-            Replace Event From Template
+          <button
+            type="button"
+            onClick={() => void saveCurrentAgendaAsTemplate()}
+            disabled={savingTemplate || !activeEvent || items.length === 0}
+            style={{ width: "fit-content" }}
+          >
+            {savingTemplate
+              ? "Saving Template..."
+              : "Save Current Agenda as Template"}
           </button>
         </div>
 
-        <div style={{ fontSize: 12, color: "#666" }}>
-          Current assigned template: {assignedTemplateName}
+        <div
+          style={{
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
+            background: "white",
+            padding: 12,
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>Use Saved Template</div>
+
+          <select
+            value={selectedTemplateId}
+            onChange={(e) => setSelectedTemplateId(e.target.value)}
+            style={{ padding: 8, maxWidth: 420 }}
+          >
+            <option value="">Select template</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" onClick={() => void assignTemplate()}>
+              Assign Template to Event
+            </button>
+
+            <button type="button" onClick={() => void copyTemplateToEvent()}>
+              Copy Template Items to Event
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void replaceEventFromTemplate()}
+            >
+              Replace Event Agenda From Template
+            </button>
+          </div>
+
+          <div style={{ fontSize: 12, color: "#666" }}>
+            Current assigned template: {assignedTemplateName}
+          </div>
         </div>
       </div>{" "}
       <div
