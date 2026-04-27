@@ -2535,7 +2535,10 @@ function AdminAttendeesPageInner() {
         showFlash("Attendee record updated.");
       }
 
+      // Close immediately on successful save
       closeAttendeeEditor();
+
+      // Then refresh data in background
       await loadQueue(currentEvent.id);
     } catch (err: any) {
       console.error("handleSaveAttendeeRecord error:", err);
