@@ -1154,10 +1154,13 @@ function AttendeeList(props: {
               attendeeSortMode === "site" && currentSite !== previousSite;
 
             return (
-              <>
+              <div key={attendee.id} style={{ display: "contents" }}>
                 {showSiteHeader ? (
                   <div
                     style={{
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 20,
                       marginTop: index === 0 ? 0 : 8,
                       padding: "8px 10px",
                       borderRadius: 10,
@@ -1166,6 +1169,7 @@ function AttendeeList(props: {
                       color: "#3730a3",
                       fontWeight: 800,
                       fontSize: 14,
+                      boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
                     }}
                   >
                     Site {currentSite}
@@ -1474,7 +1478,7 @@ function AttendeeList(props: {
                     </div>
                   ) : null}
                 </div>
-              </>
+              </div>
             );
           })}
         </div>
