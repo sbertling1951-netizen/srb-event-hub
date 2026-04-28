@@ -1532,17 +1532,17 @@ function AttendeeEditorModal(props: {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 20,
+        padding: 12,
         zIndex: 2000,
       }}
     >
       <div
         className="card"
         style={{
-          width: "min(980px, 100%)",
-          maxHeight: "90vh",
+          width: "min(1120px, 100%)",
+          maxHeight: "96vh",
           overflowY: "auto",
-          padding: 18,
+          padding: 0,
           background: "white",
           borderRadius: 14,
         }}
@@ -1553,7 +1553,8 @@ function AttendeeEditorModal(props: {
             justifyContent: "space-between",
             gap: 12,
             alignItems: "center",
-            marginBottom: 14,
+            padding: 18,
+            borderBottom: "1px solid #eee",
           }}
         >
           <div>
@@ -1568,185 +1569,200 @@ function AttendeeEditorModal(props: {
                 : "Update this attendee record."}
             </div>
           </div>
+        </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            style={secondaryButtonStyle}
-            disabled={saving}
+        <div style={{ padding: 18 }}>
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
           >
-            Close
-          </button>
+            {textFields.map((field) => (
+              <div key={String(field.key)}>
+                <label style={labelStyle}>{field.label}</label>
+                <input
+                  value={String(state[field.key] ?? "")}
+                  onChange={(e) =>
+                    onChange(
+                      field.key,
+                      field.key === "membership_number"
+                        ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
+                        : (e.target
+                            .value as AttendeeEditorState[typeof field.key]),
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </div>
+            ))}
+
+            <div>
+              <label style={labelStyle}>Participant Type</label>
+              <select
+                value={state.participant_type}
+                onChange={(e) => onChange("participant_type", e.target.value)}
+                style={inputStyle}
+              >
+                {PARTICIPANT_TYPE_OPTIONS.filter(
+                  (option) => option !== "all",
+                ).map((option) => (
+                  <option key={option} value={option}>
+                    {participantTypeLabel(option)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Data Status</label>
+              <select
+                value={state.data_status}
+                onChange={(e) => onChange("data_status", e.target.value)}
+                style={inputStyle}
+              >
+                {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
+                  (option) => (
+                    <option key={option} value={option}>
+                      {dataStatusOptionLabel(option)}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <label style={labelStyle}>Special Events Raw</label>
+            <textarea
+              value={state.special_events_raw}
+              onChange={(e) => onChange("special_events_raw", e.target.value)}
+              style={textareaStyle}
+              rows={3}
+            />
+          </div>
+
+          <div
+            style={{
+              marginTop: 14,
+              display: "grid",
+              gap: 8,
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            }}
+          >
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.wants_to_volunteer}
+                onChange={(e) =>
+                  onChange("wants_to_volunteer", e.target.checked)
+                }
+              />
+              Volunteer
+            </label>
+
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.is_first_timer}
+                onChange={(e) => onChange("is_first_timer", e.target.checked)}
+              />
+              First Timer
+            </label>
+
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.has_arrived}
+                onChange={(e) => onChange("has_arrived", e.target.checked)}
+              />
+              Has Arrived
+            </label>
+
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.share_with_attendees}
+                onChange={(e) =>
+                  onChange("share_with_attendees", e.target.checked)
+                }
+              />
+              Share With Attendees
+            </label>
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.include_in_headcount}
+                onChange={(e) =>
+                  onChange("include_in_headcount", e.target.checked)
+                }
+              />
+              Include In Headcount
+            </label>
+
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.needs_name_tag}
+                onChange={(e) => onChange("needs_name_tag", e.target.checked)}
+              />
+              Needs Name Tag
+            </label>
+
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.needs_coach_plate}
+                onChange={(e) =>
+                  onChange("needs_coach_plate", e.target.checked)
+                }
+              />
+              Needs Coach Plate
+            </label>
+
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.needs_parking}
+                onChange={(e) => onChange("needs_parking", e.target.checked)}
+              />
+              Needs Parking
+            </label>
+
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.is_active}
+                onChange={(e) => onChange("is_active", e.target.checked)}
+              />
+              Active Record
+            </label>
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <label style={labelStyle}>Notes</label>
+            <textarea
+              value={state.notes}
+              onChange={(e) => onChange("notes", e.target.value)}
+              style={textareaStyle}
+              rows={4}
+            />
+          </div>
         </div>
 
         <div
           style={{
-            display: "grid",
-            gap: 14,
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            position: "sticky",
+            bottom: 0,
+            zIndex: 5,
+            padding: 18,
+            borderTop: "1px solid #eee",
+            background: "white",
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
           }}
-        >
-          {textFields.map((field) => (
-            <div key={String(field.key)}>
-              <label style={labelStyle}>{field.label}</label>
-              <input
-                value={String(state[field.key] ?? "")}
-                onChange={(e) =>
-                  onChange(
-                    field.key,
-                    field.key === "membership_number"
-                      ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
-                      : (e.target
-                          .value as AttendeeEditorState[typeof field.key]),
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-          ))}
-
-          <div>
-            <label style={labelStyle}>Participant Type</label>
-            <select
-              value={state.participant_type}
-              onChange={(e) => onChange("participant_type", e.target.value)}
-              style={inputStyle}
-            >
-              {PARTICIPANT_TYPE_OPTIONS.filter(
-                (option) => option !== "all",
-              ).map((option) => (
-                <option key={option} value={option}>
-                  {participantTypeLabel(option)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label style={labelStyle}>Data Status</label>
-            <select
-              value={state.data_status}
-              onChange={(e) => onChange("data_status", e.target.value)}
-              style={inputStyle}
-            >
-              {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
-                (option) => (
-                  <option key={option} value={option}>
-                    {dataStatusOptionLabel(option)}
-                  </option>
-                ),
-              )}
-            </select>
-          </div>
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <label style={labelStyle}>Special Events Raw</label>
-          <textarea
-            value={state.special_events_raw}
-            onChange={(e) => onChange("special_events_raw", e.target.value)}
-            style={textareaStyle}
-            rows={3}
-          />
-        </div>
-
-        <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.wants_to_volunteer}
-              onChange={(e) => onChange("wants_to_volunteer", e.target.checked)}
-            />
-            Volunteer
-          </label>
-
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.is_first_timer}
-              onChange={(e) => onChange("is_first_timer", e.target.checked)}
-            />
-            First Timer
-          </label>
-
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.has_arrived}
-              onChange={(e) => onChange("has_arrived", e.target.checked)}
-            />
-            Has Arrived
-          </label>
-
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.share_with_attendees}
-              onChange={(e) =>
-                onChange("share_with_attendees", e.target.checked)
-              }
-            />
-            Share With Attendees
-          </label>
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.include_in_headcount}
-              onChange={(e) =>
-                onChange("include_in_headcount", e.target.checked)
-              }
-            />
-            Include In Headcount
-          </label>
-
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.needs_name_tag}
-              onChange={(e) => onChange("needs_name_tag", e.target.checked)}
-            />
-            Needs Name Tag
-          </label>
-
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.needs_coach_plate}
-              onChange={(e) => onChange("needs_coach_plate", e.target.checked)}
-            />
-            Needs Coach Plate
-          </label>
-
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.needs_parking}
-              onChange={(e) => onChange("needs_parking", e.target.checked)}
-            />
-            Needs Parking
-          </label>
-
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.is_active}
-              onChange={(e) => onChange("is_active", e.target.checked)}
-            />
-            Active Record
-          </label>
-        </div>
-
-        <div style={{ marginTop: 14 }}>
-          <label style={labelStyle}>Notes</label>
-          <textarea
-            value={state.notes}
-            onChange={(e) => onChange("notes", e.target.value)}
-            style={textareaStyle}
-            rows={4}
-          />
-        </div>
-
-        <div
-          style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}
         >
           <button
             type="button"
@@ -1767,7 +1783,7 @@ function AttendeeEditorModal(props: {
             style={secondaryButtonStyle}
             disabled={saving}
           >
-            Cancel
+            Close
           </button>
         </div>
       </div>
@@ -2588,6 +2604,104 @@ function AdminAttendeesPageInner() {
         showFlash("Attendee record updated.");
       }
 
+      if (editorMode === "edit" && viewMode === "review") {
+        const savedAttendeeId = editorState.id;
+        const updatedAttendees = attendees.map((row) =>
+          row.id === savedAttendeeId
+            ? {
+                ...row,
+                entry_id: payload.entry_id,
+                pilot_first: payload.pilot_first,
+                pilot_last: payload.pilot_last,
+                copilot_first: payload.copilot_first,
+                copilot_last: payload.copilot_last,
+                nickname: payload.nickname,
+                copilot_nickname: payload.copilot_nickname,
+                email: payload.email,
+                membership_number: payload.membership_number,
+                city: payload.city,
+                state: payload.state,
+                assigned_site: payload.assigned_site,
+                participant_type: payload.participant_type,
+                primary_phone: payload.primary_phone,
+                cell_phone: payload.cell_phone,
+                coach_manufacturer: payload.coach_manufacturer,
+                coach_model: payload.coach_model,
+                special_events_raw: payload.special_events_raw,
+                wants_to_volunteer: payload.wants_to_volunteer,
+                is_first_timer: payload.is_first_timer,
+                has_arrived: payload.has_arrived,
+                share_with_attendees: payload.share_with_attendees,
+                is_active: payload.is_active,
+                include_in_headcount: payload.include_in_headcount,
+                needs_name_tag: payload.needs_name_tag,
+                needs_coach_plate: payload.needs_coach_plate,
+                needs_parking: payload.needs_parking,
+                data_status: payload.data_status,
+                notes: payload.notes,
+              }
+            : row,
+        );
+
+        const remainingReviewItems = sortReviewItems(
+          updatedAttendees.flatMap((attendee) => {
+            const issues = REVIEW_FIELDS.flatMap((field) => {
+              const result = validateField(
+                field,
+                attendee[field] as string | null | undefined,
+                rules,
+                currentEvent.id,
+              );
+              if (!result) {
+                return [];
+              }
+
+              return [
+                {
+                  field,
+                  issue: result.issue,
+                  severity: result.severity,
+                } satisfies ReviewFieldIssue,
+              ];
+            });
+
+            if (!issues.length) {
+              return [];
+            }
+
+            const severity: ReviewSeverity = issues.some(
+              (issue) => issue.severity === "error",
+            )
+              ? "error"
+              : "warning";
+
+            return [
+              {
+                id: attendee.id,
+                attendee,
+                issues,
+                severity,
+              } satisfies ReviewItem,
+            ];
+          }),
+        ).filter((item) => item.attendee.id !== savedAttendeeId);
+
+        const nextReviewItem = remainingReviewItems[0];
+
+        if (nextReviewItem) {
+          setEditorState(attendeeToEditorState(nextReviewItem.attendee));
+          setEditorMode("edit");
+          setEditorOpen(true);
+          showFlash("Saved. Next review record loaded.");
+        } else {
+          closeAttendeeEditor();
+          showFlash("Saved. Review queue is clear.");
+        }
+
+        await loadQueue(currentEvent.id);
+        return;
+      }
+
       // Close immediately on successful save
       closeAttendeeEditor();
 
@@ -2775,7 +2889,15 @@ function AdminAttendeesPageInner() {
         <>
           <QuickActionBar
             onAddAttendee={openCreateAttendeeEditor}
-            onSetReviewMode={() => setViewMode("review")}
+            onSetReviewMode={() => {
+              setViewMode("review");
+              const firstReviewItem = filteredReviewItems[0];
+              if (firstReviewItem) {
+                openEditAttendeeEditor(firstReviewItem.attendee);
+              } else {
+                showFlash("No attendee records need review.");
+              }
+            }}
             onSetAllMode={() => setViewMode("all")}
             onRefresh={() => {
               if (currentEvent?.id) {
@@ -2917,7 +3039,17 @@ function AdminAttendeesPageInner() {
             search={search}
             setSearch={setSearch}
             viewMode={viewMode}
-            setViewMode={setViewMode}
+            setViewMode={(nextViewMode) => {
+              setViewMode(nextViewMode);
+              if (nextViewMode === "review") {
+                const firstReviewItem = filteredReviewItems[0];
+                if (firstReviewItem) {
+                  openEditAttendeeEditor(firstReviewItem.attendee);
+                } else {
+                  showFlash("No attendee records need review.");
+                }
+              }
+            }}
             pageSize={pageSize}
             setPageSize={setPageSize}
             dataStatusFilter={dataStatusFilter}
