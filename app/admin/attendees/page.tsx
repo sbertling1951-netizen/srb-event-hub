@@ -1091,6 +1091,7 @@ function AttendeeList(props: {
   inlineEditState: InlineEditState;
   inlineSaving: boolean;
   recentlySavedId: string | null;
+  attendeeSortMode: AttendeeSortMode;
   onOpenEdit: (attendee: AttendeeRow) => void;
   onStartInlineEdit: (attendee: AttendeeRow) => void;
   onCancelInlineEdit: () => void;
@@ -1107,6 +1108,7 @@ function AttendeeList(props: {
     inlineEditState,
     inlineSaving,
     recentlySavedId,
+    attendeeSortMode,
     onOpenEdit,
     onStartInlineEdit,
     onCancelInlineEdit,
@@ -1134,309 +1136,345 @@ function AttendeeList(props: {
         </div>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
-          {visibleAttendees.map((attendee) => {
+          {visibleAttendees.map((attendee, index) => {
             const attendeeIssues = reviewItems.find(
               (item) => item.attendee.id === attendee.id,
             );
             const isInlineEditing = inlineEditId === attendee.id;
+            const currentSite =
+              String(attendee.assigned_site || "Unassigned").trim() ||
+              "Unassigned";
+            const previousAttendee =
+              index > 0 ? visibleAttendees[index - 1] : null;
+            const previousSite = previousAttendee
+              ? String(previousAttendee.assigned_site || "Unassigned").trim() ||
+                "Unassigned"
+              : null;
+            const showSiteHeader =
+              attendeeSortMode === "site" && currentSite !== previousSite;
 
             return (
-              <div
-                key={attendee.id}
-                style={{
-                  border:
-                    attendee.id === recentlySavedId
-                      ? "1px solid #86efac"
-                      : "1px solid #ddd",
-                  borderRadius: 12,
-                  padding: 14,
-                  background:
-                    attendee.id === recentlySavedId ? "#f0fdf4" : "white",
-                  transition: "background 0.2s ease, border-color 0.2s ease",
-                }}
-              >
+              <>
+                {showSiteHeader ? (
+                  <div
+                    style={{
+                      marginTop: index === 0 ? 0 : 8,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      background: "#eef2ff",
+                      border: "1px solid #c7d2fe",
+                      color: "#3730a3",
+                      fontWeight: 800,
+                      fontSize: 14,
+                    }}
+                  >
+                    Site {currentSite}
+                  </div>
+                ) : null}
+
                 <div
+                  key={attendee.id}
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    marginBottom: 10,
+                    border:
+                      attendee.id === recentlySavedId
+                        ? "1px solid #86efac"
+                        : "1px solid #ddd",
+                    borderRadius: 12,
+                    padding: 14,
+                    background:
+                      attendee.id === recentlySavedId ? "#f0fdf4" : "white",
+                    transition: "background 0.2s ease, border-color 0.2s ease",
                   }}
                 >
-                  <div>
-                    {isInlineEditing ? (
-                      <div
-                        style={{
-                          display: "grid",
-                          gap: 10,
-                          gridTemplateColumns:
-                            "repeat(auto-fit, minmax(180px, 1fr))",
-                          marginBottom: 8,
-                        }}
-                      >
-                        <div>
-                          <label style={labelStyle}>Pilot First</label>
-                          <input
-                            value={inlineEditState.pilot_first}
-                            onChange={(e) =>
-                              onInlineEditChange("pilot_first", e.target.value)
-                            }
-                            style={inputStyle}
-                            disabled={inlineSaving}
-                          />
-                        </div>
-                        <div>
-                          <label style={labelStyle}>Pilot Last</label>
-                          <input
-                            value={inlineEditState.pilot_last}
-                            onChange={(e) =>
-                              onInlineEditChange("pilot_last", e.target.value)
-                            }
-                            style={inputStyle}
-                            disabled={inlineSaving}
-                          />
-                        </div>
-                        <div>
-                          <label style={labelStyle}>Email</label>
-                          <input
-                            value={inlineEditState.email}
-                            onChange={(e) =>
-                              onInlineEditChange("email", e.target.value)
-                            }
-                            style={inputStyle}
-                            disabled={inlineSaving}
-                          />
-                        </div>
-                        <div>
-                          <label style={labelStyle}>Membership Number</label>
-                          <input
-                            value={inlineEditState.membership_number}
-                            onChange={(e) =>
-                              onInlineEditChange(
-                                "membership_number",
-                                e.target.value.toUpperCase(),
-                              )
-                            }
-                            style={inputStyle}
-                            disabled={inlineSaving}
-                          />
-                        </div>
-                        <div>
-                          <label style={labelStyle}>Assigned Site</label>
-                          <input
-                            value={inlineEditState.assigned_site}
-                            onChange={(e) =>
-                              onInlineEditChange(
-                                "assigned_site",
-                                e.target.value,
-                              )
-                            }
-                            style={inputStyle}
-                            disabled={inlineSaving}
-                          />
-                        </div>
-                        <div>
-                          <label style={labelStyle}>Participant Type</label>
-                          <select
-                            value={inlineEditState.participant_type}
-                            onChange={(e) =>
-                              onInlineEditChange(
-                                "participant_type",
-                                e.target.value,
-                              )
-                            }
-                            style={inputStyle}
-                            disabled={inlineSaving}
-                          >
-                            {PARTICIPANT_TYPE_OPTIONS.filter(
-                              (option) => option !== "all",
-                            ).map((option) => (
-                              <option key={option} value={option}>
-                                {participantTypeLabel(option)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={labelStyle}>Data Status</label>
-                          <select
-                            value={inlineEditState.data_status}
-                            onChange={(e) =>
-                              onInlineEditChange("data_status", e.target.value)
-                            }
-                            style={inputStyle}
-                            disabled={inlineSaving}
-                          >
-                            {DATA_STATUS_OPTIONS.filter(
-                              (option) => option !== "all",
-                            ).map((option) => (
-                              <option key={option} value={option}>
-                                {dataStatusOptionLabel(option)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div style={{ fontWeight: 800, fontSize: 16 }}>
-                          {displayPilotName(attendee)}
-                          {displayCopilotName(attendee)
-                            ? ` / ${displayCopilotName(attendee)}`
-                            : ""}
-                        </div>
-
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div>
+                      {isInlineEditing ? (
                         <div
                           style={{
-                            display: "flex",
-                            gap: 8,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                            fontSize: 13,
-                            color: "#555",
-                            marginTop: 4,
+                            display: "grid",
+                            gap: 10,
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(180px, 1fr))",
+                            marginBottom: 8,
                           }}
                         >
-                          <span
-                            style={participantTypeBadgeStyle(
-                              attendee.participant_type,
-                            )}
-                          >
-                            {participantTypeLabel(attendee.participant_type)}
-                          </span>
-                          {attendee.email ? (
-                            <span>{attendee.email}</span>
-                          ) : null}
-                          {attendee.assigned_site ? (
-                            <span>{`Site ${attendee.assigned_site}`}</span>
-                          ) : null}
-                          {cityState(attendee) ? (
-                            <span>{cityState(attendee)}</span>
-                          ) : null}
+                          <div>
+                            <label style={labelStyle}>Pilot First</label>
+                            <input
+                              value={inlineEditState.pilot_first}
+                              onChange={(e) =>
+                                onInlineEditChange(
+                                  "pilot_first",
+                                  e.target.value,
+                                )
+                              }
+                              style={inputStyle}
+                              disabled={inlineSaving}
+                            />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Pilot Last</label>
+                            <input
+                              value={inlineEditState.pilot_last}
+                              onChange={(e) =>
+                                onInlineEditChange("pilot_last", e.target.value)
+                              }
+                              style={inputStyle}
+                              disabled={inlineSaving}
+                            />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Email</label>
+                            <input
+                              value={inlineEditState.email}
+                              onChange={(e) =>
+                                onInlineEditChange("email", e.target.value)
+                              }
+                              style={inputStyle}
+                              disabled={inlineSaving}
+                            />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Membership Number</label>
+                            <input
+                              value={inlineEditState.membership_number}
+                              onChange={(e) =>
+                                onInlineEditChange(
+                                  "membership_number",
+                                  e.target.value.toUpperCase(),
+                                )
+                              }
+                              style={inputStyle}
+                              disabled={inlineSaving}
+                            />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Assigned Site</label>
+                            <input
+                              value={inlineEditState.assigned_site}
+                              onChange={(e) =>
+                                onInlineEditChange(
+                                  "assigned_site",
+                                  e.target.value,
+                                )
+                              }
+                              style={inputStyle}
+                              disabled={inlineSaving}
+                            />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Participant Type</label>
+                            <select
+                              value={inlineEditState.participant_type}
+                              onChange={(e) =>
+                                onInlineEditChange(
+                                  "participant_type",
+                                  e.target.value,
+                                )
+                              }
+                              style={inputStyle}
+                              disabled={inlineSaving}
+                            >
+                              {PARTICIPANT_TYPE_OPTIONS.filter(
+                                (option) => option !== "all",
+                              ).map((option) => (
+                                <option key={option} value={option}>
+                                  {participantTypeLabel(option)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Data Status</label>
+                            <select
+                              value={inlineEditState.data_status}
+                              onChange={(e) =>
+                                onInlineEditChange(
+                                  "data_status",
+                                  e.target.value,
+                                )
+                              }
+                              style={inputStyle}
+                              disabled={inlineSaving}
+                            >
+                              {DATA_STATUS_OPTIONS.filter(
+                                (option) => option !== "all",
+                              ).map((option) => (
+                                <option key={option} value={option}>
+                                  {dataStatusOptionLabel(option)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 800, fontSize: 16 }}>
+                            {displayPilotName(attendee)}
+                            {displayCopilotName(attendee)
+                              ? ` / ${displayCopilotName(attendee)}`
+                              : ""}
+                          </div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                              fontSize: 13,
+                              color: "#555",
+                              marginTop: 4,
+                            }}
+                          >
+                            <span
+                              style={participantTypeBadgeStyle(
+                                attendee.participant_type,
+                              )}
+                            >
+                              {participantTypeLabel(attendee.participant_type)}
+                            </span>
+                            {attendee.email ? (
+                              <span>{attendee.email}</span>
+                            ) : null}
+                            {attendee.assigned_site ? (
+                              <span>{`Site ${attendee.assigned_site}`}</span>
+                            ) : null}
+                            {cityState(attendee) ? (
+                              <span>{cityState(attendee)}</span>
+                            ) : null}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <span style={secondaryBadgeStyle}>
+                        {isInlineEditing
+                          ? dataStatusLabel(inlineEditState.data_status)
+                          : dataStatusLabel(attendee.data_status)}
+                      </span>
+                      {attendeeIssues ? (
+                        <span style={issueBadgeStyle}>
+                          {attendeeIssues.issues.length} issue
+                          {attendeeIssues.issues.length === 1 ? "" : "s"}
+                        </span>
+                      ) : (
+                        <span
+                          style={
+                            attendee.id === recentlySavedId
+                              ? savedBadgeStyle
+                              : okBadgeStyle
+                          }
+                        >
+                          {attendee.id === recentlySavedId ? "Saved" : "OK"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {isInlineEditing ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void onSaveInlineEdit()}
+                          style={primaryButtonStyle}
+                          disabled={inlineSaving}
+                        >
+                          {inlineSaving ? "Saving..." : "Save Quick Edit"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={onCancelInlineEdit}
+                          style={secondaryButtonStyle}
+                          disabled={inlineSaving}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onOpenEdit(attendee)}
+                          style={secondaryButtonStyle}
+                          disabled={inlineSaving}
+                        >
+                          Full Edit
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onStartInlineEdit(attendee)}
+                          style={secondaryButtonStyle}
+                        >
+                          Quick Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onOpenEdit(attendee)}
+                          style={secondaryButtonStyle}
+                        >
+                          Edit Record
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void onUpdateDataStatus(attendee.id, "reviewed")
+                          }
+                          style={secondaryButtonStyle}
+                        >
+                          Mark Reviewed
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void onUpdateDataStatus(attendee.id, "locked")
+                          }
+                          style={secondaryButtonStyle}
+                        >
+                          Lock Record
+                        </button>
                       </>
                     )}
                   </div>
 
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <span style={secondaryBadgeStyle}>
-                      {isInlineEditing
-                        ? dataStatusLabel(inlineEditState.data_status)
-                        : dataStatusLabel(attendee.data_status)}
-                    </span>
-                    {attendeeIssues ? (
-                      <span style={issueBadgeStyle}>
-                        {attendeeIssues.issues.length} issue
-                        {attendeeIssues.issues.length === 1 ? "" : "s"}
-                      </span>
-                    ) : (
-                      <span
-                        style={
-                          attendee.id === recentlySavedId
-                            ? savedBadgeStyle
-                            : okBadgeStyle
-                        }
-                      >
-                        {attendee.id === recentlySavedId ? "Saved" : "OK"}
-                      </span>
-                    )}
-                  </div>
+                  {attendeeIssues ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        background: "#fff7ed",
+                        border: "1px solid #fed7aa",
+                        fontSize: 13,
+                      }}
+                    >
+                      {attendeeIssues.issues.map((issue, index) => (
+                        <div key={`${attendee.id}-${issue.field}-${index}`}>
+                          <strong>{reviewFieldLabel(issue.field)}:</strong>{" "}
+                          {issue.issue}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-
-                <div
-                  style={{
-                    marginTop: 12,
-                    display: "flex",
-                    gap: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {isInlineEditing ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void onSaveInlineEdit()}
-                        style={primaryButtonStyle}
-                        disabled={inlineSaving}
-                      >
-                        {inlineSaving ? "Saving..." : "Save Quick Edit"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={onCancelInlineEdit}
-                        style={secondaryButtonStyle}
-                        disabled={inlineSaving}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onOpenEdit(attendee)}
-                        style={secondaryButtonStyle}
-                        disabled={inlineSaving}
-                      >
-                        Full Edit
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => onStartInlineEdit(attendee)}
-                        style={secondaryButtonStyle}
-                      >
-                        Quick Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onOpenEdit(attendee)}
-                        style={secondaryButtonStyle}
-                      >
-                        Edit Record
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void onUpdateDataStatus(attendee.id, "reviewed")
-                        }
-                        style={secondaryButtonStyle}
-                      >
-                        Mark Reviewed
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void onUpdateDataStatus(attendee.id, "locked")
-                        }
-                        style={secondaryButtonStyle}
-                      >
-                        Lock Record
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {attendeeIssues ? (
-                  <div
-                    style={{
-                      marginTop: 12,
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      background: "#fff7ed",
-                      border: "1px solid #fed7aa",
-                      fontSize: 13,
-                    }}
-                  >
-                    {attendeeIssues.issues.map((issue, index) => (
-                      <div key={`${attendee.id}-${issue.field}-${index}`}>
-                        <strong>{reviewFieldLabel(issue.field)}:</strong>{" "}
-                        {issue.issue}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
+              </>
             );
           })}
         </div>
@@ -2217,8 +2255,19 @@ function AdminAttendeesPageInner() {
 
     return [...rows].sort((a, b) => {
       if (attendeeSortMode === "site") {
-        const siteA = String(a.assigned_site || "ZZZ").trim();
-        const siteB = String(b.assigned_site || "ZZZ").trim();
+        const siteA = a.assigned_site?.trim();
+        const siteB = b.assigned_site?.trim();
+
+        // push unassigned to bottom
+        if (!siteA && !siteB) {
+          return 0;
+        }
+        if (!siteA) {
+          return 1;
+        }
+        if (!siteB) {
+          return -1;
+        }
 
         return (
           siteA.localeCompare(siteB, undefined, { numeric: true }) ||
@@ -2886,6 +2935,7 @@ function AdminAttendeesPageInner() {
             inlineEditState={inlineEditState}
             inlineSaving={inlineSaving}
             recentlySavedId={recentlySavedId}
+            attendeeSortMode={attendeeSortMode}
             onOpenEdit={openEditAttendeeEditor}
             onStartInlineEdit={startInlineEdit}
             onCancelInlineEdit={cancelInlineEdit}
