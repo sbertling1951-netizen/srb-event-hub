@@ -17,25 +17,60 @@ function getSupabaseAdmin() {
   });
 }
 
-export async function POST() {
-  const supabase = getSupabaseAdmin();
+export async function POST(req: Request) {
+  try {
+    const supabase = getSupabaseAdmin();
 
-  if (!supabase) {
+    if (!supabase) {
+      return NextResponse.json(
+        { error: "Missing Supabase environment variables." },
+        { status: 500 },
+      );
+    }
+
+    const { email, password } = await req.json();
+
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: "Email and password are required." },
+        { status: 400 },
+      );
+    }
+
+    // Find user by email
+    const { data: usersData, error: listError } =
+      await supabase.auth.admin.listUsers();
+
+    if (listError) {
+      return NextResponse.json({ error: listError.message }, { status: 400 });
+    }
+
+    const user = usersData.users.find((u) => u.email === email);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "User not found in auth system." },
+        { status: 404 },
+      );
+    }
+
+    // Update password
+    const { error: updateError } = await supabase.auth.admin.updateUserById(
+      user.id,
+      {
+        password,
+      },
+    );
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
     return NextResponse.json(
-      { error: "Missing Supabase environment variables." },
+      { error: err.message || "Server error." },
       { status: 500 },
     );
   }
-
-  const userId = "4180a4b6-334f-4daf-8111-ad2721b0c75e"; // fcoceventhost
-
-  const { error } = await supabase.auth.admin.updateUserById(userId, {
-    password: "admin123",
-  });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
-  return NextResponse.json({ success: true });
 }

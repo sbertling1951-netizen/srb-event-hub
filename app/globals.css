@@ -17,6 +17,7 @@ body {
   background: #f3f4f6;
   overflow-x: hidden;
 }
+
 body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -49,7 +50,8 @@ body {
 .app-inner {
   width: 100%;
   max-width: 1200px;
-  margin: 0 auto; /* ← CRITICAL FIX */
+  margin: 0 auto;
+  /* ← CRITICAL FIX */
 }
 
 /* Header card */
@@ -130,7 +132,8 @@ select {
 /* ===== DESKTOP SIDEBAR OFFSET ===== */
 @media (min-width: 900px) {
   .app-main {
-    padding-left: 276px; /* sidebar width + spacing */
+    padding-left: 276px;
+    /* sidebar width + spacing */
   }
 }
 
@@ -180,4 +183,38 @@ div {
     max-width: 1200px !important;
     margin: 0 auto !important;
   }
+}
+
+
+/* ===== EMBEDDED ADMIN MODE ===== */
+/* Used by /admin/... pages opened with ?embedded=1 inside Attendee Management. */
+html.admin-embedded-mode,
+body.admin-embedded-mode {
+  background: transparent !important;
+}
+
+/* Hide the embedded page's own direct shell/sidebar, but keep its main content. */
+body.admin-embedded-mode> :not(.app-main):not(script):not(style) {
+  display: none !important;
+}
+
+body.admin-embedded-mode .app-main {
+  margin-left: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+}
+
+body.admin-embedded-mode .app-inner {
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+body.admin-embedded-mode .app-header-card {
+  display: none !important;
+}
+
+body.admin-embedded-mode .card:first-child {
+  margin-top: 0 !important;
 }
