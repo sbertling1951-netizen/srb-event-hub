@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import {
   type CSSProperties,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -331,6 +332,27 @@ function saveStoredReportPresets(presets: ReportPreset[]) {
 
 export default function AdminReportsPage() {
   return (
+    <Suspense
+      fallback={
+        <div className="card" style={{ padding: 18 }}>
+          Loading reports...
+        </div>
+      }
+    >
+      <AdminReportsPageContent />
+    </Suspense>
+  );
+}
+
+function AdminReportsPageContent() {
+  const searchParams = useSearchParams();
+  const isEmbedded = searchParams.get("embedded") === "1";
+
+  if (isEmbedded) {
+    return <AdminReportsPageInner />;
+  }
+
+  return (
     <AdminRouteGuard requiredPermission="can_manage_reports">
       <AdminReportsPageInner />
     </AdminRouteGuard>
@@ -364,6 +386,18 @@ function AdminReportsPageInner() {
   >("parking_ops");
 
   const isEmbedded = searchParams.get("embedded") === "1";
+
+  useEffect(() => {
+    if (!isEmbedded) {
+      return;
+    }
+
+    document.body.classList.add("admin-embedded-shell");
+
+    return () => {
+      document.body.classList.remove("admin-embedded-shell");
+    };
+  }, [isEmbedded]);
 
   function resetPageState() {
     setCurrentEvent(null);
@@ -1850,6 +1884,25 @@ function ReportsPrintStyles() {
     const style = document.createElement("style");
     style.id = "print-styles";
     style.innerHTML = `
+      body.admin-embedded-shell > :first-child {
+        display: none !important;
+      }
+
+      body.admin-embedded-shell .app-main {
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+
+      body.admin-embedded-shell .app-inner {
+        max-width: 100% !important;
+        padding: 0 !important;
+      }
+
+      body.admin-embedded-shell .app-header-card {
+        display: none !important;
+      }
+
       @media print {
         body {
           background: white !important;

@@ -23,6 +23,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="app-body">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                if (window.location.search.includes("embedded=1")) {
+                  document.documentElement.classList.add("admin-embedded-mode");
+                  document.body.classList.add("admin-embedded-mode");
+                }
+              } catch {}
+            `,
+          }}
+        />
+
         <Sidebar />
 
         <main className="app-main">

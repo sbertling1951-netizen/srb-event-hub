@@ -247,6 +247,8 @@ function AdminUsersPageInner() {
   );
   const [assignedEventIds, setAssignedEventIds] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState("");
+  const [password, setPassword] = useState("");
+  const [resetStatus, setResetStatus] = useState("");
 
   useEffect(() => {
     async function init() {
@@ -341,7 +343,9 @@ function AdminUsersPageInner() {
     setIsActive(selectedRow.is_active);
     setPrivilegeGroup(selectedRow.privilege_group || defaultGroup);
     setPermissions(selectedRow.permissions);
+    setPassword("");
     setSaveStatus("");
+    setResetStatus("");
 
     void loadAssignedEvents(selectedRow.id);
   }, [selectedRow]);
@@ -368,7 +372,9 @@ function AdminUsersPageInner() {
     setPrivilegeGroup(defaultGroup);
     setPermissions(getPresetPermissions(defaultGroup));
     setAssignedEventIds([]);
+    setPassword("");
     setSaveStatus("");
+    setResetStatus("");
   }
 
   function handlePrivilegeGroupChange(nextGroup: PrivilegeGroup) {
@@ -482,10 +488,65 @@ function AdminUsersPageInner() {
       }
     }
 
-    setSaveStatus("Saved.");
+    if (password.trim()) {
+      const passwordResponse = await fetch("/api/admins/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          password: password.trim(),
+        }),
+      });
+
+      if (!passwordResponse.ok) {
+        const result = await passwordResponse.json().catch(() => null);
+        setSaveStatus(
+          `Admin saved, but password was not set: ${
+            result?.error || "Unknown password error"
+          }`,
+        );
+        return;
+      }
+
+      setPassword("");
+    }
+
+    setSaveStatus(password.trim() ? "Saved and password set." : "Saved.");
     await loadPageData();
     if (adminUserId) {
       await loadAssignedEvents(adminUserId);
+    }
+  }
+
+  async function handleSendPasswordReset() {
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setResetStatus("Email is required before sending a reset email.");
+      return;
+    }
+
+    try {
+      setResetStatus("Sending reset email...");
+
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+        trimmedEmail,
+        {
+          redirectTo:
+            typeof window !== "undefined"
+              ? `${window.location.origin}/reset-password`
+              : undefined,
+        },
+      );
+
+      if (resetError) {
+        setResetStatus(`Could not send reset email: ${resetError.message}`);
+        return;
+      }
+
+      setResetStatus("Password reset email sent.");
+    } catch (err: any) {
+      setResetStatus(err?.message || "Could not send reset email.");
     }
   }
 
@@ -613,6 +674,49 @@ function AdminUsersPageInner() {
                 />
               </div>
             </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 14,
+                gridTemplateColumns: "1fr auto",
+                alignItems: "end",
+              }}
+            >
+              <div>
+                <label style={labelStyle}>
+                  {selectedAdminId ? "Set New Password" : "Initial Password"}
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={
+                    selectedAdminId
+                      ? "Leave blank to keep existing password"
+                      : "Enter temporary password"
+                  }
+                  style={inputStyle}
+                />
+                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                  {selectedAdminId
+                    ? "Only enter a password if you want to change it."
+                    : "Temporary password for first login."}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSendPasswordReset}
+                style={secondaryButtonStyle}
+              >
+                Send Reset Email
+              </button>
+            </div>
+
+            {resetStatus ? (
+              <div style={{ fontSize: 14, opacity: 0.85 }}>{resetStatus}</div>
+            ) : null}
 
             <div
               style={{
