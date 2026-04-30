@@ -750,9 +750,13 @@ function EventAdminPageInner() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(320px, 520px) minmax(320px, 520px)",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
           gap: 18,
           alignItems: "start",
+          width: "100%",
+          maxWidth: "100%",
+          overflowX: "hidden",
         }}
       >
         <div
