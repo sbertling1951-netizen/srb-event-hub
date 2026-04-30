@@ -75,6 +75,9 @@ type Attendee = {
 function ParkingAdminPageInner() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const lastDistanceRef = useRef<number | null>(null);
+  const attendeeButtonRefs = useRef<Record<string, HTMLButtonElement | null>>(
+    {},
+  );
 
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
@@ -510,28 +513,83 @@ function ParkingAdminPageInner() {
   const selectedSite =
     sites.find((s) => (s.id || s.master_site_id) === selectedSiteId) || null;
   const focusSite = useCallback(
-    (site: ParkingSite, targetZoom = zoom) => {
+    (site: ParkingSite, targetZoom?: number) => {
       if (!mapRef.current || site.map_x === null || site.map_y === null) {
         return;
       }
 
+      const appliedZoom = clampZoom(targetZoom ?? zoom);
       const container = mapRef.current;
-      const scaledWidth = naturalSize.width * targetZoom;
-      const scaledHeight = naturalSize.height * targetZoom;
+      const scaledWidth = naturalSize.width * appliedZoom;
+      const scaledHeight = naturalSize.height * appliedZoom;
 
       const x = (site.map_x / 100) * scaledWidth;
       const y = (site.map_y / 100) * scaledHeight;
 
+      setZoom(appliedZoom);
+
       requestAnimationFrame(() => {
-        container.scrollTo({
-          left: Math.max(0, x - container.clientWidth / 2),
-          top: Math.max(0, y - container.clientHeight / 2),
-          behavior: "smooth",
+        requestAnimationFrame(() => {
+          container.scrollTo({
+            left: Math.max(0, x - container.clientWidth / 2),
+            top: Math.max(0, y - container.clientHeight / 2),
+            behavior: "smooth",
+          });
         });
       });
     },
     [naturalSize.height, naturalSize.width, zoom],
   );
+
+  function scrollAttendeeIntoView(attendeeId: string) {
+    requestAnimationFrame(() => {
+      attendeeButtonRefs.current[attendeeId]?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  }
+
+  function recenterMap() {
+    if (selectedSite) {
+      focusSite(selectedSite, Math.max(defaultZoom, zoom));
+      return;
+    }
+
+    if (selectedAttendee?.assigned_site) {
+      const assignedSite = sites.find(
+        (site) => site.site_number === selectedAttendee.assigned_site,
+      );
+
+      if (assignedSite) {
+        focusSite(assignedSite, Math.max(defaultZoom, zoom));
+        return;
+      }
+    }
+
+    const container = mapRef.current;
+    if (!container) {
+      return;
+    }
+
+    setZoom(defaultZoom);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        container.scrollTo({
+          left: Math.max(
+            0,
+            (naturalSize.width * defaultZoom - container.clientWidth) / 2,
+          ),
+          top: Math.max(
+            0,
+            (naturalSize.height * defaultZoom - container.clientHeight) / 2,
+          ),
+          behavior: "smooth",
+        });
+      });
+    });
+  }
 
   useEffect(() => {
     if (!selectedAttendee || !selectedAttendee.assigned_site) {
@@ -545,8 +603,9 @@ function ParkingAdminPageInner() {
       return;
     }
 
-    focusSite(site);
-  }, [selectedAttendee, sites, focusSite]);
+    const targetZoom = Math.max(zoom, isNarrow ? 1.05 : defaultZoom);
+    focusSite(site, targetZoom);
+  }, [selectedAttendee, sites, focusSite, zoom, isNarrow, defaultZoom]);
 
   async function assignSelectedToSite(site: ParkingSite) {
     if (!selectedAttendee) {
@@ -732,6 +791,8 @@ function ParkingAdminPageInner() {
 
     if (site.assigned_attendee_id) {
       setSelectedAttendeeId(site.assigned_attendee_id);
+      scrollAttendeeIntoView(site.assigned_attendee_id);
+      focusSite(site, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
       if (isNarrow) {
         setShowQueuePanel(true);
       }
@@ -1090,6 +1151,9 @@ function ParkingAdminPageInner() {
         return (
           <button
             key={attendee.id}
+            ref={(el) => {
+              attendeeButtonRefs.current[attendee.id] = el;
+            }}
             type="button"
             onClick={() => setSelectedAttendeeId(attendee.id)}
             style={{
@@ -1436,6 +1500,9 @@ function ParkingAdminPageInner() {
             </button>
             <button type="button" onClick={() => setZoom(defaultZoom)}>
               Reset Zoom
+            </button>
+            <button type="button" onClick={recenterMap}>
+              Re-center Map
             </button>
           </div>
         </div>
