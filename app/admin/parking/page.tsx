@@ -1283,7 +1283,9 @@ function ParkingAdminPageInner() {
           alignItems: "start",
         }}
       >
-        {(!isNarrow || showQueuePanel) && queuePanel}
+        {(!isNarrow || showQueuePanel) && (
+          <div style={{ order: isNarrow ? 2 : 0 }}>{queuePanel}</div>
+        )}
 
         <div
           style={{
@@ -1291,17 +1293,26 @@ function ParkingAdminPageInner() {
             borderRadius: 10,
             background: "white",
             padding: 12,
+            order: isNarrow ? 1 : 0,
+            position: isNarrow ? "sticky" : "static",
+            top: isNarrow
+              ? "calc(env(safe-area-inset-top, 0px) + 8px)"
+              : undefined,
+            zIndex: isNarrow ? 40 : undefined,
           }}
         >
           <div
             ref={mapRef}
             style={{
               overflow: "auto",
-              maxHeight: isNarrow ? "60vh" : "82vh",
+              height: isNarrow ? "52vh" : undefined,
+              minHeight: isNarrow ? 320 : undefined,
+              maxHeight: isNarrow ? "52vh" : "82vh",
               border: "1px solid #ddd",
               background: "#f2f2f2",
               WebkitOverflowScrolling: "touch",
-              touchAction: "pan-x pan-y",
+              touchAction: "pan-x pan-y pinch-zoom",
+              overscrollBehavior: "contain",
             }}
           >
             <div
