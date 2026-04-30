@@ -42,6 +42,40 @@ function formatDateRange(startDate: string | null, endDate: string | null) {
   return startDate || endDate || "";
 }
 
+function normalizeEventStatus(status?: string | null) {
+  return String(status || "")
+    .trim()
+    .toLowerCase();
+}
+
+function isMemberVisibleEvent(event: EventRow, today: string) {
+  if (event.visible_to_members === false) {
+    return false;
+  }
+
+  if (event.is_active === false) {
+    return false;
+  }
+
+  const normalizedStatus = normalizeEventStatus(event.status);
+  if (
+    normalizedStatus === "inactive" ||
+    normalizedStatus === "archived" ||
+    normalizedStatus === "complete" ||
+    normalizedStatus === "completed" ||
+    normalizedStatus === "closed" ||
+    normalizedStatus === "draft"
+  ) {
+    return false;
+  }
+
+  if (event.end_date && event.end_date < today) {
+    return false;
+  }
+
+  return true;
+}
+
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: 10,
@@ -71,6 +105,7 @@ export default function MemberLoginPage() {
 
   async function loadEvents() {
     try {
+      setStatus("Loading events...");
       const today = new Date().toISOString().slice(0, 10);
 
       const { data, error } = await supabase
@@ -79,19 +114,25 @@ export default function MemberLoginPage() {
           "id,name,venue_name,location,start_date,end_date,event_code,lat,lng,visible_to_members,status,is_active",
         )
         .eq("visible_to_members", true)
-        .eq("status", "Active")
-        .eq("is_active", true)
-        .or(`end_date.is.null,end_date.gte.${today}`)
-        .order("start_date", { ascending: true, nullsFirst: false });
+        .order("start_date", { ascending: true, nullsFirst: false })
+        .limit(25);
 
       if (error) {
         throw error;
       }
 
-      const activeEvents = (data || []) as EventRow[];
-      setEvents(activeEvents);
+      const memberEvents = ((data || []) as EventRow[]).filter((event) =>
+        isMemberVisibleEvent(event, today),
+      );
+
+      setEvents(memberEvents);
+
+      if (memberEvents.length === 1) {
+        setSelectedEventId(memberEvents[0].id);
+      }
+
       setStatus(
-        activeEvents.length > 0
+        memberEvents.length > 0
           ? "Select an event, enter code, and use your registration email."
           : "No active member events are available right now.",
       );
@@ -162,7 +203,8 @@ export default function MemberLoginPage() {
       localStorage.setItem("fcoc-member-attendee-id", attendee.id);
       localStorage.setItem("fcoc-member-email", normalizedEmail);
       localStorage.setItem("fcoc-member-entry-id", attendee.entry_id || "");
-      localStorage.setItem("fcoc-member-has-arrived", "false");
+      const arrived = !!attendee.has_arrived;
+      localStorage.setItem("fcoc-member-has-arrived", String(arrived));
       localStorage.setItem("fcoc-user-mode", "member");
       localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
 
@@ -180,8 +222,13 @@ export default function MemberLoginPage() {
         expires_at: event.end_date ? `${event.end_date}T23:59:59` : null,
       });
 
-      setStatus("Login successful. Opening check-in...");
-      router.replace("/member/checkin");
+      setStatus(
+        arrived
+          ? "Login successful. Opening dashboard..."
+          : "Login successful. Opening check-in...",
+      );
+
+      router.replace(arrived ? "/member" : "/member/checkin");
       return;
     } catch (err: any) {
       console.error(err);
@@ -190,7 +237,6 @@ export default function MemberLoginPage() {
       setBusy(false);
     }
   }
-
   return (
     <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Member Login</h1>

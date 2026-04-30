@@ -408,13 +408,17 @@ export default function Sidebar() {
         return;
       }
 
+      // Clear local app state first so route guards stop seeing a logged-in mode.
+      // Then redirect immediately. Supabase sign-out can hang on localhost/network,
+      // so do not let it block the user from leaving the protected area.
+      clearAllAppState();
+
       try {
-        await supabase.auth.signOut();
+        void supabase.auth.signOut();
       } catch (err) {
         console.error("Supabase signOut failed:", err);
       }
 
-      clearAllAppState();
       window.location.replace("/");
       return;
     }
@@ -424,26 +428,16 @@ export default function Sidebar() {
   }
 
   const memberItems: NavItem[] = useMemo(() => {
-    return isCheckedIn
-      ? [
-          { label: "Home", href: "/member" },
-          { label: "Agenda", href: "/member/agenda" },
-          { label: "Announcements", href: "/member/announcements" },
-          { label: "Coach Map", href: "/coach-map" },
-          { label: "Attendee Locator", href: "/member/attendees" },
-          { label: "Nearby", href: "/member/nearby" },
-          { label: "My Check-In", href: "/member/checkin" },
-        ]
-      : [
-          { label: "My Check-In", href: "/member/checkin" },
-          { label: "Home", href: "/member" },
-          { label: "Agenda", href: "/member/agenda" },
-          { label: "Announcements", href: "/member/announcements" },
-          { label: "Coach Map", href: "/coach-map" },
-          { label: "Attendee Locator", href: "/member/attendees" },
-          { label: "Nearby", href: "/member/nearby" },
-        ];
-  }, [isCheckedIn]);
+    return [
+      { label: "Dashboard", href: "/member" },
+      { label: "Agenda", href: "/member/agenda" },
+      { label: "Announcements", href: "/member/announcements" },
+      { label: "Coach Map", href: "/coach-map" },
+      { label: "Attendee Locator", href: "/member/attendees" },
+      { label: "Nearby", href: "/member/nearby" },
+      { label: "My Check-In", href: "/member/checkin" },
+    ];
+  }, []);
 
   const canManageEventStaff =
     !!adminAccess &&

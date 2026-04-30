@@ -23,15 +23,16 @@ export default function MemberDashboardPage() {
     try {
       const rawEvent = localStorage.getItem("fcoc-member-event-context");
       const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
-      const hasArrived = localStorage.getItem("fcoc-member-has-arrived");
+      const entryId = localStorage.getItem("fcoc-member-entry-id");
+      const email = localStorage.getItem("fcoc-member-email");
 
       if (!rawEvent) {
         window.location.href = "/member/login";
         return;
       }
 
-      if (!attendeeId || hasArrived !== "true") {
-        window.location.href = "/member/checkin";
+      if (!attendeeId && !entryId && !email) {
+        window.location.href = "/member/login";
         return;
       }
 

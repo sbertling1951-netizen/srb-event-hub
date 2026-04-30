@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 
 type Attendee = {
   id: string;
+  entry_id: string | null;
   pilot_first: string | null;
   pilot_last: string | null;
   copilot_first: string | null;
@@ -62,8 +63,12 @@ function formatDateRange(
   startDate: string | null | undefined,
   endDate: string | null | undefined,
 ) {
-  if (!startDate && !endDate) {return "";}
-  if (startDate && endDate) {return `${startDate} – ${endDate}`;}
+  if (!startDate && !endDate) {
+    return "";
+  }
+  if (startDate && endDate) {
+    return `${startDate} – ${endDate}`;
+  }
   return startDate || endDate || "";
 }
 
@@ -75,6 +80,27 @@ function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
   return members.find((m) => m.person_role === role) || null;
 }
 
+function getStoredMemberAttendeeId() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return localStorage.getItem("fcoc-member-attendee-id");
+}
+
+function getStoredMemberEntryId() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return localStorage.getItem("fcoc-member-entry-id");
+}
+
+function getStoredMemberEmail() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return localStorage.getItem("fcoc-member-email");
+}
+
 function AttendeesPageInner() {
   const [event, setEvent] = useState<MemberEventRow | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
@@ -84,6 +110,7 @@ function AttendeesPageInner() {
   );
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading attendees...");
+  const [canViewLocator, setCanViewLocator] = useState(true);
 
   async function loadCurrentEventData() {
     const currentEvent = getCurrentMemberEvent();
@@ -93,6 +120,7 @@ function AttendeesPageInner() {
       setEventId(null);
       setAttendees([]);
       setHouseholdMembers([]);
+      setCanViewLocator(true);
       setStatus("No current event selected.");
       return;
     }
@@ -105,7 +133,7 @@ function AttendeesPageInner() {
     const { data, error } = await supabase
       .from("attendees")
       .select(
-        "id,pilot_first,pilot_last,copilot_first,copilot_last,email,primary_phone,cell_phone,coach_make:coach_manufacturer,coach_model,coach_length,first_time:is_first_timer,volunteer:wants_to_volunteer,handicap_parking,assigned_site,share_with_attendees,has_arrived",
+        "id,entry_id,pilot_first,pilot_last,copilot_first,copilot_last,email,primary_phone,cell_phone,coach_make:coach_manufacturer,coach_model,coach_length,first_time:is_first_timer,volunteer:wants_to_volunteer,handicap_parking,assigned_site,share_with_attendees,has_arrived",
       )
       .eq("event_id", currentEventId)
       .order("pilot_last", { ascending: true, nullsFirst: false })
@@ -117,12 +145,43 @@ function AttendeesPageInner() {
     }
 
     const attendeeRows = (data || []) as Attendee[];
-    setAttendees(attendeeRows);
 
-    const attendeeIds = attendeeRows.map((a) => a.id);
+    const storedAttendeeId = getStoredMemberAttendeeId();
+    const storedEntryId = getStoredMemberEntryId();
+    const storedEmail = getStoredMemberEmail()?.toLowerCase() || null;
+
+    const viewer =
+      attendeeRows.find(
+        (row) => storedAttendeeId && row.id === storedAttendeeId,
+      ) ||
+      attendeeRows.find(
+        (row) => storedEntryId && row.entry_id === storedEntryId,
+      ) ||
+      attendeeRows.find(
+        (row) => storedEmail && (row.email || "").toLowerCase() === storedEmail,
+      ) ||
+      null;
+
+    if (!viewer?.share_with_attendees) {
+      setCanViewLocator(false);
+      setAttendees([]);
+      setHouseholdMembers([]);
+      setStatus(
+        "Attendee Locator is available after you choose to share your information with other attendees.",
+      );
+      return;
+    }
+
+    setCanViewLocator(true);
+    const sharedAttendeeRows = attendeeRows.filter(
+      (row) => !!row.share_with_attendees,
+    );
+    setAttendees(sharedAttendeeRows);
+
+    const attendeeIds = sharedAttendeeRows.map((a) => a.id);
     if (attendeeIds.length === 0) {
       setHouseholdMembers([]);
-      setStatus("Loaded 0 attendees.");
+      setStatus("Loaded 0 shared attendees.");
       return;
     }
 
@@ -143,7 +202,7 @@ function AttendeesPageInner() {
     }
 
     setHouseholdMembers((memberData || []) as HouseholdMember[]);
-    setStatus(`Loaded ${attendeeRows.length} attendees.`);
+    setStatus(`Loaded ${sharedAttendeeRows.length} shared attendees.`);
   }
 
   useEffect(() => {
@@ -155,7 +214,12 @@ function AttendeesPageInner() {
     void init();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-member-event-changed") {
+      if (
+        e.key === "fcoc-member-event-changed" ||
+        e.key === "fcoc-member-attendee-id" ||
+        e.key === "fcoc-member-entry-id" ||
+        e.key === "fcoc-member-email"
+      ) {
         void loadCurrentEventData();
       }
     }
@@ -182,7 +246,9 @@ function AttendeesPageInner() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) {return attendees;}
+    if (!q) {
+      return attendees;
+    }
 
     return attendees.filter((a) => {
       const pilot = fullName(a.pilot_first, a.pilot_last).toLowerCase();
@@ -263,154 +329,188 @@ function AttendeesPageInner() {
         <div style={{ fontSize: 13, color: "#555" }}>Status: {status}</div>
       </div>
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "white",
-          padding: 12,
-          marginBottom: 16,
-          maxWidth: 420,
-        }}
-      >
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>Search</div>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Name, nickname, email, phone, coach, or site"
-          style={{ width: "100%", padding: 8 }}
-        />
-      </div>
+      {!canViewLocator ? (
+        <div
+          style={{
+            border: "1px solid #f59e0b",
+            borderRadius: 10,
+            background: "#fffbeb",
+            color: "#92400e",
+            padding: 16,
+            marginBottom: 16,
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>
+            Attendee Locator is locked
+          </div>
+          <div>
+            Attendee Locator is only available to members who choose to share
+            their information with other attendees. Go to My Check-In and turn
+            on sharing if you want to use this locator.
+          </div>
+        </div>
+      ) : null}
 
-      <div style={{ marginBottom: 12, fontSize: 13, color: "#555" }}>
-        Showing {filtered.length} attendee{filtered.length === 1 ? "" : "s"}.
-      </div>
-
-      <div style={{ display: "grid", gap: 12 }}>
-        {filtered.map((a) => {
-          const members = householdByAttendee.get(a.id) || [];
-          const pilotMember = getRoleMember(members, "pilot");
-          const copilotMember = getRoleMember(members, "copilot");
-
-          return (
-            <div
-              key={a.id}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 10,
-                background: "white",
-                padding: 14,
-              }}
-            >
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1.4fr 1.4fr 1fr 0.9fr",
-                  gap: 12,
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 700 }}>
-                    Pilot:{" "}
-                    {pilotMember
-                      ? memberLine(pilotMember)
-                      : fullName(a.pilot_first, a.pilot_last) || "—"}
-                  </div>
-                  {a.email ? (
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      {a.email}
-                    </div>
-                  ) : null}
-                  {displayPhone(a) ? (
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      {displayPhone(a)}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div>
-                  <div style={{ fontWeight: 700 }}>
-                    Co-Pilot:{" "}
-                    {copilotMember
-                      ? memberLine(copilotMember)
-                      : fullName(a.copilot_first, a.copilot_last) || "—"}
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ fontWeight: 700 }}>
-                    {[a.coach_make, a.coach_model].filter(Boolean).join(" ") ||
-                      "—"}
-                  </div>
-                  {a.coach_length ? (
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      {a.coach_length} ft
-                    </div>
-                  ) : null}
-                </div>
-
-                <div>
-                  <div style={{ fontWeight: 700 }}>Site</div>
-                  <div>{a.assigned_site || "—"}</div>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 16,
-                  flexWrap: "wrap",
-                  marginTop: 10,
-                  fontSize: 13,
-                  color: "#555",
-                }}
-              >
-                <div>Arrived: {yesNo(a.has_arrived)}</div>
-                <div>1st Time: {yesNo(a.first_time)}</div>
-                <div>Volunteer: {yesNo(a.volunteer)}</div>
-                <div>Handicap: {yesNo(a.handicap_parking)}</div>
-                <div>
-                  Shares with attendees: {yesNo(a.share_with_attendees)}
-                </div>
-              </div>
-
-              {members.length > 0 ? (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                    Coach / Household Members
-                  </div>
-                  <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
-                    {members.map((member) => (
-                      <div key={member.id}>
-                        {member.person_role === "pilot"
-                          ? "Pilot"
-                          : member.person_role === "copilot"
-                            ? "Co-Pilot"
-                            : "Additional"}
-                        : {memberLine(member)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-
-        {filtered.length === 0 ? (
+      {!canViewLocator ? null : (
+        <>
           <div
             style={{
               border: "1px solid #ddd",
               borderRadius: 10,
               background: "white",
-              padding: 16,
-              color: "#666",
+              padding: 12,
+              marginBottom: 16,
+              maxWidth: 420,
             }}
           >
-            No attendees found.
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Search</div>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Name, nickname, email, phone, coach, or site"
+              style={{ width: "100%", padding: 8 }}
+            />
           </div>
-        ) : null}
-      </div>
+
+          <div style={{ marginBottom: 12, fontSize: 13, color: "#555" }}>
+            Showing {filtered.length} attendee{filtered.length === 1 ? "" : "s"}
+            .
+          </div>
+
+          <div style={{ display: "grid", gap: 12 }}>
+            {filtered.map((a) => {
+              const members = householdByAttendee.get(a.id) || [];
+              const pilotMember = getRoleMember(members, "pilot");
+              const copilotMember = getRoleMember(members, "copilot");
+
+              return (
+                <div
+                  key={a.id}
+                  style={{
+                    border: "1px solid #ddd",
+                    borderRadius: 10,
+                    background: "white",
+                    padding: 14,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1.4fr 1.4fr 1fr 0.9fr",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700 }}>
+                        Pilot:{" "}
+                        {pilotMember
+                          ? memberLine(pilotMember)
+                          : fullName(a.pilot_first, a.pilot_last) || "—"}
+                      </div>
+                      {a.email ? (
+                        <div
+                          style={{ fontSize: 12, color: "#666", marginTop: 4 }}
+                        >
+                          {a.email}
+                        </div>
+                      ) : null}
+                      {displayPhone(a) ? (
+                        <div
+                          style={{ fontSize: 12, color: "#666", marginTop: 4 }}
+                        >
+                          {displayPhone(a)}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div>
+                      <div style={{ fontWeight: 700 }}>
+                        Co-Pilot:{" "}
+                        {copilotMember
+                          ? memberLine(copilotMember)
+                          : fullName(a.copilot_first, a.copilot_last) || "—"}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontWeight: 700 }}>
+                        {[a.coach_make, a.coach_model]
+                          .filter(Boolean)
+                          .join(" ") || "—"}
+                      </div>
+                      {a.coach_length ? (
+                        <div
+                          style={{ fontSize: 12, color: "#666", marginTop: 4 }}
+                        >
+                          {a.coach_length} ft
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div>
+                      <div style={{ fontWeight: 700 }}>Site</div>
+                      <div>{a.assigned_site || "—"}</div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 16,
+                      flexWrap: "wrap",
+                      marginTop: 10,
+                      fontSize: 13,
+                      color: "#555",
+                    }}
+                  >
+                    <div>Arrived: {yesNo(a.has_arrived)}</div>
+                    <div>1st Time: {yesNo(a.first_time)}</div>
+                    <div>Volunteer: {yesNo(a.volunteer)}</div>
+                    <div>Handicap: {yesNo(a.handicap_parking)}</div>
+                    <div>
+                      Shares with attendees: {yesNo(a.share_with_attendees)}
+                    </div>
+                  </div>
+
+                  {members.length > 0 ? (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                        Coach / Household Members
+                      </div>
+                      <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
+                        {members.map((member) => (
+                          <div key={member.id}>
+                            {member.person_role === "pilot"
+                              ? "Pilot"
+                              : member.person_role === "copilot"
+                                ? "Co-Pilot"
+                                : "Additional"}
+                            : {memberLine(member)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+
+            {filtered.length === 0 ? (
+              <div
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: 10,
+                  background: "white",
+                  padding: 16,
+                  color: "#666",
+                }}
+              >
+                No attendees found.
+              </div>
+            ) : null}
+          </div>
+        </>
+      )}
     </div>
   );
 }
