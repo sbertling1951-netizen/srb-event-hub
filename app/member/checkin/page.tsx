@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
@@ -47,23 +48,33 @@ function formatDateRange(
   startDate: string | null | undefined,
   endDate: string | null | undefined,
 ) {
-  if (!startDate && !endDate) {return "";}
-  if (startDate && endDate) {return `${startDate} – ${endDate}`;}
+  if (!startDate && !endDate) {
+    return "";
+  }
+  if (startDate && endDate) {
+    return `${startDate} – ${endDate}`;
+  }
   return startDate || endDate || "";
 }
 
 function getStoredMemberAttendeeId() {
-  if (typeof window === "undefined") {return null;}
+  if (typeof window === "undefined") {
+    return null;
+  }
   return localStorage.getItem("fcoc-member-attendee-id");
 }
 
 function getStoredMemberEntryId() {
-  if (typeof window === "undefined") {return null;}
+  if (typeof window === "undefined") {
+    return null;
+  }
   return localStorage.getItem("fcoc-member-entry-id");
 }
 
 function getStoredMemberEmail() {
-  if (typeof window === "undefined") {return null;}
+  if (typeof window === "undefined") {
+    return null;
+  }
   return localStorage.getItem("fcoc-member-email");
 }
 
@@ -72,6 +83,7 @@ function householdLine(member: HouseholdMember) {
 }
 
 function MemberCheckinPageInner() {
+  const router = useRouter();
   const [event, setEvent] = useState<MemberEvent | null>(null);
   const [attendee, setAttendee] = useState<AttendeeRow | null>(null);
   const [household, setHousehold] = useState<HouseholdMember[]>([]);
@@ -142,7 +154,9 @@ function MemberCheckinPageInner() {
         )
         .eq("event_id", currentEvent.id);
 
-      if (attendeeError) {throw attendeeError;}
+      if (attendeeError) {
+        throw attendeeError;
+      }
 
       const allAttendees = (attendeeRows || []) as AttendeeRow[];
 
@@ -195,7 +209,9 @@ function MemberCheckinPageInner() {
         .eq("attendee_id", attendeeRow.id)
         .order("sort_order", { ascending: true, nullsFirst: false });
 
-      if (memberError) {throw memberError;}
+      if (memberError) {
+        throw memberError;
+      }
       setHousehold((memberRows || []) as HouseholdMember[]);
 
       setStatus("Self check-in ready.");
@@ -227,23 +243,25 @@ function MemberCheckinPageInner() {
         })
         .eq("id", attendee.id);
 
-      if (error) {throw error;}
-
-      localStorage.setItem("fcoc-member-has-arrived", String(hasArrived));
-
-      const banner = cleanedSite
-        ? `Check-in complete. Your site is ${cleanedSite}.`
-        : "Check-in complete.";
-
-      setStatus("Your check-in was saved.");
-      setSuccessBanner(banner);
-
-      if (hasArrived) {
-        window.location.href = "/member/agenda";
-        return;
+      if (error) {
+        throw error;
       }
 
-      await loadPage();
+      // Update local state immediately before navigating
+      localStorage.setItem("fcoc-member-has-arrived", String(hasArrived));
+
+      setStatus("Your check-in preferences were saved.");
+      setSuccessBanner(
+        hasArrived
+          ? cleanedSite
+            ? `Check-in complete. Your site is ${cleanedSite}.`
+            : "Check-in complete."
+          : "Saved. You can explore the event before you arrive.",
+      );
+
+      // Use client navigation to avoid reload/race condition
+      router.replace("/member");
+      return;
     } catch (err: any) {
       console.error("saveCheckin error:", err);
       setStatus(err?.message || "Failed to save check-in.");
@@ -255,7 +273,9 @@ function MemberCheckinPageInner() {
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
   const householdSummary = useMemo(() => {
-    if (household.length > 0) {return household;}
+    if (household.length > 0) {
+      return household;
+    }
     return [];
   }, [household]);
 

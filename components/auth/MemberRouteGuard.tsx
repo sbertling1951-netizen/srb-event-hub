@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import type React from "react";
 import { useEffect, useState } from "react";
 
 export default function MemberRouteGuard({
@@ -34,6 +35,8 @@ export default function MemberRouteGuard({
         if (hasIdentity && hasEvent) {
           setStatus("allowed");
           return;
+        }
+        {
         }
 
         setStatus("denied");
