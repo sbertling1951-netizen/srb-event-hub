@@ -93,7 +93,6 @@ function sanitizeNearbyCardColor(color: string | null | undefined) {
     return fallback;
   }
 
-  // Green is reserved for active/current items only, not regular nearby categories.
   const reservedGreens = new Set([
     "green",
     "#f0fdf4",
@@ -130,6 +129,63 @@ function nearbyCardStyle(place: Place) {
     boxShadow: "0 1px 4px rgba(15,23,42,0.05)",
     color: "#111827",
   };
+}
+
+function nearbyChipClass(active: boolean) {
+  return `nearby-chip${active ? " active" : ""}`;
+}
+
+function nearbyCategoryIcon(category: string) {
+  const normalized = category.trim().toLowerCase();
+
+  if (normalized === "all") {
+    return "•";
+  }
+  if (
+    normalized.includes("fuel") ||
+    normalized.includes("gas") ||
+    normalized.includes("diesel")
+  ) {
+    return "⛽";
+  }
+  if (
+    normalized.includes("food") ||
+    normalized.includes("restaurant") ||
+    normalized.includes("dining")
+  ) {
+    return "🍔";
+  }
+  if (
+    normalized.includes("grocery") ||
+    normalized.includes("groceries") ||
+    normalized.includes("shopping")
+  ) {
+    return "🛒";
+  }
+  if (
+    normalized.includes("pharmacy") ||
+    normalized.includes("medical") ||
+    normalized.includes("urgent") ||
+    normalized.includes("hospital")
+  ) {
+    return "💊";
+  }
+  if (
+    normalized.includes("rv") ||
+    normalized.includes("service") ||
+    normalized.includes("parts")
+  ) {
+    return "🔧";
+  }
+  if (
+    normalized.includes("attraction") ||
+    normalized.includes("entertainment") ||
+    normalized.includes("park")
+  ) {
+    return "⭐";
+  }
+
+  return "📍";
 }
 
 function NearbyPageInner() {
@@ -301,22 +357,25 @@ function NearbyPageInner() {
 
         <div
           className="btn-row"
-          style={{ marginTop: 6, flexWrap: "wrap", gap: 4 }}
+          style={{ marginTop: 4, flexWrap: "wrap", gap: 4 }}
         >
           {categoryOptions.map((category) => (
             <button
               key={category}
               type="button"
-              className="badge"
+              className={`nearby-chip ${selectedCategory === category ? "active" : ""}`}
               onClick={() => setSelectedCategory(category)}
-              style={{
-                padding: "3px 7px",
-                fontSize: 12,
-                cursor: "pointer",
-                background:
-                  selectedCategory === category ? "#e5eefc" : undefined,
-              }}
+              style={
+                {
+                  "--chip-bg": sanitizeNearbyCardColor(
+                    getNearbyCardColor(category === "All" ? null : category),
+                  ),
+                } as React.CSSProperties
+              }
             >
+              <span aria-hidden="true" style={{ marginRight: 4 }}>
+                {nearbyCategoryIcon(category)}
+              </span>
               {category}
             </button>
           ))}
@@ -328,26 +387,24 @@ function NearbyPageInner() {
         >
           <button
             type="button"
-            className="badge"
+            className={nearbyChipClass(viewMode === "list")}
             onClick={() => setViewMode("list")}
             style={{
               padding: "3px 7px",
               fontSize: 12,
               cursor: "pointer",
-              background: viewMode === "list" ? "#e5eefc" : undefined,
             }}
           >
             List
           </button>
           <button
             type="button"
-            className="badge"
+            className={nearbyChipClass(viewMode === "map")}
             onClick={() => setViewMode("map")}
             style={{
               padding: "3px 7px",
               fontSize: 12,
               cursor: "pointer",
-              background: viewMode === "map" ? "#e5eefc" : undefined,
             }}
           >
             Map
