@@ -611,11 +611,14 @@ function EventAdminPageInner() {
           type="button"
           onClick={openDashboard}
           style={{
-            padding: "8px 12px",
+            padding: "7px 11px",
             borderRadius: 8,
             border: "1px solid #cbd5e1",
-            background: "#fff",
+            background: "#ffffff",
+            color: "#111827",
             cursor: "pointer",
+            fontWeight: 800,
+            boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
           }}
         >
           ← Return to Dashboard
@@ -878,12 +881,6 @@ function EventAdminPageInner() {
             ))}
           </select>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={openMasterMaps}>
-              Open Master Maps
-            </button>
-          </div>
-
           <div style={{ fontWeight: 700, fontSize: 14, marginTop: 6 }}>
             Selected Stored Nearby List
           </div>
@@ -907,25 +904,65 @@ function EventAdminPageInner() {
             ))}
           </select>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={openNearbyAdmin}>
-              Open Nearby Admin
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 10,
+              marginTop: 6,
+            }}
+          >
+            <button
+              type="button"
+              onClick={openMasterMaps}
+              style={gridButtonStyle}
+            >
+              Master Maps
+            </button>
+
+            <button
+              type="button"
+              onClick={openNearbyAdmin}
+              style={gridButtonStyle}
+            >
+              Nearby
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void saveAssignments()}
+              disabled={!selectedEventId || savingAssignments}
+              style={gridButtonStyle}
+            >
+              {savingAssignments ? "Saving..." : "Save Assignments"}
+            </button>
+
+            <button
+              type="button"
+              onClick={openDashboard}
+              style={gridButtonStyle}
+            >
+              Dashboard
             </button>
           </div>
-
-          <button
-            type="button"
-            onClick={() => void saveAssignments()}
-            disabled={!selectedEventId || savingAssignments}
-            style={{ width: "fit-content", marginTop: 8 }}
-          >
-            {savingAssignments ? "Saving..." : "Save Assignments"}
-          </button>
         </div>
       </div>
     </div>
   );
 }
+
+const gridButtonStyle: React.CSSProperties = {
+  width: "100%",
+  minHeight: 46,
+  padding: "10px 12px",
+  borderRadius: 8,
+  border: "1px solid #cbd5e1",
+  background: "#ffffff",
+  color: "#111827",
+  cursor: "pointer",
+  fontWeight: 800,
+  boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
+};
 
 export default function EventAdminPage() {
   return (
