@@ -1102,9 +1102,9 @@ function ParkingAdminPageInner() {
         border: "1px solid #ddd",
         borderRadius: 10,
         background: "white",
-        padding: 14,
+        padding: 10,
         display: "grid",
-        gap: 12,
+        gap: 8,
         maxHeight: isNarrow ? "none" : "82vh",
         overflow: isNarrow ? "visible" : "auto",
       }}
@@ -1560,7 +1560,14 @@ function ParkingAdminPageInner() {
     </div>
   );
   return (
-    <div style={{ padding: isNarrow ? 12 : 24 }}>
+    <div
+      style={{
+        padding: isNarrow ? 12 : "16px 12px 16px 0",
+        width: "100%",
+        maxWidth: "none",
+        boxSizing: "border-box",
+      }}
+    >
       <style>{`
         @keyframes parkingSelectedPulse {
           0% {
@@ -1575,7 +1582,13 @@ function ParkingAdminPageInner() {
         }
       `}</style>
 
-      <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
+      <h1
+        style={{
+          marginTop: 0,
+          marginBottom: 12,
+          fontSize: isNarrow ? 30 : 40,
+        }}
+      >
         Parking Admin
       </h1>
 
@@ -1584,8 +1597,8 @@ function ParkingAdminPageInner() {
           border: "1px solid #ddd",
           borderRadius: 10,
           background: "#f8f9fb",
-          padding: 14,
-          marginBottom: 16,
+          padding: 10,
+          marginBottom: 12,
         }}
       >
         <div style={{ fontWeight: 700 }}>
@@ -1711,9 +1724,11 @@ function ParkingAdminPageInner() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isNarrow ? "1fr" : "360px minmax(0, 1fr)",
-          gap: 20,
+          gridTemplateColumns: isNarrow ? "1fr" : "330px minmax(0, 1fr)",
+          gap: isNarrow ? 12 : 10,
           alignItems: "start",
+          width: "100%",
+          maxWidth: "none",
         }}
       >
         {(!isNarrow || showQueuePanel) && (
@@ -1725,7 +1740,7 @@ function ParkingAdminPageInner() {
             border: "1px solid #ddd",
             borderRadius: 10,
             background: "white",
-            padding: 12,
+            padding: 8,
             order: isNarrow ? 1 : 0,
             position: isNarrow ? "sticky" : "static",
             top: isNarrow
