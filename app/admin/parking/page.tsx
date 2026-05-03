@@ -1123,12 +1123,14 @@ function ParkingAdminPageInner() {
             setShowParked(true);
           }}
           style={{
-            padding: "6px 10px",
-            borderRadius: 6,
-            border: "1px solid #ccc",
-            background: "#f5f5f5",
+            padding: "7px 11px",
+            borderRadius: 8,
+            border: "1px solid #cbd5e1",
+            background: "#ffffff",
+            color: "#111827",
             cursor: "pointer",
-            fontWeight: 600,
+            fontWeight: 800,
+            boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
           }}
         >
           Show All Attendees

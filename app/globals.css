@@ -348,3 +348,106 @@ body.admin-embedded-mode .card:first-child {
     resize: vertical;
   }
 }
+
+/* ===== IPHONE ADMIN TOOL BUTTON DEFINITION ===== */
+@media (max-width: 899px) {
+  .admin-tool-button {
+    min-height: 96px !important;
+    padding: 14px !important;
+    border-radius: 14px !important;
+    border: 1px solid rgba(15, 23, 42, 0.22) !important;
+    display: grid !important;
+    grid-template-columns: 46px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 12px !important;
+    text-align: left !important;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.10) !important;
+  }
+
+  .admin-tool-icon {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    border: 1px solid rgba(15, 23, 42, 0.12) !important;
+  }
+
+  .admin-tool-title {
+    display: block !important;
+    font-size: 16px !important;
+    font-weight: 900 !important;
+  }
+
+  .admin-tool-description {
+    display: block !important;
+    margin-top: 5px !important;
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+  }
+}
+
+
+/* ===== WHITE BUTTON TEXT FIX ===== */
+button[style*="background: white"],
+button[style*="background: #fff"],
+button[style*="background: #ffffff"],
+button[style*="background-color: white"],
+button[style*="background-color: #fff"],
+button[style*="background-color: #ffffff"] {
+  color: #111827 !important;
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+}
+
+button[style*="background: white"]:hover:not(:disabled),
+button[style*="background: #fff"]:hover:not(:disabled),
+button[style*="background: #ffffff"]:hover:not(:disabled),
+button[style*="background-color: white"]:hover:not(:disabled),
+button[style*="background-color: #fff"]:hover:not(:disabled),
+button[style*="background-color: #ffffff"]:hover:not(:disabled) {
+  color: #111827 !important;
+  background: #f8fafc !important;
+  border-color: #94a3b8 !important;
+}
+
+/* ===== DISABLED BUTTON VISIBILITY FIX ===== */
+button:disabled,
+button[disabled] {
+  color: #64748b !important;
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  cursor: not-allowed !important;
+}
+
+button:disabled *,
+button[disabled] * {
+  color: #64748b !important;
+}
+
+/* ===== LIGHT INLINE BUTTON TEXT FIX ===== */
+button[style*="background: #f5f5f5"],
+button[style*="background: #f3f4f6"],
+button[style*="background: #f8fafc"],
+button[style*="background: #fafafa"],
+button[style*="background-color: #f5f5f5"],
+button[style*="background-color: #f3f4f6"],
+button[style*="background-color: #f8fafc"],
+button[style*="background-color: #fafafa"] {
+  color: #111827 !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+  opacity: 1 !important;
+}
+
+button[style*="background: #f5f5f5"] *,
+button[style*="background: #f3f4f6"] *,
+button[style*="background: #f8fafc"] *,
+button[style*="background: #fafafa"] *,
+button[style*="background-color: #f5f5f5"] *,
+button[style*="background-color: #f3f4f6"] *,
+button[style*="background-color: #f8fafc"] *,
+button[style*="background-color: #fafafa"] * {
+  color: #111827 !important;
+}
