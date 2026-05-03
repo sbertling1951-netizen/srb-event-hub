@@ -435,6 +435,7 @@ export default function Sidebar() {
       { label: "Coach Map", href: "/coach-map" },
       { label: "Attendee Locator", href: "/member/attendees" },
       { label: "Nearby", href: "/member/nearby" },
+      { label: "Vendors / Service Requests", href: "/member/vendor-signup" },
       { label: "My Check-In", href: "/member/checkin" },
     ];
   }, []);

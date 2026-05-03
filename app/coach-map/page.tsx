@@ -13,13 +13,23 @@ function CoachMapPageInner() {
   }, [router]);
 
   return (
-    <div style={{ padding: 24 }}>
+    <div
+      style={{
+        minHeight: "100dvh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 12,
+        background: "#f9fafb",
+      }}
+    >
       <div
         style={{
           border: "1px solid #ddd",
           borderRadius: 10,
           background: "white",
-          padding: 16,
+          padding: "10px 14px",
+          fontSize: 14,
         }}
       >
         Opening coach map...

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -172,6 +173,13 @@ const adminCards = [
     permission: "can_manage_checkin",
   },
   {
+    title: "Vendors",
+    description:
+      "Manage event vendors, member actions, signup links, and service requests.",
+    href: "/admin/vendors",
+    permission: "can_manage_events",
+  },
+  {
     title: "Reports",
     description:
       "View and export event rosters, parking, and activity reports.",
@@ -224,6 +232,7 @@ function MetricCard({
 
 function AdminDashboardPageInner() {
   const initialEvent = getInitialAdminEvent();
+  const router = useRouter();
 
   const [adminAccess, setAdminAccess] = useState<AdminAccessResult | null>(
     null,
@@ -540,7 +549,16 @@ function AdminDashboardPageInner() {
   }, [adminAccess]);
 
   function goTo(href: string) {
-    window.location.href = href;
+    const eventForNavigation =
+      activeEvent ||
+      events.find((evt) => evt.id === selectedEventId) ||
+      getInitialAdminEvent();
+
+    if (eventForNavigation?.id) {
+      setAdminWorkingEventContext(eventForNavigation);
+    }
+
+    router.push(href);
   }
 
   return (

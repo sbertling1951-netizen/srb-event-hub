@@ -32,6 +32,7 @@ type EventVendor = {
   signup_url: string | null;
   event_note: string | null;
   is_visible_to_members: boolean | null;
+  action_type: "service_request" | "external_signup" | "info_only" | null;
 };
 
 type VendorForm = {
@@ -162,6 +163,56 @@ function AdminVendorsPageInner() {
     setForm(emptyVendor);
   }
 
+  async function uploadVendorLogo(file: File) {
+    const isJpeg = file.type === "image/jpeg" || file.type === "image/jpg";
+    const isPng = file.type === "image/png";
+
+    if (!isJpeg && !isPng) {
+      setError("Logo must be a JPEG or PNG image.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+      setStatus("Uploading vendor logo...");
+
+      const fileExt = isPng ? "png" : "jpg";
+      const safeBusinessName =
+        form.business_name
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "vendor";
+      const filePath = `vendor-logos/${safeBusinessName}-${Date.now()}.${fileExt}`;
+
+      const { data, error: uploadError } = await supabase.storage
+        .from("vendor-assets")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: file.type,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("vendor-assets")
+        .getPublicUrl(data.path);
+
+      setForm((prev) => ({ ...prev, logo_url: publicUrlData.publicUrl }));
+      setStatus("Vendor logo uploaded. Save the vendor to keep this logo.");
+    } catch (err: any) {
+      console.error("upload vendor logo error:", err);
+      setError(err?.message || "Could not upload vendor logo.");
+      setStatus("Logo upload failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function saveVendor() {
     if (!form.business_name.trim()) {
       setError("Business name is required.");
@@ -251,6 +302,7 @@ function AdminVendorsPageInner() {
           signup_url: null,
           event_note: null,
           is_visible_to_members: true,
+          action_type: "service_request",
         });
 
         if (error) {
@@ -298,7 +350,7 @@ function AdminVendorsPageInner() {
   return (
     <div style={{ padding: 24, display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0 }}>Vendor Manager</h1>
+        <h1 style={{ marginTop: 0 }}>Vendor Admin</h1>
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           Current event: {adminEvent?.name || "No event selected"}
         </div>
@@ -378,14 +430,68 @@ function AdminVendorsPageInner() {
               style={{ padding: 10 }}
             />
 
-            <input
-              value={form.logo_url}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, logo_url: e.target.value }))
-              }
-              placeholder="Logo URL"
-              style={{ padding: 10 }}
-            />
+            <label
+              style={{
+                display: "grid",
+                gap: 8,
+                border: "1px solid #e5e7eb",
+                borderRadius: 10,
+                padding: 10,
+                background: "#fafafa",
+              }}
+            >
+              <div style={{ fontWeight: 700 }}>Vendor Logo</div>
+
+              {form.logo_url ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <img
+                    src={form.logo_url}
+                    alt="Vendor logo preview"
+                    style={{
+                      maxWidth: 220,
+                      maxHeight: 90,
+                      objectFit: "contain",
+                      border: "1px solid #ddd",
+                      borderRadius: 8,
+                      padding: 8,
+                      background: "white",
+                    }}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setForm((p) => ({ ...p, logo_url: "" }))}
+                    disabled={saving}
+                  >
+                    Remove Logo
+                  </button>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: "#666" }}>
+                  Upload a JPEG or PNG logo for this vendor.
+                </div>
+              )}
+
+              <input
+                type="file"
+                accept="image/jpeg,image/png"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    void uploadVendorLogo(file);
+                  }
+                  e.currentTarget.value = "";
+                }}
+                disabled={saving}
+              />
+            </label>
 
             <textarea
               value={form.business_description}
@@ -460,10 +566,41 @@ function AdminVendorsPageInner() {
                     background: assigned ? "#f0fdf4" : "white",
                   }}
                 >
-                  <div style={{ fontWeight: 800 }}>{vendor.business_name}</div>
-                  <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-                    {vendor.contact_name || "No contact"} •{" "}
-                    {vendor.preferred_contact_method || "email"}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    {vendor.logo_url ? (
+                      <img
+                        src={vendor.logo_url}
+                        alt={`${vendor.business_name} logo`}
+                        style={{
+                          width: 72,
+                          height: 48,
+                          objectFit: "contain",
+                          border: "1px solid #ddd",
+                          borderRadius: 8,
+                          padding: 6,
+                          background: "white",
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : null}
+
+                    <div>
+                      <div style={{ fontWeight: 800 }}>
+                        {vendor.business_name}
+                      </div>
+                      <div
+                        style={{ fontSize: 13, color: "#555", marginTop: 4 }}
+                      >
+                        {vendor.contact_name || "No contact"} •{" "}
+                        {vendor.preferred_contact_method || "email"}
+                      </div>
+                    </div>
                   </div>
 
                   {vendor.business_description ? (
@@ -529,6 +666,30 @@ function AdminVendorsPageInner() {
                           }
                         />
                         Visible to members
+                      </label>
+
+                      <label>
+                        <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                          Member action
+                        </div>
+                        <select
+                          value={eventVendor.action_type || "service_request"}
+                          onChange={(e) =>
+                            void updateEventVendor(eventVendor, {
+                              action_type: e.target
+                                .value as EventVendor["action_type"],
+                            })
+                          }
+                          style={{ padding: 8, width: "100%" }}
+                        >
+                          <option value="service_request">
+                            Request Service in app
+                          </option>
+                          <option value="external_signup">
+                            Use signup/contact link
+                          </option>
+                          <option value="info_only">Info only</option>
+                        </select>
                       </label>
 
                       <input

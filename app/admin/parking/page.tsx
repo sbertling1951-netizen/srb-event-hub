@@ -75,9 +75,7 @@ type Attendee = {
 function ParkingAdminPageInner() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const lastDistanceRef = useRef<number | null>(null);
-  const attendeeButtonRefs = useRef<Record<string, HTMLButtonElement | null>>(
-    {},
-  );
+  const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
@@ -85,6 +83,7 @@ function ParkingAdminPageInner() {
   const [selectedAttendeeId, setSelectedAttendeeId] = useState("");
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState("Loading...");
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -99,6 +98,7 @@ function ParkingAdminPageInner() {
   const [showArrivedOnly, setShowArrivedOnly] = useState(false);
   const [defaultZoom, setDefaultZoom] = useState(0.6);
   const [zoom, setZoom] = useState(0.6);
+  const [pendingFocusSiteNumber, setPendingFocusSiteNumber] = useState("");
 
   function clampZoom(next: number) {
     return Math.min(Math.max(next, 0.25), 3);
@@ -255,10 +255,23 @@ function ParkingAdminPageInner() {
 
     const masterSites = (masterSitesResult.data || []) as MasterMapSite[];
     const assignments = (assignmentResult.data || []) as ParkingAssignmentRow[];
+    const attendeeRows = (attendeeResult.data || []) as Attendee[];
+
+    const attendeeByAssignedSite = new Map<string, Attendee>();
+    attendeeRows.forEach((attendee) => {
+      const assignedSite = siteMatchKey(attendee.assigned_site);
+      if (assignedSite) {
+        attendeeByAssignedSite.set(assignedSite, attendee);
+      }
+    });
 
     const mergedSites: ParkingSite[] = masterSites.map((site) => {
       const assignment =
         assignments.find((a) => a.master_site_id === site.id) || null;
+      const attendeeFromRoster =
+        attendeeByAssignedSite.get(siteMatchKey(site.site_number)) ||
+        attendeeByAssignedSite.get(siteMatchKey(site.display_label)) ||
+        null;
 
       return {
         id: assignment?.id || null,
@@ -268,12 +281,18 @@ function ParkingAdminPageInner() {
         display_label: site.display_label,
         map_x: site.map_x,
         map_y: site.map_y,
-        assigned_attendee_id: assignment?.assigned_attendee_id || null,
+        assigned_attendee_id:
+          attendeeFromRoster?.id || assignment?.assigned_attendee_id || null,
       };
     });
 
     setSites(mergedSites);
-    setAttendees((attendeeResult.data || []) as Attendee[]);
+    const focusSiteNumber = localStorage.getItem("fcoc-parking-focus-site");
+    if (focusSiteNumber) {
+      setPendingFocusSiteNumber(focusSiteNumber);
+      localStorage.removeItem("fcoc-parking-focus-site");
+    }
+    setAttendees(attendeeRows);
     setStatus(
       `Loaded ${mergedSites.length} sites and ${(attendeeResult.data || []).length} attendees.`,
     );
@@ -407,6 +426,20 @@ function ParkingAdminPageInner() {
       el.removeEventListener("touchcancel", onTouchEnd);
     };
   }, []);
+  function siteMatchKey(value: string | null | undefined) {
+    return String(value || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     if (!event?.id || accessDenied) {
@@ -458,15 +491,38 @@ function ParkingAdminPageInner() {
     }
     return map;
   }, [attendees]);
+  const siteLabelByAttendeeId = useMemo(() => {
+    const map = new Map<string, string>();
+
+    sites.forEach((site) => {
+      if (!site.assigned_attendee_id) {
+        return;
+      }
+
+      const label = site.display_label || site.site_number;
+      if (label) {
+        map.set(site.assigned_attendee_id, label);
+      }
+    });
+
+    return map;
+  }, [sites]);
 
   const filteredAttendees = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const rawSearch = search.trim();
+    const q = rawSearch.toLowerCase();
+    const siteQ = siteMatchKey(rawSearch);
+    const searchLooksLikeSite =
+      !!siteQ && /^[A-Z]+\d+/i.test(siteQ) && !rawSearch.includes(" ");
 
-    return attendees.filter((a) => {
+    const filtered = attendees.filter((a) => {
       const name = `${a.pilot_first || ""} ${a.pilot_last || ""}`.toLowerCase();
       const coach =
         `${a.coach_make || ""} ${a.coach_model || ""}`.toLowerCase();
-      const site = `${a.assigned_site || ""}`.toLowerCase();
+      const effectiveSite =
+        a.assigned_site || siteLabelByAttendeeId.get(a.id) || "";
+      const site = `${effectiveSite}`.toLowerCase();
+      const siteKey = siteMatchKey(effectiveSite);
       const arrival = `${a.arrival_status || ""}`.toLowerCase();
 
       const matchesSearch =
@@ -474,26 +530,64 @@ function ParkingAdminPageInner() {
         name.includes(q) ||
         coach.includes(q) ||
         site.includes(q) ||
+        (!!siteQ && siteKey.includes(siteQ)) ||
         arrival.includes(q);
 
       if (!matchesSearch) {
         return false;
       }
-      if (showArrivedOnly && a.arrival_status !== "arrived") {
-        return false;
-      }
-      if (unassignedOnly && a.assigned_site) {
-        return false;
-      }
-      if (isNarrow && a.arrival_status === "parked") {
-        return false;
-      }
-      if (!isNarrow && !showParked && a.arrival_status === "parked") {
-        return false;
+      if (!q) {
+        if (showArrivedOnly && a.arrival_status !== "arrived") {
+          return false;
+        }
+        if (
+          unassignedOnly &&
+          (a.assigned_site || siteLabelByAttendeeId.get(a.id))
+        ) {
+          return false;
+        }
+        if (isNarrow && a.arrival_status === "parked") {
+          return false;
+        }
+        if (!isNarrow && !showParked && a.arrival_status === "parked") {
+          return false;
+        }
       }
 
       return true;
     });
+
+    const sorted = [...filtered].sort((a, b) => {
+      if (searchLooksLikeSite) {
+        const aSite = siteMatchKey(
+          a.assigned_site || siteLabelByAttendeeId.get(a.id) || "",
+        );
+        const bSite = siteMatchKey(
+          b.assigned_site || siteLabelByAttendeeId.get(b.id) || "",
+        );
+
+        const aExact = aSite === siteQ ? 0 : 1;
+        const bExact = bSite === siteQ ? 0 : 1;
+
+        if (aExact !== bExact) {
+          return aExact - bExact;
+        }
+
+        return aSite.localeCompare(bSite, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      }
+
+      const aName = `${a.pilot_last || ""} ${a.pilot_first || ""}`.trim();
+      const bName = `${b.pilot_last || ""} ${b.pilot_first || ""}`.trim();
+
+      return aName.localeCompare(bName, undefined, {
+        sensitivity: "base",
+      });
+    });
+
+    return sorted;
   }, [
     attendees,
     search,
@@ -501,6 +595,7 @@ function ParkingAdminPageInner() {
     showParked,
     showArrivedOnly,
     isNarrow,
+    siteLabelByAttendeeId,
   ]);
 
   const visibleAttendees = useMemo(
@@ -512,6 +607,23 @@ function ParkingAdminPageInner() {
     attendees.find((a) => a.id === selectedAttendeeId) || null;
   const selectedSite =
     sites.find((s) => (s.id || s.master_site_id) === selectedSiteId) || null;
+
+  const searchedSite = useMemo(() => {
+    const searchKey = siteMatchKey(debouncedSearch);
+
+    if (!searchKey || !/^[A-Z]+\d+/i.test(searchKey)) {
+      return null;
+    }
+
+    return (
+      sites.find(
+        (site) =>
+          siteMatchKey(site.site_number) === searchKey ||
+          siteMatchKey(site.display_label) === searchKey,
+      ) || null
+    );
+  }, [debouncedSearch, sites]);
+
   const focusSite = useCallback(
     (site: ParkingSite, targetZoom?: number) => {
       if (!mapRef.current || site.map_x === null || site.map_y === null) {
@@ -540,6 +652,19 @@ function ParkingAdminPageInner() {
     },
     [naturalSize.height, naturalSize.width, zoom],
   );
+
+  useEffect(() => {
+    if (!searchedSite) {
+      return;
+    }
+
+    const siteId = searchedSite.id || searchedSite.master_site_id;
+    setSelectedSiteId(siteId);
+    focusSite(searchedSite, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
+    setStatus(
+      `Focused map on site ${searchedSite.display_label || searchedSite.site_number}.`,
+    );
+  }, [searchedSite, focusSite, zoom, isNarrow, defaultZoom]);
 
   function scrollAttendeeIntoView(attendeeId: string) {
     requestAnimationFrame(() => {
@@ -607,30 +732,118 @@ function ParkingAdminPageInner() {
     focusSite(site, targetZoom);
   }, [selectedAttendee, sites, focusSite, zoom, isNarrow, defaultZoom]);
 
-  async function assignSelectedToSite(site: ParkingSite) {
-    if (!selectedAttendee) {
-      setStatus("Select an attendee first.");
+  useEffect(() => {
+    if (!pendingFocusSiteNumber || sites.length === 0) {
       return;
     }
 
-    if (
-      site.assigned_attendee_id &&
-      site.assigned_attendee_id !== selectedAttendee.id
-    ) {
-      setStatus(`Site ${site.site_number} is already occupied.`);
+    const site = sites.find(
+      (item) =>
+        String(item.site_number).trim() ===
+        String(pendingFocusSiteNumber).trim(),
+    );
+
+    if (!site) {
+      setStatus(`Could not find site ${pendingFocusSiteNumber} on this map.`);
+      setPendingFocusSiteNumber("");
       return;
     }
 
-    if (selectedAttendee.assigned_site) {
+    setSelectedSiteId(site.id || site.master_site_id);
+
+    // Delay focus slightly to ensure DOM + map render is complete
+    setTimeout(() => {
+      focusSite(site, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
+    }, 150);
+
+    setStatus(`Focused parking map on site ${pendingFocusSiteNumber}.`);
+    setPendingFocusSiteNumber("");
+  }, [pendingFocusSiteNumber, sites, focusSite, zoom, isNarrow, defaultZoom]);
+
+  async function assignAttendeeToSite({
+    attendee,
+    site,
+    markParked = false,
+    allowOverride = true,
+  }: {
+    attendee: Attendee;
+    site: ParkingSite;
+    markParked?: boolean;
+    allowOverride?: boolean;
+  }) {
+    if (!event?.id) {
+      setStatus("No active event selected.");
+      return false;
+    }
+
+    const siteLabel = site.display_label || site.site_number;
+    if (!siteLabel) {
+      setStatus("Selected site has no site number or display label.");
+      return false;
+    }
+
+    const siteKey = siteMatchKey(siteLabel);
+    const occupiedAttendeeId = site.assigned_attendee_id;
+
+    if (occupiedAttendeeId && occupiedAttendeeId !== attendee.id) {
+      const occupiedAttendee = attendees.find(
+        (a) => a.id === occupiedAttendeeId,
+      );
+      const occupiedName = occupiedAttendee
+        ? `${occupiedAttendee.pilot_first || ""} ${occupiedAttendee.pilot_last || ""}`.trim() ||
+          "another attendee"
+        : "another attendee";
+
+      if (!allowOverride) {
+        setStatus(`Site ${siteLabel} is already assigned to ${occupiedName}.`);
+        return false;
+      }
+
+      const confirmed = window.confirm(
+        `Site ${siteLabel} is already assigned to ${occupiedName}.\n\nMove ${
+          `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim() ||
+          "this attendee"
+        } to this site and clear the previous assignment?`,
+      );
+
+      if (!confirmed) {
+        setStatus("Site assignment cancelled.");
+        return false;
+      }
+
+      const { error: clearPreviousAttendeeError } = await supabase
+        .from("attendees")
+        .update({ assigned_site: null })
+        .eq("id", occupiedAttendeeId);
+
+      if (clearPreviousAttendeeError) {
+        setStatus(
+          `Could not clear previous attendee: ${clearPreviousAttendeeError.message}`,
+        );
+        return false;
+      }
+    }
+    const currentSiteKey = siteMatchKey(
+      attendee.assigned_site || siteLabelByAttendeeId.get(attendee.id) || "",
+    );
+
+    if (currentSiteKey && currentSiteKey !== siteKey) {
       const oldSite = sites.find(
-        (s) => s.site_number === selectedAttendee.assigned_site,
+        (s) =>
+          siteMatchKey(s.site_number) === currentSiteKey ||
+          siteMatchKey(s.display_label) === currentSiteKey,
       );
 
       if (oldSite?.id) {
-        await supabase
+        const { error: clearOldSiteError } = await supabase
           .from("parking_sites")
           .update({ assigned_attendee_id: null })
           .eq("id", oldSite.id);
+
+        if (clearOldSiteError) {
+          setStatus(`Could not clear old site: ${clearOldSiteError.message}`);
+          return false;
+        }
       }
     }
 
@@ -639,15 +852,15 @@ function ParkingAdminPageInner() {
     if (site.id) {
       const result = await supabase
         .from("parking_sites")
-        .update({ assigned_attendee_id: selectedAttendee.id })
+        .update({ assigned_attendee_id: attendee.id })
         .eq("id", site.id);
 
       parkingError = result.error;
     } else {
       const result = await supabase.from("parking_sites").insert({
-        event_id: event?.id,
+        event_id: event.id,
         master_site_id: site.master_site_id,
-        assigned_attendee_id: selectedAttendee.id,
+        assigned_attendee_id: attendee.id,
       });
 
       parkingError = result.error;
@@ -655,34 +868,59 @@ function ParkingAdminPageInner() {
 
     if (parkingError) {
       setStatus(`Could not assign site: ${parkingError.message}`);
-      return;
+      return false;
     }
 
-    const nextArrivalStatus =
-      selectedAttendee.arrival_status === "parked" ? "parked" : "arrived";
+    const nextArrivalStatus = markParked
+      ? "parked"
+      : attendee.arrival_status === "parked"
+        ? "parked"
+        : "arrived";
 
     const { error: attendeeError } = await supabase
       .from("attendees")
       .update({
-        assigned_site: site.site_number,
+        assigned_site: siteLabel,
         arrival_status: nextArrivalStatus,
         has_arrived:
           nextArrivalStatus === "arrived" || nextArrivalStatus === "parked",
       })
-      .eq("id", selectedAttendee.id);
+      .eq("id", attendee.id);
 
     if (attendeeError) {
       setStatus(
         `Site assigned, but attendee update failed: ${attendeeError.message}`,
       );
-      return;
+      return false;
     }
 
+    setSelectedAttendeeId(attendee.id);
+    setSelectedSiteId(site.id || site.master_site_id);
+    focusSite(site, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
+
     setStatus(
-      `Assigned ${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""} to site ${site.site_number}.`,
+      `${markParked ? "Parked" : "Assigned"} ${
+        `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim() ||
+        "attendee"
+      } at site ${siteLabel}.`,
     );
 
     await loadPage();
+    return true;
+  }
+
+  async function assignSelectedToSite(site: ParkingSite) {
+    if (!selectedAttendee) {
+      setStatus("Select an attendee first.");
+      return;
+    }
+
+    await assignAttendeeToSite({
+      attendee: selectedAttendee,
+      site,
+      markParked: false,
+      allowOverride: true,
+    });
   }
 
   async function quickParkSelected() {
@@ -696,35 +934,12 @@ function ParkingAdminPageInner() {
       return;
     }
 
-    if (
-      selectedSite.assigned_attendee_id &&
-      selectedSite.assigned_attendee_id !== selectedAttendee.id
-    ) {
-      setStatus(`Site ${selectedSite.site_number} is already occupied.`);
-      return;
-    }
-
-    const siteNumber = selectedSite.site_number;
-    await assignSelectedToSite(selectedSite);
-
-    const { error } = await supabase
-      .from("attendees")
-      .update({
-        arrival_status: "parked",
-        has_arrived: true,
-      })
-      .eq("id", selectedAttendee.id);
-
-    if (error) {
-      setStatus(`Site assigned, but quick park failed: ${error.message}`);
-      await loadPage();
-      return;
-    }
-
-    setStatus(
-      `Quick parked ${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""} at site ${siteNumber}.`,
-    );
-    await loadPage();
+    await assignAttendeeToSite({
+      attendee: selectedAttendee,
+      site: selectedSite,
+      markParked: true,
+      allowOverride: true,
+    });
   }
 
   async function clearSite(site: ParkingSite) {
@@ -782,6 +997,24 @@ function ParkingAdminPageInner() {
     }
 
     setStatus(`Arrival status updated to ${nextStatus}.`);
+
+    // Preserve selection + re-center after update
+    const updatedAttendee = attendees.find((a) => a.id === attendeeId);
+    if (updatedAttendee?.assigned_site) {
+      const siteKey = siteMatchKey(updatedAttendee.assigned_site);
+      const site = sites.find(
+        (s) =>
+          siteMatchKey(s.site_number) === siteKey ||
+          siteMatchKey(s.display_label) === siteKey,
+      );
+      if (site) {
+        setSelectedSiteId(site.id || site.master_site_id);
+        setTimeout(() => {
+          focusSite(site);
+        }, 100);
+      }
+    }
+
     await loadPage();
   }
 
@@ -811,6 +1044,12 @@ function ParkingAdminPageInner() {
   function closeMobilePalette() {
     setSelectedAttendeeId("");
     setSelectedSiteId("");
+  }
+
+  function normalizeSite(value: string | null | undefined) {
+    return String(value || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, ""); // removes dashes, spaces, etc
   }
 
   function getSiteColor(site: ParkingSite) {
@@ -873,14 +1112,6 @@ function ParkingAdminPageInner() {
       <div style={{ fontWeight: 700 }}>
         {isNarrow ? "Active Check-In Queue" : "Assignments"}
       </div>
-
-      <input
-        type="text"
-        placeholder="Search attendee, coach, site, or status"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ padding: 8 }}
-      />
 
       <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
         <button
@@ -1137,6 +1368,40 @@ function ParkingAdminPageInner() {
         </>
       )}
 
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 5,
+          background: "white",
+          paddingTop: 8,
+          paddingBottom: 6,
+          marginTop: 4,
+          borderTop: "1px solid #e5e7eb",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#555",
+            marginBottom: 4,
+          }}
+        >
+          Search / Assign
+        </div>
+        <input
+          type="text"
+          placeholder="Search attendee, coach, site, or status"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            width: "100%",
+            padding: 8,
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
       <div style={{ fontWeight: 700, marginTop: 4 }}>
         {isNarrow ? "Active Check-In Queue" : "Attendees"}
       </div>
@@ -1149,13 +1414,46 @@ function ParkingAdminPageInner() {
         const selected = attendee.id === selectedAttendeeId;
 
         return (
-          <button
+          <div
             key={attendee.id}
             ref={(el) => {
               attendeeButtonRefs.current[attendee.id] = el;
             }}
-            type="button"
-            onClick={() => setSelectedAttendeeId(attendee.id)}
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setSelectedAttendeeId(attendee.id);
+
+              if (attendee.assigned_site) {
+                const assignedSiteKey = siteMatchKey(attendee.assigned_site);
+                const site = sites.find(
+                  (s) =>
+                    siteMatchKey(s.site_number) === assignedSiteKey ||
+                    siteMatchKey(s.display_label) === assignedSiteKey,
+                );
+
+                if (site) {
+                  setSelectedSiteId(site.id || site.master_site_id);
+                  focusSite(
+                    site,
+                    Math.max(zoom, isNarrow ? 1.05 : defaultZoom),
+                  );
+                  setStatus(
+                    `Focused map on site ${site.display_label || site.site_number}.`,
+                  );
+                } else {
+                  setStatus(
+                    `Could not find site ${attendee.assigned_site} on the map.`,
+                  );
+                }
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.currentTarget.click();
+              }
+            }}
             style={{
               textAlign: "left",
               padding: 10,
@@ -1199,13 +1497,84 @@ function ParkingAdminPageInner() {
                 {attendee.arrival_status || "not_arrived"}
               </span>
             </div>
-          </button>
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                marginTop: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedAttendeeId(attendee.id);
+
+                  if (attendee.assigned_site) {
+                    const siteKey = siteMatchKey(attendee.assigned_site);
+                    const site = sites.find(
+                      (s) =>
+                        siteMatchKey(s.site_number) === siteKey ||
+                        siteMatchKey(s.display_label) === siteKey,
+                    );
+                    if (site) {
+                      setSelectedSiteId(site.id || site.master_site_id);
+                      focusSite(site);
+                      const attendeeSite = attendee.assigned_site;
+                      if (attendeeSite && site) {
+                        void assignAttendeeToSite({
+                          attendee,
+                          site,
+                          markParked: true,
+                          allowOverride: true,
+                        });
+                        return;
+                      }
+                    }
+                  }
+
+                  void setArrivalStatus(attendee.id, "parked");
+                }}
+                disabled={attendee.arrival_status === "parked"}
+                style={{
+                  padding: "5px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #ccc",
+                  background:
+                    attendee.arrival_status === "parked" ? "#f3f4f6" : "white",
+                  cursor:
+                    attendee.arrival_status === "parked"
+                      ? "not-allowed"
+                      : "pointer",
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                Mark Parked
+              </button>
+            </div>
+          </div>
         );
       })}
     </div>
   );
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
+      <style>{`
+        @keyframes parkingSelectedPulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.85), 0 1px 4px rgba(0,0,0,0.35);
+          }
+          70% {
+            box-shadow: 0 0 0 22px rgba(245, 158, 11, 0), 0 1px 4px rgba(0,0,0,0.35);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(245, 158, 11, 0), 0 1px 4px rgba(0,0,0,0.35);
+          }
+        }
+      `}</style>
+
       <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
         Parking Admin
       </h1>
@@ -1438,14 +1807,35 @@ function ParkingAdminPageInner() {
                         onClick={() => handleSiteClick(site)}
                         title={getSiteTitle(site)}
                         style={{
-                          width: isNarrow ? 26 : 14,
-                          height: isNarrow ? 26 : 14,
+                          width:
+                            (site.id || site.master_site_id) === selectedSiteId
+                              ? isNarrow
+                                ? 44
+                                : 32
+                              : isNarrow
+                                ? 32
+                                : 22,
+                          height:
+                            (site.id || site.master_site_id) === selectedSiteId
+                              ? isNarrow
+                                ? 44
+                                : 32
+                              : isNarrow
+                                ? 32
+                                : 22,
                           borderRadius: "50%",
                           background: getSiteColor(site),
                           border: isNarrow
                             ? "3px solid white"
                             : "2px solid white",
-                          boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+                          boxShadow:
+                            (site.id || site.master_site_id) === selectedSiteId
+                              ? "0 0 0 8px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(0,0,0,0.45)"
+                              : "0 1px 4px rgba(0,0,0,0.35)",
+                          animation:
+                            (site.id || site.master_site_id) === selectedSiteId
+                              ? "parkingSelectedPulse 2.2s ease-in-out infinite"
+                              : undefined,
                           cursor: "pointer",
                           padding: 0,
                           display: "block",
@@ -1513,7 +1903,7 @@ function ParkingAdminPageInner() {
 
 export default function ParkingAdminPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_parking">
+    <AdminRouteGuard>
       <ParkingAdminPageInner />
     </AdminRouteGuard>
   );
