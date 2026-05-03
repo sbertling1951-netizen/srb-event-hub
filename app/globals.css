@@ -129,16 +129,6 @@ select {
 /* ===== MOBILE FIRST ===== */
 /* Nothing fancy here — let it be full width */
 
-/* ===== DESKTOP SIDEBAR OFFSET ===== */
-@media (min-width: 900px) {
-  .app-main {
-    padding-left: 260px;
-    /* sidebar width only */
-    padding-right: 12px;
-    padding-top: 16px;
-    padding-bottom: 16px;
-  }
-}
 
 /* ===== SAFETY FIXES FOR MOBILE SCROLL ===== */
 
@@ -180,9 +170,9 @@ div {
 @media (min-width: 900px) {
   .app-main {
     padding-left: 260px !important;
-    padding-right: 12px !important;
-    padding-top: 16px !important;
-    padding-bottom: 16px !important;
+    padding-right: 8px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
   }
 
   .app-inner {
