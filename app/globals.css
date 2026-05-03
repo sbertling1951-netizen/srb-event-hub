@@ -132,8 +132,11 @@ select {
 /* ===== DESKTOP SIDEBAR OFFSET ===== */
 @media (min-width: 900px) {
   .app-main {
-    padding-left: 276px;
-    /* sidebar width + spacing */
+    padding-left: 260px;
+    /* sidebar width only */
+    padding-right: 12px;
+    padding-top: 16px;
+    padding-bottom: 16px;
   }
 }
 
@@ -176,12 +179,15 @@ div {
 /* ===== DESKTOP SIDEBAR OFFSET ONLY ===== */
 @media (min-width: 900px) {
   .app-main {
-    padding-left: 276px !important;
+    padding-left: 260px !important;
+    padding-right: 12px !important;
+    padding-top: 16px !important;
+    padding-bottom: 16px !important;
   }
 
   .app-inner {
-    max-width: 1200px !important;
-    margin: 0 auto !important;
+    max-width: none !important;
+    margin: 0 !important;
   }
 }
 
