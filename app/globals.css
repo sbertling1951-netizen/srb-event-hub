@@ -233,51 +233,118 @@ body.admin-embedded-mode .card:first-child {
   transform: scale(0.96);
 }
 
-/* ===== DASHBOARD NAV BUTTONS ===== */
-.dashboard-nav-button {
-  width: 100% !important;
-  min-height: 52px !important;
-  padding: 12px 16px !important;
-  border-radius: 12px !important;
+/* ===== ADMIN TOOL BUTTONS ===== */
+.admin-tool-button {
+  min-height: 124px !important;
+  padding: 18px 20px !important;
+  border-radius: 14px !important;
   border: 1px solid rgba(17, 24, 39, 0.14) !important;
   color: #111827 !important;
-  font-size: 16px !important;
-  font-weight: 850 !important;
-  cursor: pointer !important;
+  text-decoration: none !important;
+  display: grid !important;
+  grid-template-columns: 54px 1fr !important;
+  align-items: center !important;
+  gap: 16px !important;
+  text-align: left !important;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
-  transition:
-    transform 0.14s ease,
-    box-shadow 0.14s ease,
-    filter 0.14s ease,
-    border-color 0.14s ease !important;
 }
 
-.dashboard-nav-button:hover:not(:disabled) {
+.admin-tool-icon {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(255, 255, 255, 0.75) !important;
+  border-right: 3px solid rgba(17, 24, 39, 0.14) !important;
+  font-size: 22px !important;
+}
+
+.admin-tool-title {
+  display: block !important;
+  font-size: 17px !important;
+  font-weight: 900 !important;
+  margin-bottom: 6px !important;
+}
+
+.admin-tool-description {
+  display: block !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  line-height: 1.35 !important;
+  color: #374151 !important;
+}
+
+.admin-tool-button:hover {
   transform: translateY(-1px) !important;
-  filter: brightness(1.03) !important;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.13) !important;
+  box-shadow: 0 7px 18px rgba(15, 23, 42, 0.14) !important;
 }
 
-.dashboard-nav-button:active:not(:disabled) {
-  transform: scale(0.98) !important;
+.admin-tool-button.admin-tool-events {
+  background: #e0f2fe !important;
 }
 
-.dashboard-nav-agenda {
-  background: linear-gradient(180deg, #e0f2fe 0%, #bae6fd 100%) !important;
-  border-color: #38bdf8 !important;
+.admin-tool-button.admin-tool-parking,
+.admin-tool-button.admin-tool-checkin {
+  background: #ecfdf5 !important;
 }
 
-.dashboard-nav-announcements {
-  background: linear-gradient(180deg, #fff7ed 0%, #fed7aa 100%) !important;
-  border-color: #fb923c !important;
+.admin-tool-button.admin-tool-announcements,
+.admin-tool-button.admin-tool-imports {
+  background: #fff7ed !important;
 }
 
-.dashboard-nav-attendees {
-  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%) !important;
-  border-color: #34d399 !important;
+.admin-tool-button.admin-tool-nearby,
+.admin-tool-button.admin-tool-vendors {
+  background: #f5e8ff !important;
 }
 
-.dashboard-nav-nearby {
-  background: linear-gradient(180deg, #f5e8ff 0%, #e9d5ff 100%) !important;
-  border-color: #c084fc !important;
+.admin-tool-button.admin-tool-map,
+.admin-tool-button.admin-tool-staff {
+  background: #eef2ff !important;
+}
+
+.admin-tool-button.admin-tool-agenda {
+  background: #fef3c7 !important;
+}
+
+.admin-tool-button.admin-tool-reports {
+  background: #f8fafc !important;
+}
+
+/* ===== MOBILE FORM ALIGNMENT FIX ===== */
+@media (max-width: 899px) {
+  .card {
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+
+  .card input,
+  .card select,
+  .card textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .card label,
+  .card form,
+  .card div {
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  input,
+  select,
+  textarea {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  textarea {
+    resize: vertical;
+  }
 }
