@@ -169,20 +169,32 @@ export default function MemberDashboardPage() {
           gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
         }}
       >
-        <Link href="/member/agenda" style={cardLinkStyle}>
-          Agenda
+        <Link
+          href="/member/agenda"
+          className="dashboard-nav-button dashboard-nav-agenda"
+        >
+          📅 Agenda
         </Link>
 
-        <Link href="/member/announcements" style={cardLinkStyle}>
-          Announcements
+        <Link
+          href="/member/announcements"
+          className="dashboard-nav-button dashboard-nav-announcements"
+        >
+          📢 Announcements
         </Link>
 
-        <Link href="/member/attendees" style={cardLinkStyle}>
-          Attendees
+        <Link
+          href="/member/attendees"
+          className="dashboard-nav-button dashboard-nav-attendees"
+        >
+          👥 Attendees
         </Link>
 
-        <Link href="/member/nearby" style={cardLinkStyle}>
-          Nearby
+        <Link
+          href="/member/nearby"
+          className="dashboard-nav-button dashboard-nav-nearby"
+        >
+          📍 Nearby
         </Link>
       </div>
 
@@ -227,13 +239,21 @@ export default function MemberDashboardPage() {
                 </div>
 
                 {vendor.business_description ? (
-                  <div style={{ fontSize: 14, color: "#555", lineHeight: 1.45 }}>
+                  <div
+                    style={{ fontSize: 14, color: "#555", lineHeight: 1.45 }}
+                  >
                     {vendor.business_description}
                   </div>
                 ) : null}
 
-                {vendor.action_type === "external_signup" && vendor.signup_url ? (
-                  <a href={vendor.signup_url} target="_blank" rel="noopener noreferrer" style={primaryLinkStyle}>
+                {vendor.action_type === "external_signup" &&
+                vendor.signup_url ? (
+                  <a
+                    href={vendor.signup_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={primaryLinkStyle}
+                  >
                     Sign Up
                   </a>
                 ) : vendor.action_type === "info_only" ? (
@@ -241,7 +261,10 @@ export default function MemberDashboardPage() {
                     View Vendors
                   </Link>
                 ) : (
-                  <Link href={`/member/vendor-signup?vendorId=${vendor.id}`} style={primaryLinkStyle}>
+                  <Link
+                    href={`/member/vendor-signup?vendorId=${vendor.id}`}
+                    style={primaryLinkStyle}
+                  >
                     Request Service
                   </Link>
                 )}
@@ -265,7 +288,8 @@ export default function MemberDashboardPage() {
                     margin: "0 4px",
                     padding: 0,
                     border: "none",
-                    background: index === currentVendorIndex ? "#0b5cff" : "#ccc",
+                    background:
+                      index === currentVendorIndex ? "#0b5cff" : "#ccc",
                     cursor: "pointer",
                   }}
                 />

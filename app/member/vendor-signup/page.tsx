@@ -46,6 +46,31 @@ type AttendeeRow = {
   coach_length: string | null;
 };
 
+type MemberRequestRow = {
+  id: string;
+  event_id: string;
+  vendor_id: string | null;
+  attendee_id: string | null;
+  requester_name: string | null;
+  requester_email: string | null;
+  requester_phone: string | null;
+  site_number: string | null;
+  requested_service: string | null;
+  guest_count: number | null;
+  request_notes: string | null;
+  preferred_response_method: string | null;
+  request_status: string | null;
+  created_at: string | null;
+  vendors?:
+    | {
+        business_name: string | null;
+      }
+    | {
+        business_name: string | null;
+      }[]
+    | null;
+};
+
 function getStoredMemberAttendeeId() {
   if (typeof window === "undefined") {
     return null;
@@ -98,6 +123,31 @@ function coachInfo(attendee: AttendeeRow | null) {
     .join(" ");
 }
 
+function requestVendorName(request: MemberRequestRow) {
+  const vendor = Array.isArray(request.vendors)
+    ? request.vendors[0]
+    : request.vendors;
+
+  return vendor?.business_name || "Vendor";
+}
+
+function formatRequestDate(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
+}
+
+function canCancelRequest(request: MemberRequestRow) {
+  const status = (request.request_status || "new").toLowerCase();
+  return status === "new" || status === "contacted" || status === "confirmed";
+}
+
 function MemberVendorSignupInner() {
   const searchParams = useSearchParams();
   const vendorIdFromUrl = searchParams.get("vendorId") || "";
@@ -119,16 +169,15 @@ function MemberVendorSignupInner() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [memberRequests, setMemberRequests] = useState<MemberRequestRow[]>([]);
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(
+    null,
+  );
 
   const selectedVendor = useMemo(
     () => vendors.find((vendor) => vendor.id === selectedVendorId) || null,
     [vendors, selectedVendorId],
   );
-
-  const selectedEventVendor = selectedVendor?.event_vendors?.[0] || null;
-  const selectedActionType =
-    selectedEventVendor?.action_type || "service_request";
-  const selectedSignupUrl = selectedEventVendor?.signup_url || "";
 
   useEffect(() => {
     void loadPage();
@@ -179,8 +228,8 @@ function MemberVendorSignupInner() {
             event_note,
             display_order,
             is_visible_to_members,
-            signup_url,
-            action_type
+signup_url,
+action_type
           )
         `,
         )
@@ -234,6 +283,48 @@ function MemberVendorSignupInner() {
         ) ||
         null;
 
+      const { data: requestRows, error: requestError } = await supabase
+        .from("vendor_service_requests")
+        .select(
+          `
+          id,
+          event_id,
+          vendor_id,
+          attendee_id,
+          requester_name,
+          requester_email,
+          requester_phone,
+          site_number,
+          requested_service,
+          guest_count,
+          request_notes,
+          preferred_response_method,
+          request_status,
+          created_at,
+          vendors (
+            business_name
+          )
+        `,
+        )
+        .eq("event_id", currentEvent.id)
+        .order("created_at", { ascending: false });
+
+      if (requestError) {
+        throw requestError;
+      }
+
+      const normalizedStoredEmail = (storedEmail || "").toLowerCase();
+      const visibleRequests = (
+        (requestRows || []) as MemberRequestRow[]
+      ).filter((request) => {
+        const requestEmail = (request.requester_email || "").toLowerCase();
+        return (
+          (!!attendeeRow?.id && request.attendee_id === attendeeRow.id) ||
+          (!!normalizedStoredEmail && requestEmail === normalizedStoredEmail)
+        );
+      });
+
+      setMemberRequests(visibleRequests);
       setAttendee(attendeeRow);
 
       if (attendeeRow) {
@@ -305,12 +396,61 @@ function MemberVendorSignupInner() {
       setStatus("Your vendor request was submitted.");
       setRequestedService("");
       setNotes("");
+      await loadPage();
     } catch (err: any) {
       console.error("submit vendor request error:", err);
       setError(err?.message || "Could not submit vendor request.");
       setStatus("Request failed.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function cancelRequest(request: MemberRequestRow) {
+    if (!canCancelRequest(request)) {
+      setError("This request can no longer be cancelled from the member page.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Cancel this request for ${requestVendorName(request)}?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setCancellingRequestId(request.id);
+      setError(null);
+      setStatus("Cancelling vendor request...");
+
+      const { error: updateError } = await supabase
+        .from("vendor_service_requests")
+        .update({ request_status: "cancelled" })
+        .eq("id", request.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setMemberRequests((prev) =>
+        prev.map((row) =>
+          row.id === request.id
+            ? {
+                ...row,
+                request_status: "cancelled",
+              }
+            : row,
+        ),
+      );
+      setStatus("Vendor request cancelled.");
+    } catch (err: any) {
+      console.error("cancel vendor request error:", err);
+      setError(err?.message || "Could not cancel vendor request.");
+      setStatus("Cancel failed.");
+    } finally {
+      setCancellingRequestId(null);
     }
   }
 
@@ -590,6 +730,114 @@ function MemberVendorSignupInner() {
             Refresh
           </button>
         </div>
+      </div>
+
+      <div
+        className="card"
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          background: "white",
+          padding: 18,
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <h2 style={{ margin: 0 }}>My Vendor Requests</h2>
+
+        {memberRequests.length === 0 ? (
+          <div style={{ fontSize: 14, color: "#666" }}>
+            You do not have any vendor requests for this event yet.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {memberRequests.map((request) => {
+              const statusValue = request.request_status || "new";
+              const cancelAllowed = canCancelRequest(request);
+
+              return (
+                <div
+                  key={request.id}
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 10,
+                    background:
+                      statusValue === "cancelled" ? "#f9fafb" : "#fafafa",
+                    padding: 12,
+                    display: "grid",
+                    gap: 6,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 800 }}>
+                        {requestVendorName(request)}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#555" }}>
+                        {request.requested_service || "Service request"}
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 13, color: "#555" }}>
+                      Status: <strong>{statusValue}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 13, color: "#555" }}>
+                    {formatRequestDate(request.created_at)}
+                    {request.site_number
+                      ? ` • Site ${request.site_number}`
+                      : ""}
+                    {request.guest_count
+                      ? ` • Party ${request.guest_count}`
+                      : ""}
+                  </div>
+
+                  {request.request_notes ? (
+                    <div style={{ fontSize: 13 }}>
+                      <strong>Notes:</strong> {request.request_notes}
+                    </div>
+                  ) : null}
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => void cancelRequest(request)}
+                      disabled={
+                        !cancelAllowed || cancellingRequestId === request.id
+                      }
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: 8,
+                        border: "1px solid #dc2626",
+                        background: cancelAllowed ? "#fff1f2" : "#f3f4f6",
+                        color: cancelAllowed ? "#991b1b" : "#666",
+                        cursor:
+                          cancelAllowed && cancellingRequestId !== request.id
+                            ? "pointer"
+                            : "default",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {cancellingRequestId === request.id
+                        ? "Cancelling..."
+                        : statusValue === "cancelled"
+                          ? "Cancelled"
+                          : "Cancel Request"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
