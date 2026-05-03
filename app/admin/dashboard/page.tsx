@@ -230,6 +230,86 @@ function MetricCard({
   );
 }
 
+function getAdminToolIcon(href: string) {
+  if (href.includes("events")) {
+    return "📅";
+  }
+  if (href.includes("parking")) {
+    return "🅿️";
+  }
+  if (href.includes("announcements")) {
+    return "📢";
+  }
+  if (href.includes("nearby")) {
+    return "📍";
+  }
+  if (href.includes("master-maps") || href.includes("map")) {
+    return "🗺️";
+  }
+  if (href.includes("agenda")) {
+    return "🗓️";
+  }
+  if (href.includes("checkin")) {
+    return "✅";
+  }
+  if (href.includes("vendors")) {
+    return "🤝";
+  }
+  if (href.includes("reports")) {
+    return "📊";
+  }
+  if (href.includes("event-staff")) {
+    return "👥";
+  }
+  if (href.includes("locations")) {
+    return "📌";
+  }
+  if (href.includes("imports")) {
+    return "⬆️";
+  }
+  return "⚙️";
+}
+
+function getAdminToolClass(href: string) {
+  if (href.includes("events")) {
+    return "admin-tool-events";
+  }
+  if (href.includes("parking")) {
+    return "admin-tool-parking";
+  }
+  if (href.includes("announcements")) {
+    return "admin-tool-announcements";
+  }
+  if (href.includes("nearby")) {
+    return "admin-tool-nearby";
+  }
+  if (href.includes("master-maps") || href.includes("map")) {
+    return "admin-tool-map";
+  }
+  if (href.includes("agenda")) {
+    return "admin-tool-agenda";
+  }
+  if (href.includes("checkin")) {
+    return "admin-tool-checkin";
+  }
+  if (href.includes("vendors")) {
+    return "admin-tool-vendors";
+  }
+  if (href.includes("reports")) {
+    return "admin-tool-reports";
+  }
+  if (href.includes("event-staff")) {
+    return "admin-tool-staff";
+  }
+  if (href.includes("locations")) {
+    return "admin-tool-locations";
+  }
+  if (href.includes("imports")) {
+    return "admin-tool-imports";
+  }
+  return "admin-tool-reports";
+}
+
 function AdminDashboardPageInner() {
   const initialEvent = getInitialAdminEvent();
   const router = useRouter();
@@ -727,14 +807,18 @@ function AdminDashboardPageInner() {
               key={card.href}
               type="button"
               onClick={() => goTo(card.href)}
-              style={toolCardButtonStyle}
+              className={`admin-tool-button ${getAdminToolClass(card.href)}`}
             >
-              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
-                {card.title}
-              </div>
-              <div style={{ fontSize: 13, color: "#555", lineHeight: 1.45 }}>
-                {card.description}
-              </div>
+              <span className="admin-tool-icon" aria-hidden="true">
+                {getAdminToolIcon(card.href)}
+              </span>
+
+              <span>
+                <span className="admin-tool-title">{card.title}</span>
+                <span className="admin-tool-description">
+                  {card.description}
+                </span>
+              </span>
             </button>
           ))}
 

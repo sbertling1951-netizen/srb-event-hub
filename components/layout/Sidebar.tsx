@@ -459,6 +459,7 @@ export default function Sidebar() {
         { label: "Map Admin", href: "/admin/map-admin" },
         { label: "Attendees Management", href: "/admin/attendees" },
         { label: "Vendors", href: "/admin/vendors" },
+        { label: "Vendor Requests", href: "/admin/vendor-requests" },
         { label: "Pre-Rally Checklist", href: "/admin/checklist" },
         { label: "Print Center", href: "/admin/print" },
         { label: "Agenda Admin", href: "/admin/agenda" },

@@ -101,6 +101,59 @@ function vendorEmailHref(request: RequestRow) {
   return `mailto:${vendorEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
+function vendorForRequest(request: RequestRow) {
+  return Array.isArray(request.vendors) ? request.vendors[0] : request.vendors;
+}
+
+function vendorNameForRequest(request: RequestRow) {
+  return vendorForRequest(request)?.business_name || "Unassigned Vendor";
+}
+
+function vendorPhoneForRequest(request: RequestRow) {
+  return vendorForRequest(request)?.phone || "";
+}
+
+function safeFileName(value: string) {
+  return String(value || "vendor")
+    .trim()
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
+
+function requestSummaryLine(request: RequestRow, index: number) {
+  const site = currentSiteForRequest(request) || "Not provided";
+
+  return [
+    `${index + 1}. ${request.requester_name || "Unnamed"}`,
+    `Site: ${site}`,
+    `Phone: ${request.requester_phone || ""}`,
+    `Email: ${request.requester_email || ""}`,
+    `Service: ${request.requested_service || ""}`,
+    `Party Count: ${request.guest_count || 0}`,
+    `Status: ${request.request_status || "new"}`,
+    request.request_notes ? `Notes: ${request.request_notes}` : "Notes: —",
+  ].join("\n");
+}
+
+function vendorSummaryText(vendorName: string, requests: RequestRow[]) {
+  return [
+    `${vendorName} Service Requests`,
+    "",
+    ...requests.map((request, index) => requestSummaryLine(request, index)),
+  ].join("\n\n");
+}
+
+function smsHref(phone: string | null, body: string) {
+  const digits = String(phone || "").replace(/\D+/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  return `sms:${digits}?body=${encodeURIComponent(body)}`;
+}
+
 function openParkingMapForSite(siteNumber: string | null) {
   const site = (siteNumber || "").trim();
 
@@ -214,6 +267,21 @@ function VendorRequestsInner() {
     0,
   );
 
+  const groupedRequests = useMemo(() => {
+    const map = new Map<string, RequestRow[]>();
+
+    filtered.forEach((request) => {
+      const name = vendorNameForRequest(request);
+      const existing = map.get(name) || [];
+      existing.push(request);
+      map.set(name, existing);
+    });
+
+    return Array.from(map.entries()).sort(([a], [b]) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+  }, [filtered]);
+
   async function updateStatus(id: string, nextStatus: string) {
     setUpdatingId(id);
 
@@ -277,6 +345,63 @@ function VendorRequestsInner() {
     URL.revokeObjectURL(url);
   }
 
+  function exportVendorCsv(vendorName: string, vendorRequests: RequestRow[]) {
+    const rows = [
+      [
+        "Created",
+        "Vendor",
+        "Name",
+        "Service",
+        "Guests",
+        "Site",
+        "Phone",
+        "Email",
+        "Notes",
+        "Status",
+      ],
+      ...vendorRequests.map((r) => [
+        r.created_at || "",
+        vendorName,
+        r.requester_name || "",
+        r.requested_service || "",
+        r.guest_count || 0,
+        currentSiteForRequest(r),
+        r.requester_phone || "",
+        r.requester_email || "",
+        r.request_notes || "",
+        r.request_status || "new",
+      ]),
+    ];
+
+    const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeFileName(vendorName)}-requests.csv`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+  }
+
+  async function copyVendorSummary(
+    vendorName: string,
+    vendorRequests: RequestRow[],
+  ) {
+    const summary = vendorSummaryText(vendorName, vendorRequests);
+
+    try {
+      await navigator.clipboard.writeText(summary);
+      setStatus(`Copied ${vendorName} request summary.`);
+    } catch (err) {
+      console.error("copyVendorSummary error:", err);
+      setStatus(
+        "Could not copy summary. Your browser may not allow clipboard access.",
+      );
+    }
+  }
+
   return (
     <div style={{ padding: 24, display: "grid", gap: 16 }}>
       <div className="card" style={{ padding: 18 }}>
@@ -337,6 +462,85 @@ function VendorRequestsInner() {
         Showing {filtered.length} request{filtered.length === 1 ? "" : "s"} •
         Total party count: {totalGuests}
       </div>
+
+      {groupedRequests.length > 0 ? (
+        <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>
+            Vendor Dispatch Lists
+          </div>
+          <div style={{ fontSize: 13, color: "#555" }}>
+            Export, copy, or text a vendor-specific request list.
+          </div>
+
+          {groupedRequests.map(([vendorName, vendorRequests]) => {
+            const firstRequest = vendorRequests[0];
+            const vendorPhone = firstRequest
+              ? vendorPhoneForRequest(firstRequest)
+              : "";
+            const summary = vendorSummaryText(vendorName, vendorRequests);
+            const textLink = smsHref(vendorPhone, summary);
+
+            return (
+              <div
+                key={vendorName}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 12,
+                  background: "#f8fafc",
+                  padding: 12,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 800 }}>{vendorName}</div>
+                    <div style={{ fontSize: 13, color: "#555" }}>
+                      {vendorRequests.length} request
+                      {vendorRequests.length === 1 ? "" : "s"}
+                      {vendorPhone ? ` • ${vendorPhone}` : ""}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        exportVendorCsv(vendorName, vendorRequests)
+                      }
+                    >
+                      Export Vendor CSV
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void copyVendorSummary(vendorName, vendorRequests)
+                      }
+                    >
+                      Copy Summary
+                    </button>
+
+                    {textLink ? (
+                      <a href={textLink} style={primaryButtonStyle}>
+                        Text Vendor
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       {filtered.map((r) => (
         <div
