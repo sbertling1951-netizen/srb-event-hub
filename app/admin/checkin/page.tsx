@@ -1,4 +1,3 @@
-// replaced file contents
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -47,10 +46,28 @@ type HouseholdMember = {
 };
 
 type ParkingSiteRow = {
-  id: string;
+  id: string | null;
   event_id: string;
+  master_site_id: string | null;
   site_number: string | null;
   display_label: string | null;
+  assigned_attendee_id: string | null;
+};
+
+type EventMapSettingsRow = {
+  selected_master_map_id: string | null;
+};
+
+type MasterMapSiteRow = {
+  id: string;
+  site_number: string | null;
+  display_label: string | null;
+};
+
+type ParkingAssignmentRow = {
+  id: string;
+  event_id: string;
+  master_site_id: string | null;
   assigned_attendee_id: string | null;
 };
 
@@ -72,13 +89,24 @@ function formatDateRange(
   startDate: string | null | undefined,
   endDate: string | null | undefined,
 ) {
-  if (!startDate && !endDate) {return "";}
-  if (startDate && endDate) {return `${startDate} – ${endDate}`;}
+  if (!startDate && !endDate) {
+    return "";
+  }
+  if (startDate && endDate) {
+    return `${startDate} – ${endDate}`;
+  }
   return startDate || endDate || "";
 }
 
 function normalizeSite(value: string) {
-  return value.trim();
+  return value.trim().toUpperCase();
+}
+
+function siteMatchKey(value: string | null | undefined) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
 }
 
 function householdLine(member: HouseholdMember) {
@@ -201,7 +229,9 @@ function AdminCheckinPageInner() {
   }, []);
 
   useEffect(() => {
-    if (!event?.id || accessDenied) {return;}
+    if (!event?.id || accessDenied) {
+      return;
+    }
 
     const parkingChannel = supabase
       .channel(`admin-checkin-parking-${event.id}`)
@@ -264,16 +294,32 @@ function AdminCheckinPageInner() {
         .eq("id", adminEvent.id)
         .single();
 
-      if (eventError) {throw eventError;}
+      if (eventError) {
+        throw eventError;
+      }
 
       const loadedEvent = eventRow as AdminEventRow;
       setEvent(loadedEvent);
 
-      const [attendeeResult, siteResult] = await Promise.all([
-        supabase
-          .from("attendees")
-          .select(
-            `
+      const { data: mapSettingsRows, error: mapSettingsError } = await supabase
+        .from("event_map_settings")
+        .select("selected_master_map_id")
+        .eq("event_id", loadedEvent.id)
+        .limit(1);
+
+      if (mapSettingsError) {
+        throw mapSettingsError;
+      }
+
+      const mapSettings = (mapSettingsRows?.[0] ||
+        null) as EventMapSettingsRow | null;
+
+      const [attendeeResult, masterSiteResult, assignmentResult] =
+        await Promise.all([
+          supabase
+            .from("attendees")
+            .select(
+              `
   id,
   entry_id,
   email,
@@ -292,22 +338,52 @@ function AdminCheckinPageInner() {
   volunteer:wants_to_volunteer,
   first_time:is_first_timer
 `,
-          )
-          .eq("event_id", loadedEvent.id)
-          .order("pilot_last", { ascending: true, nullsFirst: false })
-          .order("pilot_first", { ascending: true, nullsFirst: false }),
-        supabase
-          .from("parking_sites")
-          .select("id,event_id,site_number,display_label,assigned_attendee_id")
-          .eq("event_id", loadedEvent.id)
-          .order("site_number", { ascending: true, nullsFirst: false }),
-      ]);
+            )
+            .eq("event_id", loadedEvent.id)
+            .order("pilot_last", { ascending: true, nullsFirst: false })
+            .order("pilot_first", { ascending: true, nullsFirst: false }),
+          mapSettings?.selected_master_map_id
+            ? supabase
+                .from("master_map_sites")
+                .select("id,site_number,display_label")
+                .eq("master_map_id", mapSettings.selected_master_map_id)
+                .order("site_number", { ascending: true, nullsFirst: false })
+            : Promise.resolve({ data: [], error: null }),
+          supabase
+            .from("parking_sites")
+            .select("id,event_id,master_site_id,assigned_attendee_id")
+            .eq("event_id", loadedEvent.id),
+        ]);
 
-      if (attendeeResult.error) {throw attendeeResult.error;}
-      if (siteResult.error) {throw siteResult.error;}
+      if (attendeeResult.error) {
+        throw attendeeResult.error;
+      }
+      if (masterSiteResult.error) {
+        throw masterSiteResult.error;
+      }
+      if (assignmentResult.error) {
+        throw assignmentResult.error;
+      }
 
       const attendeeList = (attendeeResult.data || []) as AttendeeRow[];
-      const siteRows = (siteResult.data || []) as ParkingSiteRow[];
+      const masterSiteRows = (masterSiteResult.data ||
+        []) as MasterMapSiteRow[];
+      const assignmentRows = (assignmentResult.data ||
+        []) as ParkingAssignmentRow[];
+
+      const siteRows: ParkingSiteRow[] = masterSiteRows.map((site) => {
+        const assignment =
+          assignmentRows.find((row) => row.master_site_id === site.id) || null;
+
+        return {
+          id: assignment?.id || null,
+          event_id: loadedEvent.id,
+          master_site_id: site.id,
+          site_number: site.site_number,
+          display_label: site.display_label,
+          assigned_attendee_id: assignment?.assigned_attendee_id || null,
+        };
+      });
 
       setAttendees(attendeeList);
       setParkingSites(siteRows);
@@ -323,7 +399,9 @@ function AdminCheckinPageInner() {
           .in("attendee_id", attendeeIds)
           .order("sort_order", { ascending: true, nullsFirst: false });
 
-        if (memberError) {throw memberError;}
+        if (memberError) {
+          throw memberError;
+        }
 
         setHouseholdMembers((memberRows || []) as HouseholdMember[]);
       } else {
@@ -360,9 +438,24 @@ function AdminCheckinPageInner() {
     return map;
   }, [householdMembers]);
 
+  const siteSuggestions = useMemo(() => {
+    const unique = new Set<string>();
+
+    parkingSites.forEach((site) => {
+      const label = site.display_label || site.site_number;
+      if (label) {
+        unique.add(label.toUpperCase());
+      }
+    });
+
+    return Array.from(unique).sort();
+  }, [parkingSites]);
+
   const filteredAttendees = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) {return attendees;}
+    if (!q) {
+      return attendees;
+    }
 
     return attendees.filter((attendee) => {
       const pilot = fullName(
@@ -415,6 +508,37 @@ function AdminCheckinPageInner() {
     }));
   }
 
+  function handleSiteNumberTyping(attendeeId: string, nextValue: string) {
+    const nextSite = nextValue.toUpperCase();
+    updateEditState(attendeeId, { siteNumber: nextSite });
+
+    const nextKey = siteMatchKey(nextSite);
+    if (!nextKey) {
+      return;
+    }
+
+    const matchedSite = parkingSites.find((site) => {
+      const siteNumberMatch = siteMatchKey(site.site_number) === nextKey;
+      const displayMatch = siteMatchKey(site.display_label) === nextKey;
+      return siteNumberMatch || displayMatch;
+    });
+
+    if (!matchedSite) {
+      return;
+    }
+
+    const canonicalSite = normalizeSite(
+      matchedSite.display_label || matchedSite.site_number || nextSite,
+    );
+
+    updateEditState(attendeeId, { siteNumber: canonicalSite });
+    localStorage.setItem("fcoc-parking-focus-site", canonicalSite);
+    window.dispatchEvent(new Event("fcoc-parking-focus-site"));
+    setStatus(
+      `Matched site ${canonicalSite}. Open Parking Admin to see it highlighted on the map.`,
+    );
+  }
+
   async function saveCheckin(attendee: AttendeeRow) {
     if (!event?.id) {
       setStatus("No working event selected.");
@@ -422,9 +546,16 @@ function AdminCheckinPageInner() {
     }
 
     const current = editState[attendee.id];
-    if (!current) {return;}
+    if (!current) {
+      return;
+    }
 
-    const normalizedSite = normalizeSite(current.siteNumber);
+    let normalizedSite = normalizeSite(current.siteNumber);
+    const enteredSiteKey = siteMatchKey(normalizedSite);
+
+    if (current.siteNumber !== normalizedSite) {
+      updateEditState(attendee.id, { siteNumber: normalizedSite });
+    }
 
     try {
       setSavingId(attendee.id);
@@ -435,11 +566,9 @@ function AdminCheckinPageInner() {
         matchedSite =
           parkingSites.find((site) => {
             const siteNumberMatch =
-              (site.site_number || "").trim().toLowerCase() ===
-              normalizedSite.toLowerCase();
+              siteMatchKey(site.site_number) === enteredSiteKey;
             const displayMatch =
-              (site.display_label || "").trim().toLowerCase() ===
-              normalizedSite.toLowerCase();
+              siteMatchKey(site.display_label) === enteredSiteKey;
             return siteNumberMatch || displayMatch;
           }) || null;
 
@@ -451,15 +580,58 @@ function AdminCheckinPageInner() {
           return;
         }
 
+        const canonicalSite = normalizeSite(
+          matchedSite.display_label ||
+            matchedSite.site_number ||
+            normalizedSite,
+        );
+        normalizedSite = canonicalSite;
+        updateEditState(attendee.id, { siteNumber: canonicalSite });
+
+        const existingByRoster = attendees.find(
+          (a) =>
+            a.id !== attendee.id &&
+            siteMatchKey(a.assigned_site) === siteMatchKey(normalizedSite),
+        );
+
+        const existingByParking = matchedSite.assigned_attendee_id
+          ? attendees.find((a) => a.id === matchedSite!.assigned_attendee_id) ||
+            null
+          : null;
+
+        const existing = existingByRoster || existingByParking;
+
+        if (existing?.id && existing.id !== attendee.id) {
+          const existingName =
+            fullName(existing.pilot_first, existing.pilot_last) ||
+            "another attendee";
+
+          const confirmMove = window.confirm(
+            `Site "${normalizedSite}" is currently assigned to ${existingName}.\n\nDo you want to move ${fullName(
+              attendee.pilot_first,
+              attendee.pilot_last,
+            )} into this site and clear the previous assignment?`,
+          );
+
+          if (!confirmMove) {
+            setSavingId(null);
+            return;
+          }
+
+          await supabase
+            .from("attendees")
+            .update({ assigned_site: null })
+            .eq("id", existing.id);
+        }
+
         if (
           matchedSite.assigned_attendee_id &&
           matchedSite.assigned_attendee_id !== attendee.id
         ) {
-          setStatus(
-            `Site "${normalizedSite}" is already assigned to another attendee.`,
-          );
-          setSavingId(null);
-          return;
+          await supabase
+            .from("parking_sites")
+            .update({ assigned_attendee_id: null })
+            .eq("id", matchedSite.id);
         }
       }
 
@@ -468,14 +640,13 @@ function AdminCheckinPageInner() {
       const oldShare = !!attendee.share_with_attendees;
 
       if (oldAssignedSite && oldAssignedSite !== normalizedSite) {
+        const oldSiteKey = siteMatchKey(oldAssignedSite);
         const oldSite =
           parkingSites.find((site) => {
             const siteNumberMatch =
-              (site.site_number || "").trim().toLowerCase() ===
-              oldAssignedSite.trim().toLowerCase();
+              siteMatchKey(site.site_number) === oldSiteKey;
             const displayMatch =
-              (site.display_label || "").trim().toLowerCase() ===
-              oldAssignedSite.trim().toLowerCase();
+              siteMatchKey(site.display_label) === oldSiteKey;
             return siteNumberMatch || displayMatch;
           }) || null;
 
@@ -485,7 +656,9 @@ function AdminCheckinPageInner() {
             .update({ assigned_attendee_id: null })
             .eq("id", oldSite.id);
 
-          if (clearOldSiteError) {throw clearOldSiteError;}
+          if (clearOldSiteError) {
+            throw clearOldSiteError;
+          }
         }
       }
 
@@ -505,7 +678,9 @@ function AdminCheckinPageInner() {
         })
         .eq("id", attendee.id);
 
-      if (attendeeUpdateError) {throw attendeeUpdateError;}
+      if (attendeeUpdateError) {
+        throw attendeeUpdateError;
+      }
 
       if (matchedSite?.id) {
         const { error: assignSiteError } = await supabase
@@ -513,18 +688,31 @@ function AdminCheckinPageInner() {
           .update({ assigned_attendee_id: attendee.id })
           .eq("id", matchedSite.id);
 
-        if (assignSiteError) {throw assignSiteError;}
+        if (assignSiteError) {
+          throw assignSiteError;
+        }
+      } else if (matchedSite?.master_site_id) {
+        const { error: insertSiteError } = await supabase
+          .from("parking_sites")
+          .insert({
+            event_id: event.id,
+            master_site_id: matchedSite.master_site_id,
+            assigned_attendee_id: attendee.id,
+          });
+
+        if (insertSiteError) {
+          throw insertSiteError;
+        }
       }
 
       if (!normalizedSite && oldAssignedSite) {
+        const oldSiteKey = siteMatchKey(oldAssignedSite);
         const oldSite =
           parkingSites.find((site) => {
             const siteNumberMatch =
-              (site.site_number || "").trim().toLowerCase() ===
-              oldAssignedSite.trim().toLowerCase();
+              siteMatchKey(site.site_number) === oldSiteKey;
             const displayMatch =
-              (site.display_label || "").trim().toLowerCase() ===
-              oldAssignedSite.trim().toLowerCase();
+              siteMatchKey(site.display_label) === oldSiteKey;
             return siteNumberMatch || displayMatch;
           }) || null;
 
@@ -534,7 +722,9 @@ function AdminCheckinPageInner() {
             .update({ assigned_attendee_id: null })
             .eq("id", oldSite.id);
 
-          if (clearSiteError) {throw clearSiteError;}
+          if (clearSiteError) {
+            throw clearSiteError;
+          }
         }
       }
 
@@ -747,7 +937,7 @@ function AdminCheckinPageInner() {
 
                 <div>
                   <div style={{ fontWeight: 700 }}>Current Site</div>
-                  <div>{attendee.assigned_site || "—"}</div>
+                  <div>{attendee.assigned_site?.toUpperCase() || "—"}</div>
                 </div>
               </div>
 
@@ -783,16 +973,39 @@ function AdminCheckinPageInner() {
                   <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
                     Site Number
                   </div>
+                  <datalist id="parking-site-suggestions">
+                    {siteSuggestions.map((site) => (
+                      <option key={site} value={site} />
+                    ))}
+                  </datalist>
                   <input
+                    list="parking-site-suggestions"
                     value={current.siteNumber}
                     onChange={(e) =>
-                      updateEditState(attendee.id, {
-                        siteNumber: e.target.value,
-                      })
+                      handleSiteNumberTyping(attendee.id, e.target.value)
                     }
                     placeholder="Site"
                     style={{ width: "100%", padding: 8 }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const siteToFocus = normalizeSite(current.siteNumber);
+                      if (!siteToFocus) {
+                        setStatus("Enter a site number first.");
+                        return;
+                      }
+
+                      localStorage.setItem(
+                        "fcoc-parking-focus-site",
+                        siteToFocus,
+                      );
+                      window.location.href = "/admin/parking";
+                    }}
+                    style={{ marginTop: 6, padding: "6px 8px" }}
+                  >
+                    Show on Map
+                  </button>
                 </div>
 
                 <label

@@ -82,6 +82,10 @@ function householdLine(member: HouseholdMember) {
   return preferredDisplayLine(member);
 }
 
+function normalizeSite(value: string) {
+  return value.trim().toUpperCase();
+}
+
 function MemberCheckinPageInner() {
   const router = useRouter();
   const [event, setEvent] = useState<MemberEvent | null>(null);
@@ -221,6 +225,107 @@ function MemberCheckinPageInner() {
     }
   }
 
+  async function syncParkingSite(
+    attendeeId: string,
+    eventId: string,
+    newSiteNumber: string,
+  ) {
+    if (!attendeeId || !eventId) {
+      return;
+    }
+
+    try {
+      const cleanedNewSite = normalizeSite(newSiteNumber);
+
+      await supabase
+        .from("parking_sites")
+        .update({ assigned_attendee_id: null })
+        .eq("event_id", eventId)
+        .eq("assigned_attendee_id", attendeeId);
+
+      if (!cleanedNewSite) {
+        return;
+      }
+
+      const { data: mapSettingsRows, error: mapSettingsError } = await supabase
+        .from("event_map_settings")
+        .select("selected_master_map_id")
+        .eq("event_id", eventId)
+        .limit(1);
+
+      if (mapSettingsError) {
+        throw mapSettingsError;
+      }
+
+      const selectedMasterMapId = mapSettingsRows?.[0]?.selected_master_map_id;
+
+      if (!selectedMasterMapId) {
+        console.warn("No selected master map for parking sync.", eventId);
+        return;
+      }
+
+      const { data: masterSite, error: masterSiteError } = await supabase
+        .from("master_map_sites")
+        .select("id")
+        .eq("master_map_id", selectedMasterMapId)
+        .eq("site_number", cleanedNewSite)
+        .maybeSingle();
+
+      if (masterSiteError) {
+        throw masterSiteError;
+      }
+
+      if (!masterSite?.id) {
+        console.warn("No matching master map site for parking sync.", {
+          eventId,
+          selectedMasterMapId,
+          cleanedNewSite,
+        });
+        return;
+      }
+
+      const { data: existingParkingSite, error: existingParkingError } =
+        await supabase
+          .from("parking_sites")
+          .select("id")
+          .eq("event_id", eventId)
+          .eq("master_site_id", masterSite.id)
+          .maybeSingle();
+
+      if (existingParkingError) {
+        throw existingParkingError;
+      }
+
+      if (existingParkingSite?.id) {
+        const { error: updateParkingError } = await supabase
+          .from("parking_sites")
+          .update({ assigned_attendee_id: attendeeId })
+          .eq("id", existingParkingSite.id);
+
+        if (updateParkingError) {
+          throw updateParkingError;
+        }
+      } else {
+        const { error: insertParkingError } = await supabase
+          .from("parking_sites")
+          .insert({
+            event_id: eventId,
+            master_site_id: masterSite.id,
+            assigned_attendee_id: attendeeId,
+          });
+
+        if (insertParkingError) {
+          throw insertParkingError;
+        }
+      }
+    } catch (err) {
+      console.error("syncParkingSite error:", err);
+      setStatus(
+        "Your check-in was saved, but the parking map could not be synced automatically.",
+      );
+    }
+  }
+
   async function saveCheckin() {
     if (!attendee?.id) {
       setStatus("No attendee record found.");
@@ -231,9 +336,34 @@ function MemberCheckinPageInner() {
       setSaving(true);
       setSuccessBanner(null);
 
-      const cleanedSite = siteNumber.trim();
+      const cleanedSite = normalizeSite(siteNumber);
 
-      const { error } = await supabase
+      if (cleanedSite && event?.id) {
+        const { data: occupiedSite, error: occupiedError } = await supabase
+          .from("attendees")
+          .select("id,pilot_first,pilot_last,assigned_site")
+          .eq("event_id", event.id)
+          .neq("id", attendee.id)
+          .ilike("assigned_site", cleanedSite)
+          .limit(1)
+          .maybeSingle();
+
+        if (occupiedError) {
+          throw occupiedError;
+        }
+
+        if (occupiedSite?.id) {
+          const occupiedName =
+            `${occupiedSite.pilot_first || ""} ${occupiedSite.pilot_last || ""}`.trim() ||
+            "another attendee";
+
+          throw new Error(
+            `Site ${cleanedSite} is already assigned to ${occupiedName}.`,
+          );
+        }
+      }
+
+      const { data: updatedAttendee, error } = await supabase
         .from("attendees")
         .update({
           has_arrived: hasArrived,
@@ -241,10 +371,25 @@ function MemberCheckinPageInner() {
           assigned_site: cleanedSite || null,
           arrival_status: hasArrived ? "arrived" : "not_arrived",
         })
-        .eq("id", attendee.id);
+        .eq("id", attendee.id)
+        .select("id,assigned_site,share_with_attendees,has_arrived")
+        .maybeSingle();
 
       if (error) {
         throw error;
+      }
+
+      if (!updatedAttendee?.id) {
+        throw new Error(
+          "No attendee record was updated. RLS is probably blocking member check-in edits.",
+        );
+      }
+
+      setAttendee((prev) =>
+        prev ? { ...prev, assigned_site: updatedAttendee.assigned_site } : prev,
+      );
+      if (event?.id) {
+        await syncParkingSite(attendee.id, event.id, cleanedSite);
       }
 
       // Update local state immediately before navigating
@@ -388,7 +533,7 @@ function MemberCheckinPageInner() {
               </div>
               <input
                 value={siteNumber}
-                onChange={(e) => setSiteNumber(e.target.value)}
+                onChange={(e) => setSiteNumber(e.target.value.toUpperCase())}
                 placeholder="Enter your assigned site"
                 style={{ width: "100%", padding: 10 }}
               />

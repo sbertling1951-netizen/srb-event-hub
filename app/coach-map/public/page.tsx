@@ -19,6 +19,7 @@ type MemberEventRow = {
   master_map_id?: string | null;
   lat?: number | null;
   lng?: number | null;
+  coach_map_open_scale?: number | null;
 };
 
 type ActiveEvent = {
@@ -32,6 +33,7 @@ type ActiveEvent = {
   master_map_id?: string | null;
   lat?: number | null;
   lng?: number | null;
+  coach_map_open_scale?: number | null;
 };
 
 type EventMapSettingsRow = {
@@ -224,7 +226,7 @@ function CoachMapPublicPageInner() {
       const { data: eventRow, error: eventError } = await supabase
         .from("events")
         .select(
-          "id,name,venue_name,location,start_date,end_date,map_image_url,master_map_id,lat,lng",
+          "id,name,venue_name,location,start_date,end_date,map_image_url,master_map_id,lat,lng,coach_map_open_scale",
         )
         .eq("id", memberEvent.id)
         .maybeSingle();
@@ -244,6 +246,7 @@ function CoachMapPublicPageInner() {
         master_map_id: null,
         lat: memberEvent.lat || null,
         lng: memberEvent.lng || null,
+        coach_map_open_scale: null,
       };
 
       let resolvedMapId: string | null = null;
@@ -303,7 +306,15 @@ function CoachMapPublicPageInner() {
         master_map_id: loadedEvent.master_map_id || null,
         lat: loadedEvent.lat || null,
         lng: loadedEvent.lng || null,
+        coach_map_open_scale: loadedEvent.coach_map_open_scale ?? null,
       });
+
+      const openingScale = Number(loadedEvent.coach_map_open_scale ?? 1);
+      if (Number.isFinite(openingScale) && openingScale > 0) {
+        const nextZoom = clamp(openingScale, 0.25, 3);
+        setZoom(nextZoom);
+        zoomRef.current = nextZoom;
+      }
 
       const [
         masterSitesResult,
@@ -480,8 +491,15 @@ function CoachMapPublicPageInner() {
   }, []);
 
   const resetZoom = useCallback(() => {
-    setZoom(1);
-  }, []);
+    const openingScale = Number(event?.coach_map_open_scale ?? 1);
+    const nextZoom =
+      Number.isFinite(openingScale) && openingScale > 0
+        ? clamp(openingScale, 0.25, 3)
+        : 1;
+
+    setZoom(nextZoom);
+    zoomRef.current = nextZoom;
+  }, [event?.coach_map_open_scale]);
   const handleViewportTouchStart = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
       if (e.touches.length !== 2 || !viewportRef.current) {
@@ -870,7 +888,14 @@ function CoachMapPublicPageInner() {
   return (
     <div
       className="app-shell"
-      style={{ padding: 24, display: "grid", gap: 16 }}
+      style={{
+        padding: 8,
+        display: "grid",
+        gap: 8,
+        minHeight: "100dvh",
+        gridTemplateRows: "auto auto minmax(0, 1fr)",
+        overflow: "hidden",
+      }}
     >
       <style>
         {`
@@ -1058,7 +1083,7 @@ function CoachMapPublicPageInner() {
             border: "1px solid #ddd",
             borderRadius: 10,
             background: "white",
-            padding: 16,
+            padding: 12,
             color: "#666",
           }}
         >
@@ -1070,7 +1095,12 @@ function CoachMapPublicPageInner() {
             border: "1px solid #ddd",
             borderRadius: 10,
             background: "white",
-            padding: 16,
+            padding: 8,
+            minHeight: 0,
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
           }}
         >
           <div
@@ -1079,14 +1109,14 @@ function CoachMapPublicPageInner() {
               gap: 8,
               alignItems: "center",
               flexWrap: "wrap",
-              marginBottom: 10,
+              marginBottom: 6,
             }}
           >
             <button
               type="button"
               onClick={zoomOut}
               style={{
-                padding: "8px 12px",
+                padding: "6px 10px",
                 borderRadius: 8,
                 border: "1px solid #ddd",
                 background: "#fff",
@@ -1100,7 +1130,7 @@ function CoachMapPublicPageInner() {
               type="button"
               onClick={zoomIn}
               style={{
-                padding: "8px 12px",
+                padding: "6px 10px",
                 borderRadius: 8,
                 border: "1px solid #ddd",
                 background: "#fff",
@@ -1114,7 +1144,7 @@ function CoachMapPublicPageInner() {
               type="button"
               onClick={resetZoom}
               style={{
-                padding: "8px 12px",
+                padding: "6px 10px",
                 borderRadius: 8,
                 border: "1px solid #ddd",
                 background: "#fff",
@@ -1138,12 +1168,14 @@ function CoachMapPublicPageInner() {
             style={{
               position: "relative",
               width: "100%",
+              flex: 1,
+              minHeight: 0,
               overflow: "auto",
-              maxHeight: "62vh",
-              minHeight: 260,
-              touchAction: "manipulation",
+              touchAction: "pan-x pan-y pinch-zoom",
               WebkitOverflowScrolling: "touch",
               background: "#f8f9fb",
+              border: "1px solid #eee",
+              borderRadius: 8,
             }}
           >
             <div
