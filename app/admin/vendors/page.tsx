@@ -129,9 +129,10 @@ function AdminVendorsPageInner() {
 
   useEffect(() => {
     void loadPage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectedVendor = useMemo(
+  const _selectedVendor = useMemo(
     () => vendors.find((v) => v.id === selectedVendorId) || null,
     [vendors, selectedVendorId],
   );

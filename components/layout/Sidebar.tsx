@@ -110,7 +110,7 @@ export default function Sidebar() {
   const [open, setOpen] = useState(false);
   const [memberEvent, setMemberEvent] = useState<EventContext | null>(null);
   const [adminEvent, setAdminEvent] = useState<EventContext | null>(null);
-  const [isCheckedIn, setIsCheckedIn] = useState(false);
+  const [_isCheckedIn, setIsCheckedIn] = useState(false);
   const [userMode, setUserMode] = useState<"member" | "admin" | "none">("none");
   const [isShortScreen, setIsShortScreen] = useState(false);
   const [adminAccess, setAdminAccess] = useState<any>(null);

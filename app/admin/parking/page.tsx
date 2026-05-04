@@ -1046,7 +1046,7 @@ function ParkingAdminPageInner() {
     setSelectedSiteId("");
   }
 
-  function normalizeSite(value: string | null | undefined) {
+  function _normalizeSite(value: string | null | undefined) {
     return String(value || "")
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, ""); // removes dashes, spaces, etc
