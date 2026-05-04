@@ -402,6 +402,42 @@ function VendorRequestsInner() {
     }
   }
 
+  async function markVendorRequestsStatus(
+    vendorName: string,
+    vendorRequests: RequestRow[],
+    nextStatus: string,
+  ) {
+    const ids = vendorRequests.map((request) => request.id);
+
+    if (ids.length === 0) {
+      return;
+    }
+
+    setUpdatingId(`vendor-${vendorName}`);
+
+    const { error } = await supabase
+      .from("vendor_service_requests")
+      .update({ request_status: nextStatus })
+      .in("id", ids);
+
+    setUpdatingId(null);
+
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+
+    setRequests((prev) =>
+      prev.map((request) =>
+        ids.includes(request.id)
+          ? { ...request, request_status: nextStatus }
+          : request,
+      ),
+    );
+
+    setStatus(`${vendorName} requests marked ${nextStatus}.`);
+  }
+
   return (
     <div style={{ padding: 24, display: "grid", gap: 16 }}>
       <div className="card" style={{ padding: 18 }}>
@@ -510,14 +546,22 @@ function VendorRequestsInner() {
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 8,
+                      width: "min(100%, 520px)",
+                    }}
+                  >
                     <button
                       type="button"
                       onClick={() =>
                         exportVendorCsv(vendorName, vendorRequests)
                       }
+                      style={dispatchButtonStyle}
                     >
-                      Export Vendor CSV
+                      Export CSV
                     </button>
 
                     <button
@@ -525,15 +569,47 @@ function VendorRequestsInner() {
                       onClick={() =>
                         void copyVendorSummary(vendorName, vendorRequests)
                       }
+                      style={dispatchButtonStyle}
                     >
                       Copy Summary
                     </button>
 
                     {textLink ? (
-                      <a href={textLink} style={primaryButtonStyle}>
+                      <a
+                        href={textLink}
+                        style={dispatchPrimaryLinkStyle}
+                        onClick={() =>
+                          setStatus(`Opened text message for ${vendorName}.`)
+                        }
+                      >
                         Text Vendor
                       </a>
-                    ) : null}
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        style={dispatchButtonStyle}
+                      >
+                        No Vendor Phone
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void markVendorRequestsStatus(
+                          vendorName,
+                          vendorRequests,
+                          "contacted",
+                        )
+                      }
+                      disabled={updatingId === `vendor-${vendorName}`}
+                      style={dispatchButtonStyle}
+                    >
+                      {updatingId === `vendor-${vendorName}`
+                        ? "Updating..."
+                        : "Mark Contacted"}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -669,4 +745,28 @@ const primaryButtonStyle = {
   color: "white",
   textDecoration: "none",
   fontWeight: 700,
+};
+
+const dispatchButtonStyle = {
+  width: "100%",
+  minHeight: 42,
+  padding: "9px 10px",
+  borderRadius: 8,
+  border: "1px solid #cbd5e1",
+  background: "#ffffff",
+  color: "#111827",
+  cursor: "pointer",
+  fontWeight: 800,
+  boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
+};
+
+const dispatchPrimaryLinkStyle = {
+  ...dispatchButtonStyle,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#0b5cff",
+  border: "1px solid #0b5cff",
+  color: "white",
+  textDecoration: "none",
 };
