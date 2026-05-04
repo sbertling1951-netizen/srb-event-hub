@@ -33,11 +33,13 @@ type RequestRow = {
         business_name: string | null;
         email: string | null;
         phone: string | null;
+        access_token: string | null;
       }
     | {
         business_name: string | null;
         email: string | null;
         phone: string | null;
+        access_token: string | null;
       }[]
     | null;
 };
@@ -111,6 +113,17 @@ function vendorNameForRequest(request: RequestRow) {
 
 function vendorPhoneForRequest(request: RequestRow) {
   return vendorForRequest(request)?.phone || "";
+}
+function vendorAccessTokenForRequest(request: RequestRow) {
+  return vendorForRequest(request)?.access_token || "";
+}
+
+function vendorAccessLink(token: string | null) {
+  if (!token || typeof window === "undefined") {
+    return "";
+  }
+
+  return `${window.location.origin}/vendor/requests?token=${token}`;
 }
 
 function safeFileName(value: string) {
@@ -209,10 +222,11 @@ function VendorRequestsInner() {
           assigned_site
         ),
         vendors (
-          business_name,
-          email,
-          phone
-        )
+  business_name,
+  email,
+  phone,
+  access_token
+)
       `,
       )
       .eq("event_id", event.id)
@@ -515,6 +529,10 @@ function VendorRequestsInner() {
               : "";
             const summary = vendorSummaryText(vendorName, vendorRequests);
             const textLink = smsHref(vendorPhone, summary);
+            const vendorToken = firstRequest
+              ? vendorAccessTokenForRequest(firstRequest)
+              : "";
+            const accessLink = vendorAccessLink(vendorToken);
 
             return (
               <div
@@ -609,6 +627,23 @@ function VendorRequestsInner() {
                       {updatingId === `vendor-${vendorName}`
                         ? "Updating..."
                         : "Mark Contacted"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!accessLink) {
+                          setStatus(
+                            "No vendor link available. Confirm this vendor has an access token.",
+                          );
+                          return;
+                        }
+
+                        void navigator.clipboard.writeText(accessLink);
+                        setStatus(`Vendor link copied for ${vendorName}.`);
+                      }}
+                      style={dispatchButtonStyle}
+                    >
+                      Copy Vendor Link
                     </button>
                   </div>
                 </div>
