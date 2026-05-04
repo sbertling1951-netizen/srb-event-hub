@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import AnnouncementBanner from "@/components/AnnouncementBanner";
@@ -31,6 +32,12 @@ export default function MemberDashboardPage() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [vendors, setVendors] = useState<DashboardVendor[]>([]);
   const [currentVendorIndex, setCurrentVendorIndex] = useState(0);
+
+  const router = useRouter();
+
+  function goTo(path: string) {
+    router.push(path);
+  }
 
   useEffect(() => {
     try {
@@ -172,7 +179,7 @@ export default function MemberDashboardPage() {
       >
         <button
           type="button"
-          onClick={() => (window.location.href = "/member/agenda")}
+          onClick={() => goTo("/member/agenda")}
           style={memberGridButtonStyle}
         >
           📅 Agenda
@@ -180,7 +187,7 @@ export default function MemberDashboardPage() {
 
         <button
           type="button"
-          onClick={() => (window.location.href = "/member/announcements")}
+          onClick={() => goTo("/member/announcements")}
           style={memberGridButtonStyle}
         >
           📣 Announcements
@@ -188,7 +195,7 @@ export default function MemberDashboardPage() {
 
         <button
           type="button"
-          onClick={() => (window.location.href = "/member/attendees")}
+          onClick={() => goTo("/member/attendees")}
           style={memberGridButtonStyle}
         >
           👥 Attendees
@@ -196,10 +203,18 @@ export default function MemberDashboardPage() {
 
         <button
           type="button"
-          onClick={() => (window.location.href = "/member/nearby")}
+          onClick={() => goTo("/member/nearby")}
           style={memberGridButtonStyle}
         >
           📍 Nearby
+        </button>
+
+        <button
+          type="button"
+          onClick={() => goTo("/member/my-requests")}
+          style={memberGridButtonStyle}
+        >
+          🧾 My Requests
         </button>
       </div>
 
