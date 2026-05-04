@@ -69,6 +69,24 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString();
 }
 
+function statusMessage(status: string) {
+  const normalized = status.toLowerCase();
+
+  if (normalized === "completed") {
+    return "The vendor marked this service request complete.";
+  }
+
+  if (normalized === "contacted" || normalized === "confirmed") {
+    return "The vendor has acknowledged this request and should follow up with you.";
+  }
+
+  if (normalized === "cancelled") {
+    return "You cancelled this request. Use Undo Cancel if you still need the service.";
+  }
+
+  return "Your request has been submitted and is waiting for vendor follow-up.";
+}
+
 export default function MyRequestsPage() {
   return (
     <MemberRouteGuard>
@@ -141,6 +159,46 @@ function MyRequestsInner() {
       console.error("load member requests error:", err);
       setRequests([]);
       setStatus(err?.message || "Could not load your requests.");
+    }
+  }
+
+  async function cancelRequest(id: string) {
+    try {
+      const { error } = await supabase
+        .from("vendor_service_requests")
+        .update({ request_status: "cancelled" })
+        .eq("id", id);
+
+      if (error) {
+        throw error;
+      }
+
+      setRequests((prev) =>
+        prev.map((r) =>
+          r.id === id ? { ...r, request_status: "cancelled" } : r,
+        ),
+      );
+    } catch (err) {
+      console.error("cancel request error:", err);
+    }
+  }
+
+  async function undoCancelRequest(id: string) {
+    try {
+      const { error } = await supabase
+        .from("vendor_service_requests")
+        .update({ request_status: "new" })
+        .eq("id", id);
+
+      if (error) {
+        throw error;
+      }
+
+      setRequests((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, request_status: "new" } : r)),
+      );
+    } catch (err) {
+      console.error("undo cancel request error:", err);
     }
   }
 
@@ -227,6 +285,19 @@ function MyRequestsInner() {
               </div>
             </div>
 
+            <div
+              style={{
+                padding: "9px 10px",
+                borderRadius: 10,
+                background: "#f8fafc",
+                border: "1px solid #e5e7eb",
+                fontSize: 13,
+                color: "#374151",
+              }}
+            >
+              <strong>Vendor response:</strong> {statusMessage(requestStatus)}
+            </div>
+
             <div>
               <strong>Service:</strong> {request.requested_service || "—"}
             </div>
@@ -244,6 +315,41 @@ function MyRequestsInner() {
             <div style={{ fontSize: 12, color: "#666" }}>
               Submitted: {formatDate(request.created_at)}
             </div>
+            {requestStatus !== "completed" && requestStatus !== "cancelled" ? (
+              <button
+                type="button"
+                onClick={() => cancelRequest(request.id)}
+                style={{
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #ef4444",
+                  background: "#fee2e2",
+                  color: "#7f1d1d",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel Request
+              </button>
+            ) : requestStatus === "cancelled" ? (
+              <button
+                type="button"
+                onClick={() => undoCancelRequest(request.id)}
+                style={{
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #2563eb",
+                  background: "#dbeafe",
+                  color: "#1e3a8a",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Undo Cancel
+              </button>
+            ) : null}
           </div>
         );
       })}
