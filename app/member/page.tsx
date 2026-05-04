@@ -165,37 +165,42 @@ export default function MemberDashboardPage() {
       <div
         style={{
           display: "grid",
-          gap: 14,
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 12,
+          marginTop: 12,
         }}
       >
-        <Link
-          href="/member/agenda"
-          className="dashboard-nav-button dashboard-nav-agenda"
+        <button
+          type="button"
+          onClick={() => (window.location.href = "/member/agenda")}
+          style={memberGridButtonStyle}
         >
           📅 Agenda
-        </Link>
+        </button>
 
-        <Link
-          href="/member/announcements"
-          className="dashboard-nav-button dashboard-nav-announcements"
+        <button
+          type="button"
+          onClick={() => (window.location.href = "/member/announcements")}
+          style={memberGridButtonStyle}
         >
-          📢 Announcements
-        </Link>
+          📣 Announcements
+        </button>
 
-        <Link
-          href="/member/attendees"
-          className="dashboard-nav-button dashboard-nav-attendees"
+        <button
+          type="button"
+          onClick={() => (window.location.href = "/member/attendees")}
+          style={memberGridButtonStyle}
         >
           👥 Attendees
-        </Link>
+        </button>
 
-        <Link
-          href="/member/nearby"
-          className="dashboard-nav-button dashboard-nav-nearby"
+        <button
+          type="button"
+          onClick={() => (window.location.href = "/member/nearby")}
+          style={memberGridButtonStyle}
         >
           📍 Nearby
-        </Link>
+        </button>
       </div>
 
       {vendors.length > 0 ? (
@@ -302,18 +307,6 @@ export default function MemberDashboardPage() {
   );
 }
 
-const cardLinkStyle = {
-  display: "block",
-  padding: "16px 18px",
-  border: "1px solid #ddd",
-  borderRadius: 10,
-  textDecoration: "none",
-  color: "#111",
-  background: "white",
-  fontWeight: 700,
-  textAlign: "center" as const,
-};
-
 const primaryLinkStyle = {
   display: "inline-block",
   width: "fit-content",
@@ -324,4 +317,18 @@ const primaryLinkStyle = {
   color: "#fff",
   textDecoration: "none",
   fontWeight: 700,
+};
+const memberGridButtonStyle: React.CSSProperties = {
+  width: "100%",
+  minHeight: 56,
+  padding: "14px 12px",
+  borderRadius: 12,
+  border: "1px solid #d1d5db",
+  background: "#ffffff",
+  color: "#111827",
+  cursor: "pointer",
+  fontWeight: 700,
+  fontSize: 16,
+  textAlign: "left",
+  boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
 };
