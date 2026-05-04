@@ -1,13 +1,21 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
+type VendorRow = {
+  id: string;
+  business_name: string | null;
+  access_token: string | null;
+  access_token_expires_at?: string | null;
+  vendor_portal_enabled?: boolean | null;
+};
+
 type RequestRow = {
   id: string;
+  vendor_id: string | null;
   requester_name: string | null;
   requester_phone: string | null;
   requester_email: string | null;
@@ -19,10 +27,20 @@ type RequestRow = {
   created_at: string | null;
 };
 
+function tokenIsExpired(value: string | null | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  const expiresAt = new Date(value).getTime();
+  return Number.isFinite(expiresAt) && expiresAt < Date.now();
+}
+
 function VendorRequestsInner() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
 
+  const [vendor, setVendor] = useState<VendorRow | null>(null);
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [status, setStatus] = useState("Loading...");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -30,15 +48,61 @@ function VendorRequestsInner() {
   useEffect(() => {
     async function load() {
       if (!token) {
+        setVendor(null);
+        setRequests([]);
         setStatus("Missing access token.");
         return;
       }
+
+      const { data: vendorRow, error: vendorError } = await supabase
+        .from("vendors")
+        .select(
+          "id,business_name,access_token,access_token_expires_at,vendor_portal_enabled",
+        )
+        .eq("access_token", token)
+        .maybeSingle();
+
+      if (vendorError) {
+        console.error(vendorError);
+        setVendor(null);
+        setRequests([]);
+        setStatus("Error validating vendor link.");
+        return;
+      }
+
+      const typedVendor = vendorRow as VendorRow | null;
+
+      if (!typedVendor?.id) {
+        setVendor(null);
+        setRequests([]);
+        setStatus("This vendor link is not valid.");
+        return;
+      }
+
+      if (typedVendor.vendor_portal_enabled === false) {
+        setVendor(typedVendor);
+        setRequests([]);
+        setStatus("This vendor link has been disabled.");
+        return;
+      }
+
+      if (tokenIsExpired(typedVendor.access_token_expires_at)) {
+        setVendor(typedVendor);
+        setRequests([]);
+        setStatus(
+          "This vendor link has expired. Please contact the event team.",
+        );
+        return;
+      }
+
+      setVendor(typedVendor);
 
       const { data, error } = await supabase
         .from("vendor_service_requests")
         .select(
           `
           id,
+          vendor_id,
           requester_name,
           requester_phone,
           requester_email,
@@ -47,22 +111,20 @@ function VendorRequestsInner() {
           site_number,
           request_notes,
           request_status,
-          created_at,
-          vendors!inner (
-            access_token
-          )
+          created_at
         `,
         )
-        .eq("vendors.access_token", token)
+        .eq("vendor_id", typedVendor.id)
         .order("created_at", { ascending: false });
 
       if (error) {
         console.error(error);
+        setRequests([]);
         setStatus("Error loading requests.");
         return;
       }
 
-      setRequests(data || []);
+      setRequests((data || []) as RequestRow[]);
       setStatus(`Loaded ${data?.length || 0} requests`);
     }
 
@@ -70,6 +132,11 @@ function VendorRequestsInner() {
   }, [token]);
 
   async function updateRequestStatus(requestId: string, nextStatus: string) {
+    if (!vendor?.id) {
+      setStatus("Vendor link is not valid.");
+      return;
+    }
+
     try {
       setUpdatingId(requestId);
       setStatus("Updating request...");
@@ -77,7 +144,8 @@ function VendorRequestsInner() {
       const { error } = await supabase
         .from("vendor_service_requests")
         .update({ request_status: nextStatus })
-        .eq("id", requestId);
+        .eq("id", requestId)
+        .eq("vendor_id", vendor.id);
 
       if (error) {
         throw error;
@@ -102,6 +170,9 @@ function VendorRequestsInner() {
   return (
     <div style={{ padding: 20, display: "grid", gap: 16 }}>
       <h1>My Service Requests</h1>
+      {vendor?.business_name ? (
+        <div style={{ fontWeight: 800 }}>{vendor.business_name}</div>
+      ) : null}
       <div style={{ fontSize: 14, opacity: 0.7 }}>{status}</div>
 
       {requests.map((r) => (
