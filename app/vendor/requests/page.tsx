@@ -197,6 +197,37 @@ function VendorRequestsInner() {
           </div>
 
           <div
+            style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}
+          >
+            {r.requester_phone ? (
+              <>
+                <a
+                  href={`tel:${r.requester_phone.replace(/\D+/g, "")}`}
+                  style={vendorActionButtonStyle}
+                >
+                  Call Member
+                </a>
+
+                <a
+                  href={`sms:${r.requester_phone.replace(/\D+/g, "")}`}
+                  style={vendorActionButtonStyle}
+                >
+                  Text Member
+                </a>
+              </>
+            ) : null}
+
+            {r.requester_email ? (
+              <a
+                href={`mailto:${r.requester_email}`}
+                style={vendorActionButtonStyle}
+              >
+                Email Member
+              </a>
+            ) : null}
+          </div>
+
+          <div
             style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
           >
             <button

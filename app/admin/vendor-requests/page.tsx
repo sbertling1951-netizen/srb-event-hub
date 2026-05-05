@@ -577,7 +577,7 @@ function VendorRequestsInner() {
                       onClick={() =>
                         exportVendorCsv(vendorName, vendorRequests)
                       }
-                      style={dispatchButtonStyle}
+                      className="app-button"
                     >
                       Export CSV
                     </button>
@@ -587,7 +587,7 @@ function VendorRequestsInner() {
                       onClick={() =>
                         void copyVendorSummary(vendorName, vendorRequests)
                       }
-                      style={dispatchButtonStyle}
+                      className="app-button"
                     >
                       Copy Summary
                     </button>
@@ -595,7 +595,7 @@ function VendorRequestsInner() {
                     {textLink ? (
                       <a
                         href={textLink}
-                        style={dispatchPrimaryLinkStyle}
+                        className="app-button app-button-primary"
                         onClick={() =>
                           setStatus(`Opened text message for ${vendorName}.`)
                         }
@@ -606,7 +606,7 @@ function VendorRequestsInner() {
                       <button
                         type="button"
                         disabled
-                        style={dispatchButtonStyle}
+                        className="app-button app-button-muted"
                       >
                         No Vendor Phone
                       </button>
@@ -622,7 +622,7 @@ function VendorRequestsInner() {
                         )
                       }
                       disabled={updatingId === `vendor-${vendorName}`}
-                      style={dispatchButtonStyle}
+                      className="app-button"
                     >
                       {updatingId === `vendor-${vendorName}`
                         ? "Updating..."
@@ -641,7 +641,7 @@ function VendorRequestsInner() {
                         void navigator.clipboard.writeText(accessLink);
                         setStatus(`Vendor link copied for ${vendorName}.`);
                       }}
-                      style={dispatchButtonStyle}
+                      className="app-button"
                     >
                       Copy Vendor Link
                     </button>
@@ -702,25 +702,22 @@ function VendorRequestsInner() {
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {r.requester_phone ? (
-              <a
-                href={phoneHref(r.requester_phone)}
-                style={secondaryButtonStyle}
-              >
+              <a href={phoneHref(r.requester_phone)} className="app-button">
                 Call Member
               </a>
             ) : null}
 
             {r.requester_email ? (
-              <a
-                href={emailHref(r.requester_email)}
-                style={secondaryButtonStyle}
-              >
+              <a href={emailHref(r.requester_email)} className="app-button">
                 Email Member
               </a>
             ) : null}
 
             {vendorEmailHref(r) ? (
-              <a href={vendorEmailHref(r)} style={primaryButtonStyle}>
+              <a
+                href={vendorEmailHref(r)}
+                className="app-button app-button-primary"
+              >
                 Email Vendor
               </a>
             ) : null}
@@ -729,6 +726,7 @@ function VendorRequestsInner() {
               type="button"
               onClick={() => openParkingMapForSite(currentSiteForRequest(r))}
               disabled={!currentSiteForRequest(r)}
+              className="app-button app-button-muted"
             >
               Show Current Site on Map
             </button>
@@ -736,18 +734,30 @@ function VendorRequestsInner() {
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {["new", "contacted", "confirmed", "completed", "cancelled"].map(
-              (s) => (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={
-                    updatingId === r.id || (r.request_status || "new") === s
-                  }
-                  onClick={() => void updateStatus(r.id, s)}
-                >
-                  {s}
-                </button>
-              ),
+              (s) => {
+                const variant =
+                  s === "completed"
+                    ? "app-button app-button-success"
+                    : s === "cancelled"
+                      ? "app-button app-button-danger"
+                      : s === "contacted" || s === "confirmed"
+                        ? "app-button app-button-primary"
+                        : "app-button app-button-muted";
+
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    disabled={
+                      updatingId === r.id || (r.request_status || "new") === s
+                    }
+                    onClick={() => void updateStatus(r.id, s)}
+                    className={variant}
+                  >
+                    {s}
+                  </button>
+                );
+              },
             )}
           </div>
         </div>
@@ -761,47 +771,3 @@ function VendorRequestsInner() {
     </div>
   );
 }
-
-const secondaryButtonStyle = {
-  padding: "7px 10px",
-  borderRadius: 8,
-  border: "1px solid #ccc",
-  background: "white",
-  color: "#111827",
-  textDecoration: "none",
-  fontWeight: 700,
-};
-
-const primaryButtonStyle = {
-  padding: "7px 10px",
-  borderRadius: 8,
-  border: "1px solid #0b5cff",
-  background: "#0b5cff",
-  color: "white",
-  textDecoration: "none",
-  fontWeight: 700,
-};
-
-const dispatchButtonStyle = {
-  width: "100%",
-  minHeight: 42,
-  padding: "9px 10px",
-  borderRadius: 8,
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#111827",
-  cursor: "pointer",
-  fontWeight: 800,
-  boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
-};
-
-const dispatchPrimaryLinkStyle = {
-  ...dispatchButtonStyle,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "#0b5cff",
-  border: "1px solid #0b5cff",
-  color: "white",
-  textDecoration: "none",
-};
