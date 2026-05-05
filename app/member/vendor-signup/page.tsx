@@ -578,7 +578,12 @@ action_type
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {selectedVendor.phone ? (
-                <a href={phoneHref(selectedVendor.phone)}>Call Vendor</a>
+                <a
+                  href={phoneHref(selectedVendor.phone)}
+                  className="app-button"
+                >
+                  Call Vendor
+                </a>
               ) : null}
               {selectedVendor.email ? (
                 <a
@@ -586,6 +591,7 @@ action_type
                     selectedVendor.email,
                     selectedVendor.business_name,
                   )}
+                  className="app-button"
                 >
                   Email Vendor
                 </a>
@@ -595,6 +601,7 @@ action_type
                   href={selectedVendor.website}
                   target="_blank"
                   rel="noreferrer"
+                  className="app-button"
                 >
                   Website
                 </a>
@@ -716,7 +723,7 @@ action_type
             type="button"
             onClick={() => void submitRequest()}
             disabled={saving || vendors.length === 0}
-            style={{ padding: "10px 14px", borderRadius: 8, fontWeight: 700 }}
+            className="app-button app-button-primary"
           >
             {saving ? "Submitting..." : "Submit Request"}
           </button>
@@ -725,7 +732,7 @@ action_type
             type="button"
             onClick={() => void loadPage()}
             disabled={saving}
-            style={{ padding: "10px 14px", borderRadius: 8 }}
+            className="app-button app-button-muted"
           >
             Refresh
           </button>
@@ -813,18 +820,11 @@ action_type
                       disabled={
                         !cancelAllowed || cancellingRequestId === request.id
                       }
-                      style={{
-                        padding: "7px 10px",
-                        borderRadius: 8,
-                        border: "1px solid #dc2626",
-                        background: cancelAllowed ? "#fff1f2" : "#f3f4f6",
-                        color: cancelAllowed ? "#991b1b" : "#666",
-                        cursor:
-                          cancelAllowed && cancellingRequestId !== request.id
-                            ? "pointer"
-                            : "default",
-                        fontWeight: 700,
-                      }}
+                      className={
+                        statusValue === "cancelled"
+                          ? "app-button app-button-muted"
+                          : "app-button app-button-danger"
+                      }
                     >
                       {cancellingRequestId === request.id
                         ? "Cancelling..."
