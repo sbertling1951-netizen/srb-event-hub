@@ -148,6 +148,22 @@ function canCancelRequest(request: MemberRequestRow) {
   return status === "new" || status === "contacted" || status === "confirmed";
 }
 
+function statusBadge(status: string) {
+  const s = status.toLowerCase();
+
+  if (s === "completed") {
+    return "app-badge app-badge-success";
+  }
+  if (s === "cancelled") {
+    return "app-badge app-badge-danger";
+  }
+  if (s === "contacted" || s === "confirmed") {
+    return "app-badge app-badge-primary";
+  }
+
+  return "app-badge app-badge-muted";
+}
+
 function MemberVendorSignupInner() {
   const searchParams = useSearchParams();
   const vendorIdFromUrl = searchParams.get("vendorId") || "";
@@ -793,7 +809,12 @@ action_type
                     </div>
 
                     <div style={{ fontSize: 13, color: "#555" }}>
-                      Status: <strong>{statusValue}</strong>
+                      <div>
+                        Status:{" "}
+                        <span className={statusBadge(statusValue)}>
+                          {statusValue}
+                        </span>
+                      </div>{" "}
                     </div>
                   </div>
 
