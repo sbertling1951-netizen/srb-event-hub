@@ -812,19 +812,39 @@ export default function Sidebar() {
             type="button"
             onClick={handleSidebarExit}
             style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
               width: "100%",
-              padding: isShortScreen ? "9px 10px" : "10px 12px",
-              borderRadius: 8,
-              border: "1px solid #374151",
-              background: "#111827",
-              color: "#fff",
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "#0f172a",
+              color: "#ffffff",
+              WebkitTextFillColor: "#ffffff",
+              fontWeight: 700,
               cursor: "pointer",
-              fontWeight: 600,
-              WebkitTapHighlightColor: "transparent",
-              fontSize: isShortScreen ? 13 : 14,
             }}
           >
-            {showLoggedInLogout ? "Logout" : "Clear"}
+            <span
+              aria-hidden="true"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 22,
+                height: 22,
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.35)",
+                fontSize: 13,
+                fontWeight: 900,
+                lineHeight: 1,
+              }}
+            >
+              ⏻
+            </span>
+            <span>Logout</span>
           </button>
         </div>
       </aside>

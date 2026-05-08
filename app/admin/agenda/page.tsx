@@ -40,10 +40,14 @@ type AgendaCalendarBlock = {
   height: number;
 };
 
+type AgendaResizeEdge = "start" | "end";
+
 type AgendaResizeDrag = {
   itemId: string;
   columnTop: number;
+  edge: AgendaResizeEdge;
   startMinutes: number;
+  endMinutes: number;
   previewMinutes: number;
 };
 
@@ -430,6 +434,25 @@ function agendaDurationMinutes(item: AgendaItem) {
   return 60;
 }
 
+function formatDurationLabel(minutes: number) {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return "Duration TBD";
+  }
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+
+  if (remainder === 0) {
+    return `${hours} hr${hours === 1 ? "" : "s"}`;
+  }
+
+  return `${hours} hr ${remainder} min`;
+}
+
 function formatCalendarSlot(value: number) {
   const hour = Math.floor(value / 60);
   const minute = value % 60;
@@ -525,6 +548,7 @@ function AdminAgendaPageInner() {
   const activeEventRef = useRef<ActiveEvent | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
+  const [compactCalendarView, setCompactCalendarView] = useState(false);
   const useButtonReorder = isMobile && !forceDesktopDrag;
   const [templates, setTemplates] = useState<AgendaTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -1032,13 +1056,24 @@ function AdminAgendaPageInner() {
 
       const y = Math.max(0, e.clientY - drag.columnTop);
       const slotIndex = Math.round(y / AGENDA_SLOT_HEIGHT);
-      const nextMinutes = Math.max(
-        drag.startMinutes + AGENDA_SLOT_MINUTES,
-        Math.min(
-          calendarRange.end,
+      const rawMinutes = Math.min(
+        calendarRange.end,
+        Math.max(
+          calendarRange.start,
           calendarRange.start + slotIndex * AGENDA_SLOT_MINUTES,
         ),
       );
+
+      const nextMinutes =
+        drag.edge === "start"
+          ? Math.max(
+              calendarRange.start,
+              Math.min(drag.endMinutes - AGENDA_SLOT_MINUTES, rawMinutes),
+            )
+          : Math.max(
+              drag.startMinutes + AGENDA_SLOT_MINUTES,
+              Math.min(calendarRange.end, rawMinutes),
+            );
 
       calendarResizeDragRef.current = {
         ...drag,
@@ -1059,6 +1094,12 @@ function AdminAgendaPageInner() {
       }
 
       calendarResizeDragRef.current = null;
+
+      if (drag.edge === "start") {
+        void resizeAgendaItemStartTime(drag.itemId, drag.previewMinutes);
+        return;
+      }
+
       void resizeAgendaItemEndTime(drag.itemId, drag.previewMinutes);
     }
 
@@ -1070,6 +1111,127 @@ function AdminAgendaPageInner() {
       window.removeEventListener("mouseup", handleWindowResizeEnd);
     };
   }, [calendarRange.end, calendarRange.start]);
+  function beginCalendarStartResize(
+    e: React.MouseEvent<HTMLSpanElement>,
+    item: AgendaItem,
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startMinutes = timeToMinutes(item.start_time);
+    const endMinutes =
+      timeToMinutes(item.end_time) ??
+      (startMinutes === null
+        ? null
+        : startMinutes + agendaDurationMinutes(item));
+
+    if (startMinutes === null || endMinutes === null) {
+      setStatus(
+        "This agenda item needs a start and end time before it can be resized.",
+      );
+      return;
+    }
+
+    const dayColumn = e.currentTarget.closest(
+      "[data-agenda-calendar-day]",
+    ) as HTMLDivElement | null;
+
+    if (!dayColumn) {
+      return;
+    }
+
+    const rect = dayColumn.getBoundingClientRect();
+
+    calendarResizeDragRef.current = {
+      itemId: item.id,
+      columnTop: rect.top,
+      edge: "start",
+      startMinutes,
+      endMinutes,
+      previewMinutes: startMinutes,
+    };
+
+    setCalendarResizePreview({
+      itemId: item.id,
+      minutes: startMinutes,
+    });
+    setStatus(`Resizing start time for "${item.title}"... release to save.`);
+  }
+  async function resizeAgendaItemStartTime(
+    itemId: string,
+    nextStartMinutes: number,
+  ) {
+    const currentEvent = activeEventRef.current;
+    const currentItems = itemsRef.current;
+
+    if (!currentEvent?.id) {
+      setStatus("No admin working event selected.");
+      setCalendarResizePreview(null);
+      return;
+    }
+
+    const item = currentItems.find((agendaItem) => agendaItem.id === itemId);
+
+    if (!item) {
+      setCalendarResizePreview(null);
+      return;
+    }
+
+    const currentStartMinutes = timeToMinutes(item.start_time);
+    const endMinutes =
+      timeToMinutes(item.end_time) ??
+      (currentStartMinutes ?? 0) + agendaDurationMinutes(item);
+
+    const safeStartMinutes = Math.max(
+      calendarRange.start,
+      Math.min(endMinutes - AGENDA_SLOT_MINUTES, nextStartMinutes),
+    );
+    const nextStartTime = minutesToTime(safeStartMinutes);
+
+    setItems((prev) =>
+      prev.map((agendaItem) =>
+        agendaItem.id === itemId
+          ? {
+              ...agendaItem,
+              start_time: nextStartTime,
+            }
+          : agendaItem,
+      ),
+    );
+
+    setStatus(`Resizing "${item.title}" to start at ${nextStartTime}...`);
+
+    const { data: updatedRows, error: updateError } = await supabase
+      .from("agenda_items")
+      .update({
+        start_time: nextStartTime,
+      })
+      .eq("id", itemId)
+      .eq("event_id", currentEvent.id)
+      .select("id,title");
+
+    if (updateError) {
+      setError(updateError.message);
+      setStatus(`Could not resize agenda item: ${updateError.message}`);
+      setCalendarResizePreview(null);
+      await loadPage();
+      return;
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      setError(
+        "No agenda item was resized. This usually means the row is blocked by RLS or does not belong to the selected event.",
+      );
+      setStatus("Agenda item was not resized.");
+      setCalendarResizePreview(null);
+      await loadPage();
+      return;
+    }
+
+    setStatus(`Resized "${item.title}" to start at ${nextStartTime}.`);
+    setCalendarResizePreview(null);
+    await loadPage();
+  }
 
   function handleDragStart(e: React.DragEvent<HTMLDivElement>, id: string) {
     setDraggedId(id);
@@ -1163,7 +1325,9 @@ function AdminAgendaPageInner() {
     calendarResizeDragRef.current = {
       itemId: item.id,
       columnTop: rect.top,
+      edge: "end",
       startMinutes,
+      endMinutes: currentEndMinutes,
       previewMinutes: currentEndMinutes,
     };
 
@@ -2424,6 +2588,24 @@ function AdminAgendaPageInner() {
                   duration and overlapping activities display side-by-side.
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setCompactCalendarView((prev) => !prev)}
+                style={{
+                  padding: "7px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #cbd5e1",
+                  background: compactCalendarView ? "#e0f2fe" : "#ffffff",
+                  color: "#0f172a",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {compactCalendarView ? "Compact View On" : "Compact View Off"}
+              </button>
             </div>
 
             {calendarDays.length === 0 ? (
@@ -2432,12 +2614,18 @@ function AdminAgendaPageInner() {
               </div>
             ) : (
               <div
-                style={{ minWidth: Math.max(820, calendarDays.length * 260) }}
+                style={{
+                  minWidth: compactCalendarView
+                    ? Math.max(720, calendarDays.length * 180)
+                    : Math.max(820, calendarDays.length * 260),
+                }}
               >
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
+                    gridTemplateColumns: compactCalendarView
+                      ? `76px repeat(${calendarDays.length}, minmax(170px, 1fr))`
+                      : `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
                     position: "sticky",
                     top: 0,
                     zIndex: 4,
@@ -2463,7 +2651,9 @@ function AdminAgendaPageInner() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
+                    gridTemplateColumns: compactCalendarView
+                      ? `76px repeat(${calendarDays.length}, minmax(170px, 1fr))`
+                      : `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
                     minHeight: calendarGridHeight,
                   }}
                 >
@@ -2648,7 +2838,7 @@ function AdminAgendaPageInner() {
                                 background: "#ffffff",
                                 color: "#111827",
                                 textAlign: "left",
-                                padding: "8px 8px 16px",
+                                padding: "16px 8px 16px",
                                 cursor: "grab",
                                 overflow: "hidden",
                                 boxShadow:
@@ -2656,8 +2846,32 @@ function AdminAgendaPageInner() {
                                     ? "0 0 0 3px rgba(96,165,250,0.35)"
                                     : "0 2px 8px rgba(15,23,42,0.10)",
                               }}
-                              title="Drag to move. Click to edit. Drag the bottom handle to change end time."
+                              title="Drag to move. Click to edit. Drag top/bottom handles to change time."
                             >
+                              <span
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  beginCalendarStartResize(e, item);
+                                }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                draggable={false}
+                                style={{
+                                  position: "absolute",
+                                  left: 12,
+                                  right: 12,
+                                  top: 4,
+                                  height: 8,
+                                  borderRadius: 999,
+                                  background: "rgba(37,99,235,0.24)",
+                                  cursor: "ns-resize",
+                                  zIndex: 7,
+                                }}
+                                title="Drag to change start time"
+                              />
                               <div style={{ fontWeight: 900, fontSize: 12 }}>
                                 {item.title}
                               </div>
@@ -2672,6 +2886,19 @@ function AdminAgendaPageInner() {
                                 {formatAgendaTime(
                                   item.start_time,
                                   item.end_time,
+                                )}
+                              </div>
+
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  color: "#64748b",
+                                  fontWeight: 800,
+                                  marginTop: 2,
+                                }}
+                              >
+                                {formatDurationLabel(
+                                  agendaDurationMinutes(item),
                                 )}
                               </div>
 
@@ -2845,6 +3072,16 @@ function AdminAgendaPageInner() {
                     <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
                       {formatAgendaDate(item.agenda_date)} ·{" "}
                       {formatAgendaTime(item.start_time, item.end_time)}
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "#64748b",
+                          fontWeight: 800,
+                          marginTop: 2,
+                        }}
+                      >
+                        {formatDurationLabel(agendaDurationMinutes(item))}
+                      </div>
                     </div>
 
                     {item.location ? (
