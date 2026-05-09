@@ -16,6 +16,8 @@ type EventRow = {
   location: string | null;
   start_date: string | null;
   end_date: string | null;
+  event_code?: string | null;
+  visible_to_members?: boolean | null;
   status: string | null;
   is_active?: boolean | null;
 };
@@ -43,6 +45,7 @@ type EventFormState = {
   location: string;
   start_date: string;
   end_date: string;
+  event_code: string;
   status: string;
 };
 
@@ -52,6 +55,7 @@ const emptyForm: EventFormState = {
   location: "",
   start_date: "",
   end_date: "",
+  event_code: "",
   status: "Draft",
 };
 
@@ -218,7 +222,9 @@ function EventAdminPageInner() {
       const [eventsResult, mapsResult, nearbyResult] = await Promise.all([
         supabase
           .from("events")
-          .select("id,name,location,start_date,end_date,status,is_active")
+          .select(
+            "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active",
+          )
           .order("start_date", { ascending: true, nullsFirst: false })
           .order("created_at", { ascending: false }),
 
@@ -366,6 +372,7 @@ function EventAdminPageInner() {
       location: selectedEvent.location || "",
       start_date: toInputDate(selectedEvent.start_date),
       end_date: toInputDate(selectedEvent.end_date),
+      event_code: selectedEvent.event_code || "",
       status: selectedEvent.status || "Draft",
     });
 
@@ -429,8 +436,10 @@ function EventAdminPageInner() {
         location: form.location.trim() || null,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
+        event_code: form.event_code.trim() || null,
         status: nextStatus,
         is_active: nextIsActive,
+        visible_to_members: nextIsActive,
       };
 
       if (form.id) {
@@ -438,7 +447,9 @@ function EventAdminPageInner() {
           .from("events")
           .update(payload)
           .eq("id", form.id)
-          .select("id,name,location,start_date,end_date,status,is_active")
+          .select(
+            "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active",
+          )
           .maybeSingle();
 
         if (error) {
@@ -466,8 +477,10 @@ function EventAdminPageInner() {
           location: updatedEvent.location || "",
           start_date: toInputDate(updatedEvent.start_date),
           end_date: toInputDate(updatedEvent.end_date),
+          event_code: updatedEvent.event_code || "",
           status: updatedEvent.status || "Draft",
         });
+
         const nextFilter = filterForStatus(updatedEvent.status);
         setEventStatusFilter(nextFilter);
         setEvents([updatedEvent]);
@@ -813,6 +826,21 @@ function EventAdminPageInner() {
                 setForm((prev) => ({ ...prev, end_date: e.target.value }))
               }
               style={{ padding: 10, display: "block", width: "100%" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Event Code</span>
+
+            <input
+              value={form.event_code}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  event_code: e.target.value,
+                }))
+              }
+              placeholder="Example: AMANA26"
+              style={{ padding: 8 }}
             />
           </label>
 
