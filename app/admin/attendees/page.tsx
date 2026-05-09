@@ -2542,6 +2542,27 @@ function AdminAttendeesPageInner() {
     return filteredAttendees.slice(0, Number(pageSize));
   }, [filteredAttendees, pageSize]);
 
+  useEffect(() => {
+    if (!attendees.length || editorOpen) {
+      return;
+    }
+
+    const pendingEditId = localStorage.getItem("fcoc-attendee-open-edit-id");
+    if (!pendingEditId) {
+      return;
+    }
+
+    const attendee = attendees.find((row) => row.id === pendingEditId);
+    if (!attendee) {
+      return;
+    }
+
+    localStorage.removeItem("fcoc-attendee-open-edit-id");
+    setCommandCenterTab("attendees");
+    setExpandedAttendeeId(attendee.id);
+    openEditAttendeeEditor(attendee);
+  }, [attendees, editorOpen, openEditAttendeeEditor]);
+
   const correctedCount = useMemo(() => {
     return attendees.filter(
       (row) => dataStatusLabel(row.data_status) === "corrected",

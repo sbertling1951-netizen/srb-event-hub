@@ -1472,6 +1472,24 @@ function AdminAttendeeImportsPageInner() {
       setImporting(false);
     }
   }
+  function openIssueInAttendeeManagement(issue: ReviewIssue) {
+    const match = savedAttendees.find((row) => {
+      return (
+        row.entry_id === issue.attendeeKey ||
+        row.email?.toLowerCase() === issue.attendeeKey.toLowerCase() ||
+        row.membership_number === issue.currentValue
+      );
+    });
+
+    if (!match) {
+      setError("Import this attendee first, then click the review item again.");
+      return;
+    }
+
+    localStorage.setItem("fcoc-attendee-open-edit-id", match.id);
+
+    window.top?.location.assign("/admin/attendees");
+  }
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -1515,7 +1533,18 @@ function AdminAttendeeImportsPageInner() {
               .map((issue) => (
                 <div
                   key={issue.key}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openIssueInAttendeeManagement(issue)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openIssueInAttendeeManagement(issue);
+                    }
+                  }}
+                  title="Open this attendee for editing"
                   style={{
+                    cursor: "pointer",
                     border: `1px solid ${
                       issue.severity === "error" ? "#fca5a5" : "#fcd34d"
                     }`,
