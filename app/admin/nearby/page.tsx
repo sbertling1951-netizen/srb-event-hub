@@ -198,6 +198,12 @@ function AdminNearbyPageInner() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [isNarrow, setIsNarrow] = useState(false);
 
+  const [storedCustomCategory, setStoredCustomCategory] = useState("");
+  const [showStoredCustomCategory, setShowStoredCustomCategory] =
+    useState(false);
+  const [eventCustomCategory, setEventCustomCategory] = useState("");
+  const [showEventCustomCategory, setShowEventCustomCategory] = useState(false);
+
   function resetAllState() {
     setAdminEvent(null);
     setStoredAreas([]);
@@ -208,6 +214,10 @@ function AdminNearbyPageInner() {
     setAreaDescription("");
     setStoredForm(emptyStoredPlaceForm);
     setEventForm(emptyEventPlaceForm);
+    setStoredCustomCategory("");
+    setShowStoredCustomCategory(false);
+    setEventCustomCategory("");
+    setShowEventCustomCategory(false);
   }
 
   useEffect(() => {
@@ -1355,18 +1365,81 @@ function AdminNearbyPageInner() {
                   style={{ padding: 10 }}
                   disabled={accessDenied || savingStoredPlace}
                 />
-                <input
-                  value={storedForm.category}
-                  onChange={(e) =>
+                <select
+                  value={
+                    showStoredCustomCategory
+                      ? "__custom__"
+                      : storedForm.category
+                  }
+                  onChange={(e) => {
+                    const nextValue = e.target.value;
+
+                    if (nextValue === "__custom__") {
+                      setShowStoredCustomCategory(true);
+                      setStoredCustomCategory("");
+                      setStoredForm((prev) => ({ ...prev, category: "" }));
+                      return;
+                    }
+
+                    setShowStoredCustomCategory(false);
+                    setStoredCustomCategory("");
                     setStoredForm((prev) => ({
                       ...prev,
-                      category: e.target.value,
-                    }))
-                  }
-                  placeholder="Category"
+                      category: nextValue,
+                    }));
+                  }}
                   style={{ padding: 10 }}
                   disabled={accessDenied || savingStoredPlace}
-                />
+                >
+                  <option value="">Select category</option>
+
+                  <option value="Restaurant">Restaurant</option>
+                  <option value="Fuel">Fuel</option>
+                  <option value="Grocery">Grocery</option>
+                  <option value="Shopping">Shopping</option>
+                  <option value="Medical">Medical</option>
+                  <option value="Pharmacy">Pharmacy</option>
+                  <option value="RV Service">RV Service</option>
+                  <option value="Attraction">Attraction</option>
+                  <option value="Other">Other</option>
+
+                  {storedForm.category &&
+                  ![
+                    "Restaurant",
+                    "Fuel",
+                    "Grocery",
+                    "Shopping",
+                    "Medical",
+                    "Pharmacy",
+                    "RV Service",
+                    "Attraction",
+                    "Other",
+                  ].includes(storedForm.category) ? (
+                    <option value={storedForm.category}>
+                      {storedForm.category}
+                    </option>
+                  ) : null}
+
+                  <option value="__custom__">+ Add new category...</option>
+                </select>
+
+                {showStoredCustomCategory ? (
+                  <input
+                    value={storedCustomCategory}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setStoredCustomCategory(nextValue);
+                      setStoredForm((prev) => ({
+                        ...prev,
+                        category: nextValue.trim(),
+                      }));
+                    }}
+                    placeholder="Enter new category"
+                    style={{ padding: 10 }}
+                    disabled={accessDenied || savingStoredPlace}
+                  />
+                ) : null}
+
                 <input
                   value={storedForm.address}
                   onChange={(e) =>
