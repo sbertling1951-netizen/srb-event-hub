@@ -110,6 +110,8 @@ type AttendeeRow = {
   needs_parking?: boolean | null;
   notes?: string | null;
   created_at?: string | null;
+  vendor_master_id?: string | null;
+  vendor_assigned_event_id?: string | null;
 };
 
 type PrintSettingsRow = {
@@ -117,6 +119,55 @@ type PrintSettingsRow = {
   event_id: string;
   name_tag_bg_url: string | null;
   coach_plate_bg_url: string | null;
+};
+
+type VendorRow = {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
+  services: string | null;
+  logo_url: string | null;
+  preferred_contact_method: string | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at?: string | null;
+};
+
+type EventVendorRow = {
+  id: string;
+  event_id: string;
+  vendor_id: string;
+  booth_location: string | null;
+  show_on_member_dashboard: boolean;
+  allow_service_requests: boolean;
+  status: string;
+  notes: string | null;
+  vendors?: VendorRow | null;
+};
+
+type VendorFormState = {
+  name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  website: string;
+  services: string;
+  preferred_contact_method: string;
+  notes: string;
+};
+
+const emptyVendorForm: VendorFormState = {
+  name: "",
+  contact_name: "",
+  email: "",
+  phone: "",
+  website: "",
+  services: "",
+  preferred_contact_method: "email",
+  notes: "",
 };
 
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
@@ -603,6 +654,18 @@ function AdminAttendeeImportsPageInner() {
   const [savingCoachPlateBg, setSavingCoachPlateBg] = useState(false);
   const [showFullImportTable, setShowFullImportTable] = useState(false);
 
+  const [vendors, setVendors] = useState<VendorRow[]>([]);
+  const [eventVendors, setEventVendors] = useState<EventVendorRow[]>([]);
+  const [loadingVendors, setLoadingVendors] = useState(false);
+  const [vendorSaving, setVendorSaving] = useState(false);
+  const [vendorStatus, setVendorStatus] = useState("");
+  const [vendorError, setVendorError] = useState<string | null>(null);
+  const [vendorForm, setVendorForm] =
+    useState<VendorFormState>(emptyVendorForm);
+  const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
+  const [editingVendorForm, setEditingVendorForm] =
+    useState<VendorFormState>(emptyVendorForm);
+
   useEffect(() => {
     async function loadEvents() {
       setLoadingEvent(true);
@@ -769,10 +832,12 @@ function AdminAttendeeImportsPageInner() {
   useEffect(() => {
     if (!selectedImportEventId) {
       setSavedAttendees([]);
+      setEventVendors([]);
       return;
     }
 
     void loadSavedAttendees(selectedImportEventId);
+    void loadVendors(selectedImportEventId);
   }, [selectedImportEventId]);
 
   useEffect(() => {
@@ -940,6 +1005,9 @@ function AdminAttendeeImportsPageInner() {
         severity: "error" | "warning";
       }[] = [];
 
+      if (attendee.participant_type === "vendor") {
+        return issues;
+      }
       const memberNumber = String(attendee.membership_number || "").trim();
 
       if (!memberNumber) {
@@ -1006,7 +1074,9 @@ function AdminAttendeeImportsPageInner() {
             needs_coach_plate,
             needs_parking,
             notes,
-            created_at
+            created_at,
+            vendor_master_id,
+            vendor_assigned_event_id
           `,
         )
         .eq("event_id", eventId)
@@ -1027,9 +1097,334 @@ function AdminAttendeeImportsPageInner() {
     }
   }
 
+  async function loadVendors(eventId: string) {
+    try {
+      setLoadingVendors(true);
+      setVendorError(null);
+
+      const [
+        { data: vendorData, error: vendorLoadError },
+        { data: assignmentData, error: assignmentLoadError },
+      ] = await Promise.all([
+        supabase.from("vendors").select("*").order("name", { ascending: true }),
+        supabase
+          .from("event_vendors")
+          .select(
+            `
+                id,
+                event_id,
+                vendor_id,
+                booth_location,
+                show_on_member_dashboard,
+                allow_service_requests,
+                status,
+                notes,
+                vendor:vendors (
+                  id,
+                  name,
+                  contact_name,
+                  email,
+                  phone,
+                  website,
+                  services,
+                  logo_url,
+                  preferred_contact_method,
+                  is_active,
+                  notes,
+                  created_at
+                )
+              `,
+          )
+          .eq("event_id", eventId)
+          .order("created_at", { ascending: true }),
+      ]);
+
+      if (vendorLoadError) {
+        throw vendorLoadError;
+      }
+
+      if (assignmentLoadError) {
+        throw assignmentLoadError;
+      }
+
+      setVendors((vendorData || []) as VendorRow[]);
+      setEventVendors(
+        (assignmentData || []).map((assignment: any) => ({
+          ...assignment,
+          vendors: Array.isArray(assignment.vendor)
+            ? assignment.vendor[0] || null
+            : assignment.vendor || null,
+        })) as EventVendorRow[],
+      );
+    } catch (err: any) {
+      console.error("loadVendors error:", err);
+      setVendors([]);
+      setEventVendors([]);
+      setVendorError(err?.message || "Could not load vendors.");
+    } finally {
+      setLoadingVendors(false);
+    }
+  }
+
+  function updateVendorForm(key: keyof VendorFormState, value: string) {
+    setVendorForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function updateEditingVendorForm(key: keyof VendorFormState, value: string) {
+    setEditingVendorForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function startEditVendor(vendor: VendorRow) {
+    setEditingVendorId(vendor.id);
+    setEditingVendorForm({
+      name: vendor.name || "",
+      contact_name: vendor.contact_name || "",
+      email: vendor.email || "",
+      phone: vendor.phone || "",
+      website: vendor.website || "",
+      services: vendor.services || "",
+      preferred_contact_method: vendor.preferred_contact_method || "email",
+      notes: vendor.notes || "",
+    });
+    setVendorError(null);
+    setVendorStatus("");
+  }
+
+  function cancelEditVendor() {
+    setEditingVendorId(null);
+    setEditingVendorForm(emptyVendorForm);
+    setVendorError(null);
+  }
+
+  async function saveEditedVendor() {
+    if (!editingVendorId) {
+      return;
+    }
+
+    const vendorName = editingVendorForm.name.trim();
+
+    if (!vendorName) {
+      setVendorError("Vendor name is required.");
+      return;
+    }
+
+    try {
+      setVendorSaving(true);
+      setVendorError(null);
+      setVendorStatus("Saving vendor changes...");
+
+      const payload = {
+        name: vendorName,
+        business_name: vendorName,
+        contact_name: editingVendorForm.contact_name.trim() || null,
+        email: editingVendorForm.email.trim() || null,
+        phone: editingVendorForm.phone.trim() || null,
+        website: editingVendorForm.website.trim() || null,
+        services: editingVendorForm.services.trim() || null,
+        preferred_contact_method:
+          editingVendorForm.preferred_contact_method || null,
+        notes: editingVendorForm.notes.trim() || null,
+      };
+
+      const { error: updateError } = await supabase
+        .from("vendors")
+        .update(payload)
+        .eq("id", editingVendorId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setEditingVendorId(null);
+      setEditingVendorForm(emptyVendorForm);
+      setVendorStatus("Vendor updated.");
+
+      if (selectedImportEventId) {
+        await loadVendors(selectedImportEventId);
+      }
+    } catch (err: any) {
+      console.error("saveEditedVendor error:", err);
+      setVendorError(err?.message || "Could not update vendor.");
+      setVendorStatus("");
+    } finally {
+      setVendorSaving(false);
+    }
+  }
+
+  async function createVendor() {
+    const vendorName = vendorForm.name.trim();
+
+    if (!vendorName) {
+      setVendorError("Vendor name is required.");
+      return;
+    }
+
+    try {
+      setVendorSaving(true);
+      setVendorError(null);
+      setVendorStatus("Saving vendor...");
+
+      const payload = {
+        name: vendorName,
+        business_name: vendorName,
+        contact_name: vendorForm.contact_name.trim() || null,
+        email: vendorForm.email.trim() || null,
+        phone: vendorForm.phone.trim() || null,
+        website: vendorForm.website.trim() || null,
+        services: vendorForm.services.trim() || null,
+        preferred_contact_method: vendorForm.preferred_contact_method || null,
+        notes: vendorForm.notes.trim() || null,
+        is_active: true,
+      };
+
+      const { error: insertError } = await supabase
+        .from("vendors")
+        .insert(payload);
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      setVendorForm(emptyVendorForm);
+      setVendorStatus("Vendor saved to the library.");
+
+      if (selectedImportEventId) {
+        await loadVendors(selectedImportEventId);
+      }
+    } catch (err: any) {
+      console.error("createVendor error:", err);
+      setVendorError(err?.message || "Could not save vendor.");
+      setVendorStatus("");
+    } finally {
+      setVendorSaving(false);
+    }
+  }
+
+  async function assignVendorToEvent(vendorId: string) {
+    if (!selectedImportEventId) {
+      setVendorError("Select an event before assigning vendors.");
+      return;
+    }
+
+    try {
+      setVendorSaving(true);
+      setVendorError(null);
+      setVendorStatus("Assigning vendor to event...");
+
+      const { error: upsertError } = await supabase
+        .from("event_vendors")
+        .upsert(
+          {
+            event_id: selectedImportEventId,
+            vendor_id: vendorId,
+            show_on_member_dashboard: true,
+            allow_service_requests: false,
+            status: "assigned",
+          },
+          { onConflict: "event_id,vendor_id" },
+        );
+
+      if (upsertError) {
+        throw upsertError;
+      }
+
+      setVendorStatus("Vendor assigned to this event.");
+      await loadVendors(selectedImportEventId);
+    } catch (err: any) {
+      console.error("assignVendorToEvent error:", err);
+      setVendorError(err?.message || "Could not assign vendor to event.");
+      setVendorStatus("");
+    } finally {
+      setVendorSaving(false);
+    }
+  }
+
+  async function unassignVendorFromEvent(assignmentId: string) {
+    if (!selectedImportEventId) {
+      return;
+    }
+
+    try {
+      setVendorSaving(true);
+      setVendorError(null);
+      setVendorStatus("Removing vendor from this event...");
+
+      const { error: deleteError } = await supabase
+        .from("event_vendors")
+        .delete()
+        .eq("id", assignmentId);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      setVendorStatus(
+        "Vendor removed from this event. It remains in the library.",
+      );
+      await loadVendors(selectedImportEventId);
+    } catch (err: any) {
+      console.error("unassignVendorFromEvent error:", err);
+      setVendorError(err?.message || "Could not remove vendor from event.");
+      setVendorStatus("");
+    } finally {
+      setVendorSaving(false);
+    }
+  }
+
+  async function updateEventVendorSetting(
+    assignmentId: string,
+    updates: Partial<
+      Pick<
+        EventVendorRow,
+        | "booth_location"
+        | "show_on_member_dashboard"
+        | "allow_service_requests"
+        | "notes"
+      >
+    >,
+  ) {
+    if (!selectedImportEventId) {
+      return;
+    }
+
+    try {
+      setVendorSaving(true);
+      setVendorError(null);
+      setVendorStatus("Updating event vendor...");
+
+      const { error: updateError } = await supabase
+        .from("event_vendors")
+        .update(updates)
+        .eq("id", assignmentId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setVendorStatus("Event vendor updated.");
+      await loadVendors(selectedImportEventId);
+    } catch (err: any) {
+      console.error("updateEventVendorSetting error:", err);
+      setVendorError(err?.message || "Could not update event vendor.");
+      setVendorStatus("");
+    } finally {
+      setVendorSaving(false);
+    }
+  }
+
   const selectedImportEvent =
     availableEvents.find((event) => event.id === selectedImportEventId) || null;
   const pageTitle = isEmbedded ? "Imports" : "Attendee Imports";
+
+  const assignedVendorIds = useMemo(
+    () => new Set(eventVendors.map((assignment) => assignment.vendor_id)),
+    [eventVendors],
+  );
+
+  const unassignedVendors = useMemo(
+    () => vendors.filter((vendor) => !assignedVendorIds.has(vendor.id)),
+    [vendors, assignedVendorIds],
+  );
 
   const eventChangedSinceLoad =
     !!rows.length &&
@@ -1318,6 +1713,9 @@ function AdminAttendeeImportsPageInner() {
           share_with_attendees: row.share_with_attendees,
           special_events_raw: row.special_events_raw || null,
           raw_import: row.raw_import,
+          participant_type: "attendee",
+          vendor_master_id: null,
+          vendor_assigned_event_id: null,
         };
       });
 
@@ -1495,6 +1893,11 @@ function AdminAttendeeImportsPageInner() {
         }
       }
       await loadSavedAttendees(selectedImportEventId);
+      // Vendor import note:
+      // Regular attendee imports are event-scoped. Persistent vendors should be
+      // stored once in a vendor library table, then connected to events through
+      // an event-vendor assignment table. Do not duplicate vendor records across
+      // every active event.
 
       setStatus(
         `Imported ${validRows.length} attendees, ${importRowPayload.length} source rows, and ${activityPayload.length} activity rows into ${
@@ -1535,6 +1938,466 @@ function AdminAttendeeImportsPageInner() {
           ← Back to Attendee Management
         </a>
       ) : null}
+
+      <div className="card" style={{ padding: 18 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "start",
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Vendor Library</h2>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>
+              Store vendors once, then assign them only to the selected event.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              selectedImportEventId
+                ? void loadVendors(selectedImportEventId)
+                : null
+            }
+            disabled={!selectedImportEventId || loadingVendors}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #ccc",
+              background: "#ffffff",
+              color: "#111827",
+              WebkitTextFillColor: "#111827",
+              fontWeight: 700,
+              lineHeight: 1.2,
+              cursor: "pointer",
+            }}
+          >
+            Refresh Vendors
+          </button>
+        </div>
+
+        {vendorError ? (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #e2b4b4",
+              background: "#fff3f3",
+              color: "#8a1f1f",
+            }}
+          >
+            {vendorError}
+          </div>
+        ) : null}
+
+        {vendorStatus ? (
+          <div style={{ fontSize: 14, marginBottom: 12 }}>{vendorStatus}</div>
+        ) : null}
+
+        <div
+          style={{
+            display: "grid",
+            gap: 18,
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          }}
+        >
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              padding: 14,
+              background: "#fafafa",
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 10 }}>
+              Add Vendor to Library
+            </h3>
+
+            <div style={{ display: "grid", gap: 10 }}>
+              <input
+                value={vendorForm.name}
+                onChange={(e) => updateVendorForm("name", e.target.value)}
+                placeholder="Vendor name"
+                style={inputStyle}
+              />
+              <input
+                value={vendorForm.contact_name}
+                onChange={(e) =>
+                  updateVendorForm("contact_name", e.target.value)
+                }
+                placeholder="Contact name"
+                style={inputStyle}
+              />
+              <input
+                value={vendorForm.email}
+                onChange={(e) => updateVendorForm("email", e.target.value)}
+                placeholder="Email"
+                style={inputStyle}
+              />
+              <input
+                value={vendorForm.phone}
+                onChange={(e) => updateVendorForm("phone", e.target.value)}
+                placeholder="Phone"
+                style={inputStyle}
+              />
+              <input
+                value={vendorForm.website}
+                onChange={(e) => updateVendorForm("website", e.target.value)}
+                placeholder="Website"
+                style={inputStyle}
+              />
+              <textarea
+                value={vendorForm.services}
+                onChange={(e) => updateVendorForm("services", e.target.value)}
+                placeholder="Services offered"
+                rows={3}
+                style={inputStyle}
+              />
+              <select
+                value={vendorForm.preferred_contact_method}
+                onChange={(e) =>
+                  updateVendorForm("preferred_contact_method", e.target.value)
+                }
+                style={inputStyle}
+              >
+                <option value="email">Email</option>
+                <option value="phone">Phone</option>
+                <option value="text">Text</option>
+                <option value="in_app">In-app request</option>
+              </select>
+              <textarea
+                value={vendorForm.notes}
+                onChange={(e) => updateVendorForm("notes", e.target.value)}
+                placeholder="Internal notes"
+                rows={3}
+                style={inputStyle}
+              />
+              <button
+                type="button"
+                onClick={() => void createVendor()}
+                disabled={vendorSaving || !vendorForm.name.trim()}
+                style={{
+                  ...darkButtonStyle,
+                  opacity: vendorSaving || !vendorForm.name.trim() ? 0.6 : 1,
+                }}
+              >
+                {vendorSaving ? "Saving..." : "Save Vendor"}
+              </button>
+            </div>
+          </div>
+
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              padding: 14,
+              background: "#fafafa",
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 10 }}>
+              Assigned to Selected Event
+            </h3>
+
+            {!selectedImportEventId ? (
+              <div style={{ opacity: 0.8 }}>Select an event first.</div>
+            ) : loadingVendors ? (
+              <div>Loading vendors...</div>
+            ) : eventVendors.length === 0 ? (
+              <div style={{ opacity: 0.8 }}>
+                No vendors assigned to this event yet.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {eventVendors.map((assignment) => {
+                  const vendor = assignment.vendors;
+                  return (
+                    <div
+                      key={assignment.id}
+                      style={{
+                        border: "1px solid #ddd",
+                        borderRadius: 12,
+                        padding: 12,
+                        background: "white",
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, marginBottom: 4 }}>
+                        {vendor?.name || "Vendor"}
+                      </div>
+                      <div
+                        style={{ fontSize: 13, opacity: 0.8, marginBottom: 8 }}
+                      >
+                        {[vendor?.contact_name, vendor?.email, vendor?.phone]
+                          .filter(Boolean)
+                          .join(" • ") || "No contact details"}
+                      </div>
+                      {vendor?.services ? (
+                        <div style={{ fontSize: 13, marginBottom: 8 }}>
+                          {vendor.services}
+                        </div>
+                      ) : null}
+                      <input
+                        defaultValue={assignment.booth_location || ""}
+                        onBlur={(e) =>
+                          void updateEventVendorSetting(assignment.id, {
+                            booth_location: e.target.value.trim() || null,
+                          })
+                        }
+                        placeholder="Booth / site / location"
+                        style={{ ...inputStyle, marginBottom: 8 }}
+                      />
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={assignment.show_on_member_dashboard}
+                          onChange={(e) =>
+                            void updateEventVendorSetting(assignment.id, {
+                              show_on_member_dashboard: e.target.checked,
+                            })
+                          }
+                        />{" "}
+                        Show on member dashboard
+                      </label>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          marginBottom: 10,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={assignment.allow_service_requests}
+                          onChange={(e) =>
+                            void updateEventVendorSetting(assignment.id, {
+                              allow_service_requests: e.target.checked,
+                            })
+                          }
+                        />{" "}
+                        Allow service requests
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void unassignVendorFromEvent(assignment.id)
+                        }
+                        disabled={vendorSaving}
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: 10,
+                          border: "1px solid #fca5a5",
+                          background: "#fff7f7",
+                          color: "#991b1b",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Remove from this event
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 18 }}>
+          <h3 style={{ marginTop: 0, marginBottom: 10 }}>Library Vendors</h3>
+          {vendors.length === 0 ? (
+            <div style={{ opacity: 0.8 }}>No vendors in the library yet.</div>
+          ) : unassignedVendors.length === 0 ? (
+            <div style={{ opacity: 0.8 }}>
+              All active library vendors are assigned to this event.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              }}
+            >
+              {unassignedVendors.map((vendor) => {
+                const isEditing = editingVendorId === vendor.id;
+
+                return (
+                  <div
+                    key={vendor.id}
+                    style={{
+                      border: "1px solid #ddd",
+                      borderRadius: 12,
+                      padding: 12,
+                      background: "#ffffff",
+                    }}
+                  >
+                    {isEditing ? (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <input
+                          value={editingVendorForm.name}
+                          onChange={(e) =>
+                            updateEditingVendorForm("name", e.target.value)
+                          }
+                          placeholder="Vendor name"
+                          style={inputStyle}
+                        />
+                        <input
+                          value={editingVendorForm.contact_name}
+                          onChange={(e) =>
+                            updateEditingVendorForm(
+                              "contact_name",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="Contact name"
+                          style={inputStyle}
+                        />
+                        <input
+                          value={editingVendorForm.email}
+                          onChange={(e) =>
+                            updateEditingVendorForm("email", e.target.value)
+                          }
+                          placeholder="Email"
+                          style={inputStyle}
+                        />
+                        <input
+                          value={editingVendorForm.phone}
+                          onChange={(e) =>
+                            updateEditingVendorForm("phone", e.target.value)
+                          }
+                          placeholder="Phone"
+                          style={inputStyle}
+                        />
+                        <input
+                          value={editingVendorForm.website}
+                          onChange={(e) =>
+                            updateEditingVendorForm("website", e.target.value)
+                          }
+                          placeholder="Website"
+                          style={inputStyle}
+                        />
+                        <textarea
+                          value={editingVendorForm.services}
+                          onChange={(e) =>
+                            updateEditingVendorForm("services", e.target.value)
+                          }
+                          placeholder="Services offered"
+                          rows={3}
+                          style={inputStyle}
+                        />
+                        <select
+                          value={editingVendorForm.preferred_contact_method}
+                          onChange={(e) =>
+                            updateEditingVendorForm(
+                              "preferred_contact_method",
+                              e.target.value,
+                            )
+                          }
+                          style={inputStyle}
+                        >
+                          <option value="email">Email</option>
+                          <option value="phone">Phone</option>
+                          <option value="text">Text</option>
+                          <option value="in_app">In-app request</option>
+                        </select>
+                        <textarea
+                          value={editingVendorForm.notes}
+                          onChange={(e) =>
+                            updateEditingVendorForm("notes", e.target.value)
+                          }
+                          placeholder="Internal notes"
+                          rows={2}
+                          style={inputStyle}
+                        />
+                        <div
+                          style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void saveEditedVendor()}
+                            disabled={
+                              vendorSaving || !editingVendorForm.name.trim()
+                            }
+                            style={{
+                              ...darkButtonStyle,
+                              opacity:
+                                vendorSaving || !editingVendorForm.name.trim()
+                                  ? 0.6
+                                  : 1,
+                            }}
+                          >
+                            Save Changes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditVendor}
+                            disabled={vendorSaving}
+                            style={secondaryButtonStyle}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: 800, marginBottom: 4 }}>
+                          {vendor.name || "Unnamed Vendor"}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            opacity: 0.8,
+                            marginBottom: 8,
+                          }}
+                        >
+                          {[vendor.contact_name, vendor.email, vendor.phone]
+                            .filter(Boolean)
+                            .join(" • ") || "No contact details"}
+                        </div>
+                        {vendor.services ? (
+                          <div style={{ fontSize: 13, marginBottom: 8 }}>
+                            {vendor.services}
+                          </div>
+                        ) : null}
+                        <div
+                          style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void assignVendorToEvent(vendor.id)}
+                            disabled={!selectedImportEventId || vendorSaving}
+                            style={darkButtonStyle}
+                          >
+                            Assign to Selected Event
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => startEditVendor(vendor)}
+                            disabled={vendorSaving}
+                            style={secondaryButtonStyle}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="card" style={{ padding: 18 }}>
         <div
@@ -2232,6 +3095,7 @@ function AdminAttendeeImportsPageInner() {
                     <th style={tableHeadStyle}>First Timer</th>
                     <th style={tableHeadStyle}>Volunteer</th>
                     <th style={tableHeadStyle}>Source</th>
+                    <th style={tableHeadStyle}>Event Scope</th>
                     <th style={tableHeadStyle}>Active</th>
                   </tr>
                 </thead>
@@ -2263,6 +3127,14 @@ function AdminAttendeeImportsPageInner() {
                       </td>
                       <td style={tableCellStyle}>
                         {row.source_type || "imported"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {row.participant_type === "vendor"
+                          ? row.vendor_assigned_event_id ===
+                            selectedImportEventId
+                            ? "Assigned to this event"
+                            : "Vendor library only"
+                          : "This event"}
                       </td>
                       <td style={tableCellStyle}>
                         {row.is_active ? "Yes" : "No"}
@@ -2453,6 +3325,29 @@ const darkButtonStyle: CSSProperties = {
   background: "#111827",
   color: "#ffffff",
   WebkitTextFillColor: "#ffffff",
+  fontWeight: 700,
+  lineHeight: 1.2,
+  cursor: "pointer",
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "white",
+  color: "#111827",
+  WebkitTextFillColor: "#111827",
+  boxSizing: "border-box",
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  padding: "8px 12px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "#ffffff",
+  color: "#111827",
+  WebkitTextFillColor: "#111827",
   fontWeight: 700,
   lineHeight: 1.2,
   cursor: "pointer",
