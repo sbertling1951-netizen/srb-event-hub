@@ -110,14 +110,18 @@ const emptyEventPlaceForm: EventPlaceForm = {
 
 function toNullableNumber(value: string): number | null {
   const trimmed = value.trim();
-  if (!trimmed) {return null;}
+  if (!trimmed) {
+    return null;
+  }
   const parsed = Number(trimmed);
   return Number.isNaN(parsed) ? null : parsed;
 }
 
 function toNullableCoordinate(value: string): number | null {
   const trimmed = value.trim();
-  if (!trimmed) {return null;}
+  if (!trimmed) {
+    return null;
+  }
   const parsed = Number(trimmed);
   return Number.isNaN(parsed) ? null : parsed;
 }
@@ -253,7 +257,9 @@ function AdminNearbyPageInner() {
   }, []);
 
   useEffect(() => {
-    if (accessDenied) {return;}
+    if (accessDenied) {
+      return;
+    }
     void loadStoredAreas();
   }, [accessDenied]);
 
@@ -365,7 +371,9 @@ function AdminNearbyPageInner() {
     return [...eventPlaces].sort((a, b) => {
       const sortA = a.sort_order ?? 0;
       const sortB = b.sort_order ?? 0;
-      if (sortA !== sortB) {return sortA - sortB;}
+      if (sortA !== sortB) {
+        return sortA - sortB;
+      }
       return a.name.localeCompare(b.name);
     });
   }, [eventPlaces]);
@@ -380,14 +388,18 @@ function AdminNearbyPageInner() {
         .select("id,name,description")
         .order("name", { ascending: true });
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       const rows = (data || []) as StoredArea[];
       setStoredAreas(rows);
 
       if (rows.length > 0) {
         setSelectedAreaId((current) => {
-          if (current && rows.some((row) => row.id === current)) {return current;}
+          if (current && rows.some((row) => row.id === current)) {
+            return current;
+          }
           return rows[0].id;
         });
         setStatus(
@@ -420,7 +432,9 @@ function AdminNearbyPageInner() {
         .eq("area_id", areaId)
         .order("name", { ascending: true });
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       const mapped = (data || []).map((row: any) => ({
         id: row.id,
@@ -462,7 +476,9 @@ function AdminNearbyPageInner() {
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       setEventPlaces((data || []) as EventPlace[]);
       setStatus(
@@ -502,7 +518,18 @@ function AdminNearbyPageInner() {
         .select("id,name,description")
         .single();
 
-      if (error) {throw error;}
+      if (error) {
+        throw new Error(
+          [
+            error.message,
+            error.details,
+            error.hint,
+            error.code ? `Code: ${error.code}` : "",
+          ]
+            .filter(Boolean)
+            .join(" | ") || "Failed to create stored area.",
+        );
+      }
 
       await loadStoredAreas();
 
@@ -513,11 +540,16 @@ function AdminNearbyPageInner() {
       setStatus(`Created stored area "${payload.name}".`);
     } catch (err: any) {
       console.error("createStoredArea error:", err);
+
+      const messageParts = [err?.message, err?.details, err?.hint]
+        .filter(Boolean)
+        .join(" | ");
+
       setStatus(
-        err?.message ||
-          err?.details ||
-          err?.hint ||
-          "Failed to create stored area.",
+        messageParts ||
+          (err && typeof err === "object"
+            ? JSON.stringify(err, null, 2)
+            : String(err || "Failed to create stored area.")),
       );
     } finally {
       setSavingArea(false);
@@ -550,7 +582,9 @@ function AdminNearbyPageInner() {
         })
         .eq("id", selectedAreaId);
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       await loadStoredAreas();
       setSelectedAreaId(selectedAreaId);
@@ -576,7 +610,9 @@ function AdminNearbyPageInner() {
     const confirmed = window.confirm(
       `Delete stored area "${selectedArea.name}" and all of its places?`,
     );
-    if (!confirmed) {return;}
+    if (!confirmed) {
+      return;
+    }
 
     try {
       setSavingArea(true);
@@ -586,7 +622,9 @@ function AdminNearbyPageInner() {
         .delete()
         .eq("id", selectedAreaId);
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       setSelectedAreaId("");
       setStoredPlaces([]);
@@ -685,14 +723,18 @@ function AdminNearbyPageInner() {
           .update(payload)
           .eq("id", storedForm.id);
 
-        if (error) {throw error;}
+        if (error) {
+          throw error;
+        }
         setStatus(
           `Updated stored place "${storedForm.name.trim()}" using ${locationSource}.`,
         );
       } else {
         const { error } = await supabase.from("nearby_master").insert(payload);
 
-        if (error) {throw error;}
+        if (error) {
+          throw error;
+        }
         setStatus(
           `Created stored place "${storedForm.name.trim()}" using ${locationSource}.`,
         );
@@ -721,7 +763,9 @@ function AdminNearbyPageInner() {
     const confirmed = window.confirm(
       `Delete stored place "${storedForm.name}"?`,
     );
-    if (!confirmed) {return;}
+    if (!confirmed) {
+      return;
+    }
 
     try {
       setSavingStoredPlace(true);
@@ -731,7 +775,9 @@ function AdminNearbyPageInner() {
         .delete()
         .eq("id", storedForm.id);
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       await loadStoredPlaces(selectedAreaId);
       setStoredForm(emptyStoredPlaceForm);
@@ -762,7 +808,9 @@ function AdminNearbyPageInner() {
     const confirmed = window.confirm(
       "Replace the current event nearby list with this stored area?",
     );
-    if (!confirmed) {return;}
+    if (!confirmed) {
+      return;
+    }
 
     try {
       setCopyingToEvent(true);
@@ -776,14 +824,18 @@ function AdminNearbyPageInner() {
         .eq("area_id", selectedAreaId)
         .order("name", { ascending: true });
 
-      if (sourceError) {throw sourceError;}
+      if (sourceError) {
+        throw sourceError;
+      }
 
       const { error: deleteError } = await supabase
         .from("event_nearby_places")
         .delete()
         .eq("event_id", adminEvent.id);
 
-      if (deleteError) {throw deleteError;}
+      if (deleteError) {
+        throw deleteError;
+      }
 
       const sourcePlaces = sourceRows || [];
       const payload: any[] = [];
@@ -830,7 +882,9 @@ function AdminNearbyPageInner() {
           .from("event_nearby_places")
           .insert(payload);
 
-        if (insertError) {throw insertError;}
+        if (insertError) {
+          throw insertError;
+        }
       }
 
       await loadEventPlaces(adminEvent.id);
@@ -934,7 +988,9 @@ function AdminNearbyPageInner() {
           .update(payload)
           .eq("id", eventForm.id);
 
-        if (error) {throw error;}
+        if (error) {
+          throw error;
+        }
         setStatus(
           `Updated event place "${eventForm.name.trim()}" using ${locationSource}.`,
         );
@@ -944,7 +1000,9 @@ function AdminNearbyPageInner() {
           sort_order: eventPlaces.length + 1,
         });
 
-        if (error) {throw error;}
+        if (error) {
+          throw error;
+        }
         setStatus(
           `Created event place "${eventForm.name.trim()}" using ${locationSource}.`,
         );
@@ -971,7 +1029,9 @@ function AdminNearbyPageInner() {
     }
 
     const confirmed = window.confirm(`Delete event place "${eventForm.name}"?`);
-    if (!confirmed) {return;}
+    if (!confirmed) {
+      return;
+    }
 
     try {
       setSavingEventPlace(true);
@@ -981,7 +1041,9 @@ function AdminNearbyPageInner() {
         .delete()
         .eq("id", eventForm.id);
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       if (adminEvent?.id) {
         await loadEventPlaces(adminEvent.id);
@@ -1007,24 +1069,23 @@ function AdminNearbyPageInner() {
             padding: 18,
           }}
         >
-<div style={{ marginBottom: 16 }}>
-  <button
-    type="button"
-    onClick={() => {
-      window.location.href = "/admin/map-admin";
-    }}
-    style={{
-      padding: "8px 12px",
-      borderRadius: 8,
-      border: "1px solid #cbd5e1",
-      background: "#fff",
-      cursor: "pointer",
-    }}
-  >
-    ← Back to Map Admin
-  </button>
-</div>
-
+          <div style={{ marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/admin/map-admin";
+              }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              ← Back to Map Admin
+            </button>
+          </div>
 
           <h1 style={{ marginTop: 0, marginBottom: 8 }}>Nearby Admin</h1>
           <div style={{ fontSize: 14, opacity: 0.8 }}>

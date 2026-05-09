@@ -653,7 +653,18 @@ function FilterBar(props: {
   } = props;
 
   return (
-    <div className="card" style={{ padding: 18 }}>
+    <div
+      className="card"
+      style={{
+        position: "sticky",
+        top: 78,
+        zIndex: 900,
+        padding: 18,
+        background: "white",
+        border: "1px solid #eee",
+        boxShadow: "0 2px 10px rgba(15, 23, 42, 0.06)",
+      }}
+    >
       <div
         style={{
           display: "grid",
@@ -795,6 +806,7 @@ function QuickActionBar(props: {
         background: "white",
         padding: 18,
         border: "1px solid #eee",
+        boxShadow: "0 2px 10px rgba(15, 23, 42, 0.08)",
       }}
     >
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1159,7 +1171,7 @@ function AttendeeList(props: {
                   <div
                     style={{
                       position: "sticky",
-                      top: 0,
+                      top: 160,
                       zIndex: 20,
                       marginTop: index === 0 ? 0 : 8,
                       padding: "8px 10px",
@@ -1911,6 +1923,7 @@ function AdminAttendeesPageInner() {
   );
   const [inlineSaving, setInlineSaving] = useState(false);
   const [recentlySavedId, setRecentlySavedId] = useState<string | null>(null);
+  const [showReviewQueue, setShowReviewQueue] = useState(true);
 
   useEffect(() => {
     async function init() {
@@ -3019,21 +3032,6 @@ function AdminAttendeesPageInner() {
               </div>
             </div>
           </div>
-          <div>
-            <label style={labelStyle}>Sort</label>
-            <select
-              value={attendeeSortMode}
-              onChange={(e) =>
-                setAttendeeSortMode(e.target.value as AttendeeSortMode)
-              }
-              style={inputStyle}
-            >
-              <option value="last_asc">Last Name A–Z</option>
-              <option value="last_desc">Last Name Z–A</option>
-              <option value="first_asc">First Name A–Z</option>
-              <option value="site_asc">Site Number</option>
-            </select>
-          </div>
 
           <FilterBar
             search={search}
@@ -3062,6 +3060,54 @@ function AdminAttendeesPageInner() {
             setShowResolvedInfo={setShowResolvedInfo}
           />
 
+          <div className="card" style={{ padding: 18 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <h2 style={{ marginTop: 0, marginBottom: 6 }}>Review Queue</h2>
+
+                <div style={{ fontSize: 14, opacity: 0.8 }}>
+                  {filteredReviewItems.length} flagged attendee
+                  {filteredReviewItems.length === 1 ? "" : "s"}
+                  {showReviewQueue
+                    ? " shown below."
+                    : " hidden while you work the attendee list."}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowReviewQueue((prev) => !prev)}
+                style={secondaryButtonStyle}
+              >
+                {showReviewQueue ? "Hide Review Queue" : "Show Review Queue"}
+              </button>
+            </div>
+          </div>
+
+          {showReviewQueue ? (
+            <ReviewQueue
+              loading={loading}
+              filteredReviewItems={filteredReviewItems}
+              visibleReviewItems={visibleReviewItems}
+              drafts={drafts}
+              savingRowId={savingRowId}
+              dataStatusFilter={dataStatusFilter}
+              participantTypeFilter={participantTypeFilter}
+              onDraftChange={updateDraft}
+              onSaveMembership={saveMembershipNumber}
+              onOpenEdit={openEditAttendeeEditor}
+              onUpdateDataStatus={updateDataStatus}
+            />
+          ) : null}
+
           <AttendeeList
             loading={loading}
             filteredAttendees={filteredAttendees}
@@ -3077,20 +3123,6 @@ function AdminAttendeesPageInner() {
             onCancelInlineEdit={cancelInlineEdit}
             onInlineEditChange={updateInlineEditField}
             onSaveInlineEdit={handleSaveInlineEdit}
-            onUpdateDataStatus={updateDataStatus}
-          />
-
-          <ReviewQueue
-            loading={loading}
-            filteredReviewItems={filteredReviewItems}
-            visibleReviewItems={visibleReviewItems}
-            drafts={drafts}
-            savingRowId={savingRowId}
-            dataStatusFilter={dataStatusFilter}
-            participantTypeFilter={participantTypeFilter}
-            onDraftChange={updateDraft}
-            onSaveMembership={saveMembershipNumber}
-            onOpenEdit={openEditAttendeeEditor}
             onUpdateDataStatus={updateDataStatus}
           />
         </>
@@ -3149,17 +3181,22 @@ const primaryButtonStyle: CSSProperties = {
   borderRadius: 10,
   border: "none",
   background: "#111827",
-  color: "white",
+  color: "#ffffff",
+  WebkitTextFillColor: "#ffffff",
   fontWeight: 700,
   cursor: "pointer",
+  lineHeight: 1.2,
 };
 
 const secondaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
   border: "1px solid #ccc",
-  background: "white",
+  background: "#ffffff",
+  color: "#111827",
+  WebkitTextFillColor: "#111827",
   fontWeight: 700,
+  lineHeight: 1.2,
   cursor: "pointer",
 };
 

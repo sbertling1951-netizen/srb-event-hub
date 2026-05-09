@@ -1680,13 +1680,7 @@ function AdminAttendeeImportsPageInner() {
                 eventChangedSinceLoad
               }
               style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "none",
-                background: "#111827",
-                color: "white",
-                fontWeight: 700,
-                cursor: "pointer",
+                ...darkButtonStyle,
                 opacity:
                   importing ||
                   parsing ||
@@ -2123,8 +2117,11 @@ function AdminAttendeeImportsPageInner() {
                 padding: "10px 14px",
                 borderRadius: 10,
                 border: "1px solid #ccc",
-                background: "white",
+                background: "#ffffff",
+                color: "#111827",
+                WebkitTextFillColor: "#111827",
                 fontWeight: 700,
+                lineHeight: 1.2,
                 cursor: "pointer",
               }}
             >
@@ -2377,6 +2374,18 @@ const backLinkStyle: CSSProperties = {
   color: "#111827",
   fontWeight: 700,
   textDecoration: "none",
+};
+
+const darkButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "none",
+  background: "#111827",
+  color: "#ffffff",
+  WebkitTextFillColor: "#ffffff",
+  fontWeight: 700,
+  lineHeight: 1.2,
+  cursor: "pointer",
 };
 
 const tableHeadStyle = {
