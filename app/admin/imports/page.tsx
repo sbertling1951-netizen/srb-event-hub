@@ -929,6 +929,43 @@ function AdminAttendeeImportsPageInner() {
     return savedAttendees.slice(0, limit);
   }, [savedAttendees, savedAttendeePageSize]);
 
+  const savedAttendeeIssues = useMemo(() => {
+    return savedAttendees.flatMap((attendee) => {
+      const issues: {
+        key: string;
+        attendee: AttendeeRow;
+        label: string;
+        message: string;
+        currentValue: string;
+        severity: "error" | "warning";
+      }[] = [];
+
+      const memberNumber = String(attendee.membership_number || "").trim();
+
+      if (!memberNumber) {
+        issues.push({
+          key: `${attendee.id}-membership-missing`,
+          attendee,
+          label: "Member #",
+          message: "Missing membership number",
+          currentValue: "",
+          severity: "warning",
+        });
+      } else if (!memberNumber.toUpperCase().startsWith("F")) {
+        issues.push({
+          key: `${attendee.id}-membership-invalid`,
+          attendee,
+          label: "Member #",
+          message: "Membership number must begin with F",
+          currentValue: memberNumber,
+          severity: "error",
+        });
+      }
+
+      return issues;
+    });
+  }, [savedAttendees]);
+
   async function loadSavedAttendees(eventId: string) {
     try {
       setLoadingSavedAttendees(true);
@@ -1513,8 +1550,12 @@ function AdminAttendeeImportsPageInner() {
           <div>
             <h2 style={{ marginTop: 0, marginBottom: 6 }}>Data Review Queue</h2>
             <div style={{ fontSize: 14, opacity: 0.8 }}>
-              {reviewIssues.filter((issue) => !issue.isResolved).length} item
-              {reviewIssues.filter((issue) => !issue.isResolved).length === 1
+              {reviewIssues.filter((issue) => !issue.isResolved).length +
+                savedAttendeeIssues.length}{" "}
+              item
+              {reviewIssues.filter((issue) => !issue.isResolved).length +
+                savedAttendeeIssues.length ===
+              1
                 ? ""
                 : "s"}{" "}
               need review or correction
