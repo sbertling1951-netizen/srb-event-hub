@@ -1,6 +1,12 @@
 "use client";
 
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
@@ -906,17 +912,16 @@ function ReviewQueue(props: {
                 style={{
                   border: "1px solid #fca5a5",
                   background: "#fef2f2",
-                  borderRadius: 12,
-                  padding: 14,
+                  borderRadius: 10,
+                  padding: "10px 12px",
                 }}
               >
                 <div
                   style={{
+                    marginTop: 8,
                     display: "flex",
-                    justifyContent: "space-between",
-                    gap: 10,
+                    gap: 8,
                     flexWrap: "wrap",
-                    marginBottom: 10,
                   }}
                 >
                   <div>
@@ -1047,7 +1052,12 @@ function ReviewQueue(props: {
                     marginTop: 12,
                     display: "flex",
                     gap: 10,
-                    flexWrap: "wrap",
+                    flexWrap: "nowrap",
+                    overflowX: "auto",
+                    WebkitOverflowScrolling: "touch",
+                    paddingBottom: 6,
+                    marginBottom: -2,
+                    scrollbarWidth: "thin",
                   }}
                 >
                   <button
@@ -1104,6 +1114,8 @@ function AttendeeList(props: {
   inlineSaving: boolean;
   recentlySavedId: string | null;
   attendeeSortMode: AttendeeSortMode;
+  expandedAttendeeId: string | null;
+  onToggleExpanded: (attendeeId: string) => void;
   onOpenEdit: (attendee: AttendeeRow) => void;
   onStartInlineEdit: (attendee: AttendeeRow) => void;
   onCancelInlineEdit: () => void;
@@ -1121,6 +1133,8 @@ function AttendeeList(props: {
     inlineSaving,
     recentlySavedId,
     attendeeSortMode,
+    expandedAttendeeId,
+    onToggleExpanded,
     onOpenEdit,
     onStartInlineEdit,
     onCancelInlineEdit,
@@ -1128,6 +1142,21 @@ function AttendeeList(props: {
     onSaveInlineEdit,
     onUpdateDataStatus,
   } = props;
+
+  const expandedCardRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!expandedAttendeeId || !expandedCardRef.current) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      expandedCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  }, [expandedAttendeeId]);
 
   return (
     <div className="card" style={{ padding: 18 }}>
@@ -1153,6 +1182,7 @@ function AttendeeList(props: {
               (item) => item.attendee.id === attendee.id,
             );
             const isInlineEditing = inlineEditId === attendee.id;
+            const isExpanded = expandedAttendeeId === attendee.id;
             const currentSite =
               String(attendee.assigned_site || "Unassigned").trim() ||
               "Unassigned";
@@ -1164,6 +1194,7 @@ function AttendeeList(props: {
               : null;
             const showSiteHeader =
               attendeeSortMode === "site" && currentSite !== previousSite;
+            const toggleAttendeeDetails = () => onToggleExpanded(attendee.id);
 
             return (
               <div key={attendee.id} style={{ display: "contents" }}>
@@ -1190,6 +1221,7 @@ function AttendeeList(props: {
 
                 <div
                   key={attendee.id}
+                  ref={isExpanded ? expandedCardRef : undefined}
                   style={{
                     border:
                       attendee.id === recentlySavedId
@@ -1203,17 +1235,37 @@ function AttendeeList(props: {
                   }}
                 >
                   <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={toggleAttendeeDetails}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggleAttendeeDetails();
+                      }
+                    }}
+                    title={
+                      isExpanded
+                        ? "Hide attendee details"
+                        : "View attendee details"
+                    }
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
                       gap: 10,
                       flexWrap: "wrap",
                       marginBottom: 10,
+                      cursor: "pointer",
+                      borderRadius: 10,
+                      padding: "4px 6px",
+                      marginLeft: -6,
+                      marginRight: -6,
                     }}
                   >
                     <div>
                       {isInlineEditing ? (
                         <div
+                          onClick={(event) => event.stopPropagation()}
                           style={{
                             display: "grid",
                             gap: 10,
@@ -1333,7 +1385,7 @@ function AttendeeList(props: {
                         </div>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 800, fontSize: 16 }}>
+                          <div style={{ fontWeight: 700, fontSize: 15 }}>
                             {displayPilotName(attendee)}
                             {displayCopilotName(attendee)
                               ? ` / ${displayCopilotName(attendee)}`
@@ -1346,7 +1398,7 @@ function AttendeeList(props: {
                               gap: 8,
                               flexWrap: "wrap",
                               alignItems: "center",
-                              fontSize: 13,
+                              fontSize: 12,
                               color: "#555",
                               marginTop: 4,
                             }}
@@ -1398,6 +1450,7 @@ function AttendeeList(props: {
                   </div>
 
                   <div
+                    onClick={(event) => event.stopPropagation()}
                     style={{
                       marginTop: 12,
                       display: "flex",
@@ -1436,6 +1489,13 @@ function AttendeeList(props: {
                       <>
                         <button
                           type="button"
+                          onClick={() => onToggleExpanded(attendee.id)}
+                          style={secondaryButtonStyle}
+                        >
+                          {isExpanded ? "Hide Details" : "View Details"}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => onStartInlineEdit(attendee)}
                           style={secondaryButtonStyle}
                         >
@@ -1469,6 +1529,131 @@ function AttendeeList(props: {
                       </>
                     )}
                   </div>
+
+                  {isExpanded ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: 10,
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(180px, 1fr))",
+                          fontSize: 13,
+                        }}
+                      >
+                        <div>
+                          <strong>Membership #</strong>
+                          <div>{attendee.membership_number || "—"}</div>
+                        </div>
+                        <div>
+                          <strong>Entry ID</strong>
+                          <div>{attendee.entry_id || "—"}</div>
+                        </div>
+                        <div>
+                          <strong>Site</strong>
+                          <div>{attendee.assigned_site || "Unassigned"}</div>
+                        </div>
+                        <div>
+                          <strong>City / State</strong>
+                          <div>{cityState(attendee) || "—"}</div>
+                        </div>
+                        <div>
+                          <strong>Primary Phone</strong>
+                          <div>{attendee.primary_phone || "—"}</div>
+                        </div>
+                        <div>
+                          <strong>Cell Phone</strong>
+                          <div>{attendee.cell_phone || "—"}</div>
+                        </div>
+                        <div>
+                          <strong>Coach</strong>
+                          <div>
+                            {[attendee.coach_manufacturer, attendee.coach_model]
+                              .filter(Boolean)
+                              .join(" ") || "—"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Source</strong>
+                          <div>{attendee.source_type || "—"}</div>
+                        </div>
+                        <div>
+                          <strong>Headcount</strong>
+                          <div>
+                            {attendee.include_in_headcount
+                              ? "Included"
+                              : "Not included"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Name Tag</strong>
+                          <div>
+                            {attendee.needs_name_tag ? "Needed" : "Not needed"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Coach Plate</strong>
+                          <div>
+                            {attendee.needs_coach_plate
+                              ? "Needed"
+                              : "Not needed"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Parking</strong>
+                          <div>
+                            {attendee.needs_parking ? "Needed" : "Not needed"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>First Timer</strong>
+                          <div>{attendee.is_first_timer ? "Yes" : "No"}</div>
+                        </div>
+                        <div>
+                          <strong>Volunteer</strong>
+                          <div>
+                            {attendee.wants_to_volunteer ? "Yes" : "No"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Arrived</strong>
+                          <div>{attendee.has_arrived ? "Yes" : "No"}</div>
+                        </div>
+                        <div>
+                          <strong>Shared With Attendees</strong>
+                          <div>
+                            {attendee.share_with_attendees ? "Yes" : "No"}
+                          </div>
+                        </div>
+                      </div>
+
+                      {attendee.special_events_raw ? (
+                        <div style={{ marginTop: 12, fontSize: 13 }}>
+                          <strong>Special Events</strong>
+                          <div style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>
+                            {attendee.special_events_raw}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {attendee.notes ? (
+                        <div style={{ marginTop: 12, fontSize: 13 }}>
+                          <strong>Notes</strong>
+                          <div style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>
+                            {attendee.notes}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   {attendeeIssues ? (
                     <div
@@ -1923,8 +2108,15 @@ function AdminAttendeesPageInner() {
   );
   const [inlineSaving, setInlineSaving] = useState(false);
   const [recentlySavedId, setRecentlySavedId] = useState<string | null>(null);
-  const [showReviewQueue, setShowReviewQueue] = useState(true);
-
+  const [expandedAttendeeId, setExpandedAttendeeId] = useState<string | null>(
+    null,
+  );
+  function toggleExpandedAttendee(attendeeId: string) {
+    setExpandedAttendeeId((current) =>
+      current === attendeeId ? null : attendeeId,
+    );
+  }
+  const [showReviewQueue, setShowReviewQueue] = useState(false);
   useEffect(() => {
     async function init() {
       setLoading(true);
@@ -2787,6 +2979,7 @@ function AdminAttendeesPageInner() {
       setStatus("Quick edit saved.");
       showFlash("Attendee quick edit saved.");
       setRecentlySavedId(savedId);
+      setExpandedAttendeeId(savedId);
       window.setTimeout(() => {
         setRecentlySavedId((current) => (current === savedId ? null : current));
       }, 1500);
@@ -2802,7 +2995,16 @@ function AdminAttendeesPageInner() {
 
   if (!loading && accessDenied) {
     return (
-      <div className="card" style={{ padding: 18 }}>
+      <div
+        className="card"
+        style={{
+          padding: 18,
+          position: "sticky",
+          top: 140,
+          zIndex: 40,
+          background: "white",
+        }}
+      >
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Command Center</h1>
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           You do not have access to this page.
@@ -3118,6 +3320,8 @@ function AdminAttendeesPageInner() {
             inlineSaving={inlineSaving}
             recentlySavedId={recentlySavedId}
             attendeeSortMode={attendeeSortMode}
+            expandedAttendeeId={expandedAttendeeId}
+            onToggleExpanded={toggleExpandedAttendee}
             onOpenEdit={openEditAttendeeEditor}
             onStartInlineEdit={startInlineEdit}
             onCancelInlineEdit={cancelInlineEdit}
