@@ -356,6 +356,9 @@ function sortRowsForPrint(rows: AttendeeRow[], sortType: SortType) {
 
 function AdminPrintPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
+  const [availableEvents, setAvailableEvents] = useState<EventRow[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
+  const [canSelectPrintEvent, setCanSelectPrintEvent] = useState(false);
   const [settings, setSettings] = useState<PrintSettingsRow | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -408,6 +411,51 @@ function AdminPrintPageInner() {
       }
 
       const adminEvent = getAdminEvent() as AdminEventContext | null;
+      const superAdminCanSelectEvents = hasPermission(
+        admin,
+        "can_manage_admins",
+      );
+
+      setCanSelectPrintEvent(superAdminCanSelectEvents);
+
+      if (superAdminCanSelectEvents) {
+        const { data: eventData, error: eventError } = await supabase
+          .from("events")
+          .select("id,name,location,venue_name,start_date,end_date")
+          .order("start_date", { ascending: false })
+          .order("name", { ascending: true });
+
+        if (eventError) {
+          throw eventError;
+        }
+
+        const eventRows = (eventData || []) as EventRow[];
+        setAvailableEvents(eventRows);
+
+        const preferredEventId =
+          selectedEventId ||
+          (adminEvent?.id && eventRows.some((row) => row.id === adminEvent.id)
+            ? adminEvent.id
+            : eventRows[0]?.id || "");
+
+        setSelectedEventId(preferredEventId);
+
+        if (!preferredEventId) {
+          setEvent(null);
+          setSettings(null);
+          setAttendees([]);
+          setManualAttendees([]);
+          setSelectedIds([]);
+          setStatus("No events available for printing.");
+          setLoading(false);
+          return;
+        }
+
+        await loadPage(preferredEventId);
+        return;
+      }
+
+      setAvailableEvents([]);
 
       if (!adminEvent?.id) {
         setEvent(null);
@@ -428,6 +476,7 @@ function AdminPrintPageInner() {
         return;
       }
 
+      setSelectedEventId(adminEvent.id);
       await loadPage(adminEvent.id);
     }
 
@@ -462,6 +511,13 @@ function AdminPrintPageInner() {
       );
     };
   }, []);
+
+  async function handleSelectedPrintEventChange(eventId: string) {
+    setSelectedEventId(eventId);
+    setPrintOverrides({});
+    setEditAttendeeId(null);
+    await loadPage(eventId);
+  }
 
   async function loadPage(eventId: string) {
     try {
@@ -900,6 +956,38 @@ function AdminPrintPageInner() {
           {event?.location ? ` • ${event.location}` : ""}
           {dateRange ? ` • ${dateRange}` : ""}
         </div>
+
+        {canSelectPrintEvent ? (
+          <div style={{ marginTop: 14, maxWidth: 520 }}>
+            <label style={labelStyle}>Print Event</label>
+            <select
+              value={selectedEventId}
+              onChange={(e) =>
+                void handleSelectedPrintEventChange(e.target.value)
+              }
+              style={inputStyle}
+              disabled={loading || availableEvents.length === 0}
+            >
+              {availableEvents.map((eventRow) => {
+                const eventLabelParts = [
+                  eventRow.name || "Unnamed Event",
+                  eventRow.venue_name || eventRow.location || "",
+                  formatDateRange(eventRow.start_date, eventRow.end_date),
+                ].filter(Boolean);
+
+                return (
+                  <option key={eventRow.id} value={eventRow.id}>
+                    {eventLabelParts.join(" • ")}
+                  </option>
+                );
+              })}
+            </select>
+            <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
+              Super Admin can select any event to print. Event Admins remain
+              locked to their assigned working event.
+            </div>
+          </div>
+        ) : null}
 
         <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
         {flashMessage ? (

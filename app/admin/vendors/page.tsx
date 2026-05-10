@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
@@ -59,6 +59,22 @@ const emptyVendor: VendorForm = {
   business_description: "",
   preferred_contact_method: "email",
   is_active: true,
+};
+
+const dashboardLinkStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 54,
+  padding: "12px 14px",
+  borderRadius: 14,
+  border: "1px solid #d1d5db",
+  background: "#f8fafc",
+  color: "#0f172a",
+  fontWeight: 800,
+  textDecoration: "none",
+  textAlign: "center",
+  transition: "all 0.2s ease",
 };
 
 function AdminVendorsPageInner() {
@@ -370,6 +386,45 @@ function AdminVendorsPageInner() {
             {error}
           </div>
         ) : null}
+      </div>
+
+      <div
+        className="card"
+        style={{
+          padding: 18,
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <h2 style={{ margin: 0 }}>Vendor Dashboard</h2>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+          }}
+        >
+          <a href="/admin/vendors" style={dashboardLinkStyle}>
+            Manage Vendors
+          </a>
+
+          <a href="/admin/vendor-requests" style={dashboardLinkStyle}>
+            Vendor Requests
+          </a>
+
+          <a href="/admin/nearby" style={dashboardLinkStyle}>
+            Nearby Services
+          </a>
+
+          <a href="/admin/events" style={dashboardLinkStyle}>
+            Event Setup
+          </a>
+
+          <a href="/admin/dashboard" style={dashboardLinkStyle}>
+            Admin Dashboard
+          </a>
+        </div>
       </div>
 
       <div

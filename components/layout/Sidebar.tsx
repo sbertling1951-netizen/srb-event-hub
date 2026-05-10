@@ -451,30 +451,37 @@ export default function Sidebar() {
   const sections: NavSection[] = useMemo(() => {
     if (effectiveUserMode === "admin") {
       const adminItems: NavItem[] = [
-        { label: "Dashboard", href: "/admin/dashboard" },
-        { label: "Announcements", href: "/admin/announcements" },
-        { label: "Check-In", href: "/admin/checkin" },
-        { label: "Parking Admin", href: "/admin/parking" },
-        { label: "Events", href: "/admin/events" },
-        { label: "Map Admin", href: "/admin/map-admin" },
-        { label: "Attendees Management", href: "/admin/attendees" },
-        { label: "Vendors", href: "/admin/vendors" },
-        { label: "Vendor Requests", href: "/admin/vendor-requests" },
-        { label: "Pre-Rally Checklist", href: "/admin/checklist" },
-        { label: "Print Center", href: "/admin/print" },
         { label: "Agenda Admin", href: "/admin/agenda" },
-        ...(canManageEventStaff
-          ? [{ label: "Event Staff", href: "/admin/event-staff" }]
-          : []),
         ...(canManageAdminUsers
           ? [{ label: "Admin Users", href: "/admin/admin-users" }]
           : []),
+        { label: "Announcements", href: "/admin/announcements" },
+        { label: "Attendees Management", href: "/admin/attendees" },
+        { label: "Check-In", href: "/admin/checkin" },
+        { label: "Dashboard", href: "/admin/dashboard" },
+        { label: "Event Admin", href: "/admin/events" },
+        ...(canManageEventStaff
+          ? [{ label: "Event Staff", href: "/admin/event-staff" }]
+          : []),
+        { label: "Map Admin", href: "/admin/map-admin" },
+        { label: "Parking Admin", href: "/admin/parking" },
+        { label: "Pre-Rally Checklist", href: "/admin/checklist" },
+        { label: "Print Center", href: "/admin/print" },
+        { label: "Vendor Management", href: "/admin/vendors" },
       ];
+
+      const uniqueAdminItems = Array.from(
+        new Map(
+          adminItems.map((item) => [`${item.label}|${item.href}`, item]),
+        ).values(),
+      ).sort((a, b) =>
+        a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
+      );
 
       return [
         {
           title: "Admin",
-          items: adminItems,
+          items: uniqueAdminItems,
         },
       ];
     }
