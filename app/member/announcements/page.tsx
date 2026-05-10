@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
@@ -38,16 +38,24 @@ type Announcement = {
 };
 
 function isNotExpired(expiresAt?: string | null) {
-  if (!expiresAt) {return true;}
+  if (!expiresAt) {
+    return true;
+  }
   const time = new Date(expiresAt).getTime();
-  if (Number.isNaN(time)) {return true;}
+  if (Number.isNaN(time)) {
+    return true;
+  }
   return time > Date.now();
 }
 
 function formatDateTime(value?: string | null) {
-  if (!value) {return "";}
+  if (!value) {
+    return "";
+  }
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {return "";}
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
   return date.toLocaleString();
 }
 
@@ -107,91 +115,115 @@ export default function Page() {
   const [status, setStatus] = useState("Loading announcements...");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
+  const loadPage = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setStatus("Loading announcements...");
 
-    async function loadPage() {
-      setLoading(true);
-      setError(null);
-      setStatus("Loading announcements...");
+    try {
+      const currentEvent = await getCurrentMemberEvent();
 
-      try {
-        const currentEvent = await getCurrentMemberEvent();
-
-        if (!mounted) {return;}
-
-        if (!currentEvent?.id) {
-          setEvent(null);
-          setAnnouncements([]);
-          setStatus("No active event selected.");
-          setLoading(false);
-          return;
-        }
-
-        if (!currentEvent?.id) {return;}
-
-        setEvent({
-          id: currentEvent.id,
-          name: currentEvent.name ?? null,
-        });
-
-        const { data, error } = await supabase
-          .from("announcements")
-          .select(
-            "id, event_id, title, body, priority, is_pinned, is_published, created_at, expire_at",
-          )
-          .eq("event_id", currentEvent.id)
-          .eq("is_published", true)
-          .order("created_at", { ascending: false });
-
-        if (!mounted) {return;}
-
-        if (error) {
-          setError(error.message);
-          setAnnouncements([]);
-          setStatus("Could not load announcements.");
-          setLoading(false);
-          return;
-        }
-
-        const normalized: Announcement[] = ((data || []) as AnnouncementRow[])
-          .map((item) => ({
-            id: item.id,
-            event_id: item.event_id,
-            title: item.title ?? "Untitled",
-            message: item.body ?? "",
-            priority: (item.priority ?? "normal").toLowerCase(),
-            is_pinned: !!item.is_pinned,
-            created_at: item.created_at ?? null,
-            expires_at: item.expire_at ?? null,
-          }))
-          .filter((item) => isNotExpired(item.expires_at));
-
-        setAnnouncements(normalized);
-        setStatus("");
+      if (!currentEvent?.id) {
+        setEvent(null);
+        setAnnouncements([]);
+        setStatus("No active event selected.");
         setLoading(false);
-      } catch (err) {
-        if (!mounted) {return;}
-        setError(err instanceof Error ? err.message : "Unknown error");
+        return;
+      }
+
+      setEvent({
+        id: currentEvent.id,
+        name: currentEvent.name ?? null,
+        venue_name: currentEvent.venue_name ?? null,
+        location: currentEvent.location ?? null,
+        start_date: currentEvent.start_date ?? null,
+        end_date: currentEvent.end_date ?? null,
+      });
+
+      const { data, error } = await supabase
+        .from("announcements")
+        .select(
+          "id, event_id, title, body, priority, is_pinned, is_published, created_at, expire_at",
+        )
+        .eq("event_id", currentEvent.id)
+        .eq("is_published", true)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        setError(error.message);
         setAnnouncements([]);
         setStatus("Could not load announcements.");
         setLoading(false);
+        return;
+      }
+
+      const normalized: Announcement[] = ((data || []) as AnnouncementRow[])
+        .map((item) => ({
+          id: item.id,
+          event_id: item.event_id,
+          title: item.title ?? "Untitled",
+          message: item.body ?? "",
+          priority: (item.priority ?? "normal").toLowerCase(),
+          is_pinned: !!item.is_pinned,
+          created_at: item.created_at ?? null,
+          expires_at: item.expire_at ?? null,
+        }))
+        .filter((item) => isNotExpired(item.expires_at));
+
+      setAnnouncements(normalized);
+      setStatus("");
+      setLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setAnnouncements([]);
+      setStatus("Could not load announcements.");
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPage();
+
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-member-event-context" ||
+        e.key === "fcoc-member-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
+        void loadPage();
       }
     }
 
-    loadPage();
+    function handleMemberEventUpdated() {
+      void loadPage();
+    }
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-member-event-updated",
+      handleMemberEventUpdated,
+    );
 
     return () => {
-      mounted = false;
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-member-event-updated",
+        handleMemberEventUpdated,
+      );
     };
-  }, []);
+  }, [loadPage]);
 
   const sortedAnnouncements = useMemo(() => {
     return [...announcements].sort((a, b) => {
-      if (a.is_pinned !== b.is_pinned) {return a.is_pinned ? -1 : 1;}
+      if (a.is_pinned !== b.is_pinned) {
+        return a.is_pinned ? -1 : 1;
+      }
 
       const priorityDiff = priorityRank(a.priority) - priorityRank(b.priority);
-      if (priorityDiff !== 0) {return priorityDiff;}
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
 
       const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;

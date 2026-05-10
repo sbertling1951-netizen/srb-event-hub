@@ -564,6 +564,17 @@ function AdminAgendaPageInner() {
     "No agenda import file selected.",
   );
   const [importBusy, setImportBusy] = useState(false);
+
+  function showStatus(message: string) {
+    setError(null);
+    setStatus(message);
+  }
+
+  function showError(message: string) {
+    setError(message);
+    setStatus("");
+  }
+
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
@@ -574,8 +585,7 @@ function AdminAgendaPageInner() {
 
   const loadPage = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    setStatus("Loading...");
+    showStatus("Loading...");
 
     const adminEvent = getAdminEvent();
 
@@ -600,8 +610,7 @@ function AdminAgendaPageInner() {
       .maybeSingle();
 
     if (eventDataError) {
-      setError(eventDataError.message);
-      setStatus(`Could not load event settings: ${eventDataError.message}`);
+      showError(eventDataError.message || "Could not load event settings.");
       setLoading(false);
       return;
     }
@@ -627,8 +636,7 @@ function AdminAgendaPageInner() {
       .order("title", { ascending: true });
 
     if (error) {
-      setError(error.message);
-      setStatus(`Could not load agenda items: ${error.message}`);
+      showError(error.message || "Could not load agenda items.");
       setLoading(false);
       return;
     }
@@ -647,7 +655,7 @@ function AdminAgendaPageInner() {
 
     if (error) {
       console.error("loadTemplates error:", error);
-      setError(`Could not load agenda templates: ${error.message}`);
+      showError(error.message || "Could not load agenda templates.");
       return;
     }
 
@@ -668,17 +676,15 @@ function AdminAgendaPageInner() {
   useEffect(() => {
     async function init() {
       setLoading(true);
-      setError(null);
-      setStatus("Checking admin access...");
       setAccessDenied(false);
+      showStatus("Checking admin access...");
 
       const admin = await getCurrentAdminAccess();
 
       if (!admin) {
         setActiveEvent(null);
         setItems([]);
-        setError("No admin access.");
-        setStatus("Access denied.");
+        showError("No admin access.");
         setLoading(false);
         setAccessDenied(true);
         return;
@@ -697,8 +703,7 @@ function AdminAgendaPageInner() {
       if (!canAccessEvent(admin, adminEvent.id)) {
         setActiveEvent(null);
         setItems([]);
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
+        showError("You do not have access to this event.");
         setLoading(false);
         setAccessDenied(true);
         return;
@@ -757,7 +762,7 @@ function AdminAgendaPageInner() {
       }));
     });
 
-    setStatus('Order changed. Click "Save Order" to keep it.');
+    showStatus('Order changed. Click "Save Order" to keep it.');
   }
 
   function moveItemDown(id: string) {
@@ -775,27 +780,27 @@ function AdminAgendaPageInner() {
       }));
     });
 
-    setStatus('Order changed. Click "Save Order" to keep it.');
+    showStatus('Order changed. Click "Save Order" to keep it.');
   }
 
   async function saveItem() {
     if (!activeEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       return;
     }
 
     if (!form.title.trim()) {
-      setStatus("Enter a title.");
+      showError("Enter a title.");
       return;
     }
 
     if (!form.agenda_date.trim()) {
-      setStatus("Enter an agenda date.");
+      showError("Enter an agenda date.");
       return;
     }
 
     if (!form.start_time.trim()) {
-      setStatus("Enter a start time.");
+      showError("Enter a start time.");
       return;
     }
 
@@ -819,7 +824,7 @@ function AdminAgendaPageInner() {
     };
 
     setSaving(true);
-    setError(null);
+    showStatus(form.id ? "Updating agenda item..." : "Adding agenda item...");
 
     try {
       if (form.id) {
@@ -831,16 +836,14 @@ function AdminAgendaPageInner() {
           .select("id,title");
 
         if (error) {
-          setError(error.message);
-          setStatus(`Could not update agenda item: ${error.message}`);
+          showError(error.message || "Could not update agenda item.");
           return;
         }
 
         if (!updatedRows || updatedRows.length === 0) {
-          setError(
+          showError(
             "No agenda item was updated. This usually means the row is blocked by RLS or does not belong to the selected event.",
           );
-          setStatus("Agenda item was not saved.");
           return;
         }
 
@@ -854,13 +857,12 @@ function AdminAgendaPageInner() {
           .maybeSingle();
 
         if (findError) {
-          setError(findError.message);
-          setStatus(`Could not check for duplicate item: ${findError.message}`);
+          showError(findError.message || "Could not check for duplicate item.");
           return;
         }
 
         if (existing?.id) {
-          setStatus(
+          showError(
             `An item with external_id "${externalId}" already exists. Edit that item or change the title/date/time.`,
           );
           return;
@@ -869,8 +871,7 @@ function AdminAgendaPageInner() {
         const { error } = await supabase.from("agenda_items").insert(payload);
 
         if (error) {
-          setError(error.message);
-          setStatus(`Could not add agenda item: ${error.message}`);
+          showError(error.message || "Could not add agenda item.");
           return;
         }
 
@@ -893,8 +894,7 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    setError(null);
-    setStatus(`Deleting "${itemTitle}"...`);
+    showStatus(`Deleting "${itemTitle}"...`);
 
     console.log("AGENDA DELETE DEBUG start", {
       id,
@@ -916,8 +916,7 @@ function AdminAgendaPageInner() {
     });
 
     if (error) {
-      setError(error.message);
-      setStatus(`Could not delete item: ${error.message}`);
+      showError(error.message || "Could not delete item.");
       return;
     }
 
@@ -930,10 +929,7 @@ function AdminAgendaPageInner() {
         "Most likely cause: Supabase RLS does not allow DELETE for this logged-in admin, or this item is stale/mismatched data.",
       ].join(" ");
 
-      setError(message);
-      setStatus(
-        "Agenda item was not deleted. Check the red error message and browser console.",
-      );
+      showError(message);
       return;
     }
 
@@ -947,7 +943,11 @@ function AdminAgendaPageInner() {
   }
 
   async function togglePublished(item: AgendaItem) {
-    setError(null);
+    showStatus(
+      item.is_published
+        ? "Unpublishing agenda item..."
+        : "Publishing agenda item...",
+    );
     const { error } = await supabase
       .from("agenda_items")
       .update({
@@ -956,8 +956,7 @@ function AdminAgendaPageInner() {
       .eq("id", item.id);
 
     if (error) {
-      setError(error.message);
-      setStatus(`Could not update publish status: ${error.message}`);
+      showError(error.message || "Could not update publish status.");
       return;
     }
 
@@ -1126,7 +1125,7 @@ function AdminAgendaPageInner() {
         : startMinutes + agendaDurationMinutes(item));
 
     if (startMinutes === null || endMinutes === null) {
-      setStatus(
+      showError(
         "This agenda item needs a start and end time before it can be resized.",
       );
       return;
@@ -1165,7 +1164,7 @@ function AdminAgendaPageInner() {
     const currentItems = itemsRef.current;
 
     if (!currentEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       setCalendarResizePreview(null);
       return;
     }
@@ -1199,7 +1198,7 @@ function AdminAgendaPageInner() {
       ),
     );
 
-    setStatus(`Resizing "${item.title}" to start at ${nextStartTime}...`);
+    showStatus(`Resizing "${item.title}" to start at ${nextStartTime}...`);
 
     const { data: updatedRows, error: updateError } = await supabase
       .from("agenda_items")
@@ -1211,18 +1210,16 @@ function AdminAgendaPageInner() {
       .select("id,title");
 
     if (updateError) {
-      setError(updateError.message);
-      setStatus(`Could not resize agenda item: ${updateError.message}`);
+      showError(updateError.message || "Could not resize agenda item.");
       setCalendarResizePreview(null);
       await loadPage();
       return;
     }
 
     if (!updatedRows || updatedRows.length === 0) {
-      setError(
+      showError(
         "No agenda item was resized. This usually means the row is blocked by RLS or does not belong to the selected event.",
       );
-      setStatus("Agenda item was not resized.");
       setCalendarResizePreview(null);
       await loadPage();
       return;
@@ -1360,7 +1357,7 @@ function AdminAgendaPageInner() {
     const startMinutes = timeToMinutes(item.start_time);
 
     if (startMinutes === null) {
-      setStatus(
+      showError(
         "This agenda item needs a start time before it can be resized.",
       );
       setCalendarResizePreview(null);
@@ -1384,7 +1381,7 @@ function AdminAgendaPageInner() {
       ),
     );
 
-    setStatus(`Resizing "${item.title}" to end at ${nextEndTime}...`);
+    showStatus(`Resizing "${item.title}" to end at ${nextEndTime}...`);
 
     const { data: updatedRows, error: updateError } = await supabase
       .from("agenda_items")
@@ -1396,18 +1393,16 @@ function AdminAgendaPageInner() {
       .select("id,title");
 
     if (updateError) {
-      setError(updateError.message);
-      setStatus(`Could not resize agenda item: ${updateError.message}`);
+      showError(updateError.message || "Could not resize agenda item.");
       setCalendarResizePreview(null);
       await loadPage();
       return;
     }
 
     if (!updatedRows || updatedRows.length === 0) {
-      setError(
+      showError(
         "No agenda item was resized. This usually means the row is blocked by RLS or does not belong to the selected event.",
       );
-      setStatus("Agenda item was not resized.");
       setCalendarResizePreview(null);
       await loadPage();
       return;
@@ -1424,7 +1419,7 @@ function AdminAgendaPageInner() {
     nextStartMinutes: number,
   ) {
     if (!activeEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       setCalendarDraggingId(null);
       return;
     }
@@ -1453,7 +1448,7 @@ function AdminAgendaPageInner() {
       ),
     );
 
-    setStatus(
+    showStatus(
       `Moving "${item.title}" to ${formatAgendaDate(nextDate)} at ${nextStartTime}...`,
     );
 
@@ -1469,18 +1464,16 @@ function AdminAgendaPageInner() {
       .select("id,title");
 
     if (updateError) {
-      setError(updateError.message);
-      setStatus(`Could not move agenda item: ${updateError.message}`);
+      showError(updateError.message || "Could not move agenda item.");
       setCalendarDraggingId(null);
       await loadPage();
       return;
     }
 
     if (!updatedRows || updatedRows.length === 0) {
-      setError(
+      showError(
         "No agenda item was moved. This usually means the row is blocked by RLS or does not belong to the selected event.",
       );
-      setStatus("Agenda item was not moved.");
       setCalendarDraggingId(null);
       await loadPage();
       return;
@@ -1545,17 +1538,18 @@ function AdminAgendaPageInner() {
 
     setItems(reordered);
     setDraggedId(null);
-    setStatus('Order changed. Click "Save Order" to keep it.');
+    showStatus('Order changed. Click "Save Order" to keep it.');
   }
 
   async function saveOrder() {
     if (!activeEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       return;
     }
 
     try {
       setSavingOrder(true);
+      showStatus("Saving agenda order...");
 
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index];
@@ -1575,17 +1569,18 @@ function AdminAgendaPageInner() {
       await loadPage();
     } catch (err: any) {
       console.error("saveOrder error:", err);
-      setError(err?.message || "Failed to save order.");
-      setStatus(err?.message || "Failed to save order.");
+      showError(err?.message || "Failed to save order.");
     } finally {
       setSavingOrder(false);
     }
   }
   async function assignTemplate() {
     if (!activeEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       return;
     }
+
+    showStatus("Assigning agenda template...");
 
     const { error } = await supabase
       .from("events")
@@ -1595,8 +1590,7 @@ function AdminAgendaPageInner() {
       .eq("id", activeEvent.id);
 
     if (error) {
-      setError(error.message);
-      setStatus(`Could not assign template: ${error.message}`);
+      showError(error.message || "Could not assign template.");
       return;
     }
 
@@ -1608,7 +1602,7 @@ function AdminAgendaPageInner() {
 
   async function saveCurrentAgendaAsTemplate() {
     if (!activeEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       return;
     }
 
@@ -1616,14 +1610,14 @@ function AdminAgendaPageInner() {
     const templateDescription = newTemplateDescription.trim();
 
     if (!templateName) {
-      setStatus(
+      showError(
         "Enter a template name before saving this agenda as a template.",
       );
       return;
     }
 
     if (items.length === 0) {
-      setStatus("There are no agenda items to save as a template.");
+      showError("There are no agenda items to save as a template.");
       return;
     }
 
@@ -1637,8 +1631,7 @@ function AdminAgendaPageInner() {
 
     try {
       setSavingTemplate(true);
-      setError(null);
-      setStatus("Saving agenda template...");
+      showStatus("Saving agenda template...");
 
       const { data: insertedTemplate, error: templateError } = await supabase
         .from("agenda_templates")
@@ -1700,22 +1693,23 @@ function AdminAgendaPageInner() {
       );
     } catch (err: any) {
       console.error("saveCurrentAgendaAsTemplate error:", err);
-      setError(err?.message || "Could not save agenda template.");
-      setStatus(err?.message || "Could not save agenda template.");
+      showError(err?.message || "Could not save agenda template.");
     } finally {
       setSavingTemplate(false);
     }
   }
   async function copyTemplateToEvent() {
     if (!activeEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       return;
     }
 
     if (!selectedTemplateId) {
-      setStatus("Select a template first.");
+      showError("Select a template first.");
       return;
     }
+
+    showStatus("Copying template items to event...");
 
     const { data, error } = await supabase
       .from("agenda_template_items")
@@ -1726,8 +1720,7 @@ function AdminAgendaPageInner() {
       .order("sort_order", { ascending: true, nullsFirst: false });
 
     if (error) {
-      setError(error.message);
-      setStatus(`Could not load template items: ${error.message}`);
+      showError(error.message || "Could not load template items.");
       return;
     }
 
@@ -1765,8 +1758,7 @@ function AdminAgendaPageInner() {
       });
 
     if (upsertError) {
-      setError(upsertError.message);
-      setStatus(`Could not copy template to event: ${upsertError.message}`);
+      showError(upsertError.message || "Could not copy template to event.");
       return;
     }
 
@@ -1775,12 +1767,12 @@ function AdminAgendaPageInner() {
   }
   async function replaceEventFromTemplate() {
     if (!activeEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       return;
     }
 
     if (!selectedTemplateId) {
-      setStatus("Select a template first.");
+      showError("Select a template first.");
       return;
     }
 
@@ -1791,14 +1783,15 @@ function AdminAgendaPageInner() {
       return;
     }
 
+    showStatus("Replacing event agenda from template...");
+
     const { error: deleteError } = await supabase
       .from("agenda_items")
       .delete()
       .eq("event_id", activeEvent.id);
 
     if (deleteError) {
-      setError(deleteError.message);
-      setStatus(`Could not clear event agenda: ${deleteError.message}`);
+      showError(deleteError.message || "Could not clear event agenda.");
       return;
     }
 
@@ -1807,11 +1800,12 @@ function AdminAgendaPageInner() {
   async function handleAgendaImportFile(file: File) {
     if (!activeEvent?.id) {
       setImportStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       return;
     }
 
     setImportBusy(true);
-    setError(null);
+    showStatus(`Reading ${file.name} for ${activeEvent.name}...`);
     setImportStatus(`Reading ${file.name} for ${activeEvent.name}...`);
 
     try {
@@ -1950,7 +1944,9 @@ function AdminAgendaPageInner() {
       );
     } catch (err: any) {
       console.error(err);
-      setImportStatus(`Import failed: ${err?.message || "Unknown error"}`);
+      const message = err?.message || "Unknown error";
+      setImportStatus(`Import failed: ${message}`);
+      showError(`Import failed: ${message}`);
     } finally {
       setImportBusy(false);
     }

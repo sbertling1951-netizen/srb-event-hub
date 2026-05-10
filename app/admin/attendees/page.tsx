@@ -2,6 +2,7 @@
 
 import {
   type CSSProperties,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -234,11 +235,21 @@ function validateField(
       return { issue: rule.message, severity: rule.severity };
     }
 
-    if (
-      rule.rule_type === "starts_with" &&
-      !normalizedValue.startsWith(ruleValue)
-    ) {
-      return { issue: rule.message, severity: rule.severity };
+    if (rule.rule_type === "starts_with") {
+      if (
+        fieldName === "membership_number" &&
+        ruleValue.toUpperCase() === "F"
+      ) {
+        const upperValue = normalizedValue.toUpperCase();
+        if (!upperValue.startsWith("F") && !upperValue.startsWith("C")) {
+          return {
+            issue: rule.message.replace("F", "F or C"),
+            severity: rule.severity,
+          };
+        }
+      } else if (!normalizedValue.startsWith(ruleValue)) {
+        return { issue: rule.message, severity: rule.severity };
+      }
     }
 
     if (rule.rule_type === "starts_with_any") {
@@ -247,8 +258,24 @@ function validateField(
         .map((v) => v.trim())
         .filter(Boolean);
 
-      if (!allowed.some((prefix) => normalizedValue.startsWith(prefix))) {
-        return { issue: rule.message, severity: rule.severity };
+      const allowedForField =
+        fieldName === "membership_number" && allowed.includes("F")
+          ? Array.from(new Set([...allowed, "C"]))
+          : allowed;
+
+      const upperValue = normalizedValue.toUpperCase();
+      if (
+        !allowedForField.some((prefix) =>
+          upperValue.startsWith(prefix.toUpperCase()),
+        )
+      ) {
+        return {
+          issue:
+            fieldName === "membership_number"
+              ? rule.message.replace("F", "F or C")
+              : rule.message,
+          severity: rule.severity,
+        };
       }
     }
 
@@ -698,7 +725,7 @@ function FilterBar(props: {
             style={inputStyle}
           >
             <option value="all">All Attendees</option>
-            <option value="review">Review Queue</option>
+            <option value="review">Flagged Only</option>
           </select>
         </div>
 
@@ -829,7 +856,7 @@ function QuickActionBar(props: {
           onClick={onSetReviewMode}
           style={secondaryButtonStyle}
         >
-          Review Mode
+          Flagged Only
         </button>
 
         <button
@@ -1766,6 +1793,15 @@ function AttendeeEditorModal(props: {
                 : "Update this attendee record."}
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={secondaryButtonStyle}
+            disabled={saving}
+          >
+            Close
+          </button>
         </div>
 
         <div style={{ padding: 18 }}>
@@ -1973,15 +2009,6 @@ function AttendeeEditorModal(props: {
                 ? "Create Attendee"
                 : "Save Changes"}
           </button>
-
-          <button
-            type="button"
-            onClick={onClose}
-            style={secondaryButtonStyle}
-            disabled={saving}
-          >
-            Close
-          </button>
         </div>
       </div>
     </div>
@@ -2003,7 +2030,7 @@ function ReportsEmbedPanel() {
         src="/admin/reports?embedded=1"
         style={{
           width: "100%",
-          minHeight: "1600px",
+          minHeight: "2200px",
           border: "none",
           display: "block",
           background: "white",
@@ -2027,7 +2054,7 @@ function ImportsEmbedPanel() {
         src="/admin/imports?embedded=1"
         style={{
           width: "100%",
-          minHeight: "1600px",
+          minHeight: "2600px",
           border: "none",
           display: "block",
           background: "white",
@@ -2052,7 +2079,7 @@ function ValidationRulesEmbedPanel() {
         src="/admin/validation-rules?embedded=1"
         style={{
           width: "100%",
-          minHeight: "1600px",
+          minHeight: "2200px",
           border: "none",
           display: "block",
           background: "white",
@@ -2070,7 +2097,7 @@ function AdminAttendeesPageInner() {
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState("Loading review queue...");
+  const [status, setStatus] = useState("Loading attendee records...");
   const [search, setSearch] = useState(storedPrefs.search || "");
   const [pageSize, setPageSize] = useState<PageSize>(
     storedPrefs.pageSize || "25",
@@ -2117,184 +2144,11 @@ function AdminAttendeesPageInner() {
     );
   }
   const [showReviewQueue, setShowReviewQueue] = useState(false);
-  useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setAccessDenied(false);
-      setError(null);
-      setStatus("Checking admin access...");
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setAccessDenied(true);
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      if (
-        !hasPermission(admin, "can_edit_attendees") &&
-        !hasPermission(admin, "can_manage_imports") &&
-        !hasPermission(admin, "can_manage_reports") &&
-        !hasPermission(admin, "can_manage_validation_rules")
-      ) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setAccessDenied(true);
-        setError("You do not have permission to use Attendee Management.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      const storedEvent = getStoredAdminEvent();
-
-      // Always load events to validate active status
-      const { data: eventsData, error: eventsError } = await supabase
-        .from("events")
-        .select("id, name, location, start_date, end_date, status")
-        .order("start_date", { ascending: false });
-
-      if (eventsError) {
-        console.error("Error loading events:", eventsError);
-        throw eventsError;
-      }
-
-      const activeEvents = (eventsData || []).filter((e: any) =>
-        isActiveEventStatus(e.status),
-      );
-
-      let eventToUse: EventContext | null = null;
-
-      if (storedEvent?.id) {
-        const matched = (eventsData || []).find(
-          (e: any) => e.id === storedEvent.id,
-        );
-
-        // Only use stored event if it's still active
-        if (matched && isActiveEventStatus(matched.status)) {
-          eventToUse = {
-            ...storedEvent,
-            id: matched.id,
-            name:
-              matched.name || storedEvent.name || storedEvent.eventName || null,
-            eventName:
-              matched.name || storedEvent.eventName || storedEvent.name || null,
-            location: matched.location || storedEvent.location || null,
-            venue_name: storedEvent.venue_name || matched.location || null,
-            start_date: matched.start_date || storedEvent.start_date || null,
-            end_date: matched.end_date || storedEvent.end_date || null,
-          };
-        }
-      }
-
-      // Fallback to first active event if stored one is inactive
-      if (!eventToUse && activeEvents.length > 0) {
-        const fallback = activeEvents[0];
-        eventToUse = {
-          id: fallback.id,
-          name: fallback.name || "Selected Event",
-          eventName: fallback.name || "Selected Event",
-          location: fallback.location || null,
-          venue_name: fallback.location || null,
-          start_date: fallback.start_date || null,
-          end_date: fallback.end_date || null,
-        };
-
-        // Update localStorage so app stays consistent
-        localStorage.setItem(
-          ADMIN_EVENT_STORAGE_KEY,
-          JSON.stringify(eventToUse),
-        );
-        localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-        window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
-      }
-
-      if (!eventToUse) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setStatus("No active event available.");
-        setLoading(false);
-        return;
-      }
-
-      if (!canAccessEvent(admin, eventToUse.id!)) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setAccessDenied(true);
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      setCurrentEvent(eventToUse);
-      await loadQueue(eventToUse.id!);
-    }
-
-    void init();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void init();
-      }
-    }
-
-    function handleAdminEventUpdated() {
-      void init();
-    }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated,
-      );
-    };
-  }, []);
-
-  useEffect(() => {
-    saveAttendeeCommandCenterPrefs({
-      search,
-      pageSize,
-      dataStatusFilter,
-      participantTypeFilter,
-      viewMode,
-      attendeeSortMode,
-      showResolvedInfo,
-      commandCenterTab,
-    });
-  }, [
-    search,
-    pageSize,
-    dataStatusFilter,
-    participantTypeFilter,
-    viewMode,
-    attendeeSortMode,
-    showResolvedInfo,
-    commandCenterTab,
-  ]);
-
-  async function loadQueue(eventId: string) {
+  const loadQueue = useCallback(async (eventId: string) => {
     try {
       setLoading(true);
       setError(null);
-      setStatus("Loading review queue...");
+      setStatus("Loading attendee records...");
 
       const [
         { data: attendeeData, error: attendeeError },
@@ -2362,18 +2216,204 @@ function AdminAttendeesPageInner() {
       setAttendees(nextAttendees);
       setRules(nextRules);
       setStatus(
-        `Loaded ${nextAttendees.length} attendees and ${nextRules.length} validation rules.`,
+        `Ready. ${nextAttendees.length} attendee${
+          nextAttendees.length === 1 ? "" : "s"
+        } loaded. ${nextRules.length} validation rule${
+          nextRules.length === 1 ? "" : "s"
+        } active.`,
       );
     } catch (err: any) {
       console.error("loadQueue error:", err);
-      setError(err?.message || "Could not load data review queue.");
-      setStatus("Could not load data review queue.");
+      setError(err?.message || "Could not load attendee records.");
+      setStatus("Load failed.");
       setAttendees([]);
       setRules([]);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      setAccessDenied(false);
+      setError(null);
+      setStatus("Checking admin access...");
+
+      const admin = await getCurrentAdminAccess();
+
+      if (!admin) {
+        setCurrentEvent(null);
+        setAttendees([]);
+        setRules([]);
+        setAccessDenied(true);
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setLoading(false);
+        return;
+      }
+
+      if (
+        !hasPermission(admin, "can_edit_attendees") &&
+        !hasPermission(admin, "can_manage_imports") &&
+        !hasPermission(admin, "can_manage_reports") &&
+        !hasPermission(admin, "can_manage_validation_rules")
+      ) {
+        setCurrentEvent(null);
+        setAttendees([]);
+        setRules([]);
+        setAccessDenied(true);
+        setError("You do not have permission to use Attendee Management.");
+        setStatus("Access denied.");
+        setLoading(false);
+        return;
+      }
+
+      const storedEvent = getStoredAdminEvent();
+
+      // Always load events to validate active status
+      const { data: eventsData, error: eventsError } = await supabase
+        .from("events")
+        .select("id, name, location, start_date, end_date, status")
+        .order("start_date", { ascending: false });
+
+      if (eventsError) {
+        console.error("Error loading events:", eventsError);
+        setCurrentEvent(null);
+        setAttendees([]);
+        setRules([]);
+        setError(eventsError.message || "Could not load events.");
+        setStatus("Load failed.");
+        setLoading(false);
+        return;
+      }
+
+      const activeEvents = (eventsData || []).filter((e: any) =>
+        isActiveEventStatus(e.status),
+      );
+
+      let eventToUse: EventContext | null = null;
+
+      if (storedEvent?.id) {
+        const matched = (eventsData || []).find(
+          (e: any) => e.id === storedEvent.id,
+        );
+
+        // Only use stored event if it's still active
+        if (matched && isActiveEventStatus(matched.status)) {
+          eventToUse = {
+            ...storedEvent,
+            id: matched.id,
+            name:
+              matched.name || storedEvent.name || storedEvent.eventName || null,
+            eventName:
+              matched.name || storedEvent.eventName || storedEvent.name || null,
+            location: matched.location || storedEvent.location || null,
+            venue_name: storedEvent.venue_name || matched.location || null,
+            start_date: matched.start_date || storedEvent.start_date || null,
+            end_date: matched.end_date || storedEvent.end_date || null,
+          };
+        }
+      }
+
+      // Fallback to first active event if stored one is inactive
+      if (!eventToUse && activeEvents.length > 0) {
+        const fallback = activeEvents[0];
+        eventToUse = {
+          id: fallback.id,
+          name: fallback.name || "Selected Event",
+          eventName: fallback.name || "Selected Event",
+          location: fallback.location || null,
+          venue_name: fallback.location || null,
+          start_date: fallback.start_date || null,
+          end_date: fallback.end_date || null,
+        };
+
+        // Update localStorage so app stays consistent
+        localStorage.setItem(
+          ADMIN_EVENT_STORAGE_KEY,
+          JSON.stringify(eventToUse),
+        );
+        localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+        window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
+      }
+
+      if (!eventToUse) {
+        setCurrentEvent(null);
+        setAttendees([]);
+        setRules([]);
+        setStatus("No active event available.");
+        setLoading(false);
+        return;
+      }
+
+      if (!canAccessEvent(admin, eventToUse.id!)) {
+        setCurrentEvent(null);
+        setAttendees([]);
+        setRules([]);
+        setAccessDenied(true);
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        setLoading(false);
+        return;
+      }
+
+      setCurrentEvent(eventToUse);
+      await loadQueue(eventToUse.id!);
+    }
+
+    void init();
+
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-admin-event-context" ||
+        e.key === "fcoc-admin-event-changed" ||
+        e.key === "fcoc-user-mode" ||
+        e.key === "fcoc-user-mode-changed"
+      ) {
+        void init();
+      }
+    }
+
+    function handleAdminEventUpdated() {
+      void init();
+    }
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated,
+      );
+    };
+  }, [loadQueue]);
+
+  useEffect(() => {
+    saveAttendeeCommandCenterPrefs({
+      search,
+      pageSize,
+      dataStatusFilter,
+      participantTypeFilter,
+      viewMode,
+      attendeeSortMode,
+      showResolvedInfo,
+      commandCenterTab,
+    });
+  }, [
+    search,
+    pageSize,
+    dataStatusFilter,
+    participantTypeFilter,
+    viewMode,
+    attendeeSortMode,
+    showResolvedInfo,
+    commandCenterTab,
+  ]);
 
   function showFlash(message: string) {
     setFlashMessage(message);
@@ -2621,11 +2661,13 @@ function AdminAttendeesPageInner() {
 
     if (!draftValue) {
       setError("Membership number cannot be blank.");
+      setStatus("Correction not saved.");
       return;
     }
 
     if (!(draftValue.startsWith("F") || draftValue.startsWith("C"))) {
       setError("Membership number must begin with F or C.");
+      setStatus("Correction not saved.");
       return;
     }
 
@@ -2697,7 +2739,7 @@ function AdminAttendeesPageInner() {
         ),
       );
 
-      setStatus(`Attendee status updated to ${nextStatus}.`);
+      setStatus("Status update complete.");
       showFlash(`Status set to ${nextStatus}.`);
     } catch (err: any) {
       console.error("updateDataStatus error:", err);
@@ -2756,6 +2798,7 @@ function AdminAttendeesPageInner() {
   async function handleSaveAttendeeRecord() {
     if (!currentEvent?.id) {
       setError("No event selected.");
+      setStatus("Save blocked.");
       return;
     }
 
@@ -2766,6 +2809,7 @@ function AdminAttendeesPageInner() {
 
     if (!pilotFirst && !pilotLast) {
       setError("Pilot first or last name is required.");
+      setStatus("Save blocked.");
       return;
     }
 
@@ -2945,6 +2989,7 @@ function AdminAttendeesPageInner() {
   async function handleSaveInlineEdit() {
     if (!currentEvent?.id || !inlineEditId) {
       setError("No attendee selected for inline edit.");
+      setStatus("Quick edit blocked.");
       return;
     }
 
@@ -2957,6 +3002,7 @@ function AdminAttendeesPageInner() {
 
     if (!pilotFirst && !pilotLast) {
       setError("Pilot first or last name is required.");
+      setStatus("Quick edit blocked.");
       return;
     }
 
@@ -3053,7 +3099,7 @@ function AdminAttendeesPageInner() {
           {eventDates ? ` • ${eventDates}` : ""}
         </div>
 
-        <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
+        {status ? <div style={statusBoxStyle}>{status}</div> : null}
 
         {flashMessage ? (
           <div style={successBoxStyle}>{flashMessage}</div>
@@ -3423,6 +3469,16 @@ const secondaryButtonStyle: CSSProperties = {
   fontWeight: 700,
   lineHeight: 1.2,
   cursor: "pointer",
+};
+
+const statusBoxStyle: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  background: "#f8fafc",
+  color: "#334155",
+  fontSize: 14,
 };
 
 const errorBoxStyle: CSSProperties = {

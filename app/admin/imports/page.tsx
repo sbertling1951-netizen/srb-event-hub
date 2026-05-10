@@ -565,11 +565,13 @@ function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
   if (!membership_number) {
     warnings.push("Missing membership number");
   }
+  const normalizedMembershipNumber = membership_number.trim().toUpperCase();
   if (
     membership_number &&
-    !membership_number.trim().toUpperCase().startsWith("F")
+    !normalizedMembershipNumber.startsWith("F") &&
+    !normalizedMembershipNumber.startsWith("C")
   ) {
-    warnings.push("Invalid membership number (must begin with 'F')");
+    warnings.push("Invalid membership number (must begin with 'F' or 'C')");
   }
   if (!coach_manufacturer && !coach_model) {
     warnings.push("Missing coach information");
@@ -916,18 +918,27 @@ function AdminAttendeeImportsPageInner() {
           currentValue: "",
           isResolved: false,
         });
-      } else if (!row.membership_number.trim().toUpperCase().startsWith("F")) {
-        issues.push({
-          key: `${attendeeKey}-membership-invalid`,
-          rowNumber: row.rowNumber,
-          attendeeKey,
-          field: "membership_number",
-          label: "Member #",
-          message: "Membership number must begin with F",
-          severity: "error",
-          currentValue: row.membership_number,
-          isResolved: false,
-        });
+      } else {
+        const normalizedMembershipNumber = row.membership_number
+          .trim()
+          .toUpperCase();
+
+        if (
+          !normalizedMembershipNumber.startsWith("F") &&
+          !normalizedMembershipNumber.startsWith("C")
+        ) {
+          issues.push({
+            key: `${attendeeKey}-membership-invalid`,
+            rowNumber: row.rowNumber,
+            attendeeKey,
+            field: "membership_number",
+            label: "Member #",
+            message: "Membership number must begin with F or C",
+            severity: "error",
+            currentValue: row.membership_number,
+            isResolved: false,
+          });
+        }
       }
 
       if (!row.email) {
@@ -1019,15 +1030,22 @@ function AdminAttendeeImportsPageInner() {
           currentValue: "",
           severity: "warning",
         });
-      } else if (!memberNumber.toUpperCase().startsWith("F")) {
-        issues.push({
-          key: `${attendee.id}-membership-invalid`,
-          attendee,
-          label: "Member #",
-          message: "Membership number must begin with F",
-          currentValue: memberNumber,
-          severity: "error",
-        });
+      } else {
+        const normalizedMembershipNumber = memberNumber.toUpperCase();
+
+        if (
+          !normalizedMembershipNumber.startsWith("F") &&
+          !normalizedMembershipNumber.startsWith("C")
+        ) {
+          issues.push({
+            key: `${attendee.id}-membership-invalid`,
+            attendee,
+            label: "Member #",
+            message: "Membership number must begin with F or C",
+            currentValue: memberNumber,
+            severity: "error",
+          });
+        }
       }
 
       return issues;
@@ -1922,12 +1940,25 @@ function AdminAttendeeImportsPageInner() {
     });
 
     if (!match) {
-      setError("Import this attendee first, then click the review item again.");
+      setError(null);
+      setStatus(
+        "This review item belongs to the imported file preview. Import this attendee first, then click the review item again.",
+      );
       return;
     }
 
+    setError(null);
     localStorage.setItem("fcoc-attendee-open-edit-id", match.id);
 
+    window.top?.location.assign("/admin/attendees");
+  }
+
+  function openSavedIssueInAttendeeManagement(issue: {
+    attendee: AttendeeRow;
+  }) {
+    setError(null);
+    setStatus("Opening saved attendee in Attendee Management...");
+    localStorage.setItem("fcoc-attendee-open-edit-id", issue.attendee.id);
     window.top?.location.assign("/admin/attendees");
   }
 
@@ -2421,14 +2452,17 @@ function AdminAttendeeImportsPageInner() {
               1
                 ? ""
                 : "s"}{" "}
-              need review or correction
+              need review or correction from the import preview or saved
+              attendee list
             </div>
           </div>
         </div>
 
-        {reviewIssues.filter((issue) => !issue.isResolved).length === 0 ? (
+        {reviewIssues.filter((issue) => !issue.isResolved).length === 0 &&
+        savedAttendeeIssues.length === 0 ? (
           <div style={{ opacity: 0.8 }}>
-            No data review items currently flagged.
+            No data review items currently flagged for the import preview or
+            saved attendee list.
           </div>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
@@ -2459,7 +2493,7 @@ function AdminAttendeeImportsPageInner() {
                   }}
                 >
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                    Row {issue.rowNumber} • {issue.label}
+                    Import Row {issue.rowNumber} • {issue.label}
                   </div>
                   <div style={{ fontSize: 14, marginBottom: 6 }}>
                     {issue.message}
@@ -2469,6 +2503,46 @@ function AdminAttendeeImportsPageInner() {
                   </div>
                 </div>
               ))}
+            {savedAttendeeIssues.map((issue) => (
+              <div
+                key={issue.key}
+                role="button"
+                tabIndex={0}
+                onClick={() => openSavedIssueInAttendeeManagement(issue)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openSavedIssueInAttendeeManagement(issue);
+                  }
+                }}
+                title="Open this attendee for editing"
+                style={{
+                  cursor: "pointer",
+                  border: `1px solid ${
+                    issue.severity === "error" ? "#fca5a5" : "#fcd34d"
+                  }`,
+                  background:
+                    issue.severity === "error" ? "#fef2f2" : "#fffbeb",
+                  borderRadius: 12,
+                  padding: 12,
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                  Saved Attendee •{" "}
+                  {fullName(
+                    issue.attendee.pilot_first,
+                    issue.attendee.pilot_last,
+                  ) || "Unnamed"}{" "}
+                  • {issue.label}
+                </div>
+                <div style={{ fontSize: 14, marginBottom: 6 }}>
+                  {issue.message}
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.8 }}>
+                  Current value: {issue.currentValue || "—"}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

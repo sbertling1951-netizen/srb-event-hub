@@ -100,6 +100,16 @@ function ParkingAdminPageInner() {
   const [zoom, setZoom] = useState(0.6);
   const [pendingFocusSiteNumber, setPendingFocusSiteNumber] = useState("");
 
+  function showStatus(message: string) {
+    setError(null);
+    setStatus(message);
+  }
+
+  function showError(message: string) {
+    setError(message);
+    setStatus("");
+  }
+
   function clampZoom(next: number) {
     return Math.min(Math.max(next, 0.25), 3);
   }
@@ -112,9 +122,8 @@ function ParkingAdminPageInner() {
 
   const loadPage = useCallback(async () => {
     setLoading(true);
-    setError(null);
     setAccessDenied(false);
-    setStatus("Loading...");
+    showStatus("Loading...");
 
     const adminEvent = getAdminEvent() as AdminEventContext | null;
 
@@ -124,7 +133,7 @@ function ParkingAdminPageInner() {
       setAttendees([]);
       setSelectedAttendeeId("");
       setSelectedSiteId("");
-      setStatus(
+      showStatus(
         "No admin working event selected. Choose one on the Admin Dashboard.",
       );
       setLoading(false);
@@ -143,7 +152,7 @@ function ParkingAdminPageInner() {
       setAttendees([]);
       setSelectedAttendeeId("");
       setSelectedSiteId("");
-      setStatus(
+      showError(
         `Could not load admin event: ${eventError?.message || "Event not found."}`,
       );
       setLoading(false);
@@ -157,7 +166,7 @@ function ParkingAdminPageInner() {
       .limit(1);
 
     if (mapSettingsError) {
-      setStatus(
+      showError(
         `Could not load event map settings: ${mapSettingsError.message}`,
       );
       setLoading(false);
@@ -177,7 +186,7 @@ function ParkingAdminPageInner() {
         .limit(1);
 
       if (masterMapError) {
-        setStatus(
+        showError(
           `Could not load selected master map: ${masterMapError.message}`,
         );
         setLoading(false);
@@ -232,7 +241,7 @@ function ParkingAdminPageInner() {
       ]);
 
     if (masterSitesResult.error) {
-      setStatus(
+      showError(
         `Could not load master map sites: ${masterSitesResult.error.message}`,
       );
       setLoading(false);
@@ -240,7 +249,7 @@ function ParkingAdminPageInner() {
     }
 
     if (assignmentResult.error) {
-      setStatus(
+      showError(
         `Could not load parking assignments: ${assignmentResult.error.message}`,
       );
       setLoading(false);
@@ -248,7 +257,7 @@ function ParkingAdminPageInner() {
     }
 
     if (attendeeResult.error) {
-      setStatus(`Could not load attendees: ${attendeeResult.error.message}`);
+      showError(`Could not load attendees: ${attendeeResult.error.message}`);
       setLoading(false);
       return;
     }
@@ -293,7 +302,7 @@ function ParkingAdminPageInner() {
       localStorage.removeItem("fcoc-parking-focus-site");
     }
     setAttendees(attendeeRows);
-    setStatus(
+    showStatus(
       `Loaded ${mergedSites.length} sites and ${(attendeeResult.data || []).length} attendees.`,
     );
     setLoading(false);
@@ -302,9 +311,8 @@ function ParkingAdminPageInner() {
   useEffect(() => {
     async function init() {
       setLoading(true);
-      setError(null);
-      setStatus("Checking admin access...");
       setAccessDenied(false);
+      showStatus("Checking admin access...");
 
       const admin = await getCurrentAdminAccess();
 
@@ -314,8 +322,7 @@ function ParkingAdminPageInner() {
         setAttendees([]);
         setSelectedAttendeeId("");
         setSelectedSiteId("");
-        setError("No admin access.");
-        setStatus("Access denied.");
+        showError("No admin access.");
         setLoading(false);
         setAccessDenied(true);
         return;
@@ -329,7 +336,7 @@ function ParkingAdminPageInner() {
         setAttendees([]);
         setSelectedAttendeeId("");
         setSelectedSiteId("");
-        setStatus(
+        showStatus(
           "No admin working event selected. Choose one on the Admin Dashboard.",
         );
         setLoading(false);
@@ -342,8 +349,7 @@ function ParkingAdminPageInner() {
         setAttendees([]);
         setSelectedAttendeeId("");
         setSelectedSiteId("");
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
+        showError("You do not have access to this event.");
         setLoading(false);
         setAccessDenied(true);
         return;
@@ -661,7 +667,7 @@ function ParkingAdminPageInner() {
     const siteId = searchedSite.id || searchedSite.master_site_id;
     setSelectedSiteId(siteId);
     focusSite(searchedSite, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
-    setStatus(
+    showStatus(
       `Focused map on site ${searchedSite.display_label || searchedSite.site_number}.`,
     );
   }, [searchedSite, focusSite, zoom, isNarrow, defaultZoom]);
@@ -744,7 +750,7 @@ function ParkingAdminPageInner() {
     );
 
     if (!site) {
-      setStatus(`Could not find site ${pendingFocusSiteNumber} on this map.`);
+      showError(`Could not find site ${pendingFocusSiteNumber} on this map.`);
       setPendingFocusSiteNumber("");
       return;
     }
@@ -756,7 +762,7 @@ function ParkingAdminPageInner() {
       focusSite(site, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
     }, 150);
 
-    setStatus(`Focused parking map on site ${pendingFocusSiteNumber}.`);
+    showStatus(`Focused parking map on site ${pendingFocusSiteNumber}.`);
     setPendingFocusSiteNumber("");
   }, [pendingFocusSiteNumber, sites, focusSite, zoom, isNarrow, defaultZoom]);
 
@@ -772,13 +778,13 @@ function ParkingAdminPageInner() {
     allowOverride?: boolean;
   }) {
     if (!event?.id) {
-      setStatus("No active event selected.");
+      showError("No active event selected.");
       return false;
     }
 
     const siteLabel = site.display_label || site.site_number;
     if (!siteLabel) {
-      setStatus("Selected site has no site number or display label.");
+      showError("Selected site has no site number or display label.");
       return false;
     }
 
@@ -795,7 +801,7 @@ function ParkingAdminPageInner() {
         : "another attendee";
 
       if (!allowOverride) {
-        setStatus(`Site ${siteLabel} is already assigned to ${occupiedName}.`);
+        showError(`Site ${siteLabel} is already assigned to ${occupiedName}.`);
         return false;
       }
 
@@ -807,7 +813,7 @@ function ParkingAdminPageInner() {
       );
 
       if (!confirmed) {
-        setStatus("Site assignment cancelled.");
+        showStatus("Site assignment cancelled.");
         return false;
       }
 
@@ -817,7 +823,7 @@ function ParkingAdminPageInner() {
         .eq("id", occupiedAttendeeId);
 
       if (clearPreviousAttendeeError) {
-        setStatus(
+        showError(
           `Could not clear previous attendee: ${clearPreviousAttendeeError.message}`,
         );
         return false;
@@ -841,7 +847,7 @@ function ParkingAdminPageInner() {
           .eq("id", oldSite.id);
 
         if (clearOldSiteError) {
-          setStatus(`Could not clear old site: ${clearOldSiteError.message}`);
+          showError(`Could not clear old site: ${clearOldSiteError.message}`);
           return false;
         }
       }
@@ -867,7 +873,7 @@ function ParkingAdminPageInner() {
     }
 
     if (parkingError) {
-      setStatus(`Could not assign site: ${parkingError.message}`);
+      showError(`Could not assign site: ${parkingError.message}`);
       return false;
     }
 
@@ -888,7 +894,7 @@ function ParkingAdminPageInner() {
       .eq("id", attendee.id);
 
     if (attendeeError) {
-      setStatus(
+      showError(
         `Site assigned, but attendee update failed: ${attendeeError.message}`,
       );
       return false;
@@ -898,7 +904,7 @@ function ParkingAdminPageInner() {
     setSelectedSiteId(site.id || site.master_site_id);
     focusSite(site, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
 
-    setStatus(
+    showStatus(
       `${markParked ? "Parked" : "Assigned"} ${
         `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim() ||
         "attendee"
@@ -911,7 +917,7 @@ function ParkingAdminPageInner() {
 
   async function assignSelectedToSite(site: ParkingSite) {
     if (!selectedAttendee) {
-      setStatus("Select an attendee first.");
+      showError("Select an attendee first.");
       return;
     }
 
@@ -925,12 +931,12 @@ function ParkingAdminPageInner() {
 
   async function quickParkSelected() {
     if (!selectedAttendee) {
-      setStatus("Select an attendee first.");
+      showError("Select an attendee first.");
       return;
     }
 
     if (!selectedSite) {
-      setStatus("Select an open site first.");
+      showError("Select an open site first.");
       return;
     }
 
@@ -958,7 +964,7 @@ function ParkingAdminPageInner() {
       .eq("id", site.id);
 
     if (parkingError) {
-      setStatus(`Could not clear site: ${parkingError.message}`);
+      showError(`Could not clear site: ${parkingError.message}`);
       return;
     }
 
@@ -972,13 +978,13 @@ function ParkingAdminPageInner() {
       .eq("id", site.assigned_attendee_id);
 
     if (attendeeError) {
-      setStatus(
+      showError(
         `Site cleared, but attendee update failed: ${attendeeError.message}`,
       );
       return;
     }
 
-    setStatus(`Cleared site ${site.site_number}.`);
+    showStatus(`Cleared site ${site.site_number}.`);
     await loadPage();
   }
 
@@ -992,11 +998,11 @@ function ParkingAdminPageInner() {
       .eq("id", attendeeId);
 
     if (error) {
-      setStatus(`Could not update arrival status: ${error.message}`);
+      showError(`Could not update arrival status: ${error.message}`);
       return;
     }
 
-    setStatus(`Arrival status updated to ${nextStatus}.`);
+    showStatus(`Arrival status updated to ${nextStatus}.`);
 
     // Preserve selection + re-center after update
     const updatedAttendee = attendees.find((a) => a.id === attendeeId);
@@ -1035,7 +1041,7 @@ function ParkingAdminPageInner() {
     if (selectedAttendeeId) {
       void assignSelectedToSite(site);
     } else {
-      setStatus(
+      showStatus(
         `Selected open site ${site.site_number}. Choose an attendee to assign.`,
       );
     }
@@ -1440,11 +1446,11 @@ function ParkingAdminPageInner() {
                     site,
                     Math.max(zoom, isNarrow ? 1.05 : defaultZoom),
                   );
-                  setStatus(
+                  showStatus(
                     `Focused map on site ${site.display_label || site.site_number}.`,
                   );
                 } else {
-                  setStatus(
+                  showError(
                     `Could not find site ${attendee.assigned_site} on the map.`,
                   );
                 }

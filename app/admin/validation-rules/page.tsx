@@ -1,7 +1,13 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
@@ -166,6 +172,18 @@ function AdminValidationRulesPageInner() {
   const searchParams = useSearchParams();
   const isEmbedded = searchParams.get("embedded") === "1";
   const pageTitle = "Validation Rules";
+
+  useEffect(() => {
+    if (!isEmbedded) {
+      return;
+    }
+
+    document.body.classList.add("admin-embedded-shell");
+
+    return () => {
+      document.body.classList.remove("admin-embedded-shell");
+    };
+  }, [isEmbedded]);
 
   useEffect(() => {
     async function init() {
@@ -507,336 +525,395 @@ function AdminValidationRulesPageInner() {
   }
 
   return (
-    <div style={{ display: "grid", gap: 18 }}>
-      {!isEmbedded ? (
-        <a href="/admin/attendees" style={backLinkStyle}>
-          ← Back to Attendee Management
-        </a>
-      ) : null}
+    <>
+      <ValidationRulesEmbeddedStyles />
+      <div style={{ display: "grid", gap: 18 }}>
+        {!isEmbedded ? (
+          <a href="/admin/attendees" style={backLinkStyle}>
+            ← Back to Attendee Management
+          </a>
+        ) : null}
 
-      <div className="card" style={{ padding: 18 }}>
-        {isEmbedded ? (
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h2>
-        ) : (
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h1>
-        )}
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          Superadmin rule editor for Data Review and future validation checks.
-          {currentEvent?.name || currentEvent?.eventName
-            ? ` Current admin event: ${currentEvent.name || currentEvent.eventName}`
-            : ""}
+        <div className="card" style={{ padding: 18 }}>
+          {isEmbedded ? (
+            <h2 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h2>
+          ) : (
+            <h1 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h1>
+          )}
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            Superadmin rule editor for Data Review and future validation checks.
+            {currentEvent?.name || currentEvent?.eventName
+              ? ` Current admin event: ${currentEvent.name || currentEvent.eventName}`
+              : ""}
+          </div>
+
+          <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
+
+          {isEmbedded ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #dbeafe",
+                background: "#eff6ff",
+                color: "#1d4ed8",
+                fontSize: 14,
+              }}
+            >
+              Embedded validation-rules mode is active. Changes made here are
+              saved immediately and stay tied to the current admin event scope
+              when an event-specific rule is selected.
+            </div>
+          ) : null}
+
+          {flashMessage ? (
+            <div style={successBoxStyle}>{flashMessage}</div>
+          ) : null}
+          {error ? <div style={errorBoxStyle}>{error}</div> : null}
         </div>
 
-        <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
-
-        {isEmbedded ? (
+        <div className="card" style={{ padding: 18 }}>
           <div
             style={{
-              marginTop: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #dbeafe",
-              background: "#eff6ff",
-              color: "#1d4ed8",
-              fontSize: 14,
+              display: "grid",
+              gap: 14,
+              gridTemplateColumns: "minmax(260px, 1fr) auto",
+              alignItems: "end",
             }}
           >
-            Embedded validation-rules mode is active. Changes made here are
-            saved immediately and stay tied to the current admin event scope
-            when an event-specific rule is selected.
+            <div>
+              <label style={labelStyle}>Search Rules</label>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search field, type, message..."
+                style={inputStyle}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={startNewRule}
+              style={secondaryButtonStyle}
+            >
+              New Rule
+            </button>
           </div>
-        ) : null}
+        </div>
 
-        {flashMessage ? (
-          <div style={successBoxStyle}>{flashMessage}</div>
-        ) : null}
-        {error ? <div style={errorBoxStyle}>{error}</div> : null}
-      </div>
+        <div className="card" style={{ padding: 18 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 12 }}>
+            {form.id ? "Edit Rule" : "Create Rule"}
+          </h2>
 
-      <div className="card" style={{ padding: 18 }}>
-        <div
-          style={{
-            display: "grid",
-            gap: 14,
-            gridTemplateColumns: "minmax(260px, 1fr) auto",
-            alignItems: "end",
-          }}
-        >
-          <div>
-            <label style={labelStyle}>Search Rules</label>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search field, type, message..."
-              style={inputStyle}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={startNewRule}
-            style={secondaryButtonStyle}
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
           >
-            New Rule
-          </button>
-        </div>
-      </div>
+            <div>
+              <label style={labelStyle}>Field</label>
+              <select
+                value={form.field_name}
+                onChange={(e) => updateForm("field_name", e.target.value)}
+                style={inputStyle}
+              >
+                <option value="membership_number">Membership Number</option>
+                <option value="email">Email</option>
+                <option value="pilot_first">Pilot First Name</option>
+                <option value="pilot_last">Pilot Last Name</option>
+                <option value="copilot_first">Co-Pilot First Name</option>
+                <option value="copilot_last">Co-Pilot Last Name</option>
+                <option value="city">City</option>
+                <option value="state">State</option>
+              </select>
+            </div>
 
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>
-          {form.id ? "Edit Rule" : "Create Rule"}
-        </h2>
+            <div>
+              <label style={labelStyle}>Rule Type</label>
+              <select
+                value={form.rule_type}
+                onChange={(e) => updateForm("rule_type", e.target.value)}
+                style={inputStyle}
+              >
+                <option value="required">Required</option>
+                <option value="starts_with">Starts With</option>
+                <option value="starts_with_any">Starts With Any</option>
+                <option value="contains">Contains</option>
+                <option value="min_length">Minimum Length</option>
+              </select>
+            </div>
 
-        <div
-          style={{
-            display: "grid",
-            gap: 14,
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          }}
-        >
-          <div>
-            <label style={labelStyle}>Field</label>
-            <select
-              value={form.field_name}
-              onChange={(e) => updateForm("field_name", e.target.value)}
-              style={inputStyle}
-            >
-              <option value="membership_number">Membership Number</option>
-              <option value="email">Email</option>
-              <option value="pilot_first">Pilot First Name</option>
-              <option value="pilot_last">Pilot Last Name</option>
-              <option value="copilot_first">Co-Pilot First Name</option>
-              <option value="copilot_last">Co-Pilot Last Name</option>
-              <option value="city">City</option>
-              <option value="state">State</option>
-            </select>
+            <div>
+              <label style={labelStyle}>Rule Value</label>
+              <input
+                value={form.rule_value}
+                onChange={(e) => updateForm("rule_value", e.target.value)}
+                style={inputStyle}
+                placeholder={
+                  form.rule_type === "required"
+                    ? "Not used for required"
+                    : "Enter value"
+                }
+                disabled={form.rule_type === "required"}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Severity</label>
+              <select
+                value={form.severity}
+                onChange={(e) =>
+                  updateForm("severity", e.target.value as ValidationSeverity)
+                }
+                style={inputStyle}
+              >
+                <option value="error">Error</option>
+                <option value="warning">Warning</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Priority</label>
+              <input
+                value={form.priority}
+                onChange={(e) => updateForm("priority", e.target.value)}
+                style={inputStyle}
+                placeholder="Lower runs first"
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Scope</label>
+              <select
+                value={form.applies_to_event_id}
+                onChange={(e) =>
+                  updateForm("applies_to_event_id", e.target.value)
+                }
+                style={inputStyle}
+              >
+                <option value="">All Events</option>
+                {events.map((event) => (
+                  <option key={event.id} value={event.id}>
+                    {formatEventLabel(event)}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div>
-            <label style={labelStyle}>Rule Type</label>
-            <select
-              value={form.rule_type}
-              onChange={(e) => updateForm("rule_type", e.target.value)}
-              style={inputStyle}
-            >
-              <option value="required">Required</option>
-              <option value="starts_with">Starts With</option>
-              <option value="starts_with_any">Starts With Any</option>
-              <option value="contains">Contains</option>
-              <option value="min_length">Minimum Length</option>
-            </select>
-          </div>
-
-          <div>
-            <label style={labelStyle}>Rule Value</label>
-            <input
-              value={form.rule_value}
-              onChange={(e) => updateForm("rule_value", e.target.value)}
-              style={inputStyle}
-              placeholder={
-                form.rule_type === "required"
-                  ? "Not used for required"
-                  : "Enter value"
-              }
-              disabled={form.rule_type === "required"}
+          <div style={{ marginTop: 14 }}>
+            <label style={labelStyle}>Message</label>
+            <textarea
+              value={form.message}
+              onChange={(e) => updateForm("message", e.target.value)}
+              style={textareaStyle}
+              rows={3}
+              placeholder="Message shown in Data Review"
             />
           </div>
 
-          <div>
-            <label style={labelStyle}>Severity</label>
-            <select
-              value={form.severity}
-              onChange={(e) =>
-                updateForm("severity", e.target.value as ValidationSeverity)
-              }
-              style={inputStyle}
-            >
-              <option value="error">Error</option>
-              <option value="warning">Warning</option>
-            </select>
-          </div>
-
-          <div>
-            <label style={labelStyle}>Priority</label>
-            <input
-              value={form.priority}
-              onChange={(e) => updateForm("priority", e.target.value)}
-              style={inputStyle}
-              placeholder="Lower runs first"
-            />
-          </div>
-
-          <div>
-            <label style={labelStyle}>Scope</label>
-            <select
-              value={form.applies_to_event_id}
-              onChange={(e) =>
-                updateForm("applies_to_event_id", e.target.value)
-              }
-              style={inputStyle}
-            >
-              <option value="">All Events</option>
-              {events.map((event) => (
-                <option key={event.id} value={event.id}>
-                  {formatEventLabel(event)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 14 }}>
-          <label style={labelStyle}>Message</label>
-          <textarea
-            value={form.message}
-            onChange={(e) => updateForm("message", e.target.value)}
-            style={textareaStyle}
-            rows={3}
-            placeholder="Message shown in Data Review"
-          />
-        </div>
-
-        <div
-          style={{
-            marginTop: 14,
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={form.is_active}
-              onChange={(e) => updateForm("is_active", e.target.checked)}
-            />
-            Rule is active
-          </label>
-        </div>
-
-        <div
-          style={{
-            marginTop: 18,
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => void handleSaveRule()}
-            style={primaryButtonStyle}
-            disabled={saving}
+          <div
+            style={{
+              marginTop: 14,
+              display: "flex",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
           >
-            {saving ? "Saving..." : form.id ? "Update Rule" : "Create Rule"}
-          </button>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={form.is_active}
+                onChange={(e) => updateForm("is_active", e.target.checked)}
+              />
+              Rule is active
+            </label>
+          </div>
 
-          <button
-            type="button"
-            onClick={startNewRule}
-            style={secondaryButtonStyle}
-            disabled={saving}
+          <div
+            style={{
+              marginTop: 18,
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
           >
-            Clear Form
-          </button>
-        </div>
-      </div>
+            <button
+              type="button"
+              onClick={() => void handleSaveRule()}
+              style={primaryButtonStyle}
+              disabled={saving}
+            >
+              {saving ? "Saving..." : form.id ? "Update Rule" : "Create Rule"}
+            </button>
 
-      <div className="card" style={{ padding: 18 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 6 }}>Rules</h2>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            {filteredRules.length} visible rule
-            {filteredRules.length === 1 ? "" : "s"}
+            <button
+              type="button"
+              onClick={startNewRule}
+              style={secondaryButtonStyle}
+              disabled={saving}
+            >
+              Clear Form
+            </button>
           </div>
         </div>
 
-        {loading ? (
-          <div>Loading...</div>
-        ) : filteredRules.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No validation rules found.</div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Field</th>
-                  <th style={thStyle}>Type</th>
-                  <th style={thStyle}>Value</th>
-                  <th style={thStyle}>Message</th>
-                  <th style={thStyle}>Severity</th>
-                  <th style={thStyle}>Priority</th>
-                  <th style={thStyle}>Scope</th>
-                  <th style={thStyle}>Active</th>
-                  <th style={thStyle}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRules.map((rule) => {
-                  const deleting = deletingRuleId === rule.id;
-
-                  return (
-                    <tr key={rule.id}>
-                      <td style={tdStyle}>{fieldLabel(rule.field_name)}</td>
-                      <td style={tdStyle}>{ruleTypeLabel(rule.rule_type)}</td>
-                      <td style={tdStyle}>{rule.rule_value || "—"}</td>
-                      <td style={tdStyle}>{rule.message}</td>
-                      <td style={tdStyle}>
-                        <span
-                          style={
-                            rule.severity === "error"
-                              ? errorBadgeStyle
-                              : warningBadgeStyle
-                          }
-                        >
-                          {rule.severity}
-                        </span>
-                      </td>
-                      <td style={tdStyle}>{rule.priority}</td>
-                      <td style={tdStyle}>{scopeLabel(rule, events)}</td>
-                      <td style={tdStyle}>{rule.is_active ? "Yes" : "No"}</td>
-                      <td style={tdStyle}>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 8,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => startEditRule(rule)}
-                            style={secondaryButtonStyle}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleToggleActive(rule)}
-                            style={secondaryButtonStyle}
-                          >
-                            {rule.is_active ? "Disable" : "Enable"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteRule(rule.id)}
-                            style={dangerButtonStyle}
-                            disabled={deleting}
-                          >
-                            {deleting ? "Deleting..." : "Delete"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ marginBottom: 14 }}>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Rules</h2>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>
+              {filteredRules.length} visible rule
+              {filteredRules.length === 1 ? "" : "s"}
+            </div>
           </div>
-        )}
+
+          {loading ? (
+            <div>Loading...</div>
+          ) : filteredRules.length === 0 ? (
+            <div style={{ opacity: 0.8 }}>No validation rules found.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Field</th>
+                    <th style={thStyle}>Type</th>
+                    <th style={thStyle}>Value</th>
+                    <th style={thStyle}>Message</th>
+                    <th style={thStyle}>Severity</th>
+                    <th style={thStyle}>Priority</th>
+                    <th style={thStyle}>Scope</th>
+                    <th style={thStyle}>Active</th>
+                    <th style={thStyle}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRules.map((rule) => {
+                    const deleting = deletingRuleId === rule.id;
+
+                    return (
+                      <tr key={rule.id}>
+                        <td style={tdStyle}>{fieldLabel(rule.field_name)}</td>
+                        <td style={tdStyle}>{ruleTypeLabel(rule.rule_type)}</td>
+                        <td style={tdStyle}>{rule.rule_value || "—"}</td>
+                        <td style={tdStyle}>{rule.message}</td>
+                        <td style={tdStyle}>
+                          <span
+                            style={
+                              rule.severity === "error"
+                                ? errorBadgeStyle
+                                : warningBadgeStyle
+                            }
+                          >
+                            {rule.severity}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>{rule.priority}</td>
+                        <td style={tdStyle}>{scopeLabel(rule, events)}</td>
+                        <td style={tdStyle}>{rule.is_active ? "Yes" : "No"}</td>
+                        <td style={tdStyle}>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => startEditRule(rule)}
+                              style={secondaryButtonStyle}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleActive(rule)}
+                              style={secondaryButtonStyle}
+                            >
+                              {rule.is_active ? "Disable" : "Enable"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteRule(rule.id)}
+                              style={dangerButtonStyle}
+                              disabled={deleting}
+                            >
+                              {deleting ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
+  );
+}
+
+function ValidationRulesEmbeddedStyles() {
+  useEffect(() => {
+    const existing = document.getElementById(
+      "validation-rules-embedded-styles",
+    );
+    if (existing) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "validation-rules-embedded-styles";
+    style.innerHTML = `
+      body.admin-embedded-shell > :first-child {
+        display: none !important;
+      }
+
+      body.admin-embedded-shell .app-main {
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+
+      body.admin-embedded-shell .app-inner {
+        max-width: 100% !important;
+        padding: 0 !important;
+      }
+
+      body.admin-embedded-shell .app-header-card {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+
+    return () => {
+      style.remove();
+    };
+  }, []);
+
+  return null;
+}
+
+function AdminValidationRulesPageContent() {
+  const searchParams = useSearchParams();
+  const isEmbedded = searchParams.get("embedded") === "1";
+
+  if (isEmbedded) {
+    return <AdminValidationRulesPageInner />;
+  }
+
+  return (
+    <AdminRouteGuard requiredPermission="can_manage_validation_rules">
+      <AdminValidationRulesPageInner />
+    </AdminRouteGuard>
   );
 }
 
@@ -969,8 +1046,14 @@ const tdStyle: CSSProperties = {
 
 export default function AdminValidationRulesPage() {
   return (
-    <AdminRouteGuard>
-      <AdminValidationRulesPageInner />
-    </AdminRouteGuard>
+    <Suspense
+      fallback={
+        <div className="card" style={{ padding: 18 }}>
+          Loading validation rules...
+        </div>
+      }
+    >
+      <AdminValidationRulesPageContent />
+    </Suspense>
   );
 }

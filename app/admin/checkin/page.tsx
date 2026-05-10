@@ -140,18 +140,26 @@ function AdminCheckinPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
 
+  function showStatus(message: string) {
+    setError(null);
+    setStatus(message);
+  }
+
+  function showError(message: string) {
+    setError(message);
+    setStatus("");
+  }
+
   useEffect(() => {
     async function init() {
       setLoading(true);
-      setError(null);
-      setStatus("Checking admin access...");
       setAccessDenied(false);
+      showStatus("Checking admin access...");
 
       const admin = await getCurrentAdminAccess();
 
       if (!admin) {
-        setError("No admin access.");
-        setStatus("Access denied.");
+        showError("No admin access.");
         setLoading(false);
         setAccessDenied(true);
         return;
@@ -162,8 +170,7 @@ function AdminCheckinPageInner() {
         setAttendees([]);
         setHouseholdMembers([]);
         setParkingSites([]);
-        setError("You do not have permission to manage check-in.");
-        setStatus("Access denied.");
+        showError("You do not have permission to manage check-in.");
         setLoading(false);
         setAccessDenied(true);
         return;
@@ -176,7 +183,7 @@ function AdminCheckinPageInner() {
         setAttendees([]);
         setHouseholdMembers([]);
         setParkingSites([]);
-        setStatus("No admin working event selected.");
+        showStatus("No admin working event selected.");
         setLoading(false);
         return;
       }
@@ -186,8 +193,7 @@ function AdminCheckinPageInner() {
         setAttendees([]);
         setHouseholdMembers([]);
         setParkingSites([]);
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
+        showError("You do not have access to this event.");
         setLoading(false);
         setAccessDenied(true);
         return;
@@ -274,8 +280,7 @@ function AdminCheckinPageInner() {
   async function loadPage() {
     try {
       setLoading(true);
-      setError(null);
-      setStatus("Loading check-in...");
+      showStatus("Loading check-in...");
 
       const adminEvent = getAdminEvent();
       if (!adminEvent?.id) {
@@ -283,7 +288,7 @@ function AdminCheckinPageInner() {
         setAttendees([]);
         setHouseholdMembers([]);
         setParkingSites([]);
-        setStatus("No admin working event selected.");
+        showStatus("No admin working event selected.");
         setLoading(false);
         return;
       }
@@ -418,11 +423,10 @@ function AdminCheckinPageInner() {
       });
       setEditState(nextEditState);
 
-      setStatus(`Loaded ${attendeeList.length} attendees for check-in.`);
+      showStatus(`Loaded ${attendeeList.length} attendees for check-in.`);
     } catch (err: any) {
       console.error("loadPage error:", err);
-      setError(err?.message || "Failed to load admin check-in.");
-      setStatus(err?.message || "Failed to load admin check-in.");
+      showError(err?.message || "Failed to load admin check-in.");
     } finally {
       setLoading(false);
     }
@@ -534,14 +538,14 @@ function AdminCheckinPageInner() {
     updateEditState(attendeeId, { siteNumber: canonicalSite });
     localStorage.setItem("fcoc-parking-focus-site", canonicalSite);
     window.dispatchEvent(new Event("fcoc-parking-focus-site"));
-    setStatus(
+    showStatus(
       `Matched site ${canonicalSite}. Open Parking Admin to see it highlighted on the map.`,
     );
   }
 
   async function saveCheckin(attendee: AttendeeRow) {
     if (!event?.id) {
-      setStatus("No working event selected.");
+      showError("No working event selected.");
       return;
     }
 
@@ -559,6 +563,7 @@ function AdminCheckinPageInner() {
 
     try {
       setSavingId(attendee.id);
+      showStatus("Saving check-in changes...");
 
       let matchedSite: ParkingSiteRow | null = null;
 
@@ -573,7 +578,7 @@ function AdminCheckinPageInner() {
           }) || null;
 
         if (!matchedSite) {
-          setStatus(
+          showError(
             `Site "${normalizedSite}" was not found in the event parking map.`,
           );
           setSavingId(null);
@@ -765,10 +770,10 @@ function AdminCheckinPageInner() {
           : `${attendeeName}: ${changes.join(" · ")}.`;
 
       await loadPage();
-      setStatus(feedback);
+      showStatus(feedback);
     } catch (err: any) {
       console.error("saveCheckin error:", err);
-      setStatus(err?.message || "Failed to save check-in.");
+      showError(err?.message || "Failed to save check-in.");
     } finally {
       setSavingId(null);
     }
@@ -992,7 +997,7 @@ function AdminCheckinPageInner() {
                     onClick={() => {
                       const siteToFocus = normalizeSite(current.siteNumber);
                       if (!siteToFocus) {
-                        setStatus("Enter a site number first.");
+                        showError("Enter a site number first.");
                         return;
                       }
 

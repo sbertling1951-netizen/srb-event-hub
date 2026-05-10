@@ -135,12 +135,12 @@ type RosterRow = {
   copilotLast: string;
 };
 
-const ADMIN_EVENT_STORAGE_KEY = "srb-event-hub-admin-event-context";
-const ADMIN_EVENT_CHANGED_KEY = "srb-event-hub-admin-event-changed";
-const USER_MODE_KEY = "srb-event-hub-user-mode";
-const USER_MODE_CHANGED_KEY = "srb-event-hub-user-mode-changed";
-const ADMIN_EVENT_UPDATED_EVENT = "srb-event-hub-admin-event-updated";
-const REPORT_PRESETS_STORAGE_KEY = "srb-event-hub-admin-report-presets";
+const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
+const ADMIN_EVENT_CHANGED_KEY = "fcoc-admin-event-changed";
+const USER_MODE_KEY = "fcoc-user-mode";
+const USER_MODE_CHANGED_KEY = "fcoc-user-mode-changed";
+const ADMIN_EVENT_UPDATED_EVENT = "fcoc-admin-event-updated";
+const REPORT_PRESETS_STORAGE_KEY = "fcoc-admin-report-presets";
 
 function getStoredAdminEvent(): EventContext | null {
   if (typeof window === "undefined") {
@@ -424,7 +424,10 @@ function AdminReportsPageInner() {
       return;
     }
 
-    if (!hasPermission(admin, "can_manage_reports")) {
+    if (
+      !hasPermission(admin, "can_manage_reports") &&
+      !hasPermission(admin, "can_edit_attendees")
+    ) {
       resetPageState();
       setError("You do not have permission to manage reports.");
       setStatus("Access denied.");
@@ -442,7 +445,11 @@ function AdminReportsPageInner() {
       return;
     }
 
-    setCanExport(hasPermission(admin, "can_export_reports"));
+    setCanExport(
+      hasPermission(admin, "can_export_reports") ||
+        hasPermission(admin, "can_manage_reports") ||
+        hasPermission(admin, "can_edit_attendees"),
+    );
 
     const [
       { data: attendeeData, error: attendeeError },
@@ -563,7 +570,10 @@ function AdminReportsPageInner() {
         return;
       }
 
-      if (!hasPermission(admin, "can_manage_reports")) {
+      if (
+        !hasPermission(admin, "can_manage_reports") &&
+        !hasPermission(admin, "can_edit_attendees")
+      ) {
         resetPageState();
         setError("You do not have permission to manage reports.");
         setStatus("Access denied.");
@@ -572,7 +582,11 @@ function AdminReportsPageInner() {
         return;
       }
 
-      setCanExport(hasPermission(admin, "can_export_reports"));
+      setCanExport(
+        hasPermission(admin, "can_export_reports") ||
+          hasPermission(admin, "can_manage_reports") ||
+          hasPermission(admin, "can_edit_attendees"),
+      );
 
       const event = getStoredAdminEvent();
 
@@ -685,7 +699,7 @@ function AdminReportsPageInner() {
       case "staff_hosts_helpers":
         return attendees
           .filter((row) =>
-            ["staff", "host", "helper", "volunteer", "vip"].includes(
+            ["staff", "event_host", "volunteer", "speaker"].includes(
               row.participant_type || "",
             ),
           )
@@ -1149,7 +1163,10 @@ function AdminReportsPageInner() {
 
     if (reportPackType === "hospitality_ops") {
       sections += makeSection("First Timers", firstTimerRows);
-      sections += makeSection("Volunteers", vendorStaffRows);
+      sections += makeSection(
+        "Vendors / Staff / Speakers / Hosts",
+        vendorStaffRows,
+      );
     }
 
     const html = `
@@ -1669,7 +1686,14 @@ function ReportControlsPanel(props: {
         <label style={labelStyle}>Report Pack</label>
         <select
           value={reportPackType}
-          onChange={(e) => setReportPackType(e.target.value as any)}
+          onChange={(e) =>
+            setReportPackType(
+              e.target.value as
+                | "parking_ops"
+                | "checkin_ops"
+                | "hospitality_ops",
+            )
+          }
           style={inputStyle}
         >
           <option value="parking_ops">Parking Operations Pack</option>
@@ -1844,6 +1868,9 @@ const inputStyle: CSSProperties = {
   borderRadius: 10,
   border: "1px solid #ccc",
   background: "white",
+  color: "#111827",
+  WebkitTextFillColor: "#111827",
+  boxSizing: "border-box",
 };
 
 const primaryButtonStyle: CSSProperties = {
@@ -1851,8 +1878,10 @@ const primaryButtonStyle: CSSProperties = {
   borderRadius: 10,
   border: "none",
   background: "#111827",
-  color: "white",
+  color: "#ffffff",
+  WebkitTextFillColor: "#ffffff",
   fontWeight: 700,
+  lineHeight: 1.2,
   cursor: "pointer",
 };
 
@@ -1860,8 +1889,11 @@ const secondaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
   border: "1px solid #ccc",
-  background: "white",
+  background: "#ffffff",
+  color: "#111827",
+  WebkitTextFillColor: "#111827",
   fontWeight: 700,
+  lineHeight: 1.2,
   cursor: "pointer",
 };
 

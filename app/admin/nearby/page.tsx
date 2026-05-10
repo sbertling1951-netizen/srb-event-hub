@@ -220,6 +220,16 @@ function AdminNearbyPageInner() {
     setShowEventCustomCategory(false);
   }
 
+  function showStatus(message: string) {
+    setError(null);
+    setStatus(message);
+  }
+
+  function showError(message: string) {
+    setError(message);
+    setStatus("");
+  }
+
   useEffect(() => {
     function handleResize() {
       setIsNarrow(window.innerWidth < 1100);
@@ -235,14 +245,13 @@ function AdminNearbyPageInner() {
       setLoading(true);
       setError(null);
       setAccessDenied(false);
-      setStatus("Checking admin access...");
+      showStatus("Checking admin access...");
 
       const admin = await getCurrentAdminAccess();
 
       if (!admin) {
         resetAllState();
-        setError("No admin access.");
-        setStatus("Access denied.");
+        showError("No admin access.");
         setAccessDenied(true);
         setLoading(false);
         return;
@@ -252,8 +261,7 @@ function AdminNearbyPageInner() {
 
       if (evt?.id && !canAccessEvent(admin, evt.id)) {
         resetAllState();
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
+        showError("You do not have access to this event.");
         setAccessDenied(true);
         setLoading(false);
         return;
@@ -309,8 +317,7 @@ function AdminNearbyPageInner() {
 
       if (!admin) {
         resetAllState();
-        setError("No admin access.");
-        setStatus("Access denied.");
+        showError("No admin access.");
         setAccessDenied(true);
         return;
       }
@@ -319,8 +326,7 @@ function AdminNearbyPageInner() {
 
       if (evt?.id && !canAccessEvent(admin, evt.id)) {
         resetAllState();
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
+        showError("You do not have access to this event.");
         setAccessDenied(true);
         return;
       }
@@ -391,7 +397,7 @@ function AdminNearbyPageInner() {
   async function loadStoredAreas() {
     try {
       setLoadingAreas(true);
-      setStatus("Loading stored nearby areas...");
+      showStatus("Loading stored nearby areas...");
 
       const { data, error } = await supabase
         .from("nearby_areas")
@@ -423,7 +429,7 @@ function AdminNearbyPageInner() {
       console.error("loadStoredAreas error:", err);
       setStoredAreas([]);
       setSelectedAreaId("");
-      setStatus(err?.message || "Failed to load stored areas.");
+      showError(err?.message || "Failed to load stored areas.");
     } finally {
       setLoadingAreas(false);
     }
@@ -432,7 +438,7 @@ function AdminNearbyPageInner() {
   async function loadStoredPlaces(areaId: string) {
     try {
       setLoadingStoredPlaces(true);
-      setStatus("Loading stored places...");
+      showStatus("Loading stored places...");
 
       const { data, error } = await supabase
         .from("nearby_master")
@@ -466,7 +472,7 @@ function AdminNearbyPageInner() {
     } catch (err: any) {
       console.error("loadStoredPlaces error:", err);
       setStoredPlaces([]);
-      setStatus(err?.message || "Failed to load stored places.");
+      showError(err?.message || "Failed to load stored places.");
     } finally {
       setLoadingStoredPlaces(false);
     }
@@ -475,7 +481,7 @@ function AdminNearbyPageInner() {
   async function loadEventPlaces(eventId: string) {
     try {
       setLoadingEventPlaces(true);
-      setStatus("Loading event nearby places...");
+      showStatus("Loading event nearby places...");
 
       const { data, error } = await supabase
         .from("event_nearby_places")
@@ -497,7 +503,7 @@ function AdminNearbyPageInner() {
     } catch (err: any) {
       console.error("loadEventPlaces error:", err);
       setEventPlaces([]);
-      setStatus(err?.message || "Failed to load event nearby places.");
+      showError(err?.message || "Failed to load event nearby places.");
     } finally {
       setLoadingEventPlaces(false);
     }
@@ -505,17 +511,17 @@ function AdminNearbyPageInner() {
 
   async function createStoredArea() {
     if (accessDenied) {
-      setStatus("You do not have access to this page.");
+      showError("You do not have access to this page.");
       return;
     }
     if (!areaName.trim()) {
-      setStatus("Enter a stored area name.");
+      showError("Enter a stored area name.");
       return;
     }
 
     try {
       setSavingArea(true);
-      setStatus("Creating stored area...");
+      showStatus("Creating stored area...");
 
       const payload = {
         name: areaName.trim(),
@@ -555,7 +561,7 @@ function AdminNearbyPageInner() {
         .filter(Boolean)
         .join(" | ");
 
-      setStatus(
+      showError(
         messageParts ||
           (err && typeof err === "object"
             ? JSON.stringify(err, null, 2)
@@ -568,21 +574,22 @@ function AdminNearbyPageInner() {
 
   async function updateStoredArea() {
     if (accessDenied) {
-      setStatus("You do not have access to this page.");
+      showError("You do not have access to this page.");
       return;
     }
     if (!selectedAreaId) {
-      setStatus("Select a stored area first.");
+      showError("Select a stored area first.");
       return;
     }
 
     if (!areaName.trim()) {
-      setStatus("Enter a stored area name.");
+      showError("Enter a stored area name.");
       return;
     }
 
     try {
       setSavingArea(true);
+      showStatus("Updating stored area...");
 
       const { error } = await supabase
         .from("nearby_areas")
@@ -601,7 +608,7 @@ function AdminNearbyPageInner() {
       setStatus(`Updated stored area "${areaName.trim()}".`);
     } catch (err: any) {
       console.error("updateStoredArea error:", err);
-      setStatus(err?.message || "Failed to update stored area.");
+      showError(err?.message || "Failed to update stored area.");
     } finally {
       setSavingArea(false);
     }
@@ -609,11 +616,11 @@ function AdminNearbyPageInner() {
 
   async function deleteStoredArea() {
     if (accessDenied) {
-      setStatus("You do not have access to this page.");
+      showError("You do not have access to this page.");
       return;
     }
     if (!selectedAreaId || !selectedArea) {
-      setStatus("Select a stored area to delete.");
+      showError("Select a stored area to delete.");
       return;
     }
 
@@ -626,6 +633,7 @@ function AdminNearbyPageInner() {
 
     try {
       setSavingArea(true);
+      showStatus("Deleting stored area...");
 
       const { error } = await supabase
         .from("nearby_areas")
@@ -643,7 +651,7 @@ function AdminNearbyPageInner() {
       setStatus(`Deleted stored area "${selectedArea.name}".`);
     } catch (err: any) {
       console.error("deleteStoredArea error:", err);
-      setStatus(err?.message || "Failed to delete stored area.");
+      showError(err?.message || "Failed to delete stored area.");
     } finally {
       setSavingArea(false);
     }
@@ -651,21 +659,22 @@ function AdminNearbyPageInner() {
 
   async function saveStoredPlace() {
     if (accessDenied) {
-      setStatus("You do not have access to this page.");
+      showError("You do not have access to this page.");
       return;
     }
     if (!selectedAreaId) {
-      setStatus("Select a stored area first.");
+      showError("Select a stored area first.");
       return;
     }
 
     if (!storedForm.name.trim()) {
-      setStatus("Enter a stored place name.");
+      showError("Enter a stored place name.");
       return;
     }
 
     try {
       setSavingStoredPlace(true);
+      showStatus("Saving stored place...");
 
       let resolvedLat = toNullableCoordinate(storedForm.lat);
       let resolvedLng = toNullableCoordinate(storedForm.lng);
@@ -673,7 +682,7 @@ function AdminNearbyPageInner() {
 
       if (resolvedLat === null || resolvedLng === null) {
         if (storedForm.location_code.trim()) {
-          setStatus("Resolving coordinates from plus code...");
+          showStatus("Resolving coordinates from plus code...");
           const plusResolved = await geocodeLocation({
             location_code: storedForm.location_code.trim(),
             address: null,
@@ -695,7 +704,7 @@ function AdminNearbyPageInner() {
           (resolvedLat === null || resolvedLng === null) &&
           storedForm.address.trim()
         ) {
-          setStatus("Resolving coordinates from address...");
+          showStatus("Resolving coordinates from address...");
           const addressResolved = await geocodeLocation({
             location_code: null,
             address: storedForm.address.trim(),
@@ -754,7 +763,7 @@ function AdminNearbyPageInner() {
       setStoredForm(emptyStoredPlaceForm);
     } catch (err: any) {
       console.error("saveStoredPlace error:", err);
-      setStatus(err?.message || "Failed to save stored place.");
+      showError(err?.message || "Failed to save stored place.");
     } finally {
       setSavingStoredPlace(false);
     }
@@ -762,11 +771,11 @@ function AdminNearbyPageInner() {
 
   async function deleteStoredPlace() {
     if (accessDenied) {
-      setStatus("You do not have access to this page.");
+      showError("You do not have access to this page.");
       return;
     }
     if (!storedForm.id) {
-      setStatus("Select a stored place to delete.");
+      showError("Select a stored place to delete.");
       return;
     }
 
@@ -779,6 +788,7 @@ function AdminNearbyPageInner() {
 
     try {
       setSavingStoredPlace(true);
+      showStatus("Deleting stored place...");
 
       const { error } = await supabase
         .from("nearby_master")
@@ -794,7 +804,7 @@ function AdminNearbyPageInner() {
       setStatus(`Deleted stored place "${storedForm.name}".`);
     } catch (err: any) {
       console.error("deleteStoredPlace error:", err);
-      setStatus(err?.message || "Failed to delete stored place.");
+      showError(err?.message || "Failed to delete stored place.");
     } finally {
       setSavingStoredPlace(false);
     }
@@ -802,16 +812,16 @@ function AdminNearbyPageInner() {
 
   async function replaceEventListFromStored() {
     if (accessDenied) {
-      setStatus("You do not have access to this page.");
+      showError("You do not have access to this page.");
       return;
     }
     if (!adminEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       return;
     }
 
     if (!selectedAreaId) {
-      setStatus("No stored area selected.");
+      showError("No stored area selected.");
       return;
     }
 
@@ -824,7 +834,7 @@ function AdminNearbyPageInner() {
 
     try {
       setCopyingToEvent(true);
-      setStatus("Replacing current event nearby list...");
+      showStatus("Replacing current event nearby list...");
 
       const { data: sourceRows, error: sourceError } = await supabase
         .from("nearby_master")
@@ -857,7 +867,7 @@ function AdminNearbyPageInner() {
         let lng = place.lng ?? null;
 
         if (lat === null || lng === null) {
-          setStatus(
+          showStatus(
             `Geocoding ${index + 1} of ${sourcePlaces.length}: ${place.name}...`,
           );
 
@@ -906,7 +916,7 @@ function AdminNearbyPageInner() {
       );
     } catch (err: any) {
       console.error("replaceEventListFromStored error:", err);
-      setStatus(err?.message || "Failed to replace event nearby list.");
+      showError(err?.message || "Failed to replace event nearby list.");
     } finally {
       setCopyingToEvent(false);
     }
@@ -914,21 +924,22 @@ function AdminNearbyPageInner() {
 
   async function saveEventPlace() {
     if (accessDenied) {
-      setStatus("You do not have access to this page.");
+      showError("You do not have access to this page.");
       return;
     }
     if (!adminEvent?.id) {
-      setStatus("No admin working event selected.");
+      showError("No admin working event selected.");
       return;
     }
 
     if (!eventForm.name.trim()) {
-      setStatus("Enter an event place name.");
+      showError("Enter an event place name.");
       return;
     }
 
     try {
       setSavingEventPlace(true);
+      showStatus("Saving event place...");
 
       let resolvedLat = toNullableCoordinate(eventForm.lat);
       let resolvedLng = toNullableCoordinate(eventForm.lng);
@@ -936,7 +947,7 @@ function AdminNearbyPageInner() {
 
       if (resolvedLat === null || resolvedLng === null) {
         if (eventForm.location_code.trim()) {
-          setStatus("Resolving coordinates from plus code...");
+          showStatus("Resolving coordinates from plus code...");
           const plusResolved = await geocodeLocation({
             location_code: eventForm.location_code.trim(),
             address: null,
@@ -958,7 +969,7 @@ function AdminNearbyPageInner() {
           (resolvedLat === null || resolvedLng === null) &&
           eventForm.address.trim()
         ) {
-          setStatus("Resolving coordinates from address...");
+          showStatus("Resolving coordinates from address...");
           const addressResolved = await geocodeLocation({
             location_code: null,
             address: eventForm.address.trim(),
@@ -1022,7 +1033,7 @@ function AdminNearbyPageInner() {
       setEventForm(emptyEventPlaceForm);
     } catch (err: any) {
       console.error("saveEventPlace error:", err);
-      setStatus(err?.message || "Failed to save event place.");
+      showError(err?.message || "Failed to save event place.");
     } finally {
       setSavingEventPlace(false);
     }
@@ -1030,11 +1041,11 @@ function AdminNearbyPageInner() {
 
   async function deleteEventPlace() {
     if (accessDenied) {
-      setStatus("You do not have access to this page.");
+      showError("You do not have access to this page.");
       return;
     }
     if (!eventForm.id) {
-      setStatus("Select an event place to delete.");
+      showError("Select an event place to delete.");
       return;
     }
 
@@ -1045,6 +1056,7 @@ function AdminNearbyPageInner() {
 
     try {
       setSavingEventPlace(true);
+      showStatus("Deleting event place...");
 
       const { error } = await supabase
         .from("event_nearby_places")
@@ -1062,7 +1074,7 @@ function AdminNearbyPageInner() {
       setStatus(`Deleted event place "${eventForm.name}".`);
     } catch (err: any) {
       console.error("deleteEventPlace error:", err);
-      setStatus(err?.message || "Failed to delete event place.");
+      showError(err?.message || "Failed to delete event place.");
     } finally {
       setSavingEventPlace(false);
     }

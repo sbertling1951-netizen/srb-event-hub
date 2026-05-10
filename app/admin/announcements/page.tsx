@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
@@ -50,11 +50,15 @@ const EMPTY_FORM: FormState = {
 };
 
 function getStoredAdminEvent(): EventContext | null {
-  if (typeof window === "undefined") {return null;}
+  if (typeof window === "undefined") {
+    return null;
+  }
 
   try {
     const raw = localStorage.getItem("fcoc-admin-event-context");
-    if (!raw) {return null;}
+    if (!raw) {
+      return null;
+    }
     return JSON.parse(raw);
   } catch {
     return null;
@@ -62,7 +66,9 @@ function getStoredAdminEvent(): EventContext | null {
 }
 
 function setStoredAdminEvent(event: EventContext | null) {
-  if (typeof window === "undefined") {return;}
+  if (typeof window === "undefined") {
+    return;
+  }
 
   if (!event?.id) {
     localStorage.removeItem("fcoc-admin-event-context");
@@ -87,18 +93,26 @@ function setStoredAdminEvent(event: EventContext | null) {
 }
 
 function normalizeForInput(value?: string | null) {
-  if (!value) {return "";}
+  if (!value) {
+    return "";
+  }
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {return "";}
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
   const offset = date.getTimezoneOffset();
   const local = new Date(date.getTime() - offset * 60 * 1000);
   return local.toISOString().slice(0, 16);
 }
 
 function formatDateTime(value?: string | null) {
-  if (!value) {return "No expiration";}
+  if (!value) {
+    return "No expiration";
+  }
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {return "No expiration";}
+  if (Number.isNaN(date.getTime())) {
+    return "No expiration";
+  }
   return date.toLocaleString();
 }
 
@@ -125,12 +139,48 @@ function AdminAnnouncementsPageInner() {
 
   const eventId = currentEvent?.id ?? null;
 
+  function showStatus(message: string) {
+    setError(null);
+    setStatus(message);
+  }
+
+  function showError(message: string) {
+    setError(message);
+    setStatus("");
+  }
+
+  const loadAnnouncements = useCallback(async (activeEventId: string) => {
+    setLoadingAnnouncements(true);
+    setError(null);
+    setStatus("Loading announcements...");
+
+    const { data, error } = await supabase
+      .from("announcements")
+      .select(
+        "id, event_id, title, body, priority, is_pinned, is_published, created_at, expire_at",
+      )
+      .eq("event_id", activeEventId)
+      .order("is_pinned", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setError(error.message || "Could not load announcements.");
+      setStatus("");
+      setLoadingAnnouncements(false);
+      return;
+    }
+
+    setAnnouncements((data || []) as Announcement[]);
+    setStatus("");
+    setLoadingAnnouncements(false);
+  }, []);
+
   useEffect(() => {
     async function init() {
       setLoadingEvent(true);
       setError(null);
-      setStatus("Checking admin access...");
       setAccessDenied(false);
+      showStatus("Checking admin access...");
 
       const admin = await getCurrentAdminAccess();
 
@@ -138,8 +188,7 @@ function AdminAnnouncementsPageInner() {
         setCurrentEvent(null);
         setAnnouncements([]);
         resetForm();
-        setError("No admin access.");
-        setStatus("Access denied.");
+        showError("No admin access.");
         setLoadingEvent(false);
         setAccessDenied(true);
         return;
@@ -152,8 +201,7 @@ function AdminAnnouncementsPageInner() {
           setCurrentEvent(null);
           setAnnouncements([]);
           resetForm();
-          setError("You do not have access to this event.");
-          setStatus("Access denied.");
+          showError("You do not have access to this event.");
           setLoadingEvent(false);
           setAccessDenied(true);
           return;
@@ -174,8 +222,7 @@ function AdminAnnouncementsPageInner() {
         setCurrentEvent(null);
         setAnnouncements([]);
         resetForm();
-        setError(error.message);
-        setStatus("Could not load event.");
+        showError(error.message || "Could not load event.");
         setLoadingEvent(false);
         return;
       }
@@ -188,7 +235,7 @@ function AdminAnnouncementsPageInner() {
         setCurrentEvent(null);
         setAnnouncements([]);
         resetForm();
-        setStatus("No accessible event selected.");
+        showError("No accessible event selected.");
         setLoadingEvent(false);
         return;
       }
@@ -241,47 +288,27 @@ function AdminAnnouncementsPageInner() {
     };
   }, []);
 
-  async function loadAnnouncements(activeEventId: string) {
-    setLoadingAnnouncements(true);
-    setError(null);
-    setStatus("Loading announcements...");
-
-    const { data, error } = await supabase
-      .from("announcements")
-      .select(
-        "id, event_id, title, body, priority, is_pinned, is_published, created_at, expire_at",
-      )
-      .eq("event_id", activeEventId)
-      .order("is_pinned", { ascending: false })
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      setError(error.message);
-      setStatus("Could not load announcements.");
-      setLoadingAnnouncements(false);
-      return;
-    }
-
-    setAnnouncements((data || []) as Announcement[]);
-    setStatus("");
-    setLoadingAnnouncements(false);
-  }
-
   useEffect(() => {
     if (!eventId || accessDenied) {
       setAnnouncements([]);
       setLoadingAnnouncements(false);
       resetForm();
-      setStatus(accessDenied ? "Access denied." : "No active event selected.");
+      if (accessDenied) {
+        showError("Access denied.");
+      } else {
+        showStatus("No active event selected.");
+      }
       return;
     }
 
     void loadAnnouncements(eventId);
-  }, [eventId, accessDenied]);
+  }, [eventId, accessDenied, loadAnnouncements]);
 
   const sortedAnnouncements = useMemo(() => {
     return [...announcements].sort((a, b) => {
-      if (a.is_pinned !== b.is_pinned) {return a.is_pinned ? -1 : 1;}
+      if (a.is_pinned !== b.is_pinned) {
+        return a.is_pinned ? -1 : 1;
+      }
       const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
       return bTime - aTime;
@@ -308,23 +335,22 @@ function AdminAnnouncementsPageInner() {
 
   async function handleSave() {
     if (!eventId) {
-      setError("No active event selected.");
+      showError("No active event selected.");
       return;
     }
 
     if (!form.title.trim()) {
-      setError("Title is required.");
+      showError("Title is required.");
       return;
     }
 
     if (!form.body.trim()) {
-      setError("Message is required.");
+      showError("Message is required.");
       return;
     }
 
     setSaving(true);
-    setError(null);
-    setStatus(
+    showStatus(
       editingId ? "Updating announcement..." : "Creating announcement...",
     );
 
@@ -345,8 +371,7 @@ function AdminAnnouncementsPageInner() {
         .eq("id", editingId);
 
       if (error) {
-        setError(error.message);
-        setStatus("Update failed.");
+        showError(error.message || "Update failed.");
         setSaving(false);
         return;
       }
@@ -357,8 +382,7 @@ function AdminAnnouncementsPageInner() {
       const { error } = await supabase.from("announcements").insert(payload);
 
       if (error) {
-        setError(error.message);
-        setStatus("Create failed.");
+        showError(error.message || "Create failed.");
         setSaving(false);
         return;
       }
@@ -374,10 +398,11 @@ function AdminAnnouncementsPageInner() {
 
   async function handleDelete(id: string) {
     const confirmed = window.confirm("Delete this announcement?");
-    if (!confirmed) {return;}
+    if (!confirmed) {
+      return;
+    }
 
-    setError(null);
-    setStatus("Deleting announcement...");
+    showStatus("Deleting announcement...");
 
     const { error } = await supabase
       .from("announcements")
@@ -385,19 +410,21 @@ function AdminAnnouncementsPageInner() {
       .eq("id", id);
 
     if (error) {
-      setError(error.message);
-      setStatus("Delete failed.");
+      showError(error.message || "Delete failed.");
       return;
     }
 
-    if (editingId === id) {resetForm();}
-    if (eventId) {await loadAnnouncements(eventId);}
+    if (editingId === id) {
+      resetForm();
+    }
+    if (eventId) {
+      await loadAnnouncements(eventId);
+    }
     setStatus("Announcement deleted.");
   }
 
   async function togglePublished(item: Announcement) {
-    setError(null);
-    setStatus(item.is_published ? "Unpublishing..." : "Publishing...");
+    showStatus(item.is_published ? "Unpublishing..." : "Publishing...");
 
     const { error } = await supabase
       .from("announcements")
@@ -405,12 +432,13 @@ function AdminAnnouncementsPageInner() {
       .eq("id", item.id);
 
     if (error) {
-      setError(error.message);
-      setStatus("Publish update failed.");
+      showError(error.message || "Publish update failed.");
       return;
     }
 
-    if (eventId) {await loadAnnouncements(eventId);}
+    if (eventId) {
+      await loadAnnouncements(eventId);
+    }
     setStatus(
       item.is_published
         ? "Announcement unpublished."
@@ -419,8 +447,7 @@ function AdminAnnouncementsPageInner() {
   }
 
   async function togglePinned(item: Announcement) {
-    setError(null);
-    setStatus(item.is_pinned ? "Removing pin..." : "Pinning announcement...");
+    showStatus(item.is_pinned ? "Removing pin..." : "Pinning announcement...");
 
     const { error } = await supabase
       .from("announcements")
@@ -428,12 +455,13 @@ function AdminAnnouncementsPageInner() {
       .eq("id", item.id);
 
     if (error) {
-      setError(error.message);
-      setStatus("Pin update failed.");
+      showError(error.message || "Pin update failed.");
       return;
     }
 
-    if (eventId) {await loadAnnouncements(eventId);}
+    if (eventId) {
+      await loadAnnouncements(eventId);
+    }
     setStatus(
       item.is_pinned ? "Announcement unpinned." : "Announcement pinned.",
     );
