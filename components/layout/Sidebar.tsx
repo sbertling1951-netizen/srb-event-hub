@@ -432,11 +432,11 @@ export default function Sidebar() {
       { label: "Dashboard", href: "/member" },
       { label: "Agenda", href: "/member/agenda" },
       { label: "Announcements", href: "/member/announcements" },
-      { label: "Coach Map", href: "/coach-map" },
       { label: "Attendee Locator", href: "/member/attendees" },
+      { label: "Coach Map", href: "/coach-map" },
+      { label: "My Check-In", href: "/member/checkin" },
       { label: "Nearby", href: "/member/nearby" },
       { label: "Vendors / Service Requests", href: "/member/vendor-signup" },
-      { label: "My Check-In", href: "/member/checkin" },
     ];
   }, []);
 
@@ -474,9 +474,18 @@ export default function Sidebar() {
         new Map(
           adminItems.map((item) => [`${item.label}|${item.href}`, item]),
         ).values(),
-      ).sort((a, b) =>
-        a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
-      );
+      ).sort((a, b) => {
+        if (a.href === "/admin/dashboard") {
+          return -1;
+        }
+        if (b.href === "/admin/dashboard") {
+          return 1;
+        }
+
+        return a.label.localeCompare(b.label, undefined, {
+          sensitivity: "base",
+        });
+      });
 
       return [
         {

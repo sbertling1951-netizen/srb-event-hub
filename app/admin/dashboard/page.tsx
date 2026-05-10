@@ -623,9 +623,11 @@ function AdminDashboardPageInner() {
       return [];
     }
 
-    return adminCards.filter((card) =>
-      hasPermission(adminAccess, card.permission),
-    );
+    return adminCards
+      .filter((card) => hasPermission(adminAccess, card.permission))
+      .sort((a, b) =>
+        a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
+      );
   }, [adminAccess]);
 
   function goTo(href: string) {

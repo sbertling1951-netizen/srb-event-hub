@@ -550,6 +550,51 @@ function AdminUsersPageInner() {
     }
   }
 
+  async function handleDeleteAdminUser() {
+    if (!selectedAdminId || !selectedRow) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete admin user ${selectedRow.display_name || selectedRow.email}? This removes their app admin record and event access.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setSaveStatus("Deleting admin user...");
+      setError(null);
+
+      const { error: accessError } = await supabase
+        .from("admin_event_access")
+        .delete()
+        .eq("admin_user_id", selectedAdminId);
+
+      if (accessError) {
+        setSaveStatus(`Could not remove event access: ${accessError.message}`);
+        return;
+      }
+
+      const { error: adminError } = await supabase
+        .from("admin_users")
+        .delete()
+        .eq("id", selectedAdminId);
+
+      if (adminError) {
+        setSaveStatus(`Could not delete admin user: ${adminError.message}`);
+        return;
+      }
+
+      startNewAdmin();
+      setSaveStatus("Admin user deleted.");
+      await loadPageData();
+    } catch (err: any) {
+      setSaveStatus(err?.message || "Could not delete admin user.");
+    }
+  }
+
   if (!loading && accessDenied) {
     return (
       <div className="card" style={{ padding: 18 }}>
@@ -637,15 +682,35 @@ function AdminUsersPageInner() {
         </div>
 
         <div className="card" style={{ padding: 18 }}>
-          <div style={{ marginBottom: 14 }}>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-              {selectedAdminId ? "Edit Admin User" : "New Admin User"}
-            </h2>
-            <div style={{ fontSize: 14, opacity: 0.75 }}>
-              {selectedAdminId
-                ? "Update this admin user, privilege group, and event access."
-                : "Create a new admin user and assign event access."}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              alignItems: "start",
+              marginBottom: 14,
+            }}
+          >
+            <div>
+              <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+                {selectedAdminId ? "Edit Admin User" : "New Admin User"}
+              </h2>
+              <div style={{ fontSize: 14, opacity: 0.75 }}>
+                {selectedAdminId
+                  ? "Update this admin user, privilege group, and event access."
+                  : "Create a new admin user and assign event access."}
+              </div>
             </div>
+
+            {selectedAdminId ? (
+              <button
+                type="button"
+                onClick={() => void handleDeleteAdminUser()}
+                style={dangerButtonStyle}
+              >
+                Delete Admin User
+              </button>
+            ) : null}
           </div>
 
           <div style={{ display: "grid", gap: 14 }}>
@@ -679,7 +744,9 @@ function AdminUsersPageInner() {
               style={{
                 display: "grid",
                 gap: 14,
-                gridTemplateColumns: "1fr auto",
+                gridTemplateColumns: selectedAdminId
+                  ? "minmax(260px, 1fr) auto"
+                  : "1fr",
                 alignItems: "end",
               }}
             >
@@ -705,13 +772,15 @@ function AdminUsersPageInner() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleSendPasswordReset}
-                style={secondaryButtonStyle}
-              >
-                Send Reset Email
-              </button>
+              {selectedAdminId ? (
+                <button
+                  type="button"
+                  onClick={handleSendPasswordReset}
+                  style={resetEmailButtonStyle}
+                >
+                  Send Reset Email
+                </button>
+              ) : null}
             </div>
 
             {resetStatus ? (
@@ -880,13 +949,16 @@ const inputStyle: CSSProperties = {
 };
 
 const primaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
+  minWidth: 150,
+  padding: "12px 18px",
+  borderRadius: 12,
   border: "none",
   background: "#111827",
-  color: "white",
-  fontWeight: 700,
+  color: "#ffffff",
+  WebkitTextFillColor: "#ffffff",
+  fontWeight: 800,
   cursor: "pointer",
+  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.18)",
 };
 
 const secondaryButtonStyle: CSSProperties = {
@@ -894,8 +966,33 @@ const secondaryButtonStyle: CSSProperties = {
   borderRadius: 10,
   border: "1px solid #ccc",
   background: "white",
+  color: "#111827",
+  WebkitTextFillColor: "#111827",
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const resetEmailButtonStyle: CSSProperties = {
+  ...secondaryButtonStyle,
+  minHeight: 42,
+  border: "1px solid #93c5fd",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  WebkitTextFillColor: "#1d4ed8",
+  boxShadow: "0 8px 18px rgba(37, 99, 235, 0.12)",
+  whiteSpace: "nowrap",
+};
+
+const dangerButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #fecaca",
+  background: "#fff1f2",
+  color: "#b91c1c",
+  WebkitTextFillColor: "#b91c1c",
+  fontWeight: 800,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
 };
 
 const errorBoxStyle: CSSProperties = {
