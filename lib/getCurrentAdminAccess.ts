@@ -1,10 +1,6 @@
+import { getAdminEvent } from "@/lib/getAdminEvent";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
-
-type AdminEventContext = {
-  id?: string | null;
-  name?: string | null;
-  eventName?: string | null;
-};
 
 export type AdminUserAccessRow = {
   id: string;
@@ -42,6 +38,9 @@ export type AdminAccessResult = {
   eventPermissionKeys: string[];
   privilegeGroup: string | null;
   isSuperAdmin: boolean;
+  // Compatibility shims for older callers. Prefer adminUser.display_name,
+  // adminUser.privilege_group, and eventIds in new code. Remove duplicates
+  // after all callers are migrated.
   email: string;
   display_name: string | null;
   privilege_group: string | null;
@@ -49,9 +48,6 @@ export type AdminAccessResult = {
   event_ids: string[];
 };
 
-const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
-const ADMIN_ACCESS_CACHE_KEY = "fcoc-admin-access-cache";
-const ADMIN_ACCESS_CACHE_TIME_KEY = "fcoc-admin-access-cache-time";
 const ADMIN_ACCESS_CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes
 
 const ADMIN_ACCESS_TIMEOUT_MS = 8000;
@@ -147,20 +143,7 @@ const EVENT_ROLE_PRESETS: Record<string, string[]> = {
 };
 
 function readStoredAdminEventId(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as AdminEventContext | null;
-    return parsed?.id || null;
-  } catch {
-    return null;
-  }
+  return getAdminEvent()?.id || null;
 }
 
 function unique(values: Array<string | null | undefined>): string[] {
@@ -182,7 +165,9 @@ function getCachedAdminAccess(): AdminAccessResult | null {
   }
 
   try {
-    const savedAtRaw = window.localStorage.getItem(ADMIN_ACCESS_CACHE_TIME_KEY);
+    const savedAtRaw = window.localStorage.getItem(
+      STORAGE_KEYS.adminAccessCacheTime,
+    );
     const savedAt = savedAtRaw ? Number(savedAtRaw) : 0;
 
     if (!savedAt || Date.now() - savedAt > ADMIN_ACCESS_CACHE_TTL_MS) {
@@ -190,7 +175,7 @@ function getCachedAdminAccess(): AdminAccessResult | null {
       return null;
     }
 
-    const raw = window.localStorage.getItem(ADMIN_ACCESS_CACHE_KEY);
+    const raw = window.localStorage.getItem(STORAGE_KEYS.adminAccessCache);
     if (!raw) {
       return null;
     }
@@ -207,8 +192,14 @@ function saveAdminAccessCache(access: AdminAccessResult) {
     return;
   }
 
-  window.localStorage.setItem(ADMIN_ACCESS_CACHE_KEY, JSON.stringify(access));
-  window.localStorage.setItem(ADMIN_ACCESS_CACHE_TIME_KEY, String(Date.now()));
+  window.localStorage.setItem(
+    STORAGE_KEYS.adminAccessCache,
+    JSON.stringify(access),
+  );
+  window.localStorage.setItem(
+    STORAGE_KEYS.adminAccessCacheTime,
+    String(Date.now()),
+  );
 }
 
 export function clearAdminAccessCache() {
@@ -216,8 +207,8 @@ export function clearAdminAccessCache() {
     return;
   }
 
-  window.localStorage.removeItem(ADMIN_ACCESS_CACHE_KEY);
-  window.localStorage.removeItem(ADMIN_ACCESS_CACHE_TIME_KEY);
+  window.localStorage.removeItem(STORAGE_KEYS.adminAccessCache);
+  window.localStorage.removeItem(STORAGE_KEYS.adminAccessCacheTime);
 }
 
 export async function getCurrentAdminAccess(options?: {
@@ -413,8 +404,10 @@ export function canAccessEvent(
   if (!admin || !eventId) {
     return false;
   }
+
   if (admin.isSuperAdmin) {
     return true;
   }
+
   return admin.eventAccessRows.some((row) => row.event_id === eventId);
 }

@@ -4,6 +4,15 @@ import { useRouter } from "next/navigation";
 import type React from "react";
 import { useEffect, useState } from "react";
 
+import {
+  getCurrentMemberEvent,
+  getStoredMemberAttendeeId,
+  getStoredMemberEmail,
+  getStoredMemberEntryId,
+  getStoredUserMode,
+} from "@/lib/getCurrentMemberEvent";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+
 export default function MemberRouteGuard({
   children,
 }: {
@@ -15,35 +24,43 @@ export default function MemberRouteGuard({
   );
 
   useEffect(() => {
+    let mounted = true;
+
     function verifyMember() {
       try {
-        const mode = localStorage.getItem("fcoc-user-mode");
+        const mode = getStoredUserMode();
         if (mode !== "member") {
-          setStatus("denied");
+          if (mounted) {
+            setStatus("denied");
+          }
           router.replace("/");
           return;
         }
 
-        const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
-        const entryId = localStorage.getItem("fcoc-member-entry-id");
-        const email = localStorage.getItem("fcoc-member-email");
-        const eventContext = localStorage.getItem("fcoc-member-event-context");
+        const attendeeId = getStoredMemberAttendeeId();
+        const entryId = getStoredMemberEntryId();
+        const email = getStoredMemberEmail();
+        const memberEvent = getCurrentMemberEvent();
 
         const hasIdentity = !!(attendeeId || entryId || email);
-        const hasEvent = !!eventContext;
+        const hasEvent = !!memberEvent;
 
         if (hasIdentity && hasEvent) {
-          setStatus("allowed");
+          if (mounted) {
+            setStatus("allowed");
+          }
           return;
         }
-        {
-        }
 
-        setStatus("denied");
+        if (mounted) {
+          setStatus("denied");
+        }
         router.replace("/member/login");
       } catch (err) {
         console.error("MemberRouteGuard error:", err);
-        setStatus("denied");
+        if (mounted) {
+          setStatus("denied");
+        }
         router.replace("/member/login");
       }
     }
@@ -52,10 +69,10 @@ export default function MemberRouteGuard({
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === "fcoc-member-event-context" ||
-        e.key === "fcoc-member-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
+        e.key === STORAGE_KEYS.memberEventContext ||
+        e.key === STORAGE_KEYS.memberEventChanged ||
+        e.key === STORAGE_KEYS.userMode ||
+        e.key === STORAGE_KEYS.userModeChanged
       ) {
         verifyMember();
       }
@@ -69,6 +86,7 @@ export default function MemberRouteGuard({
     window.addEventListener("pageshow", handlePageShow);
 
     return () => {
+      mounted = false;
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("pageshow", handlePageShow);
     };

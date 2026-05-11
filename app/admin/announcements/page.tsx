@@ -1,23 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { type AdminEventContext, getAdminEvent } from "@/lib/getAdminEvent";
 import {
   canAccessEvent,
   getCurrentAdminAccess,
 } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
-
-type EventContext = {
-  id?: string | null;
-  name?: string | null;
-  eventName?: string | null;
-  venue_name?: string | null;
-  location?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
-};
 
 type Announcement = {
   id: string;
@@ -40,6 +32,14 @@ type FormState = {
   expire_at: string;
 };
 
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  danger: boolean;
+};
+
 const EMPTY_FORM: FormState = {
   title: "",
   body: "",
@@ -48,49 +48,6 @@ const EMPTY_FORM: FormState = {
   is_published: true,
   expire_at: "",
 };
-
-function getStoredAdminEvent(): EventContext | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = localStorage.getItem("fcoc-admin-event-context");
-    if (!raw) {
-      return null;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function setStoredAdminEvent(event: EventContext | null) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (!event?.id) {
-    localStorage.removeItem("fcoc-admin-event-context");
-    localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-    window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
-    return;
-  }
-
-  const payload = {
-    id: event.id,
-    name: event.name || event.eventName || null,
-    eventName: event.eventName || event.name || null,
-    venue_name: event.venue_name || null,
-    location: event.location || null,
-    start_date: event.start_date || null,
-    end_date: event.end_date || null,
-  };
-
-  localStorage.setItem("fcoc-admin-event-context", JSON.stringify(payload));
-  localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-  window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
-}
 
 function normalizeForInput(value?: string | null) {
   if (!value) {
@@ -125,7 +82,9 @@ export default function AdminAnnouncementsPage() {
 }
 
 function AdminAnnouncementsPageInner() {
-  const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
+  const [currentEvent, setCurrentEvent] = useState<AdminEventContext | null>(
+    null,
+  );
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -135,7 +94,13 @@ function AdminAnnouncementsPageInner() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("Loading event...");
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
+
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(
+    null,
+  );
+  const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(
+    null,
+  );
 
   const eventId = currentEvent?.id ?? null;
 
@@ -147,6 +112,29 @@ function AdminAnnouncementsPageInner() {
   function showError(message: string) {
     setError(message);
     setStatus("");
+  }
+
+  function requestConfirmation(dialog: Partial<ConfirmDialogState>) {
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(false);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmDialog({
+        title: dialog.title || "Confirm Action",
+        message: dialog.message || "Are you sure you want to continue?",
+        confirmLabel: dialog.confirmLabel || "Confirm",
+        cancelLabel: dialog.cancelLabel || "Cancel",
+        danger: !!dialog.danger,
+      });
+    });
+  }
+
+  function closeConfirmDialog(confirmed: boolean) {
+    confirmResolverRef.current?.(confirmed);
+    confirmResolverRef.current = null;
+    setConfirmDialog(null);
   }
 
   const loadAnnouncements = useCallback(async (activeEventId: string) => {
@@ -179,7 +167,6 @@ function AdminAnnouncementsPageInner() {
     async function init() {
       setLoadingEvent(true);
       setError(null);
-      setAccessDenied(false);
       showStatus("Checking admin access...");
 
       const admin = await getCurrentAdminAccess();
@@ -190,11 +177,10 @@ function AdminAnnouncementsPageInner() {
         resetForm();
         showError("No admin access.");
         setLoadingEvent(false);
-        setAccessDenied(true);
         return;
       }
 
-      const stored = getStoredAdminEvent();
+      const stored = getAdminEvent();
 
       if (stored?.id) {
         if (!canAccessEvent(admin, stored.id)) {
@@ -203,7 +189,6 @@ function AdminAnnouncementsPageInner() {
           resetForm();
           showError("You do not have access to this event.");
           setLoadingEvent(false);
-          setAccessDenied(true);
           return;
         }
 
@@ -213,46 +198,12 @@ function AdminAnnouncementsPageInner() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("events")
-        .select("id, name, venue_name, location, start_date, end_date")
-        .order("start_date", { ascending: false });
-
-      if (error) {
-        setCurrentEvent(null);
-        setAnnouncements([]);
-        resetForm();
-        showError(error.message || "Could not load event.");
-        setLoadingEvent(false);
-        return;
-      }
-
-      const allowedEvent = (data || []).find((event) =>
-        canAccessEvent(admin, event.id),
+      setCurrentEvent(null);
+      setAnnouncements([]);
+      resetForm();
+      showStatus(
+        "Select an admin working event before managing announcements.",
       );
-
-      if (!allowedEvent) {
-        setCurrentEvent(null);
-        setAnnouncements([]);
-        resetForm();
-        showError("No accessible event selected.");
-        setLoadingEvent(false);
-        return;
-      }
-
-      const nextEvent: EventContext = {
-        id: allowedEvent.id,
-        name: allowedEvent.name,
-        eventName: allowedEvent.name,
-        venue_name: allowedEvent.venue_name,
-        location: allowedEvent.location,
-        start_date: allowedEvent.start_date,
-        end_date: allowedEvent.end_date,
-      };
-
-      setCurrentEvent(nextEvent);
-      setStoredAdminEvent(nextEvent);
-      setStatus("Using first accessible event.");
       setLoadingEvent(false);
     }
 
@@ -289,20 +240,16 @@ function AdminAnnouncementsPageInner() {
   }, []);
 
   useEffect(() => {
-    if (!eventId || accessDenied) {
+    if (!eventId) {
       setAnnouncements([]);
       setLoadingAnnouncements(false);
       resetForm();
-      if (accessDenied) {
-        showError("Access denied.");
-      } else {
-        showStatus("No active event selected.");
-      }
+      showStatus("No active event selected.");
       return;
     }
 
     void loadAnnouncements(eventId);
-  }, [eventId, accessDenied, loadAnnouncements]);
+  }, [eventId, loadAnnouncements]);
 
   const sortedAnnouncements = useMemo(() => {
     return [...announcements].sort((a, b) => {
@@ -354,141 +301,159 @@ function AdminAnnouncementsPageInner() {
       editingId ? "Updating announcement..." : "Creating announcement...",
     );
 
-    const payload = {
-      event_id: eventId,
-      title: form.title.trim(),
-      body: form.body.trim(),
-      priority: form.priority || "normal",
-      is_pinned: form.is_pinned,
-      is_published: form.is_published,
-      expire_at: form.expire_at ? new Date(form.expire_at).toISOString() : null,
-    };
+    try {
+      const payload = {
+        event_id: eventId,
+        title: form.title.trim(),
+        body: form.body.trim(),
+        priority: form.priority || "normal",
+        is_pinned: form.is_pinned,
+        is_published: form.is_published,
+        expire_at: form.expire_at
+          ? new Date(form.expire_at).toISOString()
+          : null,
+      };
 
-    if (editingId) {
-      const { error } = await supabase
-        .from("announcements")
-        .update(payload)
-        .eq("id", editingId);
+      if (editingId) {
+        const { error } = await supabase
+          .from("announcements")
+          .update(payload)
+          .eq("id", editingId);
 
-      if (error) {
-        showError(error.message || "Update failed.");
-        setSaving(false);
-        return;
+        if (error) {
+          showError(error.message || "Update failed.");
+          return;
+        }
+
+        setStatus("Announcement updated.");
+        setEditingId(null);
+      } else {
+        const { error } = await supabase.from("announcements").insert(payload);
+
+        if (error) {
+          showError(error.message || "Create failed.");
+          return;
+        }
+
+        setStatus("Announcement created.");
+        setEditingId(null);
       }
 
-      setStatus("Announcement updated.");
-      setEditingId(null);
-    } else {
-      const { error } = await supabase.from("announcements").insert(payload);
-
-      if (error) {
-        showError(error.message || "Create failed.");
-        setSaving(false);
-        return;
-      }
-
-      setStatus("Announcement created.");
-      setEditingId(null);
+      await loadAnnouncements(eventId);
+      resetForm();
+    } finally {
+      setSaving(false);
     }
-
-    await loadAnnouncements(eventId);
-    resetForm();
-    setSaving(false);
   }
 
   async function handleDelete(id: string) {
-    const confirmed = window.confirm("Delete this announcement?");
+    const confirmed = await requestConfirmation({
+      title: "Delete Announcement",
+      message: "Delete this announcement? This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+
     if (!confirmed) {
       return;
     }
 
     showStatus("Deleting announcement...");
 
-    const { error } = await supabase
-      .from("announcements")
-      .delete()
-      .eq("id", id);
+    try {
+      const { error } = await supabase
+        .from("announcements")
+        .delete()
+        .eq("id", id);
 
-    if (error) {
-      showError(error.message || "Delete failed.");
-      return;
-    }
+      if (error) {
+        showError(error.message || "Delete failed.");
+        return;
+      }
 
-    if (editingId === id) {
-      resetForm();
+      if (editingId === id) {
+        resetForm();
+      }
+      if (eventId) {
+        await loadAnnouncements(eventId);
+      }
+      setStatus("Announcement deleted.");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Delete failed.");
     }
-    if (eventId) {
-      await loadAnnouncements(eventId);
-    }
-    setStatus("Announcement deleted.");
   }
 
   async function togglePublished(item: Announcement) {
     showStatus(item.is_published ? "Unpublishing..." : "Publishing...");
 
-    const { error } = await supabase
-      .from("announcements")
-      .update({ is_published: !item.is_published })
-      .eq("id", item.id);
+    try {
+      const { error } = await supabase
+        .from("announcements")
+        .update({ is_published: !item.is_published })
+        .eq("id", item.id);
 
-    if (error) {
-      showError(error.message || "Publish update failed.");
-      return;
-    }
+      if (error) {
+        showError(error.message || "Publish update failed.");
+        return;
+      }
 
-    if (eventId) {
-      await loadAnnouncements(eventId);
+      if (eventId) {
+        await loadAnnouncements(eventId);
+      }
+      setStatus(
+        item.is_published
+          ? "Announcement unpublished."
+          : "Announcement published.",
+      );
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Publish update failed.");
     }
-    setStatus(
-      item.is_published
-        ? "Announcement unpublished."
-        : "Announcement published.",
-    );
   }
 
   async function togglePinned(item: Announcement) {
     showStatus(item.is_pinned ? "Removing pin..." : "Pinning announcement...");
 
-    const { error } = await supabase
-      .from("announcements")
-      .update({ is_pinned: !item.is_pinned })
-      .eq("id", item.id);
+    try {
+      const { error } = await supabase
+        .from("announcements")
+        .update({ is_pinned: !item.is_pinned })
+        .eq("id", item.id);
 
-    if (error) {
-      showError(error.message || "Pin update failed.");
-      return;
+      if (error) {
+        showError(error.message || "Pin update failed.");
+        return;
+      }
+
+      if (eventId) {
+        await loadAnnouncements(eventId);
+      }
+      setStatus(
+        item.is_pinned ? "Announcement unpinned." : "Announcement pinned.",
+      );
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Pin update failed.");
     }
-
-    if (eventId) {
-      await loadAnnouncements(eventId);
-    }
-    setStatus(
-      item.is_pinned ? "Announcement unpinned." : "Announcement pinned.",
-    );
-  }
-
-  if (!loadingEvent && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Announcements Admin</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
   }
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title || "Confirm Action"}
+        message={confirmDialog?.message || "Are you sure you want to continue?"}
+        confirmLabel={confirmDialog?.confirmLabel || "Confirm"}
+        cancelLabel={confirmDialog?.cancelLabel || "Cancel"}
+        danger={!!confirmDialog?.danger}
+        onCancel={() => closeConfirmDialog(false)}
+        onConfirm={() => closeConfirmDialog(true)}
+      />
       <div className="card" style={{ padding: 18 }}>
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Announcements Admin</h1>
 
         <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
           {loadingEvent
             ? "Loading selected event..."
-            : currentEvent?.name ||
-              currentEvent?.eventName ||
-              "No event selected"}
+            : currentEvent?.name || "No event selected"}
           {currentEvent?.location ? ` • ${currentEvent.location}` : ""}
           {currentEvent?.start_date || currentEvent?.end_date
             ? ` • ${[currentEvent?.start_date, currentEvent?.end_date]
@@ -645,7 +610,7 @@ function AdminAnnouncementsPageInner() {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               disabled={saving || !eventId}
               style={{
                 padding: "10px 14px",
@@ -798,7 +763,7 @@ function AdminAnnouncementsPageInner() {
 
                   <button
                     type="button"
-                    onClick={() => togglePublished(announcement)}
+                    onClick={() => void togglePublished(announcement)}
                     style={{
                       padding: "8px 12px",
                       borderRadius: 10,
@@ -812,7 +777,7 @@ function AdminAnnouncementsPageInner() {
 
                   <button
                     type="button"
-                    onClick={() => togglePinned(announcement)}
+                    onClick={() => void togglePinned(announcement)}
                     style={{
                       padding: "8px 12px",
                       borderRadius: 10,
@@ -826,7 +791,7 @@ function AdminAnnouncementsPageInner() {
 
                   <button
                     type="button"
-                    onClick={() => handleDelete(announcement.id)}
+                    onClick={() => void handleDelete(announcement.id)}
                     style={{
                       padding: "8px 12px",
                       borderRadius: 10,

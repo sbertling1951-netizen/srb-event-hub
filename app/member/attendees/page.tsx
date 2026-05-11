@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { fullName, preferredDisplayLine } from "@/lib/displayNames";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import {
+  type CurrentMemberEvent,
+  getCurrentMemberEvent,
+  getStoredMemberAttendeeId,
+  getStoredMemberEmail,
+  getStoredMemberEntryId,
+} from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
 
 type Attendee = {
@@ -41,16 +47,6 @@ type HouseholdMember = {
   raw_text: string | null;
 };
 
-type MemberEventRow = {
-  id?: string | null;
-  name?: string | null;
-  eventName?: string | null;
-  venue_name?: string | null;
-  location?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
-};
-
 function yesNo(value?: boolean | null) {
   return value ? "Yes" : "No";
 }
@@ -80,29 +76,8 @@ function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
   return members.find((m) => m.person_role === role) || null;
 }
 
-function getStoredMemberAttendeeId() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("fcoc-member-attendee-id");
-}
-
-function getStoredMemberEntryId() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("fcoc-member-entry-id");
-}
-
-function getStoredMemberEmail() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("fcoc-member-email");
-}
-
 function AttendeesPageInner() {
-  const [event, setEvent] = useState<MemberEventRow | null>(null);
+  const [event, setEvent] = useState<CurrentMemberEvent | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
@@ -110,11 +85,12 @@ function AttendeesPageInner() {
   );
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading attendees...");
+  const [error, setError] = useState<string | null>(null);
   const [canViewLocator, setCanViewLocator] = useState(true);
 
-  async function loadCurrentEventData() {
+  const loadCurrentEventData = useCallback(async () => {
     const currentEvent = getCurrentMemberEvent();
-
+    setError(null);
     if (!currentEvent?.id) {
       setEvent(null);
       setEventId(null);
@@ -127,9 +103,10 @@ function AttendeesPageInner() {
 
     setEvent(currentEvent);
     setEventId(currentEvent.id);
-  }
+  }, []);
 
-  async function loadAttendees(currentEventId: string) {
+  const loadAttendees = useCallback(async (currentEventId: string) => {
+    setError(null);
     const { data, error } = await supabase
       .from("attendees")
       .select(
@@ -140,7 +117,8 @@ function AttendeesPageInner() {
       .order("pilot_first", { ascending: true, nullsFirst: false });
 
     if (error) {
-      setStatus(`Could not load attendees: ${error.message}`);
+      setError(error.message);
+      setStatus("");
       return;
     }
 
@@ -194,16 +172,17 @@ function AttendeesPageInner() {
       .order("sort_order", { ascending: true, nullsFirst: false });
 
     if (memberError) {
-      setStatus(
+      setError(
         `Loaded attendees, but household members failed: ${memberError.message}`,
       );
+      setStatus("");
       setHouseholdMembers([]);
       return;
     }
 
     setHouseholdMembers((memberData || []) as HouseholdMember[]);
     setStatus(`Loaded ${sharedAttendeeRows.length} shared attendees.`);
-  }
+  }, []);
 
   useEffect(() => {
     async function init() {
@@ -226,13 +205,13 @@ function AttendeesPageInner() {
 
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+  }, [loadCurrentEventData]);
 
   useEffect(() => {
     if (eventId) {
       void loadAttendees(eventId);
     }
-  }, [eventId]);
+  }, [eventId, loadAttendees]);
 
   const householdByAttendee = useMemo(() => {
     const map = new Map<string, HouseholdMember[]>();
@@ -307,7 +286,7 @@ function AttendeesPageInner() {
         }}
       >
         <div style={{ fontWeight: 700, marginBottom: 6 }}>
-          Current event: {event?.name || event?.eventName || "No current event"}
+          Current event: {event?.name || "No current event"}
         </div>
 
         {event?.venue_name ? (
@@ -326,8 +305,27 @@ function AttendeesPageInner() {
           </div>
         ) : null}
 
-        <div style={{ fontSize: 13, color: "#555" }}>Status: {status}</div>
+        {status ? (
+          <div style={{ fontSize: 13, color: "#555" }}>Status: {status}</div>
+        ) : null}
       </div>
+
+      {error ? (
+        <div
+          role="alert"
+          style={{
+            border: "1px solid #fecaca",
+            borderRadius: 10,
+            background: "#fef2f2",
+            color: "#991b1b",
+            padding: 14,
+            marginBottom: 16,
+            fontWeight: 700,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
 
       {!canViewLocator ? (
         <div
@@ -382,6 +380,7 @@ function AttendeesPageInner() {
               const members = householdByAttendee.get(a.id) || [];
               const pilotMember = getRoleMember(members, "pilot");
               const copilotMember = getRoleMember(members, "copilot");
+              const phone = displayPhone(a);
 
               return (
                 <div
@@ -396,7 +395,8 @@ function AttendeesPageInner() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1.4fr 1.4fr 1fr 0.9fr",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(160px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -414,11 +414,11 @@ function AttendeesPageInner() {
                           {a.email}
                         </div>
                       ) : null}
-                      {displayPhone(a) ? (
+                      {phone ? (
                         <div
                           style={{ fontSize: 12, color: "#666", marginTop: 4 }}
                         >
-                          {displayPhone(a)}
+                          {phone}
                         </div>
                       ) : null}
                     </div>

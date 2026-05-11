@@ -16,13 +16,14 @@ export function AppButton({
   children,
   variant = "default",
   className = "",
+  type = "button",
   ...props
 }: AppButtonProps) {
   const variantClass = variant === "default" ? "" : ` app-button-${variant}`;
 
   return (
     <button
-      type={props.type || "button"}
+      type={type}
       className={`app-button${variantClass} ${className}`.trim()}
       {...props}
     >

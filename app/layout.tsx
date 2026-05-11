@@ -3,10 +3,15 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 
 import Sidebar from "@/components/layout/Sidebar";
+import { getTenantLabel } from "@/lib/tenantLabels";
+
+const appTitle = getTenantLabel("app_title");
+const appDescription = getTenantLabel("app_description");
+const appTagline = getTenantLabel("app_tagline");
 
 export const metadata: Metadata = {
-  title: "FCOC Event Hub",
-  description: "Event operations PWA starter for FCOC.",
+  title: appTitle,
+  description: appDescription,
 };
 
 export const viewport: Viewport = {
@@ -23,16 +28,18 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="app-body" suppressHydrationWarning>
+        {/* suppressHydrationWarning is required because embedded-mode classes may be added before React hydrates */}
+        {/* Runs before hydration to avoid embedded layout flash/flicker */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              try {
-                if (window.location.search.includes("embedded=1")) {
-                  document.documentElement.classList.add("admin-embedded-mode");
-                  document.body.classList.add("admin-embedded-mode");
-                }
-              } catch {}
-            `,
+                try {
+                  if (window.location.search.includes("embedded=1")) {
+                    document.documentElement.classList.add("admin-embedded-mode");
+                    document.body.classList.add("admin-embedded-mode");
+                  }
+                } catch {}
+              `,
           }}
         />
 
@@ -41,11 +48,8 @@ export default function RootLayout({
         <main className="app-main">
           <div className="app-inner">
             <div className="app-header-card">
-              <div className="app-brand">FCOC Event Hub</div>
-              <div className="app-subtle">
-                Your guide to schedules, parking, people, places, and admin
-                tools.
-              </div>
+              <div className="app-brand">{appTitle}</div>
+              <div className="app-subtle">{appTagline}</div>
             </div>
 
             {children}

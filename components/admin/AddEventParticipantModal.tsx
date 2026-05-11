@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import type { CurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
+import { getTenantLabel } from "@/lib/tenantLabels";
 
 export type ParticipantType =
   | "attendee"
@@ -13,17 +15,10 @@ export type ParticipantType =
   | "vip"
   | "vendor";
 
-type EventContext = {
-  id?: string | null;
-  name?: string | null;
-  eventName?: string | null;
-  event_code?: string | null;
-};
-
 type Props = {
   open: boolean;
   onClose: () => void;
-  currentEvent: EventContext | null;
+  currentEvent: CurrentMemberEvent | null;
   onSaved?: () => void;
 };
 
@@ -181,11 +176,40 @@ export default function AddEventParticipantModal({
   const [error, setError] = useState<string | null>(null);
 
   const eventId = currentEvent?.id || null;
-  const eventLabel = currentEvent?.name || currentEvent?.eventName || "Event";
+  const eventLabel = currentEvent?.name || "Event";
+  const participantTypeLabel = getTenantLabel("participant_type_label");
+  const memberNumberLabel = getTenantLabel("member_number_label");
+  const displayNameLabel = getTenantLabel("display_name_label");
+  const vehicleMakeLabel = getTenantLabel("vehicle_make_label");
+  const vehicleModelLabel = getTenantLabel("vehicle_model_label");
+  const vehicleLengthLabel = getTenantLabel("vehicle_length_label");
+  const needsVehiclePlacardLabel = getTenantLabel(
+    "needs_vehicle_placard_label",
+  );
+  const needsAssignmentLabel = getTenantLabel("needs_assignment_label");
+  const specialActivitiesLabel = getTenantLabel("special_activities_label");
 
   const canSave = useMemo(() => {
     return !!eventId && !!(form.firstName.trim() || form.lastName.trim());
   }, [eventId, form.firstName, form.lastName]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onClose]);
 
   function updateForm<K extends keyof ManualParticipantForm>(
     key: K,
@@ -203,11 +227,11 @@ export default function AddEventParticipantModal({
   }
 
   async function generateEntryId(participantType: ParticipantType) {
-    if (!eventId) {throw new Error("No event selected.");}
+    if (!eventId) {
+      throw new Error("No event selected.");
+    }
 
-    const eventCodeBase = slugify(
-      currentEvent?.eventName || currentEvent?.name || "event",
-    );
+    const eventCodeBase = slugify(currentEvent?.name || "event");
 
     const prefix = `${eventCodeBase}-${participantType}-`;
 
@@ -217,7 +241,9 @@ export default function AddEventParticipantModal({
       .eq("event_id", eventId)
       .ilike("entry_id", `${prefix}%`);
 
-    if (error) {throw error;}
+    if (error) {
+      throw error;
+    }
 
     let maxSeq = 0;
     for (const row of data || []) {
@@ -225,7 +251,9 @@ export default function AddEventParticipantModal({
       const match = entryId.match(/-(\d+)$/);
       if (match) {
         const seq = Number(match[1]);
-        if (Number.isFinite(seq) && seq > maxSeq) {maxSeq = seq;}
+        if (Number.isFinite(seq) && seq > maxSeq) {
+          maxSeq = seq;
+        }
       }
     }
 
@@ -292,7 +320,9 @@ export default function AddEventParticipantModal({
         .from("attendees")
         .insert(attendeePayload);
 
-      if (attendeeError) {throw attendeeError;}
+      if (attendeeError) {
+        throw attendeeError;
+      }
 
       const importRowPayload = {
         event_id: eventId,
@@ -339,25 +369,33 @@ export default function AddEventParticipantModal({
         .from("event_import_rows")
         .insert(importRowPayload);
 
-      if (importRowError) {throw importRowError;}
+      if (importRowError) {
+        throw importRowError;
+      }
 
       setStatus(`Saved ${form.firstName} ${form.lastName} (${entryId}).`);
       setForm(makeInitialForm());
       onSaved?.();
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setError(err?.message || "Could not save participant.");
+      setError(
+        err instanceof Error ? err.message : "Could not save participant.",
+      );
       setStatus("");
     } finally {
       setSaving(false);
     }
   }
 
-  if (!open) {return null;}
+  if (!open) {
+    return null;
+  }
 
   return (
     <div
+      role="presentation"
+      onClick={onClose}
       style={{
         position: "fixed",
         inset: 0,
@@ -370,7 +408,11 @@ export default function AddEventParticipantModal({
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-event-participant-title"
         className="card"
+        onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
           maxWidth: 900,
@@ -385,12 +427,17 @@ export default function AddEventParticipantModal({
           style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
         >
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+            <h2
+              id="add-event-participant-title"
+              style={{ marginTop: 0, marginBottom: 6 }}
+            >
               Add Event Participant
             </h2>
             <div style={{ opacity: 0.8 }}>{eventLabel}</div>
           </div>
-          <button onClick={onClose}>Close</button>
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
         </div>
 
         {error ? (
@@ -420,7 +467,7 @@ export default function AddEventParticipantModal({
         >
           <div>
             <label style={{ display: "block", marginBottom: 6 }}>
-              Participant Type
+              {participantTypeLabel}
             </label>
             <select
               value={form.participantType}
@@ -439,7 +486,7 @@ export default function AddEventParticipantModal({
 
           <div>
             <label style={{ display: "block", marginBottom: 6 }}>
-              Member Number
+              {memberNumberLabel}
             </label>
             <input
               value={form.membershipNumber}
@@ -472,7 +519,7 @@ export default function AddEventParticipantModal({
 
           <div>
             <label style={{ display: "block", marginBottom: 6 }}>
-              Nickname for Badge
+              {displayNameLabel}
             </label>
             <input
               value={form.nickname}
@@ -532,7 +579,7 @@ export default function AddEventParticipantModal({
 
           <div>
             <label style={{ display: "block", marginBottom: 6 }}>
-              Coach Manufacturer
+              {vehicleMakeLabel}
             </label>
             <input
               value={form.coachManufacturer}
@@ -543,7 +590,7 @@ export default function AddEventParticipantModal({
 
           <div>
             <label style={{ display: "block", marginBottom: 6 }}>
-              Coach Model
+              {vehicleModelLabel}
             </label>
             <input
               value={form.coachModel}
@@ -554,7 +601,7 @@ export default function AddEventParticipantModal({
 
           <div>
             <label style={{ display: "block", marginBottom: 6 }}>
-              Coach Length
+              {vehicleLengthLabel}
             </label>
             <input
               value={form.coachLength}
@@ -576,8 +623,8 @@ export default function AddEventParticipantModal({
             {[
               ["includeInHeadcount", "Include in attendee headcount"],
               ["needsNameTag", "Needs name tag"],
-              ["needsCoachPlate", "Needs coach plate"],
-              ["needsParking", "Needs parking assignment"],
+              ["needsCoachPlate", needsVehiclePlacardLabel],
+              ["needsParking", needsAssignmentLabel],
               ["isFirstTimer", "Is first timer"],
               ["shareWithAttendees", "Share with attendees"],
               ["hasArrived", "Has arrived"],
@@ -611,7 +658,7 @@ export default function AddEventParticipantModal({
 
         <div style={{ marginTop: 18 }}>
           <label style={{ display: "block", marginBottom: 6 }}>
-            Special Events / Meals / Activities
+            {specialActivitiesLabel}
           </label>
           <textarea
             value={form.specialEventsRaw}
@@ -634,10 +681,16 @@ export default function AddEventParticipantModal({
         <div
           style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}
         >
-          <button onClick={handleSave} disabled={!canSave || saving}>
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={!canSave || saving}
+          >
             {saving ? "Saving..." : "Save Participant"}
           </button>
-          <button onClick={onClose}>Cancel</button>
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
         </div>
       </div>
     </div>

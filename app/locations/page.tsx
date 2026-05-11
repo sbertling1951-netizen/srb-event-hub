@@ -30,19 +30,71 @@ type PinchState = {
   contentY: number;
 };
 
+type StatusMessage = {
+  type: "loading" | "info" | "error";
+  text: string;
+};
+
+const MARKER_LEGEND_ITEMS = [
+  { label: "Trash / Dumpster", color: "#dc2626" },
+  { label: "Building / Office", color: "#2563eb" },
+  { label: "Restroom / Bathroom", color: "#16a34a" },
+  { label: "Registration", color: "#d97706" },
+  { label: "Other", color: "#7c3aed" },
+  { label: "Selected", color: "gold" },
+];
+
+function getMarkerColor(location: EventLocation, selectedId: string): string {
+  if (location.id === selectedId) {
+    return "gold";
+  }
+
+  switch ((location.category || "").toLowerCase()) {
+    case "trash":
+    case "dumpster":
+      return "#dc2626";
+    case "building":
+    case "office":
+      return "#2563eb";
+    case "restroom":
+    case "bathroom":
+      return "#16a34a";
+    case "registration":
+      return "#d97706";
+    default:
+      return "#7c3aed";
+  }
+}
+
+function getMarkerSize(
+  location: EventLocation,
+  selectedId: string,
+  isNarrow: boolean,
+): number {
+  if (location.id === selectedId) {
+    return isNarrow ? 44 : 36;
+  }
+
+  return isNarrow ? 22 : 16;
+}
+
 export default function PublicLocationsPage() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const zoomRef = useRef(0.6);
-  const _pinchRef = useRef<PinchState | null>(null);
+  const pinchRef = useRef<PinchState | null>(null);
 
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [locations, setLocations] = useState<EventLocation[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [status, setStatus] = useState("Loading...");
+  const [status, setStatus] = useState<StatusMessage>({
+    type: "loading",
+    text: "Loading...",
+  });
   const [isNarrow, setIsNarrow] = useState(false);
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
+  const [imageLoaded, setImageLoaded] = useState(false);
   const [defaultZoom, setDefaultZoom] = useState(0.6);
   const [zoom, setZoom] = useState(0.6);
 
@@ -50,13 +102,13 @@ export default function PublicLocationsPage() {
     return Math.min(Math.max(next, 0.25), 3);
   }
 
-  function _getTouchDistance(touches: TouchList) {
+  function getTouchDistance(touches: TouchList) {
     const dx = touches[0].clientX - touches[1].clientX;
     const dy = touches[0].clientY - touches[1].clientY;
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  function _getTouchMidpoint(touches: TouchList) {
+  function getTouchMidpoint(touches: TouchList) {
     return {
       x: (touches[0].clientX + touches[1].clientX) / 2,
       y: (touches[0].clientY + touches[1].clientY) / 2,
@@ -111,12 +163,81 @@ export default function PublicLocationsPage() {
       });
     }
 
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length !== 2) {
+        pinchRef.current = null;
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const midpoint = getTouchMidpoint(e.touches);
+      const viewportX = midpoint.x - rect.left;
+      const viewportY = midpoint.y - rect.top;
+      const currentZoom = zoomRef.current;
+
+      pinchRef.current = {
+        startDistance: getTouchDistance(e.touches),
+        startZoom: currentZoom,
+        contentX: (container.scrollLeft + viewportX) / currentZoom,
+        contentY: (container.scrollTop + viewportY) / currentZoom,
+      };
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      const pinch = pinchRef.current;
+      if (!pinch || e.touches.length !== 2) {
+        return;
+      }
+
+      e.preventDefault();
+
+      const rect = container.getBoundingClientRect();
+      const midpoint = getTouchMidpoint(e.touches);
+      const viewportX = midpoint.x - rect.left;
+      const viewportY = midpoint.y - rect.top;
+      const distance = getTouchDistance(e.touches);
+      const nextZoom = clampZoom(
+        pinch.startZoom * (distance / pinch.startDistance),
+      );
+
+      setZoom(nextZoom);
+      zoomRef.current = nextZoom;
+
+      requestAnimationFrame(() => {
+        container.scrollLeft = Math.max(
+          0,
+          pinch.contentX * nextZoom - viewportX,
+        );
+        container.scrollTop = Math.max(
+          0,
+          pinch.contentY * nextZoom - viewportY,
+        );
+      });
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      if (e.touches.length < 2) {
+        pinchRef.current = null;
+      }
+    }
+
     container.addEventListener("wheel", onWheel, { passive: false });
-    return () => container.removeEventListener("wheel", onWheel);
+    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchmove", onTouchMove, { passive: false });
+    container.addEventListener("touchend", onTouchEnd, { passive: true });
+    container.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
+    return () => {
+      container.removeEventListener("wheel", onWheel);
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove", onTouchMove);
+      container.removeEventListener("touchend", onTouchEnd);
+      container.removeEventListener("touchcancel", onTouchEnd);
+    };
   }, [isNarrow]);
 
   const loadPage = useCallback(async () => {
-    setStatus("Loading...");
+    setStatus({ type: "loading", text: "Loading..." });
 
     const { data: activeEvent, error: eventError } = await supabase
       .from("events")
@@ -125,14 +246,16 @@ export default function PublicLocationsPage() {
       .single();
 
     if (eventError || !activeEvent) {
-      setStatus(
-        `Could not load active event: ${eventError?.message || "No active event found."}`,
-      );
+      setStatus({
+        type: "error",
+        text: `Could not load active event: ${eventError?.message || "No active event found."}`,
+      });
       return;
     }
 
     const typedEvent = activeEvent as ActiveEvent;
     setEvent(typedEvent);
+    setImageLoaded(false);
 
     const openingScale = Number(typedEvent.locations_map_open_scale ?? 0.6);
     const safeOpeningScale = Number.isNaN(openingScale)
@@ -149,12 +272,18 @@ export default function PublicLocationsPage() {
       .order("name", { ascending: true });
 
     if (locationError) {
-      setStatus(`Could not load map locations: ${locationError.message}`);
+      setStatus({
+        type: "error",
+        text: `Could not load map locations: ${locationError.message}`,
+      });
       return;
     }
 
     setLocations((locationData || []) as EventLocation[]);
-    setStatus(`Loaded ${(locationData || []).length} locations.`);
+    setStatus({
+      type: "info",
+      text: `Loaded ${(locationData || []).length} locations.`,
+    });
   }, []);
 
   useEffect(() => {
@@ -187,8 +316,10 @@ export default function PublicLocationsPage() {
     });
   }, [locations, search, categoryFilter]);
 
-  const selectedLocation =
-    locations.find((loc) => loc.id === selectedLocationId) || null;
+  const selectedLocation = useMemo(
+    () => locations.find((loc) => loc.id === selectedLocationId) || null,
+    [locations, selectedLocationId],
+  );
 
   const availableCategories = useMemo(() => {
     const values = Array.from(
@@ -201,18 +332,6 @@ export default function PublicLocationsPage() {
       a.localeCompare(b, undefined, { sensitivity: "base" }),
     );
   }, [locations]);
-
-  const markerLegendItems = useMemo(
-    () => [
-      { label: "Trash / Dumpster", color: "#dc2626" },
-      { label: "Building / Office", color: "#2563eb" },
-      { label: "Restroom / Bathroom", color: "#16a34a" },
-      { label: "Registration", color: "#d97706" },
-      { label: "Other", color: "#7c3aed" },
-      { label: "Selected", color: "gold" },
-    ],
-    [],
-  );
 
   function focusLocation(
     location: EventLocation,
@@ -241,36 +360,7 @@ export default function PublicLocationsPage() {
   function handleLocationClick(location: EventLocation) {
     setSelectedLocationId(location.id);
     focusLocation(location);
-    setStatus(`Focused map on ${location.name}.`);
-  }
-
-  function getMarkerColor(location: EventLocation) {
-    if (location.id === selectedLocationId) {
-      return "gold";
-    }
-
-    switch ((location.category || "").toLowerCase()) {
-      case "trash":
-      case "dumpster":
-        return "#dc2626";
-      case "building":
-      case "office":
-        return "#2563eb";
-      case "restroom":
-      case "bathroom":
-        return "#16a34a";
-      case "registration":
-        return "#d97706";
-      default:
-        return "#7c3aed";
-    }
-  }
-
-  function getMarkerSize(location: EventLocation) {
-    if (location.id === selectedLocationId) {
-      return isNarrow ? 44 : 36;
-    }
-    return isNarrow ? 22 : 16;
+    setStatus({ type: "info", text: `Focused map on ${location.name}.` });
   }
 
   return (
@@ -290,7 +380,22 @@ export default function PublicLocationsPage() {
           {event?.name || "No active event"}
         </div>
         <div style={{ color: "#555" }}>{event?.location || ""}</div>
-        <div style={{ fontSize: 13, marginTop: 6 }}>{status}</div>
+        <div
+          role={status.type === "error" ? "alert" : "status"}
+          style={{
+            fontSize: 13,
+            marginTop: 6,
+            color:
+              status.type === "error"
+                ? "#b91c1c"
+                : status.type === "loading"
+                  ? "#475569"
+                  : "#555",
+            fontWeight: status.type === "error" ? 700 : 400,
+          }}
+        >
+          {status.text}
+        </div>
       </div>
 
       <div
@@ -498,6 +603,7 @@ export default function PublicLocationsPage() {
                         width: img.naturalWidth || 1200,
                         height: img.naturalHeight || 800,
                       });
+                      setImageLoaded(true);
                     }}
                     style={{
                       width: naturalSize.width,
@@ -509,75 +615,98 @@ export default function PublicLocationsPage() {
                   />
                 )}
 
-                {locations.map((loc) => {
-                  if (loc.map_x === null || loc.map_y === null) {
-                    return null;
-                  }
+                {/* Keep all map markers visible while filters narrow only the side list. */}
+                {imageLoaded &&
+                  locations.map((loc) => {
+                    if (loc.map_x === null || loc.map_y === null) {
+                      return null;
+                    }
 
-                  const markerSize = getMarkerSize(loc);
+                    const markerSize = getMarkerSize(
+                      loc,
+                      selectedLocationId,
+                      isNarrow,
+                    );
 
-                  return (
-                    <div
-                      key={loc.id}
-                      style={{
-                        position: "absolute",
-                        left: `${loc.map_x}%`,
-                        top: `${loc.map_y}%`,
-                        transform: "translate(-50%, -50%)",
-                        pointerEvents: "none",
-                        zIndex: loc.id === selectedLocationId ? 4 : 2,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleLocationClick(loc)}
-                        title={loc.name}
-                        style={{
-                          width: markerSize,
-                          height: markerSize,
-                          borderRadius: "50%",
-                          background: getMarkerColor(loc),
-                          border: isNarrow
-                            ? "3px solid white"
-                            : "2px solid white",
-                          boxShadow:
-                            loc.id === selectedLocationId
-                              ? "0 0 0 4px rgba(255,215,0,0.35), 0 1px 4px rgba(0,0,0,0.35)"
-                              : "0 1px 4px rgba(0,0,0,0.35)",
-                          cursor: "pointer",
-                          padding: 0,
-                          display: "block",
-                          margin: "0 auto",
-                          pointerEvents: "auto",
-                        }}
-                      />
-
+                    return (
                       <div
+                        key={loc.id}
                         style={{
-                          marginTop: 4,
-                          marginLeft: "auto",
-                          marginRight: "auto",
-                          background: "rgba(255,255,255,0.92)",
-                          border: "1px solid rgba(0,0,0,0.2)",
-                          borderRadius: 4,
-                          fontSize: loc.id === selectedLocationId ? 12 : 10,
-                          fontWeight: 700,
-                          padding:
-                            loc.id === selectedLocationId
-                              ? "2px 6px"
-                              : "1px 4px",
-                          color: "#111",
-                          whiteSpace: "nowrap",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-                          display: "table",
+                          position: "absolute",
+                          left: `${loc.map_x}%`,
+                          top: `${loc.map_y}%`,
+                          transform: "translate(-50%, -50%)",
                           pointerEvents: "none",
+                          zIndex: loc.id === selectedLocationId ? 4 : 2,
                         }}
                       >
-                        {loc.name}
+                        <button
+                          type="button"
+                          onClick={() => handleLocationClick(loc)}
+                          title={loc.name}
+                          style={{
+                            width: markerSize,
+                            height: markerSize,
+                            borderRadius: "50%",
+                            background: getMarkerColor(loc, selectedLocationId),
+                            border: isNarrow
+                              ? "3px solid white"
+                              : "2px solid white",
+                            boxShadow:
+                              loc.id === selectedLocationId
+                                ? "0 0 0 4px rgba(255,215,0,0.35), 0 1px 4px rgba(0,0,0,0.35)"
+                                : "0 1px 4px rgba(0,0,0,0.35)",
+                            cursor: "pointer",
+                            padding: 0,
+                            display: "block",
+                            margin: "0 auto",
+                            pointerEvents: "auto",
+                          }}
+                        />
+
+                        <div
+                          style={{
+                            marginTop: 4,
+                            marginLeft: "auto",
+                            marginRight: "auto",
+                            background: "rgba(255,255,255,0.92)",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                            borderRadius: 4,
+                            fontSize: loc.id === selectedLocationId ? 12 : 10,
+                            fontWeight: 700,
+                            padding:
+                              loc.id === selectedLocationId
+                                ? "2px 6px"
+                                : "1px 4px",
+                            color: "#111",
+                            whiteSpace: "nowrap",
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                            display: "table",
+                            pointerEvents: "none",
+                          }}
+                        >
+                          {loc.name}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+
+                {event?.map_image_url && !imageLoaded && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#475569",
+                      fontWeight: 700,
+                      background: "rgba(255,255,255,0.72)",
+                    }}
+                  >
+                    Loading map markers...
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -595,7 +724,7 @@ export default function PublicLocationsPage() {
           >
             <div style={{ fontWeight: 700, fontSize: 13 }}>Map Legend</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {markerLegendItems.map((item) => (
+              {MARKER_LEGEND_ITEMS.map((item) => (
                 <div
                   key={item.label}
                   style={{ display: "flex", alignItems: "center", gap: 6 }}

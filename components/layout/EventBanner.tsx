@@ -1,106 +1,112 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from "react";
 
-import { supabase } from '@/lib/supabase'
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { supabase } from "@/lib/supabase";
 
 type EventRow = {
-  id: string
-  name: string
-  location: string | null
-  start_date: string | null
-  end_date: string | null
-}
+  id: string;
+  name: string;
+  location: string | null;
+  start_date: string | null;
+  end_date: string | null;
+};
 
 function formatDateRange(startDate: string | null, endDate: string | null) {
-  if (!startDate && !endDate) {return ''}
-  if (startDate && endDate) {return `${startDate} – ${endDate}`}
-  return startDate || endDate || ''
+  if (!startDate && !endDate) {
+    return "";
+  }
+  if (startDate && endDate) {
+    return `${startDate} – ${endDate}`;
+  }
+  return startDate || endDate || "";
 }
 
 export default function EventBanner() {
-  const [event, setEvent] = useState<EventRow | null>(null)
+  const [event, setEvent] = useState<EventRow | null>(null);
 
-  async function loadActiveEvent() {
+  const loadActiveEvent = useCallback(async (canUpdate: () => boolean) => {
     const { data, error } = await supabase
-      .from('events')
-      .select('id,name,location,start_date,end_date')
-      .eq('is_active', true)
-      .eq('is_master_map', false)
-      .order('start_date', { ascending: false, nullsFirst: false })
+      .from("events")
+      .select("id,name,location,start_date,end_date")
+      .eq("is_active", true)
+      .eq("is_master_map", false)
+      .order("start_date", { ascending: false, nullsFirst: false })
       .limit(1)
-      .maybeSingle()
+      .maybeSingle();
 
     if (error) {
-      console.error('Could not load active event:', error.message)
-      return
+      console.error("Could not load active event:", error.message);
+      return;
     }
 
-    setEvent(data || null)
-  }
+    if (canUpdate()) {
+      setEvent(data || null);
+    }
+  }, []);
 
   useEffect(() => {
-    void loadActiveEvent()
+    let cancelled = false;
+    const canUpdate = () => !cancelled;
+    void loadActiveEvent(canUpdate);
 
     const intervalId = window.setInterval(() => {
-      void loadActiveEvent()
-    }, 3000)
+      void loadActiveEvent(canUpdate);
+    }, 30000);
 
     function handleFocus() {
-      void loadActiveEvent()
+      void loadActiveEvent(canUpdate);
     }
 
     function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') {
-        void loadActiveEvent()
+      if (document.visibilityState === "visible") {
+        void loadActiveEvent(canUpdate);
       }
     }
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === 'fcoc-active-event-changed') {
-        void loadActiveEvent()
+      if (e.key === STORAGE_KEYS.activeEventChanged) {
+        void loadActiveEvent(canUpdate);
       }
     }
 
-    window.addEventListener('focus', handleFocus)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('storage', handleStorage)
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("storage", handleStorage);
 
     return () => {
-      window.clearInterval(intervalId)
-      window.removeEventListener('focus', handleFocus)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('storage', handleStorage)
-    }
-  }, [])
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [loadActiveEvent]);
 
-  if (!event) {return null}
+  if (!event) {
+    return null;
+  }
 
-  const dateRange = formatDateRange(event.start_date, event.end_date)
+  const dateRange = formatDateRange(event.start_date, event.end_date);
 
   return (
     <div
       style={{
-        padding: '14px 24px',
-        borderBottom: '1px solid #ddd',
-        background: '#fafafa',
+        padding: "14px 24px",
+        borderBottom: "1px solid #ddd",
+        background: "#fafafa",
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 18 }}>
-        {event.name}
-      </div>
+      <div style={{ fontWeight: 700, fontSize: 18 }}>{event.name}</div>
 
       {event.location && (
-        <div style={{ fontSize: 14, color: '#666' }}>
-          {event.location}
-        </div>
+        <div style={{ fontSize: 14, color: "#666" }}>{event.location}</div>
       )}
 
       {dateRange && (
-        <div style={{ fontSize: 13, color: '#888' }}>
-          {dateRange}
-        </div>
+        <div style={{ fontSize: 13, color: "#888" }}>{dateRange}</div>
       )}
     </div>
-  )
+  );
 }

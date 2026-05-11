@@ -1,17 +1,12 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import LocationCard from "@/components/LocationCard";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
 import { supabase } from "@/lib/supabase";
-
-const NearbyPlacesMap = dynamic(
-  () => import("@/components/map/NearbyPlacesMap"),
-  { ssr: false },
-);
 
 type Place = {
   id: string;
@@ -39,8 +34,6 @@ type EventRow = {
   lat: number | null;
   lng: number | null;
 };
-
-type ViewMode = "list" | "map";
 
 function formatDateRange(
   startDate: string | null | undefined,
@@ -85,54 +78,15 @@ function getNearbyCardColor(category: string | null | undefined) {
   return colorMap[normalized] || "#f8fafc";
 }
 
-function sanitizeNearbyCardColor(color: string | null | undefined) {
-  const fallback = "#f8fafc";
-  const value = (color || "").trim().toLowerCase();
-
-  if (!value) {
-    return fallback;
-  }
-
-  const reservedGreens = new Set([
-    "green",
-    "#f0fdf4",
-    "#dcfce7",
-    "#bbf7d0",
-    "#86efac",
-    "#4ade80",
-    "#22c55e",
-    "#16a34a",
-    "#15803d",
-    "#166534",
-    "rgb(240, 253, 244)",
-    "rgb(220, 252, 231)",
-    "rgb(187, 247, 208)",
-    "rgb(134, 239, 172)",
-    "rgb(74, 222, 128)",
-    "rgb(34, 197, 94)",
-    "rgb(22, 163, 74)",
-  ]);
-
-  if (reservedGreens.has(value)) {
-    return fallback;
-  }
-
-  return color || fallback;
-}
-
 function nearbyCardStyle(place: Place) {
   return {
     border: "1px solid rgba(17,24,39,0.14)",
-    background: sanitizeNearbyCardColor(getNearbyCardColor(place.category)),
+    background: sanitizeCardColor(getNearbyCardColor(place.category)),
     borderRadius: 10,
     padding: 6,
     boxShadow: "0 1px 4px rgba(15,23,42,0.05)",
     color: "#111827",
   };
-}
-
-function nearbyChipClass(active: boolean) {
-  return `nearby-chip${active ? " active" : ""}`;
 }
 
 function nearbyCategoryIcon(category: string) {
@@ -192,12 +146,13 @@ function NearbyPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [status, setStatus] = useState("Loading nearby places...");
+  const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   const loadNearby = useCallback(async () => {
     try {
       setStatus("Loading nearby places...");
+      setError(null);
       setSelectedCategory("All");
 
       const memberEvent = getCurrentMemberEvent();
@@ -225,7 +180,7 @@ function NearbyPageInner() {
         ? (eventRow as EventRow)
         : {
             id: memberEvent.id || "",
-            name: memberEvent.name || memberEvent.eventName || null,
+            name: memberEvent.name || null,
             venue_name: memberEvent.venue_name || null,
             location: memberEvent.location || null,
             start_date: memberEvent.start_date || null,
@@ -255,11 +210,14 @@ function NearbyPageInner() {
       setStatus(
         `Loaded ${rows.length} nearby place${rows.length === 1 ? "" : "s"}.`,
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error("loadNearby error:", err);
       setEvent(null);
       setPlaces([]);
-      setStatus(err?.message || "Failed to load nearby places.");
+      setError(
+        err instanceof Error ? err.message : "Failed to load nearby places.",
+      );
+      setStatus("");
     }
   }, []);
 
@@ -322,16 +280,20 @@ function NearbyPageInner() {
   }, [places, selectedCategory]);
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
+  const listReady =
+    !error && !!event && !status.toLowerCase().startsWith("loading");
 
   return (
     <div className="grid" style={{ gap: 6 }}>
       <div className="card" style={{ padding: 8 }}>
-        <span
-          className="badge success"
-          style={{ fontSize: 11, padding: "2px 6px" }}
-        >
-          Nearby List Ready
-        </span>
+        {listReady ? (
+          <span
+            className="badge success"
+            style={{ fontSize: 11, padding: "2px 6px" }}
+          >
+            Nearby List Ready
+          </span>
+        ) : null}
         <h1 style={{ margin: "4px 0 4px", fontSize: 22 }}>Nearby</h1>
         <p className="subtle" style={{ margin: "0 0 4px", fontSize: 13 }}>
           Fuel, urgent care, pharmacy, groceries, and local stops.
@@ -357,7 +319,13 @@ function NearbyPageInner() {
 
         <div
           className="btn-row"
-          style={{ marginTop: 4, flexWrap: "wrap", gap: 4 }}
+          style={{
+            marginTop: 4,
+            fontWeight: 700,
+            fontSize: 14,
+            flexWrap: "wrap",
+            gap: 4,
+          }}
         >
           {categoryOptions.map((category) => (
             <button
@@ -367,7 +335,7 @@ function NearbyPageInner() {
               onClick={() => setSelectedCategory(category)}
               style={
                 {
-                  "--chip-bg": sanitizeNearbyCardColor(
+                  "--chip-bg": sanitizeCardColor(
                     getNearbyCardColor(category === "All" ? null : category),
                   ),
                 } as React.CSSProperties
@@ -381,88 +349,70 @@ function NearbyPageInner() {
           ))}
         </div>
 
-        <div
-          className="btn-row"
-          style={{ marginTop: 6, flexWrap: "wrap", gap: 4 }}
-        >
-          <button
-            type="button"
-            className={nearbyChipClass(viewMode === "list")}
-            onClick={() => setViewMode("list")}
-            style={{
-              padding: "3px 7px",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-          >
-            List
-          </button>
-          <button
-            type="button"
-            className={nearbyChipClass(viewMode === "map")}
-            onClick={() => setViewMode("map")}
-            style={{
-              padding: "3px 7px",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-          >
-            Map
-          </button>
-        </div>
+        {status ? (
+          <div style={{ marginTop: 5, fontSize: 11, color: "#666" }}>
+            {status}
+          </div>
+        ) : null}
 
-        <div style={{ marginTop: 5, fontSize: 11, color: "#666" }}>
-          {status}
-        </div>
+        {error ? (
+          <div
+            role="alert"
+            style={{
+              marginTop: 8,
+              padding: 10,
+              borderRadius: 10,
+              border: "1px solid #fecaca",
+              background: "#fef2f2",
+              color: "#991b1b",
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
       </div>
 
-      {viewMode === "list" ? (
-        <div className="grid grid-2" style={{ gap: 6 }}>
-          {filteredPlaces.map((place) => (
-            <div key={place.id} style={nearbyCardStyle(place)}>
-              <LocationCard
-                name={place.name}
-                address={place.address || ""}
-                phone={place.phone || undefined}
-                website={place.website || undefined}
-                latitude={place.lat || undefined}
-                longitude={place.lng || undefined}
-                category={place.category || "Nearby"}
-                rvNote={place.notes || undefined}
-                locationCode={place.location_code || undefined}
-              />
-              {place.distance_miles !== null &&
-              place.distance_miles !== undefined ? (
-                <div
-                  style={{
-                    display: "inline-block",
-                    marginTop: 3,
-                    padding: "1px 6px",
-                    borderRadius: 999,
-                    background: "rgba(255,255,255,0.82)",
-                    border: "1px solid rgba(0,0,0,0.08)",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: "#111827",
-                  }}
-                >
-                  {place.distance_miles} mi
-                </div>
-              ) : null}
-            </div>
-          ))}
+      <div className="grid grid-2" style={{ gap: 6 }}>
+        {filteredPlaces.map((place) => (
+          <div key={place.id} style={nearbyCardStyle(place)}>
+            <LocationCard
+              name={place.name}
+              address={place.address || ""}
+              phone={place.phone || undefined}
+              website={place.website || undefined}
+              latitude={place.lat || undefined}
+              longitude={place.lng || undefined}
+              category={place.category || "Nearby"}
+              rvNote={place.notes || undefined}
+              locationCode={place.location_code || undefined}
+            />
+            {place.distance_miles !== null &&
+            place.distance_miles !== undefined ? (
+              <div
+                style={{
+                  display: "inline-block",
+                  marginTop: 3,
+                  padding: "1px 6px",
+                  borderRadius: 999,
+                  background: "rgba(255,255,255,0.82)",
+                  border: "1px solid rgba(0,0,0,0.08)",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#111827",
+                }}
+              >
+                {place.distance_miles} mi
+              </div>
+            ) : null}
+          </div>
+        ))}
 
-          {filteredPlaces.length === 0 ? (
-            <div className="card">No nearby places found.</div>
-          ) : null}
-        </div>
-      ) : (
-        <NearbyPlacesMap
-          places={filteredPlaces}
-          eventLat={typeof event?.lat === "number" ? event.lat : null}
-          eventLng={typeof event?.lng === "number" ? event.lng : null}
-        />
-      )}
+        {filteredPlaces.length === 0 ? (
+          <div className="card">No nearby places found.</div>
+        ) : null}
+      </div>
     </div>
   );
 }

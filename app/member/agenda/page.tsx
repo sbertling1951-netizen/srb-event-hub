@@ -8,13 +8,12 @@ import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
 
 type MemberEvent = {
-  id?: string | null;
-  name?: string | null;
-  eventName?: string | null;
-  venue_name?: string | null;
-  location?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
+  id: string;
+  name: string | null;
+  venue_name: string | null;
+  location: string | null;
+  start_date: string | null;
+  end_date: string | null;
 };
 
 type AgendaItem = {
@@ -191,19 +190,18 @@ function groupAgenda(items: AgendaItem[]): GroupedAgenda[] {
     }));
 }
 
-function categoryStyle(
-  _category: string | null | undefined,
-  _color: string | null | undefined,
-) {
+function categoryStyle(resolvedColor: string | null | undefined) {
+  const background = sanitizeAgendaCardColor(resolvedColor);
+
   return {
     display: "inline-block",
     padding: "3px 8px",
     borderRadius: 999,
     fontSize: 12,
     fontWeight: 700,
-    background: "rgba(255,255,255,0.82)",
+    background,
     color: "#111827",
-    border: "1px solid rgba(0,0,0,0.08)",
+    border: "1px solid rgba(0,0,0,0.12)",
   } as const;
 }
 
@@ -250,6 +248,7 @@ function sanitizeAgendaCardColor(color: string | null | undefined) {
 function agendaCardStyle(
   item: AgendaItem,
   status: "now" | "upcoming" | "past" | "unknown",
+  resolvedColor: string | null | undefined,
 ) {
   if (status === "now") {
     return {
@@ -271,9 +270,7 @@ function agendaCardStyle(
 
   return {
     border: "1px solid rgba(17,24,39,0.14)",
-    background: sanitizeAgendaCardColor(
-      getAgendaColor(item.category, item.color),
-    ),
+    background: sanitizeAgendaCardColor(resolvedColor),
     boxShadow: "0 2px 10px rgba(15,23,42,0.06)",
     color: "#111827",
   };
@@ -283,6 +280,7 @@ function MemberAgendaPageInner() {
   const [event, setEvent] = useState<MemberEvent | null>(null);
   const [items, setItems] = useState<AgendaItem[]>([]);
   const [status, setStatus] = useState("Loading agenda...");
+  const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [expandedPastItems, setExpandedPastItems] = useState<
@@ -291,6 +289,7 @@ function MemberAgendaPageInner() {
 
   const loadAgenda = useCallback(async () => {
     try {
+      setError(null);
       setStatus("Loading agenda...");
 
       const memberEvent = getCurrentMemberEvent();
@@ -299,11 +298,19 @@ function MemberAgendaPageInner() {
       if (!memberEvent?.id) {
         setEvent(null);
         setItems([]);
+        setError(null);
         setStatus("No current event selected.");
         return;
       }
 
-      setEvent(memberEvent);
+      setEvent({
+        id: memberEvent.id,
+        name: memberEvent.name ?? null,
+        venue_name: memberEvent.venue_name ?? null,
+        location: memberEvent.location ?? null,
+        start_date: memberEvent.start_date ?? null,
+        end_date: memberEvent.end_date ?? null,
+      });
 
       const { data, error } = await supabase
         .from("agenda_items")
@@ -319,25 +326,20 @@ function MemberAgendaPageInner() {
       }
 
       const loaded = (data || []) as AgendaItem[];
-      loaded.sort((a, b) => {
-        const timeDiff = itemSortValue(a) - itemSortValue(b);
-        if (timeDiff !== 0) {
-          return timeDiff;
-        }
-        return (a.sort_order || 0) - (b.sort_order || 0);
-      });
 
       setItems(loaded);
+      setError(null);
       setStatus(
         loaded.length > 0
           ? `Loaded ${loaded.length} published agenda items.`
           : "No published agenda items yet.",
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error("loadAgenda error:", err);
       setEvent(null);
       setItems([]);
-      setStatus(err?.message || "Failed to load agenda.");
+      setError(err instanceof Error ? err.message : "Failed to load agenda.");
+      setStatus("");
     }
   }, []);
 
@@ -400,18 +402,16 @@ function MemberAgendaPageInner() {
   const now = useMemo(() => new Date(nowTick), [nowTick]);
 
   const currentItem = useMemo(() => {
-    return (
-      filteredItems.find((item) => getItemStatus(item, now) === "now") || null
-    );
-  }, [filteredItems, now]);
+    return items.find((item) => getItemStatus(item, now) === "now") || null;
+  }, [items, now]);
 
   const nextItem = useMemo(() => {
     return (
-      filteredItems
+      items
         .filter((item) => getItemStatus(item, now) === "upcoming")
         .sort((a, b) => itemSortValue(a) - itemSortValue(b))[0] || null
     );
-  }, [filteredItems, now]);
+  }, [items, now]);
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
@@ -428,7 +428,7 @@ function MemberAgendaPageInner() {
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Agenda</h1>
 
         <div style={{ fontWeight: 700 }}>
-          Current event: {event?.name || event?.eventName || "No current event"}
+          Current event: {event?.name || "No current event"}
         </div>
 
         {event?.venue_name ? (
@@ -445,10 +445,26 @@ function MemberAgendaPageInner() {
           </div>
         ) : null}
 
-        <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-          {status}
-        </div>
+        {status ? (
+          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+            {status}
+          </div>
+        ) : null}
       </div>
+
+      {error ? (
+        <div
+          style={{
+            border: "1px solid #f5c2c7",
+            background: "#fff5f5",
+            color: "#842029",
+            borderRadius: 10,
+            padding: 14,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
 
       {currentItem ? (
         <div
@@ -581,35 +597,157 @@ function MemberAgendaPageInner() {
               <div style={{ display: "grid", gap: 10 }}>
                 {group.items.map((item) => {
                   const itemStatus = getItemStatus(item, now);
-                  const cardStyle = agendaCardStyle(item, itemStatus);
+                  const resolvedAgendaColor = getAgendaColor(
+                    item.category,
+                    item.color,
+                  );
+                  const cardStyle = agendaCardStyle(
+                    item,
+                    itemStatus,
+                    resolvedAgendaColor,
+                  );
                   const isPast = itemStatus === "past";
                   const isExpanded = !isPast || !!expandedPastItems[item.id];
 
+                  if (!isPast) {
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          ...cardStyle,
+                          borderRadius: 10,
+                          padding: 14,
+                          cursor: "default",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            alignItems: "start",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div
+                              style={{
+                                fontWeight: 800,
+                                fontSize: 17,
+                                color:
+                                  itemStatus === "now" ? "#064e3b" : "#111827",
+                              }}
+                            >
+                              {item.title || "Untitled item"}
+                            </div>
+
+                            {item.location ? (
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  color: "#475569",
+                                  marginTop: 2,
+                                  fontWeight: 500,
+                                  letterSpacing: 0.2,
+                                }}
+                              >
+                                📍 {item.location}
+                              </div>
+                            ) : null}
+
+                            {item.description ? (
+                              <div
+                                style={{
+                                  marginTop: 8,
+                                  color: "#374151",
+                                  lineHeight: 1.45,
+                                  whiteSpace: "pre-wrap",
+                                }}
+                              >
+                                {item.description}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div
+                            style={{
+                              textAlign: "right",
+                              minWidth: 110,
+                              color:
+                                itemStatus === "now" ? "#064e3b" : "#111827",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {formatItemTime(item)}
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 10,
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          {item.category ? (
+                            <span style={categoryStyle(resolvedAgendaColor)}>
+                              {item.category}
+                            </span>
+                          ) : null}
+
+                          {itemStatus === "now" ? (
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "3px 8px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                                fontWeight: 800,
+                                background: "#dcfce7",
+                                color: "#166534",
+                              }}
+                            >
+                              Happening now
+                            </span>
+                          ) : null}
+
+                          {itemStatus === "upcoming" ? (
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "3px 8px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                                fontWeight: 800,
+                                background: "#dbeafe",
+                                color: "#1d4ed8",
+                              }}
+                            >
+                              Upcoming
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
-                    <div
+                    <button
                       key={item.id}
-                      role={isPast ? "button" : undefined}
-                      tabIndex={isPast ? 0 : undefined}
-                      aria-expanded={isPast ? isExpanded : undefined}
-                      onClick={
-                        isPast ? () => togglePastItem(item.id) : undefined
-                      }
-                      onKeyDown={
-                        isPast
-                          ? (e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                togglePastItem(item.id);
-                              }
-                            }
-                          : undefined
-                      }
+                      type="button"
+                      aria-expanded={isExpanded}
+                      onClick={() => togglePastItem(item.id)}
                       style={{
                         ...cardStyle,
+                        width: "100%",
                         borderRadius: 10,
                         padding: isExpanded ? 14 : "10px 14px",
-                        cursor: isPast ? "pointer" : "default",
-                        opacity: isPast && !isExpanded ? 0.88 : 1,
+                        cursor: "pointer",
+                        opacity: !isExpanded ? 0.88 : 1,
+                        textAlign: "left",
+                        font: "inherit",
                       }}
                     >
                       <div
@@ -626,8 +764,7 @@ function MemberAgendaPageInner() {
                             style={{
                               fontWeight: 800,
                               fontSize: 17,
-                              color:
-                                itemStatus === "now" ? "#064e3b" : "#111827",
+                              color: "#111827",
                             }}
                           >
                             {item.title || "Untitled item"}
@@ -665,7 +802,7 @@ function MemberAgendaPageInner() {
                           style={{
                             textAlign: "right",
                             minWidth: 110,
-                            color: itemStatus === "now" ? "#064e3b" : "#111827",
+                            color: "#111827",
                             fontWeight: 700,
                           }}
                         >
@@ -684,48 +821,14 @@ function MemberAgendaPageInner() {
                           }}
                         >
                           {item.category ? (
-                            <span
-                              style={categoryStyle(item.category, item.color)}
-                            >
+                            <span style={categoryStyle(resolvedAgendaColor)}>
                               {item.category}
-                            </span>
-                          ) : null}
-
-                          {itemStatus === "now" ? (
-                            <span
-                              style={{
-                                display: "inline-block",
-                                padding: "3px 8px",
-                                borderRadius: 999,
-                                fontSize: 12,
-                                fontWeight: 800,
-                                background: "#dcfce7",
-                                color: "#166534",
-                              }}
-                            >
-                              Happening now
-                            </span>
-                          ) : null}
-
-                          {itemStatus === "upcoming" ? (
-                            <span
-                              style={{
-                                display: "inline-block",
-                                padding: "3px 8px",
-                                borderRadius: 999,
-                                fontSize: 12,
-                                fontWeight: 800,
-                                background: "#dbeafe",
-                                color: "#1d4ed8",
-                              }}
-                            >
-                              Upcoming
                             </span>
                           ) : null}
 
                           {isPast ? (
                             <span style={{ fontSize: 12, color: "#6b7280" }}>
-                              Tap to collapse
+                              Collapse
                             </span>
                           ) : null}
                         </div>
@@ -737,10 +840,10 @@ function MemberAgendaPageInner() {
                             color: "#6b7280",
                           }}
                         >
-                          Past item · tap to expand
+                          Past item · expand
                         </div>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>

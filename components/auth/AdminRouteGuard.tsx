@@ -7,6 +7,8 @@ import {
   getCurrentAdminAccess,
   hasPermission,
 } from "@/lib/getCurrentAdminAccess";
+import { getStoredUserMode } from "@/lib/getCurrentMemberEvent";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 type Props = {
   children: React.ReactNode;
@@ -20,7 +22,7 @@ type CachedAdminState = {
   checkedAt: number;
 };
 
-const ADMIN_CACHE_KEY = "fcoc-admin-access";
+const ADMIN_CACHE_KEY = STORAGE_KEYS.adminAccess;
 const ADMIN_CACHE_MAX_AGE_MS = 1000 * 60 * 15; // 15 minutes
 
 function readCachedAdminState(): CachedAdminState | null {
@@ -89,7 +91,7 @@ export default function AdminRouteGuard({
       try {
         setChecking(true);
         setDeniedMessage(null);
-        const mode = localStorage.getItem("fcoc-user-mode");
+        const mode = getStoredUserMode();
         if (mode !== "admin") {
           clearCachedAdminState();
           if (mounted) {
@@ -159,10 +161,10 @@ export default function AdminRouteGuard({
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
+        e.key === STORAGE_KEYS.adminEventContext ||
+        e.key === STORAGE_KEYS.adminEventChanged ||
+        e.key === STORAGE_KEYS.userMode ||
+        e.key === STORAGE_KEYS.userModeChanged
       ) {
         void verifyAdmin();
       }
@@ -203,6 +205,7 @@ export default function AdminRouteGuard({
     return (
       <div style={{ padding: 24 }}>
         <div
+          role="alert"
           style={{
             border: "1px solid #e2b4b4",
             borderRadius: 10,

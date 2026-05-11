@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { saveMemberSession } from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
@@ -13,7 +13,6 @@ type EventRow = {
   location: string | null;
   start_date: string | null;
   end_date: string | null;
-  event_code: string | null;
   lat: number | null;
   lng: number | null;
   visible_to_members?: boolean | null;
@@ -97,21 +96,19 @@ export default function MemberLoginPage() {
   const [enteredCode, setEnteredCode] = useState("");
   const [enteredEmail, setEnteredEmail] = useState("");
   const [status, setStatus] = useState("Loading events...");
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    void loadEvents();
-  }, []);
-
-  async function loadEvents() {
+  const loadEvents = useCallback(async () => {
     try {
       setStatus("Loading events...");
+      setError(null);
       const today = new Date().toISOString().slice(0, 10);
 
       const { data, error } = await supabase
         .from("events")
         .select(
-          "id,name,venue_name,location,start_date,end_date,event_code,lat,lng,visible_to_members,status,is_active",
+          "id,name,venue_name,location,start_date,end_date,lat,lng,visible_to_members,status,is_active",
         )
         .eq("visible_to_members", true)
         .order("start_date", { ascending: true, nullsFirst: false })
@@ -136,11 +133,16 @@ export default function MemberLoginPage() {
           ? "Select an event, enter code, and use your registration email."
           : "No active member events are available right now.",
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setStatus(err?.message || "Failed to load events.");
+      setError(err instanceof Error ? err.message : "Failed to load events.");
+      setStatus("");
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    void loadEvents();
+  }, [loadEvents]);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -151,67 +153,69 @@ export default function MemberLoginPage() {
     const event = events.find((e) => e.id === selectedEventId);
 
     if (!event) {
-      setStatus("Select an event.");
+      setError("Select an event.");
+      setStatus("");
       return;
     }
 
-    const expected = (event.event_code || "").trim().toLowerCase();
     const entered = enteredCode.trim().toLowerCase();
     const normalizedEmail = enteredEmail.trim().toLowerCase();
 
     if (!entered) {
-      setStatus("Enter the event code.");
-      return;
-    }
-
-    if (entered !== expected) {
-      setStatus("Incorrect event code.");
+      setError("Enter the event code.");
+      setStatus("");
       return;
     }
 
     if (!normalizedEmail) {
-      setStatus("Enter the email used for registration.");
+      setError("Enter the email used for registration.");
+      setStatus("");
       return;
     }
 
     try {
       setBusy(true);
       setStatus("Checking registration...");
+      setError(null);
 
-      const { data, error } = await supabase
-        .from("attendees")
-        .select(
-          "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,has_arrived",
-        )
-        .eq("event_id", event.id)
-        .eq("email", normalizedEmail)
-        .maybeSingle();
+      const { data, error } = await supabase.rpc("verify_member_event_login", {
+        p_event_id: event.id,
+        p_event_code: entered,
+        p_email: normalizedEmail,
+      });
 
       if (error) {
         throw error;
       }
 
-      const attendee = data as AttendeeRow | null;
+      const attendee =
+        Array.isArray(data) && data.length > 0
+          ? (data[0] as AttendeeRow)
+          : null;
 
       if (!attendee?.id) {
-        setStatus(
+        setError(
           "No attendee registration was found for that email in this event.",
         );
+        setStatus("");
         return;
       }
 
-      localStorage.setItem("fcoc-member-attendee-id", attendee.id);
-      localStorage.setItem("fcoc-member-email", normalizedEmail);
-      localStorage.setItem("fcoc-member-entry-id", attendee.entry_id || "");
       const arrived = !!attendee.has_arrived;
-      localStorage.setItem("fcoc-member-has-arrived", String(arrived));
-      localStorage.setItem("fcoc-user-mode", "member");
-      localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("fcoc-member-attendee-id", attendee.id);
+        localStorage.setItem("fcoc-member-email", normalizedEmail);
+        localStorage.setItem("fcoc-member-entry-id", attendee.entry_id || "");
+        localStorage.setItem("fcoc-member-has-arrived", String(arrived));
+        localStorage.setItem("fcoc-user-mode", "member");
+        localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
+      }
 
       saveMemberSession({
         event_id: event.id,
         event_name: event.name || null,
-        event_code: event.event_code || null,
+        event_code: null,
         venue_name: event.venue_name || null,
         location: event.location || null,
         start_date: event.start_date || null,
@@ -230,9 +234,10 @@ export default function MemberLoginPage() {
 
       router.replace(arrived ? "/member" : "/member/checkin");
       return;
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setStatus(err?.message || "Login failed.");
+      setError(err instanceof Error ? err.message : "Login failed.");
+      setStatus("");
     } finally {
       setBusy(false);
     }
@@ -330,7 +335,26 @@ export default function MemberLoginPage() {
           {busy ? "Checking..." : "Enter"}
         </button>
 
-        <div style={{ fontSize: 13, color: "#666" }}>{status}</div>
+        {status ? (
+          <div style={{ fontSize: 13, color: "#666" }}>{status}</div>
+        ) : null}
+
+        {error ? (
+          <div
+            role="alert"
+            style={{
+              border: "1px solid #fecaca",
+              borderRadius: 8,
+              background: "#fef2f2",
+              color: "#991b1b",
+              padding: 12,
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
       </form>
     </div>
   );

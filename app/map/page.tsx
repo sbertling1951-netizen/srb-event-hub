@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import CampgroundMap from "@/components/map/CampgroundMap";
 import { getActiveEvent } from "@/lib/getActiveEvent";
@@ -32,10 +32,13 @@ type ActiveEventRow = {
   location: string | null;
   start_date: string | null;
   end_date: string | null;
+  map_image_url: string | null;
 };
 
 function attendeeName(a: Attendee | undefined) {
-  if (!a) {return "Open Site";}
+  if (!a) {
+    return "Open Site";
+  }
   return (
     [a.pilot_first, a.pilot_last].filter(Boolean).join(" ") ||
     "Unnamed attendee"
@@ -43,15 +46,25 @@ function attendeeName(a: Attendee | undefined) {
 }
 
 function visibleOccupantLabel(a: Attendee | undefined, assigned: boolean) {
-  if (!assigned) {return "Open Site";}
-  if (!a) {return "Occupied Site";}
-  if (a.share_with_attendees) {return attendeeName(a);}
+  if (!assigned) {
+    return "Open Site";
+  }
+  if (!a) {
+    return "Occupied Site";
+  }
+  if (a.share_with_attendees) {
+    return attendeeName(a);
+  }
   return "Occupied Site";
 }
 
 function formatDateRange(startDate: string | null, endDate: string | null) {
-  if (!startDate && !endDate) {return "";}
-  if (startDate && endDate) {return `${startDate} – ${endDate}`;}
+  if (!startDate && !endDate) {
+    return "";
+  }
+  if (startDate && endDate) {
+    return `${startDate} – ${endDate}`;
+  }
   return startDate || endDate || "";
 }
 
@@ -65,28 +78,9 @@ export default function CoachMapPage() {
   const [attendeeSearch, setAttendeeSearch] = useState("");
   const [siteSearch, setSiteSearch] = useState("");
   const [occupiedOnly, setOccupiedOnly] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [lastChecked, setLastChecked] = useState<string>("");
 
-  const mapImageUrl = "/Amana_Map2026r1.png";
-
-  async function loadActiveEventData() {
-    const activeEvent = await getActiveEvent();
-
-    if (!activeEvent) {
-      setEvent(null);
-      setEventId(null);
-      setSites([]);
-      setAttendees([]);
-      setSelectedSiteId(null);
-      setStatus("No active event found.");
-      return;
-    }
-
-    setEvent(activeEvent);
-    setEventId((prev) => (prev === activeEvent.id ? prev : activeEvent.id));
-  }
-
-  async function loadMapData(activeEventId: string) {
+  const loadMapData = useCallback(async (activeEventId: string) => {
     const { data: attendeeData, error: attendeeError } = await supabase
       .from("attendees")
       .select(
@@ -115,41 +109,60 @@ export default function CoachMapPage() {
 
     setAttendees((attendeeData || []) as Attendee[]);
     setSites((siteData || []) as ParkingSite[]);
-    setLastUpdated(new Date().toLocaleTimeString());
+    setLastChecked(new Date().toLocaleTimeString());
     setStatus("Ready");
-  }
+  }, []);
 
   useEffect(() => {
-    async function init() {
-      setStatus("Loading active event...");
-      await loadActiveEventData();
+    let cancelled = false;
+
+    async function refreshCoachMap() {
+      setStatus((prev) =>
+        prev === "Ready"
+          ? "Refreshing coach map..."
+          : "Loading active event...",
+      );
+
+      const activeEvent = await getActiveEvent();
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!activeEvent) {
+        setEvent(null);
+        setEventId(null);
+        setSites([]);
+        setAttendees([]);
+        setSelectedSiteId(null);
+        setStatus("No active event found.");
+        return;
+      }
+
+      setEvent(activeEvent);
+      setEventId((prev) => (prev === activeEvent.id ? prev : activeEvent.id));
+      await loadMapData(activeEvent.id);
     }
 
-    void init();
+    void refreshCoachMap();
 
-    const activeEventInterval = window.setInterval(() => {
-      void loadActiveEventData();
+    const refreshInterval = window.setInterval(() => {
+      void refreshCoachMap();
     }, 5000);
 
     function handleFocus() {
-      void loadActiveEventData();
-      if (eventId) {
-        void loadMapData(eventId);
-      }
+      void refreshCoachMap();
     }
 
     function handleVisibilityChange() {
       if (document.visibilityState === "visible") {
-        void loadActiveEventData();
-        if (eventId) {
-          void loadMapData(eventId);
-        }
+        void refreshCoachMap();
       }
     }
 
     function handleStorage(e: StorageEvent) {
       if (e.key === "fcoc-active-event-changed") {
-        void loadActiveEventData();
+        void refreshCoachMap();
       }
     }
 
@@ -158,26 +171,13 @@ export default function CoachMapPage() {
     window.addEventListener("storage", handleStorage);
 
     return () => {
-      window.clearInterval(activeEventInterval);
+      cancelled = true;
+      window.clearInterval(refreshInterval);
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("storage", handleStorage);
     };
-  }, [eventId]);
-
-  useEffect(() => {
-    if (!eventId) {return;}
-
-    void loadMapData(eventId);
-
-    const mapDataInterval = window.setInterval(() => {
-      void loadMapData(eventId);
-    }, 5000);
-
-    return () => {
-      window.clearInterval(mapDataInterval);
-    };
-  }, [eventId]);
+  }, [loadMapData]);
 
   const attendeeById = useMemo(() => {
     const map = new Map<string, Attendee>();
@@ -187,12 +187,18 @@ export default function CoachMapPage() {
 
   const matchedSitesForLocator = useMemo(() => {
     const q = attendeeSearch.trim().toLowerCase();
-    if (!q) {return [];}
+    if (!q) {
+      return [];
+    }
 
     return sites.filter((site) => {
-      if (!site.assigned_attendee_id) {return false;}
+      if (!site.assigned_attendee_id) {
+        return false;
+      }
       const assigned = attendeeById.get(site.assigned_attendee_id);
-      if (!assigned?.share_with_attendees) {return false;}
+      if (!assigned?.share_with_attendees) {
+        return false;
+      }
       return attendeeName(assigned).toLowerCase().includes(q);
     });
   }, [sites, attendeeById, attendeeSearch]);
@@ -271,11 +277,20 @@ export default function CoachMapPage() {
     event?.start_date || null,
     event?.end_date || null,
   );
+  const mapImageUrl = event?.map_image_url || "";
 
-  const selectedSite = sites.find((s) => s.id === selectedSiteId) || null;
-  const selectedAttendee = selectedSite?.assigned_attendee_id
-    ? attendeeById.get(selectedSite.assigned_attendee_id)
-    : undefined;
+  const selectedSite = useMemo(
+    () => sites.find((s) => s.id === selectedSiteId) || null,
+    [sites, selectedSiteId],
+  );
+
+  const selectedAttendee = useMemo(
+    () =>
+      selectedSite?.assigned_attendee_id
+        ? attendeeById.get(selectedSite.assigned_attendee_id)
+        : undefined,
+    [selectedSite, attendeeById],
+  );
 
   function locateFirstMatch() {
     if (matchedSitesForLocator.length === 0) {
@@ -330,9 +345,9 @@ export default function CoachMapPage() {
 
         <div style={{ fontSize: 13, color: "#555" }}>Status: {status}</div>
 
-        {lastUpdated && (
+        {lastChecked && (
           <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>
-            Last updated: {lastUpdated}
+            Last checked: {lastChecked}
           </div>
         )}
       </div>
@@ -431,7 +446,11 @@ export default function CoachMapPage() {
 
         <div>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>Locator</div>
-          <button onClick={locateFirstMatch} style={{ width: "100%" }}>
+          <button
+            type="button"
+            onClick={locateFirstMatch}
+            style={{ width: "100%" }}
+          >
             Locate First Match
           </button>
         </div>
@@ -466,6 +485,7 @@ export default function CoachMapPage() {
 
                 return (
                   <button
+                    type="button"
                     key={site.id}
                     onClick={() => setSelectedSiteId(site.id)}
                     style={{
@@ -530,15 +550,21 @@ export default function CoachMapPage() {
           touchAction: "auto",
         }}
       >
-        <CampgroundMap
-          key={mapRefreshKey}
-          mapImageUrl={mapImageUrl}
-          sites={mapSites}
-          selectedSiteId={selectedSiteId}
-          onMarkerClick={(site) => {
-            setSelectedSiteId(site.id);
-          }}
-        />
+        {mapImageUrl ? (
+          <CampgroundMap
+            key={mapRefreshKey}
+            mapImageUrl={mapImageUrl}
+            sites={mapSites}
+            selectedSiteId={selectedSiteId}
+            onMarkerClick={(site) => {
+              setSelectedSiteId(site.id);
+            }}
+          />
+        ) : (
+          <div style={{ padding: 24, textAlign: "center", color: "#666" }}>
+            No event map image has been configured for this event.
+          </div>
+        )}
       </div>
     </div>
   );

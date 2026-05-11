@@ -1,17 +1,17 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import {
+  type CurrentMemberEvent,
+  getCurrentMemberEvent,
+  getStoredMemberAttendeeId,
+  getStoredMemberEmail,
+} from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
-
-type MemberEvent = {
-  id?: string | null;
-  name?: string | null;
-  eventName?: string | null;
-};
 
 type VendorRow = {
   id: string;
@@ -46,6 +46,10 @@ type AttendeeRow = {
   coach_length: string | null;
 };
 
+type RequestVendorRow = {
+  business_name: string | null;
+};
+
 type MemberRequestRow = {
   id: string;
   event_id: string;
@@ -61,39 +65,14 @@ type MemberRequestRow = {
   preferred_response_method: string | null;
   request_status: string | null;
   created_at: string | null;
-  vendors?:
-    | {
-        business_name: string | null;
-      }
-    | {
-        business_name: string | null;
-      }[]
-    | null;
+  vendors?: RequestVendorRow | RequestVendorRow[] | null;
 };
-
-function getStoredMemberAttendeeId() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("fcoc-member-attendee-id");
-}
-
-function getStoredMemberEmail() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("fcoc-member-email");
-}
 
 function fullName(
   first: string | null | undefined,
   last: string | null | undefined,
 ) {
   return `${first || ""} ${last || ""}`.trim();
-}
-
-function eventName(event: MemberEvent | null) {
-  return event?.name || event?.eventName || "Current event";
 }
 
 function phoneHref(value: string | null | undefined) {
@@ -168,7 +147,7 @@ function MemberVendorSignupInner() {
   const searchParams = useSearchParams();
   const vendorIdFromUrl = searchParams.get("vendorId") || "";
 
-  const [event, setEvent] = useState<MemberEvent | null>(null);
+  const [event, setEvent] = useState<CurrentMemberEvent | null>(null);
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [attendee, setAttendee] = useState<AttendeeRow | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState(vendorIdFromUrl);
@@ -189,16 +168,13 @@ function MemberVendorSignupInner() {
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(
     null,
   );
+  const [requestPendingCancel, setRequestPendingCancel] =
+    useState<MemberRequestRow | null>(null);
 
   const selectedVendor = useMemo(
     () => vendors.find((vendor) => vendor.id === selectedVendorId) || null,
     [vendors, selectedVendorId],
   );
-
-  useEffect(() => {
-    void loadPage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (vendorIdFromUrl) {
@@ -212,7 +188,7 @@ function MemberVendorSignupInner() {
     }
   }, [selectedVendor?.preferred_contact_method]);
 
-  async function loadPage() {
+  const loadPage = useCallback(async () => {
     try {
       setError(null);
       setStatus("Loading vendor request form...");
@@ -244,8 +220,8 @@ function MemberVendorSignupInner() {
             event_note,
             display_order,
             is_visible_to_members,
-signup_url,
-action_type
+            signup_url,
+            action_type
           )
         `,
         )
@@ -359,12 +335,20 @@ action_type
           ? `Loaded ${visibleVendors.length} vendor${visibleVendors.length === 1 ? "" : "s"}.`
           : "No vendors are available for this event yet.",
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error("load vendor signup error:", err);
-      setError(err?.message || "Could not load vendor request form.");
-      setStatus("Could not load vendor request form.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not load vendor request form.",
+      );
+      setStatus("");
     }
-  }
+  }, [vendorIdFromUrl]);
+
+  useEffect(() => {
+    void loadPage();
+  }, [loadPage]);
 
   async function submitRequest() {
     if (!event?.id) {
@@ -413,28 +397,33 @@ action_type
       setRequestedService("");
       setNotes("");
       await loadPage();
-    } catch (err: any) {
+    } catch (err) {
       console.error("submit vendor request error:", err);
-      setError(err?.message || "Could not submit vendor request.");
-      setStatus("Request failed.");
+      setError(
+        err instanceof Error ? err.message : "Could not submit vendor request.",
+      );
+      setStatus("");
     } finally {
       setSaving(false);
     }
   }
 
-  async function cancelRequest(request: MemberRequestRow) {
+  function cancelRequest(request: MemberRequestRow) {
     if (!canCancelRequest(request)) {
       setError("This request can no longer be cancelled from the member page.");
       return;
     }
 
-    const confirmed = window.confirm(
-      `Cancel this request for ${requestVendorName(request)}?`,
-    );
+    setRequestPendingCancel(request);
+  }
 
-    if (!confirmed) {
+  async function confirmCancelRequest() {
+    if (!requestPendingCancel) {
       return;
     }
+
+    const request = requestPendingCancel;
+    setRequestPendingCancel(null);
 
     try {
       setCancellingRequestId(request.id);
@@ -461,10 +450,12 @@ action_type
         ),
       );
       setStatus("Vendor request cancelled.");
-    } catch (err: any) {
+    } catch (err) {
       console.error("cancel vendor request error:", err);
-      setError(err?.message || "Could not cancel vendor request.");
-      setStatus("Cancel failed.");
+      setError(
+        err instanceof Error ? err.message : "Could not cancel vendor request.",
+      );
+      setStatus("");
     } finally {
       setCancellingRequestId(null);
     }
@@ -485,7 +476,7 @@ action_type
           Vendor Service Request
         </h1>
         <div style={{ fontSize: 14, color: "#555" }}>
-          Current event: {eventName(event)}
+          Current event: {event?.name || "Current event"}
         </div>
         <div style={{ fontSize: 13, marginTop: 8 }}>{status}</div>
         {error ? (
@@ -837,7 +828,7 @@ action_type
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                       type="button"
-                      onClick={() => void cancelRequest(request)}
+                      onClick={() => cancelRequest(request)}
                       disabled={
                         !cancelAllowed || cancellingRequestId === request.id
                       }
@@ -860,6 +851,20 @@ action_type
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={!!requestPendingCancel}
+        title="Cancel Vendor Request"
+        message={
+          requestPendingCancel
+            ? `Cancel this request for ${requestVendorName(requestPendingCancel)}?`
+            : ""
+        }
+        confirmLabel="Cancel Request"
+        cancelLabel="Keep Request"
+        danger={true}
+        onConfirm={() => void confirmCancelRequest()}
+        onCancel={() => setRequestPendingCancel(null)}
+      />
     </div>
   );
 }

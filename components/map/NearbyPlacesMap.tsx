@@ -27,14 +27,20 @@ type Place = {
 };
 
 function cleanPhone(phone?: string | null) {
-  if (!phone) {return "";}
+  if (!phone) {
+    return "";
+  }
   return phone.replace(/[^\d+]/g, "");
 }
 
 function normalizeWebsite(url?: string | null) {
-  if (!url) {return "";}
+  if (!url) {
+    return "";
+  }
   const trimmed = url.trim();
-  if (!trimmed) {return "";}
+  if (!trimmed) {
+    return "";
+  }
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
     return trimmed;
   }
@@ -128,10 +134,12 @@ export default function NearbyPlacesMap({
   places = [],
   eventLat = null,
   eventLng = null,
+  notesLabel = "Note",
 }: {
   places: Place[];
   eventLat?: number | null;
   eventLng?: number | null;
+  notesLabel?: string;
 }) {
   const validPlaces = useMemo(
     () =>
@@ -224,7 +232,7 @@ export default function NearbyPlacesMap({
                     <div
                       style={{ fontSize: 12, color: "#555", marginBottom: 8 }}
                     >
-                      <strong>RV note:</strong> {place.notes}
+                      <strong>{notesLabel}:</strong> {place.notes}
                     </div>
                   ) : null}
                   <div

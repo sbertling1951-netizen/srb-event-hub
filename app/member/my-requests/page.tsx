@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { supabase } from "@/lib/supabase";
+
+type RequestVendorRow = {
+  business_name: string | null;
+};
 
 type RequestRow = {
   id: string;
@@ -17,14 +21,7 @@ type RequestRow = {
   request_notes: string | null;
   request_status: string | null;
   created_at: string | null;
-  vendors?:
-    | {
-        business_name: string | null;
-      }
-    | {
-        business_name: string | null;
-      }[]
-    | null;
+  vendors?: RequestVendorRow | RequestVendorRow[] | null;
 };
 
 function statusBadgeStyle(status: string): React.CSSProperties {
@@ -99,9 +96,17 @@ function MyRequestsInner() {
   const [memberName, setMemberName] = useState<string | null>(null);
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [status, setStatus] = useState("Loading your requests...");
+  const [error, setError] = useState<string | null>(null);
 
-  async function loadRequests() {
+  const loadRequests = useCallback(async () => {
     try {
+      setError(null);
+      if (typeof window === "undefined") {
+        setRequests([]);
+        setStatus("No member session found.");
+        return;
+      }
+
       const rawEvent = localStorage.getItem("fcoc-member-event-context");
       const memberEmail = localStorage.getItem("fcoc-member-email");
       const name = localStorage.getItem("fcoc-member-name");
@@ -155,15 +160,19 @@ function MyRequestsInner() {
       setStatus(
         `Loaded ${rows.length} service request${rows.length === 1 ? "" : "s"}.`,
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error("load member requests error:", err);
       setRequests([]);
-      setStatus(err?.message || "Could not load your requests.");
+      setError(
+        err instanceof Error ? err.message : "Could not load your requests.",
+      );
+      setStatus("");
     }
-  }
+  }, []);
 
   async function cancelRequest(id: string) {
     try {
+      setError(null);
       const { error } = await supabase
         .from("vendor_service_requests")
         .update({ request_status: "cancelled" })
@@ -180,11 +189,15 @@ function MyRequestsInner() {
       );
     } catch (err) {
       console.error("cancel request error:", err);
+      setError(
+        err instanceof Error ? err.message : "Could not cancel your request.",
+      );
     }
   }
 
   async function undoCancelRequest(id: string) {
     try {
+      setError(null);
       const { error } = await supabase
         .from("vendor_service_requests")
         .update({ request_status: "new" })
@@ -199,12 +212,15 @@ function MyRequestsInner() {
       );
     } catch (err) {
       console.error("undo cancel request error:", err);
+      setError(
+        err instanceof Error ? err.message : "Could not restore your request.",
+      );
     }
   }
 
   useEffect(() => {
     void loadRequests();
-  }, []);
+  }, [loadRequests]);
 
   const activeCount = useMemo(() => {
     return requests.filter((request) => {
@@ -230,9 +246,28 @@ function MyRequestsInner() {
             {memberName}, here are your service requests.
           </div>
         ) : null}
-        <div style={{ marginTop: 6, fontSize: 14, color: "#555" }}>
-          {status}
-        </div>
+        {status ? (
+          <div style={{ marginTop: 6, fontSize: 14, color: "#555" }}>
+            {status}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div
+            role="alert"
+            style={{
+              marginTop: 10,
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid #fecaca",
+              background: "#fef2f2",
+              color: "#991b1b",
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
         {activeCount > 0 ? (
           <div style={{ marginTop: 6, fontWeight: 800 }}>
             Active requests: {activeCount}
@@ -318,7 +353,7 @@ function MyRequestsInner() {
             {requestStatus !== "completed" && requestStatus !== "cancelled" ? (
               <button
                 type="button"
-                onClick={() => cancelRequest(request.id)}
+                onClick={() => void cancelRequest(request.id)}
                 style={{
                   marginTop: 8,
                   padding: "8px 12px",
@@ -335,7 +370,7 @@ function MyRequestsInner() {
             ) : requestStatus === "cancelled" ? (
               <button
                 type="button"
-                onClick={() => undoCancelRequest(request.id)}
+                onClick={() => void undoCancelRequest(request.id)}
                 style={{
                   marginTop: 8,
                   padding: "8px 12px",

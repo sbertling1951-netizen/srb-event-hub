@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { setCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
 
 type EventRow = {
@@ -28,33 +30,16 @@ function formatDateRange(startDate: string | null, endDate: string | null) {
   return startDate || endDate || "";
 }
 
-function setMemberEventContext(event: EventRow) {
-  localStorage.setItem(
-    "fcoc-member-event-context",
-    JSON.stringify({
-      id: event.id,
-      name: event.name || null,
-      eventName: event.name || null,
-      venue_name: event.venue_name || null,
-      location: event.location || null,
-      start_date: event.start_date || null,
-      end_date: event.end_date || null,
-      event_code: event.event_code || null,
-      lat: event.lat || null,
-      lng: event.lng || null,
-    }),
-  );
-
-  localStorage.setItem("fcoc-member-event-changed", String(Date.now()));
-}
-
 export default function MemberEventsPage() {
+  const router = useRouter();
   const [events, setEvents] = useState<EventRow[]>([]);
   const [status, setStatus] = useState("Loading events...");
+  const [error, setError] = useState<string | null>(null);
 
   const loadEvents = useCallback(async () => {
     try {
       setStatus("Loading events...");
+      setError(null);
 
       const { data, error } = await supabase
         .from("events")
@@ -72,10 +57,11 @@ export default function MemberEventsPage() {
       setStatus(
         `Loaded ${(data || []).length} event${(data || []).length === 1 ? "" : "s"}.`,
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error("loadEvents error:", err);
       setEvents([]);
-      setStatus(err?.message || "Failed to load events.");
+      setError(err instanceof Error ? err.message : "Failed to load events.");
+      setStatus("");
     }
   }, []);
 
@@ -84,8 +70,8 @@ export default function MemberEventsPage() {
   }, [loadEvents]);
 
   function handleSelectEvent(event: EventRow) {
-    setMemberEventContext(event);
-    window.location.href = "/nearby";
+    setCurrentMemberEvent(event);
+    router.push("/nearby");
   }
 
   return (
@@ -93,19 +79,38 @@ export default function MemberEventsPage() {
       <h1 style={{ marginTop: 0 }}>Member Events</h1>
       <p>Select an event to continue.</p>
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-          marginBottom: 16,
-          fontSize: 13,
-          color: "#555",
-        }}
-      >
-        {status}
-      </div>
+      {status ? (
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "#f8f9fb",
+            padding: 14,
+            marginBottom: 16,
+            fontSize: 13,
+            color: "#555",
+          }}
+        >
+          {status}
+        </div>
+      ) : null}
+
+      {error ? (
+        <div
+          role="alert"
+          style={{
+            border: "1px solid #fecaca",
+            borderRadius: 10,
+            background: "#fef2f2",
+            color: "#991b1b",
+            padding: 14,
+            marginBottom: 16,
+            fontWeight: 700,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
 
       <div style={{ display: "grid", gap: 14 }}>
         {events.map((event) => (

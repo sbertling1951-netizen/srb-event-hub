@@ -22,6 +22,7 @@ type CampgroundMapProps = {
   onMapClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onMarkerClick?: (site: SiteMarker) => void;
   selectedSiteId?: string | null;
+  siteLabel?: string;
 };
 
 function markerColor(site: SiteMarker, isSelected: boolean) {
@@ -44,6 +45,7 @@ function CampgroundMapInner({
   onMapClick,
   onMarkerClick,
   selectedSiteId = null,
+  siteLabel = "Site",
 }: CampgroundMapProps) {
   const selectedSite = sites.find((s) => s.id === selectedSiteId) || null;
 
@@ -63,13 +65,8 @@ function CampgroundMapInner({
   });
   const [isPanning, setIsPanning] = React.useState(false);
   const didPanRef = React.useRef(false);
-  const canPanMap = true;
 
   function beginPan(e: React.PointerEvent<HTMLDivElement>) {
-    if (!canPanMap) {
-      return;
-    }
-
     const target = e.target as HTMLElement | null;
     if (target?.closest("button")) {
       return;
@@ -95,7 +92,7 @@ function CampgroundMapInner({
   }
 
   function movePan(e: React.PointerEvent<HTMLDivElement>) {
-    if (!canPanMap || !panStateRef.current.active) {
+    if (!panStateRef.current.active) {
       return;
     }
 
@@ -175,7 +172,7 @@ function CampgroundMapInner({
       >
         <img
           src={mapImageUrl}
-          alt="Campground map"
+          alt="Event map"
           draggable={false}
           style={{
             position: "absolute",
@@ -199,7 +196,7 @@ function CampgroundMapInner({
                 e.stopPropagation();
                 onMarkerClick?.(site);
               }}
-              title={`Site ${site.site_number || ""}`}
+              title={`${siteLabel} ${site.site_number || ""}`}
               style={{
                 position: "absolute",
                 left: `${site.map_x}%`,
@@ -284,7 +281,7 @@ function CampgroundMapInner({
             }}
           >
             <div style={{ fontWeight: 700 }}>
-              Site {selectedSite.site_number || "(no number)"}
+              {siteLabel} {selectedSite.site_number || "(no number)"}
             </div>
 
             {selectedSite.display_label &&

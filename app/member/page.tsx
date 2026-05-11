@@ -2,20 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import AnnouncementBanner from "@/components/AnnouncementBanner";
+import {
+  type CurrentMemberEvent,
+  getCurrentMemberEvent,
+  getStoredMemberAttendeeId,
+  getStoredMemberEmail,
+  getStoredMemberEntryId,
+} from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
-
-type EventContext = {
-  id?: string | null;
-  name?: string | null;
-  eventName?: string | null;
-  venue_name?: string | null;
-  location?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
-};
+import { getTenantLabel } from "@/lib/tenantLabels";
 
 type DashboardVendor = {
   id: string;
@@ -24,16 +22,54 @@ type DashboardVendor = {
   logo_url: string | null;
   signup_url: string | null;
   is_featured: boolean | null;
-  action_type: string | null;
+  action_type: string;
 };
+
+type EventVendorDetails = {
+  id: string;
+  business_name: string;
+  business_description: string | null;
+  logo_url: string | null;
+};
+
+type EventVendorRow = {
+  id: string;
+  is_featured: boolean | null;
+  display_order: number | null;
+  signup_url: string | null;
+  action_type: string | null;
+  vendors: EventVendorDetails | EventVendorDetails[] | null;
+};
+
+function getDashboardVendorDetails(
+  value: EventVendorRow["vendors"],
+): EventVendorDetails | null {
+  if (Array.isArray(value)) {
+    return value[0] || null;
+  }
+
+  return value;
+}
 
 export default function MemberDashboardPage() {
   const [ready, setReady] = useState(false);
-  const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
+  const [currentEvent, setCurrentEvent] = useState<CurrentMemberEvent | null>(
+    null,
+  );
   const [vendors, setVendors] = useState<DashboardVendor[]>([]);
+  const [vendorError, setVendorError] = useState<string | null>(null);
   const [currentVendorIndex, setCurrentVendorIndex] = useState(0);
 
   const router = useRouter();
+
+  const dashboardTitle = getTenantLabel("dashboard_title");
+  const agendaNavLabel = getTenantLabel("agenda_nav_label");
+  const announcementsNavLabel = getTenantLabel("announcements_nav_label");
+  const attendeesNavLabel = getTenantLabel("attendees_nav_label");
+  const nearbyNavLabel = getTenantLabel("nearby_nav_label");
+  const myRequestsNavLabel = getTenantLabel("my_requests_nav_label");
+  const eventVendorsHeading = getTenantLabel("event_vendors_heading");
+  const vendorLabel = getTenantLabel("vendor_label");
 
   function goTo(path: string) {
     router.push(path);
@@ -41,46 +77,43 @@ export default function MemberDashboardPage() {
 
   useEffect(() => {
     try {
-      const rawEvent = localStorage.getItem("fcoc-member-event-context");
-      const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
-      const entryId = localStorage.getItem("fcoc-member-entry-id");
-      const email = localStorage.getItem("fcoc-member-email");
+      const memberEvent = getCurrentMemberEvent();
+      const attendeeId = getStoredMemberAttendeeId();
+      const entryId = getStoredMemberEntryId();
+      const email = getStoredMemberEmail();
 
-      if (!rawEvent) {
-        window.location.href = "/member/login";
+      if (!memberEvent) {
+        router.replace("/member/login");
         return;
       }
 
       if (!attendeeId && !entryId && !email) {
-        window.location.href = "/member/login";
+        router.replace("/member/login");
         return;
       }
 
-      const parsed = JSON.parse(rawEvent);
-      setCurrentEvent(parsed);
+      setCurrentEvent(memberEvent);
     } catch (err) {
       console.error("Member dashboard load error:", err);
-      window.location.href = "/member/login";
+      router.replace("/member/login");
       return;
     } finally {
       setReady(true);
     }
-  }, []);
+  }, [router]);
 
-  useEffect(() => {
-    async function loadVendors() {
-      try {
-        const rawEvent = localStorage.getItem("fcoc-member-event-context");
-        if (!rawEvent) {
-          return;
-        }
+  const loadVendors = useCallback(async () => {
+    try {
+      setVendorError(null);
+      const event = getCurrentMemberEvent();
+      if (!event?.id) {
+        return;
+      }
 
-        const event = JSON.parse(rawEvent);
-
-        const { data, error } = await supabase
-          .from("event_vendors")
-          .select(
-            `
+      const { data, error } = await supabase
+        .from("event_vendors")
+        .select(
+          `
           id,
           is_featured,
           display_order,
@@ -93,37 +126,50 @@ export default function MemberDashboardPage() {
             logo_url
           )
         `,
-          )
-          .eq("event_id", event.id)
-          .eq("is_visible_to_members", true)
-          .order("display_order", { ascending: true });
+        )
+        .eq("event_id", event.id)
+        .eq("is_visible_to_members", true)
+        .order("display_order", { ascending: true });
 
-        if (error) {
-          throw error;
-        }
-
-        const cleaned =
-          (data || [])
-            .filter((row: any) => row.vendors)
-            .map((row: any) => ({
-              id: row.vendors.id,
-              business_name: row.vendors.business_name,
-              business_description: row.vendors.business_description,
-              logo_url: row.vendors.logo_url,
-              signup_url: row.signup_url,
-              is_featured: row.is_featured,
-              action_type: row.action_type || "service_request",
-            })) || [];
-
-        setVendors(cleaned);
-        setCurrentVendorIndex(0);
-      } catch (err) {
-        console.error("Vendor load error:", err);
+      if (error) {
+        throw error;
       }
-    }
 
+      // Supabase does not infer this joined relationship shape here; the select above defines it.
+      const rows = (data || []) as EventVendorRow[];
+      const cleaned = rows
+        .map((row) => {
+          const vendor = getDashboardVendorDetails(row.vendors);
+
+          if (!vendor) {
+            return null;
+          }
+
+          return {
+            id: vendor.id || row.id,
+            business_name: vendor.business_name || vendorLabel,
+            business_description: vendor.business_description || null,
+            logo_url: vendor.logo_url || null,
+            signup_url: row.signup_url,
+            is_featured: row.is_featured,
+            action_type: row.action_type || "service_request",
+          };
+        })
+        .filter((vendor): vendor is DashboardVendor => !!vendor);
+
+      setVendors(cleaned);
+      setCurrentVendorIndex(0);
+    } catch (err) {
+      console.error("Vendor load error:", err);
+      setVendorError(
+        err instanceof Error ? err.message : "Could not load event vendors.",
+      );
+    }
+  }, [vendorLabel]);
+
+  useEffect(() => {
     void loadVendors();
-  }, []);
+  }, [loadVendors]);
 
   useEffect(() => {
     if (vendors.length <= 1) {
@@ -138,6 +184,8 @@ export default function MemberDashboardPage() {
 
     return () => clearInterval(interval);
   }, [vendors]);
+
+  const activeVendor = vendors[currentVendorIndex] ?? vendors[0] ?? null;
 
   if (!ready) {
     return <div style={{ padding: 30 }}>Loading...</div>;
@@ -161,7 +209,7 @@ export default function MemberDashboardPage() {
         }}
       >
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>
-          {currentEvent.name || currentEvent.eventName || "Member Dashboard"}
+          {currentEvent.name || dashboardTitle}
         </h1>
 
         <div style={{ fontSize: 14, opacity: 0.8 }}>
@@ -182,7 +230,7 @@ export default function MemberDashboardPage() {
           onClick={() => goTo("/member/agenda")}
           style={memberGridButtonStyle}
         >
-          📅 Agenda
+          📅 {agendaNavLabel}
         </button>
 
         <button
@@ -190,7 +238,7 @@ export default function MemberDashboardPage() {
           onClick={() => goTo("/member/announcements")}
           style={memberGridButtonStyle}
         >
-          📣 Announcements
+          📣 {announcementsNavLabel}
         </button>
 
         <button
@@ -198,7 +246,7 @@ export default function MemberDashboardPage() {
           onClick={() => goTo("/member/attendees")}
           style={memberGridButtonStyle}
         >
-          👥 Attendees
+          👥 {attendeesNavLabel}
         </button>
 
         <button
@@ -206,7 +254,7 @@ export default function MemberDashboardPage() {
           onClick={() => goTo("/member/nearby")}
           style={memberGridButtonStyle}
         >
-          📍 Nearby
+          📍 {nearbyNavLabel}
         </button>
 
         <button
@@ -214,9 +262,25 @@ export default function MemberDashboardPage() {
           onClick={() => goTo("/member/my-requests")}
           style={memberGridButtonStyle}
         >
-          🧾 My Requests
+          🧾 {myRequestsNavLabel}
         </button>
       </div>
+
+      {vendorError ? (
+        <div
+          role="alert"
+          style={{
+            border: "1px solid #fecaca",
+            borderRadius: 12,
+            background: "#fef2f2",
+            color: "#991b1b",
+            padding: 14,
+            fontWeight: 700,
+          }}
+        >
+          {vendorError}
+        </div>
+      ) : null}
 
       {vendors.length > 0 ? (
         <div
@@ -229,68 +293,58 @@ export default function MemberDashboardPage() {
           }}
         >
           <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 10 }}>
-            Event Vendors
+            {eventVendorsHeading}
           </div>
 
-          {(() => {
-            const vendor = vendors[currentVendorIndex] || vendors[0];
+          {activeVendor ? (
+            <div style={{ display: "grid", gap: 10, textAlign: "center" }}>
+              {activeVendor.logo_url ? (
+                <img
+                  src={activeVendor.logo_url}
+                  alt={activeVendor.business_name}
+                  style={{
+                    maxHeight: 90,
+                    maxWidth: "100%",
+                    objectFit: "contain",
+                    margin: "0 auto",
+                  }}
+                />
+              ) : null}
 
-            if (!vendor) {
-              return null;
-            }
-
-            return (
-              <div style={{ display: "grid", gap: 10, textAlign: "center" }}>
-                {vendor.logo_url ? (
-                  <img
-                    src={vendor.logo_url}
-                    alt={vendor.business_name}
-                    style={{
-                      maxHeight: 90,
-                      maxWidth: "100%",
-                      objectFit: "contain",
-                      margin: "0 auto",
-                    }}
-                  />
-                ) : null}
-
-                <div style={{ fontWeight: 800, fontSize: 20 }}>
-                  {vendor.business_name}
-                </div>
-
-                {vendor.business_description ? (
-                  <div
-                    style={{ fontSize: 14, color: "#555", lineHeight: 1.45 }}
-                  >
-                    {vendor.business_description}
-                  </div>
-                ) : null}
-
-                {vendor.action_type === "external_signup" &&
-                vendor.signup_url ? (
-                  <a
-                    href={vendor.signup_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={primaryLinkStyle}
-                  >
-                    Sign Up
-                  </a>
-                ) : vendor.action_type === "info_only" ? (
-                  <Link href="/member/vendor-signup" style={primaryLinkStyle}>
-                    View Vendors
-                  </Link>
-                ) : (
-                  <Link
-                    href={`/member/vendor-signup?vendorId=${vendor.id}`}
-                    style={primaryLinkStyle}
-                  >
-                    Request Service
-                  </Link>
-                )}
+              <div style={{ fontWeight: 800, fontSize: 20 }}>
+                {activeVendor.business_name}
               </div>
-            );
-          })()}
+
+              {activeVendor.business_description ? (
+                <div style={{ fontSize: 14, color: "#555", lineHeight: 1.45 }}>
+                  {activeVendor.business_description}
+                </div>
+              ) : null}
+
+              {activeVendor.action_type === "external_signup" &&
+              activeVendor.signup_url ? (
+                <a
+                  href={activeVendor.signup_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={primaryLinkStyle}
+                >
+                  Sign Up
+                </a>
+              ) : activeVendor.action_type === "info_only" ? (
+                <Link href="/member/vendor-signup" style={primaryLinkStyle}>
+                  View Vendors
+                </Link>
+              ) : (
+                <Link
+                  href={`/member/vendor-signup?vendorId=${activeVendor.id}`}
+                  style={primaryLinkStyle}
+                >
+                  Request Service
+                </Link>
+              )}
+            </div>
+          ) : null}
 
           {vendors.length > 1 ? (
             <div style={{ marginTop: 12, textAlign: "center" }}>
@@ -298,7 +352,7 @@ export default function MemberDashboardPage() {
                 <button
                   key={vendor.id}
                   type="button"
-                  aria-label={`Show vendor ${index + 1}`}
+                  aria-label={`Show ${vendorLabel} ${index + 1}`}
                   onClick={() => setCurrentVendorIndex(index)}
                   style={{
                     display: "inline-block",

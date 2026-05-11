@@ -7,6 +7,10 @@ import {
   toTitleCase,
 } from "@/lib/importNormalize";
 
+// This maps the FCOC Gravity Forms CSV export format.
+// For other tenants, extend importMapping with tenant-specific
+// column maps or a runtime alias configuration.
+
 export type ParsedImportRow = {
   membershipNumber: string;
   pilotPrefix: string;
@@ -75,6 +79,7 @@ export function mapImportRow(row: unknown[]): ParsedImportRow {
     pilotLast: toTitleCase(cells[4]),
     pilotSuffix: toTitleCase(cells[5]),
     pilotBadgeNickname: toTitleCase(cells[6]),
+    // cells[7]: unused blank separator column in source export
 
     copilotPrefix: toTitleCase(cells[8]),
     copilotFirst: toTitleCase(cells[9]),
@@ -82,6 +87,7 @@ export function mapImportRow(row: unknown[]): ParsedImportRow {
     copilotLast: toTitleCase(cells[11]),
     copilotSuffix: toTitleCase(cells[12]),
     copilotBadgeNickname: toTitleCase(cells[13]),
+    // cells[14]: unused blank separator column in source export
 
     additionalAttendees: cleanValue(cells[15]),
 
@@ -109,6 +115,7 @@ export function mapImportRow(row: unknown[]): ParsedImportRow {
     productName: cleanValue(cells[34]),
     productPrice: cleanValue(cells[35]),
     productQuantity: cleanValue(cells[36]),
+    // cells[37-41]: unused internal/export metadata fields not imported
 
     rmEmail: normalizeEmail(cells[42]),
     createdByUserId: cleanValue(cells[43]),

@@ -2,27 +2,40 @@
 
 import type { Route } from "next";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+
+import {
+  getCurrentMemberEvent,
+  getStoredMemberAttendeeId,
+  getStoredMemberHasArrived,
+} from "@/lib/getCurrentMemberEvent";
+import { getTenantLabel } from "@/lib/tenantLabels";
 
 export default function HomePage() {
   const [checked, setChecked] = useState(false);
   const [hasSession, setHasSession] = useState(false);
+  const router = useRouter();
+  const appTitle = getTenantLabel("app_title");
+  const welcomeMessage = getTenantLabel("welcome_message");
+  const memberLoginLabel = getTenantLabel("member_login_label");
+  const adminLoginLabel = getTenantLabel("admin_login_label");
 
   useEffect(() => {
     try {
-      const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
-      const eventContext = localStorage.getItem("fcoc-member-event-context");
-      const hasArrived = localStorage.getItem("fcoc-member-has-arrived");
+      const attendeeId = getStoredMemberAttendeeId();
+      const memberEvent = getCurrentMemberEvent();
+      const hasArrived = getStoredMemberHasArrived();
 
-      const sessionExists = !!eventContext;
+      const sessionExists = !!memberEvent;
 
       if (sessionExists) {
         setHasSession(true);
 
         if (attendeeId && hasArrived === "true") {
-          window.location.href = "/member";
+          router.replace("/member");
         } else {
-          window.location.href = "/member/checkin";
+          router.replace("/member/checkin");
         }
 
         return;
@@ -35,7 +48,7 @@ export default function HomePage() {
     } finally {
       setChecked(true);
     }
-  }, []);
+  }, [router]);
 
   if (!checked) {
     return <div style={{ padding: 30 }}>Loading...</div>;
@@ -43,15 +56,15 @@ export default function HomePage() {
 
   if (!hasSession) {
     const links = [
-      { href: "/member/login", label: "Member" },
-      { href: "/admin/login", label: "Admin" },
+      { href: "/member/login", label: memberLoginLabel },
+      { href: "/admin/login", label: adminLoginLabel },
     ];
 
     return (
       <div style={{ padding: 30, maxWidth: 700, margin: "0 auto" }}>
-        <h1 style={{ marginTop: 0 }}>FCOC Event Hub</h1>
+        <h1 style={{ marginTop: 0 }}>{appTitle}</h1>
 
-        <p>Welcome to the Freightliner Chassis Owners Club event app.</p>
+        <p>{welcomeMessage}</p>
 
         <div
           style={{

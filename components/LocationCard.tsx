@@ -1,7 +1,7 @@
 import { getBestLocationQuery } from "@/lib/location";
 import { buildAppleMapsUrl, buildGoogleMapsUrl } from "@/lib/maps";
 
-interface Props {
+export type LocationCardProps = {
   name: string;
   address: string;
   phone?: string;
@@ -11,40 +11,45 @@ interface Props {
   category?: string;
   rvNote?: string;
   locationCode?: string;
-}
+};
 
 function cleanPhone(phone?: string) {
-  if (!phone) {return "";}
+  if (!phone) {
+    return "";
+  }
   return phone.replace(/[^\d+]/g, "");
 }
 
 function normalizeWebsite(url?: string) {
-  if (!url) {return "";}
+  if (!url) {
+    return "";
+  }
   const trimmed = url.trim();
-  if (!trimmed) {return "";}
+  if (!trimmed) {
+    return "";
+  }
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
     return trimmed;
   }
   return `https://${trimmed}`;
 }
 
-export default function LocationCard(props: Props) {
+export default function LocationCard(props: LocationCardProps) {
   const mapQuery = getBestLocationQuery({
     location_code: props.locationCode,
     address: props.address,
   });
 
-  const appleMaps = buildAppleMapsUrl(
-    mapQuery || props.address || props.name,
-    props.latitude,
-    props.longitude,
-  );
+  const destinationQuery =
+    mapQuery || props.address?.trim() || props.name?.trim() || "";
 
-  const googleMaps = buildGoogleMapsUrl(
-    mapQuery || props.address || props.name,
-    props.latitude,
-    props.longitude,
-  );
+  const appleMaps = destinationQuery
+    ? buildAppleMapsUrl(destinationQuery, props.latitude, props.longitude)
+    : "";
+
+  const googleMaps = destinationQuery
+    ? buildGoogleMapsUrl(destinationQuery, props.latitude, props.longitude)
+    : "";
 
   const phoneHref = cleanPhone(props.phone);
   const websiteHref = normalizeWebsite(props.website);
@@ -73,23 +78,27 @@ export default function LocationCard(props: Props) {
       ) : null}
 
       <div className="location-actions">
-        <a
-          className="button-secondary"
-          href={appleMaps}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Apple Maps
-        </a>
+        {appleMaps ? (
+          <a
+            className="button-secondary"
+            href={appleMaps}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Apple Maps
+          </a>
+        ) : null}
 
-        <a
-          className="button-secondary"
-          href={googleMaps}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Google Maps
-        </a>
+        {googleMaps ? (
+          <a
+            className="button-secondary"
+            href={googleMaps}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Google Maps
+          </a>
+        ) : null}
 
         {phoneHref ? (
           <a className="button-secondary" href={`tel:${phoneHref}`}>

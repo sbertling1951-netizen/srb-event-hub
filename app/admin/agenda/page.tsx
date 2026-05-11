@@ -5,7 +5,10 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
+import AgendaImportPanel from "@/components/admin/agenda/AgendaImportPanel";
+import AgendaTemplatePanel from "@/components/admin/agenda/AgendaTemplatePanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
@@ -96,7 +99,16 @@ type AgendaTemplateItem = {
 };
 
 type AgendaAdminMode = "items" | "import";
+
 type AgendaImportRow = Record<string, unknown>;
+
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  danger: boolean;
+};
 
 const MOBILE_BREAKPOINT = 900;
 const AGENDA_SLOT_MINUTES = 15;
@@ -558,12 +570,17 @@ function AdminAgendaPageInner() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [agendaMode, setAgendaMode] = useState<AgendaAdminMode>("items");
   const [importStatus, setImportStatus] = useState(
     "No agenda import file selected.",
   );
   const [importBusy, setImportBusy] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(
+    null,
+  );
+  const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(
+    null,
+  );
 
   function showStatus(message: string) {
     setError(null);
@@ -573,6 +590,32 @@ function AdminAgendaPageInner() {
   function showError(message: string) {
     setError(message);
     setStatus("");
+  }
+
+  function requestConfirmation(dialog: Partial<ConfirmDialogState>) {
+    // Prevent orphaned promises if another confirmation is opened
+    // before the previous dialog has been resolved.
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(false);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+
+      setConfirmDialog({
+        title: dialog.title || "Confirm Action",
+        message: dialog.message || "Are you sure you want to continue?",
+        confirmLabel: dialog.confirmLabel || "Confirm",
+        cancelLabel: dialog.cancelLabel || "Cancel",
+        danger: !!dialog.danger,
+      });
+    });
+  }
+
+  function closeConfirmDialog(confirmed: boolean) {
+    confirmResolverRef.current?.(confirmed);
+    confirmResolverRef.current = null;
+    setConfirmDialog(null);
   }
 
   useEffect(() => {
@@ -654,7 +697,6 @@ function AdminAgendaPageInner() {
       .order("name", { ascending: true });
 
     if (error) {
-      console.error("loadTemplates error:", error);
       showError(error.message || "Could not load agenda templates.");
       return;
     }
@@ -676,7 +718,6 @@ function AdminAgendaPageInner() {
   useEffect(() => {
     async function init() {
       setLoading(true);
-      setAccessDenied(false);
       showStatus("Checking admin access...");
 
       const admin = await getCurrentAdminAccess();
@@ -686,7 +727,6 @@ function AdminAgendaPageInner() {
         setItems([]);
         showError("No admin access.");
         setLoading(false);
-        setAccessDenied(true);
         return;
       }
 
@@ -705,7 +745,6 @@ function AdminAgendaPageInner() {
         setItems([]);
         showError("You do not have access to this event.");
         setLoading(false);
-        setAccessDenied(true);
         return;
       }
 
@@ -889,31 +928,24 @@ function AdminAgendaPageInner() {
     const itemToDelete = items.find((item) => item.id === id);
     const itemTitle = itemToDelete?.title || "this agenda item";
 
-    const confirmed = window.confirm(`Delete "${itemTitle}"?`);
+    const confirmed = await requestConfirmation({
+      title: "Delete Agenda Item",
+      message: `Delete "${itemTitle}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+
     if (!confirmed) {
       return;
     }
 
     showStatus(`Deleting "${itemTitle}"...`);
 
-    console.log("AGENDA DELETE DEBUG start", {
-      id,
-      activeEventId: activeEvent?.id || null,
-      itemEventId: itemToDelete?.event_id || null,
-      itemTitle,
-    });
-
     const { data: deletedRows, error } = await supabase
       .from("agenda_items")
       .delete()
       .eq("id", id)
       .select("id,title,event_id");
-
-    console.log("AGENDA DELETE DEBUG result", {
-      id,
-      deletedRows,
-      error,
-    });
 
     if (error) {
       showError(error.message || "Could not delete item.");
@@ -1235,14 +1267,23 @@ function AdminAgendaPageInner() {
     try {
       e.dataTransfer.setData("text/plain", id);
       e.dataTransfer.effectAllowed = "move";
-    } catch {}
+    } catch (err) {
+      // Some mobile/Safari drag events do not fully support dataTransfer.
+      // Safe to ignore because local component drag state still works.
+      console.debug("Drag dataTransfer unavailable:", err);
+    }
   }
 
   function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
+
     try {
       e.dataTransfer.dropEffect = "move";
-    } catch {}
+    } catch (err) {
+      // Some mobile/Safari drag events do not fully support dropEffect.
+      // Safe to ignore because drag/drop still functions with local state.
+      console.debug("Drag dropEffect unavailable:", err);
+    }
   }
 
   function handleCalendarDragStart(
@@ -1258,7 +1299,11 @@ function AdminAgendaPageInner() {
     try {
       e.dataTransfer.setData("text/plain", id);
       e.dataTransfer.effectAllowed = "move";
-    } catch {}
+    } catch (err) {
+      // Some mobile/Safari drag events do not fully support dataTransfer.
+      // Safe to ignore because local component drag state still works.
+      console.debug("Calendar drag dataTransfer unavailable:", err);
+    }
   }
 
   function handleCalendarDragOver(
@@ -1269,7 +1314,11 @@ function AdminAgendaPageInner() {
 
     try {
       e.dataTransfer.dropEffect = "move";
-    } catch {}
+    } catch (err) {
+      // Some mobile/Safari drag events do not fully support dropEffect.
+      // Safe to ignore because drag/drop still functions with local state.
+      console.debug("Calendar drag dropEffect unavailable:", err);
+    }
 
     const rect = e.currentTarget.getBoundingClientRect();
     const y = Math.max(0, e.clientY - rect.top);
@@ -1551,25 +1600,27 @@ function AdminAgendaPageInner() {
       setSavingOrder(true);
       showStatus("Saving agenda order...");
 
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index];
-        const nextSort = index + 1;
+      const sortOrderPayload = items.map((item, index) => ({
+        id: item.id,
+        event_id: activeEvent.id,
+        sort_order: index + 1,
+      }));
 
-        const { error } = await supabase
-          .from("agenda_items")
-          .update({ sort_order: nextSort })
-          .eq("id", item.id);
+      const { error } = await supabase
+        .from("agenda_items")
+        .upsert(sortOrderPayload, {
+          onConflict: "id",
+        });
 
-        if (error) {
-          throw error;
-        }
+      if (error) {
+        throw error;
       }
 
       setStatus("Agenda order saved.");
       await loadPage();
-    } catch (err: any) {
+    } catch (err) {
       console.error("saveOrder error:", err);
-      showError(err?.message || "Failed to save order.");
+      showError(err instanceof Error ? err.message : "Failed to save order.");
     } finally {
       setSavingOrder(false);
     }
@@ -1621,9 +1672,11 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Save the current agenda for ${activeEvent.name} as template "${templateName}"?`,
-    );
+    const confirmed = await requestConfirmation({
+      title: "Save Agenda Template",
+      message: `Save the current agenda for ${activeEvent.name} as template "${templateName}"?`,
+      confirmLabel: "Save Template",
+    });
 
     if (!confirmed) {
       return;
@@ -1691,9 +1744,11 @@ function AdminAgendaPageInner() {
       setStatus(
         `Saved "${templateName}" with ${templateItems.length} agenda items.`,
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error("saveCurrentAgendaAsTemplate error:", err);
-      showError(err?.message || "Could not save agenda template.");
+      showError(
+        err instanceof Error ? err.message : "Could not save agenda template.",
+      );
     } finally {
       setSavingTemplate(false);
     }
@@ -1732,10 +1787,7 @@ function AdminAgendaPageInner() {
           "template",
           selectedTemplateId,
           String(index + 1),
-          (item.title || "agenda-item")
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, ""),
+          slugify(item.title || "agenda-item"),
         ].join("-"),
       title: item.title,
       description: item.description,
@@ -1776,9 +1828,14 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Replace the current event agenda with the selected template? This will remove current event agenda items first.",
-    );
+    const confirmed = await requestConfirmation({
+      title: "Replace Event Agenda",
+      message:
+        "Replace the current event agenda with the selected template? This will remove current event agenda items first.",
+      confirmLabel: "Replace Agenda",
+      danger: true,
+    });
+
     if (!confirmed) {
       return;
     }
@@ -1816,16 +1873,23 @@ function AdminAgendaPageInner() {
         return;
       }
 
-      const payloads = rows.map((row, index) => {
+      const importWarnings: string[] = [];
+
+      const payloads = rows.flatMap((row, index) => {
+        const rowNumber = index + 2;
+
         const title = normalizeImportText(
           getImportField(row, ["Title", "title"]),
         );
+
         const description = normalizeImportText(
           getImportField(row, ["Description", "description"]),
         );
+
         const location = normalizeImportText(
           getImportField(row, ["Location", "location", "Room", "Venue"]),
         );
+
         const speaker = normalizeImportText(
           getImportField(row, ["Speaker", "speaker", "Presenter", "Host"]),
         );
@@ -1868,9 +1932,11 @@ function AdminAgendaPageInner() {
         const category = normalizeImportText(
           getImportField(row, ["Category", "category"]),
         );
+
         const color = normalizeImportText(
           getImportField(row, ["Color", "color"]),
         );
+
         const published = yesNoToBool(
           getImportField(row, [
             "Published",
@@ -1879,24 +1945,28 @@ function AdminAgendaPageInner() {
             "is_published",
           ]),
         );
+
         const sortOrder = normalizeImportNumber(
           getImportField(row, ["Sort Order", "sort_order"]),
         );
 
         if (!title) {
-          throw new Error(`Import blocked. Row ${index + 2}: missing Title.`);
+          importWarnings.push(`Row ${rowNumber}: missing Title`);
+          return [];
         }
 
         if (!agendaDate) {
-          throw new Error(
-            `Import blocked. Row ${index + 2}: missing or invalid Agenda Date.`,
+          importWarnings.push(
+            `Row ${rowNumber}: missing or invalid Agenda Date`,
           );
+          return [];
         }
 
         if (!startTime) {
-          throw new Error(
-            `Import blocked. Row ${index + 2}: missing or invalid Start Time.`,
+          importWarnings.push(
+            `Row ${rowNumber}: missing or invalid Start Time`,
           );
+          return [];
         }
 
         const externalId = [
@@ -1905,26 +1975,39 @@ function AdminAgendaPageInner() {
           startTime || "no-time",
         ].join("-");
 
-        return {
-          event_id: activeEvent.id,
-          external_id: externalId,
-          title,
-          description,
-          location,
-          speaker,
-          category,
-          color: getAgendaColor(category || "", color || ""),
-          agenda_date: agendaDate,
-          start_time: startTime,
-          end_time: endTime,
-          is_published: published,
-          sort_order: sortOrder ?? index + 1,
-          source: "import",
-        };
+        return [
+          {
+            event_id: activeEvent.id,
+            external_id: externalId,
+            title,
+            description,
+            location,
+            speaker,
+            category,
+            color: getAgendaColor(category || "", color || ""),
+            agenda_date: agendaDate,
+            start_time: startTime,
+            end_time: endTime,
+            is_published: published,
+            sort_order: sortOrder ?? index + 1,
+            source: "import",
+          },
+        ];
       });
 
+      if (!payloads.length) {
+        const warningMessage =
+          importWarnings.length > 0
+            ? importWarnings.join(" | ")
+            : "No valid rows found.";
+
+        setImportStatus(`Import failed. ${warningMessage}`);
+        showError(`Import failed. ${warningMessage}`);
+        return;
+      }
+
       setImportStatus(
-        `Importing ${payloads.length} rows into ${activeEvent.name}...`,
+        `Importing ${payloads.length} valid rows into ${activeEvent.name}...`,
       );
 
       const { error: importError } = await supabase
@@ -1939,12 +2022,21 @@ function AdminAgendaPageInner() {
 
       await loadPage();
       setAgendaMode("items");
-      setImportStatus(
-        `Agenda import complete for ${activeEvent.name}. ${payloads.length} rows imported or updated.`,
-      );
-    } catch (err: any) {
+
+      if (importWarnings.length > 0) {
+        setImportStatus(
+          `Agenda import completed with warnings. Imported ${payloads.length} rows. Skipped ${importWarnings.length} rows. ${importWarnings.join(" | ")}`,
+        );
+      } else {
+        setImportStatus(
+          `Agenda import complete for ${activeEvent.name}. ${payloads.length} rows imported or updated.`,
+        );
+      }
+    } catch (err) {
       console.error(err);
-      const message = err?.message || "Unknown error";
+
+      const message = err instanceof Error ? err.message : "Unknown error";
+
       setImportStatus(`Import failed: ${message}`);
       showError(`Import failed: ${message}`);
     } finally {
@@ -1954,18 +2046,18 @@ function AdminAgendaPageInner() {
 
   const assignedTemplateName =
     templates.find((t) => t.id === assignedTemplateId)?.name || "None";
-  if (!loading && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Agenda</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
-  }
   return (
     <div style={{ padding: 24 }}>
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title || "Confirm Action"}
+        message={confirmDialog?.message || "Are you sure you want to continue?"}
+        confirmLabel={confirmDialog?.confirmLabel || "Confirm"}
+        cancelLabel={confirmDialog?.cancelLabel || "Cancel"}
+        danger={!!confirmDialog?.danger}
+        onCancel={() => closeConfirmDialog(false)}
+        onConfirm={() => closeConfirmDialog(true)}
+      />
       <div style={{ marginBottom: 16 }}>
         <button
           type="button"
@@ -2046,215 +2138,38 @@ function AdminAgendaPageInner() {
           {activeEvent?.name || "No admin working event selected"}
         </div>
         <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
-          {status}
+          {loading ? "Loading agenda data..." : status}
         </div>
         <div style={{ fontSize: 13, color: "#666", marginTop: 6 }}>
           Assigned Template: {assignedTemplateName}
         </div>
       </div>
-      {agendaMode === "import" ? (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 16,
-            display: "grid",
-            gap: 14,
-            marginBottom: 20,
-            maxWidth: 840,
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>
-              Import Agenda
-            </div>
-            <div style={{ fontSize: 14, color: "#555" }}>
-              Import CSV or XLSX agenda rows into the selected admin working
-              event.
-            </div>
-          </div>
+      <AgendaImportPanel
+        agendaMode={agendaMode}
+        activeEvent={activeEvent}
+        importBusy={importBusy}
+        importStatus={importStatus}
+        onImportFile={handleAgendaImportFile}
+      />
+      <AgendaTemplatePanel
+        isMobile={isMobile}
+        activeEvent={activeEvent}
+        itemCount={items.length}
+        templates={templates}
+        selectedTemplateId={selectedTemplateId}
+        assignedTemplateName={assignedTemplateName}
+        newTemplateName={newTemplateName}
+        newTemplateDescription={newTemplateDescription}
+        savingTemplate={savingTemplate}
+        setSelectedTemplateId={setSelectedTemplateId}
+        setNewTemplateName={setNewTemplateName}
+        setNewTemplateDescription={setNewTemplateDescription}
+        onSaveTemplate={saveCurrentAgendaAsTemplate}
+        onAssignTemplate={assignTemplate}
+        onCopyTemplate={copyTemplateToEvent}
+        onReplaceFromTemplate={replaceEventFromTemplate}
+      />
 
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 10,
-              background: "#f8f9fb",
-              padding: 14,
-            }}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>
-              Admin working event: {activeEvent?.name || "No selected event"}
-            </div>
-            <div style={{ fontSize: 13, color: "#666" }}>
-              Agenda imports go into this selected admin working event only.
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>
-              Agenda Import Templates
-            </div>
-            <div style={{ display: "grid", gap: 8 }}>
-              <a href="/templates/agenda/agenda_import_template_blank_with_speaker.xlsx">
-                Download blank XLSX template
-              </a>
-              <a href="/templates/agenda/agenda_import_template_blank_with_speaker.csv">
-                Download blank CSV template
-              </a>
-              <a href="/templates/agenda/agenda_import_template_sample_with_speaker.xlsx">
-                Download sample XLSX template
-              </a>
-              <a href="/templates/agenda/agenda_import_template_sample_with_speaker.csv">
-                Download sample CSV template
-              </a>
-              <a href="/templates/agenda/agenda_import_template_notes_with_speaker.txt">
-                Download template notes / instructions
-              </a>
-            </div>
-
-            <div style={{ marginTop: 12, fontSize: 13, color: "#666" }}>
-              <strong>Preferred columns:</strong> Title, Description, Location,
-              Speaker, Agenda Date, Start Time, End Time, Category, Color,
-              Published, Sort Order.
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Upload file</div>
-            <div style={{ fontSize: 14, color: "#555", marginBottom: 10 }}>
-              Accepted formats: CSV and XLSX.
-            </div>
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              disabled={importBusy || !activeEvent}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  void handleAgendaImportFile(file);
-                }
-              }}
-            />
-          </div>
-
-          <div>
-            <strong>Status:</strong> {importStatus}
-          </div>
-        </div>
-      ) : null}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-          gap: 20,
-          marginBottom: 20,
-          alignItems: "start",
-        }}
-      >
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 16,
-            display: "grid",
-            gap: 14,
-            height: "100%",
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 18 }}>
-              Save Agenda Template
-            </div>
-            <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
-              Save this event schedule as a reusable template.
-            </div>
-          </div>
-
-          <input
-            value={newTemplateName}
-            onChange={(e) => setNewTemplateName(e.target.value)}
-            placeholder="Template name, e.g. Spring Rally Standard Agenda"
-            style={{ padding: 8 }}
-            disabled={savingTemplate}
-          />
-
-          <textarea
-            value={newTemplateDescription}
-            onChange={(e) => setNewTemplateDescription(e.target.value)}
-            placeholder="Optional template notes or description"
-            style={{ padding: "7px 8px", minHeight: 48 }}
-            disabled={savingTemplate}
-          />
-
-          <button
-            type="button"
-            onClick={() => void saveCurrentAgendaAsTemplate()}
-            disabled={savingTemplate || !activeEvent || items.length === 0}
-            style={{ width: "fit-content" }}
-          >
-            {savingTemplate
-              ? "Saving Template..."
-              : "Save Current Agenda as Template"}
-          </button>
-        </div>
-
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 16,
-            display: "grid",
-            gap: 14,
-            height: "100%",
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 18 }}>
-              Use Saved Template
-            </div>
-            <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
-              Assign or copy an existing reusable agenda template.
-            </div>
-          </div>
-
-          <select
-            value={selectedTemplateId}
-            onChange={(e) => setSelectedTemplateId(e.target.value)}
-            style={{ padding: 8 }}
-          >
-            <option value="">Select template</option>
-            {templates.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.name}
-              </option>
-            ))}
-          </select>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={() => void assignTemplate()}>
-              Assign Template to Event
-            </button>
-
-            <button type="button" onClick={() => void copyTemplateToEvent()}>
-              Copy Template Items to Event
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void replaceEventFromTemplate()}
-            >
-              Replace Event Agenda From Template
-            </button>
-          </div>
-
-          <div style={{ fontSize: 12, color: "#666" }}>
-            Current assigned template: {assignedTemplateName}
-          </div>
-        </div>
-      </div>
       <div
         style={{
           display: "grid",
@@ -2547,16 +2462,6 @@ function AdminAgendaPageInner() {
 
           <div
             style={{
-              padding: 12,
-              background: "#fff8dc",
-              border: "1px solid #e5e7eb",
-            }}
-          >
-            items: {items.length} | filteredItems: {filteredItems.length}
-          </div>
-
-          <div
-            style={{
               margin: 12,
               border: "1px solid #d1d5db",
               borderRadius: 12,
@@ -2795,7 +2700,9 @@ function AdminAgendaPageInner() {
                                 borderRadius: 999,
                               }}
                             >
-                              Ends{" "}
+                              {calendarResizeDragRef.current?.edge === "start"
+                                ? "Starts"
+                                : "Ends"}{" "}
                               {minutesToTime(calendarResizePreview.minutes)}
                             </div>
                           </div>

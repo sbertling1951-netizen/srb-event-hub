@@ -2,14 +2,22 @@
 
 import type { Route } from "next";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import {
   getCurrentAdminAccess,
   hasPermission,
 } from "@/lib/getCurrentAdminAccess";
+import {
+  getCurrentMemberEvent,
+  getStoredMemberHasArrived,
+  getStoredUserMode,
+} from "@/lib/getCurrentMemberEvent";
+import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
+import { getTenantLabel } from "@/lib/tenantLabels";
 
 type NavItem = {
   label: string;
@@ -30,6 +38,8 @@ type EventContext = {
   start_date?: string | null;
   end_date?: string | null;
 };
+
+type AdminAccessState = Awaited<ReturnType<typeof getCurrentAdminAccess>>;
 
 const SIDEBAR_WIDTH = 260;
 const MOBILE_BREAKPOINT = 900;
@@ -104,6 +114,9 @@ function formatPrivilegeGroup(value?: string | null) {
 }
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const appTitle = getTenantLabel("app_title");
+  const mapNavLabel = getTenantLabel("map_nav_label");
 
   const [mounted, setMounted] = useState(false);
   const [isMobile, setIsMobile] = useState(true);
@@ -113,23 +126,28 @@ export default function Sidebar() {
   const [_isCheckedIn, setIsCheckedIn] = useState(false);
   const [userMode, setUserMode] = useState<"member" | "admin" | "none">("none");
   const [isShortScreen, setIsShortScreen] = useState(false);
-  const [adminAccess, setAdminAccess] = useState<any>(null);
+  const [adminAccess, setAdminAccess] = useState<AdminAccessState>(null);
   const [adminDisplayName, setAdminDisplayName] = useState("");
   const [adminPrivilegeGroup, setAdminPrivilegeGroup] = useState("");
+  const [logoutConfirmMessage, setLogoutConfirmMessage] = useState<
+    string | null
+  >(null);
 
   function loadContextsFromStorage() {
     try {
-      const rawMemberEvent = localStorage.getItem("fcoc-member-event-context");
-      const rawAdminEvent = localStorage.getItem("fcoc-admin-event-context");
-      const rawHasArrived = localStorage.getItem("fcoc-member-has-arrived");
-      const rawUserMode = localStorage.getItem("fcoc-user-mode");
+      const memberEventContext = getCurrentMemberEvent();
+      const rawAdminEvent = localStorage.getItem(
+        STORAGE_KEYS.adminEventContext,
+      );
+      const hasArrived = getStoredMemberHasArrived();
+      const storedUserMode = getStoredUserMode();
 
-      setMemberEvent(rawMemberEvent ? JSON.parse(rawMemberEvent) : null);
+      setMemberEvent(memberEventContext);
       setAdminEvent(rawAdminEvent ? JSON.parse(rawAdminEvent) : null);
-      setIsCheckedIn(rawHasArrived === "true");
+      setIsCheckedIn(hasArrived === "true");
       setUserMode(
-        rawUserMode === "member" || rawUserMode === "admin"
-          ? rawUserMode
+        storedUserMode === "member" || storedUserMode === "admin"
+          ? storedUserMode
           : "none",
       );
     } catch (err) {
@@ -200,13 +218,13 @@ export default function Sidebar() {
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === "fcoc-member-event-context" ||
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-member-has-arrived" ||
-        e.key === "fcoc-member-event-changed" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
+        e.key === STORAGE_KEYS.memberEventContext ||
+        e.key === STORAGE_KEYS.adminEventContext ||
+        e.key === STORAGE_KEYS.memberHasArrived ||
+        e.key === STORAGE_KEYS.memberEventChanged ||
+        e.key === STORAGE_KEYS.adminEventChanged ||
+        e.key === STORAGE_KEYS.userMode ||
+        e.key === STORAGE_KEYS.userModeChanged
       ) {
         loadContextsFromStorage();
       }
@@ -217,7 +235,7 @@ export default function Sidebar() {
     }
 
     function clearVisibleSidebarStateIfLoggedOut() {
-      const mode = localStorage.getItem("fcoc-user-mode");
+      const mode = getStoredUserMode();
       if (mode === "admin" || mode === "member") {
         loadContextsFromStorage();
         return;
@@ -239,7 +257,7 @@ export default function Sidebar() {
 
     window.addEventListener("storage", handleStorage);
     window.addEventListener(
-      "fcoc-admin-event-updated",
+      APP_EVENT_NAMES.adminEventUpdated,
       handleAdminEventUpdated,
     );
     window.addEventListener("popstate", loadContextsFromStorage);
@@ -248,7 +266,7 @@ export default function Sidebar() {
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(
-        "fcoc-admin-event-updated",
+        APP_EVENT_NAMES.adminEventUpdated,
         handleAdminEventUpdated,
       );
       window.removeEventListener("popstate", loadContextsFromStorage);
@@ -295,7 +313,7 @@ export default function Sidebar() {
     }
 
     async function loadAdminAccess() {
-      const mode = localStorage.getItem("fcoc-user-mode");
+      const mode = getStoredUserMode();
       if (mode !== "admin") {
         setAdminAccess(null);
         setAdminDisplayName("");
@@ -305,18 +323,8 @@ export default function Sidebar() {
       const admin = await getCurrentAdminAccess();
       setAdminAccess(admin);
 
-      const adminRecord = admin as Record<string, unknown> | null;
-      const displayName =
-        typeof adminRecord?.display_name === "string"
-          ? adminRecord.display_name
-          : typeof adminRecord?.email === "string"
-            ? adminRecord.email
-            : "";
-
-      const privilegeGroup =
-        typeof adminRecord?.privilege_group === "string"
-          ? adminRecord.privilege_group
-          : "";
+      const displayName = admin?.display_name || admin?.email || "";
+      const privilegeGroup = admin?.privilege_group || "";
 
       setAdminDisplayName(displayName);
       setAdminPrivilegeGroup(privilegeGroup);
@@ -332,10 +340,10 @@ export default function Sidebar() {
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
+        e.key === STORAGE_KEYS.adminEventContext ||
+        e.key === STORAGE_KEYS.adminEventChanged ||
+        e.key === STORAGE_KEYS.userMode ||
+        e.key === STORAGE_KEYS.userModeChanged
       ) {
         void loadAdminAccess();
       }
@@ -352,7 +360,7 @@ export default function Sidebar() {
 
     window.addEventListener("storage", handleStorage);
     window.addEventListener(
-      "fcoc-admin-event-updated",
+      APP_EVENT_NAMES.adminEventUpdated,
       handleAdminEventUpdated,
     );
     window.addEventListener("pageshow", handlePageShow);
@@ -361,17 +369,23 @@ export default function Sidebar() {
       subscription.unsubscribe();
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(
-        "fcoc-admin-event-updated",
+        APP_EVENT_NAMES.adminEventUpdated,
         handleAdminEventUpdated,
       );
       window.removeEventListener("pageshow", handlePageShow);
     };
   }, [mounted]);
 
+  function clearKnownAppStorageKeys() {
+    Object.values(STORAGE_KEYS).forEach((key) => {
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+    });
+  }
+
   function clearAllAppState() {
     try {
-      localStorage.clear();
-      sessionStorage.clear();
+      clearKnownAppStorageKeys();
 
       setMemberEvent(null);
       setAdminEvent(null);
@@ -385,14 +399,14 @@ export default function Sidebar() {
       document.body.style.touchAction = "";
       document.documentElement.style.overflow = "";
 
-      window.dispatchEvent(new Event("fcoc-admin-event-updated"));
-      window.dispatchEvent(new Event("fcoc-member-event-updated"));
+      window.dispatchEvent(new Event(APP_EVENT_NAMES.adminEventUpdated));
+      window.dispatchEvent(new Event(APP_EVENT_NAMES.memberEventUpdated));
     } catch (err) {
       console.error("Failed to clear app state:", err);
     }
   }
 
-  async function handleSidebarExit() {
+  function handleSidebarExit() {
     if (showLoggedInLogout) {
       const eventName =
         memberEvent?.name ||
@@ -401,30 +415,29 @@ export default function Sidebar() {
         adminEvent?.eventName ||
         "this event";
 
-      const confirmed = window.confirm(
-        `Do you want to logout of ${eventName}?`,
-      );
-      if (!confirmed) {
-        return;
-      }
-
-      // Clear local app state first so route guards stop seeing a logged-in mode.
-      // Then redirect immediately. Supabase sign-out can hang on localhost/network,
-      // so do not let it block the user from leaving the protected area.
-      clearAllAppState();
-
-      try {
-        void supabase.auth.signOut();
-      } catch (err) {
-        console.error("Supabase signOut failed:", err);
-      }
-
-      window.location.replace("/");
+      setLogoutConfirmMessage(`Do you want to logout of ${eventName}?`);
       return;
     }
 
     clearAllAppState();
-    window.location.replace("/");
+    router.replace("/");
+  }
+
+  function confirmSidebarLogout() {
+    setLogoutConfirmMessage(null);
+
+    // Clear local app state first so route guards stop seeing a logged-in mode.
+    // Then redirect immediately. Supabase sign-out can hang on localhost/network,
+    // so do not let it block the user from leaving the protected area.
+    clearAllAppState();
+
+    try {
+      void supabase.auth.signOut();
+    } catch (err) {
+      console.error("Supabase signOut failed:", err);
+    }
+
+    router.replace("/");
   }
 
   const memberItems: NavItem[] = useMemo(() => {
@@ -433,12 +446,12 @@ export default function Sidebar() {
       { label: "Agenda", href: "/member/agenda" },
       { label: "Announcements", href: "/member/announcements" },
       { label: "Attendee Locator", href: "/member/attendees" },
-      { label: "Coach Map", href: "/coach-map" },
+      { label: mapNavLabel, href: "/coach-map" },
       { label: "My Check-In", href: "/member/checkin" },
       { label: "Nearby", href: "/member/nearby" },
       { label: "Vendors / Service Requests", href: "/member/vendor-signup" },
     ];
-  }, []);
+  }, [mapNavLabel]);
 
   const canManageEventStaff =
     !!adminAccess &&
@@ -465,7 +478,7 @@ export default function Sidebar() {
           : []),
         { label: "Map Admin", href: "/admin/map-admin" },
         { label: "Parking Admin", href: "/admin/parking" },
-        { label: "Pre-Rally Checklist", href: "/admin/checklist" },
+        { label: "Pre-Event Checklist", href: "/admin/checklist" },
         { label: "Print Center", href: "/admin/print" },
         { label: "Vendor Management", href: "/admin/vendors" },
       ];
@@ -527,7 +540,7 @@ export default function Sidebar() {
           type="button"
           onClick={() => {
             clearAllAppState();
-            window.location.replace("/");
+            router.replace("/");
           }}
           style={{
             position: "fixed",
@@ -649,7 +662,7 @@ export default function Sidebar() {
                 fontSize: isShortScreen ? 20 : 24,
               }}
             >
-              FCOC
+              {appTitle}
             </h2>
 
             <div
@@ -864,6 +877,16 @@ export default function Sidebar() {
           </button>
         </div>
       </aside>
+      <ConfirmDialog
+        open={!!logoutConfirmMessage}
+        title="Logout"
+        message={logoutConfirmMessage || ""}
+        confirmLabel="Logout"
+        cancelLabel="Stay Logged In"
+        danger={true}
+        onConfirm={confirmSidebarLogout}
+        onCancel={() => setLogoutConfirmMessage(null)}
+      />
     </>
   );
 }

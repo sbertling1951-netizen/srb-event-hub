@@ -1,6 +1,12 @@
 "use client";
 
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
@@ -229,12 +235,14 @@ export default function AdminUsersPage() {
 }
 
 function AdminUsersPageInner() {
+  const adminAccessRef = useRef<Awaited<
+    ReturnType<typeof getCurrentAdminAccess>
+  > | null>(null);
   const [rows, setRows] = useState<AdminUserWithPermissions[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("Loading admin users...");
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
 
   const [selectedAdminId, setSelectedAdminId] = useState<string>("");
   const [email, setEmail] = useState("");
@@ -255,29 +263,30 @@ function AdminUsersPageInner() {
       setLoading(true);
       setError(null);
       setStatus("Checking admin access...");
-      setAccessDenied(false);
 
       const admin = await getCurrentAdminAccess();
 
       if (!admin) {
+        adminAccessRef.current = null;
         setError("No admin access.");
         setStatus("Access denied.");
-        setAccessDenied(true);
         setLoading(false);
         return;
       }
 
-      await loadPageData();
+      adminAccessRef.current = admin;
+      await loadPageData(admin);
     }
 
     void init();
   }, []);
 
-  async function loadPageData() {
+  async function loadPageData(
+    adminAccess?: Awaited<ReturnType<typeof getCurrentAdminAccess>>,
+  ) {
     setLoading(true);
     setError(null);
     setStatus("Loading admin users...");
-    setAccessDenied(false);
 
     const [
       { data: adminUsers, error: adminError },
@@ -297,7 +306,6 @@ function AdminUsersPageInner() {
     if (adminError) {
       setError(adminError.message);
       setStatus("Could not load admin users.");
-      setAccessDenied(false);
       setLoading(false);
       return;
     }
@@ -305,7 +313,6 @@ function AdminUsersPageInner() {
     if (eventError) {
       setError(eventError.message);
       setStatus("Could not load events.");
-      setAccessDenied(false);
       setLoading(false);
       return;
     }
@@ -315,10 +322,16 @@ function AdminUsersPageInner() {
       permissions: getPresetPermissions(admin.privilege_group || defaultGroup),
     }));
 
-    const admin = await getCurrentAdminAccess();
-    const accessibleEvents = admin
+    const resolvedAdmin =
+      adminAccess || adminAccessRef.current || (await getCurrentAdminAccess());
+
+    if (resolvedAdmin) {
+      adminAccessRef.current = resolvedAdmin;
+    }
+
+    const accessibleEvents = resolvedAdmin
       ? ((eventRows || []) as EventRow[]).filter(
-          (event) => !!event.id && canAccessEvent(admin, event.id),
+          (event) => !!event.id && canAccessEvent(resolvedAdmin, event.id),
         )
       : [];
 
@@ -394,15 +407,10 @@ function AdminUsersPageInner() {
     );
   }
 
-  async function handleSave() {
-    setSaveStatus("Saving...");
-
+  async function upsertAdminUser() {
     if (!email.trim()) {
-      setSaveStatus("Email is required.");
-      return;
+      return { adminUserId: null, errorMessage: "Email is required." };
     }
-
-    let adminUserId = selectedAdminId;
 
     if (selectedAdminId) {
       const { error: updateError } = await supabase
@@ -416,105 +424,147 @@ function AdminUsersPageInner() {
         .eq("id", selectedAdminId);
 
       if (updateError) {
-        setSaveStatus(`Could not update admin user: ${updateError.message}`);
-        return;
-      }
-    } else {
-      const { data: inserted, error: insertError } = await supabase
-        .from("admin_users")
-        .insert({
-          email: email.trim(),
-          display_name: displayName.trim() || null,
-          is_active: isActive,
-          privilege_group: privilegeGroup,
-          is_super_admin: false,
-        })
-        .select("id")
-        .single();
-
-      if (insertError || !inserted?.id) {
-        setSaveStatus(
-          `Could not create admin user: ${insertError?.message || "Unknown error"}`,
-        );
-        return;
+        return {
+          adminUserId: null,
+          errorMessage: `Could not update admin user: ${updateError.message}`,
+        };
       }
 
-      adminUserId = inserted.id;
-      setSelectedAdminId(inserted.id);
+      return { adminUserId: selectedAdminId, errorMessage: null };
     }
 
-    if (privilegeGroup === "super_admin") {
-      const { error: clearError } = await supabase
-        .from("admin_event_access")
-        .delete()
-        .eq("admin_user_id", adminUserId);
+    const { data: inserted, error: insertError } = await supabase
+      .from("admin_users")
+      .insert({
+        email: email.trim(),
+        display_name: displayName.trim() || null,
+        is_active: isActive,
+        privilege_group: privilegeGroup,
+        is_super_admin: false,
+      })
+      .select("id")
+      .single();
 
-      if (clearError) {
-        setSaveStatus(
-          `Saved admin user, but could not clear event access: ${clearError.message}`,
-        );
-        return;
-      }
-    } else {
-      const { error: deleteAccessError } = await supabase
-        .from("admin_event_access")
-        .delete()
-        .eq("admin_user_id", adminUserId);
-
-      if (deleteAccessError) {
-        setSaveStatus(
-          `Saved admin user, but could not reset event access: ${deleteAccessError.message}`,
-        );
-        return;
-      }
-
-      if (assignedEventIds.length > 0) {
-        const { error: insertAccessError } = await supabase
-          .from("admin_event_access")
-          .insert(
-            assignedEventIds.map((eventId) => ({
-              admin_user_id: adminUserId,
-              event_id: eventId,
-              role: getEventAccessRole(privilegeGroup),
-            })),
-          );
-
-        if (insertAccessError) {
-          setSaveStatus(
-            `Saved admin user, but event access failed: ${insertAccessError.message}`,
-          );
-          return;
-        }
-      }
+    if (insertError || !inserted?.id) {
+      return {
+        adminUserId: null,
+        errorMessage: `Could not create admin user: ${
+          insertError?.message || "Unknown error"
+        }`,
+      };
     }
 
-    if (password.trim()) {
-      const passwordResponse = await fetch("/api/admins/set-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          password: password.trim(),
-        }),
-      });
+    setSelectedAdminId(inserted.id);
+    return { adminUserId: inserted.id as string, errorMessage: null };
+  }
 
-      if (!passwordResponse.ok) {
-        const result = await passwordResponse.json().catch(() => null);
-        setSaveStatus(
-          `Admin saved, but password was not set: ${
-            result?.error || "Unknown password error"
-          }`,
-        );
+  async function syncEventAccess(
+    adminUserId: string,
+    group: PrivilegeGroup,
+    eventIds: string[],
+  ) {
+    const { error: deleteAccessError } = await supabase
+      .from("admin_event_access")
+      .delete()
+      .eq("admin_user_id", adminUserId);
+
+    if (deleteAccessError) {
+      return group === "super_admin"
+        ? `Saved admin user, but could not clear event access: ${deleteAccessError.message}`
+        : `Saved admin user, but could not reset event access: ${deleteAccessError.message}`;
+    }
+
+    if (group === "super_admin" || eventIds.length === 0) {
+      return null;
+    }
+
+    const { error: insertAccessError } = await supabase
+      .from("admin_event_access")
+      .insert(
+        eventIds.map((eventId) => ({
+          admin_user_id: adminUserId,
+          event_id: eventId,
+          role: getEventAccessRole(group),
+        })),
+      );
+
+    if (insertAccessError) {
+      return `Saved admin user, but event access failed: ${insertAccessError.message}`;
+    }
+
+    return null;
+  }
+
+  async function setPasswordIfProvided(
+    adminEmail: string,
+    nextPassword: string,
+  ): Promise<{ error: string | null; passwordWasSet: boolean }> {
+    const trimmedPassword = nextPassword.trim();
+
+    if (!trimmedPassword) {
+      return { error: null, passwordWasSet: false };
+    }
+
+    const passwordResponse = await fetch("/api/admins/set-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: adminEmail.trim(),
+        password: trimmedPassword,
+      }),
+    });
+
+    if (!passwordResponse.ok) {
+      const result = await passwordResponse.json().catch(() => null);
+      return {
+        error: `Admin saved, but password was not set: ${
+          result?.error || "Unknown password error"
+        }`,
+        passwordWasSet: false,
+      };
+    }
+
+    setPassword("");
+    return { error: null, passwordWasSet: true };
+  }
+
+  async function handleSave() {
+    try {
+      setSaveStatus("Saving...");
+
+      const { adminUserId, errorMessage } = await upsertAdminUser();
+
+      if (errorMessage || !adminUserId) {
+        setSaveStatus(errorMessage || "Could not save admin user.");
         return;
       }
 
-      setPassword("");
-    }
+      const eventAccessError = await syncEventAccess(
+        adminUserId,
+        privilegeGroup,
+        assignedEventIds,
+      );
 
-    setSaveStatus(password.trim() ? "Saved and password set." : "Saved.");
-    await loadPageData();
-    if (adminUserId) {
+      if (eventAccessError) {
+        setSaveStatus(eventAccessError);
+        return;
+      }
+
+      const { error: passwordError, passwordWasSet } =
+        await setPasswordIfProvided(email, password);
+
+      if (passwordError) {
+        setSaveStatus(passwordError);
+        return;
+      }
+
+      setSaveStatus(passwordWasSet ? "Saved and password set." : "Saved.");
+      await loadPageData(adminAccessRef.current);
       await loadAssignedEvents(adminUserId);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Could not save admin user.";
+      setSaveStatus(msg);
     }
   }
 
@@ -545,8 +595,10 @@ function AdminUsersPageInner() {
       }
 
       setResetStatus("Password reset email sent.");
-    } catch (err: any) {
-      setResetStatus(err?.message || "Could not send reset email.");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Could not send reset email.";
+      setResetStatus(msg);
     }
   }
 
@@ -589,21 +641,12 @@ function AdminUsersPageInner() {
 
       startNewAdmin();
       setSaveStatus("Admin user deleted.");
-      await loadPageData();
-    } catch (err: any) {
-      setSaveStatus(err?.message || "Could not delete admin user.");
+      await loadPageData(adminAccessRef.current);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Could not delete admin user.";
+      setSaveStatus(msg);
     }
-  }
-
-  if (!loading && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Users</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -856,6 +899,9 @@ function AdminUsersPageInner() {
                       type="checkbox"
                       checked={!!permissions[key]}
                       readOnly
+                      aria-readonly="true"
+                      title="Permission is controlled by the selected privilege group"
+                      style={{ cursor: "not-allowed", opacity: 0.6 }}
                     />
                     <span>{PERMISSION_LABELS[key]}</span>
                   </label>
@@ -946,6 +992,7 @@ const inputStyle: CSSProperties = {
   borderRadius: 10,
   border: "1px solid #ccc",
   background: "white",
+  boxSizing: "border-box",
 };
 
 const primaryButtonStyle: CSSProperties = {

@@ -1,22 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { preferredDisplayLine } from "@/lib/displayNames";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import {
+  type CurrentMemberEvent,
+  getCurrentMemberEvent,
+  getStoredMemberAttendeeId,
+  getStoredMemberEmail,
+  getStoredMemberEntryId,
+} from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
-
-type MemberEvent = {
-  id?: string | null;
-  name?: string | null;
-  eventName?: string | null;
-  location?: string | null;
-  venue_name?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
-};
 
 type AttendeeRow = {
   id: string;
@@ -57,27 +53,6 @@ function formatDateRange(
   return startDate || endDate || "";
 }
 
-function getStoredMemberAttendeeId() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("fcoc-member-attendee-id");
-}
-
-function getStoredMemberEntryId() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("fcoc-member-entry-id");
-}
-
-function getStoredMemberEmail() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("fcoc-member-email");
-}
-
 function householdLine(member: HouseholdMember) {
   return preferredDisplayLine(member);
 }
@@ -88,38 +63,20 @@ function normalizeSite(value: string) {
 
 function MemberCheckinPageInner() {
   const router = useRouter();
-  const [event, setEvent] = useState<MemberEvent | null>(null);
+  const [event, setEvent] = useState<CurrentMemberEvent | null>(null);
   const [attendee, setAttendee] = useState<AttendeeRow | null>(null);
   const [household, setHousehold] = useState<HouseholdMember[]>([]);
   const [shareWithAttendees, setShareWithAttendees] = useState(false);
   const [hasArrived, setHasArrived] = useState(false);
   const [siteNumber, setSiteNumber] = useState("");
   const [status, setStatus] = useState("Loading check-in...");
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
-  useEffect(() => {
-    void loadPage();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-member-attendee-id" ||
-        e.key === "fcoc-member-entry-id" ||
-        e.key === "fcoc-member-email" ||
-        e.key === "fcoc-member-event-changed"
-      ) {
-        void loadPage();
-      }
-    }
-
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
-  async function loadPage() {
+  const loadPage = useCallback(async () => {
     try {
       setStatus("Loading check-in...");
-      setSuccessBanner(null);
+      setError(null);
 
       const currentEvent = getCurrentMemberEvent();
       if (!currentEvent?.id) {
@@ -219,11 +176,35 @@ function MemberCheckinPageInner() {
       setHousehold((memberRows || []) as HouseholdMember[]);
 
       setStatus("Self check-in ready.");
-    } catch (err: any) {
+    } catch (err) {
       console.error("loadPage error:", err);
-      setStatus(err?.message || "Failed to load self check-in.");
+      setError(
+        err instanceof Error ? err.message : "Failed to load self check-in.",
+      );
+      setStatus("");
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    void loadPage();
+
+    function handleStorage(e: StorageEvent) {
+      if (
+        e.key === "fcoc-member-attendee-id" ||
+        e.key === "fcoc-member-entry-id" ||
+        e.key === "fcoc-member-email" ||
+        e.key === "fcoc-member-event-changed"
+      ) {
+        void loadPage();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [loadPage]);
 
   async function syncParkingSite(
     attendeeId: string,
@@ -334,7 +315,7 @@ function MemberCheckinPageInner() {
 
     try {
       setSaving(true);
-      setSuccessBanner(null);
+      setError(null);
 
       const cleanedSite = normalizeSite(siteNumber);
 
@@ -392,37 +373,26 @@ function MemberCheckinPageInner() {
         await syncParkingSite(attendee.id, event.id, cleanedSite);
       }
 
-      // Update local state immediately before navigating
-      localStorage.setItem("fcoc-member-has-arrived", String(hasArrived));
+      // Update local state immediately before navigating.
+      if (typeof window !== "undefined") {
+        localStorage.setItem("fcoc-member-has-arrived", String(hasArrived));
+      }
 
       setStatus("Your check-in preferences were saved.");
-      setSuccessBanner(
-        hasArrived
-          ? cleanedSite
-            ? `Check-in complete. Your site is ${cleanedSite}.`
-            : "Check-in complete."
-          : "Saved. You can explore the event before you arrive.",
-      );
 
-      // Use client navigation to avoid reload/race condition
+      // Use client navigation to avoid reload/race condition.
       router.replace("/member");
       return;
-    } catch (err: any) {
+    } catch (err) {
       console.error("saveCheckin error:", err);
-      setStatus(err?.message || "Failed to save check-in.");
+      setError(err instanceof Error ? err.message : "Failed to save check-in.");
+      setStatus("");
     } finally {
       setSaving(false);
     }
   }
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
-
-  const householdSummary = useMemo(() => {
-    if (household.length > 0) {
-      return household;
-    }
-    return [];
-  }, [household]);
 
   return (
     <div style={{ padding: 24, display: "grid", gap: 16, maxWidth: 760 }}>
@@ -437,7 +407,7 @@ function MemberCheckinPageInner() {
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>My Check-In</h1>
 
         <div style={{ fontWeight: 700 }}>
-          Current event: {event?.name || event?.eventName || "No current event"}
+          Current event: {event?.name || "No current event"}
         </div>
 
         {event?.venue_name ? (
@@ -454,23 +424,26 @@ function MemberCheckinPageInner() {
           </div>
         ) : null}
 
-        <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-          {status}
-        </div>
+        {status ? (
+          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+            {status}
+          </div>
+        ) : null}
       </div>
 
-      {successBanner ? (
+      {error ? (
         <div
+          role="alert"
           style={{
-            border: "1px solid #86efac",
-            background: "#f0fdf4",
-            color: "#166534",
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#991b1b",
             borderRadius: 10,
             padding: 14,
             fontWeight: 700,
           }}
         >
-          {successBanner}
+          {error}
         </div>
       ) : null}
 
@@ -501,9 +474,9 @@ function MemberCheckinPageInner() {
             <div style={{ fontWeight: 700, marginBottom: 6 }}>
               Coach / Household
             </div>
-            {householdSummary.length > 0 ? (
+            {household.length > 0 ? (
               <div style={{ display: "grid", gap: 4 }}>
-                {householdSummary.map((member) => (
+                {household.map((member) => (
                   <div key={member.id}>
                     {member.person_role === "pilot"
                       ? "Pilot"

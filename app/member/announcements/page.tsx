@@ -2,16 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
 
 type MemberEvent = {
   id: string;
-  name?: string | null;
-  venue_name?: string | null;
-  location?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
+  name: string | null;
+  venue_name: string | null;
+  location: string | null;
+  start_date: string | null;
+  end_date: string | null;
 };
 
 type AnnouncementRow = {
@@ -26,6 +27,8 @@ type AnnouncementRow = {
   expire_at: string | null;
 };
 
+// DB rows use `body` and `expire_at`; the UI normalizes those to
+// `message` and `expires_at` so member-facing rendering reads naturally.
 type Announcement = {
   id: string;
   event_id: string;
@@ -36,17 +39,6 @@ type Announcement = {
   created_at: string | null;
   expires_at: string | null;
 };
-
-function isNotExpired(expiresAt?: string | null) {
-  if (!expiresAt) {
-    return true;
-  }
-  const time = new Date(expiresAt).getTime();
-  if (Number.isNaN(time)) {
-    return true;
-  }
-  return time > Date.now();
-}
 
 function formatDateTime(value?: string | null) {
   if (!value) {
@@ -109,6 +101,14 @@ function badgeStyle(priority?: string | null) {
 }
 
 export default function Page() {
+  return (
+    <MemberRouteGuard>
+      <MemberAnnouncementsPageInner />
+    </MemberRouteGuard>
+  );
+}
+
+function MemberAnnouncementsPageInner() {
   const [event, setEvent] = useState<MemberEvent | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,24 +121,25 @@ export default function Page() {
     setStatus("Loading announcements...");
 
     try {
-      const currentEvent = await getCurrentMemberEvent();
+      const currentEvent = getCurrentMemberEvent();
 
       if (!currentEvent?.id) {
         setEvent(null);
         setAnnouncements([]);
         setStatus("No active event selected.");
-        setLoading(false);
         return;
       }
 
       setEvent({
         id: currentEvent.id,
-        name: currentEvent.name ?? null,
+        name: currentEvent.name ?? currentEvent.eventName ?? null,
         venue_name: currentEvent.venue_name ?? null,
         location: currentEvent.location ?? null,
         start_date: currentEvent.start_date ?? null,
         end_date: currentEvent.end_date ?? null,
       });
+
+      const now = new Date().toISOString();
 
       const { data, error } = await supabase
         .from("announcements")
@@ -147,36 +148,37 @@ export default function Page() {
         )
         .eq("event_id", currentEvent.id)
         .eq("is_published", true)
+        .or(`expire_at.is.null,expire_at.gt.${now}`)
+        .order("is_pinned", { ascending: false })
         .order("created_at", { ascending: false });
 
       if (error) {
         setError(error.message);
         setAnnouncements([]);
         setStatus("Could not load announcements.");
-        setLoading(false);
         return;
       }
 
-      const normalized: Announcement[] = ((data || []) as AnnouncementRow[])
-        .map((item) => ({
-          id: item.id,
-          event_id: item.event_id,
-          title: item.title ?? "Untitled",
-          message: item.body ?? "",
-          priority: (item.priority ?? "normal").toLowerCase(),
-          is_pinned: !!item.is_pinned,
-          created_at: item.created_at ?? null,
-          expires_at: item.expire_at ?? null,
-        }))
-        .filter((item) => isNotExpired(item.expires_at));
+      const normalized: Announcement[] = (
+        (data || []) as AnnouncementRow[]
+      ).map((item) => ({
+        id: item.id,
+        event_id: item.event_id,
+        title: item.title ?? "Untitled",
+        message: item.body ?? "",
+        priority: (item.priority ?? "normal").toLowerCase(),
+        is_pinned: !!item.is_pinned,
+        created_at: item.created_at ?? null,
+        expires_at: item.expire_at ?? null,
+      }));
 
       setAnnouncements(normalized);
       setStatus("");
-      setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setAnnouncements([]);
       setStatus("Could not load announcements.");
+    } finally {
       setLoading(false);
     }
   }, []);
