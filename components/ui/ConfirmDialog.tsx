@@ -33,7 +33,17 @@ export default function ConfirmDialog({
     }
 
     function handleKeyDown(e: KeyboardEvent) {
+      if (busy) {
+        return;
+      }
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void onConfirm();
+      }
+
       if (e.key === "Escape") {
+        e.preventDefault();
         onCancel();
       }
     }
@@ -43,7 +53,7 @@ export default function ConfirmDialog({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open, onCancel]);
+  }, [open, busy, onConfirm, onCancel]);
 
   if (!open) {
     return null;
@@ -127,6 +137,7 @@ export default function ConfirmDialog({
 
           <button
             type="button"
+            autoFocus
             onClick={() => {
               void onConfirm();
             }}
