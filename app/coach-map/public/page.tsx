@@ -778,19 +778,21 @@ function CoachMapPublicPageInner() {
     }
 
     const viewport = viewportRef.current;
-    const xPx = (site.map_x / 100) * renderedMapWidth;
-    const yPx = (site.map_y / 100) * renderedMapHeight;
+    const contentWidth = Math.max(viewport.scrollWidth, renderedMapWidth);
+    const contentHeight = Math.max(viewport.scrollHeight, renderedMapHeight);
+    const xPx = (site.map_x / 100) * contentWidth;
+    const yPx = (site.map_y / 100) * contentHeight;
 
     const targetLeft = clamp(
       xPx - viewport.clientWidth / 2,
       0,
-      Math.max(0, viewport.scrollWidth - viewport.clientWidth),
+      Math.max(0, contentWidth - viewport.clientWidth),
     );
 
     const targetTop = clamp(
       yPx - viewport.clientHeight / 2,
       0,
-      Math.max(0, viewport.scrollHeight - viewport.clientHeight),
+      Math.max(0, contentHeight - viewport.clientHeight),
     );
 
     viewport.scrollTo({
@@ -810,9 +812,10 @@ function CoachMapPublicPageInner() {
     setSearch("");
     setPulseKey(siteKey);
 
-    requestAnimationFrame(() => {
+    window.setTimeout(() => {
+      refreshMapSize();
       centerSiteInViewport(site);
-    });
+    }, 50);
   }
   function getLocationColor(category?: string | null) {
     const c = (category || "").toLowerCase();
@@ -842,42 +845,14 @@ function CoachMapPublicPageInner() {
     }
   }
 
-  function getFloatingPanelStyle(site: RenderedSite) {
-    const width = isNarrow ? 220 : 300;
-    const heightEstimate = isNarrow ? 150 : 190;
-    const gap = 16;
-
-    if (
-      !renderedMapWidth ||
-      !renderedMapHeight ||
-      site.map_x === null ||
-      site.map_y === null
-    ) {
-      return {
-        left: 12,
-        top: 12,
-        width,
-      };
-    }
-
-    const xPx = (site.map_x / 100) * renderedMapWidth;
-    const yPx = (site.map_y / 100) * renderedMapHeight;
-
-    const left =
-      xPx < renderedMapWidth * 0.58
-        ? clamp(xPx + gap, 12, renderedMapWidth - width - 12)
-        : clamp(xPx - width - gap, 12, renderedMapWidth - width - 12);
-
-    const top = clamp(
-      yPx - heightEstimate / 2,
-      12,
-      renderedMapHeight - heightEstimate - 12,
-    );
-
+  function getFloatingPanelStyle(_site: RenderedSite) {
     return {
-      left,
-      top,
-      width,
+      position: "fixed" as const,
+      right: isNarrow ? 12 : 24,
+      bottom: isNarrow ? 12 : 24,
+      width: isNarrow ? "min(340px, calc(100vw - 24px))" : 340,
+      maxHeight: isNarrow ? "45dvh" : "55dvh",
+      overflowY: "auto" as const,
     };
   }
 
@@ -1383,10 +1358,7 @@ function CoachMapPublicPageInner() {
               {selectedSite && floatingPanelStyle ? (
                 <div
                   style={{
-                    position: "absolute",
-                    left: floatingPanelStyle.left,
-                    top: floatingPanelStyle.top,
-                    width: floatingPanelStyle.width,
+                    ...floatingPanelStyle,
                     background: "rgba(255,255,255,0.98)",
                     border: "1px solid #d1d5db",
                     borderRadius: 10,

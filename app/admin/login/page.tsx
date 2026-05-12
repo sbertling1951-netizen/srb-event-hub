@@ -16,29 +16,34 @@ export default function AdminLoginPage() {
       setStatus("Signing in...");
 
       const normalizedEmail = email.trim().toLowerCase();
+      const normalizedPassword = password.trim();
 
       if (!normalizedEmail) {
         setStatus("Enter your email.");
         return;
       }
 
-      if (!password) {
+      if (!normalizedPassword) {
         setStatus("Enter your password.");
         return;
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
-        password,
+        password: normalizedPassword,
       });
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       if (!data.session) {
         const { data: sessionData, error: sessionError } =
           await supabase.auth.getSession();
 
-        if (sessionError) {throw sessionError;}
+        if (sessionError) {
+          throw sessionError;
+        }
         if (!sessionData.session) {
           throw new Error(
             "Login succeeded but no session was available yet. Please try again.",
@@ -86,7 +91,9 @@ export default function AdminLoginPage() {
         },
       );
 
-      if (error) {throw error;}
+      if (error) {
+        throw error;
+      }
 
       setStatus("Password reset email sent.");
     } catch (err: any) {

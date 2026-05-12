@@ -332,6 +332,7 @@ function AdminDashboardPageInner() {
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [isWide, setIsWide] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(false);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
 
   const didInitialLoad = useRef(false);
@@ -510,6 +511,7 @@ function AdminDashboardPageInner() {
   useEffect(() => {
     function handleResize() {
       setIsWide(window.innerWidth > 1200);
+      setIsNarrow(window.innerWidth < 760);
     }
 
     handleResize();
@@ -659,7 +661,14 @@ function AdminDashboardPageInner() {
           </div>
         </div>
 
-        <div style={eventSelectorGridStyle}>
+        <div
+          style={{
+            ...eventSelectorGridStyle,
+            gridTemplateColumns: isNarrow
+              ? "1fr"
+              : "minmax(0, 1.5fr) minmax(220px, 1fr)",
+          }}
+        >
           <div>
             <label style={labelStyle}>Admin Working Event</label>
             <select
@@ -875,6 +884,8 @@ const labelStyle: React.CSSProperties = {
 
 const selectStyle: React.CSSProperties = {
   width: "100%",
+  maxWidth: "100%",
+  boxSizing: "border-box",
   padding: "10px 12px",
   border: "1px solid #cbd5e1",
   borderRadius: 10,
@@ -883,6 +894,8 @@ const selectStyle: React.CSSProperties = {
 };
 
 const statusBoxStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
   border: "1px solid #ddd",
   borderRadius: 10,
   background: "#f8f9fb",
