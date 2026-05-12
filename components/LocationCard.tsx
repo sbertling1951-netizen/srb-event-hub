@@ -44,7 +44,12 @@ export default function LocationCard(props: LocationCardProps) {
     mapQuery || props.address?.trim() || props.name?.trim() || "";
 
   const appleMaps = destinationQuery
-    ? buildAppleMapsUrl(destinationQuery, props.latitude, props.longitude)
+    ? buildAppleMapsUrl(
+        destinationQuery,
+        props.latitude,
+        props.longitude,
+        props.name,
+      )
     : "";
 
   const googleMaps = destinationQuery

@@ -1,8 +1,17 @@
-export function buildAppleMapsUrl(address: string, lat?: number, lng?: number) {
+export function buildAppleMapsUrl(
+  address: string,
+  lat?: number,
+  lng?: number,
+  label?: string,
+) {
+  const safeAddress = address.trim();
+  const safeLabel = (label || safeAddress).trim();
+
   if (lat !== undefined && lng !== undefined) {
-    return `https://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(address)}`;
+    return `https://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(safeLabel)}`;
   }
-  return `https://maps.apple.com/?q=${encodeURIComponent(address)}`;
+
+  return `https://maps.apple.com/?q=${encodeURIComponent(safeLabel || safeAddress)}`;
 }
 
 export function buildGoogleMapsUrl(
