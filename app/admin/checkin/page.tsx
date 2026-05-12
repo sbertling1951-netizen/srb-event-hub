@@ -232,6 +232,8 @@ function AdminCheckinPageInner() {
         handleAdminEventUpdated,
       );
     };
+    // loadPage is intentionally omitted to avoid changing the established admin event reload flow.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -275,6 +277,8 @@ function AdminCheckinPageInner() {
       void supabase.removeChannel(parkingChannel);
       void supabase.removeChannel(attendeesChannel);
     };
+    // loadPage is intentionally omitted to avoid resubscribing on every reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id, accessDenied]);
 
   async function loadPage() {

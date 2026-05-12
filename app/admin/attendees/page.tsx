@@ -2601,8 +2601,9 @@ function AdminAttendeesPageInner() {
     setCommandCenterTab("attendees");
     setExpandedAttendeeId(attendee.id);
     openEditAttendeeEditor(attendee);
-  }, [attendees, editorOpen, openEditAttendeeEditor]);
-
+    // openEditAttendeeEditor is intentionally omitted because it is declared later in this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attendees, editorOpen]);
   const correctedCount = useMemo(() => {
     return attendees.filter(
       (row) => dataStatusLabel(row.data_status) === "corrected",
@@ -2754,12 +2755,14 @@ function AdminAttendeesPageInner() {
     setEditorOpen(true);
   }
 
-  function openEditAttendeeEditor(attendee: AttendeeRow) {
+  const openEditAttendeeEditor = useCallback((attendee: AttendeeRow) => {
     cancelInlineEdit();
     setEditorMode("edit");
     setEditorState(attendeeToEditorState(attendee));
     setEditorOpen(true);
-  }
+    // cancelInlineEdit is intentionally omitted to avoid declaration-order issues in this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function closeAttendeeEditor() {
     cancelInlineEdit();
@@ -2783,10 +2786,10 @@ function AdminAttendeesPageInner() {
     setInlineEditState(attendeeToInlineEditState(attendee));
   }
 
-  function cancelInlineEdit() {
+  const cancelInlineEdit = useCallback(() => {
     setInlineEditId(null);
     setInlineEditState(emptyInlineEditState());
-  }
+  }, []);
 
   function updateInlineEditField(key: keyof InlineEditState, value: string) {
     setInlineEditState((prev) => ({

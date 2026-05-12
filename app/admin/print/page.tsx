@@ -510,7 +510,7 @@ function AdminPrintPageInner() {
         handleAdminEventUpdated,
       );
     };
-  }, []);
+  }, [selectedEventId]);
 
   async function handleSelectedPrintEventChange(eventId: string) {
     setSelectedEventId(eventId);

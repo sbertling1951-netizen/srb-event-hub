@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { geocodeLocation } from "@/lib/geocodeLocation";
@@ -201,8 +201,6 @@ function AdminNearbyPageInner() {
   const [storedCustomCategory, setStoredCustomCategory] = useState("");
   const [showStoredCustomCategory, setShowStoredCustomCategory] =
     useState(false);
-  const [eventCustomCategory, setEventCustomCategory] = useState("");
-  const [showEventCustomCategory, setShowEventCustomCategory] = useState(false);
 
   function resetAllState() {
     setAdminEvent(null);
@@ -216,8 +214,6 @@ function AdminNearbyPageInner() {
     setEventForm(emptyEventPlaceForm);
     setStoredCustomCategory("");
     setShowStoredCustomCategory(false);
-    setEventCustomCategory("");
-    setShowEventCustomCategory(false);
   }
 
   function showStatus(message: string) {
@@ -273,43 +269,6 @@ function AdminNearbyPageInner() {
 
     void init();
   }, []);
-
-  useEffect(() => {
-    if (accessDenied) {
-      return;
-    }
-    void loadStoredAreas();
-  }, [accessDenied]);
-
-  useEffect(() => {
-    if (accessDenied) {
-      setStoredPlaces([]);
-      setStoredForm(emptyStoredPlaceForm);
-      return;
-    }
-
-    if (selectedAreaId) {
-      void loadStoredPlaces(selectedAreaId);
-    } else {
-      setStoredPlaces([]);
-      setStoredForm(emptyStoredPlaceForm);
-    }
-  }, [selectedAreaId, accessDenied]);
-
-  useEffect(() => {
-    if (accessDenied) {
-      setEventPlaces([]);
-      setEventForm(emptyEventPlaceForm);
-      return;
-    }
-
-    if (adminEvent?.id) {
-      void loadEventPlaces(adminEvent.id);
-    } else {
-      setEventPlaces([]);
-      setEventForm(emptyEventPlaceForm);
-    }
-  }, [adminEvent?.id, accessDenied]);
 
   useEffect(() => {
     async function refreshAdminEvent() {
@@ -394,7 +353,7 @@ function AdminNearbyPageInner() {
     });
   }, [eventPlaces]);
 
-  async function loadStoredAreas() {
+  const loadStoredAreas = useCallback(async () => {
     try {
       setLoadingAreas(true);
       showStatus("Loading stored nearby areas...");
@@ -433,9 +392,9 @@ function AdminNearbyPageInner() {
     } finally {
       setLoadingAreas(false);
     }
-  }
+  }, []);
 
-  async function loadStoredPlaces(areaId: string) {
+  const loadStoredPlaces = useCallback(async (areaId: string) => {
     try {
       setLoadingStoredPlaces(true);
       showStatus("Loading stored places...");
@@ -476,9 +435,9 @@ function AdminNearbyPageInner() {
     } finally {
       setLoadingStoredPlaces(false);
     }
-  }
+  }, []);
 
-  async function loadEventPlaces(eventId: string) {
+  const loadEventPlaces = useCallback(async (eventId: string) => {
     try {
       setLoadingEventPlaces(true);
       showStatus("Loading event nearby places...");
@@ -507,7 +466,45 @@ function AdminNearbyPageInner() {
     } finally {
       setLoadingEventPlaces(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (accessDenied) {
+      return;
+    }
+
+    void loadStoredAreas();
+  }, [accessDenied, loadStoredAreas]);
+
+  useEffect(() => {
+    if (accessDenied) {
+      setStoredPlaces([]);
+      setStoredForm(emptyStoredPlaceForm);
+      return;
+    }
+
+    if (selectedAreaId) {
+      void loadStoredPlaces(selectedAreaId);
+    } else {
+      setStoredPlaces([]);
+      setStoredForm(emptyStoredPlaceForm);
+    }
+  }, [selectedAreaId, accessDenied, loadStoredPlaces]);
+
+  useEffect(() => {
+    if (accessDenied) {
+      setEventPlaces([]);
+      setEventForm(emptyEventPlaceForm);
+      return;
+    }
+
+    if (adminEvent?.id) {
+      void loadEventPlaces(adminEvent.id);
+    } else {
+      setEventPlaces([]);
+      setEventForm(emptyEventPlaceForm);
+    }
+  }, [adminEvent?.id, accessDenied, loadEventPlaces]);
 
   async function createStoredArea() {
     if (accessDenied) {

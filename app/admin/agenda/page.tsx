@@ -1137,11 +1137,11 @@ function AdminAgendaPageInner() {
     window.addEventListener("mousemove", handleWindowResizeMove);
     window.addEventListener("mouseup", handleWindowResizeEnd);
 
-    return () => {
-      window.removeEventListener("mousemove", handleWindowResizeMove);
-      window.removeEventListener("mouseup", handleWindowResizeEnd);
-    };
+    // The resize handlers intentionally read the current drag ref and current calendar range.
+    // The resize save functions are declared below and use refs for current event/items.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendarRange.end, calendarRange.start]);
+
   function beginCalendarStartResize(
     e: React.MouseEvent<HTMLSpanElement>,
     item: AgendaItem,
