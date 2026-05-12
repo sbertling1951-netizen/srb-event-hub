@@ -495,8 +495,33 @@ function AdminUsersPageInner() {
     return null;
   }
 
-  async function setPasswordIfProvided(
+  async function ensureAuthUser(
     adminEmail: string,
+  ): Promise<{ error: string | null; userId: string | null }> {
+    const res = await fetch("/api/admins/ensure-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: adminEmail.trim() }),
+    });
+
+    if (!res.ok) {
+      const result = await res.json().catch(() => null);
+      return {
+        error: result?.error || "Failed to ensure auth user exists.",
+        userId: null,
+      };
+    }
+
+    const result = await res.json().catch(() => null);
+
+    return {
+      error: null,
+      userId: result?.userId || null,
+    };
+  }
+
+  async function setPasswordIfProvided(
+    userId: string | null,
     nextPassword: string,
   ): Promise<{ error: string | null; passwordWasSet: boolean }> {
     const trimmedPassword = nextPassword.trim();
@@ -505,11 +530,18 @@ function AdminUsersPageInner() {
       return { error: null, passwordWasSet: false };
     }
 
+    if (!userId) {
+      return {
+        error: "No linked auth user. Save again to sync user.",
+        passwordWasSet: false,
+      };
+    }
+
     const passwordResponse = await fetch("/api/admins/set-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: adminEmail.trim(),
+        userId,
         password: trimmedPassword,
       }),
     });
@@ -550,8 +582,31 @@ function AdminUsersPageInner() {
         return;
       }
 
+      // Only ensure auth user if we need to (new user OR setting password)
+      let resolvedUserId = selectedRow?.user_id || null;
+
+      if (password || !resolvedUserId) {
+        const { error: ensureError, userId } = await ensureAuthUser(email);
+
+        if (ensureError) {
+          setSaveStatus(
+            `Saved admin user, but auth setup failed: ${ensureError}`,
+          );
+          return;
+        }
+
+        if (userId) {
+          resolvedUserId = userId;
+
+          await supabase
+            .from("admin_users")
+            .update({ user_id: userId })
+            .eq("id", adminUserId);
+        }
+      }
+
       const { error: passwordError, passwordWasSet } =
-        await setPasswordIfProvided(email, password);
+        await setPasswordIfProvided(resolvedUserId, password);
 
       if (passwordError) {
         setSaveStatus(passwordError);

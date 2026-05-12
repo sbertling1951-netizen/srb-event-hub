@@ -23,6 +23,51 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+html.coach-map-lock,
+body.coach-map-lock {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: none !important;
+  -webkit-overflow-scrolling: auto !important;
+}
+
+body.coach-map-lock .app-main {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 100dvh !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  overscroll-behavior: none !important;
+  touch-action: none !important;
+}
+
+body.coach-map-lock .app-inner {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 100dvh !important;
+  overflow: hidden !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overscroll-behavior: none !important;
+  touch-action: none !important;
+}
+
+body.coach-map-lock .app-header-card {
+  display: none !important;
+}
+
+body.coach-map-lock .app-shell {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 100dvh !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: none !important;
+}
+
 .app-shell {
   min-height: 100vh;
   min-height: 100dvh;

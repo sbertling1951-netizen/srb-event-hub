@@ -86,13 +86,21 @@ export default function AdminRouteGuard({
 
   useEffect(() => {
     let mounted = true;
+    let running = false;
 
     async function verifyAdmin() {
+      if (running) {
+        return;
+      }
+      running = true;
+
       try {
         setChecking(true);
         setDeniedMessage(null);
         const mode = getStoredUserMode();
+        console.log("[AdminGuard] mode:", mode);
         if (mode !== "admin") {
+          console.log("[AdminGuard] redirect: not in admin mode");
           clearCachedAdminState();
           if (mounted) {
             setAllowed(false);
@@ -102,9 +110,26 @@ export default function AdminRouteGuard({
           return;
         }
 
-        const admin = await getCurrentAdminAccess();
+        let admin = null;
+        try {
+          admin = await getCurrentAdminAccess();
+        } catch (err) {
+          console.error(
+            "[AdminGuard] getCurrentAdminAccess failed:",
+            err instanceof Error
+              ? err.message
+              : typeof err === "string"
+                ? err
+                : JSON.stringify(err),
+          );
+
+          // Do NOT throw — just treat as failed access
+          admin = null;
+        }
+        console.log("[AdminGuard] admin result:", admin);
 
         if (!admin?.adminUser?.user_id) {
+          console.log("[AdminGuard] redirect: missing adminUser.user_id");
           clearCachedAdminState();
           if (mounted) {
             setAllowed(false);
@@ -142,7 +167,15 @@ export default function AdminRouteGuard({
         }
         setAllowed(true);
       } catch (err) {
-        console.error("AdminRouteGuard error:", err);
+        console.error(
+          "AdminRouteGuard error:",
+          err instanceof Error
+            ? err.message
+            : typeof err === "string"
+              ? err
+              : JSON.stringify(err),
+        );
+        console.log("[AdminGuard] redirect: exception path");
         clearCachedAdminState();
         if (mounted) {
           setAllowed(false);
@@ -154,6 +187,7 @@ export default function AdminRouteGuard({
         if (mounted) {
           setChecking(false);
         }
+        running = false;
       }
     }
 
@@ -174,13 +208,37 @@ export default function AdminRouteGuard({
       void verifyAdmin();
     }
 
+    function handleUnhandledRejection(e: PromiseRejectionEvent) {
+      try {
+        const reason = e.reason;
+        const message =
+          reason instanceof Error
+            ? reason.message
+            : typeof reason === "string"
+              ? reason
+              : JSON.stringify(reason);
+
+        console.error("[AdminGuard] Unhandled rejection:", message);
+      } catch (err) {
+        console.error("[AdminGuard] Unhandled rejection (unknown)");
+      }
+
+      // prevent React/Next from showing opaque [object Event]
+      e.preventDefault();
+    }
+
     window.addEventListener("storage", handleStorage);
     window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
 
     return () => {
       mounted = false;
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener(
+        "unhandledrejection",
+        handleUnhandledRejection,
+      );
     };
   }, [router, requiredPermission, fallbackPath]);
 

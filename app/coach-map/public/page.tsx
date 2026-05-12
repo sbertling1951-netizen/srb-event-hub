@@ -183,6 +183,7 @@ function CoachMapPublicPageInner() {
   const [isNarrow, setIsNarrow] = useState(false);
   const [pulseKey, setPulseKey] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [mapPan, setMapPan] = useState({ x: 0, y: -240 });
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -193,10 +194,64 @@ function CoachMapPublicPageInner() {
   const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(
     null,
   );
+  const oneFingerPanRef = useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    lastY: 0,
+    didMove: false,
+  });
+  const mapPanRef = useRef({ x: 0, y: -240 });
 
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
   const renderedMapWidth = naturalSize.width * zoom;
   const renderedMapHeight = naturalSize.height * zoom;
+  const verticalPanBuffer = 240;
+  const renderedMapScrollHeight = renderedMapHeight + verticalPanBuffer * 2;
+
+  function clampMapPan(nextX: number, nextY: number) {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return { x: nextX, y: nextY };
+    }
+
+    const minX = Math.min(0, viewport.clientWidth - renderedMapWidth);
+    const minY = Math.min(0, viewport.clientHeight - renderedMapScrollHeight);
+
+    return {
+      x: clamp(nextX, minX, 0),
+      y: clamp(nextY, minY, 0),
+    };
+  }
+
+  function applyMapPan(nextX: number, nextY: number) {
+    const clamped = clampMapPan(nextX, nextY);
+    mapPanRef.current = clamped;
+    setMapPan(clamped);
+  }
+
+  function applyMapPanForZoom(nextX: number, nextY: number, nextZoom: number) {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      const nextPan = { x: nextX, y: nextY };
+      mapPanRef.current = nextPan;
+      setMapPan(nextPan);
+      return;
+    }
+
+    const nextWidth = naturalSize.width * nextZoom;
+    const nextHeight = naturalSize.height * nextZoom + verticalPanBuffer * 2;
+    const minX = Math.min(0, viewport.clientWidth - nextWidth);
+    const minY = Math.min(0, viewport.clientHeight - nextHeight);
+    const nextPan = {
+      x: clamp(nextX, minX, 0),
+      y: clamp(nextY, minY, 0),
+    };
+
+    mapPanRef.current = nextPan;
+    setMapPan(nextPan);
+  }
 
   const refreshMapSize = useCallback(() => {
     if (!imageRef.current) {
@@ -461,15 +516,76 @@ function CoachMapPublicPageInner() {
   }, [loadMap, refreshMapSize]);
 
   useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyOverscrollBehavior =
+      document.body.style.overscrollBehavior;
+    const previousBodyTouchAction = document.body.style.touchAction;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousHtmlOverscrollBehavior =
+      document.documentElement.style.overscrollBehavior;
+    const previousHtmlTouchAction = document.documentElement.style.touchAction;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    document.body.style.touchAction = "none";
+    document.documentElement.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
+    document.documentElement.style.touchAction = "none";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.overscrollBehavior = previousBodyOverscrollBehavior;
+      document.body.style.touchAction = previousBodyTouchAction;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.documentElement.style.overscrollBehavior =
+        previousHtmlOverscrollBehavior;
+      document.documentElement.style.touchAction = previousHtmlTouchAction;
+    };
+  }, []);
+
+  useEffect(() => {
     const t = setTimeout(() => {
       refreshMapSize();
     }, 100);
 
     return () => clearTimeout(t);
   }, [zoom, isNarrow, event?.map_image_url, refreshMapSize]);
+
+  useEffect(() => {
+    if (!event?.map_image_url) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      applyMapPan(0, -verticalPanBuffer);
+    });
+  }, [event?.map_image_url]);
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const claimMapTouch = (event: TouchEvent) => {
+      event.preventDefault();
+    };
+
+    viewport.addEventListener("touchstart", claimMapTouch, {
+      passive: false,
+    });
+    viewport.addEventListener("touchmove", claimMapTouch, {
+      passive: false,
+    });
+
+    return () => {
+      viewport.removeEventListener("touchstart", claimMapTouch);
+      viewport.removeEventListener("touchmove", claimMapTouch);
+    };
+  }, []);
   useEffect(() => {
     if (!pulseKey) {
       return;
@@ -502,11 +618,31 @@ function CoachMapPublicPageInner() {
   }, [event?.coach_map_open_scale]);
   const handleViewportTouchStart = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
-      if (e.touches.length !== 2 || !viewportRef.current) {
+      if (!viewportRef.current) {
         return;
       }
 
       const viewport = viewportRef.current;
+
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        oneFingerPanRef.current = {
+          active: true,
+          startX: touch.clientX,
+          startY: touch.clientY,
+          lastX: touch.clientX,
+          lastY: touch.clientY,
+          didMove: false,
+        };
+        return;
+      }
+
+      if (e.touches.length !== 2) {
+        return;
+      }
+
+      oneFingerPanRef.current.active = false;
+
       const rect = viewport.getBoundingClientRect();
       const touchA = {
         clientX: e.touches[0].clientX,
@@ -522,12 +658,8 @@ function CoachMapPublicPageInner() {
       pinchStartDistanceRef.current = getTouchDistance(touchA, touchB);
       pinchStartZoomRef.current = zoomRef.current;
       pinchAnchorRef.current = {
-        x:
-          (viewport.scrollLeft + centerX) /
-          Math.max(pinchStartZoomRef.current, 0.001),
-        y:
-          (viewport.scrollTop + centerY) /
-          Math.max(pinchStartZoomRef.current, 0.001),
+        x: (centerX - mapPanRef.current.x) / Math.max(zoomRef.current, 0.001),
+        y: (centerY - mapPanRef.current.y) / Math.max(zoomRef.current, 0.001),
       };
     },
     [],
@@ -535,17 +667,38 @@ function CoachMapPublicPageInner() {
 
   const handleViewportTouchMove = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
-      if (
-        e.touches.length !== 2 ||
-        !viewportRef.current ||
-        !pinchStartDistanceRef.current
-      ) {
+      if (!viewportRef.current) {
         return;
       }
 
-      e.preventDefault();
-
       const viewport = viewportRef.current;
+
+      if (e.touches.length === 1 && oneFingerPanRef.current.active) {
+        const touch = e.touches[0];
+        const totalDx = touch.clientX - oneFingerPanRef.current.startX;
+        const totalDy = touch.clientY - oneFingerPanRef.current.startY;
+        const frameDx = touch.clientX - oneFingerPanRef.current.lastX;
+        const frameDy = touch.clientY - oneFingerPanRef.current.lastY;
+
+        if (Math.abs(totalDx) > 4 || Math.abs(totalDy) > 4) {
+          oneFingerPanRef.current.didMove = true;
+        }
+
+        applyMapPan(
+          mapPanRef.current.x + frameDx,
+          mapPanRef.current.y + frameDy,
+        );
+        oneFingerPanRef.current.lastX = touch.clientX;
+        oneFingerPanRef.current.lastY = touch.clientY;
+        return;
+      }
+
+      if (e.touches.length !== 2 || !pinchStartDistanceRef.current) {
+        return;
+      }
+
+      oneFingerPanRef.current.active = false;
+
       const rect = viewport.getBoundingClientRect();
       const touchA = {
         clientX: e.touches[0].clientX,
@@ -561,27 +714,16 @@ function CoachMapPublicPageInner() {
       const scaleRatio = currentDistance / pinchStartDistanceRef.current;
       const nextZoom = clamp(pinchStartZoomRef.current * scaleRatio, 0.35, 3);
       const anchor = pinchAnchorRef.current || {
-        x: (viewport.scrollLeft + centerX) / Math.max(zoomRef.current, 0.001),
-        y: (viewport.scrollTop + centerY) / Math.max(zoomRef.current, 0.001),
+        x: (centerX - mapPanRef.current.x) / Math.max(zoomRef.current, 0.001),
+        y: (centerY - mapPanRef.current.y) / Math.max(zoomRef.current, 0.001),
       };
 
       setZoom(nextZoom);
-
-      requestAnimationFrame(() => {
-        const nextWidth = naturalSize.width * nextZoom;
-        const nextHeight = naturalSize.height * nextZoom;
-
-        viewport.scrollLeft = clamp(
-          anchor.x * nextZoom - centerX,
-          0,
-          Math.max(0, nextWidth - viewport.clientWidth),
-        );
-        viewport.scrollTop = clamp(
-          anchor.y * nextZoom - centerY,
-          0,
-          Math.max(0, nextHeight - viewport.clientHeight),
-        );
-      });
+      applyMapPanForZoom(
+        centerX - anchor.x * nextZoom,
+        centerY - anchor.y * nextZoom,
+        nextZoom,
+      );
     },
     [naturalSize.height, naturalSize.width],
   );
@@ -591,6 +733,12 @@ function CoachMapPublicPageInner() {
       if (e.touches.length === 0) {
         pinchStartDistanceRef.current = null;
         pinchAnchorRef.current = null;
+        oneFingerPanRef.current.active = false;
+      }
+
+      if (oneFingerPanRef.current.didMove) {
+        oneFingerPanRef.current.didMove = false;
+        return;
       }
 
       if (e.changedTouches.length !== 1 || !viewportRef.current) {
@@ -618,27 +766,16 @@ function CoachMapPublicPageInner() {
           3,
         );
         const anchorX =
-          (viewport.scrollLeft + tapX) / Math.max(currentZoom, 0.001);
+          (tapX - mapPanRef.current.x) / Math.max(currentZoom, 0.001);
         const anchorY =
-          (viewport.scrollTop + tapY) / Math.max(currentZoom, 0.001);
+          (tapY - mapPanRef.current.y) / Math.max(currentZoom, 0.001);
 
         setZoom(nextZoom);
-
-        requestAnimationFrame(() => {
-          const nextWidth = naturalSize.width * nextZoom;
-          const nextHeight = naturalSize.height * nextZoom;
-
-          viewport.scrollLeft = clamp(
-            anchorX * nextZoom - tapX,
-            0,
-            Math.max(0, nextWidth - viewport.clientWidth),
-          );
-          viewport.scrollTop = clamp(
-            anchorY * nextZoom - tapY,
-            0,
-            Math.max(0, nextHeight - viewport.clientHeight),
-          );
-        });
+        applyMapPanForZoom(
+          tapX - anchorX * nextZoom,
+          tapY - anchorY * nextZoom,
+          nextZoom,
+        );
 
         lastTapRef.current = null;
         return;
@@ -770,36 +907,18 @@ function CoachMapPublicPageInner() {
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
   function centerSiteInViewport(site: RenderedSite) {
-    if (!viewportRef.current || !imageRef.current) {
-      return;
-    }
-    if (site.map_x === null || site.map_y === null) {
+    if (!viewportRef.current || site.map_x === null || site.map_y === null) {
       return;
     }
 
     const viewport = viewportRef.current;
-    const contentWidth = Math.max(viewport.scrollWidth, renderedMapWidth);
-    const contentHeight = Math.max(viewport.scrollHeight, renderedMapHeight);
-    const xPx = (site.map_x / 100) * contentWidth;
-    const yPx = (site.map_y / 100) * contentHeight;
+    const xPx = (site.map_x / 100) * renderedMapWidth;
+    const yPx = verticalPanBuffer + (site.map_y / 100) * renderedMapHeight;
 
-    const targetLeft = clamp(
-      xPx - viewport.clientWidth / 2,
-      0,
-      Math.max(0, contentWidth - viewport.clientWidth),
+    applyMapPan(
+      viewport.clientWidth / 2 - xPx,
+      viewport.clientHeight / 2 - yPx,
     );
-
-    const targetTop = clamp(
-      yPx - viewport.clientHeight / 2,
-      0,
-      Math.max(0, contentHeight - viewport.clientHeight),
-    );
-
-    viewport.scrollTo({
-      left: targetLeft,
-      top: targetTop,
-      behavior: "smooth",
-    });
   }
 
   function goToSite(siteKey: string) {
@@ -867,9 +986,11 @@ function CoachMapPublicPageInner() {
         padding: 8,
         display: "grid",
         gap: 8,
-        minHeight: "100dvh",
+        height: "100dvh",
+        maxHeight: "100dvh",
         gridTemplateRows: "auto auto minmax(0, 1fr)",
         overflow: "hidden",
+        overscrollBehavior: "none",
       }}
     >
       <style>
@@ -1073,9 +1194,11 @@ function CoachMapPublicPageInner() {
             padding: 8,
             minHeight: 0,
             height: "100%",
+            maxHeight: "100%",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
+            overscrollBehavior: "none",
           }}
         >
           <div
@@ -1145,9 +1268,14 @@ function CoachMapPublicPageInner() {
               width: "100%",
               flex: 1,
               minHeight: 0,
-              overflow: "auto",
-              touchAction: "pan-x pan-y pinch-zoom",
-              WebkitOverflowScrolling: "touch",
+              overflow: "hidden",
+              touchAction: "none",
+              WebkitUserSelect: "none",
+              WebkitTouchCallout: "none",
+              userSelect: "none",
+              overscrollBehavior: "none",
+              overscrollBehaviorX: "none",
+              overscrollBehaviorY: "none",
               background: "#f8f9fb",
               border: "1px solid #eee",
               borderRadius: 8,
@@ -1157,9 +1285,15 @@ function CoachMapPublicPageInner() {
               style={{
                 position: "relative",
                 width: `${renderedMapWidth}px`,
-                height: `${renderedMapHeight}px`,
+                height: `${renderedMapScrollHeight}px`,
                 minWidth: `${renderedMapWidth}px`,
-                minHeight: `${renderedMapHeight}px`,
+                minHeight: `${renderedMapScrollHeight}px`,
+                transform: `translate3d(${mapPan.x}px, ${mapPan.y}px, 0)`,
+                transformOrigin: "0 0",
+                willChange: "transform",
+                touchAction: "none",
+                userSelect: "none",
+                WebkitUserSelect: "none",
               }}
             >
               <img
@@ -1173,7 +1307,8 @@ function CoachMapPublicPageInner() {
                   display: "block",
                   borderRadius: 8,
                   height: `${renderedMapHeight}px`,
-                  touchAction: "none",
+                  marginTop: verticalPanBuffer,
+                  pointerEvents: "none",
                   userSelect: "none",
                   WebkitUserSelect: "none",
                 }}
@@ -1199,7 +1334,7 @@ function CoachMapPublicPageInner() {
                     style={{
                       position: "absolute",
                       left: `${(x / 100) * renderedMapWidth}px`,
-                      top: `${(y / 100) * renderedMapHeight}px`,
+                      top: `${verticalPanBuffer + (y / 100) * renderedMapHeight}px`,
                       transform: "translate(-50%, -50%)",
                     }}
                   >
@@ -1227,8 +1362,8 @@ function CoachMapPublicPageInner() {
                       title={site.display_label || site.site_number}
                       style={{
                         position: "relative",
-                        width: isSelected ? 18 : isViewerSite ? 16 : 12,
-                        height: isSelected ? 18 : isViewerSite ? 16 : 12,
+                        width: isSelected ? 26 : isViewerSite ? 24 : 22,
+                        height: isSelected ? 26 : isViewerSite ? 24 : 22,
                         borderRadius: "50%",
                         border: isSelected
                           ? "3px solid #ffffff"
@@ -1249,6 +1384,7 @@ function CoachMapPublicPageInner() {
                         margin: "0 auto",
                         transition: "all 0.2s ease",
                         zIndex: 2,
+                        touchAction: "manipulation",
                       }}
                     />
 
@@ -1275,8 +1411,10 @@ function CoachMapPublicPageInner() {
                           color: "#111",
                           whiteSpace: "nowrap",
                           boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
-                          cursor: "pointer",
+                          cursor: "default",
                           display: "table",
+                          pointerEvents: "none",
+                          touchAction: "pan-x pan-y",
                         }}
                       >
                         {site.display_label || site.site_number}
@@ -1302,7 +1440,7 @@ function CoachMapPublicPageInner() {
                     style={{
                       position: "absolute",
                       left: `${(x / 100) * renderedMapWidth}px`,
-                      top: `${(y / 100) * renderedMapHeight}px`,
+                      top: `${verticalPanBuffer + (y / 100) * renderedMapHeight}px`,
                       transform: "translate(-50%, -50%)",
                       zIndex: 5,
                     }}
@@ -1347,6 +1485,8 @@ function CoachMapPublicPageInner() {
                           padding: "1px 4px",
                           color: "#111",
                           whiteSpace: "nowrap",
+                          pointerEvents: "none",
+                          touchAction: "pan-x pan-y",
                         }}
                       >
                         {location.name}

@@ -19,6 +19,8 @@ function getSupabaseAdmin() {
 
 export async function POST(req: Request) {
   try {
+    console.log("🔥 SET PASSWORD ROUTE HIT");
+
     const supabase = getSupabaseAdmin();
 
     if (!supabase) {
@@ -28,35 +30,20 @@ export async function POST(req: Request) {
       );
     }
 
-    const { email, password } = await req.json();
+    const { userId, password } = await req.json();
 
-    if (!email || !password) {
-      return NextResponse.json(
-        { error: "Email and password are required." },
-        { status: 400 },
-      );
+    console.log("PAYLOAD:", { userId, password });
+
+    if (!userId) {
+      return NextResponse.json({ error: "userId required" }, { status: 400 });
     }
 
-    // Find user by email
-    const { data: usersData, error: listError } =
-      await supabase.auth.admin.listUsers();
-
-    if (listError) {
-      return NextResponse.json({ error: listError.message }, { status: 400 });
+    if (!password) {
+      return NextResponse.json({ error: "Password required" }, { status: 400 });
     }
 
-    const user = usersData.users.find((u) => u.email === email);
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "User not found in auth system." },
-        { status: 404 },
-      );
-    }
-
-    // Update password
     const { error: updateError } = await supabase.auth.admin.updateUserById(
-      user.id,
+      userId,
       {
         password,
       },

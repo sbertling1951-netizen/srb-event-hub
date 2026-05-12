@@ -38,6 +38,11 @@ export default function RootLayout({
                     document.documentElement.classList.add("admin-embedded-mode");
                     document.body.classList.add("admin-embedded-mode");
                   }
+
+                  if (window.location.pathname.startsWith("/coach-map")) {
+                    document.documentElement.classList.add("coach-map-lock");
+                    document.body.classList.add("coach-map-lock");
+                  }
                 } catch {}
               `,
           }}

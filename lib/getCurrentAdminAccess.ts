@@ -1,4 +1,3 @@
-import { getAdminEvent } from "@/lib/getAdminEvent";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
@@ -38,9 +37,6 @@ export type AdminAccessResult = {
   eventPermissionKeys: string[];
   privilegeGroup: string | null;
   isSuperAdmin: boolean;
-  // Compatibility shims for older callers. Prefer adminUser.display_name,
-  // adminUser.privilege_group, and eventIds in new code. Remove duplicates
-  // after all callers are migrated.
   email: string;
   display_name: string | null;
   privilege_group: string | null;
@@ -48,9 +44,10 @@ export type AdminAccessResult = {
   event_ids: string[];
 };
 
-const ADMIN_ACCESS_CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes
+const ADMIN_ACCESS_CACHE_TTL_MS = 1000 * 60 * 30;
+const ADMIN_ACCESS_TIMEOUT_MS = 15000;
 
-const ADMIN_ACCESS_TIMEOUT_MS = 8000;
+let inflightAdminAccess: Promise<AdminAccessResult | null> | null = null;
 
 async function withTimeout<T>(
   promise: PromiseLike<T>,
@@ -73,317 +70,6 @@ async function withTimeout<T>(
   }
 }
 
-const PRIVILEGE_GROUP_PRESETS: Record<string, string[]> = {
-  super_admin: [
-    "can_manage_admins",
-    "can_manage_event_admins",
-    "can_view_admin_dashboard",
-    "can_manage_checkin",
-    "can_manage_parking",
-    "can_manage_agenda",
-    "can_manage_announcements",
-    "can_manage_nearby",
-    "can_manage_locations",
-    "can_manage_reports",
-    "can_manage_imports",
-    "can_manage_event_staff",
-    "can_manage_events",
-    "can_manage_master_maps",
-  ],
-  event_admin: [
-    "can_manage_event_admins",
-    "can_view_admin_dashboard",
-    "can_manage_checkin",
-    "can_manage_parking",
-    "can_manage_agenda",
-    "can_manage_announcements",
-    "can_manage_nearby",
-    "can_manage_locations",
-    "can_manage_reports",
-    "can_manage_imports",
-    "can_manage_event_staff",
-    "can_manage_events",
-  ],
-  checkin: ["can_view_admin_dashboard", "can_manage_checkin"],
-  parking: ["can_view_admin_dashboard", "can_manage_parking"],
-  content_admin: [
-    "can_view_admin_dashboard",
-    "can_manage_agenda",
-    "can_manage_announcements",
-    "can_manage_nearby",
-    "can_manage_locations",
-  ],
-  read_only: ["can_view_admin_dashboard"],
-};
-
-const EVENT_ROLE_PRESETS: Record<string, string[]> = {
-  super_admin: PRIVILEGE_GROUP_PRESETS.super_admin,
-  event_admin: [
-    "can_view_admin_dashboard",
-    "can_manage_checkin",
-    "can_manage_parking",
-    "can_manage_agenda",
-    "can_manage_announcements",
-    "can_manage_nearby",
-    "can_manage_locations",
-    "can_manage_reports",
-    "can_manage_imports",
-    "can_manage_event_staff",
-  ],
-  checkin: ["can_view_admin_dashboard", "can_manage_checkin"],
-  parking: ["can_view_admin_dashboard", "can_manage_parking"],
-  content_admin: [
-    "can_view_admin_dashboard",
-    "can_manage_agenda",
-    "can_manage_announcements",
-    "can_manage_nearby",
-    "can_manage_locations",
-  ],
-  read_only: ["can_view_admin_dashboard"],
-};
-
-function readStoredAdminEventId(): string | null {
-  return getAdminEvent()?.id || null;
-}
-
-function unique(values: Array<string | null | undefined>): string[] {
-  return Array.from(
-    new Set(values.filter((value): value is string => !!value)),
-  );
-}
-
-function buildPermissionMap(permissionKeys: string[]): Record<string, boolean> {
-  const map: Record<string, boolean> = {};
-  for (const key of permissionKeys) {
-    map[key] = true;
-  }
-  return map;
-}
-function getCachedAdminAccess(): AdminAccessResult | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const savedAtRaw = window.localStorage.getItem(
-      STORAGE_KEYS.adminAccessCacheTime,
-    );
-    const savedAt = savedAtRaw ? Number(savedAtRaw) : 0;
-
-    if (!savedAt || Date.now() - savedAt > ADMIN_ACCESS_CACHE_TTL_MS) {
-      clearAdminAccessCache();
-      return null;
-    }
-
-    const raw = window.localStorage.getItem(STORAGE_KEYS.adminAccessCache);
-    if (!raw) {
-      return null;
-    }
-
-    return JSON.parse(raw) as AdminAccessResult;
-  } catch {
-    clearAdminAccessCache();
-    return null;
-  }
-}
-
-function saveAdminAccessCache(access: AdminAccessResult) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(
-    STORAGE_KEYS.adminAccessCache,
-    JSON.stringify(access),
-  );
-  window.localStorage.setItem(
-    STORAGE_KEYS.adminAccessCacheTime,
-    String(Date.now()),
-  );
-}
-
-export function clearAdminAccessCache() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(STORAGE_KEYS.adminAccessCache);
-  window.localStorage.removeItem(STORAGE_KEYS.adminAccessCacheTime);
-}
-
-export async function getCurrentAdminAccess(options?: {
-  forceRefresh?: boolean;
-}): Promise<AdminAccessResult | null> {
-  if (!options?.forceRefresh) {
-    const cached = getCachedAdminAccess();
-    if (cached) {
-      return cached;
-    }
-  }
-  let authResult: Awaited<ReturnType<typeof supabase.auth.getUser>>;
-
-  try {
-    authResult = await withTimeout(supabase.auth.getUser(), "Admin auth check");
-  } catch (error) {
-    console.error("Admin auth check failed:", error);
-    clearAdminAccessCache();
-    return null;
-  }
-
-  const {
-    data: { user },
-    error: authError,
-  } = authResult;
-
-  if (authError || !user) {
-    clearAdminAccessCache();
-    return null;
-  }
-
-  let adminUserResult: {
-    data: AdminUserAccessRow | null;
-    error: unknown;
-  };
-
-  try {
-    adminUserResult = await withTimeout(
-      supabase
-        .from("admin_users")
-        .select(
-          "id, email, display_name, is_active, is_super_admin, privilege_group, user_id",
-        )
-        .eq("user_id", user.id)
-        .eq("is_active", true)
-        .maybeSingle(),
-      "Admin user lookup",
-    );
-  } catch (error) {
-    console.error("Admin user lookup failed:", error);
-    clearAdminAccessCache();
-    return null;
-  }
-
-  const { data: adminUserData, error: adminUserError } = adminUserResult;
-
-  if (adminUserError || !adminUserData) {
-    clearAdminAccessCache();
-    return null;
-  }
-
-  const adminUser = adminUserData as AdminUserAccessRow;
-  const currentEventId = readStoredAdminEventId();
-
-  let eventAccessResult: {
-    data: unknown[] | null;
-    error: unknown;
-  };
-
-  try {
-    eventAccessResult = await withTimeout(
-      supabase
-        .from("admin_event_access")
-        .select("id, event_id, admin_user_id, role, created_at")
-        .eq("admin_user_id", adminUser.id),
-      "Admin event access lookup",
-    );
-  } catch (error) {
-    console.error("Admin event access lookup failed:", error);
-    clearAdminAccessCache();
-    return null;
-  }
-
-  const { data: eventAccessData, error: eventAccessError } = eventAccessResult;
-
-  if (eventAccessError) {
-    clearAdminAccessCache();
-    return null;
-  }
-
-  const eventAccessRows = (eventAccessData || []) as AdminEventAccessRow[];
-
-  const currentEventAccess = currentEventId
-    ? eventAccessRows.find((row) => row.event_id === currentEventId) || null
-    : null;
-
-  let eventPermissionRows: AdminEventPermissionRow[] = [];
-
-  if (currentEventAccess?.id) {
-    let permissionResult: {
-      data: unknown[] | null;
-      error: unknown;
-    };
-
-    try {
-      permissionResult = await withTimeout(
-        supabase
-          .from("admin_event_permissions")
-          .select("id, admin_event_access_id, permission_key, is_enabled")
-          .eq("admin_event_access_id", currentEventAccess.id)
-          .eq("is_enabled", true),
-        "Admin event permissions lookup",
-      );
-    } catch (error) {
-      console.error("Admin event permissions lookup failed:", error);
-      clearAdminAccessCache();
-      return null;
-    }
-
-    const { data: permissionData, error: permissionError } = permissionResult;
-
-    if (permissionError) {
-      clearAdminAccessCache();
-      return null;
-    }
-
-    eventPermissionRows = (permissionData || []) as AdminEventPermissionRow[];
-  }
-
-  const privilegeGroup = adminUser.privilege_group || null;
-  const isSuperAdmin =
-    !!adminUser.is_super_admin || privilegeGroup === "super_admin";
-
-  const privilegePermissions = isSuperAdmin
-    ? PRIVILEGE_GROUP_PRESETS.super_admin
-    : PRIVILEGE_GROUP_PRESETS[privilegeGroup || ""] || [];
-
-  const rolePermissions = currentEventAccess
-    ? EVENT_ROLE_PRESETS[currentEventAccess.role || "event_admin"] || []
-    : [];
-
-  const eventPermissionKeys = eventPermissionRows.map(
-    (row) => row.permission_key,
-  );
-
-  const permissionKeys = unique([
-    ...privilegePermissions,
-    ...rolePermissions,
-    ...eventPermissionKeys,
-  ]);
-
-  const eventIds = unique(eventAccessRows.map((row) => row.event_id));
-
-  const result: AdminAccessResult = {
-    adminUser,
-    currentEventId,
-    currentEventAccess,
-    eventAccessRows,
-    permissionKeys,
-    permissionMap: buildPermissionMap(permissionKeys),
-    rolePermissions,
-    eventPermissionKeys,
-    privilegeGroup,
-    isSuperAdmin,
-    email: adminUser.email,
-    display_name: adminUser.display_name,
-    privilege_group: privilegeGroup,
-    eventIds,
-    event_ids: eventIds,
-  };
-
-  saveAdminAccessCache(result);
-  return result;
-}
-
 export function hasPermission(
   admin: AdminAccessResult | null | undefined,
   permissionKey: string,
@@ -404,10 +90,180 @@ export function canAccessEvent(
   if (!admin || !eventId) {
     return false;
   }
-
   if (admin.isSuperAdmin) {
     return true;
   }
-
   return admin.eventAccessRows.some((row) => row.event_id === eventId);
+}
+
+function unique(values: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(values.filter((v): v is string => !!v)));
+}
+
+function buildPermissionMap(keys: string[]): Record<string, boolean> {
+  const map: Record<string, boolean> = {};
+  for (const k of keys) {
+    map[k] = true;
+  }
+  return map;
+}
+
+function getCachedAdminAccess(): AdminAccessResult | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const savedAt = Number(
+      localStorage.getItem(STORAGE_KEYS.adminAccessCacheTime) || 0,
+    );
+    if (!savedAt || Date.now() - savedAt > ADMIN_ACCESS_CACHE_TTL_MS) {
+      clearAdminAccessCache();
+      return null;
+    }
+    const raw = localStorage.getItem(STORAGE_KEYS.adminAccessCache);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    clearAdminAccessCache();
+    return null;
+  }
+}
+
+function saveAdminAccessCache(access: AdminAccessResult) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  localStorage.setItem(STORAGE_KEYS.adminAccessCache, JSON.stringify(access));
+  localStorage.setItem(STORAGE_KEYS.adminAccessCacheTime, String(Date.now()));
+}
+
+export function clearAdminAccessCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  localStorage.removeItem(STORAGE_KEYS.adminAccessCache);
+  localStorage.removeItem(STORAGE_KEYS.adminAccessCacheTime);
+}
+
+export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null> {
+  if (inflightAdminAccess) {
+    return inflightAdminAccess;
+  }
+
+  inflightAdminAccess = (async () => {
+    try {
+      const cached = getCachedAdminAccess();
+      if (cached) {
+        return cached;
+      }
+
+      const auth = await withTimeout(
+        supabase.auth.getUser(),
+        "Admin auth check",
+      );
+      const user = auth.data.user;
+      if (!user) {
+        return null;
+      }
+
+      let { data: adminUser } = await supabase
+        .from("admin_users")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!adminUser && user.email) {
+        const { data: fallback } = await supabase
+          .from("admin_users")
+          .select("*")
+          .eq("email", user.email)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (fallback) {
+          adminUser = fallback;
+
+          if (!adminUser.user_id) {
+            await supabase
+              .from("admin_users")
+              .update({ user_id: user.id })
+              .eq("id", adminUser.id);
+
+            adminUser.user_id = user.id;
+          }
+        }
+      }
+
+      if (!adminUser) {
+        return null;
+      }
+
+      const { data: accessRows } = await supabase
+        .from("admin_event_access")
+        .select("*")
+        .eq("admin_user_id", adminUser.id);
+
+      const eventIds = unique((accessRows || []).map((r: any) => r.event_id));
+
+      let currentEventId: string | null = null;
+
+      if (adminUser.privilege_group === "super_admin") {
+        currentEventId = null;
+      } else if (eventIds.length === 1) {
+        currentEventId = eventIds[0];
+      } else if (eventIds.length > 1) {
+        currentEventId = eventIds[0];
+      }
+
+      const permissionKeys =
+        adminUser.privilege_group === "super_admin" ||
+        adminUser.privilege_group === "event_admin"
+          ? [
+              "can_view_admin_dashboard",
+              "can_manage_events",
+              "can_manage_checkin",
+              "can_manage_parking",
+              "can_manage_agenda",
+              "can_manage_announcements",
+              "can_manage_nearby",
+              "can_manage_locations",
+              "can_manage_reports",
+              "can_manage_imports",
+              "can_manage_event_staff",
+            ]
+          : [];
+
+      const permissionMap = buildPermissionMap(permissionKeys);
+
+      const result: AdminAccessResult = {
+        adminUser,
+        currentEventId,
+        currentEventAccess:
+          (accessRows || []).find((r: any) => r.event_id === currentEventId) ||
+          null,
+        eventAccessRows: accessRows || [],
+        permissionKeys,
+        permissionMap,
+        rolePermissions: [],
+        eventPermissionKeys: [],
+        privilegeGroup: adminUser.privilege_group,
+        isSuperAdmin: adminUser.privilege_group === "super_admin",
+        email: adminUser.email,
+        display_name: adminUser.display_name,
+        privilege_group: adminUser.privilege_group,
+        eventIds,
+        event_ids: eventIds,
+      };
+
+      saveAdminAccessCache(result);
+      return result;
+    } catch (err) {
+      console.error("[getAdminAccess] FATAL", err);
+      return null;
+    } finally {
+      inflightAdminAccess = null;
+    }
+  })();
+
+  return inflightAdminAccess;
 }
