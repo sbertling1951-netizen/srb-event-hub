@@ -74,19 +74,6 @@ export default function HomePage() {
     run();
   }, [router]);
 
-  useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      // 🔥 Keep homepage in sync with auth state (logout, expiry, etc.)
-      window.location.reload();
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
   if (!checked) {
     return <div style={{ padding: 30 }}>Loading...</div>;
   }
