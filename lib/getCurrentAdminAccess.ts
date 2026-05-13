@@ -116,10 +116,22 @@ function getCachedAdminAccess(): AdminAccessResult | null {
     const savedAt = Number(
       localStorage.getItem(STORAGE_KEYS.adminAccessCacheTime) || 0,
     );
-    if (!savedAt || Date.now() - savedAt > ADMIN_ACCESS_CACHE_TTL_MS) {
+
+    const cacheVersion =
+      localStorage.getItem("admin-permissions-version") || "0";
+    const storedVersion =
+      localStorage.getItem("adminAccessCacheVersion") || "0";
+
+    // 🔥 invalidate if expired OR version changed
+    if (
+      !savedAt ||
+      Date.now() - savedAt > ADMIN_ACCESS_CACHE_TTL_MS ||
+      cacheVersion !== storedVersion
+    ) {
       clearAdminAccessCache();
       return null;
     }
+
     const raw = localStorage.getItem(STORAGE_KEYS.adminAccessCache);
     return raw ? JSON.parse(raw) : null;
   } catch {
@@ -132,8 +144,12 @@ function saveAdminAccessCache(access: AdminAccessResult) {
   if (typeof window === "undefined") {
     return;
   }
+
+  const version = localStorage.getItem("admin-permissions-version") || "0";
+
   localStorage.setItem(STORAGE_KEYS.adminAccessCache, JSON.stringify(access));
   localStorage.setItem(STORAGE_KEYS.adminAccessCacheTime, String(Date.now()));
+  localStorage.setItem("adminAccessCacheVersion", version);
 }
 
 export function clearAdminAccessCache() {
@@ -142,6 +158,15 @@ export function clearAdminAccessCache() {
   }
   localStorage.removeItem(STORAGE_KEYS.adminAccessCache);
   localStorage.removeItem(STORAGE_KEYS.adminAccessCacheTime);
+}
+
+export function bumpAdminPermissionsVersion() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const next = String(Date.now());
+  localStorage.setItem("admin-permissions-version", next);
+  clearAdminAccessCache();
 }
 
 export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null> {
@@ -215,24 +240,93 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         currentEventId = eventIds[0];
       }
 
-      const permissionKeys =
-        adminUser.privilege_group === "super_admin" ||
-        adminUser.privilege_group === "event_admin"
-          ? [
-              "can_view_admin_dashboard",
-              "can_manage_events",
-              "can_manage_checkin",
-              "can_manage_parking",
-              "can_manage_agenda",
-              "can_manage_announcements",
-              "can_manage_nearby",
-              "can_manage_locations",
-              "can_manage_reports",
-              "can_manage_imports",
-              "can_manage_event_staff",
-            ]
-          : [];
+      const privilegeGroup = adminUser.privilege_group || "read_only";
 
+      // 🔥 BASE PRESETS (guaranteed baseline)
+      const PRESETS: Record<string, string[]> = {
+        super_admin: [
+          "can_manage_admins",
+          "can_manage_event_admins",
+          "can_view_admin_dashboard",
+          "can_manage_events",
+          "can_manage_attendees",
+          "can_manage_checkin",
+          "can_manage_parking",
+          "can_manage_agenda",
+          "can_manage_announcements",
+          "can_manage_nearby",
+          "can_manage_locations",
+          "can_manage_reports",
+          "can_manage_imports",
+          "can_manage_event_staff",
+          "can_manage_master_maps",
+          "can_manage_vendors",
+        ],
+        event_admin: [
+          "can_view_admin_dashboard",
+          "can_manage_events",
+          "can_manage_attendees",
+          "can_manage_checkin",
+          "can_manage_parking",
+          "can_manage_agenda",
+          "can_manage_announcements",
+          "can_manage_nearby",
+          "can_manage_locations",
+          "can_manage_reports",
+          "can_manage_imports",
+          "can_manage_event_staff",
+          "can_manage_vendors",
+        ],
+        checkin: [
+          "can_view_admin_dashboard",
+          "can_manage_checkin",
+          "can_manage_attendees",
+        ],
+        parking: ["can_view_admin_dashboard", "can_manage_parking"],
+        content_admin: [
+          "can_view_admin_dashboard",
+          "can_manage_agenda",
+          "can_manage_announcements",
+          "can_manage_nearby",
+          "can_manage_locations",
+        ],
+        read_only: ["can_view_admin_dashboard"],
+      };
+
+      const basePermissions =
+        privilegeGroup === "super_admin" ? PRESETS.super_admin : []; // 🔥 all other roles controlled by DB
+
+      // 🔥 DB overrides (add/remove)
+      const { data: overrideRows, error: permissionError } = await supabase
+        .from("admin_privilege_group_permissions")
+        .select("permission_key, is_enabled")
+        .eq("privilege_group", privilegeGroup);
+
+      if (permissionError) {
+        console.error("Permission load error:", permissionError);
+      }
+
+      const overrideMap: Record<string, boolean> = {};
+      (overrideRows || []).forEach((row: any) => {
+        overrideMap[row.permission_key] = row.is_enabled;
+      });
+
+      // 🔥 merge base + overrides
+      const finalPermissions = Array.from(
+        new Set([
+          ...basePermissions.filter((p) => overrideMap[p] !== false),
+          ...Object.keys(overrideMap).filter((p) => overrideMap[p] === true),
+        ]),
+      );
+
+      console.log("PERMISSIONS (merged):", {
+        privilegeGroup,
+        basePermissions,
+        overrides: overrideMap,
+        finalPermissions,
+      });
+
+      const permissionKeys = finalPermissions;
       const permissionMap = buildPermissionMap(permissionKeys);
 
       const result: AdminAccessResult = {
@@ -266,4 +360,23 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
   })();
 
   return inflightAdminAccess;
+}
+
+export function listenForPermissionChanges() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  function handler(e: StorageEvent) {
+    if (e.key === "admin-permissions-version") {
+      console.log("🔄 Permissions changed in another tab, refreshing...");
+      window.location.reload();
+    }
+  }
+
+  window.addEventListener("storage", handler);
+
+  return () => {
+    window.removeEventListener("storage", handler);
+  };
 }

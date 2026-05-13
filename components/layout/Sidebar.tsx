@@ -29,6 +29,34 @@ type NavSection = {
   items: NavItem[];
 };
 
+const ICON_MAP: Record<string, string> = {
+  // Member (match dashboard exactly)
+  "/member": "🏠",
+  "/member/agenda": "📅",
+  "/member/announcements": "📣",
+  "/member/attendees": "👥",
+  "/coach-map": "🗺️",
+  "/member/checkin": "🪪",
+  "/member/nearby": "📍",
+  "/member/vendor-signup": "🛠️",
+
+  // Admin (clean + distinct, not all same)
+  "/admin/dashboard": "🏠",
+  "/admin/events": "📅",
+  "/admin/agenda": "📅",
+  "/admin/announcements": "📣",
+  "/admin/attendees": "👥",
+  "/admin/checkin": "🪪",
+  "/admin/parking": "🅿️",
+  "/admin/print": "🖨️",
+  "/admin/vendors": "🛠️",
+  "/admin/map-admin": "🗺️",
+  "/admin/admin-users": "🔐",
+  "/admin/permissions": "⚙️",
+  "/admin/checklist": "📋",
+  "/admin/event-staff": "👥",
+};
+
 type EventContext = {
   id?: string | null;
   name?: string | null;
@@ -453,58 +481,92 @@ export default function Sidebar() {
     ];
   }, [mapNavLabel]);
 
-  const canManageEventStaff =
-    !!adminAccess &&
-    (hasPermission(adminAccess, "can_manage_admins") ||
-      hasPermission(adminAccess, "can_manage_event_admins"));
-
-  const canManageAdminUsers =
-    !!adminAccess && hasPermission(adminAccess, "can_manage_admins");
-
   const sections: NavSection[] = useMemo(() => {
     if (effectiveUserMode === "admin") {
-      const adminItems: NavItem[] = [
-        { label: "Agenda Admin", href: "/admin/agenda" },
-        ...(canManageAdminUsers
-          ? [{ label: "Admin Users", href: "/admin/admin-users" }]
-          : []),
-        { label: "Announcements", href: "/admin/announcements" },
-        { label: "Attendees Management", href: "/admin/attendees" },
-        { label: "Check-In", href: "/admin/checkin" },
-        { label: "Dashboard", href: "/admin/dashboard" },
-        { label: "Event Admin", href: "/admin/events" },
-        ...(canManageEventStaff
-          ? [{ label: "Event Staff", href: "/admin/event-staff" }]
-          : []),
-        { label: "Map Admin", href: "/admin/map-admin" },
-        { label: "Parking Admin", href: "/admin/parking" },
-        { label: "Pre-Event Checklist", href: "/admin/checklist" },
-        { label: "Print Center", href: "/admin/print" },
-        { label: "Vendor Management", href: "/admin/vendors" },
-      ];
+      const adminSection: NavItem[] = [
+        hasPermission(adminAccess, "can_view_admin_dashboard") && {
+          label: "Dashboard",
+          href: "/admin/dashboard",
+        },
+        hasPermission(adminAccess, "can_manage_events") && {
+          label: "Event Admin",
+          href: "/admin/events",
+        },
+        hasPermission(adminAccess, "can_manage_admins") && {
+          label: "Admin Users",
+          href: "/admin/admin-users",
+        },
+        hasPermission(adminAccess, "can_manage_admins") && {
+          label: "Permissions",
+          href: "/admin/permissions",
+        },
+      ].filter(Boolean) as NavItem[];
 
-      const uniqueAdminItems = Array.from(
-        new Map(
-          adminItems.map((item) => [`${item.label}|${item.href}`, item]),
-        ).values(),
-      ).sort((a, b) => {
-        if (a.href === "/admin/dashboard") {
-          return -1;
-        }
-        if (b.href === "/admin/dashboard") {
-          return 1;
-        }
+      const opsSection: NavItem[] = [
+        (hasPermission(adminAccess, "can_manage_attendees") ||
+          hasPermission(adminAccess, "can_manage_checkin") ||
+          hasPermission(adminAccess, "can_manage_parking")) && {
+          label: "Attendees Management",
+          href: "/admin/attendees",
+        },
+        hasPermission(adminAccess, "can_manage_checkin") && {
+          label: "Check-In",
+          href: "/admin/checkin",
+        },
+        hasPermission(adminAccess, "can_manage_parking") && {
+          label: "Parking Admin",
+          href: "/admin/parking",
+        },
+        hasPermission(adminAccess, "can_manage_reports") && {
+          label: "Print Center",
+          href: "/admin/print",
+        },
+        hasPermission(adminAccess, "can_manage_vendors") && {
+          label: "Vendor Management",
+          href: "/admin/vendors",
+        },
+      ].filter(Boolean) as NavItem[];
 
-        return a.label.localeCompare(b.label, undefined, {
-          sensitivity: "base",
-        });
-      });
+      const contentSection: NavItem[] = [
+        hasPermission(adminAccess, "can_manage_agenda") && {
+          label: "Agenda Admin",
+          href: "/admin/agenda",
+        },
+        hasPermission(adminAccess, "can_manage_announcements") && {
+          label: "Announcements",
+          href: "/admin/announcements",
+        },
+        hasPermission(adminAccess, "can_manage_master_maps") && {
+          label: "Map Admin",
+          href: "/admin/map-admin",
+        },
+      ].filter(Boolean) as NavItem[];
+
+      const staffSection: NavItem[] = [
+        (hasPermission(adminAccess, "can_manage_event_staff") ||
+          hasPermission(adminAccess, "can_manage_admins")) && {
+          label: "Event Staff",
+          href: "/admin/event-staff",
+        },
+        hasPermission(adminAccess, "can_manage_events") && {
+          label: "Pre-Event Checklist",
+          href: "/admin/checklist",
+        },
+      ].filter(Boolean) as NavItem[];
 
       return [
-        {
-          title: "Admin",
-          items: uniqueAdminItems,
-        },
+        ...(adminSection.length
+          ? [{ title: "Admin", items: adminSection }]
+          : []),
+        ...(opsSection.length
+          ? [{ title: "Operations", items: opsSection }]
+          : []),
+        ...(contentSection.length
+          ? [{ title: "Content", items: contentSection }]
+          : []),
+        ...(staffSection.length
+          ? [{ title: "Staff & Setup", items: staffSection }]
+          : []),
       ];
     }
 
@@ -518,12 +580,7 @@ export default function Sidebar() {
     }
 
     return [];
-  }, [
-    effectiveUserMode,
-    memberItems,
-    canManageEventStaff,
-    canManageAdminUsers,
-  ]);
+  }, [effectiveUserMode, memberItems, adminAccess]);
 
   function isActiveRoute(itemHref: string) {
     return pathname === itemHref || pathname.startsWith(itemHref + "/");
@@ -725,7 +782,7 @@ export default function Sidebar() {
                       marginBottom: 4,
                     }}
                   >
-                    Signed In As
+                    {formatPrivilegeGroup(adminPrivilegeGroup)}
                   </div>
 
                   <div
@@ -748,9 +805,9 @@ export default function Sidebar() {
 
                     <div
                       style={{
-                        fontSize: 11,
-                        fontWeight: 800,
-                        padding: "2px 6px",
+                        fontSize: 12,
+                        fontWeight: 900,
+                        padding: "4px 8px",
                         borderRadius: 999,
                         color: "#fff",
                         whiteSpace: "nowrap",
@@ -760,14 +817,6 @@ export default function Sidebar() {
                       {getPrivilegeBadge(adminPrivilegeGroup)}
                     </div>
                   </div>
-
-                  {adminPrivilegeGroup && (
-                    <div
-                      style={{ fontSize: 12, color: "#d1d5db", marginTop: 4 }}
-                    >
-                      {formatPrivilegeGroup(adminPrivilegeGroup)}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -791,11 +840,25 @@ export default function Sidebar() {
                 style={{
                   fontSize: 12,
                   textTransform: "uppercase",
-                  opacity: 0.65,
+                  opacity: 0.75,
                   marginBottom: 6,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
                 }}
               >
-                {section.title}
+                <span>
+                  {section.title === "Admin"
+                    ? "⚙️"
+                    : section.title === "Operations"
+                      ? "🧭"
+                      : section.title === "Content"
+                        ? "📰"
+                        : section.title === "Staff & Setup"
+                          ? "👥"
+                          : ""}
+                </span>
+                <span>{section.title}</span>
               </div>
 
               {section.items.map((item) => {
@@ -813,15 +876,66 @@ export default function Sidebar() {
                     style={{
                       display: "block",
                       padding: isShortScreen ? "7px 9px" : "8px 10px",
+                      paddingLeft: active
+                        ? isShortScreen
+                          ? "6px"
+                          : "7px"
+                        : isShortScreen
+                          ? "9px"
+                          : "10px",
                       marginBottom: 4,
                       borderRadius: 6,
                       textDecoration: "none",
                       color: active ? "#fff" : "#d1d5db",
                       background: active ? "#0b5cff" : "transparent",
                       fontSize: isShortScreen ? 13 : 14,
+                      boxShadow: active
+                        ? "0 0 0 1px rgba(11,92,255,0.6), 0 4px 10px rgba(11,92,255,0.35)"
+                        : "none",
+                      transform: active ? "translateX(2px)" : "none",
+                      transition: "all 0.15s ease",
+                      // borderLeft modification:
+                      borderLeft: active
+                        ? `3px solid ${getSectionColor(section.title)}`
+                        : "3px solid transparent",
+                      // Add borderColor:
+                      borderColor: active
+                        ? getSectionColor(section.title)
+                        : "transparent",
                     }}
                   >
-                    {item.label}
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        fontWeight: active ? 700 : 600,
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 22,
+                          height: 22,
+                          fontSize: 16,
+                          transform: active ? "scale(1.15)" : "scale(1)",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        {ICON_MAP[item.href] || "📌"}
+                      </span>
+
+                      <span
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                        }}
+                      >
+                        {item.label}
+                      </span>
+                    </span>
                   </Link>
                 );
               })}
@@ -889,4 +1003,20 @@ export default function Sidebar() {
       />
     </>
   );
+}
+
+// Section color helper for fallback (for TS/JS scope)
+function getSectionColor(title: string) {
+  switch (title) {
+    case "Admin":
+      return "#f87171"; // red
+    case "Operations":
+      return "#60a5fa"; // blue
+    case "Content":
+      return "#34d399"; // green
+    case "Staff & Setup":
+      return "#fbbf24"; // amber
+    default:
+      return "#9ca3af";
+  }
 }

@@ -130,6 +130,8 @@ function EventAdminPageInner() {
   const [masterMaps, setMasterMaps] = useState<MasterMapRow[]>([]);
   const [nearbyLists, setNearbyLists] = useState<NearbyAreaRow[]>([]);
 
+  const [adminState, setAdminState] = useState<any | null>(null);
+
   const [selectedEventId, setSelectedEventId] = useState("");
   const [form, setForm] = useState<EventFormState>(emptyForm);
 
@@ -151,6 +153,7 @@ function EventAdminPageInner() {
   const loadAssignmentsForEvent = useCallback(async (eventId: string) => {
     try {
       const admin = await getCurrentAdminAccess();
+      setAdminState(admin);
       if (!admin || !canAccessEvent(admin, eventId)) {
         setSelectedMasterMapId("");
         setSelectedNearbyListId("");
@@ -219,14 +222,22 @@ function EventAdminPageInner() {
         return;
       }
 
+      // Prepare the events query with filtering for event admins
+      let eventsQuery = supabase
+        .from("events")
+        .select(
+          "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active",
+        )
+        .order("start_date", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: false });
+
+      // 🔒 Event Admins only see active events
+      if (!admin.isSuperAdmin) {
+        eventsQuery = eventsQuery.eq("is_active", true);
+      }
+
       const [eventsResult, mapsResult, nearbyResult] = await Promise.all([
-        supabase
-          .from("events")
-          .select(
-            "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active",
-          )
-          .order("start_date", { ascending: true, nullsFirst: false })
-          .order("created_at", { ascending: false }),
+        eventsQuery,
 
         supabase
           .from("master_maps")
@@ -549,13 +560,16 @@ function EventAdminPageInner() {
         return;
       }
 
-      const mapUpsert = supabase.from("event_map_settings").upsert(
-        {
-          event_id: selectedEventId,
-          selected_master_map_id: selectedMasterMapId || null,
-        },
-        { onConflict: "event_id" },
-      );
+      const mapUpsert = supabase
+        .from("event_map_settings")
+        .upsert(
+          {
+            event_id: selectedEventId,
+            selected_master_map_id: selectedMasterMapId || null,
+          },
+          { onConflict: "event_id" },
+        )
+        .select();
 
       const nearbyUpdate = supabase
         .from("events")
@@ -702,11 +716,19 @@ function EventAdminPageInner() {
               fontSize: 14,
             }}
           >
-            <option value="active">Active events</option>
-            <option value="inactive">Inactive events</option>
-            <option value="archived">Archived events</option>
-            <option value="draft">Draft events</option>
-            <option value="all">All events</option>
+            {adminState?.isSuperAdmin ? (
+              <>
+                <option value="active">Active events</option>
+                <option value="inactive">Inactive events</option>
+                <option value="archived">Archived events</option>
+                <option value="draft">Draft events</option>
+                <option value="all">All events</option>
+              </>
+            ) : (
+              <>
+                <option value="active">Active events</option>
+              </>
+            )}
           </select>
         </label>
 

@@ -3,6 +3,7 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 
 import Sidebar from "@/components/layout/Sidebar";
+import { AdminProvider } from "@/lib/adminContext";
 import { getTenantLabel } from "@/lib/tenantLabels";
 
 const appTitle = getTenantLabel("app_title");
@@ -28,11 +29,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="app-body" suppressHydrationWarning>
-        {/* suppressHydrationWarning is required because embedded-mode classes may be added before React hydrates */}
-        {/* Runs before hydration to avoid embedded layout flash/flicker */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
+        <AdminProvider>
+          {/* Runs before hydration to avoid embedded layout flash */}
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
                 try {
                   if (window.location.search.includes("embedded=1")) {
                     document.documentElement.classList.add("admin-embedded-mode");
@@ -45,21 +46,22 @@ export default function RootLayout({
                   }
                 } catch {}
               `,
-          }}
-        />
+            }}
+          />
 
-        <Sidebar />
+          <Sidebar />
 
-        <main className="app-main">
-          <div className="app-inner">
-            <div className="app-header-card">
-              <div className="app-brand">{appTitle}</div>
-              <div className="app-subtle">{appTagline}</div>
+          <main className="app-main">
+            <div className="app-inner">
+              <div className="app-header-card">
+                <div className="app-brand">{appTitle}</div>
+                <div className="app-subtle">{appTagline}</div>
+              </div>
+
+              {children}
             </div>
-
-            {children}
-          </div>
-        </main>
+          </main>
+        </AdminProvider>
       </body>
     </html>
   );

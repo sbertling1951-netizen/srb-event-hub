@@ -251,6 +251,14 @@ export default function MemberDashboardPage() {
 
         <button
           type="button"
+          onClick={() => goTo("/coach-map")}
+          style={memberGridButtonStyle}
+        >
+          🗺️ Map
+        </button>
+
+        <button
+          type="button"
           onClick={() => goTo("/member/nearby")}
           style={memberGridButtonStyle}
         >

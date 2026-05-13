@@ -10,6 +10,7 @@ import {
   getStoredMemberAttendeeId,
   getStoredMemberHasArrived,
 } from "@/lib/getCurrentMemberEvent";
+import { getStoredUserMode } from "@/lib/getCurrentMemberEvent";
 import { getTenantLabel } from "@/lib/tenantLabels";
 
 export default function HomePage() {
@@ -23,6 +24,14 @@ export default function HomePage() {
 
   useEffect(() => {
     try {
+      const mode = getStoredUserMode();
+
+      // 🔥 ADMIN MODE REDIRECT (fixes landing page issue)
+      if (mode === "admin") {
+        router.replace("/admin/dashboard");
+        return;
+      }
+
       const attendeeId = getStoredMemberAttendeeId();
       const memberEvent = getCurrentMemberEvent();
       const hasArrived = getStoredMemberHasArrived();
