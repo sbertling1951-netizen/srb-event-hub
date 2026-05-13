@@ -11,6 +11,7 @@ import {
   getStoredMemberHasArrived,
 } from "@/lib/getCurrentMemberEvent";
 import { getStoredUserMode } from "@/lib/getCurrentMemberEvent";
+import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 
 export default function HomePage() {
@@ -23,41 +24,68 @@ export default function HomePage() {
   const adminLoginLabel = getTenantLabel("admin_login_label");
 
   useEffect(() => {
-    try {
-      const mode = getStoredUserMode();
+    async function run() {
+      try {
+        // 🔥 REAL AUTH CHECK (fixes ghost admin issue)
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-      // 🔥 ADMIN MODE REDIRECT (fixes landing page issue)
-      if (mode === "admin") {
-        router.replace("/admin/dashboard");
-        return;
-      }
+        const mode = getStoredUserMode();
 
-      const attendeeId = getStoredMemberAttendeeId();
-      const memberEvent = getCurrentMemberEvent();
-      const hasArrived = getStoredMemberHasArrived();
-
-      const sessionExists = !!memberEvent;
-
-      if (sessionExists) {
-        setHasSession(true);
-
-        if (attendeeId && hasArrived === "true") {
-          router.replace("/member");
-        } else {
-          router.replace("/member/checkin");
+        // 🚨 If no real session, kill fake admin mode
+        if (!user && mode === "admin") {
+          localStorage.removeItem("fcoc-user-mode");
         }
 
-        return;
-      }
+        // ✅ Only redirect to admin if session is REAL
+        if (user && mode === "admin") {
+          router.replace("/admin/dashboard");
+          return;
+        }
 
-      setHasSession(false);
-    } catch (err) {
-      console.error("Home redirect error:", err);
-      setHasSession(false);
-    } finally {
-      setChecked(true);
+        const attendeeId = getStoredMemberAttendeeId();
+        const memberEvent = getCurrentMemberEvent();
+        const hasArrived = getStoredMemberHasArrived();
+
+        const sessionExists = !!memberEvent;
+
+        if (sessionExists) {
+          setHasSession(true);
+
+          if (attendeeId && hasArrived === "true") {
+            router.replace("/member");
+          } else {
+            router.replace("/member/checkin");
+          }
+
+          return;
+        }
+
+        setHasSession(false);
+      } catch (err) {
+        console.error("Home redirect error:", err);
+        setHasSession(false);
+      } finally {
+        setChecked(true);
+      }
     }
+
+    run();
   }, [router]);
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      // 🔥 Keep homepage in sync with auth state (logout, expiry, etc.)
+      window.location.reload();
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   if (!checked) {
     return <div style={{ padding: 30 }}>Loading...</div>;
