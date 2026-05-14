@@ -1048,6 +1048,12 @@ function ReviewQueue(props: {
                       onChange={(e) =>
                         onDraftChange(attendee.id, e.target.value)
                       }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !saving) {
+                          e.preventDefault();
+                          void onSaveMembership(item);
+                        }
+                      }}
                       placeholder="Must begin with F or C"
                       style={inputStyle}
                       disabled={saving}
@@ -2710,7 +2716,10 @@ function AdminAttendeesPageInner() {
       setStatus(
         `${displayPilotName(item.attendee)} corrected and removed from review queue.`,
       );
-      showFlash("Membership number saved. Review item cleared.");
+
+      setExpandedAttendeeId(item.attendee.id);
+
+      showFlash(`${displayPilotName(item.attendee)} corrected successfully.`);
     } catch (err: any) {
       console.error("saveMembershipNumber error:", err);
       setError(err?.message || "Could not save membership number.");
@@ -2718,6 +2727,11 @@ function AdminAttendeesPageInner() {
     } finally {
       setSavingRowId(null);
     }
+    window.setTimeout(() => {
+      setExpandedAttendeeId((current) =>
+        current === item.attendee.id ? null : current,
+      );
+    }, 1800);
   }
 
   async function updateDataStatus(attendeeId: string, nextStatus: string) {

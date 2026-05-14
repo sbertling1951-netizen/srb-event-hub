@@ -18,6 +18,7 @@ body {
   overflow-x: hidden;
 }
 
+
 body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -29,7 +30,6 @@ body.coach-map-lock {
   min-height: 100%;
   overflow: hidden !important;
   overscroll-behavior: none !important;
-  touch-action: none !important;
   -webkit-overflow-scrolling: auto !important;
 }
 
@@ -40,7 +40,6 @@ body.coach-map-lock .app-main {
   overflow: hidden !important;
   padding: 0 !important;
   overscroll-behavior: none !important;
-  touch-action: none !important;
 }
 
 body.coach-map-lock .app-inner {
@@ -52,7 +51,6 @@ body.coach-map-lock .app-inner {
   margin: 0 !important;
   padding: 0 !important;
   overscroll-behavior: none !important;
-  touch-action: none !important;
 }
 
 body.coach-map-lock .app-header-card {
@@ -65,7 +63,6 @@ body.coach-map-lock .app-shell {
   min-height: 100dvh !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
-  touch-action: none !important;
 }
 
 .app-shell {

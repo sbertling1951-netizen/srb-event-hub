@@ -158,6 +158,7 @@ function getStoredViewerAttendeeId() {
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
+
 function getTouchDistance(
   touchA: { clientX: number; clientY: number },
   touchB: { clientX: number; clientY: number },
@@ -183,7 +184,7 @@ function CoachMapPublicPageInner() {
   const [isNarrow, setIsNarrow] = useState(false);
   const [pulseKey, setPulseKey] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [mapPan, setMapPan] = useState({ x: 0, y: -240 });
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -202,62 +203,52 @@ function CoachMapPublicPageInner() {
     lastY: 0,
     didMove: false,
   });
-  const mapPanRef = useRef({ x: 0, y: -240 });
+  const mapPanRef = useRef({ x: 0, y: 0 });
 
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
-  const renderedMapWidth = naturalSize.width * zoom;
-  const renderedMapHeight = naturalSize.height * zoom;
-  const verticalPanBuffer = 240;
-  const renderedMapScrollHeight = renderedMapHeight + verticalPanBuffer * 2;
 
-  function clampMapPan(nextX: number, nextY: number) {
+  // ─── Pan clamp ────────────────────────────────────────────────────────────────
+  // Always pass forZoom explicitly — never read zoomRef inside here.
+  // zoomRef is updated in a useEffect (after render), so reading it during a
+  // touch move handler that also just called setZoom gives a stale value,
+  // which makes horizontal clamping cut off too early.
+  function clampMapPan(nextX: number, nextY: number, forZoom: number) {
     const viewport = viewportRef.current;
     if (!viewport) {
       return { x: nextX, y: nextY };
     }
-
-    const minX = Math.min(0, viewport.clientWidth - renderedMapWidth);
-    const minY = Math.min(0, viewport.clientHeight - renderedMapScrollHeight);
-
+    const maxX = Math.max(
+      0,
+      naturalSize.width * forZoom - viewport.clientWidth,
+    );
+    const maxY = Math.max(
+      0,
+      naturalSize.height * forZoom - viewport.clientHeight,
+    );
     return {
-      x: clamp(nextX, minX, 0),
-      y: clamp(nextY, minY, 0),
+      x: clamp(nextX, -maxX, 0),
+      y: clamp(nextY, -maxY, 0),
     };
   }
 
+  // Single-finger pan: use current zoomRef (valid since zoom isn't changing)
   function applyMapPan(nextX: number, nextY: number) {
-    const clamped = clampMapPan(nextX, nextY);
+    const clamped = clampMapPan(nextX, nextY, zoomRef.current);
     mapPanRef.current = clamped;
     setMapPan(clamped);
   }
 
+  // Zoom gestures: pass the new zoom value explicitly so clamp is accurate
   function applyMapPanForZoom(nextX: number, nextY: number, nextZoom: number) {
-    const viewport = viewportRef.current;
-    if (!viewport) {
-      const nextPan = { x: nextX, y: nextY };
-      mapPanRef.current = nextPan;
-      setMapPan(nextPan);
-      return;
-    }
-
-    const nextWidth = naturalSize.width * nextZoom;
-    const nextHeight = naturalSize.height * nextZoom + verticalPanBuffer * 2;
-    const minX = Math.min(0, viewport.clientWidth - nextWidth);
-    const minY = Math.min(0, viewport.clientHeight - nextHeight);
-    const nextPan = {
-      x: clamp(nextX, minX, 0),
-      y: clamp(nextY, minY, 0),
-    };
-
-    mapPanRef.current = nextPan;
-    setMapPan(nextPan);
+    const clamped = clampMapPan(nextX, nextY, nextZoom);
+    mapPanRef.current = clamped;
+    setMapPan(clamped);
   }
 
   const refreshMapSize = useCallback(() => {
     if (!imageRef.current) {
       return;
     }
-
     setNaturalSize({
       width: imageRef.current.naturalWidth || 1200,
       height: imageRef.current.naturalHeight || 800,
@@ -267,7 +258,6 @@ function CoachMapPublicPageInner() {
   const loadMap = useCallback(async () => {
     try {
       const memberEvent = getCurrentMemberEvent();
-
       if (!memberEvent?.id) {
         setEvent(null);
         setSites([]);
@@ -285,7 +275,6 @@ function CoachMapPublicPageInner() {
         )
         .eq("id", memberEvent.id)
         .maybeSingle();
-
       if (eventError) {
         throw eventError;
       }
@@ -305,13 +294,11 @@ function CoachMapPublicPageInner() {
       };
 
       let resolvedMapId: string | null = null;
-
       const { data: mapSettingsRow, error: mapSettingsError } = await supabase
         .from("event_map_settings")
         .select("event_id,selected_master_map_id")
         .eq("event_id", memberEvent.id)
         .maybeSingle();
-
       if (mapSettingsError) {
         console.warn(
           "Could not load event_map_settings:",
@@ -322,28 +309,24 @@ function CoachMapPublicPageInner() {
           (mapSettingsRow as EventMapSettingsRow | null)
             ?.selected_master_map_id || null;
       }
-
       if (!resolvedMapId) {
         resolvedMapId = loadedEvent.master_map_id || null;
       }
 
       let resolvedMapImageUrl: string | null = null;
-
       if (resolvedMapId) {
         const { data: masterMapRow, error: masterMapError } = await supabase
           .from("master_maps")
           .select("id,name,map_image_url")
           .eq("id", resolvedMapId)
           .maybeSingle();
-
         if (masterMapError) {
           console.warn("Could not load master map:", masterMapError.message);
         } else {
-          const mapRow = masterMapRow as MasterMapRow | null;
-          resolvedMapImageUrl = mapRow?.map_image_url || null;
+          resolvedMapImageUrl =
+            (masterMapRow as MasterMapRow | null)?.map_image_url || null;
         }
       }
-
       if (!resolvedMapImageUrl) {
         resolvedMapImageUrl = loadedEvent.map_image_url || null;
       }
@@ -424,18 +407,14 @@ function CoachMapPublicPageInner() {
       const mergedSites: MapSite[] = masterSites.map((site) => {
         const directAssignment =
           assignments.find((a) => a.master_site_id === site.id) || null;
-
         const fallbackAttendee = attendeeList.find((attendee) => {
-          const normalizedAssignedSite = normalizeSiteKey(
-            attendee.assigned_site,
-          );
+          const n = normalizeSiteKey(attendee.assigned_site);
           return (
-            normalizedAssignedSite &&
-            (normalizedAssignedSite === normalizeSiteKey(site.site_number) ||
-              normalizedAssignedSite === normalizeSiteKey(site.display_label))
+            n &&
+            (n === normalizeSiteKey(site.site_number) ||
+              n === normalizeSiteKey(site.display_label))
           );
         });
-
         return {
           id: directAssignment?.id || site.id,
           master_site_id: site.id,
@@ -455,7 +434,6 @@ function CoachMapPublicPageInner() {
       setAttendees(attendeeList);
 
       const attendeeIds = attendeeList.map((a) => a.id);
-
       if (attendeeIds.length > 0) {
         const { data: memberRows, error: memberError } = await supabase
           .from("attendee_household_members")
@@ -464,7 +442,6 @@ function CoachMapPublicPageInner() {
           )
           .in("attendee_id", attendeeIds)
           .order("sort_order", { ascending: true, nullsFirst: false });
-
         if (memberError) {
           throw memberError;
         }
@@ -490,7 +467,6 @@ function CoachMapPublicPageInner() {
     setViewerAttendeeId(getStoredViewerAttendeeId());
     setIsNarrow(window.innerWidth < 800);
     void loadMap();
-
     function handleStorage(e: StorageEvent) {
       if (
         e.key === "fcoc-member-event-changed" ||
@@ -500,46 +476,27 @@ function CoachMapPublicPageInner() {
         void loadMap();
       }
     }
-
     function handleResize() {
       setIsNarrow(window.innerWidth < 800);
       refreshMapSize();
     }
-
     window.addEventListener("storage", handleStorage);
     window.addEventListener("resize", handleResize);
-
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("resize", handleResize);
     };
   }, [loadMap, refreshMapSize]);
 
+  // Lock body scrolling only while the coach map page is active.
+  // Do NOT globally disable touch gestures.
   useEffect(() => {
-    const previousBodyOverflow = document.body.style.overflow;
-    const previousBodyOverscrollBehavior =
-      document.body.style.overscrollBehavior;
-    const previousBodyTouchAction = document.body.style.touchAction;
-    const previousHtmlOverflow = document.documentElement.style.overflow;
-    const previousHtmlOverscrollBehavior =
-      document.documentElement.style.overscrollBehavior;
-    const previousHtmlTouchAction = document.documentElement.style.touchAction;
-
-    document.body.style.overflow = "hidden";
-    document.body.style.overscrollBehavior = "none";
-    document.body.style.touchAction = "none";
-    document.documentElement.style.overflow = "hidden";
-    document.documentElement.style.overscrollBehavior = "none";
-    document.documentElement.style.touchAction = "none";
+    document.body.classList.add("coach-map-lock");
+    document.documentElement.classList.add("coach-map-lock");
 
     return () => {
-      document.body.style.overflow = previousBodyOverflow;
-      document.body.style.overscrollBehavior = previousBodyOverscrollBehavior;
-      document.body.style.touchAction = previousBodyTouchAction;
-      document.documentElement.style.overflow = previousHtmlOverflow;
-      document.documentElement.style.overscrollBehavior =
-        previousHtmlOverscrollBehavior;
-      document.documentElement.style.touchAction = previousHtmlTouchAction;
+      document.body.classList.remove("coach-map-lock");
+      document.documentElement.classList.remove("coach-map-lock");
     };
   }, []);
 
@@ -547,7 +504,6 @@ function CoachMapPublicPageInner() {
     const t = setTimeout(() => {
       refreshMapSize();
     }, 100);
-
     return () => clearTimeout(t);
   }, [zoom, isNarrow, event?.map_image_url, refreshMapSize]);
 
@@ -555,73 +511,80 @@ function CoachMapPublicPageInner() {
     if (!event?.map_image_url) {
       return;
     }
-
     requestAnimationFrame(() => {
-      applyMapPan(0, -verticalPanBuffer);
+      applyMapPan(0, 0);
     });
-  }, [event?.map_image_url]);
+  }, [event?.map_image_url]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
 
+  // Claim all touches with passive:false so preventDefault works on iOS Safari.
+  // React synthetic events are passive by default in React 17+.
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) {
       return;
     }
-
-    const claimMapTouch = (event: TouchEvent) => {
-      event.preventDefault();
+    const claim = (e: TouchEvent) => {
+      e.preventDefault();
     };
-
-    viewport.addEventListener("touchstart", claimMapTouch, {
-      passive: false,
-    });
-    viewport.addEventListener("touchmove", claimMapTouch, {
-      passive: false,
-    });
-
+    viewport.addEventListener("touchstart", claim, { passive: false });
+    viewport.addEventListener("touchmove", claim, { passive: false });
     return () => {
-      viewport.removeEventListener("touchstart", claimMapTouch);
-      viewport.removeEventListener("touchmove", claimMapTouch);
+      viewport.removeEventListener("touchstart", claim);
+      viewport.removeEventListener("touchmove", claim);
     };
   }, []);
+
   useEffect(() => {
     if (!pulseKey) {
       return;
     }
-
     const t = setTimeout(() => {
       setPulseKey(null);
     }, 1500);
-
     return () => clearTimeout(t);
   }, [pulseKey]);
 
   const zoomIn = useCallback(() => {
-    setZoom((z) => clamp(Number((z + 0.2).toFixed(2)), 0.35, 3));
-  }, []);
+    const nextZoom = clamp(Number((zoomRef.current + 0.2).toFixed(2)), 0.35, 3);
 
+    zoomRef.current = nextZoom;
+    setZoom(nextZoom);
+
+    applyMapPanForZoom(mapPanRef.current.x, mapPanRef.current.y, nextZoom);
+  }, []);
   const zoomOut = useCallback(() => {
-    setZoom((z) => clamp(Number((z - 0.2).toFixed(2)), 0.35, 3));
-  }, []);
+    const nextZoom = clamp(Number((zoomRef.current - 0.2).toFixed(2)), 0.35, 3);
 
+    zoomRef.current = nextZoom;
+    setZoom(nextZoom);
+
+    applyMapPanForZoom(mapPanRef.current.x, mapPanRef.current.y, nextZoom);
+  }, []);
   const resetZoom = useCallback(() => {
     const openingScale = Number(event?.coach_map_open_scale ?? 1);
+
     const nextZoom =
       Number.isFinite(openingScale) && openingScale > 0
         ? clamp(openingScale, 0.25, 3)
         : 1;
 
-    setZoom(nextZoom);
     zoomRef.current = nextZoom;
+    setZoom(nextZoom);
+
+    requestAnimationFrame(() => {
+      applyMapPanForZoom(0, 0, nextZoom);
+    });
   }, [event?.coach_map_open_scale]);
+
   const handleViewportTouchStart = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
       if (!viewportRef.current) {
         return;
       }
-
       const viewport = viewportRef.current;
 
       if (e.touches.length === 1) {
@@ -657,6 +620,7 @@ function CoachMapPublicPageInner() {
 
       pinchStartDistanceRef.current = getTouchDistance(touchA, touchB);
       pinchStartZoomRef.current = zoomRef.current;
+      // Anchor in natural (unscaled) map coords
       pinchAnchorRef.current = {
         x: (centerX - mapPanRef.current.x) / Math.max(zoomRef.current, 0.001),
         y: (centerY - mapPanRef.current.y) / Math.max(zoomRef.current, 0.001),
@@ -670,7 +634,6 @@ function CoachMapPublicPageInner() {
       if (!viewportRef.current) {
         return;
       }
-
       const viewport = viewportRef.current;
 
       if (e.touches.length === 1 && oneFingerPanRef.current.active) {
@@ -679,11 +642,9 @@ function CoachMapPublicPageInner() {
         const totalDy = touch.clientY - oneFingerPanRef.current.startY;
         const frameDx = touch.clientX - oneFingerPanRef.current.lastX;
         const frameDy = touch.clientY - oneFingerPanRef.current.lastY;
-
         if (Math.abs(totalDx) > 4 || Math.abs(totalDy) > 4) {
           oneFingerPanRef.current.didMove = true;
         }
-
         applyMapPan(
           mapPanRef.current.x + frameDx,
           mapPanRef.current.y + frameDy,
@@ -713,11 +674,15 @@ function CoachMapPublicPageInner() {
       const currentDistance = getTouchDistance(touchA, touchB);
       const scaleRatio = currentDistance / pinchStartDistanceRef.current;
       const nextZoom = clamp(pinchStartZoomRef.current * scaleRatio, 0.35, 3);
+
       const anchor = pinchAnchorRef.current || {
         x: (centerX - mapPanRef.current.x) / Math.max(zoomRef.current, 0.001),
         y: (centerY - mapPanRef.current.y) / Math.max(zoomRef.current, 0.001),
       };
 
+      // Update zoomRef immediately so any subsequent clampMapPan call in this
+      // same frame uses the right zoom (not the stale state value)
+      zoomRef.current = nextZoom;
       setZoom(nextZoom);
       applyMapPanForZoom(
         centerX - anchor.x * nextZoom,
@@ -725,7 +690,7 @@ function CoachMapPublicPageInner() {
         nextZoom,
       );
     },
-    [naturalSize.height, naturalSize.width],
+    [naturalSize.height, naturalSize.width], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const handleViewportTouchEnd = useCallback(
@@ -734,6 +699,20 @@ function CoachMapPublicPageInner() {
         pinchStartDistanceRef.current = null;
         pinchAnchorRef.current = null;
         oneFingerPanRef.current.active = false;
+      } else if (e.touches.length === 1) {
+        // One finger lifted mid-pinch — resume single-finger pan cleanly
+        pinchStartDistanceRef.current = null;
+        pinchAnchorRef.current = null;
+        const touch = e.touches[0];
+        oneFingerPanRef.current = {
+          active: true,
+          startX: touch.clientX,
+          startY: touch.clientY,
+          lastX: touch.clientX,
+          lastY: touch.clientY,
+          didMove: false,
+        };
+        return;
       }
 
       if (oneFingerPanRef.current.didMove) {
@@ -770,6 +749,7 @@ function CoachMapPublicPageInner() {
         const anchorY =
           (tapY - mapPanRef.current.y) / Math.max(currentZoom, 0.001);
 
+        zoomRef.current = nextZoom;
         setZoom(nextZoom);
         applyMapPanForZoom(
           tapX - anchorX * nextZoom,
@@ -783,21 +763,21 @@ function CoachMapPublicPageInner() {
 
       lastTapRef.current = { time: now, x: tapX, y: tapY };
     },
-    [naturalSize.height, naturalSize.width],
+    [], // no naturalSize deps needed — clampMapPan reads naturalSize from closure correctly
   );
 
   const attendeeLookup = useMemo(() => {
     const map = new Map<string, Attendee>();
-    attendees.forEach((attendee) => map.set(attendee.id, attendee));
+    attendees.forEach((a) => map.set(a.id, a));
     return map;
   }, [attendees]);
 
   const householdByAttendee = useMemo(() => {
     const map = new Map<string, HouseholdMember[]>();
-    householdMembers.forEach((member) => {
-      const existing = map.get(member.attendee_id) || [];
-      existing.push(member);
-      map.set(member.attendee_id, existing);
+    householdMembers.forEach((m) => {
+      const existing = map.get(m.attendee_id) || [];
+      existing.push(m);
+      map.set(m.attendee_id, existing);
     });
     return map;
   }, [householdMembers]);
@@ -818,33 +798,21 @@ function CoachMapPublicPageInner() {
       const assigned = site.assigned_attendee_id
         ? attendeeLookup.get(site.assigned_attendee_id) || null
         : null;
-
       const members = site.assigned_attendee_id
         ? householdByAttendee.get(site.assigned_attendee_id) || []
         : [];
-
       const searchParts = [
         site.site_number,
         site.display_label,
         assigned ? fullName(assigned.pilot_first, assigned.pilot_last) : "",
         assigned ? fullName(assigned.copilot_first, assigned.copilot_last) : "",
-        ...members.map((member) =>
-          [
-            member.display_name,
-            member.nickname,
-            member.first_name,
-            member.last_name,
-            member.raw_text,
-          ]
+        ...members.map((m) =>
+          [m.display_name, m.nickname, m.first_name, m.last_name, m.raw_text]
             .filter(Boolean)
             .join(" "),
         ),
       ];
-
-      return {
-        site,
-        searchText: searchParts.join(" ").toLowerCase(),
-      };
+      return { site, searchText: searchParts.join(" ").toLowerCase() };
     });
   }, [renderedSites, attendeeLookup, householdByAttendee]);
 
@@ -853,11 +821,10 @@ function CoachMapPublicPageInner() {
     if (!q) {
       return [];
     }
-
     return searchableSites
-      .filter((entry) => entry.searchText.includes(q))
+      .filter((e) => e.searchText.includes(q))
       .slice(0, 12)
-      .map((entry) => entry.site);
+      .map((e) => e.site);
   }, [search, searchableSites]);
 
   const viewerAttendee = viewerAttendeeId
@@ -868,53 +835,41 @@ function CoachMapPublicPageInner() {
     if (!viewerAttendee?.assigned_site) {
       return null;
     }
-
-    const normalizedAssignedSite = normalizeSiteKey(
-      viewerAttendee.assigned_site,
-    );
-
-    const matchedSite =
+    const n = normalizeSiteKey(viewerAttendee.assigned_site);
+    return (
       renderedSites.find(
-        (site) =>
-          normalizeSiteKey(site.site_number) === normalizedAssignedSite ||
-          normalizeSiteKey(site.display_label) === normalizedAssignedSite,
-      ) || null;
-
-    return matchedSite?.key || null;
+        (s) =>
+          normalizeSiteKey(s.site_number) === n ||
+          normalizeSiteKey(s.display_label) === n,
+      )?.key || null
+    );
   }, [viewerAttendee, renderedSites]);
 
   const viewerHasOptedIn = !!viewerAttendee?.share_with_attendees;
-
   const selectedSite =
     renderedSites.find((s) => s.key === selectedSiteKey) || null;
-
   const selectedAttendee = selectedSite?.assigned_attendee_id
     ? attendeeLookup.get(selectedSite.assigned_attendee_id) || null
     : null;
-
   const selectedHousehold = selectedSite?.assigned_attendee_id
     ? householdByAttendee.get(selectedSite.assigned_attendee_id) || []
     : [];
-
   const occupantHasOptedIn = !!selectedAttendee?.share_with_attendees;
-
   const canShowPrivateDetails =
     !!selectedAttendee &&
     viewerAttendeeId !== null &&
     viewerHasOptedIn &&
     occupantHasOptedIn;
-
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
   function centerSiteInViewport(site: RenderedSite) {
     if (!viewportRef.current || site.map_x === null || site.map_y === null) {
       return;
     }
-
     const viewport = viewportRef.current;
-    const xPx = (site.map_x / 100) * renderedMapWidth;
-    const yPx = verticalPanBuffer + (site.map_y / 100) * renderedMapHeight;
-
+    const z = zoomRef.current;
+    const xPx = (site.map_x / 100) * naturalSize.width * z;
+    const yPx = (site.map_y / 100) * naturalSize.height * z;
     applyMapPan(
       viewport.clientWidth / 2 - xPx,
       viewport.clientHeight / 2 - yPx,
@@ -926,36 +881,33 @@ function CoachMapPublicPageInner() {
     if (!site) {
       return;
     }
-
     setSelectedSiteKey(siteKey);
     setSearch("");
     setPulseKey(siteKey);
-
-    window.setTimeout(() => {
+    requestAnimationFrame(() => {
       refreshMapSize();
       centerSiteInViewport(site);
-    }, 50);
+    });
   }
+
   function getLocationColor(category?: string | null) {
     const c = (category || "").toLowerCase();
-
     if (c.includes("restroom") || c.includes("bath")) {
       return "#16a34a";
-    } // green
+    }
     if (c.includes("office") || c.includes("registration")) {
       return "#2563eb";
-    } // blue
+    }
     if (c.includes("dump")) {
       return "#92400e";
-    } // brown
+    }
     if (c.includes("food") || c.includes("cafe") || c.includes("restaurant")) {
       return "#f97316";
-    } // orange
+    }
     if (c.includes("medical") || c.includes("first aid")) {
       return "#dc2626";
-    } // red
-
-    return "#6b7280"; // default gray
+    }
+    return "#6b7280";
   }
 
   function handleGoToFirstMatch() {
@@ -964,19 +916,16 @@ function CoachMapPublicPageInner() {
     }
   }
 
-  function getFloatingPanelStyle(_site: RenderedSite) {
-    return {
-      position: "fixed" as const,
-      right: isNarrow ? 12 : 24,
-      bottom: isNarrow ? 12 : 24,
-      width: isNarrow ? "min(340px, calc(100vw - 24px))" : 340,
-      maxHeight: isNarrow ? "45dvh" : "55dvh",
-      overflowY: "auto" as const,
-    };
-  }
-
   const floatingPanelStyle = selectedSite
-    ? getFloatingPanelStyle(selectedSite)
+    ? {
+        position: "fixed" as const,
+        right: isNarrow ? "calc(env(safe-area-inset-right, 0px) + 12px)" : 24,
+
+        bottom: isNarrow ? "calc(env(safe-area-inset-bottom, 0px) + 12px)" : 24,
+        width: isNarrow ? "min(340px, calc(100vw - 24px))" : 340,
+        maxHeight: isNarrow ? "45dvh" : "55dvh",
+        overflowY: "auto" as const,
+      }
     : null;
 
   return (
@@ -993,36 +942,19 @@ function CoachMapPublicPageInner() {
         overscrollBehavior: "none",
       }}
     >
-      <style>
-        {`
-      @keyframes fcoc-pulse {
-        0% {
-          transform: scale(1);
-          opacity: 0.6;
+      <style>{`
+        @keyframes fcoc-pulse {
+          0%   { transform: scale(1);   opacity: 0.6; }
+          70%  { transform: scale(2.5); opacity: 0;   }
+          100% { transform: scale(2.5); opacity: 0;   }
         }
-        70% {
-          transform: scale(2.5);
-          opacity: 0;
+        @keyframes fcoc-panel-in {
+          0%   { opacity: 0; transform: translateY(8px); }
+          100% { opacity: 1; transform: translateY(0);   }
         }
-        100% {
-          transform: scale(2.5);
-          opacity: 0;
-        }
-      }
+      `}</style>
 
-      @keyframes fcoc-panel-in {
-        0% {
-          opacity: 0;
-          transform: translateY(8px);
-        }
-        100% {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-    `}
-      </style>
-
+      {/* ── Header ── */}
       <div
         style={{
           border: "1px solid #ddd",
@@ -1032,25 +964,20 @@ function CoachMapPublicPageInner() {
         }}
       >
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Coach Map</h1>
-
         <div style={{ fontWeight: 700 }}>
-          Current event: {event?.name || "No current event"}{" "}
+          Current event: {event?.name || "No current event"}
         </div>
-
-        {event?.venue_name ? (
+        {event?.venue_name && (
           <div style={{ color: "#555", marginTop: 4 }}>{event.venue_name}</div>
-        ) : null}
-
-        {event?.location ? (
+        )}
+        {event?.location && (
           <div style={{ color: "#555", marginTop: 4 }}>{event.location}</div>
-        ) : null}
-
-        {dateRange ? (
+        )}
+        {dateRange && (
           <div style={{ color: "#666", marginTop: 4, fontSize: 13 }}>
             {dateRange}
           </div>
-        ) : null}
-
+        )}
         <div
           style={{
             marginTop: 10,
@@ -1069,12 +996,12 @@ function CoachMapPublicPageInner() {
             Show site labels
           </label>
         </div>
-
         <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
           {status}
         </div>
       </div>
 
+      {/* ── Search ── */}
       <div
         style={{
           border: "1px solid #ddd",
@@ -1087,7 +1014,6 @@ function CoachMapPublicPageInner() {
         <div style={{ fontWeight: 700, marginBottom: 8 }}>
           Find Attendee or Site
         </div>
-
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input
             value={search}
@@ -1101,7 +1027,6 @@ function CoachMapPublicPageInner() {
             placeholder="Name, nickname, or site"
             style={{ flex: "1 1 240px", padding: 8, minWidth: 220 }}
           />
-
           <button
             type="button"
             onClick={handleGoToFirstMatch}
@@ -1116,7 +1041,6 @@ function CoachMapPublicPageInner() {
           >
             Go To
           </button>
-
           <button
             type="button"
             onClick={() => {
@@ -1140,8 +1064,7 @@ function CoachMapPublicPageInner() {
               : "My Site"}
           </button>
         </div>
-
-        {searchResults.length > 0 ? (
+        {searchResults.length > 0 && (
           <div
             style={{
               marginTop: 8,
@@ -1170,9 +1093,10 @@ function CoachMapPublicPageInner() {
               </button>
             ))}
           </div>
-        ) : null}
+        )}
       </div>
 
+      {/* ── Map ── */}
       {!event?.map_image_url ? (
         <div
           style={{
@@ -1223,7 +1147,6 @@ function CoachMapPublicPageInner() {
             >
               −
             </button>
-
             <button
               type="button"
               onClick={zoomIn}
@@ -1237,7 +1160,6 @@ function CoachMapPublicPageInner() {
             >
               +
             </button>
-
             <button
               type="button"
               onClick={resetZoom}
@@ -1251,12 +1173,15 @@ function CoachMapPublicPageInner() {
             >
               Reset
             </button>
-
             <div style={{ fontSize: 13, color: "#666" }}>
               Zoom: {Math.round(zoom * 100)}%
             </div>
           </div>
 
+          {/*
+           * Viewport: overflow hidden, touchAction none, no scroll.
+           * All pan is driven by CSS transform on the outer pan layer below.
+           */}
           <div
             ref={viewportRef}
             onTouchStart={handleViewportTouchStart}
@@ -1274,342 +1199,312 @@ function CoachMapPublicPageInner() {
               WebkitTouchCallout: "none",
               userSelect: "none",
               overscrollBehavior: "none",
-              overscrollBehaviorX: "none",
-              overscrollBehaviorY: "none",
               background: "#f8f9fb",
               border: "1px solid #eee",
               borderRadius: 8,
             }}
           >
+            {/*
+             * OUTER PAN LAYER
+             * - Sized to the SCALED map dimensions (naturalSize * zoom).
+             * - Safari measures this element's layout size for overflow clipping.
+             *   By making it as large as the scaled map, Safari's clip boundary
+             *   correctly matches the visible map area, preventing premature
+             *   horizontal pan cutoff.
+             * - Uses `translate` not `translate3d`. translate3d creates a GPU
+             *   compositing layer; Safari then ties touch-target recognition to
+             *   that layer's pre-transform bounds, causing horizontal pan to stop
+             *   at the unscaled width.
+             * - willChange: "transform" is intentional here (only on this layer).
+             */}
             <div
               style={{
-                position: "relative",
-                width: `${renderedMapWidth}px`,
-                height: `${renderedMapScrollHeight}px`,
-                minWidth: `${renderedMapWidth}px`,
-                minHeight: `${renderedMapScrollHeight}px`,
-                transform: `translate3d(${mapPan.x}px, ${mapPan.y}px, 0)`,
-                transformOrigin: "0 0",
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: `${naturalSize.width * zoom}px`,
+                height: `${naturalSize.height * zoom}px`,
+                transform: `translate(${mapPan.x}px, ${mapPan.y}px)`,
+                transformOrigin: "top left",
                 willChange: "transform",
-                touchAction: "none",
-                userSelect: "none",
-                WebkitUserSelect: "none",
+                contain: "layout paint size",
               }}
             >
-              <img
-                ref={imageRef}
-                src={event?.map_image_url || ""}
-                alt="Coach map"
-                onLoad={refreshMapSize}
+              {/*
+               * INNER SCALE LAYER
+               * - Sized to natural (unscaled) dimensions.
+               * - Only applies scale(), no translate.
+               * - No willChange here — an extra compositing layer on the scale
+               *   element can interfere with touch propagation on Safari.
+               * - Markers and locations are positioned in natural pixel coords
+               *   and scale with this layer correctly.
+               */}
+              <div
                 style={{
-                  width: `${renderedMapWidth}px`,
-                  maxWidth: "none",
-                  display: "block",
-                  borderRadius: 8,
-                  height: `${renderedMapHeight}px`,
-                  marginTop: verticalPanBuffer,
-                  pointerEvents: "none",
-                  userSelect: "none",
-                  WebkitUserSelect: "none",
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: `${naturalSize.width}px`,
+                  height: `${naturalSize.height}px`,
+                  transform: `scale(${zoom})`,
+                  transformOrigin: "top left",
                 }}
-              />
-              {renderedSites.map((site) => {
-                const x = typeof site.map_x === "number" ? site.map_x : null;
-                const y = typeof site.map_y === "number" ? site.map_y : null;
-                if (x === null || y === null) {
-                  return null;
-                }
+              >
+                <img
+                  ref={imageRef}
+                  src={event?.map_image_url || ""}
+                  alt="Coach map"
+                  onLoad={refreshMapSize}
+                  style={{
+                    width: `${naturalSize.width}px`,
+                    height: `${naturalSize.height}px`,
+                    display: "block",
+                    borderRadius: 8,
+                    pointerEvents: "none",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                  }}
+                />
 
-                const assigned = site.assigned_attendee_id
-                  ? attendeeLookup.get(site.assigned_attendee_id)
-                  : null;
+                {renderedSites.map((site) => {
+                  const x = typeof site.map_x === "number" ? site.map_x : null;
+                  const y = typeof site.map_y === "number" ? site.map_y : null;
+                  if (x === null || y === null) {
+                    return null;
+                  }
 
-                const isSelected = selectedSiteKey === site.key;
-                const isOccupied = !!assigned;
-                const isViewerSite = viewerAssignedSiteKey === site.key;
+                  const assigned = site.assigned_attendee_id
+                    ? attendeeLookup.get(site.assigned_attendee_id)
+                    : null;
+                  const isSelected = selectedSiteKey === site.key;
+                  const isOccupied = !!assigned;
+                  const isViewerSite = viewerAssignedSiteKey === site.key;
 
-                return (
-                  <div
-                    key={site.key}
-                    style={{
-                      position: "absolute",
-                      left: `${(x / 100) * renderedMapWidth}px`,
-                      top: `${verticalPanBuffer + (y / 100) * renderedMapHeight}px`,
-                      transform: "translate(-50%, -50%)",
-                    }}
-                  >
-                    {isSelected && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: "50%",
-                          top: "50%",
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          background: "rgba(255,59,48,0.4)",
-                          transform: "translate(-50%, -50%)",
-                          animation: "fcoc-pulse 1.5s ease-out",
-                          pointerEvents: "none",
-                          zIndex: 1,
-                        }}
-                      />
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => goToSite(site.key)}
-                      title={site.display_label || site.site_number}
+                  return (
+                    <div
+                      key={site.key}
                       style={{
-                        position: "relative",
-                        width: isSelected ? 26 : isViewerSite ? 24 : 22,
-                        height: isSelected ? 26 : isViewerSite ? 24 : 22,
-                        borderRadius: "50%",
-                        border: isSelected
-                          ? "3px solid #ffffff"
-                          : "1px solid rgba(255,255,255,0.85)",
-                        background: isSelected
-                          ? "#ff3b30"
-                          : isViewerSite
-                            ? "#16a34a"
-                            : isOccupied
-                              ? "#2563eb"
-                              : "#6b7280",
-                        boxShadow: isSelected
-                          ? "0 0 0 4px rgba(255,59,48,0.25), 0 4px 10px rgba(0,0,0,0.35)"
-                          : "0 1px 3px rgba(0,0,0,0.25)",
-                        padding: 0,
-                        cursor: "pointer",
-                        display: "block",
-                        margin: "0 auto",
-                        transition: "all 0.2s ease",
-                        zIndex: 2,
-                        touchAction: "manipulation",
+                        position: "absolute",
+                        left: `${(x / 100) * naturalSize.width}px`,
+                        top: `${(y / 100) * naturalSize.height}px`,
+                        transform: "translate(-50%, -50%)",
                       }}
-                    />
-
-                    {showLabels ? (
+                    >
+                      {isSelected && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: "50%",
+                            top: "50%",
+                            width: 18,
+                            height: 18,
+                            borderRadius: "50%",
+                            background: "rgba(255,59,48,0.4)",
+                            transform: "translate(-50%, -50%)",
+                            animation: "fcoc-pulse 1.5s ease-out",
+                            pointerEvents: "none",
+                            zIndex: 1,
+                          }}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => goToSite(site.key)}
-                        title={`Site ${site.display_label || site.site_number}`}
+                        title={site.display_label || site.site_number}
                         style={{
-                          marginTop: 3,
-                          marginLeft: "auto",
-                          marginRight: "auto",
-                          background: isSelected
-                            ? "rgba(255,244,214,0.98)"
-                            : "rgba(255,255,255,0.92)",
+                          position: "relative",
+                          width: isSelected ? 26 : isViewerSite ? 24 : 22,
+                          height: isSelected ? 26 : isViewerSite ? 24 : 22,
+                          borderRadius: "50%",
                           border: isSelected
-                            ? "1px solid rgba(255,59,48,0.55)"
-                            : "1px solid rgba(0,0,0,0.18)",
-                          borderRadius: 4,
-                          fontSize: 9,
-                          fontWeight: 700,
-                          lineHeight: 1.1,
-                          padding: "1px 4px",
-                          color: "#111",
-                          whiteSpace: "nowrap",
-                          boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
-                          cursor: "default",
-                          display: "table",
-                          pointerEvents: "none",
-                          touchAction: "pan-x pan-y",
+                            ? "3px solid #ffffff"
+                            : "1px solid rgba(255,255,255,0.85)",
+                          background: isSelected
+                            ? "#ff3b30"
+                            : isViewerSite
+                              ? "#16a34a"
+                              : isOccupied
+                                ? "#2563eb"
+                                : "#6b7280",
+                          boxShadow: isSelected
+                            ? "0 0 0 4px rgba(255,59,48,0.25), 0 4px 10px rgba(0,0,0,0.35)"
+                            : "0 1px 3px rgba(0,0,0,0.25)",
+                          padding: 0,
+                          cursor: "pointer",
+                          display: "block",
+                          zIndex: 2,
+                          touchAction: "manipulation",
                         }}
-                      >
-                        {site.display_label || site.site_number}
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-
-              {locations.map((location) => {
-                const x =
-                  typeof location.map_x === "number" ? location.map_x : null;
-                const y =
-                  typeof location.map_y === "number" ? location.map_y : null;
-
-                if (x === null || y === null) {
-                  return null;
-                }
-
-                return (
-                  <div
-                    key={location.id}
-                    style={{
-                      position: "absolute",
-                      left: `${(x / 100) * renderedMapWidth}px`,
-                      top: `${verticalPanBuffer + (y / 100) * renderedMapHeight}px`,
-                      transform: "translate(-50%, -50%)",
-                      zIndex: 5,
-                    }}
-                    title={location.name}
-                  >
-                    <div
-                      style={{
-                        width: 14,
-                        height: 14,
-                        borderRadius: 4,
-                        background: getLocationColor(location.category),
-                        border: "2px solid white",
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
-                        margin: "0 auto",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 10,
-                        color: "white",
-                      }}
-                    >
-                      {location.category?.toLowerCase().includes("restroom")
-                        ? "R"
-                        : location.category?.toLowerCase().includes("office")
-                          ? "O"
-                          : location.category?.toLowerCase().includes("dump")
-                            ? "D"
-                            : ""}
-                    </div>
-
-                    {showLabels ? (
-                      <div
-                        style={{
-                          marginTop: 3,
-                          marginLeft: "auto",
-                          marginRight: "auto",
-                          background: "rgba(255,255,255,0.92)",
-                          border: "1px solid rgba(0,0,0,0.18)",
-                          borderRadius: 4,
-                          fontSize: 9,
-                          fontWeight: 700,
-                          padding: "1px 4px",
-                          color: "#111",
-                          whiteSpace: "nowrap",
-                          pointerEvents: "none",
-                          touchAction: "pan-x pan-y",
-                        }}
-                      >
-                        {location.name}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-              {selectedSite && floatingPanelStyle ? (
-                <div
-                  style={{
-                    ...floatingPanelStyle,
-                    background: "rgba(255,255,255,0.98)",
-                    border: "1px solid #d1d5db",
-                    borderRadius: 10,
-                    boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-                    padding: 12,
-                    zIndex: 40,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 8,
-                      alignItems: "start",
-                    }}
-                  >
-                    <div style={{ fontWeight: 700 }}>
-                      Site{" "}
-                      {selectedSite.display_label || selectedSite.site_number}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSiteKey(null)}
-                      style={{
-                        border: "1px solid #ddd",
-                        background: "#fff",
-                        borderRadius: 8,
-                        padding: "4px 8px",
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-
-                  {!selectedAttendee ? (
-                    <div style={{ color: "#666", marginTop: 8 }}>
-                      This site is open.
-                    </div>
-                  ) : canShowPrivateDetails ? (
-                    <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>
-                        Coach / Household
-                      </div>
-
-                      {selectedHousehold.length > 0 ? (
-                        <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
-                          {selectedHousehold.map((member) => (
-                            <div key={member.id}>
-                              {member.person_role === "pilot"
-                                ? "Pilot"
-                                : member.person_role === "copilot"
-                                  ? "Co-Pilot"
-                                  : "Additional"}
-                              : {householdLine(member)}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div style={{ color: "#666", fontSize: 14 }}>
-                          {fullName(
-                            selectedAttendee.pilot_first,
-                            selectedAttendee.pilot_last,
-                          )}
-                          {selectedAttendee.copilot_first ||
-                          selectedAttendee.copilot_last
-                            ? ` / ${fullName(
-                                selectedAttendee.copilot_first,
-                                selectedAttendee.copilot_last,
-                              )}`
-                            : ""}
+                      />
+                      {showLabels && (
+                        <div
+                          style={{
+                            marginTop: 3,
+                            marginLeft: "auto",
+                            marginRight: "auto",
+                            background: isSelected
+                              ? "rgba(255,244,214,0.98)"
+                              : "rgba(255,255,255,0.92)",
+                            border: isSelected
+                              ? "1px solid rgba(255,59,48,0.55)"
+                              : "1px solid rgba(0,0,0,0.18)",
+                            borderRadius: 4,
+                            fontSize: 9,
+                            fontWeight: 700,
+                            lineHeight: 1.1,
+                            padding: "1px 4px",
+                            color: "#111",
+                            whiteSpace: "nowrap",
+                            boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
+                            display: "table",
+                            pointerEvents: "none",
+                          }}
+                        >
+                          {site.display_label || site.site_number}
                         </div>
                       )}
-
-                      <div style={{ fontSize: 13, color: "#555" }}>
-                        {[
-                          selectedAttendee.coach_make,
-                          selectedAttendee.coach_model,
-                        ]
-                          .filter(Boolean)
-                          .join(" ") || "Coach information not available"}
-                        {selectedAttendee.coach_length
-                          ? ` · ${selectedAttendee.coach_length} ft`
-                          : ""}
-                      </div>
-
-                      <div style={{ fontSize: 13, color: "#555" }}>
-                        Arrival status:{" "}
-                        {selectedAttendee.has_arrived
-                          ? "Arrived"
-                          : "Not marked arrived"}
-                      </div>
                     </div>
-                  ) : (
-                    <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>
-                        Site status
-                      </div>
-                      <div style={{ color: "#555" }}>Occupied</div>
-                      <div style={{ fontSize: 12, color: "#666" }}>
-                        Household details are shown only when both you and the
-                        occupant have opted in to sharing.
-                      </div>
+                  );
+                })}
+
+                {locations.map((location) => {
+                  const x =
+                    typeof location.map_x === "number" ? location.map_x : null;
+                  const y =
+                    typeof location.map_y === "number" ? location.map_y : null;
+                  if (x === null || y === null) {
+                    return null;
+                  }
+                  return (
+                    <div
+                      key={location.id}
+                      style={{
+                        position: "absolute",
+                        left: `${(x / 100) * naturalSize.width}px`,
+                        top: `${(y / 100) * naturalSize.height}px`,
+                        transform: "translate(-50%, -50%)",
+                        zIndex: 5,
+                      }}
+                      title={location.name}
+                    >
+                      <div
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: 4,
+                          background: getLocationColor(location.category),
+                          border: "2px solid white",
+                          boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+                        }}
+                      />
                     </div>
-                  )}
-                </div>
-              ) : null}
+                  );
+                })}
+              </div>
             </div>
           </div>
+
+          {selectedSite && floatingPanelStyle && (
+            <div
+              style={{
+                ...floatingPanelStyle,
+                background: "rgba(255,255,255,0.98)",
+                border: "1px solid #d1d5db",
+                borderRadius: 10,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+                padding: 12,
+                zIndex: 40,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  alignItems: "start",
+                }}
+              >
+                <div style={{ fontWeight: 700 }}>
+                  Site {selectedSite.display_label || selectedSite.site_number}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSiteKey(null)}
+                  style={{
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    borderRadius: 8,
+                    padding: "4px 8px",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              {!selectedAttendee ? (
+                <div style={{ color: "#666", marginTop: 8 }}>
+                  This site is open.
+                </div>
+              ) : canShowPrivateDetails ? (
+                <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    Coach / Household
+                  </div>
+                  {selectedHousehold.length > 0 ? (
+                    <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
+                      {selectedHousehold.map((member) => (
+                        <div key={member.id}>
+                          {member.person_role === "pilot"
+                            ? "Pilot"
+                            : member.person_role === "copilot"
+                              ? "Co-Pilot"
+                              : "Additional"}
+                          : {householdLine(member)}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ color: "#666", fontSize: 14 }}>
+                      {fullName(
+                        selectedAttendee.pilot_first,
+                        selectedAttendee.pilot_last,
+                      )}
+                      {selectedAttendee.copilot_first ||
+                      selectedAttendee.copilot_last
+                        ? ` / ${fullName(selectedAttendee.copilot_first, selectedAttendee.copilot_last)}`
+                        : ""}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 13, color: "#555" }}>
+                    {[selectedAttendee.coach_make, selectedAttendee.coach_model]
+                      .filter(Boolean)
+                      .join(" ") || "Coach information not available"}
+                    {selectedAttendee.coach_length
+                      ? ` · ${selectedAttendee.coach_length} ft`
+                      : ""}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#555" }}>
+                    Arrival status:{" "}
+                    {selectedAttendee.has_arrived
+                      ? "Arrived"
+                      : "Not marked arrived"}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    Site status
+                  </div>
+                  <div style={{ color: "#555" }}>Occupied</div>
+                  <div style={{ fontSize: 12, color: "#666" }}>
+                    Household details are shown only when both you and the
+                    occupant have opted in to sharing.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
