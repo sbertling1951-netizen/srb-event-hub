@@ -108,7 +108,6 @@ function PermissionsInner() {
   const [rows, setRows] = useState<PermissionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [undoing, setUndoing] = useState(false);
-
   const [presets, setPresets] = useState<Record<string, any>>({});
 
   useEffect(() => {
@@ -253,7 +252,7 @@ function PermissionsInner() {
                 action_id: actionId,
               });
             } catch (err) {
-              console.error("Audit dependency enable failed:", err);
+              console.error("Toggle error:", err);
             }
           }
         }
@@ -307,8 +306,14 @@ function PermissionsInner() {
 
       // 🔥 reload UI
       await load();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Toggle error:", err);
+
+      alert(
+        `Toggle failed:\n\n${
+          err?.message || err?.error_description || JSON.stringify(err, null, 2)
+        }`,
+      );
     }
   }
 
@@ -616,16 +621,6 @@ function PermissionsInner() {
                     return (
                       <div
                         key={perm}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-
-                          if (locked || loading || undoing) {
-                            return;
-                          }
-
-                          toggle(group, perm);
-                        }}
                         style={{
                           display: "flex",
                           alignItems: "center",
@@ -666,24 +661,34 @@ function PermissionsInner() {
                           )}
                         </span>
 
-                        <div
+                        <button
+                          type="button"
+                          aria-pressed={enabled}
+                          disabled={locked || undoing}
                           onClick={(e) => {
-                            e.preventDefault();
                             e.stopPropagation();
 
-                            if (locked || loading || undoing) {
+                            if (locked || undoing) {
                               return;
                             }
 
-                            toggle(group, perm);
+                            void toggle(group, perm);
                           }}
                           style={{
                             width: 42,
                             height: 24,
+                            minWidth: 42,
+                            padding: 0,
+                            border: "none",
+                            outline: "none",
                             borderRadius: 999,
                             background: enabled ? "#0b5cff" : "#e5e7eb",
                             position: "relative",
                             transition: "all 0.2s ease",
+                            cursor: locked ? "not-allowed" : "pointer",
+                            pointerEvents: "auto",
+                            appearance: "none",
+                            WebkitAppearance: "none",
                           }}
                         >
                           <div
@@ -697,9 +702,10 @@ function PermissionsInner() {
                               left: enabled ? 20 : 3,
                               transition: "all 0.2s ease",
                               boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                              pointerEvents: "none",
                             }}
                           />
-                        </div>
+                        </button>
                       </div>
                     );
                   })}
