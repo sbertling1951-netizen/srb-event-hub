@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 import { useAdmin } from "@/lib/adminContext";
 import { hasPermission } from "@/lib/getCurrentAdminAccess";
@@ -19,12 +20,17 @@ export default function AdminRouteGuard({
   const router = useRouter();
   const { admin, loading } = useAdmin();
 
+  useEffect(() => {
+    if (!loading && !admin?.adminUser?.user_id) {
+      router.replace(fallbackPath);
+    }
+  }, [loading, admin, fallbackPath, router]);
+
   if (loading) {
     return <div style={{ padding: 24 }}>Checking access...</div>;
   }
 
   if (!admin?.adminUser?.user_id) {
-    router.replace(fallbackPath);
     return null;
   }
 
