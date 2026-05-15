@@ -21,10 +21,31 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   async function loadAdmin() {
-    setLoading(true);
-    const result = await getCurrentAdminAccess();
-    setAdmin(result);
-    setLoading(false);
+    try {
+      setLoading(true);
+
+      const result = await getCurrentAdminAccess();
+
+      setAdmin(result);
+
+      if (typeof window !== "undefined") {
+        if (result) {
+          sessionStorage.setItem("fcoc-admin-access", JSON.stringify(result));
+        } else {
+          sessionStorage.removeItem("fcoc-admin-access");
+        }
+      }
+    } catch (err) {
+      console.error("loadAdmin error:", err);
+
+      setAdmin(null);
+
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("fcoc-admin-access");
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {

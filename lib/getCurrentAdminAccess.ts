@@ -176,19 +176,25 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
 
   inflightAdminAccess = (async () => {
     try {
-      const cached = getCachedAdminAccess();
-      if (cached) {
-        return cached;
-      }
-
       const auth = await withTimeout(
         supabase.auth.getUser(),
         "Admin auth check",
       );
+
       const user = auth.data.user;
+
       if (!user) {
+        clearAdminAccessCache();
         return null;
       }
+
+      const cached = getCachedAdminAccess();
+
+      if (cached && cached.adminUser?.user_id === user.id) {
+        return cached;
+      }
+
+      clearAdminAccessCache();
 
       let { data: adminUser } = await supabase
         .from("admin_users")
@@ -293,10 +299,8 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         read_only: ["can_view_admin_dashboard"],
       };
 
-      const basePermissions =
-        privilegeGroup === "super_admin" ? PRESETS.super_admin : []; // 🔥 all other roles controlled by DB
+      const basePermissions = PRESETS[privilegeGroup] || PRESETS.read_only;
 
-      // 🔥 DB overrides (add/remove)
       const { data: overrideRows, error: permissionError } = await supabase
         .from("admin_privilege_group_permissions")
         .select("permission_key, is_enabled")
@@ -311,13 +315,21 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         overrideMap[row.permission_key] = row.is_enabled;
       });
 
-      // 🔥 merge base + overrides
-      const finalPermissions = Array.from(
-        new Set([
-          ...basePermissions.filter((p) => overrideMap[p] !== false),
-          ...Object.keys(overrideMap).filter((p) => overrideMap[p] === true),
-        ]),
-      );
+      const finalPermissions = Array.from(new Set(basePermissions));
+
+      Object.entries(overrideMap).forEach(([key, enabled]) => {
+        if (enabled === true && !finalPermissions.includes(key)) {
+          finalPermissions.push(key);
+        }
+
+        if (enabled === false) {
+          const index = finalPermissions.indexOf(key);
+
+          if (index >= 0) {
+            finalPermissions.splice(index, 1);
+          }
+        }
+      });
 
       console.log("PERMISSIONS (merged):", {
         privilegeGroup,
