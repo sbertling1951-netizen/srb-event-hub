@@ -905,7 +905,10 @@ function EventStaffPageInner() {
           style={{
             display: "grid",
             gap: 12,
-            gridTemplateColumns: "minmax(280px, 1.6fr) minmax(220px, 1fr) auto",
+            gridTemplateColumns:
+              typeof window !== "undefined" && window.innerWidth < 900
+                ? "1fr"
+                : "minmax(280px, 1.6fr) minmax(220px, 1fr) auto",
             alignItems: "end",
           }}
         >
@@ -1066,9 +1069,9 @@ function EventStaffPageInner() {
                   style={{
                     display: "grid",
                     gap: 12,
-                    gridTemplateColumns:
-                      "minmax(220px, 1.3fr) minmax(200px, 0.8fr) auto",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                     alignItems: "end",
+                    width: "100%",
                   }}
                 >
                   <div>
@@ -1109,6 +1112,7 @@ function EventStaffPageInner() {
                       display: "flex",
                       gap: 8,
                       flexWrap: "wrap",
+                      width: "100%",
                     }}
                   >
                     <button
@@ -1236,6 +1240,9 @@ const permissionLabelStyle: CSSProperties = {
   border: "1px solid #eee",
   borderRadius: 10,
   background: "white",
+  width: "100%",
+  minWidth: 0,
+  overflowWrap: "anywhere",
 };
 
 export default function EventStaffPage() {
