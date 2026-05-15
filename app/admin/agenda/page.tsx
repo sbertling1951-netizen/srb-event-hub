@@ -918,7 +918,7 @@ function AdminAgendaPageInner() {
       }
 
       setForm(emptyForm);
-      await loadPage();
+      void loadPage();
     } finally {
       setSaving(false);
     }
@@ -970,7 +970,7 @@ function AdminAgendaPageInner() {
     }
 
     setItems((prev) => prev.filter((item) => item.id !== id));
-    await loadPage();
+    void loadPage();
     setStatus(`Deleted "${deletedRows[0]?.title || itemTitle}".`);
   }
 
@@ -992,7 +992,7 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    await loadPage();
+    void loadPage();
     setStatus(
       `${item.title} ${item.is_published ? "unpublished" : "published"}.`,
     );
@@ -1244,7 +1244,7 @@ function AdminAgendaPageInner() {
     if (updateError) {
       showError(updateError.message || "Could not resize agenda item.");
       setCalendarResizePreview(null);
-      await loadPage();
+      void loadPage();
       return;
     }
 
@@ -1253,13 +1253,13 @@ function AdminAgendaPageInner() {
         "No agenda item was resized. This usually means the row is blocked by RLS or does not belong to the selected event.",
       );
       setCalendarResizePreview(null);
-      await loadPage();
+      void loadPage();
       return;
     }
 
     setStatus(`Resized "${item.title}" to start at ${nextStartTime}.`);
     setCalendarResizePreview(null);
-    await loadPage();
+    void loadPage();
   }
 
   function handleDragStart(e: React.DragEvent<HTMLDivElement>, id: string) {
@@ -1444,7 +1444,7 @@ function AdminAgendaPageInner() {
     if (updateError) {
       showError(updateError.message || "Could not resize agenda item.");
       setCalendarResizePreview(null);
-      await loadPage();
+      void loadPage();
       return;
     }
 
@@ -1453,13 +1453,13 @@ function AdminAgendaPageInner() {
         "No agenda item was resized. This usually means the row is blocked by RLS or does not belong to the selected event.",
       );
       setCalendarResizePreview(null);
-      await loadPage();
+      void loadPage();
       return;
     }
 
     setStatus(`Resized "${item.title}" to end at ${nextEndTime}.`);
     setCalendarResizePreview(null);
-    await loadPage();
+    void loadPage();
   }
 
   async function moveAgendaItemToCalendarSlot(
@@ -1515,7 +1515,7 @@ function AdminAgendaPageInner() {
     if (updateError) {
       showError(updateError.message || "Could not move agenda item.");
       setCalendarDraggingId(null);
-      await loadPage();
+      void loadPage();
       return;
     }
 
@@ -1524,7 +1524,7 @@ function AdminAgendaPageInner() {
         "No agenda item was moved. This usually means the row is blocked by RLS or does not belong to the selected event.",
       );
       setCalendarDraggingId(null);
-      await loadPage();
+      void loadPage();
       return;
     }
 
@@ -1532,7 +1532,7 @@ function AdminAgendaPageInner() {
       `Moved "${item.title}" to ${formatAgendaDate(nextDate)} at ${nextStartTime}.`,
     );
     setCalendarDraggingId(null);
-    await loadPage();
+    void loadPage();
   }
 
   function handleCalendarColumnDrop(
@@ -1814,7 +1814,7 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    await loadPage();
+    void loadPage();
     setStatus(`Copied ${rows.length} template items into this event.`);
   }
   async function replaceEventFromTemplate() {
@@ -2020,7 +2020,7 @@ function AdminAgendaPageInner() {
         throw new Error(`Bulk import failed: ${importError.message}`);
       }
 
-      await loadPage();
+      void loadPage();
       setAgendaMode("items");
 
       if (importWarnings.length > 0) {
@@ -2058,18 +2058,29 @@ function AdminAgendaPageInner() {
         onCancel={() => closeConfirmDialog(false)}
         onConfirm={() => closeConfirmDialog(true)}
       />
-      <div style={{ marginBottom: 16 }}>
+      <div
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 10,
+        }}
+      >
         <button
           type="button"
           onClick={() => {
             window.location.href = "/admin/dashboard";
           }}
           style={{
-            padding: "8px 12px",
-            borderRadius: 8,
+            padding: isMobile ? "12px 16px" : "8px 12px",
+            borderRadius: 12,
             border: "1px solid #cbd5e1",
             background: "#fff",
             cursor: "pointer",
+            width: isMobile ? "100%" : "auto",
+            minHeight: 48,
+            fontSize: isMobile ? 16 : 14,
+            fontWeight: 700,
           }}
         >
           ← Return to Dashboard
@@ -2077,18 +2088,30 @@ function AdminAgendaPageInner() {
       </div>
       <h1>Admin Agenda</h1>
       <div
-        style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : "repeat(auto-fit, minmax(180px, auto))",
+          gap: 10,
+          marginBottom: 16,
+        }}
       >
         <button
           type="button"
           onClick={() => setAgendaMode("items")}
           style={{
-            padding: "10px 14px",
-            borderRadius: 10,
+            padding: isMobile ? "14px 16px" : "10px 14px",
+            borderRadius: 12,
             border: agendaMode === "items" ? "none" : "1px solid #cbd5e1",
             background: agendaMode === "items" ? "#111827" : "white",
             color: agendaMode === "items" ? "white" : "#111827",
+            WebkitTextFillColor: agendaMode === "items" ? "white" : "#111827",
+            textShadow:
+              agendaMode === "items" ? "0 1px 1px rgba(0,0,0,0.45)" : "none",
             fontWeight: 700,
+            minHeight: 48,
+            fontSize: isMobile ? 16 : 14,
             cursor: "pointer",
           }}
         >
@@ -2099,12 +2122,17 @@ function AdminAgendaPageInner() {
           type="button"
           onClick={() => setAgendaMode("import")}
           style={{
-            padding: "10px 14px",
-            borderRadius: 10,
+            padding: isMobile ? "14px 16px" : "10px 14px",
+            borderRadius: 12,
             border: agendaMode === "import" ? "none" : "1px solid #cbd5e1",
             background: agendaMode === "import" ? "#111827" : "white",
             color: agendaMode === "import" ? "white" : "#111827",
+            WebkitTextFillColor: agendaMode === "import" ? "white" : "#111827",
+            textShadow:
+              agendaMode === "import" ? "0 1px 1px rgba(0,0,0,0.45)" : "none",
             fontWeight: 700,
+            minHeight: 48,
+            fontSize: isMobile ? 16 : 14,
             cursor: "pointer",
           }}
         >
