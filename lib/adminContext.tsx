@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
+import { supabase } from "@/lib/supabase";
 
 type AdminContextType = {
   admin: Awaited<ReturnType<typeof getCurrentAdminAccess>> | null;
@@ -49,7 +50,31 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    void loadAdmin();
+    let mounted = true;
+
+    async function init() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (!session) {
+        setAdmin(null);
+        setLoading(false);
+        return;
+      }
+
+      await loadAdmin();
+    }
+
+    void init();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   return (
