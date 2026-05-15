@@ -246,7 +246,7 @@ function EventAdminPageInner() {
           .order("name", { ascending: true }),
 
         supabase
-          .from("nearby_areas")
+          .from("nearby_area_templates")
           .select("id,name,description")
           .order("name", { ascending: true }),
       ]);

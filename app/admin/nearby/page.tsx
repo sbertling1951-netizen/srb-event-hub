@@ -359,7 +359,7 @@ function AdminNearbyPageInner() {
       showStatus("Loading stored nearby areas...");
 
       const { data, error } = await supabase
-        .from("nearby_areas")
+        .from("nearby_area_templates")
         .select("id,name,description")
         .order("name", { ascending: true });
 
@@ -526,7 +526,7 @@ function AdminNearbyPageInner() {
       };
 
       const { data, error } = await supabase
-        .from("nearby_areas")
+        .from("nearby_area_templates")
         .insert(payload)
         .select("id,name,description")
         .single();
@@ -589,7 +589,7 @@ function AdminNearbyPageInner() {
       showStatus("Updating stored area...");
 
       const { error } = await supabase
-        .from("nearby_areas")
+        .from("nearby_area_templates")
         .update({
           name: areaName.trim(),
           description: areaDescription.trim() || null,
@@ -633,7 +633,7 @@ function AdminNearbyPageInner() {
       showStatus("Deleting stored area...");
 
       const { error } = await supabase
-        .from("nearby_areas")
+        .from("nearby_area_templates")
         .delete()
         .eq("id", selectedAreaId);
 

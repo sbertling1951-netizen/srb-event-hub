@@ -67,7 +67,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      await loadAdmin();
+      setTimeout(() => {
+        void loadAdmin();
+      }, 100);
     }
 
     void init();
