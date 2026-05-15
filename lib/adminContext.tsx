@@ -52,7 +52,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    async function init() {
+    async function bootstrap() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -61,21 +61,39 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      if (!session) {
+      if (session) {
+        await loadAdmin();
+      } else {
         setAdmin(null);
         setLoading(false);
+      }
+    }
+
+    void bootstrap();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) {
         return;
       }
 
-      setTimeout(() => {
+      if (session) {
         void loadAdmin();
-      }, 100);
-    }
+      } else {
+        setAdmin(null);
 
-    void init();
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem("fcoc-admin-access");
+        }
+
+        setLoading(false);
+      }
+    });
 
     return () => {
       mounted = false;
+      subscription.unsubscribe();
     };
   }, []);
 
