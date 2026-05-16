@@ -120,35 +120,23 @@ function ParkingAdminPageInner() {
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  const focusSite = useCallback(
-    (site: ParkingSite, targetZoom?: number) => {
-      if (!mapRef.current) {
+  const focusSite = useCallback((site: ParkingSite) => {
+    const siteKey = site.id || site.master_site_id;
+
+    window.setTimeout(() => {
+      const marker = siteMarkerRefs.current[siteKey];
+
+      if (!marker) {
         return;
       }
 
-      const siteKey = site.id || site.master_site_id;
-      const appliedZoom = clampZoom(targetZoom ?? zoom);
-
-      if (Math.abs(appliedZoom - zoom) > 0.01) {
-        setZoom(appliedZoom);
-      }
-
-      window.setTimeout(() => {
-        const marker = siteMarkerRefs.current[siteKey];
-
-        if (!marker) {
-          return;
-        }
-
-        marker.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-          inline: "center",
-        });
-      }, 120);
-    },
-    [zoom],
-  );
+      marker.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "center",
+      });
+    }, 120);
+  }, []);
 
   const loadPage = useCallback(async () => {
     setLoading(true);
@@ -347,10 +335,7 @@ function ParkingAdminPageInner() {
 
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            focusSite(
-              matchedSite,
-              Math.max(safeOpeningScale, isNarrow ? 1.05 : safeOpeningScale),
-            );
+            focusSite(matchedSite);
           });
         });
 
@@ -703,12 +688,19 @@ function ParkingAdminPageInner() {
     }
 
     const siteId = searchedSite.id || searchedSite.master_site_id;
+
     setSelectedSiteId(siteId);
-    focusSite(searchedSite, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
+
+    setTimeout(() => {
+      focusSite(searchedSite);
+    }, 180);
+
     showStatus(
-      `Focused map on site ${searchedSite.display_label || searchedSite.site_number}.`,
+      `Focused map on site ${
+        searchedSite.display_label || searchedSite.site_number
+      }.`,
     );
-  }, [searchedSite, focusSite, zoom, isNarrow, defaultZoom]);
+  }, [searchedSite, focusSite]);
 
   function scrollAttendeeIntoView(attendeeId: string) {
     requestAnimationFrame(() => {
@@ -721,7 +713,7 @@ function ParkingAdminPageInner() {
 
   function recenterMap() {
     if (selectedSite) {
-      focusSite(selectedSite, Math.max(defaultZoom, zoom));
+      focusSite(selectedSite);
       return;
     }
 
@@ -731,7 +723,7 @@ function ParkingAdminPageInner() {
       );
 
       if (assignedSite) {
-        focusSite(assignedSite, Math.max(defaultZoom, zoom));
+        focusSite(assignedSite);
         return;
       }
     }
@@ -773,7 +765,7 @@ function ParkingAdminPageInner() {
     }
 
     const targetZoom = Math.max(zoom, isNarrow ? 1.05 : defaultZoom);
-    focusSite(site, targetZoom);
+    focusSite(site);
   }, [selectedAttendee, sites, focusSite, zoom, isNarrow, defaultZoom]);
 
   async function assignAttendeeToSite({
@@ -912,8 +904,7 @@ function ParkingAdminPageInner() {
 
     setSelectedAttendeeId(attendee.id);
     setSelectedSiteId(site.id || site.master_site_id);
-    focusSite(site, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
-
+    focusSite(site);
     showStatus(
       `${markParked ? "Parked" : "Assigned"} ${
         `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim() ||
@@ -1041,7 +1032,7 @@ function ParkingAdminPageInner() {
     if (site.assigned_attendee_id) {
       setSelectedAttendeeId(site.assigned_attendee_id);
       scrollAttendeeIntoView(site.assigned_attendee_id);
-      focusSite(site, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
+      focusSite(site);
       if (isNarrow) {
         setShowQueuePanel(true);
       }
@@ -1452,10 +1443,7 @@ function ParkingAdminPageInner() {
 
                 if (site) {
                   setSelectedSiteId(site.id || site.master_site_id);
-                  focusSite(
-                    site,
-                    Math.max(zoom, isNarrow ? 1.05 : defaultZoom),
-                  );
+                  focusSite(site);
                   showStatus(
                     `Focused map on site ${site.display_label || site.site_number}.`,
                   );
