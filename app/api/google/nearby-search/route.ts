@@ -34,7 +34,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // STEP 1: Geocode city/state
     const geocodeUrl = new URL(
       "https://maps.googleapis.com/maps/api/geocode/json",
     );
@@ -44,6 +43,8 @@ export async function POST(req: Request) {
 
     const geocodeResponse = await fetch(geocodeUrl.toString());
     const geocodeData = await geocodeResponse.json();
+
+    console.log("GEOCODE RESPONSE:", geocodeData);
 
     const firstResult = geocodeData?.results?.[0];
 
@@ -57,7 +58,6 @@ export async function POST(req: Request) {
     const lat = firstResult.geometry.location.lat;
     const lng = firstResult.geometry.location.lng;
 
-    // STEP 2: Google Nearby Search
     const nearbyUrl = new URL(
       "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
     );
@@ -69,6 +69,8 @@ export async function POST(req: Request) {
 
     const nearbyResponse = await fetch(nearbyUrl.toString());
     const nearbyData = await nearbyResponse.json();
+
+    console.log("GOOGLE NEARBY RESPONSE:", nearbyData);
 
     const places = (nearbyData?.results || []).map((place: any) => ({
       id: place.place_id,

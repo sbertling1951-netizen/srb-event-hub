@@ -198,6 +198,11 @@ function AdminNearbyPageInner() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [isNarrow, setIsNarrow] = useState(false);
 
+  const [googleQuery, setGoogleQuery] = useState("");
+  const [googleRadius, setGoogleRadius] = useState("10");
+  const [googleResults, setGoogleResults] = useState<any[]>([]);
+  const [searchingGoogle, setSearchingGoogle] = useState(false);
+
   const [storedCustomCategory, setStoredCustomCategory] = useState("");
   const [showStoredCustomCategory, setShowStoredCustomCategory] =
     useState(false);
@@ -1077,6 +1082,60 @@ function AdminNearbyPageInner() {
     }
   }
 
+  async function searchGoogleNearby() {
+    if (!adminEvent?.location) {
+      showError("No admin event location available.");
+      return;
+    }
+
+    if (!googleQuery.trim()) {
+      showError("Enter a Google nearby search.");
+      return;
+    }
+
+    try {
+      setSearchingGoogle(true);
+      showStatus("Searching Google nearby places...");
+
+      const locationParts = adminEvent.location.split(",");
+
+      const city = locationParts[0]?.trim() || "";
+      const state = locationParts[1]?.trim() || "";
+
+      const response = await fetch("/api/google/nearby-search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: googleQuery.trim(),
+          city,
+          state,
+          radiusMiles: Number(googleRadius) || 10,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Google nearby search failed.");
+      }
+
+      setGoogleResults(data.places || []);
+
+      showStatus(
+        `Found ${(data.places || []).length} Google nearby place${
+          (data.places || []).length === 1 ? "" : "s"
+        }.`,
+      );
+    } catch (err: any) {
+      console.error("searchGoogleNearby error:", err);
+      showError(err?.message || "Google nearby search failed.");
+    } finally {
+      setSearchingGoogle(false);
+    }
+  }
+
   if (!loading && accessDenied) {
     return (
       <div style={{ padding: 24 }}>
@@ -1574,6 +1633,168 @@ function AdminNearbyPageInner() {
             </div>
           )}
         </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 10,
+          background: "white",
+          padding: 14,
+          display: "grid",
+          gap: 14,
+        }}
+      >
+        <div>
+          <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+            Google Nearby Search
+          </h2>
+
+          <div style={{ fontSize: 13, color: "#666" }}>
+            Search Google Places near the current admin event location and
+            quickly add them into the stored nearby list.
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isNarrow
+              ? "1fr"
+              : "minmax(240px, 1fr) 120px auto",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <input
+            value={googleQuery}
+            onChange={(e) => setGoogleQuery(e.target.value)}
+            placeholder="Search Google nearby (restaurants, fuel, grocery...)"
+            style={{ padding: 10 }}
+            disabled={searchingGoogle}
+          />
+
+          <input
+            value={googleRadius}
+            onChange={(e) => setGoogleRadius(e.target.value)}
+            placeholder="Miles"
+            style={{ padding: 10 }}
+            disabled={searchingGoogle}
+          />
+
+          <button
+            type="button"
+            onClick={() => void searchGoogleNearby()}
+            disabled={searchingGoogle}
+          >
+            {searchingGoogle ? "Searching..." : "Search Google"}
+          </button>
+        </div>
+
+        {googleResults.length === 0 ? null : (
+          <div
+            style={{
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            {googleResults.map((place) => (
+              <div
+                key={place.id}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 10,
+                  padding: 12,
+                  background: "#fafafa",
+                  display: "grid",
+                  gap: 6,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "start",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{place.name}</div>
+
+                    <div style={{ fontSize: 13, color: "#555" }}>
+                      {place.category || "Unknown"}
+                    </div>
+                  </div>
+
+                  {place.rating ? (
+                    <div
+                      style={{
+                        fontSize: 13,
+                        background: "#fff7d6",
+                        border: "1px solid #f0c36d",
+                        borderRadius: 999,
+                        padding: "4px 10px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      ⭐ {place.rating}
+                    </div>
+                  ) : null}
+                </div>
+
+                {place.address ? (
+                  <div style={{ fontSize: 13, color: "#666" }}>
+                    {place.address}
+                  </div>
+                ) : null}
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStoredForm({
+                        ...emptyStoredPlaceForm,
+                        name: place.name || "",
+                        category: place.category || "",
+                        address: place.address || "",
+                      });
+
+                      window.scrollTo({
+                        top: 0,
+                        behavior: "smooth",
+                      });
+
+                      showStatus(
+                        `Loaded "${place.name}" into the stored place editor.`,
+                      );
+                    }}
+                  >
+                    Load Into Stored Place Editor
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEventForm({
+                        ...emptyEventPlaceForm,
+                        name: place.name || "",
+                        category: place.category || "",
+                        address: place.address || "",
+                      });
+
+                      showStatus(
+                        `Loaded "${place.name}" into the event place editor.`,
+                      );
+                    }}
+                  >
+                    Load Into Event Place Editor
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div
