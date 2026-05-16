@@ -139,6 +139,19 @@ function AdminCheckinPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 900);
+    }
+
+    handleResize();
+
+    window.addEventListener("resize", handleResize);
+
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   function showStatus(message: string) {
     setError(null);
@@ -900,7 +913,9 @@ function AdminCheckinPageInner() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1.3fr 1.3fr 1fr 1fr",
+                  gridTemplateColumns: isMobile
+                    ? "minmax(0, 1fr)"
+                    : "minmax(0, 1.3fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr)",
                   gap: 12,
                 }}
               >
@@ -973,9 +988,11 @@ function AdminCheckinPageInner() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "220px auto auto auto",
+                  gridTemplateColumns: isMobile
+                    ? "minmax(0, 1fr)"
+                    : "minmax(220px, 1.2fr) auto auto auto",
                   gap: 12,
-                  alignItems: "center",
+                  alignItems: isMobile ? "stretch" : "center",
                 }}
               >
                 <div>
@@ -994,7 +1011,12 @@ function AdminCheckinPageInner() {
                       handleSiteNumberTyping(attendee.id, e.target.value)
                     }
                     placeholder="Site"
-                    style={{ width: "100%", padding: 8 }}
+                    style={{
+                      width: "100%",
+                      padding: 10,
+                      boxSizing: "border-box",
+                      fontSize: 16,
+                    }}
                   />
                   <button
                     type="button"
@@ -1011,14 +1033,28 @@ function AdminCheckinPageInner() {
                       );
                       window.location.href = "/admin/parking";
                     }}
-                    style={{ marginTop: 6, padding: "6px 8px" }}
+                    style={{
+                      marginTop: 6,
+                      padding: "10px 12px",
+                      width: isMobile ? "100%" : "auto",
+                      background: "#facc15",
+                      border: "1px solid #eab308",
+                      color: "#111827",
+                      fontWeight: 700,
+                      boxShadow: "0 4px 12px rgba(234,179,8,0.35)",
+                    }}
                   >
                     Show on Map
                   </button>
                 </div>
 
                 <label
-                  style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    minHeight: 44,
+                  }}
                 >
                   <input
                     type="checkbox"
@@ -1033,7 +1069,12 @@ function AdminCheckinPageInner() {
                 </label>
 
                 <label
-                  style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    minHeight: 44,
+                  }}
                 >
                   <input
                     type="checkbox"
@@ -1051,6 +1092,14 @@ function AdminCheckinPageInner() {
                   type="button"
                   onClick={() => void saveCheckin(attendee)}
                   disabled={savingId === attendee.id}
+                  style={{
+                    minHeight: 44,
+                    padding: "10px 14px",
+                    width:
+                      typeof window !== "undefined" && window.innerWidth < 900
+                        ? "100%"
+                        : "auto",
+                  }}
                 >
                   {savingId === attendee.id ? "Saving..." : "Save"}
                 </button>

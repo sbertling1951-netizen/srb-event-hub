@@ -411,6 +411,18 @@ function moveItem<T>(arr: T[], fromIndex: number, toIndex: number) {
   return copy;
 }
 
+function ensureRowsAffected<T>(rows: T[] | null, message: string) {
+  if (!rows || rows.length === 0) {
+    throw new Error(message);
+  }
+
+  return rows;
+}
+
+function getErrorMessage(err: unknown, fallback: string) {
+  return err instanceof Error ? err.message : fallback;
+}
+
 function timeToMinutes(value: string | null | undefined) {
   if (!value) {
     return null;
@@ -879,12 +891,10 @@ function AdminAgendaPageInner() {
           return;
         }
 
-        if (!updatedRows || updatedRows.length === 0) {
-          showError(
-            "No agenda item was updated. This usually means the row is blocked by RLS or does not belong to the selected event.",
-          );
-          return;
-        }
+        ensureRowsAffected(
+          updatedRows,
+          "No agenda item was updated. This usually means the row is blocked by RLS or does not belong to the selected event.",
+        );
 
         setStatus(`Updated "${form.title.trim()}".`);
       } else {
@@ -952,18 +962,16 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    if (!deletedRows || deletedRows.length === 0) {
-      const message = [
+    ensureRowsAffected(
+      deletedRows,
+      [
         "No agenda item was deleted.",
         `Item ID: ${id}`,
         `Item event_id: ${itemToDelete?.event_id || "unknown"}`,
         `Admin event_id: ${activeEvent?.id || "unknown"}`,
         "Most likely cause: Supabase RLS does not allow DELETE for this logged-in admin, or this item is stale/mismatched data.",
-      ].join(" ");
-
-      showError(message);
-      return;
-    }
+      ].join(" "),
+    );
 
     if (form.id === id) {
       setForm(emptyForm);
@@ -1248,10 +1256,14 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    if (!updatedRows || updatedRows.length === 0) {
-      showError(
+    try {
+      ensureRowsAffected(
+        updatedRows,
         "No agenda item was resized. This usually means the row is blocked by RLS or does not belong to the selected event.",
       );
+    } catch (err) {
+      showError(getErrorMessage(err, "No agenda item was resized."));
+
       setCalendarResizePreview(null);
       void loadPage();
       return;
@@ -1264,12 +1276,15 @@ function AdminAgendaPageInner() {
 
   function handleDragStart(e: React.DragEvent<HTMLDivElement>, id: string) {
     setDraggedId(id);
+
+    if (!e.dataTransfer) {
+      return;
+    }
+
     try {
       e.dataTransfer.setData("text/plain", id);
       e.dataTransfer.effectAllowed = "move";
     } catch (err) {
-      // Some mobile/Safari drag events do not fully support dataTransfer.
-      // Safe to ignore because local component drag state still works.
       console.debug("Drag dataTransfer unavailable:", err);
     }
   }
@@ -1277,11 +1292,13 @@ function AdminAgendaPageInner() {
   function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
 
+    if (!e.dataTransfer) {
+      return;
+    }
+
     try {
       e.dataTransfer.dropEffect = "move";
     } catch (err) {
-      // Some mobile/Safari drag events do not fully support dropEffect.
-      // Safe to ignore because drag/drop still functions with local state.
       console.debug("Drag dropEffect unavailable:", err);
     }
   }
@@ -1291,10 +1308,15 @@ function AdminAgendaPageInner() {
     id: string,
   ) {
     setCalendarDraggingId(id);
+
     const rect = e.currentTarget.getBoundingClientRect();
     const offsetY = Math.max(0, e.clientY - rect.top);
 
     setCalendarDragOffsetSlots(Math.floor(offsetY / AGENDA_SLOT_HEIGHT));
+
+    if (!e.dataTransfer) {
+      return;
+    }
 
     try {
       e.dataTransfer.setData("text/plain", id);
@@ -1448,10 +1470,14 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    if (!updatedRows || updatedRows.length === 0) {
-      showError(
+    try {
+      ensureRowsAffected(
+        updatedRows,
         "No agenda item was resized. This usually means the row is blocked by RLS or does not belong to the selected event.",
       );
+    } catch (err) {
+      showError(getErrorMessage(err, "No agenda item was resized."));
+
       setCalendarResizePreview(null);
       void loadPage();
       return;
@@ -1519,10 +1545,14 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    if (!updatedRows || updatedRows.length === 0) {
-      showError(
+    try {
+      ensureRowsAffected(
+        updatedRows,
         "No agenda item was moved. This usually means the row is blocked by RLS or does not belong to the selected event.",
       );
+    } catch (err) {
+      showError(getErrorMessage(err, "No agenda item was moved."));
+
       setCalendarDraggingId(null);
       void loadPage();
       return;
@@ -1625,30 +1655,39 @@ function AdminAgendaPageInner() {
       setSavingOrder(false);
     }
   }
+
   async function assignTemplate() {
     if (!activeEvent?.id) {
       showError("No admin working event selected.");
       return;
     }
 
-    showStatus("Assigning agenda template...");
+    try {
+      showStatus("Assigning agenda template...");
 
-    const { error } = await supabase
-      .from("events")
-      .update({
-        assigned_agenda_template_id: selectedTemplateId || null,
-      })
-      .eq("id", activeEvent.id);
+      const { error } = await supabase
+        .from("events")
+        .update({
+          assigned_agenda_template_id: selectedTemplateId || null,
+        })
+        .eq("id", activeEvent.id);
 
-    if (error) {
-      showError(error.message || "Could not assign template.");
-      return;
+      if (error) {
+        throw error;
+      }
+
+      setAssignedTemplateId(selectedTemplateId || "");
+
+      const templateName =
+        templates.find((t) => t.id === selectedTemplateId)?.name || "None";
+
+      setStatus(`Assigned agenda template: ${templateName}.`);
+    } catch (err) {
+      console.error("assignTemplate error:", err);
+      showError(
+        err instanceof Error ? err.message : "Could not assign template.",
+      );
     }
-
-    setAssignedTemplateId(selectedTemplateId || "");
-    const templateName =
-      templates.find((t) => t.id === selectedTemplateId)?.name || "None";
-    setStatus(`Assigned agenda template: ${templateName}.`);
   }
 
   async function saveCurrentAgendaAsTemplate() {
@@ -1738,14 +1777,17 @@ function AdminAgendaPageInner() {
         insertedTemplate as AgendaTemplate,
         ...prev.filter((template) => template.id !== templateId),
       ]);
+
       setSelectedTemplateId(templateId);
       setNewTemplateName("");
       setNewTemplateDescription("");
+
       setStatus(
         `Saved "${templateName}" with ${templateItems.length} agenda items.`,
       );
     } catch (err) {
       console.error("saveCurrentAgendaAsTemplate error:", err);
+
       showError(
         err instanceof Error ? err.message : "Could not save agenda template.",
       );
@@ -1753,6 +1795,7 @@ function AdminAgendaPageInner() {
       setSavingTemplate(false);
     }
   }
+
   async function copyTemplateToEvent() {
     if (!activeEvent?.id) {
       showError("No admin working event selected.");
@@ -1764,59 +1807,71 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    showStatus("Copying template items to event...");
+    try {
+      showStatus("Copying template items to event...");
 
-    const { data, error } = await supabase
-      .from("agenda_template_items")
-      .select(
-        "external_id,title,description,location,speaker,category,color,agenda_date,start_time,end_time,sort_order,is_published",
-      )
-      .eq("template_id", selectedTemplateId)
-      .order("sort_order", { ascending: true, nullsFirst: false });
+      const { data, error } = await supabase
+        .from("agenda_template_items")
+        .select(
+          "external_id,title,description,location,speaker,category,color,agenda_date,start_time,end_time,sort_order,is_published",
+        )
+        .eq("template_id", selectedTemplateId)
+        .order("sort_order", { ascending: true, nullsFirst: false });
 
-    if (error) {
-      showError(error.message || "Could not load template items.");
-      return;
+      if (error) {
+        throw error;
+      }
+
+      const rows = ((data || []) as AgendaTemplateItem[]).map(
+        (item, index) => ({
+          event_id: activeEvent.id,
+          external_id:
+            item.external_id ||
+            [
+              "template",
+              selectedTemplateId,
+              String(index + 1),
+              slugify(item.title || "agenda-item"),
+            ].join("-"),
+          title: item.title,
+          description: item.description,
+          location: item.location,
+          speaker: item.speaker,
+          category: item.category,
+          color: item.color,
+          agenda_date: item.agenda_date,
+          start_time: item.start_time,
+          end_time: item.end_time,
+          sort_order: item.sort_order ?? index + 1,
+          is_published: !!item.is_published,
+          source: "template",
+        }),
+      );
+
+      const { error: upsertError } = await supabase
+        .from("agenda_items")
+        .upsert(rows, {
+          onConflict: "event_id,external_id",
+        });
+
+      if (upsertError) {
+        throw upsertError;
+      }
+
+      await loadPage();
+
+      setStatus(`Copied ${rows.length} template items into this event.`);
+    } catch (err) {
+      console.error("copyTemplateToEvent error:", err);
+
+      showError(
+        err instanceof Error
+          ? err.message
+          : "Could not copy template to event.",
+      );
     }
-
-    const rows = ((data || []) as AgendaTemplateItem[]).map((item, index) => ({
-      event_id: activeEvent.id,
-      external_id:
-        item.external_id ||
-        [
-          "template",
-          selectedTemplateId,
-          String(index + 1),
-          slugify(item.title || "agenda-item"),
-        ].join("-"),
-      title: item.title,
-      description: item.description,
-      location: item.location,
-      speaker: item.speaker,
-      category: item.category,
-      color: item.color,
-      agenda_date: item.agenda_date,
-      start_time: item.start_time,
-      end_time: item.end_time,
-      sort_order: item.sort_order ?? index + 1,
-      is_published: !!item.is_published,
-      source: "template",
-    }));
-
-    const { error: upsertError } = await supabase
-      .from("agenda_items")
-      .upsert(rows, {
-        onConflict: "event_id,external_id",
-      });
-
-    if (upsertError) {
-      showError(upsertError.message || "Could not copy template to event.");
-      return;
-    }
-
-    void loadPage();
-    setStatus(`Copied ${rows.length} template items into this event.`);
   }
+
   async function replaceEventFromTemplate() {
     if (!activeEvent?.id) {
       showError("No admin working event selected.");
@@ -1840,20 +1895,30 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    showStatus("Replacing event agenda from template...");
+    try {
+      showStatus("Replacing event agenda from template...");
 
-    const { error: deleteError } = await supabase
-      .from("agenda_items")
-      .delete()
-      .eq("event_id", activeEvent.id);
+      const { error: deleteError } = await supabase
+        .from("agenda_items")
+        .delete()
+        .eq("event_id", activeEvent.id);
 
-    if (deleteError) {
-      showError(deleteError.message || "Could not clear event agenda.");
-      return;
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      await copyTemplateToEvent();
+    } catch (err) {
+      console.error("replaceEventFromTemplate error:", err);
+
+      showError(
+        err instanceof Error
+          ? err.message
+          : "Could not replace event from template.",
+      );
     }
-
-    await copyTemplateToEvent();
   }
+
   async function handleAgendaImportFile(file: File) {
     if (!activeEvent?.id) {
       setImportStatus("No admin working event selected.");
@@ -2803,6 +2868,7 @@ function AdminAgendaPageInner() {
                                 }}
                                 title="Drag to change start time"
                               />
+
                               <div style={{ fontWeight: 900, fontSize: 12 }}>
                                 {item.title}
                               </div>
@@ -2908,12 +2974,20 @@ function AdminAgendaPageInner() {
                   style={{
                     display: "grid",
                     gridTemplateColumns: useButtonReorder
-                      ? "56px 1fr auto"
-                      : "44px 1fr auto",
+                      ? isMobile
+                        ? "1fr"
+                        : "72px 1fr auto"
+                      : isMobile
+                        ? "1fr"
+                        : "52px 1fr auto",
                     gap: 12,
-                    padding: 14,
+                    padding: isMobile ? 16 : 14,
                     borderTop: "1px solid #eee",
                     background: draggedId === item.id ? "#f8fafc" : "white",
+                    borderLeft: `6px solid ${getAgendaColor(
+                      item.category || "",
+                      item.color || "",
+                    )}`,
                   }}
                 >
                   <div
@@ -2922,6 +2996,8 @@ function AdminAgendaPageInner() {
                       gap: 6,
                       alignContent: "start",
                       justifyItems: "center",
+                      gridAutoFlow: isMobile ? "column" : "row",
+                      justifyContent: isMobile ? "start" : "center",
                     }}
                   >
                     {useButtonReorder ? (
@@ -2932,7 +3008,7 @@ function AdminAgendaPageInner() {
                           disabled={filteredItems[0]?.id === item.id}
                           style={{
                             padding: "6px 8px",
-                            minWidth: 36,
+                            minWidth: 40,
                             cursor:
                               filteredItems[0]?.id === item.id
                                 ? "default"
@@ -2952,7 +3028,7 @@ function AdminAgendaPageInner() {
                           }
                           style={{
                             padding: "6px 8px",
-                            minWidth: 36,
+                            minWidth: 40,
                             cursor:
                               filteredItems[filteredItems.length - 1]?.id ===
                               item.id
@@ -2973,12 +3049,12 @@ function AdminAgendaPageInner() {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          fontSize: 18,
+                          fontSize: 20,
                           color: "#666",
                           cursor: "grab",
                           userSelect: "none",
-                          width: 32,
-                          height: 32,
+                          width: 40,
+                          height: 40,
                         }}
                         title="Drag to reorder"
                       >
@@ -2996,43 +3072,133 @@ function AdminAgendaPageInner() {
                       border: "none",
                       padding: 0,
                       cursor: "pointer",
+                      display: "grid",
+                      gap: 6,
                     }}
                   >
-                    <div style={{ fontWeight: 700 }}>{item.title}</div>
-
-                    <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-                      {formatAgendaDate(item.agenda_date)} ·{" "}
-                      {formatAgendaTime(item.start_time, item.end_time)}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <div
                         style={{
-                          fontSize: 10,
-                          color: "#64748b",
                           fontWeight: 800,
-                          marginTop: 2,
+                          fontSize: isMobile ? 16 : 15,
+                          color: "#111827",
                         }}
                       >
-                        {formatDurationLabel(agendaDurationMinutes(item))}
+                        {item.title}
                       </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          background: item.is_published ? "#dcfce7" : "#fee2e2",
+                          color: item.is_published ? "#166534" : "#991b1b",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {item.is_published ? "Published" : "Hidden"}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "#475569",
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span>{formatAgendaDate(item.agenda_date)}</span>
+                      <span>•</span>
+                      <span>
+                        {formatAgendaTime(item.start_time, item.end_time)}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        {formatDurationLabel(agendaDurationMinutes(item))}
+                      </span>
                     </div>
 
                     {item.location ? (
-                      <div style={{ fontSize: 13, marginTop: 4 }}>
-                        {item.location}
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "#334155",
+                        }}
+                      >
+                        📍 {item.location}
                       </div>
                     ) : null}
 
-                    <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-                      {item.category || "No category"}
-                      {item.speaker ? ` · Speaker: ${item.speaker}` : ""}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          background: "#f1f5f9",
+                          color: "#334155",
+                        }}
+                      >
+                        {item.category || "No category"}
+                      </span>
+
+                      {item.speaker ? (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#475569",
+                          }}
+                        >
+                          Speaker: {item.speaker}
+                        </span>
+                      ) : null}
                     </div>
 
-                    {item.color ? (
+                    {item.description ? (
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "#555",
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        {item.description}
+                      </div>
+                    ) : null}
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        marginTop: 2,
+                      }}
+                    >
                       <div
                         style={{
                           display: "flex",
                           alignItems: "center",
                           gap: 8,
-                          marginTop: 6,
                         }}
                       >
                         <span
@@ -3040,32 +3206,43 @@ function AdminAgendaPageInner() {
                             width: 14,
                             height: 14,
                             borderRadius: 999,
-                            background: item.color,
+                            background: item.color || "#cbd5e1",
                             border: "1px solid rgba(0,0,0,0.15)",
                             display: "inline-block",
                           }}
                         />
+
                         <span style={{ fontSize: 12, color: "#777" }}>
-                          {item.color}
+                          {item.color || "Auto Color"}
                         </span>
                       </div>
-                    ) : null}
 
-                    <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>
-                      external_id: {item.external_id || "—"}
-                      {item.sort_order !== null && item.sort_order !== undefined
-                        ? ` · sort: ${item.sort_order}`
-                        : ""}
-                      {item.source ? ` · source: ${item.source}` : ""}
+                      <span style={{ fontSize: 12, color: "#777" }}>
+                        Sort: {item.sort_order ?? "—"}
+                      </span>
+
+                      {item.source ? (
+                        <span style={{ fontSize: 12, color: "#777" }}>
+                          Source: {item.source}
+                        </span>
+                      ) : null}
                     </div>
                   </button>
 
                   <div
-                    style={{ display: "grid", gap: 8, alignContent: "start" }}
+                    style={{
+                      display: "grid",
+                      gap: 8,
+                      alignContent: "start",
+                      gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr",
+                    }}
                   >
                     <button
                       type="button"
                       onClick={() => void togglePublished(item)}
+                      style={{
+                        minHeight: 42,
+                      }}
                     >
                       {item.is_published ? "Unpublish" : "Publish"}
                     </button>
@@ -3073,6 +3250,9 @@ function AdminAgendaPageInner() {
                     <button
                       type="button"
                       onClick={() => void deleteItem(item.id)}
+                      style={{
+                        minHeight: 42,
+                      }}
                     >
                       Delete
                     </button>
