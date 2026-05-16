@@ -1784,17 +1784,17 @@ function ParkingAdminPageInner() {
             <div
               style={{
                 position: "relative",
-                width: naturalSize.width * zoom,
-                height: naturalSize.height * zoom,
+                width: naturalSize.width * zoom + 600,
+                height: naturalSize.height * zoom + 600,
+                padding: 300,
+                boxSizing: "border-box",
               }}
             >
               <div
                 style={{
                   position: "relative",
-                  width: naturalSize.width,
-                  height: naturalSize.height,
-                  transform: `scale(${zoom})`,
-                  transformOrigin: "top left",
+                  width: naturalSize.width * zoom,
+                  height: naturalSize.height * zoom,
                 }}
               >
                 {event?.map_image_url && (
@@ -1810,8 +1810,8 @@ function ParkingAdminPageInner() {
                       });
                     }}
                     style={{
-                      width: naturalSize.width,
-                      height: naturalSize.height,
+                      width: naturalSize.width * zoom,
+                      height: naturalSize.height * zoom,
                       display: "block",
                       userSelect: "none",
                       pointerEvents: "none",
