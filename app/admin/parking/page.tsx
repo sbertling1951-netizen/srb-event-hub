@@ -98,7 +98,6 @@ function ParkingAdminPageInner() {
   const [showArrivedOnly, setShowArrivedOnly] = useState(false);
   const [defaultZoom, setDefaultZoom] = useState(0.6);
   const [zoom, setZoom] = useState(0.6);
-  const [pendingFocusSiteNumber, setPendingFocusSiteNumber] = useState("");
 
   function showStatus(message: string) {
     setError(null);
@@ -119,6 +118,35 @@ function ParkingAdminPageInner() {
     const dy = touches[0].clientY - touches[1].clientY;
     return Math.sqrt(dx * dx + dy * dy);
   }
+
+  const focusSite = useCallback(
+    (site: ParkingSite, targetZoom?: number) => {
+      if (!mapRef.current || site.map_x === null || site.map_y === null) {
+        return;
+      }
+
+      const appliedZoom = clampZoom(targetZoom ?? zoom);
+      const container = mapRef.current;
+      const scaledWidth = naturalSize.width * appliedZoom;
+      const scaledHeight = naturalSize.height * appliedZoom;
+
+      const x = (site.map_x / 100) * scaledWidth;
+      const y = (site.map_y / 100) * scaledHeight;
+
+      setZoom(appliedZoom);
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          container.scrollTo({
+            left: Math.max(0, x - container.clientWidth / 2),
+            top: Math.max(0, y - container.clientHeight / 2),
+            behavior: "smooth",
+          });
+        });
+      });
+    },
+    [naturalSize.height, naturalSize.width, zoom],
+  );
 
   const loadPage = useCallback(async () => {
     setLoading(true);
@@ -296,17 +324,54 @@ function ParkingAdminPageInner() {
     });
 
     setSites(mergedSites);
+    setAttendees(attendeeRows);
+
     const focusSiteNumber = localStorage.getItem("fcoc-parking-focus-site");
+
     if (focusSiteNumber) {
-      setPendingFocusSiteNumber(focusSiteNumber);
+      const normalizedFocus = siteMatchKey(focusSiteNumber);
+
+      const matchedSite =
+        mergedSites.find(
+          (site) =>
+            siteMatchKey(site.site_number) === normalizedFocus ||
+            siteMatchKey(site.display_label) === normalizedFocus,
+        ) || null;
+
+      if (matchedSite) {
+        const matchedSiteId = matchedSite.id || matchedSite.master_site_id;
+
+        setSelectedSiteId(matchedSiteId);
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            focusSite(
+              matchedSite,
+              Math.max(defaultZoom, isNarrow ? 1.05 : defaultZoom),
+            );
+          });
+        });
+
+        showStatus(
+          `Focused parking map on site ${
+            matchedSite.display_label || matchedSite.site_number
+          }.`,
+        );
+      } else {
+        showError(`Could not find site ${focusSiteNumber} on this map.`);
+      }
+
       localStorage.removeItem("fcoc-parking-focus-site");
     }
-    setAttendees(attendeeRows);
+
     showStatus(
-      `Loaded ${mergedSites.length} sites and ${(attendeeResult.data || []).length} attendees.`,
+      `Loaded ${mergedSites.length} sites and ${
+        (attendeeResult.data || []).length
+      } attendees.`,
     );
+
     setLoading(false);
-  }, []);
+  }, [defaultZoom, focusSite, isNarrow]);
 
   useEffect(() => {
     async function init() {
@@ -630,35 +695,6 @@ function ParkingAdminPageInner() {
     );
   }, [debouncedSearch, sites]);
 
-  const focusSite = useCallback(
-    (site: ParkingSite, targetZoom?: number) => {
-      if (!mapRef.current || site.map_x === null || site.map_y === null) {
-        return;
-      }
-
-      const appliedZoom = clampZoom(targetZoom ?? zoom);
-      const container = mapRef.current;
-      const scaledWidth = naturalSize.width * appliedZoom;
-      const scaledHeight = naturalSize.height * appliedZoom;
-
-      const x = (site.map_x / 100) * scaledWidth;
-      const y = (site.map_y / 100) * scaledHeight;
-
-      setZoom(appliedZoom);
-
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          container.scrollTo({
-            left: Math.max(0, x - container.clientWidth / 2),
-            top: Math.max(0, y - container.clientHeight / 2),
-            behavior: "smooth",
-          });
-        });
-      });
-    },
-    [naturalSize.height, naturalSize.width, zoom],
-  );
-
   useEffect(() => {
     if (!searchedSite) {
       return;
@@ -737,34 +773,6 @@ function ParkingAdminPageInner() {
     const targetZoom = Math.max(zoom, isNarrow ? 1.05 : defaultZoom);
     focusSite(site, targetZoom);
   }, [selectedAttendee, sites, focusSite, zoom, isNarrow, defaultZoom]);
-
-  useEffect(() => {
-    if (!pendingFocusSiteNumber || sites.length === 0) {
-      return;
-    }
-
-    const site = sites.find(
-      (item) =>
-        String(item.site_number).trim() ===
-        String(pendingFocusSiteNumber).trim(),
-    );
-
-    if (!site) {
-      showError(`Could not find site ${pendingFocusSiteNumber} on this map.`);
-      setPendingFocusSiteNumber("");
-      return;
-    }
-
-    setSelectedSiteId(site.id || site.master_site_id);
-
-    // Delay focus slightly to ensure DOM + map render is complete
-    setTimeout(() => {
-      focusSite(site, Math.max(zoom, isNarrow ? 1.05 : defaultZoom));
-    }, 150);
-
-    showStatus(`Focused parking map on site ${pendingFocusSiteNumber}.`);
-    setPendingFocusSiteNumber("");
-  }, [pendingFocusSiteNumber, sites, focusSite, zoom, isNarrow, defaultZoom]);
 
   async function assignAttendeeToSite({
     attendee,
