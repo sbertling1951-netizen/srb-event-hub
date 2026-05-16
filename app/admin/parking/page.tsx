@@ -120,6 +120,12 @@ function ParkingAdminPageInner() {
     return Math.sqrt(dx * dx + dy * dy);
   }
 
+  function runAfterLayout(callback: () => void, delay = 90) {
+    window.setTimeout(() => {
+      callback();
+    }, delay);
+  }
+
   const focusSite = useCallback((site: ParkingSite) => {
     const siteKey = site.id || site.master_site_id;
 
@@ -333,10 +339,8 @@ function ParkingAdminPageInner() {
 
         setSelectedSiteId(matchedSiteId);
 
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            focusSite(matchedSite);
-          });
+        runAfterLayout(() => {
+          focusSite(matchedSite);
         });
 
         showStatus(
@@ -703,12 +707,12 @@ function ParkingAdminPageInner() {
   }, [searchedSite, focusSite]);
 
   function scrollAttendeeIntoView(attendeeId: string) {
-    requestAnimationFrame(() => {
+    runAfterLayout(() => {
       attendeeButtonRefs.current[attendeeId]?.scrollIntoView({
         behavior: "smooth",
         block: "center",
       });
-    });
+    }, 40);
   }
 
   function recenterMap() {
@@ -735,21 +739,19 @@ function ParkingAdminPageInner() {
 
     setZoom(defaultZoom);
 
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        container.scrollTo({
-          left: Math.max(
-            0,
-            (naturalSize.width * defaultZoom - container.clientWidth) / 2,
-          ),
-          top: Math.max(
-            0,
-            (naturalSize.height * defaultZoom - container.clientHeight) / 2,
-          ),
-          behavior: "smooth",
-        });
+    runAfterLayout(() => {
+      container.scrollTo({
+        left: Math.max(
+          0,
+          (naturalSize.width * defaultZoom - container.clientWidth) / 2,
+        ),
+        top: Math.max(
+          0,
+          (naturalSize.height * defaultZoom - container.clientHeight) / 2,
+        ),
+        behavior: "smooth",
       });
-    });
+    }, 120);
   }
 
   useEffect(() => {
@@ -1772,9 +1774,9 @@ function ParkingAdminPageInner() {
             <div
               style={{
                 position: "relative",
-                width: naturalSize.width * zoom + 600,
-                height: naturalSize.height * zoom + 600,
-                padding: 300,
+                width: naturalSize.width * zoom,
+                height: naturalSize.height * zoom,
+                margin: "0 auto",
                 boxSizing: "border-box",
               }}
             >
