@@ -76,6 +76,7 @@ function ParkingAdminPageInner() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const lastDistanceRef = useRef<number | null>(null);
   const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const siteMarkerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
@@ -121,31 +122,32 @@ function ParkingAdminPageInner() {
 
   const focusSite = useCallback(
     (site: ParkingSite, targetZoom?: number) => {
-      if (!mapRef.current || site.map_x === null || site.map_y === null) {
+      if (!mapRef.current) {
         return;
       }
 
+      const siteKey = site.id || site.master_site_id;
       const appliedZoom = clampZoom(targetZoom ?? zoom);
-      const container = mapRef.current;
-      const scaledWidth = naturalSize.width * appliedZoom;
-      const scaledHeight = naturalSize.height * appliedZoom;
 
-      const x = (site.map_x / 100) * scaledWidth;
-      const y = (site.map_y / 100) * scaledHeight;
+      if (Math.abs(appliedZoom - zoom) > 0.01) {
+        setZoom(appliedZoom);
+      }
 
-      setZoom(appliedZoom);
+      window.setTimeout(() => {
+        const marker = siteMarkerRefs.current[siteKey];
 
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          container.scrollTo({
-            left: Math.max(0, x - container.clientWidth / 2),
-            top: Math.max(0, y - container.clientHeight / 2),
-            behavior: "smooth",
-          });
+        if (!marker) {
+          return;
+        }
+
+        marker.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+          inline: "center",
         });
-      });
+      }, 120);
     },
-    [naturalSize.height, naturalSize.width, zoom],
+    [zoom],
   );
 
   const loadPage = useCallback(async () => {
@@ -347,7 +349,7 @@ function ParkingAdminPageInner() {
           requestAnimationFrame(() => {
             focusSite(
               matchedSite,
-              Math.max(defaultZoom, isNarrow ? 1.05 : defaultZoom),
+              Math.max(safeOpeningScale, isNarrow ? 1.05 : safeOpeningScale),
             );
           });
         });
@@ -371,7 +373,7 @@ function ParkingAdminPageInner() {
     );
 
     setLoading(false);
-  }, [defaultZoom, focusSite, isNarrow]);
+  }, [focusSite, isNarrow]);
 
   useEffect(() => {
     async function init() {
@@ -1834,6 +1836,11 @@ function ParkingAdminPageInner() {
                       }}
                     >
                       <button
+                        ref={(el) => {
+                          siteMarkerRefs.current[
+                            site.id || site.master_site_id
+                          ] = el;
+                        }}
                         type="button"
                         onClick={() => handleSiteClick(site)}
                         title={getSiteTitle(site)}
