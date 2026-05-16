@@ -371,6 +371,22 @@ function AdminPrintPageInner() {
   >({});
   const [manualAttendees, setManualAttendees] = useState<AttendeeRow[]>([]);
 
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 900);
+    }
+
+    handleResize();
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
   const [printMode, setPrintMode] = useState<PrintMode>("name_tags");
   const [printFilter, setPrintFilter] = useState<PrintFilter>("all");
   const [sortType, setSortType] = useState<SortType>("alpha");
@@ -877,7 +893,14 @@ function AdminPrintPageInner() {
     printMode === "name_tags" ? nameTagTextColor : coachPlateTextColor;
 
   return (
-    <div style={{ display: "grid", gap: 18 }}>
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        minWidth: 0,
+      }}
+    >
+      {" "}
       <style>{`
   @media print {
     body * {
@@ -947,7 +970,6 @@ function AdminPrintPageInner() {
     }
   }
 `}</style>
-
       <div className="card no-print" style={{ padding: 18 }}>
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Print Center</h1>
 
@@ -996,13 +1018,14 @@ function AdminPrintPageInner() {
 
         {error ? <div style={errorBoxStyle}>{error}</div> : null}
       </div>
-
       <div className="card no-print" style={{ padding: 18 }}>
         <div
           style={{
             display: "grid",
             gap: 14,
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fit, minmax(220px, 1fr))",
             alignItems: "end",
           }}
         >
@@ -1115,6 +1138,8 @@ function AdminPrintPageInner() {
               alignItems: "end",
               gap: 10,
               flexWrap: "wrap",
+              width: "100%",
+              minWidth: 0,
             }}
           >
             <button
@@ -1164,7 +1189,6 @@ function AdminPrintPageInner() {
             : ""}
         </div>
       </div>
-
       <div className="card no-print" style={{ padding: 18 }}>
         <h2 style={{ marginTop: 0, marginBottom: 12 }}>Who Will Print</h2>
 
@@ -1185,8 +1209,9 @@ function AdminPrintPageInner() {
                   key={row.id}
                   style={{
                     display: "flex",
+                    flexDirection: isMobile ? "column" : "row",
                     gap: 10,
-                    alignItems: "start",
+                    alignItems: isMobile ? "stretch" : "start",
                     padding: "10px 12px",
                     border: "1px solid #ddd",
                     borderRadius: 10,
@@ -1219,10 +1244,12 @@ function AdminPrintPageInner() {
                     </div>
                     <div
                       style={{
-                        marginTop: 8,
                         display: "flex",
-                        gap: 8,
+                        alignItems: "end",
+                        gap: 10,
                         flexWrap: "wrap",
+                        width: "100%",
+                        minWidth: 0,
                       }}
                     >
                       <button
@@ -1289,7 +1316,6 @@ function AdminPrintPageInner() {
           </div>
         )}
       </div>
-
       {editPreviewRow ? (
         <div
           className="no-print"
@@ -1340,7 +1366,9 @@ function AdminPrintPageInner() {
               style={{
                 display: "grid",
                 gap: 14,
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "repeat(auto-fit, minmax(220px, 1fr))",
               }}
             >
               <div>
@@ -1474,10 +1502,12 @@ function AdminPrintPageInner() {
 
             <div
               style={{
-                marginTop: 14,
                 display: "flex",
+                alignItems: "end",
                 gap: 10,
                 flexWrap: "wrap",
+                width: "100%",
+                minWidth: 0,
               }}
             >
               <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1513,10 +1543,12 @@ function AdminPrintPageInner() {
 
             <div
               style={{
-                marginTop: 18,
                 display: "flex",
+                alignItems: "end",
                 gap: 10,
                 flexWrap: "wrap",
+                width: "100%",
+                minWidth: 0,
               }}
             >
               <button
@@ -1576,8 +1608,16 @@ function AdminPrintPageInner() {
           </div>
         </div>
       ) : null}
-
-      <div className="print-area">
+      <div
+        className="print-area"
+        style={{
+          overflowX: "auto",
+          overflowY: "hidden",
+          width: "100%",
+          paddingBottom: 12,
+        }}
+      >
+        {" "}
         {printMode === "name_tags" ? (
           <div
             className="name-tag-sheet"
@@ -1587,6 +1627,10 @@ function AdminPrintPageInner() {
               gridAutoRows: "3in",
               justifyContent: "center",
               gap: "0.1in",
+              width: "fit-content",
+              margin: "0 auto",
+              paddingLeft: 12,
+              paddingRight: 12,
             }}
           >
             {printableNameTags.map((tag) => {
@@ -1889,19 +1933,24 @@ const printEditorOverlayStyle: CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
   justifyContent: "center",
-  padding: "32px 16px",
+  padding: "12px",
   overflowY: "auto",
+  overflowX: "hidden",
   zIndex: 99999,
 };
 
 const printEditorModalStyle: CSSProperties = {
   width: "min(100%, 980px)",
-  maxHeight: "calc(100vh - 64px)",
+  maxWidth: "100%",
+  maxHeight: "calc(100vh - 24px)",
   overflowY: "auto",
+  overflowX: "hidden",
   padding: 18,
   margin: "0 auto",
   boxShadow: "0 24px 60px rgba(0, 0, 0, 0.35)",
   border: "1px solid #d1d5db",
+  minWidth: 0,
+  boxSizing: "border-box",
 };
 
 const labelStyle: CSSProperties = {

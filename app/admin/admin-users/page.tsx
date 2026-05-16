@@ -257,6 +257,21 @@ function AdminUsersPageInner() {
   const [saveStatus, setSaveStatus] = useState("");
   const [password, setPassword] = useState("");
   const [resetStatus, setResetStatus] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 900);
+    }
+
+    handleResize();
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     async function init() {
@@ -725,7 +740,7 @@ function AdminUsersPageInner() {
         style={{
           display: "grid",
           gap: 18,
-          gridTemplateColumns: "minmax(280px, 340px) 1fr",
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(280px, 340px) 1fr",
         }}
       >
         <div className="card" style={{ padding: 18 }}>

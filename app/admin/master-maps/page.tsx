@@ -80,6 +80,21 @@ function MasterMapsPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [canManageMaps, setCanManageMaps] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 900);
+    }
+
+    handleResize();
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   const currentMaps = useMemo(() => {
     return maps.filter((map) => map.status !== "archived");
@@ -691,24 +706,23 @@ function MasterMapsPageInner() {
             padding: 18,
           }}
         >
-<div style={{ marginBottom: 16 }}>
-  <button
-    type="button"
-    onClick={() => {
-      window.location.href = "/admin/map-admin";
-    }}
-    style={{
-      padding: "8px 12px",
-      borderRadius: 8,
-      border: "1px solid #cbd5e1",
-      background: "#fff",
-      cursor: "pointer",
-    }}
-  >
-    ← Back to Map Admin
-  </button>
-</div>
-
+          <div style={{ marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/admin/map-admin";
+              }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              ← Back to Map Admin
+            </button>
+          </div>
 
           <h1 style={{ marginTop: 0, marginBottom: 8 }}>Master Maps</h1>
           <div style={{ fontSize: 14, opacity: 0.8 }}>
@@ -923,6 +937,8 @@ function MasterMapsPageInner() {
                 style={{
                   display: "grid",
                   gap: 8,
+                  minWidth: 0,
+                  overflowWrap: "anywhere",
                 }}
               >
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -991,6 +1007,8 @@ function MasterMapsPageInner() {
                 style={{
                   display: "grid",
                   gap: 8,
+                  minWidth: 0,
+                  overflowWrap: "anywhere",
                 }}
               >
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

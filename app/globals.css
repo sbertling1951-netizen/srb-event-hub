@@ -17,7 +17,7 @@ body {
   background: #f3f4f6;
 
   /* allow horizontal pan on iPhone when content is wider */
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 
@@ -80,13 +80,14 @@ body.coach-map-lock .app-shell {
 /* ===== APP LAYOUT ===== */
 .app-body {
   width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
 .app-main {
-  width: 100%;
-  padding: 16px;
+  margin-left: 280px;
+  width: calc(100% - 280px);
+  transition: margin-left 0.2s ease;
 }
 
 .app-inner {
@@ -189,7 +190,7 @@ div {
   .app-main {
     width: 100% !important;
     max-width: 100% !important;
-    margin: 0 !important;
+    margin-left: 0 !important;
     padding: 72px 16px 16px 16px !important;
   }
 

@@ -15,7 +15,7 @@ const headerCardStyle: CSSProperties = {
 const toolGridStyle: CSSProperties = {
   display: "grid",
   gap: 18,
-  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
   alignItems: "stretch",
 };
 
@@ -77,7 +77,8 @@ const descriptionStyle: CSSProperties = {
 const mapCards = [
   {
     title: "Park Maps",
-    description: "Manage master park maps, site markers, and published park maps.",
+    description:
+      "Manage master park maps, site markers, and published park maps.",
     href: "/admin/master-maps",
     buttonLabel: "Open Park Maps",
     icon: "🗺️",
@@ -109,7 +110,8 @@ const mapCards = [
   },
   {
     title: "Nearby Admin",
-    description: "Manage nearby places, stored area lists, and event nearby lists.",
+    description:
+      "Manage nearby places, stored area lists, and event nearby lists.",
     href: "/admin/nearby",
     buttonLabel: "Open Nearby Admin",
     icon: "👥",
@@ -121,6 +123,23 @@ const mapCards = [
       background: "#f3e8ff",
       color: "#9333ea",
       border: "1px solid #e9d5ff",
+    },
+  },
+  {
+    title: "Google Nearby",
+    description:
+      "Build reusable nearby area templates and preview Google Places results.",
+    href: "/admin/nearby-google",
+    buttonLabel: "Open Google Nearby",
+    icon: "🌎",
+    cardStyle: {
+      background: "linear-gradient(135deg, #ecfeff 0%, #ffffff 100%)",
+      border: "1px solid #a5f3fc",
+    },
+    iconStyle: {
+      background: "#cffafe",
+      color: "#0891b2",
+      border: "1px solid #a5f3fc",
     },
   },
 ] as const;

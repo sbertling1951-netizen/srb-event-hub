@@ -72,6 +72,58 @@ function formatDateTime(value?: string | null) {
   }
   return date.toLocaleString();
 }
+const appInputStyle = (isMobile: boolean) => ({
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  boxSizing: "border-box" as const,
+  fontSize: 16,
+  minHeight: isMobile ? 48 : undefined,
+});
+
+const mobileStackRow = (isMobile: boolean) => ({
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap" as const,
+  flexDirection: isMobile ? ("column" as const) : ("row" as const),
+  alignItems: isMobile ? ("stretch" as const) : ("center" as const),
+});
+
+const mobileCheckboxRow = (isMobile: boolean) => ({
+  display: "flex",
+  gap: 18,
+  flexWrap: "wrap" as const,
+  flexDirection: isMobile ? ("column" as const) : ("row" as const),
+  alignItems: isMobile ? ("flex-start" as const) : ("center" as const),
+});
+
+const mobileHeaderRow = (isMobile: boolean) => ({
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap" as const,
+  flexDirection: isMobile ? ("column" as const) : ("row" as const),
+  alignItems: isMobile ? ("flex-start" as const) : ("center" as const),
+});
+
+const appButtonStyle = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #ccc",
+  background: "#fff",
+  cursor: "pointer",
+};
+
+const primaryButtonStyle = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "none",
+  background: "#111827",
+  color: "#fff",
+  fontWeight: 700,
+  cursor: "pointer",
+};
 
 export default function AdminAnnouncementsPage() {
   return (
@@ -88,6 +140,7 @@ function AdminAnnouncementsPageInner() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
 
   const [loadingEvent, setLoadingEvent] = useState(true);
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
@@ -103,6 +156,20 @@ function AdminAnnouncementsPageInner() {
   );
 
   const eventId = currentEvent?.id ?? null;
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 900);
+    }
+
+    handleResize();
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   function showStatus(message: string) {
     setError(null);
@@ -494,12 +561,7 @@ function AdminAnnouncementsPageInner() {
                 setForm((prev) => ({ ...prev, title: e.target.value }))
               }
               placeholder="Announcement title"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ccc",
-              }}
+              style={appInputStyle(isMobile)}
             />
           </div>
 
@@ -517,10 +579,7 @@ function AdminAnnouncementsPageInner() {
               placeholder="Write the announcement here..."
               rows={6}
               style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ccc",
+                ...appInputStyle(isMobile),
                 resize: "vertical",
               }}
             />
@@ -529,7 +588,9 @@ function AdminAnnouncementsPageInner() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 12,
             }}
           >
@@ -544,12 +605,7 @@ function AdminAnnouncementsPageInner() {
                 onChange={(e) =>
                   setForm((prev) => ({ ...prev, priority: e.target.value }))
                 }
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ccc",
-                }}
+                style={appInputStyle(isMobile)}
               >
                 <option value="low">Low</option>
                 <option value="normal">Normal</option>
@@ -570,17 +626,13 @@ function AdminAnnouncementsPageInner() {
                 onChange={(e) =>
                   setForm((prev) => ({ ...prev, expire_at: e.target.value }))
                 }
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ccc",
-                }}
+                style={appInputStyle(isMobile)}
               />
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+          <div style={mobileCheckboxRow(isMobile)}>
+            {" "}
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 type="checkbox"
@@ -591,7 +643,6 @@ function AdminAnnouncementsPageInner() {
               />
               Pin this announcement
             </label>
-
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 type="checkbox"
@@ -607,15 +658,13 @@ function AdminAnnouncementsPageInner() {
             </label>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={mobileStackRow(isMobile)}>
             <button
               type="button"
               onClick={() => void handleSave()}
               disabled={saving || !eventId}
               style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "none",
+                ...primaryButtonStyle,
                 cursor: saving ? "not-allowed" : "pointer",
                 opacity: saving ? 0.7 : 1,
               }}
@@ -631,13 +680,7 @@ function AdminAnnouncementsPageInner() {
               type="button"
               onClick={resetForm}
               disabled={saving}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #ccc",
-                background: "#fff",
-                cursor: "pointer",
-              }}
+              style={appButtonStyle}
             >
               {editingId ? "Cancel Edit" : "Clear"}
             </button>
@@ -670,10 +713,7 @@ function AdminAnnouncementsPageInner() {
               >
                 <div
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    flexWrap: "wrap",
+                    ...mobileHeaderRow(isMobile),
                     marginBottom: 8,
                   }}
                 >
@@ -746,17 +786,11 @@ function AdminAnnouncementsPageInner() {
                   Expires: {formatDateTime(announcement.expire_at)}
                 </div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div style={mobileStackRow(isMobile)}>
                   <button
                     type="button"
                     onClick={() => startEdit(announcement)}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 10,
-                      border: "1px solid #ccc",
-                      background: "#fff",
-                      cursor: "pointer",
-                    }}
+                    style={appButtonStyle}
                   >
                     Edit
                   </button>
@@ -764,13 +798,7 @@ function AdminAnnouncementsPageInner() {
                   <button
                     type="button"
                     onClick={() => void togglePublished(announcement)}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 10,
-                      border: "1px solid #ccc",
-                      background: "#fff",
-                      cursor: "pointer",
-                    }}
+                    style={appButtonStyle}
                   >
                     {announcement.is_published ? "Unpublish" : "Publish"}
                   </button>
@@ -778,13 +806,7 @@ function AdminAnnouncementsPageInner() {
                   <button
                     type="button"
                     onClick={() => void togglePinned(announcement)}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 10,
-                      border: "1px solid #ccc",
-                      background: "#fff",
-                      cursor: "pointer",
-                    }}
+                    style={appButtonStyle}
                   >
                     {announcement.is_pinned ? "Unpin" : "Pin"}
                   </button>
@@ -793,11 +815,9 @@ function AdminAnnouncementsPageInner() {
                     type="button"
                     onClick={() => void handleDelete(announcement.id)}
                     style={{
-                      padding: "8px 12px",
-                      borderRadius: 10,
+                      ...appButtonStyle,
                       border: "1px solid #d7b1b1",
                       background: "#fff5f5",
-                      cursor: "pointer",
                     }}
                   >
                     Delete
