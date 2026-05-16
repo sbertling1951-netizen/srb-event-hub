@@ -154,10 +154,11 @@ const adminCards = [
     href: "/admin/nearby",
     permission: "can_manage_nearby",
   },
+
   {
-    title: "Master Maps",
-    description: "Manage map images and reusable master map layouts.",
-    href: "/admin/master-maps",
+    title: "Admin Maps",
+    description: "Manage maps, nearby locations, sites, and reusable layouts.",
+    href: "/admin/map-admin",
     permission: "can_manage_master_maps",
   },
   {
