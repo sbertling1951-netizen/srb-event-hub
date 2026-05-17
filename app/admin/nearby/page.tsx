@@ -242,6 +242,12 @@ function AdminNearbyPageInner() {
   const [googleRadius, setGoogleRadius] = useState("10");
   const [googleResults, setGoogleResults] = useState<any[]>([]);
   const [searchingGoogle, setSearchingGoogle] = useState(false);
+  const [storedSearch, setStoredSearch] = useState("");
+  const [storedCategoryFilter, setStoredCategoryFilter] = useState("All");
+
+  const [showMissingCoordsOnly, setShowMissingCoordsOnly] = useState(false);
+
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
 
   const [storedCustomCategory, setStoredCustomCategory] = useState("");
   const [showStoredCustomCategory, setShowStoredCustomCategory] =
@@ -389,8 +395,70 @@ function AdminNearbyPageInner() {
     }
   }, [selectedArea]);
 
+  const duplicateKeys = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    storedPlaces.forEach((place) => {
+      const key = `${String(place.name || "")
+        .trim()
+        .toLowerCase()}|${String(place.address || "")
+        .trim()
+        .toLowerCase()}`;
+
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    return counts;
+  }, [storedPlaces]);
+
   const sortedStoredPlaces = useMemo(() => {
-    return [...storedPlaces].sort((a, b) => a.name.localeCompare(b.name));
+    const filtered = storedPlaces.filter((place) => {
+      const matchesSearch =
+        !storedSearch.trim() ||
+        place.name.toLowerCase().includes(storedSearch.trim().toLowerCase()) ||
+        String(place.address || "")
+          .toLowerCase()
+          .includes(storedSearch.trim().toLowerCase());
+
+      const matchesCategory =
+        storedCategoryFilter === "All" ||
+        (place.category || "") === storedCategoryFilter;
+
+      const missingCoords = place.lat === null || place.lng === null;
+
+      const duplicateKey = `${String(place.name || "")
+        .trim()
+        .toLowerCase()}|${String(place.address || "")
+        .trim()
+        .toLowerCase()}`;
+
+      const isDuplicate = (duplicateKeys.get(duplicateKey) || 0) > 1;
+
+      if (showMissingCoordsOnly && !missingCoords) {
+        return false;
+      }
+
+      if (showDuplicatesOnly && !isDuplicate) {
+        return false;
+      }
+
+      return matchesSearch && matchesCategory;
+    });
+
+    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+  }, [
+    storedPlaces,
+    storedSearch,
+    storedCategoryFilter,
+    showMissingCoordsOnly,
+    showDuplicatesOnly,
+    duplicateKeys,
+  ]);
+
+  const storedCategories = useMemo(() => {
+    return Array.from(
+      new Set(storedPlaces.map((p) => p.category).filter(Boolean)),
+    ).sort();
   }, [storedPlaces]);
 
   const sortedEventPlaces = useMemo(() => {
@@ -1630,6 +1698,109 @@ function AdminNearbyPageInner() {
         >
           <h2 style={{ marginTop: 0 }}>Stored Area Places</h2>
 
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isNarrow
+                ? "1fr"
+                : "minmax(220px,1fr) 180px auto auto auto",
+              gap: 8,
+              marginBottom: 16,
+              alignItems: "center",
+            }}
+          >
+            <input
+              value={storedSearch}
+              onChange={(e) => setStoredSearch(e.target.value)}
+              placeholder="Search stored places"
+              style={{ padding: 10 }}
+            />
+
+            <select
+              value={storedCategoryFilter}
+              onChange={(e) => setStoredCategoryFilter(e.target.value)}
+              style={{ padding: 10 }}
+            >
+              <option value="All">All Categories</option>
+
+              {storedCategories.map((category) => (
+                <option key={category} value={category || ""}>
+                  {category}
+                </option>
+              ))}
+            </select>
+
+            <label
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                fontSize: 14,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showMissingCoordsOnly}
+                onChange={(e) => setShowMissingCoordsOnly(e.target.checked)}
+              />
+              Missing Coordinates
+            </label>
+
+            <label
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                fontSize: 14,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showDuplicatesOnly}
+                onChange={(e) => setShowDuplicatesOnly(e.target.checked)}
+              />
+              Duplicates
+            </label>
+
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  showStatus("Bulk geocoding missing coordinates...");
+
+                  for (const place of storedPlaces) {
+                    if (place.lat !== null && place.lng !== null) {
+                      continue;
+                    }
+
+                    const resolved = await geocodeLocation({
+                      location_code: place.location_code ?? null,
+                      address: place.address ?? null,
+                    });
+
+                    await supabase
+                      .from("nearby_master")
+                      .update({
+                        lat: resolved.lat,
+                        lng: resolved.lng,
+                      })
+                      .eq("id", place.id);
+                  }
+
+                  await loadStoredPlaces(selectedAreaId);
+
+                  showStatus("Bulk geocode complete.");
+                } catch (err: any) {
+                  console.error(err);
+
+                  showError(err?.message || "Bulk geocode failed.");
+                }
+              }}
+            >
+              Geocode Missing Coordinates
+            </button>
+          </div>
+
           {!selectedAreaId ? (
             <div>Select a stored area to manage its reusable places.</div>
           ) : (
@@ -1664,6 +1835,15 @@ function AdminNearbyPageInner() {
                       place.location_code,
                     );
 
+                    const duplicateKey = `${String(place.name || "")
+                      .trim()
+                      .toLowerCase()}|${String(place.address || "")
+                      .trim()
+                      .toLowerCase()}`;
+
+                    const isDuplicate =
+                      (duplicateKeys.get(duplicateKey) || 0) > 1;
+
                     return (
                       <button
                         key={place.id}
@@ -1683,6 +1863,24 @@ function AdminNearbyPageInner() {
                         }}
                       >
                         <div style={{ fontWeight: 700 }}>{place.name}</div>
+
+                        {isDuplicate ? (
+                          <div
+                            style={{
+                              marginTop: 6,
+                              display: "inline-block",
+                              padding: "2px 8px",
+                              borderRadius: 999,
+                              background: "#fee2e2",
+                              color: "#991b1b",
+                              fontSize: 11,
+                              fontWeight: 700,
+                            }}
+                          >
+                            Possible Duplicate
+                          </div>
+                        ) : null}
+
                         <div
                           style={{
                             display: "flex",
@@ -1982,6 +2180,53 @@ function AdminNearbyPageInner() {
                     }
                   >
                     Delete Stored Place
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        showStatus(`Re-geocoding ${storedForm.name}...`);
+
+                        const resolved = await geocodeLocation({
+                          location_code: storedForm.location_code || null,
+                          address: storedForm.address || null,
+                        });
+
+                        const { error } = await supabase
+                          .from("nearby_master")
+                          .update({
+                            lat: resolved.lat,
+                            lng: resolved.lng,
+                          })
+                          .eq("id", storedForm.id);
+
+                        if (error) {
+                          throw error;
+                        }
+
+                        await loadStoredPlaces(selectedAreaId);
+
+                        setStoredForm((prev) => ({
+                          ...prev,
+                          lat:
+                            resolved.lat !== null ? String(resolved.lat) : "",
+                          lng:
+                            resolved.lng !== null ? String(resolved.lng) : "",
+                        }));
+
+                        showStatus(
+                          `Updated coordinates for ${storedForm.name}.`,
+                        );
+                      } catch (err: any) {
+                        console.error(err);
+
+                        showError(err?.message || "Re-geocode failed.");
+                      }
+                    }}
+                    disabled={!storedForm.id}
+                  >
+                    Re-Geocode
                   </button>
                 </div>
               </div>
