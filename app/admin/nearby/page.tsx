@@ -924,6 +924,127 @@ function AdminNearbyPageInner() {
     }
   }
 
+  <button
+    type="button"
+    onClick={() => void mergeStoredAreaIntoEvent()}
+    disabled={
+      accessDenied || !adminEvent?.id || !selectedAreaId || copyingToEvent
+    }
+  >
+    Merge Stored Area Into Event Nearby
+  </button>;
+
+  async function mergeStoredAreaIntoEvent() {
+    if (accessDenied) {
+      showError("You do not have access to this page.");
+      return;
+    }
+
+    if (!adminEvent?.id) {
+      showError("No admin working event selected.");
+      return;
+    }
+
+    if (!selectedAreaId) {
+      showError("No stored area selected.");
+      return;
+    }
+
+    try {
+      setCopyingToEvent(true);
+      showStatus("Merging stored area into current event nearby list...");
+
+      const { data: sourceRows, error: sourceError } = await supabase
+        .from("nearby_master")
+        .select(
+          "id,name,address,phone,category,description,link,location_code,lat,lng",
+        )
+        .eq("area_id", selectedAreaId)
+        .order("name", { ascending: true });
+
+      if (sourceError) {
+        throw sourceError;
+      }
+
+      const { data: existingRows, error: existingError } = await supabase
+        .from("event_nearby_places")
+        .select("name,address")
+        .eq("event_id", adminEvent.id);
+
+      if (existingError) {
+        throw existingError;
+      }
+
+      const existingKeys = new Set(
+        (existingRows || []).map((row: any) => {
+          return `${String(row.name || "")
+            .trim()
+            .toLowerCase()}|${String(row.address || "")
+            .trim()
+            .toLowerCase()}`;
+        }),
+      );
+
+      const sourcePlaces = sourceRows || [];
+
+      const payload: any[] = [];
+
+      for (let index = 0; index < sourcePlaces.length; index += 1) {
+        const place = sourcePlaces[index];
+
+        const compareKey = `${String(place.name || "")
+          .trim()
+          .toLowerCase()}|${String(place.address || "")
+          .trim()
+          .toLowerCase()}`;
+
+        if (existingKeys.has(compareKey)) {
+          continue;
+        }
+
+        payload.push({
+          event_id: adminEvent.id,
+          name: place.name,
+          address: place.address ?? null,
+          phone: place.phone ?? null,
+          website: place.link ?? null,
+          category: place.category ?? null,
+          notes: place.description ?? null,
+          sort_order: eventPlaces.length + payload.length + 1,
+          is_hidden: false,
+          distance_miles: null,
+          location_code: place.location_code ?? null,
+          lat: place.lat ?? null,
+          lng: place.lng ?? null,
+        });
+      }
+
+      if (payload.length > 0) {
+        const { error: insertError } = await supabase
+          .from("event_nearby_places")
+          .insert(payload);
+
+        if (insertError) {
+          throw insertError;
+        }
+      }
+
+      await loadEventPlaces(adminEvent.id);
+
+      setStatus(
+        `Merged ${payload.length} new place${
+          payload.length === 1 ? "" : "s"
+        } into the event nearby list.`,
+      );
+    } catch (err: any) {
+      console.error("mergeStoredAreaIntoEvent error:", err);
+
+      showError(err?.message || "Failed to merge stored area into event.");
+    } finally {
+      setCopyingToEvent(false);
+    }
+  }
+
   async function saveEventPlace() {
     if (accessDenied) {
       showError("You do not have access to this page.");
