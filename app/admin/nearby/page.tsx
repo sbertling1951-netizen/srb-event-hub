@@ -21,6 +21,11 @@ type StoredArea = {
   id: string;
   name: string;
   description: string | null;
+  google_radius_miles: number | null;
+  google_custom_search: string | null;
+  google_search_city: string | null;
+  google_search_state: string | null;
+  google_last_run: string | null;
 };
 
 type StoredPlace = {
@@ -337,6 +342,12 @@ function AdminNearbyPageInner() {
     if (selectedArea) {
       setAreaName(selectedArea.name || "");
       setAreaDescription(selectedArea.description || "");
+      setGoogleRadius(
+        selectedArea.google_radius_miles
+          ? String(selectedArea.google_radius_miles)
+          : "10",
+      );
+      setGoogleQuery(selectedArea.google_custom_search || "");
     } else {
       setAreaName("");
       setAreaDescription("");
@@ -365,7 +376,9 @@ function AdminNearbyPageInner() {
 
       const { data, error } = await supabase
         .from("nearby_area_templates")
-        .select("id,name,description")
+        .select(
+          "id,name,description,google_radius_miles,google_custom_search,google_search_city,google_search_state,google_last_run",
+        )
         .order("name", { ascending: true });
 
       if (error) {
@@ -528,12 +541,21 @@ function AdminNearbyPageInner() {
       const payload = {
         name: areaName.trim(),
         description: areaDescription.trim() || null,
+        google_radius_miles: Number(googleRadius) || 10,
+        google_custom_search: googleQuery.trim() || null,
+        google_search_city:
+          adminEvent?.location?.split(",")?.[0]?.trim() || null,
+        google_search_state:
+          adminEvent?.location?.split(",")?.[1]?.trim() || null,
+        google_last_run: null,
       };
 
       const { data, error } = await supabase
         .from("nearby_area_templates")
         .insert(payload)
-        .select("id,name,description")
+        .select(
+          "id,name,description,google_radius_miles,google_custom_search,google_search_city,google_search_state,google_last_run",
+        )
         .single();
 
       if (error) {
@@ -598,6 +620,12 @@ function AdminNearbyPageInner() {
         .update({
           name: areaName.trim(),
           description: areaDescription.trim() || null,
+          google_radius_miles: Number(googleRadius) || 10,
+          google_custom_search: googleQuery.trim() || null,
+          google_search_city:
+            adminEvent?.location?.split(",")?.[0]?.trim() || null,
+          google_search_state:
+            adminEvent?.location?.split(",")?.[1]?.trim() || null,
         })
         .eq("id", selectedAreaId);
 
@@ -1234,6 +1262,19 @@ function AdminNearbyPageInner() {
 
       setGoogleResults(data.places || []);
 
+      if (selectedAreaId) {
+        await supabase
+          .from("nearby_area_templates")
+          .update({
+            google_last_run: new Date().toISOString(),
+            google_radius_miles: Number(googleRadius) || 10,
+            google_custom_search: googleQuery.trim() || null,
+            google_search_city: city || null,
+            google_search_state: state || null,
+          })
+          .eq("id", selectedAreaId);
+      }
+
       showStatus(
         `Found ${(data.places || []).length} Google nearby place${
           (data.places || []).length === 1 ? "" : "s"
@@ -1402,6 +1443,22 @@ function AdminNearbyPageInner() {
                 style={{ padding: 10, resize: "vertical" }}
                 disabled={accessDenied || savingArea}
               />
+
+              {selectedArea?.google_last_run ? (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#666",
+                    background: "#f8f9fb",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    padding: 10,
+                  }}
+                >
+                  Last Google Search Run:{" "}
+                  {new Date(selectedArea.google_last_run).toLocaleString()}
+                </div>
+              ) : null}
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
