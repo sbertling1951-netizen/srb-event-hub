@@ -125,23 +125,6 @@ const mapCards = [
       border: "1px solid #e9d5ff",
     },
   },
-  {
-    title: "Google Nearby",
-    description:
-      "Build reusable nearby area templates and preview Google Places results.",
-    href: "/admin/nearby-google",
-    buttonLabel: "Open Google Nearby",
-    icon: "🌎",
-    cardStyle: {
-      background: "linear-gradient(135deg, #ecfeff 0%, #ffffff 100%)",
-      border: "1px solid #a5f3fc",
-    },
-    iconStyle: {
-      background: "#cffafe",
-      color: "#0891b2",
-      border: "1px solid #a5f3fc",
-    },
-  },
 ] as const;
 
 function MapAdminPageInner() {

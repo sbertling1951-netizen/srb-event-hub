@@ -1412,6 +1412,11 @@ function AdminNearbyPageInner() {
 
       const city = locationParts[0]?.trim() || "";
       const state = locationParts[1]?.trim() || "";
+      console.log({
+        location: adminEvent.location,
+        city,
+        state,
+      });
 
       const response = await fetch("/api/google/nearby-search", {
         method: "POST",
