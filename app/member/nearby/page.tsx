@@ -139,7 +139,7 @@ function nearbyCategoryIcon(category: string) {
     return "⭐";
   }
 
-  return "📍";
+  return "🧭";
 }
 
 function NearbyPageInner() {
@@ -388,6 +388,27 @@ function NearbyPageInner() {
               rvNote={place.notes || undefined}
               locationCode={place.location_code || undefined}
             />
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 6,
+                fontSize: 12,
+                color: "#555",
+              }}
+            >
+              {place.phone ? <div>📞 {place.phone}</div> : null}
+
+              {place.lat !== null && place.lng !== null ? (
+                <div>
+                  🌎 {Number(place.lat).toFixed(5)},{" "}
+                  {Number(place.lng).toFixed(5)}
+                </div>
+              ) : null}
+
+              {place.location_code ? <div>🧭 {place.location_code}</div> : null}
+            </div>
             {place.distance_miles !== null &&
             place.distance_miles !== undefined ? (
               <div
