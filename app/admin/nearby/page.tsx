@@ -924,16 +924,6 @@ function AdminNearbyPageInner() {
     }
   }
 
-  <button
-    type="button"
-    onClick={() => void mergeStoredAreaIntoEvent()}
-    disabled={
-      accessDenied || !adminEvent?.id || !selectedAreaId || copyingToEvent
-    }
-  >
-    Merge Stored Area Into Event Nearby
-  </button>;
-
   async function mergeStoredAreaIntoEvent() {
     if (accessDenied) {
       showError("You do not have access to this page.");
@@ -1450,6 +1440,20 @@ function AdminNearbyPageInner() {
                 {copyingToEvent
                   ? "Replacing Event List..."
                   : "Replace Event Nearby from Stored Area"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void mergeStoredAreaIntoEvent()}
+                disabled={
+                  accessDenied ||
+                  !adminEvent?.id ||
+                  !selectedAreaId ||
+                  copyingToEvent
+                }
+              >
+                {copyingToEvent
+                  ? "Merging Into Event..."
+                  : "Merge Stored Area Into Event Nearby"}
               </button>
             </>
           )}
