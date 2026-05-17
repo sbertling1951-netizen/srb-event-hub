@@ -735,21 +735,53 @@ function MasterMapsPageInner() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ marginBottom: 16 }}>
+      <div
+        style={{
+          display: "grid",
+          gap: 12,
+          marginBottom: 18,
+          width: "100%",
+          maxWidth: 420,
+        }}
+      >
         <button
           type="button"
           onClick={() => {
             window.location.href = "/admin/dashboard";
           }}
           style={{
-            padding: "8px 12px",
-            borderRadius: 8,
+            width: "100%",
+            padding: "14px 18px",
+            borderRadius: 18,
             border: "1px solid #cbd5e1",
             background: "#fff",
             cursor: "pointer",
+            fontWeight: 700,
+            fontSize: 16,
+            boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
           }}
         >
           ← Return to Dashboard
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = "/admin/map-admin";
+          }}
+          style={{
+            width: "100%",
+            padding: "14px 18px",
+            borderRadius: 18,
+            border: "1px solid #cbd5e1",
+            background: "#fff",
+            cursor: "pointer",
+            fontWeight: 700,
+            fontSize: 16,
+            boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
+          }}
+        >
+          ← Back to Map Admin
         </button>
       </div>
 

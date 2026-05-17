@@ -218,12 +218,16 @@ function MetricCard({
 }) {
   return (
     <div className="card" style={metricCardStyle}>
-      <div style={{ fontSize: 13, color: "#666", marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>
         {label}
       </div>
-      <div style={{ fontSize: 28, fontWeight: 800 }}>{value}</div>
+
+      <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>
+        {value}
+      </div>
+
       {footer ? (
-        <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
           {footer}
         </div>
       ) : null}
@@ -702,7 +706,7 @@ function AdminDashboardPageInner() {
           display: "grid",
           gridTemplateColumns: isWide
             ? "repeat(4, minmax(0, 1fr))"
-            : "repeat(auto-fit, minmax(180px, 1fr))",
+            : "repeat(3, minmax(0, 1fr))",
           gap: 16,
         }}
       >
@@ -743,7 +747,7 @@ function AdminDashboardPageInner() {
           display: "grid",
           gridTemplateColumns: isWide
             ? "repeat(3, minmax(0, 1fr))"
-            : "repeat(auto-fit, minmax(180px, 1fr))",
+            : "repeat(3, minmax(0, 1fr))",
           gap: 16,
         }}
       >
@@ -909,7 +913,9 @@ const statusBoxStyle: React.CSSProperties = {
 };
 
 const metricCardStyle: React.CSSProperties = {
-  padding: 16,
+  padding: "10px 12px",
+  borderRadius: 12,
+  minHeight: 0,
 };
 
 const sectionCardStyle: React.CSSProperties = {
