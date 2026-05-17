@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
-import LocationCard from "@/components/LocationCard";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
 import { supabase } from "@/lib/supabase";
@@ -377,38 +376,161 @@ function NearbyPageInner() {
       <div className="grid grid-2" style={{ gap: 6 }}>
         {filteredPlaces.map((place) => (
           <div key={place.id} style={nearbyCardStyle(place)}>
-            <LocationCard
-              name={place.name}
-              address={place.address || ""}
-              phone={place.phone || undefined}
-              website={place.website || undefined}
-              latitude={place.lat || undefined}
-              longitude={place.lng || undefined}
-              category={place.category || "Nearby"}
-              rvNote={place.notes || undefined}
-              locationCode={place.location_code || undefined}
-            />
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                marginTop: 6,
-                fontSize: 12,
-                color: "#555",
-              }}
-            >
-              {place.phone ? <div>📞 {place.phone}</div> : null}
+            <div style={{ display: "grid", gap: 10 }}>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: "#111827",
+                }}
+              >
+                {place.name}
+              </div>
 
-              {place.lat !== null && place.lng !== null ? (
-                <div>
-                  🌎 {Number(place.lat).toFixed(5)},{" "}
-                  {Number(place.lng).toFixed(5)}
+              {place.category ? (
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "#374151",
+                    fontWeight: 500,
+                  }}
+                >
+                  {place.category}
                 </div>
               ) : null}
 
-              {place.location_code ? <div>🧭 {place.location_code}</div> : null}
+              {place.address ? (
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "#374151",
+                  }}
+                >
+                  {place.address}
+                </div>
+              ) : null}
+
+              {place.notes ? (
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "#111827",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {place.notes}
+                </div>
+              ) : null}
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  marginTop: 2,
+                }}
+              >
+                {place.lat !== null && place.lng !== null ? (
+                  <>
+                    <a
+                      href={`https://maps.apple.com/?ll=${place.lat},${place.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="app-button app-button-primary"
+                      style={{
+                        textDecoration: "none",
+                        padding: "8px 14px",
+                        borderRadius: 999,
+                        fontSize: 14,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Apple Maps
+                    </a>
+
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="app-button app-button-primary"
+                      style={{
+                        textDecoration: "none",
+                        padding: "8px 14px",
+                        borderRadius: 999,
+                        fontSize: 14,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Google Maps
+                    </a>
+                  </>
+                ) : null}
+
+                {place.phone ? (
+                  <a
+                    href={`tel:${place.phone}`}
+                    className="app-button app-button-primary"
+                    style={{
+                      textDecoration: "none",
+                      padding: "8px 14px",
+                      borderRadius: 999,
+                      fontSize: 14,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Call
+                  </a>
+                ) : null}
+
+                {place.website ? (
+                  <a
+                    href={place.website}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="app-button app-button-primary"
+                    style={{
+                      textDecoration: "none",
+                      padding: "8px 14px",
+                      borderRadius: 999,
+                      fontSize: 14,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Website
+                  </a>
+                ) : null}
+              </div>
+
+              {(place.phone ||
+                place.location_code ||
+                (place.lat !== null && place.lng !== null)) && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 14,
+                    flexWrap: "wrap",
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTop: "1px solid rgba(0,0,0,0.08)",
+                    fontSize: 13,
+                    color: "#374151",
+                    fontWeight: 500,
+                  }}
+                >
+                  {place.phone ? <div>📞 {place.phone}</div> : null}
+
+                  {place.location_code ? (
+                    <div>
+                      📍 {place.location_code}
+                      {place.lat !== null && place.lng !== null
+                        ? ` • ${Number(place.lat).toFixed(5)}, ${Number(place.lng).toFixed(5)}`
+                        : ""}
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
+
             {place.distance_miles !== null &&
             place.distance_miles !== undefined ? (
               <div
