@@ -166,6 +166,40 @@ function eventFormFromPlace(place: EventPlace): EventPlaceForm {
   };
 }
 
+function getCoordinateStatus(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+  locationCode?: string | null,
+) {
+  const hasCoordinates =
+    lat !== null && lat !== undefined && lng !== null && lng !== undefined;
+
+  if (!hasCoordinates) {
+    return {
+      label: "🟡 Needs Geocode",
+      background: "#fff7d6",
+      border: "1px solid #f0c36d",
+      color: "#7a5200",
+    };
+  }
+
+  if (locationCode?.trim()) {
+    return {
+      label: "🔵 Plus Code",
+      background: "#e8f1ff",
+      border: "1px solid #93c5fd",
+      color: "#1d4ed8",
+    };
+  }
+
+  return {
+    label: "🟢 GPS Ready",
+    background: "#ecfdf3",
+    border: "1px solid #86efac",
+    color: "#166534",
+  };
+}
+
 export default function AdminNearbyPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_nearby">
@@ -198,6 +232,7 @@ function AdminNearbyPageInner() {
   const [savingStoredPlace, setSavingStoredPlace] = useState(false);
   const [savingEventPlace, setSavingEventPlace] = useState(false);
   const [copyingToEvent, setCopyingToEvent] = useState(false);
+  const [bulkGeocoding, setBulkGeocoding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -837,6 +872,75 @@ function AdminNearbyPageInner() {
       showError(err?.message || "Failed to delete stored place.");
     } finally {
       setSavingStoredPlace(false);
+    }
+  }
+
+  async function bulkGeocodeStoredPlaces() {
+    if (accessDenied) {
+      showError("You do not have access to this page.");
+      return;
+    }
+
+    if (!selectedAreaId) {
+      showError("Select a stored area first.");
+      return;
+    }
+
+    const missingPlaces = storedPlaces.filter(
+      (place) => place.lat === null || place.lng === null,
+    );
+
+    if (missingPlaces.length === 0) {
+      showStatus("All stored places already have coordinates.");
+      return;
+    }
+
+    try {
+      setBulkGeocoding(true);
+
+      let updatedCount = 0;
+
+      for (let index = 0; index < missingPlaces.length; index += 1) {
+        const place = missingPlaces[index];
+
+        showStatus(
+          `Bulk geocoding ${index + 1} of ${missingPlaces.length}: ${place.name}`,
+        );
+
+        const resolved = await geocodeLocation({
+          location_code: place.location_code ?? null,
+          address: place.address ?? null,
+        });
+
+        if (resolved.lat === null || resolved.lng === null) {
+          continue;
+        }
+
+        const { error } = await supabase
+          .from("nearby_master")
+          .update({
+            lat: resolved.lat,
+            lng: resolved.lng,
+          })
+          .eq("id", place.id);
+
+        if (error) {
+          throw error;
+        }
+
+        updatedCount += 1;
+      }
+
+      await loadStoredPlaces(selectedAreaId);
+
+      setStatus(
+        `Bulk geocode complete. Updated ${updatedCount} stored place${updatedCount === 1 ? "" : "s"}.`,
+      );
+    } catch (err: any) {
+      console.error("bulkGeocodeStoredPlaces error:", err);
+      showError(err?.message || "Bulk geocode failed.");
+    } finally {
+      setBulkGeocoding(false);
     }
   }
 
@@ -1554,6 +1658,11 @@ function AdminNearbyPageInner() {
                 ) : (
                   sortedStoredPlaces.map((place) => {
                     const selected = storedForm.id === place.id;
+                    const coordinateStatus = getCoordinateStatus(
+                      place.lat,
+                      place.lng,
+                      place.location_code,
+                    );
 
                     return (
                       <button
@@ -1574,8 +1683,58 @@ function AdminNearbyPageInner() {
                         }}
                       >
                         <div style={{ fontWeight: 700 }}>{place.name}</div>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            flexWrap: "wrap",
+                            marginTop: 6,
+                          }}
+                        >
+                          {(place.lat !== null && place.lng !== null) ||
+                          place.address ? (
+                            <a
+                              href={
+                                place.lat !== null && place.lng !== null
+                                  ? `https://www.google.com/maps?q=${place.lat},${place.lng}`
+                                  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || "")}`
+                              }
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                fontSize: 11,
+                                textDecoration: "none",
+                                background: "#eff6ff",
+                                border: "1px solid #93c5fd",
+                                color: "#1d4ed8",
+                                borderRadius: 999,
+                                padding: "3px 8px",
+                                fontWeight: 600,
+                              }}
+                            >
+                              Open in Google Maps
+                            </a>
+                          ) : null}
+                        </div>
                         <div style={{ fontSize: 13, color: "#555" }}>
                           {place.category || "Uncategorized"}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            background: coordinateStatus.background,
+                            border: coordinateStatus.border,
+                            color: coordinateStatus.color,
+                            borderRadius: 999,
+                            padding: "3px 8px",
+                            display: "inline-flex",
+                            width: "fit-content",
+                            marginTop: 6,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {coordinateStatus.label}
                         </div>
                         {place.address ? (
                           <div
@@ -1803,6 +1962,20 @@ function AdminNearbyPageInner() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => void bulkGeocodeStoredPlaces()}
+                    disabled={
+                      accessDenied ||
+                      bulkGeocoding ||
+                      loadingStoredPlaces ||
+                      storedPlaces.length === 0
+                    }
+                  >
+                    {bulkGeocoding
+                      ? "Bulk Geocoding..."
+                      : "Bulk Geocode Missing GPS"}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => void deleteStoredPlace()}
                     disabled={
                       accessDenied || !storedForm.id || savingStoredPlace
@@ -1931,6 +2104,52 @@ function AdminNearbyPageInner() {
                   </div>
                 ) : null}
 
+                {/* New metadata section below address */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    fontSize: 12,
+                    color: "#555",
+                  }}
+                >
+                  {place.phone ? <div>📞 {place.phone}</div> : null}
+                  {place.website ? <div>🌐 Website Available</div> : null}
+                  {place.lat !== null && place.lng !== null ? (
+                    <div>
+                      📍 {Number(place.lat).toFixed(5)},{" "}
+                      {Number(place.lng).toFixed(5)}
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Google Maps link block before button wrapper */}
+                {(place.lat !== null && place.lng !== null) || place.address ? (
+                  <a
+                    href={
+                      place.lat !== null && place.lng !== null
+                        ? `https://www.google.com/maps?q=${place.lat},${place.lng}`
+                        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || "")}`
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      fontSize: 12,
+                      textDecoration: "none",
+                      background: "#eff6ff",
+                      border: "1px solid #93c5fd",
+                      color: "#1d4ed8",
+                      borderRadius: 999,
+                      padding: "5px 10px",
+                      width: "fit-content",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Open Google Result in Maps
+                  </a>
+                ) : null}
+
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button
                     type="button"
@@ -1940,6 +2159,18 @@ function AdminNearbyPageInner() {
                         name: place.name || "",
                         category: place.category || "",
                         address: place.address || "",
+                        phone: place.phone || "",
+                        website: place.website || "",
+                        notes: place.editorialSummary || "",
+                        location_code: place.plusCode || "",
+                        lat:
+                          place.lat === null || place.lat === undefined
+                            ? ""
+                            : String(place.lat),
+                        lng:
+                          place.lng === null || place.lng === undefined
+                            ? ""
+                            : String(place.lng),
                       });
 
                       window.scrollTo({
@@ -1963,6 +2194,18 @@ function AdminNearbyPageInner() {
                         name: place.name || "",
                         category: place.category || "",
                         address: place.address || "",
+                        phone: place.phone || "",
+                        website: place.website || "",
+                        notes: place.editorialSummary || "",
+                        location_code: place.plusCode || "",
+                        lat:
+                          place.lat === null || place.lat === undefined
+                            ? ""
+                            : String(place.lat),
+                        lng:
+                          place.lng === null || place.lng === undefined
+                            ? ""
+                            : String(place.lng),
                       });
 
                       showStatus(
@@ -2019,6 +2262,11 @@ function AdminNearbyPageInner() {
               ) : (
                 sortedEventPlaces.map((place) => {
                   const selected = eventForm.id === place.id;
+                  const coordinateStatus = getCoordinateStatus(
+                    place.lat,
+                    place.lng,
+                    place.location_code,
+                  );
 
                   return (
                     <button
@@ -2037,8 +2285,58 @@ function AdminNearbyPageInner() {
                       }}
                     >
                       <div style={{ fontWeight: 700 }}>{place.name}</div>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 6,
+                          flexWrap: "wrap",
+                          marginTop: 6,
+                        }}
+                      >
+                        {(place.lat !== null && place.lng !== null) ||
+                        place.address ? (
+                          <a
+                            href={
+                              place.lat !== null && place.lng !== null
+                                ? `https://www.google.com/maps?q=${place.lat},${place.lng}`
+                                : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || "")}`
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              fontSize: 11,
+                              textDecoration: "none",
+                              background: "#eff6ff",
+                              border: "1px solid #93c5fd",
+                              color: "#1d4ed8",
+                              borderRadius: 999,
+                              padding: "3px 8px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Open in Google Maps
+                          </a>
+                        ) : null}
+                      </div>
                       <div style={{ fontSize: 13, color: "#555" }}>
                         {place.category || "Uncategorized"}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          background: coordinateStatus.background,
+                          border: coordinateStatus.border,
+                          color: coordinateStatus.color,
+                          borderRadius: 999,
+                          padding: "3px 8px",
+                          display: "inline-flex",
+                          width: "fit-content",
+                          marginTop: 6,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {coordinateStatus.label}
                       </div>
                       {place.address ? (
                         <div
