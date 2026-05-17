@@ -49,7 +49,6 @@ function formatDateRange(
 
 function getNearbyCardColor(category: string | null | undefined) {
   const normalized = (category || "").trim().toLowerCase();
-
   const colorMap: Record<string, string> = {
     food: "#fef3c7",
     restaurant: "#fef3c7",
@@ -73,24 +72,11 @@ function getNearbyCardColor(category: string | null | undefined) {
     services: "#f1f5f9",
     nearby: "#f8fafc",
   };
-
   return colorMap[normalized] || "#f8fafc";
-}
-
-function nearbyCardStyle(place: Place) {
-  return {
-    border: "1px solid rgba(17,24,39,0.14)",
-    background: sanitizeCardColor(getNearbyCardColor(place.category)),
-    borderRadius: 10,
-    padding: 6,
-    boxShadow: "0 1px 4px rgba(15,23,42,0.05)",
-    color: "#111827",
-  };
 }
 
 function nearbyCategoryIcon(category: string) {
   const normalized = category.trim().toLowerCase();
-
   if (normalized === "all") {
     return "•";
   }
@@ -137,9 +123,19 @@ function nearbyCategoryIcon(category: string) {
   ) {
     return "⭐";
   }
-
   return "🧭";
 }
+
+const actionBtnStyle: React.CSSProperties = {
+  display: "inline-block",
+  textDecoration: "none",
+  padding: "12px 22px",
+  borderRadius: 999,
+  fontSize: 15,
+  fontWeight: 700,
+  background: "#1d4ed8",
+  color: "#fff",
+};
 
 function NearbyPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
@@ -257,13 +253,11 @@ function NearbyPageInner() {
     const categories = Array.from(
       new Set(places.map((p) => p.category).filter(Boolean)),
     ) as string[];
-
     const preferredOrder = ["Fuel", "Urgent Care", "Pharmacy", "Groceries"];
     const ordered = preferredOrder.filter((c) => categories.includes(c));
     const remaining = categories
       .filter((c) => !preferredOrder.includes(c))
       .sort((a, b) => a.localeCompare(b));
-
     return ["All", ...ordered, ...remaining];
   }, [places]);
 
@@ -271,7 +265,6 @@ function NearbyPageInner() {
     if (selectedCategory === "All") {
       return places;
     }
-
     return places.filter(
       (place) =>
         (place.category || "").toLowerCase() === selectedCategory.toLowerCase(),
@@ -284,6 +277,7 @@ function NearbyPageInner() {
 
   return (
     <div className="grid" style={{ gap: 6 }}>
+      {/* Header card */}
       <div className="card" style={{ padding: 8 }}>
         {listReady ? (
           <span
@@ -301,21 +295,19 @@ function NearbyPageInner() {
         <div style={{ marginTop: 4, fontWeight: 700, fontSize: 14 }}>
           Current event: {event?.name || "No current event"}
         </div>
-
         {event?.venue_name ? (
           <div style={{ color: "#555", marginTop: 2 }}>{event.venue_name}</div>
         ) : null}
-
         {event?.location ? (
           <div style={{ color: "#555", marginTop: 2 }}>{event.location}</div>
         ) : null}
-
         {dateRange ? (
           <div style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
             {dateRange}
           </div>
         ) : null}
 
+        {/* Category chips */}
         <div
           className="btn-row"
           style={{
@@ -373,182 +365,229 @@ function NearbyPageInner() {
         ) : null}
       </div>
 
-      <div className="grid grid-2" style={{ gap: 6 }}>
+      {/* Places list */}
+      <div style={{ display: "grid", gap: 12 }}>
         {filteredPlaces.map((place) => (
-          <div key={place.id} style={nearbyCardStyle(place)}>
-            <div style={{ display: "grid", gap: 10 }}>
+          <div
+            key={place.id}
+            style={{
+              background: "#fff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              overflow: "hidden",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+            }}
+          >
+            {/* Main content */}
+            <div style={{ padding: "20px 20px 16px" }}>
+              {/* Name */}
               <div
                 style={{
-                  fontSize: 15,
-                  fontWeight: 700,
+                  fontSize: 22,
+                  fontWeight: 800,
                   color: "#111827",
+                  marginBottom: 6,
                 }}
               >
                 {place.name}
               </div>
 
-              {place.category ? (
+              {/* Category */}
+              {place.category && (
                 <div
-                  style={{
-                    fontSize: 14,
-                    color: "#374151",
-                    fontWeight: 500,
-                  }}
+                  style={{ fontSize: 15, color: "#6b7280", marginBottom: 14 }}
                 >
                   {place.category}
                 </div>
-              ) : null}
+              )}
 
-              {place.address ? (
+              {/* Address */}
+              {place.address && (
                 <div
-                  style={{
-                    fontSize: 14,
-                    color: "#374151",
-                  }}
+                  style={{ fontSize: 16, color: "#111827", marginBottom: 14 }}
                 >
                   {place.address}
                 </div>
-              ) : null}
+              )}
 
-              {place.notes ? (
+              {/* Phone as link */}
+              {place.phone && (
                 <div
                   style={{
-                    fontSize: 14,
-                    color: "#111827",
-                    lineHeight: 1.5,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 10,
                   }}
                 >
-                  {place.notes}
-                </div>
-              ) : null}
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
-                  marginTop: 2,
-                }}
-              >
-                {place.lat !== null && place.lng !== null ? (
-                  <>
-                    <a
-                      href={`https://maps.apple.com/?ll=${place.lat},${place.lng}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="app-button app-button-primary"
-                      style={{
-                        textDecoration: "none",
-                        padding: "8px 14px",
-                        borderRadius: 999,
-                        fontSize: 14,
-                        fontWeight: 700,
-                      }}
-                    >
-                      Apple Maps
-                    </a>
-
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="app-button app-button-primary"
-                      style={{
-                        textDecoration: "none",
-                        padding: "8px 14px",
-                        borderRadius: 999,
-                        fontSize: 14,
-                        fontWeight: 700,
-                      }}
-                    >
-                      Google Maps
-                    </a>
-                  </>
-                ) : null}
-
-                {place.phone ? (
+                  <span style={{ fontSize: 20 }}>📞</span>
                   <a
                     href={`tel:${place.phone}`}
-                    className="app-button app-button-primary"
                     style={{
+                      fontSize: 16,
+                      color: "#2563eb",
                       textDecoration: "none",
-                      padding: "8px 14px",
-                      borderRadius: 999,
-                      fontSize: 14,
-                      fontWeight: 700,
+                      fontWeight: 500,
                     }}
                   >
-                    Call
+                    {place.phone}
                   </a>
-                ) : null}
+                </div>
+              )}
 
-                {place.website ? (
+              {/* Website as link */}
+              {place.website && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 14,
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>🌐</span>
                   <a
                     href={place.website}
                     target="_blank"
                     rel="noreferrer"
-                    className="app-button app-button-primary"
                     style={{
+                      fontSize: 16,
+                      color: "#2563eb",
                       textDecoration: "none",
-                      padding: "8px 14px",
-                      borderRadius: 999,
-                      fontSize: 14,
-                      fontWeight: 700,
+                      fontWeight: 500,
                     }}
                   >
-                    Website
+                    {place.website}
                   </a>
-                ) : null}
-              </div>
+                </div>
+              )}
 
-              {(place.phone ||
-                place.location_code ||
-                (place.lat !== null && place.lng !== null)) && (
+              {/* Notes */}
+              {place.notes && (
                 <div
                   style={{
-                    display: "flex",
-                    gap: 14,
-                    flexWrap: "wrap",
-                    marginTop: 8,
-                    paddingTop: 8,
-                    borderTop: "1px solid rgba(0,0,0,0.08)",
-                    fontSize: 13,
+                    fontSize: 15,
                     color: "#374151",
-                    fontWeight: 500,
+                    lineHeight: 1.6,
+                    marginBottom: 18,
                   }}
                 >
-                  {place.phone ? <div>📞 {place.phone}</div> : null}
+                  {place.notes}
+                </div>
+              )}
 
-                  {place.location_code ? (
-                    <div>
-                      📍 {place.location_code}
-                      {place.lat !== null && place.lng !== null
-                        ? ` • ${Number(place.lat).toFixed(5)}, ${Number(place.lng).toFixed(5)}`
-                        : ""}
-                    </div>
-                  ) : null}
+              {/* Action buttons */}
+              {(place.lat !== null || place.phone || place.website) && (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {place.lat !== null && place.lng !== null && (
+                    <>
+                      <a
+                        href={`https://maps.apple.com/?ll=${place.lat},${place.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={actionBtnStyle}
+                      >
+                        Apple Maps
+                      </a>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={actionBtnStyle}
+                      >
+                        Google Maps
+                      </a>
+                    </>
+                  )}
+                  {place.phone && (
+                    <a href={`tel:${place.phone}`} style={actionBtnStyle}>
+                      Call
+                    </a>
+                  )}
+                  {place.website && (
+                    <a
+                      href={place.website}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={actionBtnStyle}
+                    >
+                      Website
+                    </a>
+                  )}
                 </div>
               )}
             </div>
 
-            {place.distance_miles !== null &&
-            place.distance_miles !== undefined ? (
+            {/* Footer bar */}
+            {(place.location_code ||
+              (place.lat !== null && place.lng !== null)) && (
               <div
                 style={{
-                  display: "inline-block",
-                  marginTop: 3,
-                  padding: "1px 6px",
-                  borderRadius: 999,
-                  background: "rgba(255,255,255,0.82)",
-                  border: "1px solid rgba(0,0,0,0.08)",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "#111827",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                  padding: "12px 20px",
+                  background: "#f8fafc",
+                  borderTop: "1px solid #e5e7eb",
+                  fontSize: 14,
+                  color: "#374151",
                 }}
               >
-                {place.distance_miles} mi
+                {place.location_code && (
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <span
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: "50%",
+                        background: "#374151",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 14,
+                      }}
+                    >
+                      🧭
+                    </span>
+                    <span>{place.location_code}</span>
+                  </div>
+                )}
+
+                {place.location_code && place.lat !== null && (
+                  <span style={{ color: "#d1d5db" }}>|</span>
+                )}
+
+                {place.lat !== null && place.lng !== null && (
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <span style={{ fontSize: 18 }}>🌐</span>
+                    <span>
+                      {Number(place.lat).toFixed(5)},{" "}
+                      {Number(place.lng).toFixed(5)}
+                    </span>
+                  </div>
+                )}
+
+                {place.distance_miles !== null && (
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      padding: "2px 10px",
+                      borderRadius: 999,
+                      background: "#e5e7eb",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "#374151",
+                    }}
+                  >
+                    {place.distance_miles} mi
+                  </span>
+                )}
               </div>
-            ) : null}
+            )}
           </div>
         ))}
 
