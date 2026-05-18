@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { geocodeLocation } from "@/lib/geocodeLocation";
@@ -185,18 +185,18 @@ function getCoordinateStatus(
 
   if (locationCode?.trim()) {
     return {
-      label: "🔵 Plus Code",
-      background: "#e8f1ff",
-      border: "1px solid #93c5fd",
-      color: "#1d4ed8",
+      label: "🟢 Plus Code",
+      background: "#ecfdf3",
+      border: "1px solid #86efac",
+      color: "#166534",
     };
   }
 
   return {
-    label: "🟢 GPS Ready",
-    background: "#ecfdf3",
-    border: "1px solid #86efac",
-    color: "#166534",
+    label: "🔵 GPS Ready",
+    background: "#e8f1ff",
+    border: "1px solid #93c5fd",
+    color: "#1d4ed8",
   };
 }
 
@@ -222,6 +222,76 @@ function AdminNearbyPageInner() {
 
   const [storedForm, setStoredForm] =
     useState<StoredPlaceForm>(emptyStoredPlaceForm);
+
+  const [storedDraftLoaded, setStoredDraftLoaded] = useState(false);
+
+  const lastFocusedStoredFieldRef = useRef<string | null>(null);
+
+  function rememberStoredFieldFocus(fieldName: string) {
+    lastFocusedStoredFieldRef.current = fieldName;
+  }
+
+  useEffect(() => {
+    if (storedDraftLoaded) {
+      return;
+    }
+
+    try {
+      const saved = localStorage.getItem("admin-nearby-draft");
+
+      if (saved) {
+        setStoredForm(JSON.parse(saved));
+      }
+    } catch (err) {
+      console.error("Could not restore nearby draft:", err);
+    } finally {
+      setStoredDraftLoaded(true);
+    }
+  }, [storedDraftLoaded]);
+
+  useEffect(() => {
+    if (!storedDraftLoaded) {
+      return;
+    }
+
+    try {
+      const nextDraft = JSON.stringify(storedForm);
+      const currentDraft = localStorage.getItem("admin-nearby-draft");
+
+      if (currentDraft !== nextDraft) {
+        localStorage.setItem("admin-nearby-draft", nextDraft);
+      }
+    } catch (err) {
+      console.error("Could not save nearby draft:", err);
+    }
+  }, [storedForm, storedDraftLoaded]);
+
+  useEffect(() => {
+    function restoreStoredFieldFocus() {
+      if (!lastFocusedStoredFieldRef.current) {
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        const field = document.querySelector(
+          `[data-stored-field="${lastFocusedStoredFieldRef.current}"]`,
+        ) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+
+        if (field) {
+          field.focus();
+        }
+      });
+    }
+
+    window.addEventListener("focus", restoreStoredFieldFocus);
+    document.addEventListener("visibilitychange", restoreStoredFieldFocus);
+
+    return () => {
+      window.removeEventListener("focus", restoreStoredFieldFocus);
+      document.removeEventListener("visibilitychange", restoreStoredFieldFocus);
+    };
+  }, []);
+
   const [eventForm, setEventForm] =
     useState<EventPlaceForm>(emptyEventPlaceForm);
 
@@ -608,7 +678,6 @@ function AdminNearbyPageInner() {
       void loadStoredPlaces(selectedAreaId);
     } else {
       setStoredPlaces([]);
-      setStoredForm(emptyStoredPlaceForm);
     }
   }, [selectedAreaId, accessDenied, loadStoredPlaces]);
 
@@ -893,6 +962,9 @@ function AdminNearbyPageInner() {
       }
 
       await loadStoredPlaces(selectedAreaId);
+
+      localStorage.removeItem("admin-nearby-draft");
+
       setStoredForm(emptyStoredPlaceForm);
     } catch (err: any) {
       console.error("saveStoredPlace error:", err);
@@ -932,9 +1004,11 @@ function AdminNearbyPageInner() {
         throw error;
       }
 
+      const deletedPlaceName = storedForm.name;
+
       await loadStoredPlaces(selectedAreaId);
-      setStoredForm(emptyStoredPlaceForm);
-      setStatus(`Deleted stored place "${storedForm.name}".`);
+
+      setStatus(`Deleted stored place "${deletedPlaceName}".`);
     } catch (err: any) {
       console.error("deleteStoredPlace error:", err);
       showError(err?.message || "Failed to delete stored place.");
@@ -2001,6 +2075,8 @@ function AdminNearbyPageInner() {
 
               <div style={{ display: "grid", gap: 8 }}>
                 <input
+                  data-stored-field="name"
+                  onFocus={() => rememberStoredFieldFocus("name")}
                   value={storedForm.name}
                   onChange={(e) =>
                     setStoredForm((prev) => ({ ...prev, name: e.target.value }))
@@ -2010,6 +2086,8 @@ function AdminNearbyPageInner() {
                   disabled={accessDenied || savingStoredPlace}
                 />
                 <select
+                  data-stored-field="category"
+                  onFocus={() => rememberStoredFieldFocus("category")}
                   value={
                     showStoredCustomCategory
                       ? "__custom__"
@@ -2069,6 +2147,8 @@ function AdminNearbyPageInner() {
 
                 {showStoredCustomCategory ? (
                   <input
+                    data-stored-field="custom-category"
+                    onFocus={() => rememberStoredFieldFocus("custom-category")}
                     value={storedCustomCategory}
                     onChange={(e) => {
                       const nextValue = e.target.value;
@@ -2085,6 +2165,8 @@ function AdminNearbyPageInner() {
                 ) : null}
 
                 <input
+                  data-stored-field="address"
+                  onFocus={() => rememberStoredFieldFocus("address")}
                   value={storedForm.address}
                   onChange={(e) =>
                     setStoredForm((prev) => ({
@@ -2097,6 +2179,8 @@ function AdminNearbyPageInner() {
                   disabled={accessDenied || savingStoredPlace}
                 />
                 <input
+                  data-stored-field="phone"
+                  onFocus={() => rememberStoredFieldFocus("phone")}
                   value={storedForm.phone}
                   onChange={(e) =>
                     setStoredForm((prev) => ({
@@ -2109,6 +2193,8 @@ function AdminNearbyPageInner() {
                   disabled={accessDenied || savingStoredPlace}
                 />
                 <input
+                  data-stored-field="website"
+                  onFocus={() => rememberStoredFieldFocus("website")}
                   value={storedForm.website}
                   onChange={(e) =>
                     setStoredForm((prev) => ({
@@ -2121,6 +2207,8 @@ function AdminNearbyPageInner() {
                   disabled={accessDenied || savingStoredPlace}
                 />
                 <textarea
+                  data-stored-field="notes"
+                  onFocus={() => rememberStoredFieldFocus("notes")}
                   value={storedForm.notes}
                   onChange={(e) =>
                     setStoredForm((prev) => ({
@@ -2142,6 +2230,8 @@ function AdminNearbyPageInner() {
                   }}
                 >
                   <input
+                    data-stored-field="lat"
+                    onFocus={() => rememberStoredFieldFocus("lat")}
                     value={storedForm.lat}
                     onChange={(e) =>
                       setStoredForm((prev) => ({
@@ -2154,6 +2244,8 @@ function AdminNearbyPageInner() {
                     disabled={accessDenied || savingStoredPlace}
                   />
                   <input
+                    data-stored-field="lng"
+                    onFocus={() => rememberStoredFieldFocus("lng")}
                     value={storedForm.lng}
                     onChange={(e) =>
                       setStoredForm((prev) => ({
@@ -2168,6 +2260,8 @@ function AdminNearbyPageInner() {
                 </div>
 
                 <input
+                  data-stored-field="location_code"
+                  onFocus={() => rememberStoredFieldFocus("location_code")}
                   value={storedForm.location_code}
                   onChange={(e) =>
                     setStoredForm((prev) => ({
@@ -2190,7 +2284,16 @@ function AdminNearbyPageInner() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStoredForm(emptyStoredPlaceForm)}
+                    onClick={() => {
+                      localStorage.removeItem("admin-nearby-draft");
+
+                      setStoredCustomCategory("");
+                      setShowStoredCustomCategory(false);
+
+                      setStoredForm({
+                        ...emptyStoredPlaceForm,
+                      });
+                    }}
                     disabled={accessDenied || savingStoredPlace}
                   >
                     New Blank
