@@ -465,6 +465,14 @@ function AdminNearbyPageInner() {
     }
   }, [selectedArea]);
 
+  useEffect(() => {
+    if (!selectedAreaId) {
+      return;
+    }
+
+    localStorage.setItem("fcoc-nearby-selected-area-id", selectedAreaId);
+  }, [selectedAreaId]);
+
   const duplicateKeys = useMemo(() => {
     const counts = new Map<string, number>();
 
@@ -563,17 +571,73 @@ function AdminNearbyPageInner() {
 
       if (rows.length > 0) {
         setSelectedAreaId((current) => {
+          // FIRST PRIORITY:
+          // Match admin event name to nearby area name
+          if (adminEvent?.name) {
+            const normalizedEventName = adminEvent.name.toLowerCase().trim();
+
+            const matchingByName = rows.find((row) => {
+              const normalizedAreaName = row.name.toLowerCase().trim();
+
+              return (
+                normalizedAreaName.includes(normalizedEventName) ||
+                normalizedEventName.includes(normalizedAreaName)
+              );
+            });
+
+            if (matchingByName) {
+              return matchingByName.id;
+            }
+          }
+
+          // SECOND PRIORITY:
+          // Match city from event location
+          if (adminEvent?.location) {
+            const locationParts = adminEvent.location
+              .split(",")
+              .map((part) => part.trim().toLowerCase())
+              .filter(Boolean);
+
+            const possibleCity =
+              locationParts.length >= 2 ? locationParts[1] : "";
+
+            if (possibleCity) {
+              const matchingByCity = rows.find((row) => {
+                const normalizedAreaName = row.name.toLowerCase().trim();
+
+                return normalizedAreaName.includes(possibleCity);
+              });
+
+              if (matchingByCity) {
+                return matchingByCity.id;
+              }
+            }
+          }
+
+          // THIRD PRIORITY:
+          // Keep current valid selection
           if (current && rows.some((row) => row.id === current)) {
             return current;
           }
+
+          // FOURTH PRIORITY:
+          // Restore previously selected area
+          const savedAreaId = localStorage.getItem(
+            "fcoc-nearby-selected-area-id",
+          );
+
+          if (savedAreaId && rows.some((row) => row.id === savedAreaId)) {
+            return savedAreaId;
+          }
+
+          // FINAL FALLBACK:
+          // First alphabetical area
           return rows[0].id;
         });
+
         setStatus(
           `Loaded ${rows.length} stored area${rows.length === 1 ? "" : "s"}.`,
         );
-      } else {
-        setSelectedAreaId("");
-        setStatus("No stored areas found.");
       }
     } catch (err: any) {
       console.error("loadStoredAreas error:", err);
@@ -583,7 +647,7 @@ function AdminNearbyPageInner() {
     } finally {
       setLoadingAreas(false);
     }
-  }, []);
+  }, [adminEvent]);
 
   const loadStoredPlaces = useCallback(async (areaId: string) => {
     try {
@@ -1691,6 +1755,10 @@ function AdminNearbyPageInner() {
                 disabled={accessDenied || loadingAreas}
                 onChange={(e) => {
                   setSelectedAreaId(e.target.value);
+
+                  setStoredCustomCategory("");
+                  setShowStoredCustomCategory(false);
+
                   setStoredForm(emptyStoredPlaceForm);
                 }}
                 style={{
