@@ -776,7 +776,7 @@ function AdminDashboardPageInner() {
         />
       </div>
 
-      {adminAccess?.isSuperAdmin && systemStatus ? (
+      {adminAccess?.isSuperAdmin ? (
         <div className="card" style={sectionCardStyle}>
           <div style={sectionTitleStyle}>Super Admin System Status</div>
 
@@ -788,21 +788,22 @@ function AdminDashboardPageInner() {
             }}
           >
             <div>
-              <strong>App Health:</strong> {systemStatus.status}
+              <strong>App Health:</strong>{" "}
+              {systemStatus?.status || "Refreshing..."}
             </div>
 
             <div>
               <strong>Last Good Deploy:</strong>{" "}
-              {systemStatus.lastDeployedAt
+              {systemStatus?.lastDeployedAt
                 ? new Date(systemStatus.lastDeployedAt).toLocaleString()
-                : "Unknown"}
+                : "Refreshing..."}
             </div>
 
             <div>
               <strong>Version:</strong>{" "}
-              {systemStatus.commit
+              {systemStatus?.commit
                 ? systemStatus.commit.slice(0, 7)
-                : "Unknown"}
+                : "Refreshing..."}
             </div>
           </div>
         </div>
