@@ -32,6 +32,8 @@ type SystemStatus = {
   status: string;
   commit: string | null;
   lastDeployedAt: string | null;
+  environment?: string | null;
+  dirty?: boolean;
 };
 
 type HouseholdMember = {
@@ -800,9 +802,14 @@ function AdminDashboardPageInner() {
             </div>
 
             <div>
+              <strong>Environment:</strong>{" "}
+              {systemStatus?.environment || "Unknown"}
+            </div>
+
+            <div>
               <strong>Version:</strong>{" "}
               {systemStatus?.commit
-                ? systemStatus.commit.slice(0, 7)
+                ? `${systemStatus.commit.slice(0, 7)}${systemStatus?.dirty ? "*" : ""}`
                 : "Refreshing..."}
             </div>
           </div>
