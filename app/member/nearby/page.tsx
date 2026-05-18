@@ -127,14 +127,18 @@ function nearbyCategoryIcon(category: string) {
 }
 
 const actionBtnStyle: React.CSSProperties = {
-  display: "inline-block",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   textDecoration: "none",
-  padding: "12px 22px",
-  borderRadius: 999,
+  minHeight: 48,
+  padding: "12px 20px",
+  borderRadius: 14,
   fontSize: 15,
   fontWeight: 700,
-  background: "#1d4ed8",
+  background: "#2563eb",
   color: "#fff",
+  boxShadow: "0 2px 8px rgba(37,99,235,0.25)",
 };
 
 function NearbyPageInner() {
@@ -261,19 +265,79 @@ function NearbyPageInner() {
     return ["All", ...ordered, ...remaining];
   }, [places]);
 
-  const filteredPlaces = useMemo(() => {
-    if (selectedCategory === "All") {
-      return places;
+  const closestPlaces = useMemo(() => {
+    function findClosest(matchers: string[]) {
+      return places
+        .filter((place) => {
+          if (place.distance_miles === null) {
+            return false;
+          }
+
+          const category = (place.category || "").toLowerCase();
+
+          return matchers.some((matcher) =>
+            category.includes(matcher.toLowerCase()),
+          );
+        })
+        .sort((a, b) => {
+          return (a.distance_miles || 0) - (b.distance_miles || 0);
+        })[0];
     }
-    return places.filter(
-      (place) =>
-        (place.category || "").toLowerCase() === selectedCategory.toLowerCase(),
-    );
+
+    return [
+      {
+        label: "Fuel",
+        icon: "⛽",
+        category: "Fuel",
+        place: findClosest(["fuel", "gas", "diesel"]),
+      },
+      {
+        label: "Groceries",
+        icon: "🛒",
+        category: "Groceries",
+        place: findClosest(["grocery", "groceries"]),
+      },
+      {
+        label: "Urgent Care",
+        icon: "💊",
+        category: "Urgent Care",
+        place: findClosest(["urgent", "medical", "hospital"]),
+      },
+      {
+        label: "Pharmacy",
+        icon: "💉",
+        category: "Pharmacy",
+        place: findClosest(["pharmacy"]),
+      },
+    ].filter((item) => item.place);
+  }, [places]);
+
+  const filteredPlaces = useMemo(() => {
+    return places.filter((place) => {
+      return (
+        selectedCategory === "All" ||
+        (place.category || "") === selectedCategory
+      );
+    });
   }, [places, selectedCategory]);
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
   const listReady =
     !error && !!event && !status.toLowerCase().startsWith("loading");
+  function jumpToCategory(category: string) {
+    setSelectedCategory(category);
+
+    requestAnimationFrame(() => {
+      const target = document.querySelector(`[data-category="${category}"]`);
+
+      if (target) {
+        target.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }
+    });
+  }
 
   return (
     <div className="grid" style={{ gap: 6 }}>
@@ -340,6 +404,60 @@ function NearbyPageInner() {
           ))}
         </div>
 
+        {/* Quick Actions */}
+        {closestPlaces.length > 0 ? (
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+              paddingBottom: 6,
+              marginTop: 10,
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {closestPlaces.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => jumpToCategory(item.category)}
+                style={{
+                  whiteSpace: "nowrap",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  borderRadius: 999,
+                  padding: "10px 14px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "#111827",
+                  cursor: "pointer",
+                  boxShadow: "0 1px 4px rgba(15,23,42,0.05)",
+                }}
+              >
+                {item.icon} Closest {item.label}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => setSelectedCategory("All")}
+              style={{
+                whiteSpace: "nowrap",
+                border: "1px solid #cbd5e1",
+                background: "#eff6ff",
+                borderRadius: 999,
+                padding: "10px 14px",
+                fontSize: 13,
+                fontWeight: 700,
+                color: "#1d4ed8",
+                cursor: "pointer",
+              }}
+            >
+              🔎 Reset Filters
+            </button>
+          </div>
+        ) : null}
+
         {status ? (
           <div style={{ marginTop: 5, fontSize: 11, color: "#666" }}>
             {status}
@@ -370,16 +488,26 @@ function NearbyPageInner() {
         {filteredPlaces.map((place) => (
           <div
             key={place.id}
+            data-category={place.category || "Other"}
             style={{
               background: "#fff",
-              border: "1px solid #e5e7eb",
-              borderRadius: 12,
+              border: "1px solid #dbe3ee",
+              borderRadius: 18,
               overflow: "hidden",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+              boxShadow: "0 8px 24px rgba(15,23,42,0.08)",
             }}
           >
+            <div
+              style={{
+                height: 8,
+                background: sanitizeCardColor(
+                  getNearbyCardColor(place.category),
+                ),
+              }}
+            />
             {/* Main content */}
-            <div style={{ padding: "20px 20px 16px" }}>
+            <div style={{ padding: "22px 22px 18px" }}>
+              {" "}
               {/* Name */}
               <div
                 style={{
@@ -391,7 +519,6 @@ function NearbyPageInner() {
               >
                 {place.name}
               </div>
-
               {/* Category */}
               {place.category && (
                 <div
@@ -400,7 +527,6 @@ function NearbyPageInner() {
                   {place.category}
                 </div>
               )}
-
               {/* Address */}
               {place.address && (
                 <div
@@ -409,7 +535,6 @@ function NearbyPageInner() {
                   {place.address}
                 </div>
               )}
-
               {/* Phone as link */}
               {place.phone && (
                 <div
@@ -434,7 +559,6 @@ function NearbyPageInner() {
                   </a>
                 </div>
               )}
-
               {/* Website as link */}
               {place.website && (
                 <div
@@ -461,7 +585,6 @@ function NearbyPageInner() {
                   </a>
                 </div>
               )}
-
               {/* Notes */}
               {place.notes && (
                 <div
@@ -475,10 +598,17 @@ function NearbyPageInner() {
                   {place.notes}
                 </div>
               )}
-
               {/* Action buttons */}
               {(place.lat !== null || place.phone || place.website) && (
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    marginTop: 8,
+                  }}
+                >
+                  {" "}
                   {place.lat !== null && place.lng !== null && (
                     <>
                       <a
