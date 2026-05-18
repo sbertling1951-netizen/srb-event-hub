@@ -1,5 +1,20 @@
 "use client";
 
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -200,6 +215,203 @@ function getCoordinateStatus(
   };
 }
 
+function SortableEventPlaceCard(props: {
+  place: EventPlace;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { place, selected, onSelect } = props;
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: place.id,
+  });
+
+  const coordinateStatus = getCoordinateStatus(
+    place.lat,
+    place.lng,
+    place.location_code,
+  );
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        touchAction: "none",
+      }}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        onClick={onSelect}
+        style={{
+          textAlign: "left",
+          padding: 10,
+          borderRadius: 8,
+          border: selected ? "1px solid #f0c36d" : "1px solid #e5e7eb",
+          background: selected ? "#fff7d6" : "white",
+          cursor: "grab",
+          display: "grid",
+          gap: 6,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>{place.name}</div>
+
+          <div
+            style={{
+              fontSize: 18,
+              opacity: 0.5,
+            }}
+          >
+            ☰
+          </div>
+        </div>
+
+        <div style={{ fontSize: 13, color: "#555" }}>
+          {place.category || "Uncategorized"}
+        </div>
+
+        <div
+          style={{
+            fontSize: 11,
+            background: coordinateStatus.background,
+            border: coordinateStatus.border,
+            color: coordinateStatus.color,
+            borderRadius: 999,
+            padding: "3px 8px",
+            display: "inline-flex",
+            width: "fit-content",
+            marginTop: 6,
+            fontWeight: 600,
+          }}
+        >
+          {coordinateStatus.label}
+        </div>
+
+        {place.address ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: "#666",
+            }}
+          >
+            {place.address}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function StoredPlaceCard(props: {
+  place: StoredPlace;
+  selected: boolean;
+  isDuplicate: boolean;
+  onSelect: () => void;
+}) {
+  const { place, selected, isDuplicate, onSelect } = props;
+
+  const coordinateStatus = getCoordinateStatus(
+    place.lat,
+    place.lng,
+    place.location_code,
+  );
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      style={{
+        textAlign: "left",
+        padding: 10,
+        borderRadius: 8,
+        border: selected ? "1px solid #f0c36d" : "1px solid #e5e7eb",
+        background: selected ? "#fff7d6" : "white",
+        cursor: "pointer",
+        display: "grid",
+        gap: 6,
+        width: "100%",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>{place.name}</div>
+
+        {isDuplicate ? (
+          <div
+            style={{
+              fontSize: 11,
+              background: "#fee2e2",
+              border: "1px solid #fca5a5",
+              color: "#991b1b",
+              borderRadius: 999,
+              padding: "3px 8px",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Duplicate
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ fontSize: 13, color: "#555" }}>
+        {place.category || "Uncategorized"}
+      </div>
+
+      <div
+        style={{
+          fontSize: 11,
+          background: coordinateStatus.background,
+          border: coordinateStatus.border,
+          color: coordinateStatus.color,
+          borderRadius: 999,
+          padding: "3px 8px",
+          display: "inline-flex",
+          width: "fit-content",
+          marginTop: 4,
+          fontWeight: 600,
+        }}
+      >
+        {coordinateStatus.label}
+      </div>
+
+      {place.address ? (
+        <div
+          style={{
+            fontSize: 12,
+            color: "#666",
+          }}
+        >
+          {place.address}
+        </div>
+      ) : null}
+    </button>
+  );
+}
+
 export default function AdminNearbyPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_nearby">
@@ -211,6 +423,14 @@ export default function AdminNearbyPage() {
 function AdminNearbyPageInner() {
   const [adminEvent, setAdminEvent] = useState<AdminEventContext | null>(null);
   const [status, setStatus] = useState("Loading nearby admin...");
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+  );
 
   const [storedAreas, setStoredAreas] = useState<StoredArea[]>([]);
   const [selectedAreaId, setSelectedAreaId] = useState("");
@@ -1081,75 +1301,6 @@ function AdminNearbyPageInner() {
     }
   }
 
-  async function bulkGeocodeStoredPlaces() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
-      return;
-    }
-
-    if (!selectedAreaId) {
-      showError("Select a stored area first.");
-      return;
-    }
-
-    const missingPlaces = storedPlaces.filter(
-      (place) => place.lat === null || place.lng === null,
-    );
-
-    if (missingPlaces.length === 0) {
-      showStatus("All stored places already have coordinates.");
-      return;
-    }
-
-    try {
-      setBulkGeocoding(true);
-
-      let updatedCount = 0;
-
-      for (let index = 0; index < missingPlaces.length; index += 1) {
-        const place = missingPlaces[index];
-
-        showStatus(
-          `Bulk geocoding ${index + 1} of ${missingPlaces.length}: ${place.name}`,
-        );
-
-        const resolved = await geocodeLocation({
-          location_code: place.location_code ?? null,
-          address: place.address ?? null,
-        });
-
-        if (resolved.lat === null || resolved.lng === null) {
-          continue;
-        }
-
-        const { error } = await supabase
-          .from("nearby_master")
-          .update({
-            lat: resolved.lat,
-            lng: resolved.lng,
-          })
-          .eq("id", place.id);
-
-        if (error) {
-          throw error;
-        }
-
-        updatedCount += 1;
-      }
-
-      await loadStoredPlaces(selectedAreaId);
-
-      setStatus(
-        `Bulk geocode complete. Updated ${updatedCount} stored place${updatedCount === 1 ? "" : "s"}.`,
-      );
-    } catch (err: any) {
-      console.error("bulkGeocodeStoredPlaces error:", err);
-      showError(err?.message || "Bulk geocode failed.");
-    } finally {
-      setBulkGeocoding(false);
-    }
-  }
-
   async function replaceEventListFromStored() {
     if (accessDenied) {
       showError("You do not have access to this page.");
@@ -1371,6 +1522,67 @@ function AdminNearbyPageInner() {
     } finally {
       setCopyingToEvent(false);
     }
+  }
+
+  async function saveEventPlaceOrder(updatedPlaces: EventPlace[]) {
+    if (!adminEvent?.id) {
+      return;
+    }
+
+    try {
+      setEventPlaces(updatedPlaces);
+
+      for (let index = 0; index < updatedPlaces.length; index += 1) {
+        const place = updatedPlaces[index];
+
+        const { error } = await supabase
+          .from("event_nearby_places")
+          .update({
+            sort_order: index + 1,
+          })
+          .eq("id", place.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      showStatus("Nearby place order updated.");
+    } catch (err: any) {
+      console.error(err);
+      showError(err?.message || "Failed to save nearby order.");
+
+      await loadEventPlaces(adminEvent.id);
+    }
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const oldIndex = sortedEventPlaces.findIndex(
+      (place) => place.id === active.id,
+    );
+
+    const newIndex = sortedEventPlaces.findIndex(
+      (place) => place.id === over.id,
+    );
+
+    if (oldIndex === -1 || newIndex === -1) {
+      return;
+    }
+
+    const reordered = arrayMove(sortedEventPlaces, oldIndex, newIndex).map(
+      (place, index) => ({
+        ...place,
+        sort_order: index + 1,
+      }),
+    );
+
+    void saveEventPlaceOrder(reordered);
   }
 
   async function saveEventPlace() {
@@ -1602,18 +1814,132 @@ function AdminNearbyPageInner() {
       setSearchingGoogle(false);
     }
   }
+  async function bulkGeocodeStoredPlaces() {
+    if (accessDenied) {
+      showError("You do not have access to this page.");
+      return;
+    }
+
+    if (!selectedAreaId) {
+      showError("Select a stored area first.");
+      return;
+    }
+
+    try {
+      setBulkGeocoding(true);
+
+      const missingPlaces = storedPlaces.filter(
+        (place) => place.lat === null || place.lng === null,
+      );
+
+      if (missingPlaces.length === 0) {
+        showStatus("All stored places already have coordinates.");
+        return;
+      }
+
+      showStatus(
+        `Bulk geocoding ${missingPlaces.length} stored place${
+          missingPlaces.length === 1 ? "" : "s"
+        }...`,
+      );
+
+      for (let index = 0; index < missingPlaces.length; index += 1) {
+        const place = missingPlaces[index];
+
+        showStatus(
+          `Geocoding ${index + 1} of ${missingPlaces.length}: ${place.name}`,
+        );
+
+        const resolved = await geocodeLocation({
+          location_code: place.location_code ?? null,
+          address: place.address ?? null,
+        });
+
+        if (resolved.lat !== null && resolved.lng !== null) {
+          const { error } = await supabase
+            .from("nearby_master")
+            .update({
+              lat: resolved.lat,
+              lng: resolved.lng,
+            })
+            .eq("id", place.id);
+
+          if (error) {
+            console.error("Bulk geocode update error:", error);
+          }
+        }
+      }
+
+      await loadStoredPlaces(selectedAreaId);
+
+      showStatus("Bulk geocoding completed.");
+    } catch (err: any) {
+      console.error("bulkGeocodeStoredPlaces error:", err);
+
+      showError(err?.message || "Bulk geocoding failed.");
+    } finally {
+      setBulkGeocoding(false);
+    }
+  }
+
+  async function reGeocodeStoredPlace() {
+    if (accessDenied) {
+      showError("You do not have access to this page.");
+      return;
+    }
+
+    if (!storedForm.id) {
+      showError("Select a stored place first.");
+      return;
+    }
+
+    try {
+      setSavingStoredPlace(true);
+      showStatus(`Re-geocoding ${storedForm.name}...`);
+
+      const resolved = await geocodeLocation({
+        location_code: storedForm.location_code.trim() || null,
+        address: storedForm.address.trim() || null,
+      });
+
+      if (resolved.lat === null || resolved.lng === null) {
+        throw new Error("Could not resolve coordinates for this place.");
+      }
+
+      const { error } = await supabase
+        .from("nearby_master")
+        .update({
+          lat: resolved.lat,
+          lng: resolved.lng,
+        })
+        .eq("id", storedForm.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setStoredForm((prev) => ({
+        ...prev,
+        lat: String(resolved.lat),
+        lng: String(resolved.lng),
+      }));
+
+      await loadStoredPlaces(selectedAreaId);
+
+      showStatus(`Updated coordinates for ${storedForm.name}.`);
+    } catch (err: any) {
+      console.error("reGeocodeStoredPlace error:", err);
+
+      showError(err?.message || "Failed to re-geocode stored place.");
+    } finally {
+      setSavingStoredPlace(false);
+    }
+  }
 
   if (!loading && accessDenied) {
     return (
       <div style={{ padding: 24 }}>
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 18,
-          }}
-        >
+        <div className="app-card-section">
           <div style={{ marginBottom: 16 }}>
             <button
               type="button"
@@ -1644,9 +1970,8 @@ function AdminNearbyPageInner() {
   return (
     <div style={{ padding: 24, display: "grid", gap: 18 }}>
       <div
+        className="app-button-row"
         style={{
-          display: "grid",
-          gap: 12,
           marginBottom: 18,
           width: "100%",
           maxWidth: 420,
@@ -1654,19 +1979,13 @@ function AdminNearbyPageInner() {
       >
         <button
           type="button"
+          className="app-button app-button-full"
           onClick={() => {
             window.location.href = "/admin/dashboard";
           }}
           style={{
-            width: "100%",
-            padding: "14px 18px",
-            borderRadius: 18,
-            border: "1px solid #cbd5e1",
-            background: "#fff",
-            cursor: "pointer",
-            fontWeight: 700,
+            minHeight: 52,
             fontSize: 16,
-            boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
           }}
         >
           ← Return to Dashboard
@@ -1674,19 +1993,13 @@ function AdminNearbyPageInner() {
 
         <button
           type="button"
+          className="app-button app-button-full"
           onClick={() => {
             window.location.href = "/admin/map-admin";
           }}
           style={{
-            width: "100%",
-            padding: "14px 18px",
-            borderRadius: 18,
-            border: "1px solid #cbd5e1",
-            background: "#fff",
-            cursor: "pointer",
-            fontWeight: 700,
+            minHeight: 52,
             fontSize: 16,
-            boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
           }}
         >
           ← Back to Map Admin
@@ -1707,21 +2020,18 @@ function AdminNearbyPageInner() {
         </div>
       ) : null}
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-        }}
-      >
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Nearby Admin</h1>
+      <div className="app-card-section-muted">
+        <h1 className="app-section-title">Nearby Admin</h1>
+
         <div style={{ fontWeight: 700 }}>Admin Working Event</div>
+
         <div>{adminEvent?.name || "No event selected"}</div>
+
         <div style={{ color: "#555", marginTop: 4 }}>
           {adminEvent?.location || ""}
         </div>
-        <div style={{ fontSize: 13, color: "#555", marginTop: 8 }}>
+
+        <div className="app-subtle-text" style={{ marginTop: 8 }}>
           {status}
         </div>
       </div>
@@ -1734,16 +2044,7 @@ function AdminNearbyPageInner() {
           alignItems: "start",
         }}
       >
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 14,
-            display: "grid",
-            gap: 12,
-          }}
-        >
+        <div className="app-card-section">
           <h2 style={{ margin: 0 }}>Stored Area Lists</h2>
 
           {loadingAreas ? (
@@ -1811,7 +2112,8 @@ function AdminNearbyPageInner() {
                 </div>
               ) : null}
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div className="app-button-row">
+                {" "}
                 <button
                   type="button"
                   onClick={() => void createStoredArea()}
@@ -1867,14 +2169,7 @@ function AdminNearbyPageInner() {
           )}
         </div>
 
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 14,
-          }}
-        >
+        <div className="app-card-section" style={{ display: "grid", gap: 12 }}>
           <h2 style={{ marginTop: 0 }}>Stored Area Places</h2>
 
           <div
@@ -1943,40 +2238,16 @@ function AdminNearbyPageInner() {
 
             <button
               type="button"
-              onClick={async () => {
-                try {
-                  showStatus("Bulk geocoding missing coordinates...");
-
-                  for (const place of storedPlaces) {
-                    if (place.lat !== null && place.lng !== null) {
-                      continue;
-                    }
-
-                    const resolved = await geocodeLocation({
-                      location_code: place.location_code ?? null,
-                      address: place.address ?? null,
-                    });
-
-                    await supabase
-                      .from("nearby_master")
-                      .update({
-                        lat: resolved.lat,
-                        lng: resolved.lng,
-                      })
-                      .eq("id", place.id);
-                  }
-
-                  await loadStoredPlaces(selectedAreaId);
-
-                  showStatus("Bulk geocode complete.");
-                } catch (err: any) {
-                  console.error(err);
-
-                  showError(err?.message || "Bulk geocode failed.");
-                }
-              }}
+              className="app-button app-button-muted"
+              onClick={() => void bulkGeocodeStoredPlaces()}
+              disabled={
+                accessDenied ||
+                bulkGeocoding ||
+                loadingStoredPlaces ||
+                storedPlaces.length === 0
+              }
             >
-              Geocode Missing Coordinates
+              {bulkGeocoding ? "Bulk Geocoding..." : "Bulk Geocode Missing GPS"}
             </button>
           </div>
 
@@ -2004,15 +2275,10 @@ function AdminNearbyPageInner() {
                 {loadingStoredPlaces ? (
                   <div>Loading stored places...</div>
                 ) : sortedStoredPlaces.length === 0 ? (
-                  <div>No places found in this stored area.</div>
+                  <div>No stored places found.</div>
                 ) : (
                   sortedStoredPlaces.map((place) => {
                     const selected = storedForm.id === place.id;
-                    const coordinateStatus = getCoordinateStatus(
-                      place.lat,
-                      place.lng,
-                      place.location_code,
-                    );
 
                     const duplicateKey = `${String(place.name || "")
                       .trim()
@@ -2024,118 +2290,15 @@ function AdminNearbyPageInner() {
                       (duplicateKeys.get(duplicateKey) || 0) > 1;
 
                     return (
-                      <button
+                      <StoredPlaceCard
                         key={place.id}
-                        type="button"
-                        onClick={() =>
+                        place={place}
+                        selected={selected}
+                        isDuplicate={isDuplicate}
+                        onSelect={() =>
                           setStoredForm(storedFormFromPlace(place))
                         }
-                        style={{
-                          textAlign: "left",
-                          padding: 10,
-                          borderRadius: 8,
-                          border: selected
-                            ? "1px solid #f0c36d"
-                            : "1px solid #e5e7eb",
-                          background: selected ? "#fff7d6" : "white",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ fontWeight: 700 }}>{place.name}</div>
-
-                        {isDuplicate ? (
-                          <div
-                            style={{
-                              marginTop: 6,
-                              display: "inline-block",
-                              padding: "2px 8px",
-                              borderRadius: 999,
-                              background: "#fee2e2",
-                              color: "#991b1b",
-                              fontSize: 11,
-                              fontWeight: 700,
-                            }}
-                          >
-                            Possible Duplicate
-                          </div>
-                        ) : null}
-
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 6,
-                            flexWrap: "wrap",
-                            marginTop: 6,
-                          }}
-                        >
-                          {(place.lat !== null && place.lng !== null) ||
-                          place.address ? (
-                            <a
-                              href={
-                                place.lat !== null && place.lng !== null
-                                  ? `https://www.google.com/maps?q=${place.lat},${place.lng}`
-                                  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || "")}`
-                              }
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              style={{
-                                fontSize: 11,
-                                textDecoration: "none",
-                                background: "#eff6ff",
-                                border: "1px solid #93c5fd",
-                                color: "#1d4ed8",
-                                borderRadius: 999,
-                                padding: "3px 8px",
-                                fontWeight: 600,
-                              }}
-                            >
-                              Open in Google Maps
-                            </a>
-                          ) : null}
-                        </div>
-                        <div style={{ fontSize: 13, color: "#555" }}>
-                          {place.category || "Uncategorized"}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            background: coordinateStatus.background,
-                            border: coordinateStatus.border,
-                            color: coordinateStatus.color,
-                            borderRadius: 999,
-                            padding: "3px 8px",
-                            display: "inline-flex",
-                            width: "fit-content",
-                            marginTop: 6,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {coordinateStatus.label}
-                        </div>
-                        {place.address ? (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: "#666",
-                              marginTop: 4,
-                            }}
-                          >
-                            {place.address}
-                          </div>
-                        ) : null}
-                        {place.location_code ? (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: "#666",
-                              marginTop: 4,
-                            }}
-                          >
-                            {place.location_code}
-                          </div>
-                        ) : null}
-                      </button>
+                      />
                     );
                   })
                 )}
@@ -2342,7 +2505,8 @@ function AdminNearbyPageInner() {
                   disabled={accessDenied || savingStoredPlace}
                 />
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div className="app-button-row">
+                  {" "}
                   <button
                     type="button"
                     onClick={() => void saveStoredPlace()}
@@ -2368,17 +2532,12 @@ function AdminNearbyPageInner() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void bulkGeocodeStoredPlaces()}
+                    onClick={() => void reGeocodeStoredPlace()}
                     disabled={
-                      accessDenied ||
-                      bulkGeocoding ||
-                      loadingStoredPlaces ||
-                      storedPlaces.length === 0
+                      accessDenied || savingStoredPlace || !storedForm.id
                     }
                   >
-                    {bulkGeocoding
-                      ? "Bulk Geocoding..."
-                      : "Bulk Geocode Missing GPS"}
+                    Re-Geocode This Place
                   </button>
                   <button
                     type="button"
@@ -2389,53 +2548,6 @@ function AdminNearbyPageInner() {
                   >
                     Delete Stored Place
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        showStatus(`Re-geocoding ${storedForm.name}...`);
-
-                        const resolved = await geocodeLocation({
-                          location_code: storedForm.location_code || null,
-                          address: storedForm.address || null,
-                        });
-
-                        const { error } = await supabase
-                          .from("nearby_master")
-                          .update({
-                            lat: resolved.lat,
-                            lng: resolved.lng,
-                          })
-                          .eq("id", storedForm.id);
-
-                        if (error) {
-                          throw error;
-                        }
-
-                        await loadStoredPlaces(selectedAreaId);
-
-                        setStoredForm((prev) => ({
-                          ...prev,
-                          lat:
-                            resolved.lat !== null ? String(resolved.lat) : "",
-                          lng:
-                            resolved.lng !== null ? String(resolved.lng) : "",
-                        }));
-
-                        showStatus(
-                          `Updated coordinates for ${storedForm.name}.`,
-                        );
-                      } catch (err: any) {
-                        console.error(err);
-
-                        showError(err?.message || "Re-geocode failed.");
-                      }
-                    }}
-                    disabled={!storedForm.id}
-                  >
-                    Re-Geocode
-                  </button>
                 </div>
               </div>
             </div>
@@ -2443,16 +2555,7 @@ function AdminNearbyPageInner() {
         </div>
       </div>
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "white",
-          padding: 14,
-          display: "grid",
-          gap: 14,
-        }}
-      >
+      <div className="app-card-section">
         <div>
           <h2 style={{ marginTop: 0, marginBottom: 6 }}>
             Google Nearby Search
@@ -2603,7 +2706,8 @@ function AdminNearbyPageInner() {
                   </a>
                 ) : null}
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div className="app-button-row">
+                  {" "}
                   <button
                     type="button"
                     onClick={() => {
@@ -2638,7 +2742,6 @@ function AdminNearbyPageInner() {
                   >
                     Load Into Stored Place Editor
                   </button>
-
                   <button
                     type="button"
                     onClick={() => {
@@ -2675,14 +2778,7 @@ function AdminNearbyPageInner() {
         )}
       </div>
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "white",
-          padding: 14,
-        }}
-      >
+      <div className="app-card-section">
         <h2 style={{ marginTop: 0 }}>Current Event Nearby Places</h2>
 
         {!adminEvent?.id ? (
@@ -2713,109 +2809,34 @@ function AdminNearbyPageInner() {
                   No nearby places are currently assigned to this event.
                 </div>
               ) : (
-                sortedEventPlaces.map((place) => {
-                  const selected = eventForm.id === place.id;
-                  const coordinateStatus = getCoordinateStatus(
-                    place.lat,
-                    place.lng,
-                    place.location_code,
-                  );
-
-                  return (
-                    <button
-                      key={place.id}
-                      type="button"
-                      onClick={() => setEventForm(eventFormFromPlace(place))}
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={sortedEventPlaces.map((place) => place.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div
                       style={{
-                        textAlign: "left",
-                        padding: 10,
-                        borderRadius: 8,
-                        border: selected
-                          ? "1px solid #f0c36d"
-                          : "1px solid #e5e7eb",
-                        background: selected ? "#fff7d6" : "white",
-                        cursor: "pointer",
+                        display: "grid",
+                        gap: 8,
                       }}
                     >
-                      <div style={{ fontWeight: 700 }}>{place.name}</div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 6,
-                          flexWrap: "wrap",
-                          marginTop: 6,
-                        }}
-                      >
-                        {(place.lat !== null && place.lng !== null) ||
-                        place.address ? (
-                          <a
-                            href={
-                              place.lat !== null && place.lng !== null
-                                ? `https://www.google.com/maps?q=${place.lat},${place.lng}`
-                                : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || "")}`
-                            }
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            style={{
-                              fontSize: 11,
-                              textDecoration: "none",
-                              background: "#eff6ff",
-                              border: "1px solid #93c5fd",
-                              color: "#1d4ed8",
-                              borderRadius: 999,
-                              padding: "3px 8px",
-                              fontWeight: 600,
-                            }}
-                          >
-                            Open in Google Maps
-                          </a>
-                        ) : null}
-                      </div>
-                      <div style={{ fontSize: 13, color: "#555" }}>
-                        {place.category || "Uncategorized"}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          background: coordinateStatus.background,
-                          border: coordinateStatus.border,
-                          color: coordinateStatus.color,
-                          borderRadius: 999,
-                          padding: "3px 8px",
-                          display: "inline-flex",
-                          width: "fit-content",
-                          marginTop: 6,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {coordinateStatus.label}
-                      </div>
-                      {place.address ? (
-                        <div
-                          style={{ fontSize: 12, color: "#666", marginTop: 4 }}
-                        >
-                          {place.address}
-                        </div>
-                      ) : null}
-                      {place.distance_miles !== null &&
-                      place.distance_miles !== undefined ? (
-                        <div
-                          style={{ fontSize: 12, color: "#666", marginTop: 4 }}
-                        >
-                          {place.distance_miles} mi
-                        </div>
-                      ) : null}
-                      {place.location_code ? (
-                        <div
-                          style={{ fontSize: 12, color: "#666", marginTop: 4 }}
-                        >
-                          {place.location_code}
-                        </div>
-                      ) : null}
-                    </button>
-                  );
-                })
+                      {sortedEventPlaces.map((place) => (
+                        <SortableEventPlaceCard
+                          key={place.id}
+                          place={place}
+                          selected={eventForm.id === place.id}
+                          onSelect={() =>
+                            setEventForm(eventFormFromPlace(place))
+                          }
+                        />
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
 
@@ -2960,7 +2981,8 @@ function AdminNearbyPageInner() {
                 Hidden from members
               </label>
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div className="app-button-row">
+                {" "}
                 <button
                   type="button"
                   onClick={() => void saveEventPlace()}
