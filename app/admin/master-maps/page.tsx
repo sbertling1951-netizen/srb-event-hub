@@ -924,126 +924,246 @@ function MasterMapsPageInner() {
           {showArchived ? "Archived Maps" : "Active Maps"}
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: showArchived
-              ? "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1.4fr"
-              : "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1fr",
-            gap: 12,
-            padding: 12,
-            fontWeight: 700,
-            borderBottom: "1px solid #eee",
-          }}
-        >
-          <div>Name</div>
-          <div>Park</div>
-          <div>Location</div>
-          <div>Status</div>
-          <div>Sites</div>
-          <div>Actions</div>
-        </div>
+        {!isMobile ? (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: showArchived
+                  ? "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1.4fr"
+                  : "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1fr",
+                gap: 12,
+                padding: 12,
+                fontWeight: 700,
+                borderBottom: "1px solid #eee",
+              }}
+            >
+              <div>Name</div>
+              <div>Park</div>
+              <div>Location</div>
+              <div>Status</div>
+              <div>Sites</div>
+              <div>Actions</div>
+            </div>
 
-        {visibleMaps.map((map) => (
-          <div
-            key={map.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: showArchived
-                ? "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1.4fr"
-                : "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1fr",
-              gap: 12,
-              padding: 12,
-              borderBottom: "1px solid #eee",
-              alignItems: "center",
-            }}
-          >
-            <div style={{ fontWeight: 600 }}>{map.name}</div>
-            <div>{map.park_name || "—"}</div>
-            <div>{map.location || "—"}</div>
-            <div>{map.status}</div>
-            <div>{map.site_count}</div>
-
-            {showArchived ? (
+            {visibleMaps.map((map) => (
               <div
+                key={map.id}
                 style={{
                   display: "grid",
-                  gap: 8,
-                  minWidth: 0,
-                  overflowWrap: "anywhere",
+                  gridTemplateColumns: showArchived
+                    ? "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1.4fr"
+                    : "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1fr",
+                  gap: 12,
+                  padding: 12,
+                  borderBottom: "1px solid #eee",
+                  alignItems: "center",
                 }}
               >
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    onClick={() => void handleRestoreMap(map)}
-                    disabled={restoringMapId === map.id || !canManageMaps}
-                  >
-                    {restoringMapId === map.id ? "Restoring..." : "Restore"}
-                  </button>
+                <div style={{ fontWeight: 600 }}>{map.name}</div>
+                <div>{map.park_name || "—"}</div>
+                <div>{map.location || "—"}</div>
+                <div>{map.status}</div>
+                <div>{map.site_count}</div>
 
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteArchivedMap(map)}
-                    disabled={deletingMapId === map.id || !canManageMaps}
+                {showArchived ? (
+                  <div
                     style={{
-                      background: "#fff1f2",
-                      color: "#991b1b",
-                      border: "1px solid #dc2626",
-                      borderRadius: 8,
-                      padding: "8px 10px",
-                      fontWeight: 700,
-                      cursor: "pointer",
+                      display: "grid",
+                      gap: 8,
+                      minWidth: 0,
+                      overflowWrap: "anywhere",
                     }}
                   >
-                    {deletingMapId === map.id ? "Deleting..." : "Delete"}
-                  </button>
-                </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => void handleRestoreMap(map)}
+                        disabled={restoringMapId === map.id || !canManageMaps}
+                      >
+                        {restoringMapId === map.id ? "Restoring..." : "Restore"}
+                      </button>
 
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] || null;
-                    setReplaceImageFiles((prev) => ({
-                      ...prev,
-                      [map.id]: file,
-                    }));
-                  }}
-                  disabled={replacingImageMapId === map.id || !canManageMaps}
-                  style={{ fontSize: 12 }}
-                />
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteArchivedMap(map)}
+                        disabled={deletingMapId === map.id || !canManageMaps}
+                        style={{
+                          background: "#fff1f2",
+                          color: "#991b1b",
+                          border: "1px solid #dc2626",
+                          borderRadius: 8,
+                          padding: "8px 10px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {deletingMapId === map.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
 
-                <div style={{ fontSize: 12, color: "#666" }}>
-                  {replaceImageFiles[map.id]
-                    ? `Selected: ${replaceImageFiles[map.id]?.name}`
-                    : "Choose a new image file to enable Replace Image."}
-                </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        setReplaceImageFiles((prev) => ({
+                          ...prev,
+                          [map.id]: file,
+                        }));
+                      }}
+                      disabled={
+                        replacingImageMapId === map.id || !canManageMaps
+                      }
+                      style={{ fontSize: 12 }}
+                    />
 
-                <button
-                  type="button"
-                  onClick={() => void handleReplaceMapImage(map)}
-                  disabled={
-                    replacingImageMapId === map.id ||
-                    !canManageMaps ||
-                    !replaceImageFiles[map.id]
-                  }
-                >
-                  {replacingImageMapId === map.id
-                    ? "Replacing Image..."
-                    : "Replace Image"}
-                </button>
+                    <div style={{ fontSize: 12, color: "#666" }}>
+                      {replaceImageFiles[map.id]
+                        ? `Selected: ${replaceImageFiles[map.id]?.name}`
+                        : "Choose a new image file to enable Replace Image."}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleReplaceMapImage(map)}
+                      disabled={
+                        replacingImageMapId === map.id ||
+                        !canManageMaps ||
+                        !replaceImageFiles[map.id]
+                      }
+                    >
+                      {replacingImageMapId === map.id
+                        ? "Replacing Image..."
+                        : "Replace Image"}
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 8,
+                      minWidth: 0,
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => void handleEditMap(map)}
+                        disabled={openingMapId === map.id || !canManageMaps}
+                      >
+                        {openingMapId === map.id ? "Opening..." : "Edit Map"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => void handleArchiveMap(map)}
+                        disabled={archivingMapId === map.id || !canManageMaps}
+                        style={{
+                          background: "#fff7ed",
+                          color: "#9a3412",
+                          border: "1px solid #ea580c",
+                          borderRadius: 8,
+                          padding: "8px 10px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {archivingMapId === map.id ? "Archiving..." : "Archive"}
+                      </button>
+                    </div>
+
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        setReplaceImageFiles((prev) => ({
+                          ...prev,
+                          [map.id]: file,
+                        }));
+                      }}
+                      disabled={
+                        replacingImageMapId === map.id || !canManageMaps
+                      }
+                      style={{ fontSize: 12 }}
+                    />
+
+                    <div style={{ fontSize: 12, color: "#666" }}>
+                      {replaceImageFiles[map.id]
+                        ? `Selected: ${replaceImageFiles[map.id]?.name}`
+                        : "Choose a new image file to enable Replace Image."}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleReplaceMapImage(map)}
+                      disabled={
+                        replacingImageMapId === map.id ||
+                        !canManageMaps ||
+                        !replaceImageFiles[map.id]
+                      }
+                    >
+                      {replacingImageMapId === map.id
+                        ? "Replacing Image..."
+                        : "Replace Image"}
+                    </button>
+                  </div>
+                )}
               </div>
-            ) : (
+            ))}
+
+            {visibleMaps.length === 0 && (
+              <div style={{ padding: 14, color: "#666" }}>
+                {showArchived
+                  ? "No archived maps found."
+                  : "No active maps found."}
+              </div>
+            )}
+          </>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+              padding: 14,
+            }}
+          >
+            {visibleMaps.map((map) => (
               <div
+                key={map.id}
                 style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 14,
+                  padding: 14,
                   display: "grid",
-                  gap: 8,
-                  minWidth: 0,
-                  overflowWrap: "anywhere",
+                  gap: 10,
+                  background: "#fff",
                 }}
               >
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontWeight: 800, fontSize: 18 }}>{map.name}</div>
+
+                <div>
+                  <strong>Park:</strong> {map.park_name || "—"}
+                </div>
+                <div>
+                  <strong>Location:</strong> {map.location || "—"}
+                </div>
+                <div>
+                  <strong>Status:</strong> {map.status}
+                </div>
+                <div>
+                  <strong>Sites:</strong> {map.site_count}
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <button
                     type="button"
                     onClick={() => void handleEditMap(map)}
@@ -1056,68 +1176,27 @@ function MasterMapsPageInner() {
                     type="button"
                     onClick={() => void handleArchiveMap(map)}
                     disabled={archivingMapId === map.id || !canManageMaps}
-                    style={{
-                      background: "#fff7ed",
-                      color: "#9a3412",
-                      border: "1px solid #ea580c",
-                      borderRadius: 8,
-                      padding: "8px 10px",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
                   >
                     {archivingMapId === map.id ? "Archiving..." : "Archive"}
                   </button>
                 </div>
+              </div>
+            ))}
 
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] || null;
-                    setReplaceImageFiles((prev) => ({
-                      ...prev,
-                      [map.id]: file,
-                    }));
-                  }}
-                  disabled={replacingImageMapId === map.id || !canManageMaps}
-                  style={{ fontSize: 12 }}
-                />
-
-                <div style={{ fontSize: 12, color: "#666" }}>
-                  {replaceImageFiles[map.id]
-                    ? `Selected: ${replaceImageFiles[map.id]?.name}`
-                    : "Choose a new image file to enable Replace Image."}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => void handleReplaceMapImage(map)}
-                  disabled={
-                    replacingImageMapId === map.id ||
-                    !canManageMaps ||
-                    !replaceImageFiles[map.id]
-                  }
-                >
-                  {replacingImageMapId === map.id
-                    ? "Replacing Image..."
-                    : "Replace Image"}
-                </button>
+            {visibleMaps.length === 0 && (
+              <div style={{ color: "#666" }}>
+                {showArchived
+                  ? "No archived maps found."
+                  : "No active maps found."}
               </div>
             )}
           </div>
-        ))}
-
-        {visibleMaps.length === 0 && (
-          <div style={{ padding: 14, color: "#666" }}>
-            {showArchived ? "No archived maps found." : "No active maps found."}
-          </div>
         )}
-      </div>
 
-      <p style={{ marginTop: 20 }}>
-        <strong>Status:</strong> {loading ? "Loading..." : status}
-      </p>
+        <p style={{ marginTop: 20 }}>
+          <strong>Status:</strong> {loading ? "Loading..." : status}
+        </p>
+      </div>
     </div>
   );
 }
