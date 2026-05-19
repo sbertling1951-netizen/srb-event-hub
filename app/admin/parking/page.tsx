@@ -494,6 +494,13 @@ function ParkingAdminPageInner() {
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, "");
   }
+  useEffect(() => {
+    document.body.classList.add("coach-map-lock");
+
+    return () => {
+      document.body.classList.remove("coach-map-lock");
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1767,7 +1774,9 @@ function ParkingAdminPageInner() {
               border: "1px solid #ddd",
               background: "#f2f2f2",
               WebkitOverflowScrolling: "touch",
-              touchAction: "pan-x pan-y pinch-zoom",
+              touchAction: "none",
+              overscrollBehaviorX: "contain",
+              overscrollBehaviorY: "contain",
               overscrollBehavior: "contain",
             }}
           >
