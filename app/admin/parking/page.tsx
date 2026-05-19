@@ -111,7 +111,7 @@ function ParkingAdminPageInner() {
   }
 
   function clampZoom(next: number) {
-    return Math.min(Math.max(next, 0.25), 3);
+    return Math.min(Math.max(next, 0.1), 3);
   }
 
   function getTouchDistance(touches: TouchList) {
@@ -1771,14 +1771,15 @@ function ParkingAdminPageInner() {
           <div
             ref={mapRef}
             style={{
-              overflow: "auto",
+              overflowX: "scroll",
+              overflowY: "scroll",
               height: isNarrow ? "52vh" : undefined,
               minHeight: isNarrow ? 320 : undefined,
               maxHeight: isNarrow ? "52vh" : "82vh",
               border: "1px solid #ddd",
               background: "#f2f2f2",
               WebkitOverflowScrolling: "touch",
-              touchAction: "pan-x pan-y",
+              touchAction: "auto",
               overscrollBehaviorX: "contain",
               overscrollBehaviorY: "contain",
               overscrollBehavior: "contain",
