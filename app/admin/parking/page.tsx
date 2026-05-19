@@ -1789,8 +1789,10 @@ function ParkingAdminPageInner() {
                 position: "relative",
                 width: naturalSize.width * zoom,
                 height: naturalSize.height * zoom,
-                margin: "0 auto",
+                minWidth: naturalSize.width * zoom,
+                minHeight: naturalSize.height * zoom,
                 boxSizing: "border-box",
+                flexShrink: 0,
               }}
             >
               <div
