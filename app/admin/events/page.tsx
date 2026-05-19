@@ -20,6 +20,8 @@ type EventRow = {
   visible_to_members?: boolean | null;
   status: string | null;
   is_active?: boolean | null;
+  lat?: number | null;
+  lng?: number | null;
 };
 
 type MasterMapRow = {
@@ -47,6 +49,8 @@ type EventFormState = {
   end_date: string;
   event_code: string;
   status: string;
+  lat: string;
+  lng: string;
 };
 
 const emptyForm: EventFormState = {
@@ -57,6 +61,8 @@ const emptyForm: EventFormState = {
   end_date: "",
   event_code: "",
   status: "Draft",
+  lat: "",
+  lng: "",
 };
 
 function normalizeEventStatus(status?: string | null) {
@@ -226,7 +232,7 @@ function EventAdminPageInner() {
       let eventsQuery = supabase
         .from("events")
         .select(
-          "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active",
+          "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
         )
         .order("start_date", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false });
@@ -385,6 +391,8 @@ function EventAdminPageInner() {
       end_date: toInputDate(selectedEvent.end_date),
       event_code: selectedEvent.event_code || "",
       status: selectedEvent.status || "Draft",
+      lat: String(selectedEvent.lat ?? ""),
+      lng: String(selectedEvent.lng ?? ""),
     });
 
     void loadAssignmentsForEvent(selectedEvent.id);
@@ -451,6 +459,8 @@ function EventAdminPageInner() {
         status: nextStatus,
         is_active: nextIsActive,
         visible_to_members: nextIsActive,
+        lat: form.lat ? Number(form.lat) : null,
+        lng: form.lng ? Number(form.lng) : null,
       };
 
       if (form.id) {
@@ -459,7 +469,7 @@ function EventAdminPageInner() {
           .update(payload)
           .eq("id", form.id)
           .select(
-            "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active",
+            "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
           )
           .maybeSingle();
 
@@ -490,6 +500,8 @@ function EventAdminPageInner() {
           end_date: toInputDate(updatedEvent.end_date),
           event_code: updatedEvent.event_code || "",
           status: updatedEvent.status || "Draft",
+          lat: String(updatedEvent.lat ?? ""),
+          lng: String(updatedEvent.lng ?? ""),
         });
 
         const nextFilter = filterForStatus(updatedEvent.status);
@@ -826,6 +838,71 @@ function EventAdminPageInner() {
             placeholder="Location"
             style={{ padding: 10 }}
           />
+
+          <button
+            type="button"
+            onClick={async () => {
+              if (!form.location.trim()) {
+                setStatus("Enter a location first.");
+                return;
+              }
+
+              try {
+                setStatus("Looking up coordinates...");
+
+                const response = await fetch(
+                  `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(form.location)}`,
+                );
+
+                const results = await response.json();
+
+                if (!results?.length) {
+                  setStatus("No coordinates found.");
+                  return;
+                }
+
+                const first = results[0];
+
+                setForm((prev) => ({
+                  ...prev,
+                  lat: first.lat,
+                  lng: first.lon,
+                }));
+
+                setStatus("Coordinates loaded.");
+              } catch (err) {
+                console.error(err);
+                setStatus("Coordinate lookup failed.");
+              }
+            }}
+            style={{ width: "fit-content" }}
+          >
+            Auto Fill Coordinates
+          </button>
+
+          <label>
+            Latitude
+            <input
+              value={form.lat}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, lat: e.target.value }))
+              }
+              placeholder="37.1104805"
+              style={{ padding: 10, display: "block", width: "100%" }}
+            />
+          </label>
+
+          <label>
+            Longitude
+            <input
+              value={form.lng}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, lng: e.target.value }))
+              }
+              placeholder="-113.5769339"
+              style={{ padding: 10, display: "block", width: "100%" }}
+            />
+          </label>
 
           <label>
             Start Date
