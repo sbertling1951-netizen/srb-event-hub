@@ -454,7 +454,9 @@ function ParkingAdminPageInner() {
     function onTouchStart(e: TouchEvent) {
       if (e.touches.length === 2) {
         lastDistanceRef.current = getTouchDistance(e.touches);
-        e.preventDefault();
+        if (e.touches.length === 2) {
+          e.preventDefault();
+        }
       }
     }
 
@@ -468,7 +470,9 @@ function ParkingAdminPageInner() {
         }
 
         lastDistanceRef.current = distance;
-        e.preventDefault();
+        if (e.touches.length === 2) {
+          e.preventDefault();
+        }
       }
     }
 
@@ -1774,7 +1778,7 @@ function ParkingAdminPageInner() {
               border: "1px solid #ddd",
               background: "#f2f2f2",
               WebkitOverflowScrolling: "touch",
-              touchAction: "none",
+              touchAction: "pan-x pan-y",
               overscrollBehaviorX: "contain",
               overscrollBehaviorY: "contain",
               overscrollBehavior: "contain",
