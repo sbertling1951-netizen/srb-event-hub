@@ -147,6 +147,9 @@ function NearbyPageInner() {
   const [status, setStatus] = useState("Loading nearby places...");
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
+  const [sortMode, setSortMode] = useState<"default" | "distance">("default");
 
   const loadNearby = useCallback(async () => {
     try {
@@ -253,6 +256,18 @@ function NearbyPageInner() {
     };
   }, [loadNearby]);
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("fcoc-nearby-favorites");
+
+      if (stored) {
+        setFavoriteIds(JSON.parse(stored));
+      }
+    } catch (err) {
+      console.error("favorite load error:", err);
+    }
+  }, []);
+
   const categoryOptions = useMemo(() => {
     const categories = Array.from(
       new Set(places.map((p) => p.category).filter(Boolean)),
@@ -312,18 +327,86 @@ function NearbyPageInner() {
     ].filter((item) => item.place);
   }, [places]);
 
-  const filteredPlaces = useMemo(() => {
+  const emergencyPlaces = useMemo(() => {
+    const emergencyMatchers = [
+      "urgent",
+      "hospital",
+      "medical",
+      "pharmacy",
+      "fuel",
+      "gas",
+      "diesel",
+      "rv service",
+      "service",
+      "repair",
+    ];
+
     return places.filter((place) => {
-      return (
-        selectedCategory === "All" ||
-        (place.category || "") === selectedCategory
-      );
+      const category = (place.category || "").toLowerCase();
+
+      return emergencyMatchers.some((matcher) => category.includes(matcher));
     });
-  }, [places, selectedCategory]);
+  }, [places]);
+
+  const filteredPlaces = useMemo(() => {
+    const filtered = places.filter((place) => {
+      const matchesCategory =
+        selectedCategory === "All" ||
+        (place.category || "") === selectedCategory;
+
+      const matchesSearch =
+        !search.trim() ||
+        place.name.toLowerCase().includes(search.trim().toLowerCase()) ||
+        String(place.address || "")
+          .toLowerCase()
+          .includes(search.trim().toLowerCase()) ||
+        String(place.category || "")
+          .toLowerCase()
+          .includes(search.trim().toLowerCase());
+
+      return matchesCategory && matchesSearch;
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
+      const aFav = favoriteIds.includes(a.id);
+      const bFav = favoriteIds.includes(b.id);
+
+      if (aFav && !bFav) {
+        return -1;
+      }
+
+      if (!aFav && bFav) {
+        return 1;
+      }
+
+      if (sortMode === "distance") {
+        const aDistance = a.distance_miles ?? 999999;
+        const bDistance = b.distance_miles ?? 999999;
+
+        return aDistance - bDistance;
+      }
+
+      return 0;
+    });
+
+    return sorted;
+  }, [places, selectedCategory, favoriteIds, sortMode, search]);
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
   const listReady =
     !error && !!event && !status.toLowerCase().startsWith("loading");
+  function toggleFavorite(placeId: string) {
+    setFavoriteIds((prev) => {
+      const next = prev.includes(placeId)
+        ? prev.filter((id) => id !== placeId)
+        : [...prev, placeId];
+
+      localStorage.setItem("fcoc-nearby-favorites", JSON.stringify(next));
+
+      return next;
+    });
+  }
+
   function jumpToCategory(category: string) {
     setSelectedCategory(category);
 
@@ -371,6 +454,50 @@ function NearbyPageInner() {
           </div>
         ) : null}
 
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 8,
+            marginTop: 10,
+            alignItems: "center",
+          }}
+        >
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search nearby places"
+            style={{
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid #cbd5e1",
+              fontSize: 14,
+              minWidth: 0,
+            }}
+          />
+
+          <button
+            type="button"
+            onClick={() =>
+              setSortMode((prev) =>
+                prev === "default" ? "distance" : "default",
+              )
+            }
+            style={{
+              whiteSpace: "nowrap",
+              border: "1px solid #cbd5e1",
+              background: sortMode === "distance" ? "#dbeafe" : "#fff",
+              color: sortMode === "distance" ? "#1d4ed8" : "#111827",
+              borderRadius: 12,
+              padding: "12px 14px",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            {sortMode === "distance" ? "📍 Nearest" : "↕ Default"}
+          </button>
+        </div>
         {/* Category chips */}
         <div
           className="btn-row"
@@ -440,7 +567,11 @@ function NearbyPageInner() {
 
             <button
               type="button"
-              onClick={() => setSelectedCategory("All")}
+              onClick={() => {
+                setSelectedCategory("All");
+                setSearch("");
+                setSortMode("default");
+              }}
               style={{
                 whiteSpace: "nowrap",
                 border: "1px solid #cbd5e1",
@@ -483,6 +614,191 @@ function NearbyPageInner() {
         ) : null}
       </div>
 
+      {/* Emergency Nearby */}
+      {emergencyPlaces.length > 0 ? (
+        <div
+          style={{
+            display: "grid",
+            gap: 10,
+            marginTop: 8,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  color: "#991b1b",
+                }}
+              >
+                Emergency & Travel Essentials
+              </div>
+
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#666",
+                  marginTop: 2,
+                }}
+              >
+                Quick access to important nearby services.
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: "#fee2e2",
+                color: "#991b1b",
+                fontSize: 12,
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+              }}
+            >
+              Priority Access
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              overflowX: "auto",
+              paddingBottom: 8,
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {emergencyPlaces.map((place) => (
+              <div
+                key={`emergency-${place.id}`}
+                style={{
+                  minWidth: 280,
+                  maxWidth: 320,
+                  flex: "0 0 auto",
+                  borderRadius: 18,
+                  border: "1px solid #fecaca",
+                  background: "#fff7f7",
+                  boxShadow: "0 4px 16px rgba(153,27,27,0.08)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: 6,
+                    background: "#dc2626",
+                  }}
+                />
+
+                <div
+                  style={{
+                    padding: 16,
+                    display: "grid",
+                    gap: 10,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 800,
+                        color: "#111827",
+                      }}
+                    >
+                      {place.name}
+                    </div>
+
+                    {place.category ? (
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "#991b1b",
+                          marginTop: 4,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {place.category}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {place.address ? (
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "#374151",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {place.address}
+                    </div>
+                  ) : null}
+
+                  {place.distance_miles !== null ? (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#991b1b",
+                      }}
+                    >
+                      {place.distance_miles} mi away
+                    </div>
+                  ) : null}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {place.lat !== null && place.lng !== null ? (
+                      <a
+                        href={`https://maps.apple.com/?ll=${place.lat},${place.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          ...actionBtnStyle,
+                          minHeight: 42,
+                          padding: "10px 16px",
+                          fontSize: 13,
+                          background: "#dc2626",
+                        }}
+                      >
+                        Directions
+                      </a>
+                    ) : null}
+
+                    {place.phone ? (
+                      <a
+                        href={`tel:${place.phone}`}
+                        style={{
+                          ...actionBtnStyle,
+                          minHeight: 42,
+                          padding: "10px 16px",
+                          fontSize: 13,
+                          background: "#991b1b",
+                        }}
+                      >
+                        Call
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {/* Places list */}
       <div style={{ display: "grid", gap: 12 }}>
         {filteredPlaces.map((place) => (
@@ -511,13 +827,39 @@ function NearbyPageInner() {
               {/* Name */}
               <div
                 style={{
-                  fontSize: 22,
-                  fontWeight: 800,
-                  color: "#111827",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 12,
                   marginBottom: 6,
                 }}
               >
-                {place.name}
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    color: "#111827",
+                    flex: 1,
+                  }}
+                >
+                  {place.name}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => toggleFavorite(place.id)}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    fontSize: 24,
+                    cursor: "pointer",
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
+                  aria-label="Toggle favorite"
+                >
+                  {favoriteIds.includes(place.id) ? "⭐" : "☆"}
+                </button>
               </div>
               {/* Category */}
               {place.category && (
