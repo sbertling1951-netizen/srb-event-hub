@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { calculateDistanceMiles } from "@/lib/calculateDistanceMiles";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
 import { supabase } from "@/lib/supabase";
@@ -193,7 +194,29 @@ function NearbyPageInner() {
       }
 
       const rows = (data || []) as Place[];
-      setPlaces(rows);
+
+      const rowsWithDistance = rows.map((place) => {
+        if (
+          eventInfo.lat === null ||
+          eventInfo.lng === null ||
+          place.lat === null ||
+          place.lng === null
+        ) {
+          return place;
+        }
+
+        return {
+          ...place,
+          distance_miles: calculateDistanceMiles(
+            eventInfo.lat,
+            eventInfo.lng,
+            place.lat,
+            place.lng,
+          ),
+        };
+      });
+
+      setPlaces(rowsWithDistance);
       setStatus(
         `Loaded ${rows.length} nearby place${rows.length === 1 ? "" : "s"}.`,
       );
@@ -326,11 +349,18 @@ function NearbyPageInner() {
       "repair",
     ];
 
-    return places.filter((place) => {
-      const category = (place.category || "").toLowerCase();
+    return [...places]
+      .filter((place) => {
+        const category = (place.category || "").toLowerCase();
 
-      return emergencyMatchers.some((matcher) => category.includes(matcher));
-    });
+        return emergencyMatchers.some((matcher) => category.includes(matcher));
+      })
+      .sort((a, b) => {
+        const aDistance = a.distance_miles ?? Number.MAX_SAFE_INTEGER;
+        const bDistance = b.distance_miles ?? Number.MAX_SAFE_INTEGER;
+
+        return aDistance - bDistance;
+      });
   }, [places]);
 
   const filteredPlaces = useMemo(() => {
