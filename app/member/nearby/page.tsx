@@ -126,21 +126,6 @@ function nearbyCategoryIcon(category: string) {
   return "🧭";
 }
 
-const actionBtnStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  textDecoration: "none",
-  minHeight: 48,
-  padding: "12px 20px",
-  borderRadius: 14,
-  fontSize: 15,
-  fontWeight: 700,
-  background: "#2563eb",
-  color: "#fff",
-  boxShadow: "0 2px 8px rgba(37,99,235,0.25)",
-};
-
 function NearbyPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
@@ -423,9 +408,11 @@ function NearbyPageInner() {
   }
 
   return (
-    <div className="grid" style={{ gap: 6 }}>
+    <div className="nearby-page-grid">
+      {" "}
       {/* Header card */}
-      <div className="card" style={{ padding: 8 }}>
+      <div className="card nearby-header-card">
+        {" "}
         {listReady ? (
           <span
             className="badge success"
@@ -438,7 +425,6 @@ function NearbyPageInner() {
         <p className="subtle" style={{ margin: "0 0 4px", fontSize: 13 }}>
           Fuel, urgent care, pharmacy, groceries, and local stops.
         </p>
-
         <div style={{ marginTop: 4, fontWeight: 700, fontSize: 14 }}>
           Current event: {event?.name || "No current event"}
         </div>
@@ -453,27 +439,13 @@ function NearbyPageInner() {
             {dateRange}
           </div>
         ) : null}
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto",
-            gap: 8,
-            marginTop: 10,
-            alignItems: "center",
-          }}
-        >
+        <div className="nearby-search-row">
           <input
+            type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search nearby places"
-            style={{
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "1px solid #cbd5e1",
-              fontSize: 14,
-              minWidth: 0,
-            }}
+            placeholder="Search nearby places..."
+            className="nearby-search-input"
           />
 
           <button
@@ -483,32 +455,13 @@ function NearbyPageInner() {
                 prev === "default" ? "distance" : "default",
               )
             }
-            style={{
-              whiteSpace: "nowrap",
-              border: "1px solid #cbd5e1",
-              background: sortMode === "distance" ? "#dbeafe" : "#fff",
-              color: sortMode === "distance" ? "#1d4ed8" : "#111827",
-              borderRadius: 12,
-              padding: "12px 14px",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
+            className={`nearby-sort-button ${sortMode === "distance" ? "active" : ""}`}
           >
             {sortMode === "distance" ? "📍 Nearest" : "↕ Default"}
           </button>
         </div>
         {/* Category chips */}
-        <div
-          className="btn-row"
-          style={{
-            marginTop: 4,
-            fontWeight: 700,
-            fontSize: 14,
-            flexWrap: "wrap",
-            gap: 4,
-          }}
-        >
+        <div className="btn-row nearby-chip-row">
           {categoryOptions.map((category) => (
             <button
               key={category}
@@ -530,36 +483,15 @@ function NearbyPageInner() {
             </button>
           ))}
         </div>
-
         {/* Quick Actions */}
         {closestPlaces.length > 0 ? (
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              overflowX: "auto",
-              paddingBottom: 6,
-              marginTop: 10,
-              WebkitOverflowScrolling: "touch",
-            }}
-          >
+          <div className="nearby-quick-actions">
             {closestPlaces.map((item) => (
               <button
                 key={item.label}
                 type="button"
                 onClick={() => jumpToCategory(item.category)}
-                style={{
-                  whiteSpace: "nowrap",
-                  border: "1px solid #cbd5e1",
-                  background: "#ffffff",
-                  borderRadius: 999,
-                  padding: "10px 14px",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: "#111827",
-                  cursor: "pointer",
-                  boxShadow: "0 1px 4px rgba(15,23,42,0.05)",
-                }}
+                className="nearby-quick-chip"
               >
                 {item.icon} Closest {item.label}
               </button>
@@ -572,207 +504,76 @@ function NearbyPageInner() {
                 setSearch("");
                 setSortMode("default");
               }}
-              style={{
-                whiteSpace: "nowrap",
-                border: "1px solid #cbd5e1",
-                background: "#eff6ff",
-                borderRadius: 999,
-                padding: "10px 14px",
-                fontSize: 13,
-                fontWeight: 700,
-                color: "#1d4ed8",
-                cursor: "pointer",
-              }}
+              className="nearby-reset-chip"
             >
               🔎 Reset Filters
             </button>
           </div>
         ) : null}
-
-        {status ? (
-          <div style={{ marginTop: 5, fontSize: 11, color: "#666" }}>
-            {status}
-          </div>
-        ) : null}
-
+        {status ? <div className="nearby-status-text">{status}</div> : null}
         {error ? (
-          <div
-            role="alert"
-            style={{
-              marginTop: 8,
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #fecaca",
-              background: "#fef2f2",
-              color: "#991b1b",
-              fontSize: 13,
-              fontWeight: 700,
-            }}
-          >
+          <div role="alert" className="nearby-error-banner">
             {error}
           </div>
         ) : null}
       </div>
-
       {/* Emergency Nearby */}
       {emergencyPlaces.length > 0 ? (
-        <div
-          style={{
-            display: "grid",
-            gap: 10,
-            marginTop: 8,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
-          >
+        <div className="nearby-emergency-section">
+          <div className="nearby-emergency-header">
             <div>
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 800,
-                  color: "#991b1b",
-                }}
-              >
+              <div className="nearby-emergency-title">
                 Emergency & Travel Essentials
               </div>
 
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "#666",
-                  marginTop: 2,
-                }}
-              >
+              <div className="nearby-emergency-subtitle">
                 Quick access to important nearby services.
               </div>
             </div>
 
-            <div
-              style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                background: "#fee2e2",
-                color: "#991b1b",
-                fontSize: 12,
-                fontWeight: 700,
-                whiteSpace: "nowrap",
-              }}
-            >
-              Priority Access
-            </div>
+            <div className="nearby-emergency-badge">Priority Access</div>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              overflowX: "auto",
-              paddingBottom: 8,
-              WebkitOverflowScrolling: "touch",
-            }}
-          >
+          <div className="nearby-emergency-scroll">
             {emergencyPlaces.map((place) => (
               <div
                 key={`emergency-${place.id}`}
-                style={{
-                  minWidth: 280,
-                  maxWidth: 320,
-                  flex: "0 0 auto",
-                  borderRadius: 18,
-                  border: "1px solid #fecaca",
-                  background: "#fff7f7",
-                  boxShadow: "0 4px 16px rgba(153,27,27,0.08)",
-                  overflow: "hidden",
-                }}
+                className="nearby-emergency-card"
               >
-                <div
-                  style={{
-                    height: 6,
-                    background: "#dc2626",
-                  }}
-                />
+                <div className="nearby-emergency-card-top" />
 
-                <div
-                  style={{
-                    padding: 16,
-                    display: "grid",
-                    gap: 10,
-                  }}
-                >
+                <div className="nearby-place-content">
                   <div>
-                    <div
-                      style={{
-                        fontSize: 18,
-                        fontWeight: 800,
-                        color: "#111827",
-                      }}
-                    >
+                    <div className="nearby-emergency-place-title">
                       {place.name}
                     </div>
 
                     {place.category ? (
-                      <div
-                        style={{
-                          fontSize: 13,
-                          color: "#991b1b",
-                          marginTop: 4,
-                          fontWeight: 700,
-                        }}
-                      >
+                      <div className="nearby-emergency-place-category">
                         {place.category}
                       </div>
                     ) : null}
                   </div>
 
                   {place.address ? (
-                    <div
-                      style={{
-                        fontSize: 14,
-                        color: "#374151",
-                        lineHeight: 1.5,
-                      }}
-                    >
+                    <div className="nearby-emergency-place-address">
                       {place.address}
                     </div>
                   ) : null}
 
                   {place.distance_miles !== null ? (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "#991b1b",
-                      }}
-                    >
+                    <div className="nearby-emergency-distance">
                       {place.distance_miles} mi away
                     </div>
                   ) : null}
 
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 8,
-                      flexWrap: "wrap",
-                    }}
-                  >
+                  <div className="nearby-action-row">
                     {place.lat !== null && place.lng !== null ? (
                       <a
                         href={`https://maps.apple.com/?ll=${place.lat},${place.lng}`}
                         target="_blank"
                         rel="noreferrer"
-                        style={{
-                          ...actionBtnStyle,
-                          minHeight: 42,
-                          padding: "10px 16px",
-                          fontSize: 13,
-                          background: "#dc2626",
-                        }}
+                        className="nearby-action-button nearby-action-button-danger"
                       >
                         Directions
                       </a>
@@ -781,13 +582,7 @@ function NearbyPageInner() {
                     {place.phone ? (
                       <a
                         href={`tel:${place.phone}`}
-                        style={{
-                          ...actionBtnStyle,
-                          minHeight: 42,
-                          padding: "10px 16px",
-                          fontSize: 13,
-                          background: "#991b1b",
-                        }}
+                        className="nearby-action-button nearby-action-button-dark"
                       >
                         Call
                       </a>
@@ -800,62 +595,33 @@ function NearbyPageInner() {
         </div>
       ) : null}
       {/* Places list */}
-      <div style={{ display: "grid", gap: 12 }}>
+      <div className="nearby-places-grid">
+        {" "}
         {filteredPlaces.map((place) => (
           <div
             key={place.id}
             data-category={place.category || "Other"}
-            style={{
-              background: "#fff",
-              border: "1px solid #dbe3ee",
-              borderRadius: 18,
-              overflow: "hidden",
-              boxShadow: "0 8px 24px rgba(15,23,42,0.08)",
-            }}
+            className="nearby-place-card"
           >
             <div
-              style={{
-                height: 8,
-                background: sanitizeCardColor(
-                  getNearbyCardColor(place.category),
-                ),
-              }}
+              className="nearby-place-topbar"
+              style={
+                {
+                  "--nearby-topbar": sanitizeCardColor(
+                    getNearbyCardColor(place.category),
+                  ),
+                } as React.CSSProperties
+              }
             />
-            {/* Main content */}
-            <div style={{ padding: "22px 22px 18px" }}>
-              {" "}
-              {/* Name */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  marginBottom: 6,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 800,
-                    color: "#111827",
-                    flex: 1,
-                  }}
-                >
-                  {place.name}
-                </div>
+
+            <div className="nearby-place-content">
+              <div className="nearby-place-title-row">
+                <div className="nearby-card-title">{place.name}</div>
 
                 <button
                   type="button"
                   onClick={() => toggleFavorite(place.id)}
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    fontSize: 24,
-                    cursor: "pointer",
-                    padding: 0,
-                    lineHeight: 1,
-                  }}
+                  className="nearby-favorite-button"
                   aria-label="Toggle favorite"
                 >
                   {favoriteIds.includes(place.id) ? "⭐" : "☆"}
@@ -863,93 +629,51 @@ function NearbyPageInner() {
               </div>
               {/* Category */}
               {place.category && (
-                <div
-                  style={{ fontSize: 15, color: "#6b7280", marginBottom: 14 }}
-                >
-                  {place.category}
-                </div>
+                <div className="nearby-place-category">{place.category}</div>
               )}
+
               {/* Address */}
               {place.address && (
-                <div
-                  style={{ fontSize: 16, color: "#111827", marginBottom: 14 }}
-                >
-                  {place.address}
-                </div>
+                <div className="nearby-place-address">{place.address}</div>
               )}
+
               {/* Phone as link */}
               {place.phone && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    marginBottom: 10,
-                  }}
-                >
-                  <span style={{ fontSize: 20 }}>📞</span>
+                <div className="nearby-contact-row">
+                  <span className="nearby-contact-icon">📞</span>
+
                   <a
                     href={`tel:${place.phone}`}
-                    style={{
-                      fontSize: 16,
-                      color: "#2563eb",
-                      textDecoration: "none",
-                      fontWeight: 500,
-                    }}
+                    className="nearby-contact-link"
                   >
                     {place.phone}
                   </a>
                 </div>
               )}
+
               {/* Website as link */}
               {place.website && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    marginBottom: 14,
-                  }}
-                >
-                  <span style={{ fontSize: 20 }}>🌐</span>
+                <div className="nearby-contact-row">
+                  <span className="nearby-contact-icon">🌐</span>
+
                   <a
                     href={place.website}
                     target="_blank"
                     rel="noreferrer"
-                    style={{
-                      fontSize: 16,
-                      color: "#2563eb",
-                      textDecoration: "none",
-                      fontWeight: 500,
-                    }}
+                    className="nearby-contact-link"
                   >
                     {place.website}
                   </a>
                 </div>
               )}
+
               {/* Notes */}
               {place.notes && (
-                <div
-                  style={{
-                    fontSize: 15,
-                    color: "#374151",
-                    lineHeight: 1.6,
-                    marginBottom: 18,
-                  }}
-                >
-                  {place.notes}
-                </div>
+                <div className="nearby-place-notes">{place.notes}</div>
               )}
               {/* Action buttons */}
               {(place.lat !== null || place.phone || place.website) && (
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    marginTop: 8,
-                  }}
-                >
+                <div className="nearby-action-row">
                   {" "}
                   {place.lat !== null && place.lng !== null && (
                     <>
@@ -957,7 +681,7 @@ function NearbyPageInner() {
                         href={`https://maps.apple.com/?ll=${place.lat},${place.lng}`}
                         target="_blank"
                         rel="noreferrer"
-                        style={actionBtnStyle}
+                        className="nearby-action-button"
                       >
                         Apple Maps
                       </a>
@@ -965,14 +689,17 @@ function NearbyPageInner() {
                         href={`https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`}
                         target="_blank"
                         rel="noreferrer"
-                        style={actionBtnStyle}
+                        className="nearby-action-button"
                       >
                         Google Maps
                       </a>
                     </>
                   )}
                   {place.phone && (
-                    <a href={`tel:${place.phone}`} style={actionBtnStyle}>
+                    <a
+                      href={`tel:${place.phone}`}
+                      className="nearby-action-button"
+                    >
                       Call
                     </a>
                   )}
@@ -981,7 +708,7 @@ function NearbyPageInner() {
                       href={place.website}
                       target="_blank"
                       rel="noreferrer"
-                      style={actionBtnStyle}
+                      className="nearby-action-button"
                     >
                       Website
                     </a>
@@ -993,49 +720,23 @@ function NearbyPageInner() {
             {/* Footer bar */}
             {(place.location_code ||
               (place.lat !== null && place.lng !== null)) && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 16,
-                  padding: "12px 20px",
-                  background: "#f8fafc",
-                  borderTop: "1px solid #e5e7eb",
-                  fontSize: 14,
-                  color: "#374151",
-                }}
-              >
+              <div className="nearby-footer-bar">
                 {place.location_code && (
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 8 }}
-                  >
-                    <span
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: "50%",
-                        background: "#374151",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 14,
-                      }}
-                    >
-                      🧭
-                    </span>
+                  <div className="nearby-footer-item">
+                    <span className="nearby-footer-icon">🧭</span>
+
                     <span>{place.location_code}</span>
                   </div>
                 )}
 
                 {place.location_code && place.lat !== null && (
-                  <span style={{ color: "#d1d5db" }}>|</span>
+                  <span className="nearby-footer-divider">|</span>
                 )}
 
                 {place.lat !== null && place.lng !== null && (
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 8 }}
-                  >
-                    <span style={{ fontSize: 18 }}>🌐</span>
+                  <div className="nearby-footer-item">
+                    <span className="nearby-footer-emoji">🌐</span>
+
                     <span>
                       {Number(place.lat).toFixed(5)},{" "}
                       {Number(place.lng).toFixed(5)}
@@ -1044,17 +745,7 @@ function NearbyPageInner() {
                 )}
 
                 {place.distance_miles !== null && (
-                  <span
-                    style={{
-                      marginLeft: "auto",
-                      padding: "2px 10px",
-                      borderRadius: 999,
-                      background: "#e5e7eb",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "#374151",
-                    }}
-                  >
+                  <span className="nearby-distance-badge">
                     {place.distance_miles} mi
                   </span>
                 )}
@@ -1062,7 +753,6 @@ function NearbyPageInner() {
             )}
           </div>
         ))}
-
         {filteredPlaces.length === 0 ? (
           <div className="card">No nearby places found.</div>
         ) : null}
