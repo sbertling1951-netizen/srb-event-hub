@@ -1117,3 +1117,208 @@ button[style*="background-color: #fafafa"] * {
   display: grid;
   gap: 6px;
 }
+
+/* ================================
+   MEMBER NEARBY FINAL OVERRIDES
+================================ */
+
+.nearby-page-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.nearby-header-card {
+  padding: 16px;
+  border-radius: 18px;
+}
+
+.nearby-place-card {
+  background: #ffffff;
+  border: 1px solid #dbe3ee;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.nearby-place-topbar {
+  height: 8px;
+  background: var(--nearby-topbar, #dbeafe);
+}
+
+.nearby-place-content {
+  padding: 22px;
+  display: grid;
+  gap: 14px;
+}
+
+.nearby-place-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.nearby-card-title {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 800;
+  color: #111827;
+}
+
+.nearby-place-category {
+  font-size: 14px;
+  font-weight: 700;
+  color: #6b7280;
+}
+
+.nearby-place-address {
+  font-size: 16px;
+  line-height: 1.5;
+  color: #111827;
+}
+
+.nearby-place-notes {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #374151;
+}
+
+.nearby-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nearby-contact-link {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.nearby-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.nearby-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: #2563eb;
+  color: #ffffff !important;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.nearby-action-button-danger {
+  background: #dc2626;
+}
+
+.nearby-action-button-dark {
+  background: #991b1b;
+}
+
+.nearby-footer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: #f8fafc;
+  border-top: 1px solid #e5e7eb;
+  font-size: 13px;
+  color: #374151;
+}
+
+.nearby-footer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nearby-footer-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #374151;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nearby-distance-badge {
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nearby-emergency-section {
+  display: grid;
+  gap: 12px;
+}
+
+.nearby-emergency-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.nearby-emergency-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nearby-emergency-card {
+  min-width: 280px;
+  max-width: 320px;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid #fecaca;
+  background: #fff7f7;
+}
+
+.nearby-emergency-card-top {
+  height: 6px;
+  background: #dc2626;
+}
+
+.nearby-quick-actions {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.nearby-quick-chip,
+.nearby-reset-chip {
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nearby-quick-chip {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+}
+
+.nearby-reset-chip {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
