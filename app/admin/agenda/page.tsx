@@ -716,6 +716,10 @@ function AdminAgendaPageInner() {
     setTemplates((data || []) as AgendaTemplate[]);
   }, []);
 
+  const refreshAgendaData = useCallback(async () => {
+    await Promise.all([loadPage(), loadTemplates()]);
+  }, [loadPage, loadTemplates]);
+
   useEffect(() => {
     function handleResize() {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
@@ -769,9 +773,7 @@ function AdminAgendaPageInner() {
     function handleStorage(e: StorageEvent) {
       if (
         e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
+        e.key === "fcoc-admin-event-changed"
       ) {
         void init();
         void loadTemplates();
@@ -928,7 +930,7 @@ function AdminAgendaPageInner() {
       }
 
       setForm(emptyForm);
-      void loadPage();
+      void refreshAgendaData();
     } finally {
       setSaving(false);
     }
@@ -978,7 +980,7 @@ function AdminAgendaPageInner() {
     }
 
     setItems((prev) => prev.filter((item) => item.id !== id));
-    void loadPage();
+    void refreshAgendaData();
     setStatus(`Deleted "${deletedRows[0]?.title || itemTitle}".`);
   }
 
@@ -1000,7 +1002,7 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    void loadPage();
+    void refreshAgendaData();
     setStatus(
       `${item.title} ${item.is_published ? "unpublished" : "published"}.`,
     );
@@ -1252,7 +1254,7 @@ function AdminAgendaPageInner() {
     if (updateError) {
       showError(updateError.message || "Could not resize agenda item.");
       setCalendarResizePreview(null);
-      void loadPage();
+      void refreshAgendaData();
       return;
     }
 
@@ -1265,13 +1267,13 @@ function AdminAgendaPageInner() {
       showError(getErrorMessage(err, "No agenda item was resized."));
 
       setCalendarResizePreview(null);
-      void loadPage();
+      void refreshAgendaData();
       return;
     }
 
     setStatus(`Resized "${item.title}" to start at ${nextStartTime}.`);
     setCalendarResizePreview(null);
-    void loadPage();
+    void refreshAgendaData();
   }
 
   function handleDragStart(e: React.DragEvent<HTMLDivElement>, id: string) {
@@ -1466,7 +1468,7 @@ function AdminAgendaPageInner() {
     if (updateError) {
       showError(updateError.message || "Could not resize agenda item.");
       setCalendarResizePreview(null);
-      void loadPage();
+      void refreshAgendaData();
       return;
     }
 
@@ -1479,13 +1481,13 @@ function AdminAgendaPageInner() {
       showError(getErrorMessage(err, "No agenda item was resized."));
 
       setCalendarResizePreview(null);
-      void loadPage();
+      void refreshAgendaData();
       return;
     }
 
     setStatus(`Resized "${item.title}" to end at ${nextEndTime}.`);
     setCalendarResizePreview(null);
-    void loadPage();
+    void refreshAgendaData();
   }
 
   async function moveAgendaItemToCalendarSlot(
@@ -1508,8 +1510,9 @@ function AdminAgendaPageInner() {
 
     const duration = agendaDurationMinutes(item);
     const nextStartTime = minutesToTime(nextStartMinutes);
-    const nextEndTime = minutesToTime(nextStartMinutes + duration);
+    const safeEndMinutes = Math.min(24 * 60 - 1, nextStartMinutes + duration);
 
+    const nextEndTime = minutesToTime(safeEndMinutes);
     setItems((prev) =>
       prev.map((agendaItem) =>
         agendaItem.id === itemId
@@ -1541,7 +1544,7 @@ function AdminAgendaPageInner() {
     if (updateError) {
       showError(updateError.message || "Could not move agenda item.");
       setCalendarDraggingId(null);
-      void loadPage();
+      void refreshAgendaData();
       return;
     }
 
@@ -1554,7 +1557,7 @@ function AdminAgendaPageInner() {
       showError(getErrorMessage(err, "No agenda item was moved."));
 
       setCalendarDraggingId(null);
-      void loadPage();
+      void refreshAgendaData();
       return;
     }
 
@@ -1562,7 +1565,7 @@ function AdminAgendaPageInner() {
       `Moved "${item.title}" to ${formatAgendaDate(nextDate)} at ${nextStartTime}.`,
     );
     setCalendarDraggingId(null);
-    void loadPage();
+    void refreshAgendaData();
   }
 
   function handleCalendarColumnDrop(
@@ -2085,7 +2088,7 @@ function AdminAgendaPageInner() {
         throw new Error(`Bulk import failed: ${importError.message}`);
       }
 
-      void loadPage();
+      void refreshAgendaData();
       setAgendaMode("items");
 
       if (importWarnings.length > 0) {

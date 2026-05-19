@@ -376,6 +376,31 @@ function EventAdminPageInner() {
   }, [loadPage]);
 
   useEffect(() => {
+    if (selectedEventId) {
+      return;
+    }
+
+    try {
+      const stored = localStorage.getItem("fcoc-event-draft");
+
+      if (!stored) {
+        return;
+      }
+
+      const parsed = JSON.parse(stored);
+
+      setForm({
+        ...emptyForm,
+        ...parsed,
+      });
+
+      setStatus("Restored unsaved event draft.");
+    } catch (err) {
+      console.error("draft restore failed", err);
+    }
+  }, [selectedEventId]);
+
+  useEffect(() => {
     if (!selectedEvent) {
       setForm(emptyForm);
       setSelectedMasterMapId("");
@@ -397,6 +422,52 @@ function EventAdminPageInner() {
 
     void loadAssignmentsForEvent(selectedEvent.id);
   }, [selectedEvent, loadAssignmentsForEvent]);
+
+  useEffect(() => {
+    if (!form.location.trim()) {
+      return;
+    }
+
+    const timeout = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(form.location)}`,
+        );
+
+        const results = await response.json();
+
+        if (!results?.length) {
+          return;
+        }
+
+        const first = results[0];
+
+        setForm((prev) => {
+          if (prev.lat && prev.lng) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            lat: first.lat,
+            lng: first.lon,
+          };
+        });
+      } catch (err) {
+        console.error("auto geocode failed", err);
+      }
+    }, 1200);
+
+    return () => clearTimeout(timeout);
+  }, [form.location]);
+
+  useEffect(() => {
+    if (form.id) {
+      return;
+    }
+
+    localStorage.setItem("fcoc-event-draft", JSON.stringify(form));
+  }, [form]);
 
   function setWorkingAdminEvent(event: EventRow | null) {
     if (!event) {
@@ -521,7 +592,9 @@ function EventAdminPageInner() {
         const { data, error } = await supabase
           .from("events")
           .insert(payload)
-          .select("id,name,location,start_date,end_date,status,is_active")
+          .select(
+            "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
+          )
           .single();
 
         if (error) {
@@ -531,6 +604,7 @@ function EventAdminPageInner() {
         const createdEvent = data as EventRow;
         setSelectedEventId(createdEvent.id);
         setEventStatusFilter(filterForStatus(createdEvent.status));
+        localStorage.removeItem("fcoc-event-draft");
         setEvents([createdEvent]);
         if (isActiveEventStatus(createdEvent.status)) {
           setWorkingAdminEvent(createdEvent);
@@ -795,6 +869,97 @@ function EventAdminPageInner() {
         >
           New Event
         </button>
+        <button
+          type="button"
+          disabled={!selectedEvent}
+          onClick={async () => {
+            if (!selectedEvent) {
+              setStatus("Select an event first.");
+              return;
+            }
+
+            const newName = window.prompt(
+              "New event name",
+              `${selectedEvent.name || "Event"} Copy`,
+            );
+
+            if (!newName) {
+              return;
+            }
+
+            const newCode = window.prompt(
+              "New event code",
+              `${selectedEvent.event_code || "COPY"}-COPY`,
+            );
+
+            if (!newCode) {
+              return;
+            }
+
+            try {
+              setStatus("Cloning event...");
+              setError(null);
+
+              const { data: createdEvent, error: createError } = await supabase
+                .from("events")
+                .insert({
+                  name: newName.trim(),
+                  location: selectedEvent.location || null,
+                  start_date: selectedEvent.start_date || null,
+                  end_date: selectedEvent.end_date || null,
+                  event_code: newCode.trim(),
+                  status: "Draft",
+                  is_active: false,
+                  visible_to_members: false,
+                  lat: selectedEvent.lat || null,
+                  lng: selectedEvent.lng || null,
+                })
+                .select(
+                  "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
+                )
+                .single();
+
+              if (createError) {
+                throw createError;
+              }
+
+              if (!createdEvent?.id) {
+                throw new Error("Failed to create cloned event.");
+              }
+
+              await supabase.from("event_map_settings").upsert({
+                event_id: createdEvent.id,
+                selected_master_map_id: selectedMasterMapId || null,
+              });
+
+              await supabase
+                .from("events")
+                .update({
+                  selected_nearby_area_id: selectedNearbyListId || null,
+                })
+                .eq("id", createdEvent.id);
+
+              const clonedEvent = createdEvent as EventRow;
+
+              setEvents((prev) => [clonedEvent, ...prev]);
+              setSelectedEventId(clonedEvent.id);
+
+              setWorkingAdminEvent(clonedEvent);
+
+              setStatus(`Cloned event "${newName}".`);
+            } catch (err: any) {
+              console.error("clone event error:", err);
+              setError(err?.message || "Failed to clone event.");
+              setStatus(err?.message || "Failed to clone event.");
+            }
+          }}
+          style={{
+            width: "fit-content",
+            marginLeft: 10,
+          }}
+        >
+          Clone Event
+        </button>
       </div>
 
       <div
@@ -809,6 +974,129 @@ function EventAdminPageInner() {
           overflowX: "hidden",
         }}
       >
+        {selectedEvent ? (
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              background: "#ffffff",
+              padding: 16,
+              display: "grid",
+              gap: 14,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0 }}>Event Health</h2>
+
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "#666",
+                    marginTop: 4,
+                  }}
+                >
+                  Pre-flight checklist for this event.
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  background: isActiveEventStatus(selectedEvent.status)
+                    ? "#dcfce7"
+                    : "#fef3c7",
+                  color: isActiveEventStatus(selectedEvent.status)
+                    ? "#166534"
+                    : "#92400e",
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}
+              >
+                {selectedEvent.status || "Draft"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
+                gap: 12,
+              }}
+            >
+              <div style={healthCardStyle}>
+                <div style={healthTitleStyle}>Coordinates</div>
+
+                <div style={healthValueStyle}>
+                  {selectedEvent.lat && selectedEvent.lng
+                    ? "✅ Loaded"
+                    : "⚠ Missing"}
+                </div>
+
+                <div style={healthSubtleStyle}>
+                  {selectedEvent.lat && selectedEvent.lng
+                    ? `${selectedEvent.lat.toFixed(4)}, ${selectedEvent.lng.toFixed(4)}`
+                    : "Nearby distances may fail"}
+                </div>
+              </div>
+
+              <div style={healthCardStyle}>
+                <div style={healthTitleStyle}>Master Map</div>
+
+                <div style={healthValueStyle}>
+                  {selectedMasterMapId ? "✅ Assigned" : "⚠ Missing"}
+                </div>
+
+                <div style={healthSubtleStyle}>
+                  {selectedMasterMapId
+                    ? "Event map ready"
+                    : "No campground map assigned"}
+                </div>
+              </div>
+
+              <div style={healthCardStyle}>
+                <div style={healthTitleStyle}>Nearby List</div>
+
+                <div style={healthValueStyle}>
+                  {selectedNearbyListId ? "✅ Assigned" : "⚠ Missing"}
+                </div>
+
+                <div style={healthSubtleStyle}>
+                  {selectedNearbyListId
+                    ? "Nearby locations available"
+                    : "No nearby list assigned"}
+                </div>
+              </div>
+
+              <div style={healthCardStyle}>
+                <div style={healthTitleStyle}>Visibility</div>
+
+                <div style={healthValueStyle}>
+                  {selectedEvent.visible_to_members
+                    ? "✅ Members Visible"
+                    : "🟡 Hidden"}
+                </div>
+
+                <div style={healthSubtleStyle}>
+                  {selectedEvent.visible_to_members
+                    ? "Members can access"
+                    : "Hidden from members"}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div
           style={{
             border: "1px solid #ddd",
@@ -879,6 +1167,22 @@ function EventAdminPageInner() {
           >
             Auto Fill Coordinates
           </button>
+          {form.lat && form.lng ? (
+            <div
+              style={{
+                width: "fit-content",
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: "#dcfce7",
+                color: "#166534",
+                fontSize: 12,
+                fontWeight: 700,
+                marginTop: 4,
+              }}
+            >
+              📍 Coordinates Loaded
+            </div>
+          ) : null}
 
           <label>
             Latitude
@@ -1077,6 +1381,33 @@ function EventAdminPageInner() {
     </div>
   );
 }
+
+const healthCardStyle: React.CSSProperties = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 10,
+  padding: 14,
+  background: "#f8fafc",
+  display: "grid",
+  gap: 6,
+};
+
+const healthTitleStyle: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#6b7280",
+};
+
+const healthValueStyle: React.CSSProperties = {
+  fontSize: 18,
+  fontWeight: 800,
+  color: "#111827",
+};
+
+const healthSubtleStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#6b7280",
+  lineHeight: 1.4,
+};
 
 const gridButtonStyle: React.CSSProperties = {
   width: "100%",
