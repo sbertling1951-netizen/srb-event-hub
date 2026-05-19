@@ -1769,6 +1769,9 @@ function ParkingAdminPageInner() {
             style={{
               overflowX: "auto",
               overflowY: "auto",
+
+              whiteSpace: "nowrap",
+
               height: isNarrow ? "52vh" : undefined,
               minHeight: isNarrow ? 320 : undefined,
               maxHeight: isNarrow ? "52vh" : "82vh",
@@ -1789,11 +1792,15 @@ function ParkingAdminPageInner() {
             <div
               style={{
                 position: "relative",
-                width: naturalSize.width * zoom,
-                height: naturalSize.height * zoom,
-                minWidth: naturalSize.width * zoom,
-                minHeight: naturalSize.height * zoom,
-                boxSizing: "border-box",
+
+                width: `${naturalSize.width * zoom}px`,
+                height: `${naturalSize.height * zoom}px`,
+
+                minWidth: `${naturalSize.width * zoom}px`,
+                minHeight: `${naturalSize.height * zoom}px`,
+
+                display: "inline-block",
+                boxSizing: "content-box",
               }}
             >
               <div
