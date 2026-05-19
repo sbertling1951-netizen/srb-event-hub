@@ -454,9 +454,7 @@ function ParkingAdminPageInner() {
     function onTouchStart(e: TouchEvent) {
       if (e.touches.length === 2) {
         lastDistanceRef.current = getTouchDistance(e.touches);
-        if (e.touches.length === 2) {
-          e.preventDefault();
-        }
+        e.preventDefault();
       }
     }
 
@@ -470,9 +468,7 @@ function ParkingAdminPageInner() {
         }
 
         lastDistanceRef.current = distance;
-        if (e.touches.length === 2) {
-          e.preventDefault();
-        }
+        e.preventDefault();
       }
     }
 
@@ -1771,18 +1767,23 @@ function ParkingAdminPageInner() {
           <div
             ref={mapRef}
             style={{
-              overflowX: "scroll",
-              overflowY: "scroll",
+              overflowX: "auto",
+              overflowY: "auto",
               height: isNarrow ? "52vh" : undefined,
               minHeight: isNarrow ? 320 : undefined,
               maxHeight: isNarrow ? "52vh" : "82vh",
               border: "1px solid #ddd",
               background: "#f2f2f2",
+
               WebkitOverflowScrolling: "touch",
-              touchAction: "auto",
+
+              touchAction: "pan-x pan-y",
+
+              overscrollBehavior: "contain",
               overscrollBehaviorX: "contain",
               overscrollBehaviorY: "contain",
-              overscrollBehavior: "contain",
+
+              position: "relative",
             }}
           >
             <div
@@ -1793,7 +1794,6 @@ function ParkingAdminPageInner() {
                 minWidth: naturalSize.width * zoom,
                 minHeight: naturalSize.height * zoom,
                 boxSizing: "border-box",
-                flexShrink: 0,
               }}
             >
               <div
