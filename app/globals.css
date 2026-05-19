@@ -1322,3 +1322,67 @@ button[style*="background-color: #fafafa"] * {
   background: #eff6ff;
   color: #1d4ed8;
 }
+
+/* ===== IOS CARD SNAP SCROLL ===== */
+
+.nearby-emergency-scroll {
+  scroll-snap-type: x mandatory;
+  padding-bottom: 10px;
+}
+
+.nearby-emergency-card {
+  scroll-snap-align: start;
+}
+
+.nearby-quick-actions {
+  scroll-snap-type: x proximity;
+}
+
+.nearby-quick-chip,
+.nearby-reset-chip {
+  scroll-snap-align: start;
+}
+
+/* ===== MEMBER CARD INTERACTION ===== */
+
+.nearby-place-card,
+.nearby-emergency-card,
+.nearby-quick-chip,
+.nearby-reset-chip,
+.nearby-action-button,
+.nearby-chip {
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.nearby-place-card:hover,
+.nearby-emergency-card:hover {
+  transform: translateY(-2px);
+}
+
+.nearby-place-card:active,
+.nearby-emergency-card:active,
+.nearby-quick-chip:active,
+.nearby-reset-chip:active,
+.nearby-action-button:active,
+.nearby-chip:active {
+  transform: scale(0.97);
+}
+
+/* ===== MEMBER PAGE SPACING ===== */
+
+@media (max-width: 899px) {
+  .card {
+    border-radius: 18px;
+  }
+
+  .app-main {
+    padding-top: 82px !important;
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+    padding-bottom: 20px !important;
+  }
+}
