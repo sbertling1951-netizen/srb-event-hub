@@ -1799,8 +1799,9 @@ function ParkingAdminPageInner() {
                 minWidth: `${naturalSize.width * zoom}px`,
                 minHeight: `${naturalSize.height * zoom}px`,
 
-                display: "inline-block",
-                boxSizing: "content-box",
+                display: "block",
+                boxSizing: "border-box",
+                flexShrink: 0,
               }}
             >
               <div
@@ -1908,7 +1909,6 @@ function ParkingAdminPageInner() {
                             fontWeight: 700,
                             padding: "1px 4px",
                             color: "#111",
-                            whiteSpace: "nowrap",
                             boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
                             display: "table",
                             pointerEvents: "none",
