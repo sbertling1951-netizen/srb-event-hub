@@ -445,49 +445,6 @@ function ParkingAdminPageInner() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  useEffect(() => {
-    const el = mapRef.current;
-    if (!el) {
-      return;
-    }
-
-    function onTouchStart(e: TouchEvent) {
-      if (e.touches.length === 2) {
-        lastDistanceRef.current = getTouchDistance(e.touches);
-        e.preventDefault();
-      }
-    }
-
-    function onTouchMove(e: TouchEvent) {
-      if (e.touches.length === 2) {
-        const distance = getTouchDistance(e.touches);
-
-        if (lastDistanceRef.current) {
-          const factor = distance / lastDistanceRef.current;
-          setZoom((z) => clampZoom(z * factor));
-        }
-
-        lastDistanceRef.current = distance;
-        e.preventDefault();
-      }
-    }
-
-    function onTouchEnd() {
-      lastDistanceRef.current = null;
-    }
-
-    el.addEventListener("touchstart", onTouchStart, { passive: false });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd, { passive: false });
-    el.addEventListener("touchcancel", onTouchEnd, { passive: false });
-
-    return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
-    };
-  }, []);
   function siteMatchKey(value: string | null | undefined) {
     return String(value || "")
       .trim()
@@ -1767,24 +1724,20 @@ function ParkingAdminPageInner() {
           <div
             ref={mapRef}
             style={{
-              overflowX: "auto",
-              overflowY: "auto",
-
-              whiteSpace: "nowrap",
+              overflow: "auto",
 
               height: isNarrow ? "52vh" : undefined,
               minHeight: isNarrow ? 320 : undefined,
               maxHeight: isNarrow ? "52vh" : "82vh",
+
               border: "1px solid #ddd",
               background: "#f2f2f2",
 
               WebkitOverflowScrolling: "touch",
 
-              touchAction: "pan-x pan-y",
+              touchAction: "manipulation",
 
               overscrollBehavior: "contain",
-              overscrollBehaviorX: "contain",
-              overscrollBehaviorY: "contain",
 
               position: "relative",
             }}
