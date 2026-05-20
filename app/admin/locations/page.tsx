@@ -968,12 +968,14 @@ function AdminLocationsPageInner() {
             ref={mapRef}
             onClick={handleMapClick}
             style={{
-              overflow: "auto",
+              overflow: "hidden",
               maxHeight: isNarrow ? "60vh" : "82vh",
               border: "1px solid #ddd",
               background: "#f2f2f2",
               WebkitOverflowScrolling: "touch",
-              touchAction: "pan-x pan-y",
+              touchAction: "none",
+              overflowX: "scroll",
+              overflowY: "scroll",
             }}
           >
             <div

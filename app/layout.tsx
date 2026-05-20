@@ -18,6 +18,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
 };
 
@@ -30,7 +32,6 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="app-body" suppressHydrationWarning>
         <AdminProvider>
-          {/* Runs before hydration to avoid embedded layout flash */}
           <script
             dangerouslySetInnerHTML={{
               __html: `

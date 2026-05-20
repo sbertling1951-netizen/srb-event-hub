@@ -48,7 +48,7 @@ body.coach-map-lock .app-inner {
   height: 100dvh !important;
   max-height: 100dvh !important;
   min-height: 100dvh !important;
-  overflow: hidden !important;
+  overflow: visible !important;
   max-width: none !important;
   margin: 0 !important;
   padding: 0 !important;
