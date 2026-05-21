@@ -68,15 +68,19 @@ export default function InteractiveMapViewport({
       }}
     >
       <TransformWrapper
-        initialScale={1}
-        minScale={0.8}
-        maxScale={6}
+        initialScale={initialScale}
+        minScale={minScale}
+        maxScale={maxScale}
         limitToBounds={true}
+        centerZoomedOut={true}
+        doubleClick={{
+          disabled: false,
+          step: 1.2,
+        }}
         panning={{
           disabled: false,
         }}
       >
-        {" "}
         <TransformComponent
           wrapperStyle={{
             width: "100%",
@@ -99,14 +103,6 @@ export default function InteractiveMapViewport({
               height,
             }}
           >
-            <div
-              style={{
-                width,
-                height,
-                background: "#3366cc",
-              }}
-            />
-
             {children}
           </div>
         </TransformComponent>
