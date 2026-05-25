@@ -109,7 +109,8 @@ export default function PublicLocationsPage() {
       .from("events")
       .select("id,name,location,map_image_url,locations_map_open_scale")
       .eq("is_active", true)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (eventError || !activeEvent) {
       setStatus({
@@ -409,6 +410,8 @@ export default function PublicLocationsPage() {
             borderRadius: 10,
             background: "white",
             padding: 12,
+            height: isNarrow ? "65vh" : "82vh",
+            minHeight: 420,
           }}
         >
           <InteractiveMapViewport
