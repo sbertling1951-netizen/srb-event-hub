@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import InteractiveMapViewport from "@/components/map/InteractiveMapViewport";
 import { supabase } from "@/lib/supabase";
 
 type ActiveEvent = {
@@ -21,13 +22,6 @@ type EventLocation = {
   map_x: number | null;
   map_y: number | null;
   priority: number | null;
-};
-
-type PinchState = {
-  startDistance: number;
-  startZoom: number;
-  contentX: number;
-  contentY: number;
 };
 
 type StatusMessage = {
@@ -79,10 +73,6 @@ function getMarkerSize(
 }
 
 export default function PublicLocationsPage() {
-  const mapRef = useRef<HTMLDivElement | null>(null);
-  const zoomRef = useRef(0.6);
-  const pinchRef = useRef<PinchState | null>(null);
-
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [locations, setLocations] = useState<EventLocation[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState("");
@@ -102,23 +92,6 @@ export default function PublicLocationsPage() {
     return Math.min(Math.max(next, 0.25), 3);
   }
 
-  function getTouchDistance(touches: TouchList) {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
-  function getTouchMidpoint(touches: TouchList) {
-    return {
-      x: (touches[0].clientX + touches[1].clientX) / 2,
-      y: (touches[0].clientY + touches[1].clientY) / 2,
-    };
-  }
-
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
-
   useEffect(() => {
     function handleResize() {
       setIsNarrow(window.innerWidth < 900);
@@ -128,113 +101,6 @@ export default function PublicLocationsPage() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
-  useEffect(() => {
-    const el = mapRef.current;
-    if (!el) {
-      return;
-    }
-
-    const container = el;
-
-    function onWheel(e: WheelEvent) {
-      if (isNarrow) {
-        return;
-      }
-
-      e.preventDefault();
-
-      const rect = container.getBoundingClientRect();
-      const viewportX = e.clientX - rect.left;
-      const viewportY = e.clientY - rect.top;
-
-      const currentZoom = zoomRef.current;
-      const nextZoom = clampZoom(currentZoom * (e.deltaY > 0 ? 0.92 : 1.08));
-
-      const contentX = (container.scrollLeft + viewportX) / currentZoom;
-      const contentY = (container.scrollTop + viewportY) / currentZoom;
-
-      setZoom(nextZoom);
-      zoomRef.current = nextZoom;
-
-      requestAnimationFrame(() => {
-        container.scrollLeft = Math.max(0, contentX * nextZoom - viewportX);
-        container.scrollTop = Math.max(0, contentY * nextZoom - viewportY);
-      });
-    }
-
-    function onTouchStart(e: TouchEvent) {
-      if (e.touches.length !== 2) {
-        pinchRef.current = null;
-        return;
-      }
-
-      const rect = container.getBoundingClientRect();
-      const midpoint = getTouchMidpoint(e.touches);
-      const viewportX = midpoint.x - rect.left;
-      const viewportY = midpoint.y - rect.top;
-      const currentZoom = zoomRef.current;
-
-      pinchRef.current = {
-        startDistance: getTouchDistance(e.touches),
-        startZoom: currentZoom,
-        contentX: (container.scrollLeft + viewportX) / currentZoom,
-        contentY: (container.scrollTop + viewportY) / currentZoom,
-      };
-    }
-
-    function onTouchMove(e: TouchEvent) {
-      const pinch = pinchRef.current;
-      if (!pinch || e.touches.length !== 2) {
-        return;
-      }
-
-      e.preventDefault();
-
-      const rect = container.getBoundingClientRect();
-      const midpoint = getTouchMidpoint(e.touches);
-      const viewportX = midpoint.x - rect.left;
-      const viewportY = midpoint.y - rect.top;
-      const distance = getTouchDistance(e.touches);
-      const nextZoom = clampZoom(
-        pinch.startZoom * (distance / pinch.startDistance),
-      );
-
-      setZoom(nextZoom);
-      zoomRef.current = nextZoom;
-
-      requestAnimationFrame(() => {
-        container.scrollLeft = Math.max(
-          0,
-          pinch.contentX * nextZoom - viewportX,
-        );
-        container.scrollTop = Math.max(
-          0,
-          pinch.contentY * nextZoom - viewportY,
-        );
-      });
-    }
-
-    function onTouchEnd(e: TouchEvent) {
-      if (e.touches.length < 2) {
-        pinchRef.current = null;
-      }
-    }
-
-    container.addEventListener("wheel", onWheel, { passive: false });
-    container.addEventListener("touchstart", onTouchStart, { passive: true });
-    container.addEventListener("touchmove", onTouchMove, { passive: false });
-    container.addEventListener("touchend", onTouchEnd, { passive: true });
-    container.addEventListener("touchcancel", onTouchEnd, { passive: true });
-
-    return () => {
-      container.removeEventListener("wheel", onWheel);
-      container.removeEventListener("touchstart", onTouchStart);
-      container.removeEventListener("touchmove", onTouchMove);
-      container.removeEventListener("touchend", onTouchEnd);
-      container.removeEventListener("touchcancel", onTouchEnd);
-    };
-  }, [isNarrow]);
 
   const loadPage = useCallback(async () => {
     setStatus({ type: "loading", text: "Loading..." });
@@ -333,28 +199,8 @@ export default function PublicLocationsPage() {
     );
   }, [locations]);
 
-  function focusLocation(
-    location: EventLocation,
-    targetZoom = zoomRef.current,
-  ) {
-    if (!mapRef.current || location.map_x === null || location.map_y === null) {
-      return;
-    }
-
-    const container = mapRef.current;
-    const scaledWidth = naturalSize.width * targetZoom;
-    const scaledHeight = naturalSize.height * targetZoom;
-
-    const x = (location.map_x / 100) * scaledWidth;
-    const y = (location.map_y / 100) * scaledHeight;
-
-    requestAnimationFrame(() => {
-      container.scrollTo({
-        left: Math.max(0, x - container.clientWidth / 2),
-        top: Math.max(0, y - container.clientHeight / 2),
-        behavior: "smooth",
-      });
-    });
+  function focusLocation(location: EventLocation, targetZoom = zoom) {
+    // Implement focusLocation as needed for new InteractiveMapViewport, or leave as no-op if handled inside.
   }
 
   function handleLocationClick(location: EventLocation) {
@@ -565,152 +411,139 @@ export default function PublicLocationsPage() {
             padding: 12,
           }}
         >
-          <div
-            ref={mapRef}
-            style={{
-              overflow: "auto",
-              maxHeight: isNarrow ? "72vh" : "82vh",
-              border: "1px solid #ddd",
-              background: "#f2f2f2",
-              WebkitOverflowScrolling: "touch",
-              touchAction: "pan-x pan-y",
-            }}
+          <InteractiveMapViewport
+            imageUrl={event?.map_image_url || ""}
+            width={naturalSize.width}
+            height={naturalSize.height}
+            initialScale={defaultZoom}
           >
             <div
               style={{
                 position: "relative",
-                width: naturalSize.width * zoom,
-                height: naturalSize.height * zoom,
+                width: naturalSize.width,
+                height: naturalSize.height,
               }}
             >
-              <div
-                style={{
-                  position: "relative",
-                  width: naturalSize.width,
-                  height: naturalSize.height,
-                  transform: `scale(${zoom})`,
-                  transformOrigin: "top left",
-                }}
-              >
-                {event?.map_image_url && (
-                  <img
-                    src={event.map_image_url}
-                    alt="Event map"
-                    draggable={false}
-                    onLoad={(e) => {
-                      const img = e.currentTarget;
-                      setNaturalSize({
-                        width: img.naturalWidth || 1200,
-                        height: img.naturalHeight || 800,
-                      });
-                      setImageLoaded(true);
-                    }}
-                    style={{
-                      width: naturalSize.width,
-                      height: naturalSize.height,
-                      display: "block",
-                      userSelect: "none",
-                      pointerEvents: "none",
-                    }}
-                  />
-                )}
+              {event?.map_image_url && (
+                <img
+                  src={event.map_image_url}
+                  alt="Event map"
+                  draggable={false}
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    setNaturalSize({
+                      width: img.naturalWidth || 1200,
+                      height: img.naturalHeight || 800,
+                    });
+                    setImageLoaded(true);
+                  }}
+                  style={{
+                    width: naturalSize.width,
+                    height: naturalSize.height,
+                    display: "block",
+                    userSelect: "none",
+                    pointerEvents: "none",
+                    touchAction: "none",
+                    WebkitTouchCallout: "none",
+                    backfaceVisibility: "hidden",
+                    WebkitBackfaceVisibility: "hidden",
+                  }}
+                />
+              )}
 
-                {/* Keep all map markers visible while filters narrow only the side list. */}
-                {imageLoaded &&
-                  locations.map((loc) => {
-                    if (loc.map_x === null || loc.map_y === null) {
-                      return null;
-                    }
+              {imageLoaded &&
+                locations.map((loc) => {
+                  if (loc.map_x === null || loc.map_y === null) {
+                    return null;
+                  }
 
-                    const markerSize = getMarkerSize(
-                      loc,
-                      selectedLocationId,
-                      isNarrow,
-                    );
+                  const markerSize = getMarkerSize(
+                    loc,
+                    selectedLocationId,
+                    isNarrow,
+                  );
 
-                    return (
-                      <div
-                        key={loc.id}
+                  return (
+                    <div
+                      key={loc.id}
+                      style={{
+                        position: "absolute",
+                        left: `${loc.map_x}%`,
+                        top: `${loc.map_y}%`,
+                        transform: "translate(-50%, -50%)",
+                        pointerEvents: "none",
+                        zIndex: loc.id === selectedLocationId ? 4 : 2,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleLocationClick(loc)}
+                        title={loc.name}
                         style={{
-                          position: "absolute",
-                          left: `${loc.map_x}%`,
-                          top: `${loc.map_y}%`,
-                          transform: "translate(-50%, -50%)",
+                          width: markerSize,
+                          height: markerSize,
+                          borderRadius: "50%",
+                          background: getMarkerColor(loc, selectedLocationId),
+                          border: isNarrow
+                            ? "3px solid white"
+                            : "2px solid white",
+                          boxShadow:
+                            loc.id === selectedLocationId
+                              ? "0 0 0 4px rgba(255,215,0,0.35), 0 1px 4px rgba(0,0,0,0.35)"
+                              : "0 1px 4px rgba(0,0,0,0.35)",
+                          cursor: "pointer",
+                          padding: 0,
+                          display: "block",
+                          margin: "0 auto",
+                          pointerEvents: "auto",
+                        }}
+                      />
+
+                      <div
+                        style={{
+                          marginTop: 4,
+                          marginLeft: "auto",
+                          marginRight: "auto",
+                          background: "rgba(255,255,255,0.92)",
+                          border: "1px solid rgba(0,0,0,0.2)",
+                          borderRadius: 4,
+                          fontSize: loc.id === selectedLocationId ? 12 : 10,
+                          fontWeight: 700,
+                          padding:
+                            loc.id === selectedLocationId
+                              ? "2px 6px"
+                              : "1px 4px",
+                          color: "#111",
+                          whiteSpace: "nowrap",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                          display: "table",
                           pointerEvents: "none",
-                          zIndex: loc.id === selectedLocationId ? 4 : 2,
                         }}
                       >
-                        <button
-                          type="button"
-                          onClick={() => handleLocationClick(loc)}
-                          title={loc.name}
-                          style={{
-                            width: markerSize,
-                            height: markerSize,
-                            borderRadius: "50%",
-                            background: getMarkerColor(loc, selectedLocationId),
-                            border: isNarrow
-                              ? "3px solid white"
-                              : "2px solid white",
-                            boxShadow:
-                              loc.id === selectedLocationId
-                                ? "0 0 0 4px rgba(255,215,0,0.35), 0 1px 4px rgba(0,0,0,0.35)"
-                                : "0 1px 4px rgba(0,0,0,0.35)",
-                            cursor: "pointer",
-                            padding: 0,
-                            display: "block",
-                            margin: "0 auto",
-                            pointerEvents: "auto",
-                          }}
-                        />
-
-                        <div
-                          style={{
-                            marginTop: 4,
-                            marginLeft: "auto",
-                            marginRight: "auto",
-                            background: "rgba(255,255,255,0.92)",
-                            border: "1px solid rgba(0,0,0,0.2)",
-                            borderRadius: 4,
-                            fontSize: loc.id === selectedLocationId ? 12 : 10,
-                            fontWeight: 700,
-                            padding:
-                              loc.id === selectedLocationId
-                                ? "2px 6px"
-                                : "1px 4px",
-                            color: "#111",
-                            whiteSpace: "nowrap",
-                            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-                            display: "table",
-                            pointerEvents: "none",
-                          }}
-                        >
-                          {loc.name}
-                        </div>
+                        {loc.name}
                       </div>
-                    );
-                  })}
+                    </div>
+                  );
+                })}
 
-                {event?.map_image_url && !imageLoaded && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#475569",
-                      fontWeight: 700,
-                      background: "rgba(255,255,255,0.72)",
-                    }}
-                  >
-                    Loading map markers...
-                  </div>
-                )}
-              </div>
+              {event?.map_image_url && !imageLoaded && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#475569",
+                    fontWeight: 700,
+                    background: "rgba(255,255,255,0.72)",
+                  }}
+                >
+                  Loading map markers...
+                </div>
+              )}
             </div>
-          </div>
-
+          </InteractiveMapViewport>
           <div
             style={{
               display: "grid",

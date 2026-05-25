@@ -600,7 +600,7 @@ function NearbyPageInner() {
                   <div className="nearby-action-row">
                     {place.lat !== null && place.lng !== null ? (
                       <a
-                        href={`https://maps.apple.com/?ll=${place.lat},${place.lng}`}
+                        href={`https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d`}
                         target="_blank"
                         rel="noreferrer"
                         className="nearby-action-button nearby-action-button-danger"

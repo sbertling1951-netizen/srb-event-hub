@@ -251,25 +251,6 @@ export default function CoachMapPage() {
     });
   }, [filteredSites, attendeeById]);
 
-  const mapRefreshKey = useMemo(() => {
-    return (
-      `${eventId || ""}|${occupiedOnly}|${attendeeSearch}|${siteSearch}|${selectedSiteId || ""}|` +
-      mapSites
-        .map(
-          (s) =>
-            `${s.id}:${s.assigned_attendee_id || ""}:${s.site_number || ""}:${s.display_label || ""}:${s.map_x || ""}:${s.map_y || ""}`,
-        )
-        .join("|")
-    );
-  }, [
-    eventId,
-    occupiedOnly,
-    attendeeSearch,
-    siteSearch,
-    selectedSiteId,
-    mapSites,
-  ]);
-
   const totalSites = sites.length;
   const occupiedCount = sites.filter((s) => !!s.assigned_attendee_id).length;
   const openCount = totalSites - occupiedCount;
@@ -552,7 +533,6 @@ export default function CoachMapPage() {
       >
         {mapImageUrl ? (
           <CampgroundMap
-            key={mapRefreshKey}
             mapImageUrl={mapImageUrl}
             sites={mapSites}
             selectedSiteId={selectedSiteId}

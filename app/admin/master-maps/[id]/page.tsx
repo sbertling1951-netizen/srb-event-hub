@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import TouchMapViewport from "@/components/map/TouchMapViewport";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   canAccessEvent,
@@ -66,6 +67,7 @@ function MasterMapEditorPageInner() {
   const params = useParams();
   const router = useRouter();
   const masterMapId = params?.id as string;
+  const [isMobile, setIsMobile] = useState(false);
 
   const siteNumberRef = useRef<HTMLInputElement | null>(null);
   const mapCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -94,7 +96,6 @@ function MasterMapEditorPageInner() {
   const [editX, setEditX] = useState<number | null>(null);
   const [editY, setEditY] = useState<number | null>(null);
   const [status, setStatus] = useState("Loading master map...");
-  const [zoom, setZoom] = useState(1);
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
   const [saveAndNextMode, setSaveAndNextMode] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
@@ -134,6 +135,20 @@ function MasterMapEditorPageInner() {
   useEffect(() => {
     undoStackRef.current = undoStack;
   }, [undoStack]);
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 900);
+    }
+
+    handleResize();
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   const loadMasterMap = useCallback(async () => {
     const { data, error } = await supabase
@@ -1796,15 +1811,17 @@ function MasterMapEditorPageInner() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "340px minmax(0, 1fr)",
+          gridTemplateColumns: isMobile ? "1fr" : "340px minmax(0, 1fr)",
           gap: 24,
           alignItems: "start",
+          width: "100%",
+          overflow: "hidden",
         }}
       >
         <div
           style={{
-            position: "sticky",
-            top: 16,
+            position: isMobile ? "relative" : "sticky",
+            top: isMobile ? 0 : 16,
             display: "grid",
             gap: 12,
           }}
@@ -2049,34 +2066,7 @@ function MasterMapEditorPageInner() {
                 background: "#fafafa",
               }}
             >
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                Position + Zoom
-              </div>
-
-              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                <button
-                  onClick={() =>
-                    setZoom((z) => Math.max(0.5, Number((z - 0.1).toFixed(2))))
-                  }
-                  disabled={loading}
-                >
-                  -
-                </button>
-                <button onClick={() => setZoom(1)} disabled={loading}>
-                  Reset
-                </button>
-                <button
-                  onClick={() =>
-                    setZoom((z) => Math.min(3, Number((z + 0.1).toFixed(2))))
-                  }
-                  disabled={loading}
-                >
-                  +
-                </button>
-                <div style={{ alignSelf: "center", fontSize: 13 }}>
-                  Zoom: {Math.round(zoom * 100)}%
-                </div>
-              </div>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Position</div>
 
               <div style={{ fontSize: 12, marginBottom: 8 }}>
                 X: {editX ?? primarySelectedSite?.map_x ?? pendingX ?? "—"} | Y:{" "}
@@ -2196,7 +2186,6 @@ function MasterMapEditorPageInner() {
             </div>
           </div>
         </div>
-
         <div
           style={{
             border: "1px solid #ddd",
@@ -2205,13 +2194,10 @@ function MasterMapEditorPageInner() {
             padding: 12,
           }}
         >
-          <div
-            style={{
-              height: "78vh",
-              overflow: "auto",
-              border: "1px solid #ddd",
-              background: "#f2f2f2",
-            }}
+          <TouchMapViewport
+            imageUrl={masterMap?.map_image_url || ""}
+            width={naturalSize.width}
+            height={naturalSize.height}
           >
             <div
               ref={mapCanvasRef}
@@ -2225,8 +2211,8 @@ function MasterMapEditorPageInner() {
               onMouseLeave={handleMapMouseUp}
               style={{
                 position: "relative",
-                width: naturalSize.width * zoom,
-                height: naturalSize.height * zoom,
+                width: naturalSize.width,
+                height: naturalSize.height,
                 cursor: readOnlyMarkers ? "default" : "crosshair",
                 userSelect: "none",
                 WebkitUserSelect: "none",
@@ -2246,15 +2232,17 @@ function MasterMapEditorPageInner() {
                     });
                   }}
                   style={{
+                    position: "absolute",
+                    inset: 0,
                     width: "100%",
                     height: "100%",
+                    objectFit: "contain",
                     display: "block",
                     userSelect: "none",
                     pointerEvents: "none",
                   }}
                 />
               )}
-
               {selectionBox && (
                 <div
                   style={{
@@ -2445,7 +2433,7 @@ function MasterMapEditorPageInner() {
                 </div>
               )}
             </div>
-          </div>
+          </TouchMapViewport>
         </div>
       </div>
     </div>

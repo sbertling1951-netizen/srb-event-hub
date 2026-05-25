@@ -74,10 +74,30 @@ type Attendee = {
 
 function ParkingAdminPageInner() {
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const lastDistanceRef = useRef<number | null>(null);
   const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const siteMarkerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const dragRef = useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  });
 
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+
+  const pinchRef = useRef({
+    active: false,
+    startDistance: 0,
+    startZoom: 1,
+    startTranslateX: 0,
+    startTranslateY: 0,
+    centerX: 0,
+    centerY: 0,
+  });
+  const pinchFrameRef = useRef<number | null>(null);
+  const liveZoomRef = useRef(0.6);
+  const liveTranslateRef = useRef({ x: 0, y: 0 });
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -99,6 +119,30 @@ function ParkingAdminPageInner() {
   const [showArrivedOnly, setShowArrivedOnly] = useState(false);
   const [defaultZoom, setDefaultZoom] = useState(0.6);
   const [zoom, setZoom] = useState(0.6);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    liveZoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
+    liveTranslateRef.current = translate;
+  }, [translate]);
+
+  useEffect(() => {
+    const container = mapRef.current;
+
+    if (!container || !naturalSize.width || !naturalSize.height) {
+      return;
+    }
+
+    const scaledWidth = naturalSize.width * zoom;
+    const scaledHeight = naturalSize.height * zoom;
+
+    setTranslate({
+      x: (container.clientWidth - scaledWidth) / 2,
+      y: (container.clientHeight - scaledHeight) / 2,
+    });
+  }, [naturalSize.width, naturalSize.height]);
 
   function showStatus(message: string) {
     setError(null);
@@ -112,12 +156,6 @@ function ParkingAdminPageInner() {
 
   function clampZoom(next: number) {
     return Math.min(Math.max(next, 0.1), 3);
-  }
-
-  function getTouchDistance(touches: TouchList) {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
   }
 
   function runAfterLayout(callback: () => void, delay = 90) {
@@ -726,13 +764,13 @@ function ParkingAdminPageInner() {
     const site = sites.find(
       (s) => s.site_number === selectedAttendee.assigned_site,
     );
+
     if (!site) {
       return;
     }
 
-    const targetZoom = Math.max(zoom, isNarrow ? 1.05 : defaultZoom);
     focusSite(site);
-  }, [selectedAttendee, sites, focusSite, zoom, isNarrow, defaultZoom]);
+  }, [selectedAttendee, sites, focusSite]);
 
   async function assignAttendeeToSite({
     attendee,
@@ -1067,6 +1105,153 @@ function ParkingAdminPageInner() {
         </div>
       </div>
     );
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    pointersRef.current.set(e.pointerId, {
+      x: e.clientX,
+      y: e.clientY,
+    });
+
+    if (pointersRef.current.size === 2) {
+      const points = Array.from(pointersRef.current.values());
+
+      const dx = points[0].x - points[1].x;
+      const dy = points[0].y - points[1].y;
+
+      pinchRef.current.active = true;
+      pinchRef.current.startDistance = Math.hypot(dx, dy);
+      pinchRef.current.startZoom = zoom;
+
+      pinchRef.current.startTranslateX = translate.x;
+      pinchRef.current.startTranslateY = translate.y;
+
+      pinchRef.current.centerX = (points[0].x + points[1].x) / 2;
+      pinchRef.current.centerY = (points[0].y + points[1].y) / 2;
+
+      dragRef.current.active = false;
+      return;
+    } else {
+      dragRef.current.active = true;
+
+      dragRef.current.startX = e.clientX;
+      dragRef.current.startY = e.clientY;
+
+      dragRef.current.originX = translate.x;
+      dragRef.current.originY = translate.y;
+    }
+
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (pointersRef.current.has(e.pointerId)) {
+      pointersRef.current.set(e.pointerId, {
+        x: e.clientX,
+        y: e.clientY,
+      });
+    }
+
+    if (pinchRef.current.active && pointersRef.current.size === 2) {
+      const points = Array.from(pointersRef.current.values());
+
+      const dx = points[0].x - points[1].x;
+      const dy = points[0].y - points[1].y;
+
+      const distance = Math.hypot(dx, dy);
+
+      // ignore tiny touch jitter
+      if (Math.abs(distance - pinchRef.current.startDistance) < 3) {
+        return;
+      }
+
+      if (pinchFrameRef.current !== null) {
+        return;
+      }
+
+      pinchFrameRef.current = window.requestAnimationFrame(() => {
+        pinchFrameRef.current = null;
+
+        const rawZoom =
+          pinchRef.current.startZoom *
+          (distance / pinchRef.current.startDistance);
+
+        const nextZoom = clampZoom(rawZoom);
+
+        // ignore microscopic zoom changes
+        if (Math.abs(nextZoom - liveZoomRef.current) < 0.02) {
+          return;
+        }
+
+        const scaleRatio = nextZoom / pinchRef.current.startZoom;
+
+        const nextTranslateX =
+          pinchRef.current.centerX -
+          (pinchRef.current.centerX - pinchRef.current.startTranslateX) *
+            scaleRatio;
+
+        const nextTranslateY =
+          pinchRef.current.centerY -
+          (pinchRef.current.centerY - pinchRef.current.startTranslateY) *
+            scaleRatio;
+
+        liveZoomRef.current = nextZoom;
+        setZoom(nextZoom);
+
+        const currentTranslate = liveTranslateRef.current;
+
+        if (
+          Math.abs(currentTranslate.x - nextTranslateX) < 1.5 &&
+          Math.abs(currentTranslate.y - nextTranslateY) < 1.5
+        ) {
+          return;
+        }
+
+        const nextTranslate = {
+          x: nextTranslateX,
+          y: nextTranslateY,
+        };
+
+        liveTranslateRef.current = nextTranslate;
+        setTranslate(nextTranslate);
+      });
+
+      return;
+    }
+
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+
+    setTranslate((current) => {
+      const nextX = dragRef.current.originX + dx;
+      const nextY = dragRef.current.originY + dy;
+
+      if (
+        Math.abs(current.x - nextX) < 0.5 &&
+        Math.abs(current.y - nextY) < 0.5
+      ) {
+        return current;
+      }
+
+      return {
+        x: nextX,
+        y: nextY,
+      };
+    });
+  }
+
+  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    pointersRef.current.delete(e.pointerId);
+
+    if (pointersRef.current.size < 2) {
+      pinchRef.current.active = false;
+    }
+
+    if (pinchFrameRef.current !== null) {
+      cancelAnimationFrame(pinchFrameRef.current);
+      pinchFrameRef.current = null;
+    }
+    dragRef.current.active = false;
   }
 
   const queuePanel = (
@@ -1733,43 +1918,59 @@ function ParkingAdminPageInner() {
                 e.preventDefault();
               }
             }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
             style={{
-              height: isNarrow ? "52vh" : undefined,
+              height: isNarrow ? "56vh" : undefined,
               minHeight: isNarrow ? 320 : undefined,
-              maxHeight: isNarrow ? "52vh" : "82vh",
+              maxHeight: isNarrow ? "56vh" : "82vh",
 
               border: "1px solid #ddd",
               background: "#f2f2f2",
 
-              overflowX: "auto",
-              overflowY: "auto",
+              overflow: "hidden",
 
               overscrollBehavior: "contain",
-
               WebkitOverflowScrolling: "touch",
 
-              touchAction: "pan-x pan-y",
+              touchAction: "none",
+              contain: "layout paint size",
+
               position: "relative",
 
               width: "100%",
               maxWidth: "100vw",
+
+              borderRadius: 10,
             }}
           >
             <div
               style={{
-                position: "relative",
+                position: "absolute",
+                left: 0,
+                top: 0,
 
-                width: `${naturalSize.width * zoom}px`,
-                height: `${naturalSize.height * zoom}px`,
+                width: naturalSize.width,
+                height: naturalSize.height,
 
-                minWidth: `${naturalSize.width * zoom}px`,
+                transform: `translate(${translate.x}px, ${translate.y}px) scale(${zoom})`,
+                transformOrigin: "top left",
+
+                touchAction: "none",
+                contain: "layout paint size",
+                willChange: "transform",
+                backfaceVisibility: "hidden",
+                WebkitBackfaceVisibility: "hidden",
+                transformStyle: "preserve-3d",
               }}
             >
               <div
                 style={{
                   position: "relative",
-                  width: naturalSize.width * zoom,
-                  height: naturalSize.height * zoom,
+                  width: naturalSize.width,
+                  height: naturalSize.height,
                 }}
               >
                 {event?.map_image_url && (
@@ -1785,11 +1986,15 @@ function ParkingAdminPageInner() {
                       });
                     }}
                     style={{
-                      width: naturalSize.width * zoom,
-                      height: naturalSize.height * zoom,
+                      width: naturalSize.width,
+                      height: naturalSize.height,
                       display: "block",
                       userSelect: "none",
                       pointerEvents: "none",
+                      touchAction: "none",
+                      WebkitTouchCallout: "none",
+                      backfaceVisibility: "hidden",
+                      WebkitBackfaceVisibility: "hidden",
                     }}
                   />
                 )}

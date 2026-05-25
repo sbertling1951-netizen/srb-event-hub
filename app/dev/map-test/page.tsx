@@ -1,4 +1,6 @@
-import InteractiveMapViewport from "@/components/map/InteractiveMapViewport";
+"use client";
+
+import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
 
 export default function MapTestPage() {
   return (
@@ -10,11 +12,18 @@ export default function MapTestPage() {
         background: "#111827",
       }}
     >
-      <InteractiveMapViewport
-        imageUrl="/test-map.jpg"
-        width={1800}
-        height={1200}
-      >
+      <GestureMapViewportV2 width={4000} height={2500}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(45deg, #1e293b 25%, #334155 25%, #334155 50%, #1e293b 50%, #1e293b 75%, #334155 75%, #334155 100%)",
+            backgroundSize: "120px 120px",
+            pointerEvents: "none",
+          }}
+        />
+
         <div
           style={{
             position: "absolute",
@@ -42,7 +51,7 @@ export default function MapTestPage() {
             transform: "translate(-50%, -50%)",
           }}
         />
-      </InteractiveMapViewport>
+      </GestureMapViewportV2>
     </div>
   );
 }

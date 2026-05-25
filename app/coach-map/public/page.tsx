@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
 import { fullName, preferredDisplayLine } from "@/lib/displayNames";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
@@ -155,19 +156,6 @@ function getStoredViewerAttendeeId() {
   return localStorage.getItem("fcoc-member-attendee-id");
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function getTouchDistance(
-  touchA: { clientX: number; clientY: number },
-  touchB: { clientX: number; clientY: number },
-) {
-  const dx = Number(touchA.clientX) - Number(touchB.clientX);
-  const dy = Number(touchA.clientY) - Number(touchB.clientY);
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
 function CoachMapPublicPageInner() {
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -183,67 +171,9 @@ function CoachMapPublicPageInner() {
   const [search, setSearch] = useState("");
   const [isNarrow, setIsNarrow] = useState(false);
   const [pulseKey, setPulseKey] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
-
-  const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  const pinchStartDistanceRef = useRef<number | null>(null);
-  const pinchStartZoomRef = useRef(1);
-  const pinchAnchorRef = useRef<{ x: number; y: number } | null>(null);
-  const zoomRef = useRef(1);
-  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(
-    null,
-  );
-  const oneFingerPanRef = useRef({
-    active: false,
-    startX: 0,
-    startY: 0,
-    lastX: 0,
-    lastY: 0,
-    didMove: false,
-  });
-  const mapPanRef = useRef({ x: 0, y: 0 });
 
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
-
-  // ─── Pan clamp ────────────────────────────────────────────────────────────────
-  // Always pass forZoom explicitly — never read zoomRef inside here.
-  // zoomRef is updated in a useEffect (after render), so reading it during a
-  // touch move handler that also just called setZoom gives a stale value,
-  // which makes horizontal clamping cut off too early.
-  function clampMapPan(nextX: number, nextY: number, forZoom: number) {
-    const viewport = viewportRef.current;
-    if (!viewport) {
-      return { x: nextX, y: nextY };
-    }
-    const maxX = Math.max(
-      0,
-      naturalSize.width * forZoom - viewport.clientWidth,
-    );
-    const maxY = Math.max(
-      0,
-      naturalSize.height * forZoom - viewport.clientHeight,
-    );
-    return {
-      x: clamp(nextX, -maxX, 0),
-      y: clamp(nextY, -maxY, 0),
-    };
-  }
-
-  // Single-finger pan: use current zoomRef (valid since zoom isn't changing)
-  function applyMapPan(nextX: number, nextY: number) {
-    const clamped = clampMapPan(nextX, nextY, zoomRef.current);
-    mapPanRef.current = clamped;
-    setMapPan(clamped);
-  }
-
-  // Zoom gestures: pass the new zoom value explicitly so clamp is accurate
-  function applyMapPanForZoom(nextX: number, nextY: number, nextZoom: number) {
-    const clamped = clampMapPan(nextX, nextY, nextZoom);
-    mapPanRef.current = clamped;
-    setMapPan(clamped);
-  }
 
   const refreshMapSize = useCallback(() => {
     if (!imageRef.current) {
@@ -346,13 +276,6 @@ function CoachMapPublicPageInner() {
         lng: loadedEvent.lng || null,
         coach_map_open_scale: loadedEvent.coach_map_open_scale ?? null,
       });
-
-      const openingScale = Number(loadedEvent.coach_map_open_scale ?? 1);
-      if (Number.isFinite(openingScale) && openingScale > 0) {
-        const nextZoom = clamp(openingScale, 0.25, 3);
-        setZoom(nextZoom);
-        zoomRef.current = nextZoom;
-      }
 
       const [
         masterSitesResult,
@@ -501,44 +424,6 @@ function CoachMapPublicPageInner() {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      refreshMapSize();
-    }, 100);
-    return () => clearTimeout(t);
-  }, [zoom, isNarrow, event?.map_image_url, refreshMapSize]);
-
-  useEffect(() => {
-    if (!event?.map_image_url) {
-      return;
-    }
-    requestAnimationFrame(() => {
-      applyMapPan(0, 0);
-    });
-  }, [event?.map_image_url]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
-
-  // Claim all touches with passive:false so preventDefault works on iOS Safari.
-  // React synthetic events are passive by default in React 17+.
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) {
-      return;
-    }
-    const claim = (e: TouchEvent) => {
-      e.preventDefault();
-    };
-    viewport.addEventListener("touchstart", claim, { passive: false });
-    viewport.addEventListener("touchmove", claim, { passive: false });
-    return () => {
-      viewport.removeEventListener("touchstart", claim);
-      viewport.removeEventListener("touchmove", claim);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!pulseKey) {
       return;
     }
@@ -547,224 +432,6 @@ function CoachMapPublicPageInner() {
     }, 1500);
     return () => clearTimeout(t);
   }, [pulseKey]);
-
-  const zoomIn = useCallback(() => {
-    const nextZoom = clamp(Number((zoomRef.current + 0.2).toFixed(2)), 0.35, 3);
-
-    zoomRef.current = nextZoom;
-    setZoom(nextZoom);
-
-    applyMapPanForZoom(mapPanRef.current.x, mapPanRef.current.y, nextZoom);
-  }, []);
-  const zoomOut = useCallback(() => {
-    const nextZoom = clamp(Number((zoomRef.current - 0.2).toFixed(2)), 0.35, 3);
-
-    zoomRef.current = nextZoom;
-    setZoom(nextZoom);
-
-    applyMapPanForZoom(mapPanRef.current.x, mapPanRef.current.y, nextZoom);
-  }, []);
-  const resetZoom = useCallback(() => {
-    const openingScale = Number(event?.coach_map_open_scale ?? 1);
-
-    const nextZoom =
-      Number.isFinite(openingScale) && openingScale > 0
-        ? clamp(openingScale, 0.25, 3)
-        : 1;
-
-    zoomRef.current = nextZoom;
-    setZoom(nextZoom);
-
-    requestAnimationFrame(() => {
-      applyMapPanForZoom(0, 0, nextZoom);
-    });
-  }, [event?.coach_map_open_scale]);
-
-  const handleViewportTouchStart = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      if (!viewportRef.current) {
-        return;
-      }
-      const viewport = viewportRef.current;
-
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        oneFingerPanRef.current = {
-          active: true,
-          startX: touch.clientX,
-          startY: touch.clientY,
-          lastX: touch.clientX,
-          lastY: touch.clientY,
-          didMove: false,
-        };
-        return;
-      }
-
-      if (e.touches.length !== 2) {
-        return;
-      }
-
-      oneFingerPanRef.current.active = false;
-
-      const rect = viewport.getBoundingClientRect();
-      const touchA = {
-        clientX: e.touches[0].clientX,
-        clientY: e.touches[0].clientY,
-      };
-      const touchB = {
-        clientX: e.touches[1].clientX,
-        clientY: e.touches[1].clientY,
-      };
-      const centerX = (touchA.clientX + touchB.clientX) / 2 - rect.left;
-      const centerY = (touchA.clientY + touchB.clientY) / 2 - rect.top;
-
-      pinchStartDistanceRef.current = getTouchDistance(touchA, touchB);
-      pinchStartZoomRef.current = zoomRef.current;
-      // Anchor in natural (unscaled) map coords
-      pinchAnchorRef.current = {
-        x: (centerX - mapPanRef.current.x) / Math.max(zoomRef.current, 0.001),
-        y: (centerY - mapPanRef.current.y) / Math.max(zoomRef.current, 0.001),
-      };
-    },
-    [],
-  );
-
-  const handleViewportTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      if (!viewportRef.current) {
-        return;
-      }
-      const viewport = viewportRef.current;
-
-      if (e.touches.length === 1 && oneFingerPanRef.current.active) {
-        const touch = e.touches[0];
-        const totalDx = touch.clientX - oneFingerPanRef.current.startX;
-        const totalDy = touch.clientY - oneFingerPanRef.current.startY;
-        const frameDx = touch.clientX - oneFingerPanRef.current.lastX;
-        const frameDy = touch.clientY - oneFingerPanRef.current.lastY;
-        if (Math.abs(totalDx) > 4 || Math.abs(totalDy) > 4) {
-          oneFingerPanRef.current.didMove = true;
-        }
-        applyMapPan(
-          mapPanRef.current.x + frameDx,
-          mapPanRef.current.y + frameDy,
-        );
-        oneFingerPanRef.current.lastX = touch.clientX;
-        oneFingerPanRef.current.lastY = touch.clientY;
-        return;
-      }
-
-      if (e.touches.length !== 2 || !pinchStartDistanceRef.current) {
-        return;
-      }
-
-      oneFingerPanRef.current.active = false;
-
-      const rect = viewport.getBoundingClientRect();
-      const touchA = {
-        clientX: e.touches[0].clientX,
-        clientY: e.touches[0].clientY,
-      };
-      const touchB = {
-        clientX: e.touches[1].clientX,
-        clientY: e.touches[1].clientY,
-      };
-      const centerX = (touchA.clientX + touchB.clientX) / 2 - rect.left;
-      const centerY = (touchA.clientY + touchB.clientY) / 2 - rect.top;
-      const currentDistance = getTouchDistance(touchA, touchB);
-      const scaleRatio = currentDistance / pinchStartDistanceRef.current;
-      const nextZoom = clamp(pinchStartZoomRef.current * scaleRatio, 0.35, 3);
-
-      const anchor = pinchAnchorRef.current || {
-        x: (centerX - mapPanRef.current.x) / Math.max(zoomRef.current, 0.001),
-        y: (centerY - mapPanRef.current.y) / Math.max(zoomRef.current, 0.001),
-      };
-
-      // Update zoomRef immediately so any subsequent clampMapPan call in this
-      // same frame uses the right zoom (not the stale state value)
-      zoomRef.current = nextZoom;
-      setZoom(nextZoom);
-      applyMapPanForZoom(
-        centerX - anchor.x * nextZoom,
-        centerY - anchor.y * nextZoom,
-        nextZoom,
-      );
-    },
-    [naturalSize.height, naturalSize.width], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  const handleViewportTouchEnd = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      if (e.touches.length === 0) {
-        pinchStartDistanceRef.current = null;
-        pinchAnchorRef.current = null;
-        oneFingerPanRef.current.active = false;
-      } else if (e.touches.length === 1) {
-        // One finger lifted mid-pinch — resume single-finger pan cleanly
-        pinchStartDistanceRef.current = null;
-        pinchAnchorRef.current = null;
-        const touch = e.touches[0];
-        oneFingerPanRef.current = {
-          active: true,
-          startX: touch.clientX,
-          startY: touch.clientY,
-          lastX: touch.clientX,
-          lastY: touch.clientY,
-          didMove: false,
-        };
-        return;
-      }
-
-      if (oneFingerPanRef.current.didMove) {
-        oneFingerPanRef.current.didMove = false;
-        return;
-      }
-
-      if (e.changedTouches.length !== 1 || !viewportRef.current) {
-        return;
-      }
-
-      const viewport = viewportRef.current;
-      const rect = viewport.getBoundingClientRect();
-      const touch = e.changedTouches[0];
-      const tapX = touch.clientX - rect.left;
-      const tapY = touch.clientY - rect.top;
-      const now = Date.now();
-      const lastTap = lastTapRef.current;
-
-      if (
-        lastTap &&
-        now - lastTap.time < 300 &&
-        Math.abs(lastTap.x - tapX) < 24 &&
-        Math.abs(lastTap.y - tapY) < 24
-      ) {
-        const currentZoom = zoomRef.current;
-        const nextZoom = clamp(
-          currentZoom < 1.4 ? currentZoom * 1.5 : currentZoom * 1.35,
-          0.35,
-          3,
-        );
-        const anchorX =
-          (tapX - mapPanRef.current.x) / Math.max(currentZoom, 0.001);
-        const anchorY =
-          (tapY - mapPanRef.current.y) / Math.max(currentZoom, 0.001);
-
-        zoomRef.current = nextZoom;
-        setZoom(nextZoom);
-        applyMapPanForZoom(
-          tapX - anchorX * nextZoom,
-          tapY - anchorY * nextZoom,
-          nextZoom,
-        );
-
-        lastTapRef.current = null;
-        return;
-      }
-
-      lastTapRef.current = { time: now, x: tapX, y: tapY };
-    },
-    [], // no naturalSize deps needed — clampMapPan reads naturalSize from closure correctly
-  );
 
   const attendeeLookup = useMemo(() => {
     const map = new Map<string, Attendee>();
@@ -862,18 +529,9 @@ function CoachMapPublicPageInner() {
     occupantHasOptedIn;
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
-  function centerSiteInViewport(site: RenderedSite) {
-    if (!viewportRef.current || site.map_x === null || site.map_y === null) {
-      return;
-    }
-    const viewport = viewportRef.current;
-    const z = zoomRef.current;
-    const xPx = (site.map_x / 100) * naturalSize.width * z;
-    const yPx = (site.map_y / 100) * naturalSize.height * z;
-    applyMapPan(
-      viewport.clientWidth / 2 - xPx,
-      viewport.clientHeight / 2 - yPx,
-    );
+  function centerSiteInViewport(_site: RenderedSite) {
+    // GestureMapViewportV2 now handles viewport movement internally.
+    // Selection/pulse still works without manual scroll positioning.
   }
 
   function goToSite(siteKey: string) {
@@ -1125,284 +783,180 @@ function CoachMapPublicPageInner() {
             overscrollBehavior: "none",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              flexWrap: "wrap",
-              marginBottom: 6,
-            }}
+          <GestureMapViewportV2
+            width={naturalSize.width}
+            height={naturalSize.height}
+            initialScale={Number(event?.coach_map_open_scale || 1)}
+            minScale={0.35}
+            maxScale={3}
           >
-            <button
-              type="button"
-              onClick={zoomOut}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid #ddd",
-                background: "#fff",
-                fontWeight: 700,
-              }}
-            >
-              −
-            </button>
-            <button
-              type="button"
-              onClick={zoomIn}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid #ddd",
-                background: "#fff",
-                fontWeight: 700,
-              }}
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={resetZoom}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid #ddd",
-                background: "#fff",
-                fontWeight: 700,
-              }}
-            >
-              Reset
-            </button>
-            <div style={{ fontSize: 13, color: "#666" }}>
-              Zoom: {Math.round(zoom * 100)}%
-            </div>
-          </div>
-
-          {/*
-           * Viewport: overflow hidden, touchAction none, no scroll.
-           * All pan is driven by CSS transform on the outer pan layer below.
-           */}
-          <div
-            ref={viewportRef}
-            onTouchStart={handleViewportTouchStart}
-            onTouchMove={handleViewportTouchMove}
-            onTouchEnd={handleViewportTouchEnd}
-            onTouchCancel={handleViewportTouchEnd}
-            style={{
-              position: "relative",
-              width: "100%",
-              flex: 1,
-              minHeight: 0,
-              overflow: "hidden",
-              touchAction: "none",
-              WebkitUserSelect: "none",
-              WebkitTouchCallout: "none",
-              userSelect: "none",
-              overscrollBehavior: "none",
-              background: "#f8f9fb",
-              border: "1px solid #eee",
-              borderRadius: 8,
-            }}
-          >
-            {/*
-             * OUTER PAN LAYER
-             * - Sized to the SCALED map dimensions (naturalSize * zoom).
-             * - Safari measures this element's layout size for overflow clipping.
-             *   By making it as large as the scaled map, Safari's clip boundary
-             *   correctly matches the visible map area, preventing premature
-             *   horizontal pan cutoff.
-             * - Uses `translate` not `translate3d`. translate3d creates a GPU
-             *   compositing layer; Safari then ties touch-target recognition to
-             *   that layer's pre-transform bounds, causing horizontal pan to stop
-             *   at the unscaled width.
-             * - willChange: "transform" is intentional here (only on this layer).
-             */}
             <div
               style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: `${naturalSize.width * zoom}px`,
-                height: `${naturalSize.height * zoom}px`,
-                transform: `translate(${mapPan.x}px, ${mapPan.y}px)`,
-                transformOrigin: "top left",
-                willChange: "transform",
-                contain: "layout paint size",
+                position: "relative",
+                width: naturalSize.width,
+                height: naturalSize.height,
               }}
             >
-              {/*
-               * INNER SCALE LAYER
-               * - Sized to natural (unscaled) dimensions.
-               * - Only applies scale(), no translate.
-               * - No willChange here — an extra compositing layer on the scale
-               *   element can interfere with touch propagation on Safari.
-               * - Markers and locations are positioned in natural pixel coords
-               *   and scale with this layer correctly.
-               */}
-              <div
+              <img
+                ref={imageRef}
+                src={event?.map_image_url || ""}
+                alt="Coach map"
+                onLoad={refreshMapSize}
+                draggable={false}
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
                   width: `${naturalSize.width}px`,
                   height: `${naturalSize.height}px`,
-                  transform: `scale(${zoom})`,
-                  transformOrigin: "top left",
+                  display: "block",
+                  borderRadius: 8,
+                  pointerEvents: "none",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
                 }}
-              >
-                <img
-                  ref={imageRef}
-                  src={event?.map_image_url || ""}
-                  alt="Coach map"
-                  onLoad={refreshMapSize}
-                  style={{
-                    width: `${naturalSize.width}px`,
-                    height: `${naturalSize.height}px`,
-                    display: "block",
-                    borderRadius: 8,
-                    pointerEvents: "none",
-                    userSelect: "none",
-                    WebkitUserSelect: "none",
-                  }}
-                />
+              />
 
-                {renderedSites.map((site) => {
-                  const x = typeof site.map_x === "number" ? site.map_x : null;
-                  const y = typeof site.map_y === "number" ? site.map_y : null;
-                  if (x === null || y === null) {
-                    return null;
-                  }
+              {renderedSites.map((site) => {
+                const x = typeof site.map_x === "number" ? site.map_x : null;
+                const y = typeof site.map_y === "number" ? site.map_y : null;
 
-                  const assigned = site.assigned_attendee_id
-                    ? attendeeLookup.get(site.assigned_attendee_id)
-                    : null;
-                  const isSelected = selectedSiteKey === site.key;
-                  const isOccupied = !!assigned;
-                  const isViewerSite = viewerAssignedSiteKey === site.key;
+                if (x === null || y === null) {
+                  return null;
+                }
 
-                  return (
-                    <div
-                      key={site.key}
-                      style={{
-                        position: "absolute",
-                        left: `${(x / 100) * naturalSize.width}px`,
-                        top: `${(y / 100) * naturalSize.height}px`,
-                        transform: "translate(-50%, -50%)",
-                      }}
-                    >
-                      {isSelected && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            left: "50%",
-                            top: "50%",
-                            width: 18,
-                            height: 18,
-                            borderRadius: "50%",
-                            background: "rgba(255,59,48,0.4)",
-                            transform: "translate(-50%, -50%)",
-                            animation: "fcoc-pulse 1.5s ease-out",
-                            pointerEvents: "none",
-                            zIndex: 1,
-                          }}
-                        />
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => goToSite(site.key)}
-                        title={site.display_label || site.site_number}
-                        style={{
-                          position: "relative",
-                          width: isSelected ? 26 : isViewerSite ? 24 : 22,
-                          height: isSelected ? 26 : isViewerSite ? 24 : 22,
-                          borderRadius: "50%",
-                          border: isSelected
-                            ? "3px solid #ffffff"
-                            : "1px solid rgba(255,255,255,0.85)",
-                          background: isSelected
-                            ? "#ff3b30"
-                            : isViewerSite
-                              ? "#16a34a"
-                              : isOccupied
-                                ? "#2563eb"
-                                : "#6b7280",
-                          boxShadow: isSelected
-                            ? "0 0 0 4px rgba(255,59,48,0.25), 0 4px 10px rgba(0,0,0,0.35)"
-                            : "0 1px 3px rgba(0,0,0,0.25)",
-                          padding: 0,
-                          cursor: "pointer",
-                          display: "block",
-                          zIndex: 2,
-                          touchAction: "manipulation",
-                        }}
-                      />
-                      {showLabels && (
-                        <div
-                          style={{
-                            marginTop: 3,
-                            marginLeft: "auto",
-                            marginRight: "auto",
-                            background: isSelected
-                              ? "rgba(255,244,214,0.98)"
-                              : "rgba(255,255,255,0.92)",
-                            border: isSelected
-                              ? "1px solid rgba(255,59,48,0.55)"
-                              : "1px solid rgba(0,0,0,0.18)",
-                            borderRadius: 4,
-                            fontSize: 9,
-                            fontWeight: 700,
-                            lineHeight: 1.1,
-                            padding: "1px 4px",
-                            color: "#111",
-                            whiteSpace: "nowrap",
-                            boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
-                            display: "table",
-                            pointerEvents: "none",
-                          }}
-                        >
-                          {site.display_label || site.site_number}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                const assigned = site.assigned_attendee_id
+                  ? attendeeLookup.get(site.assigned_attendee_id)
+                  : null;
 
-                {locations.map((location) => {
-                  const x =
-                    typeof location.map_x === "number" ? location.map_x : null;
-                  const y =
-                    typeof location.map_y === "number" ? location.map_y : null;
-                  if (x === null || y === null) {
-                    return null;
-                  }
-                  return (
-                    <div
-                      key={location.id}
-                      style={{
-                        position: "absolute",
-                        left: `${(x / 100) * naturalSize.width}px`,
-                        top: `${(y / 100) * naturalSize.height}px`,
-                        transform: "translate(-50%, -50%)",
-                        zIndex: 5,
-                      }}
-                      title={location.name}
-                    >
+                const isSelected = selectedSiteKey === site.key;
+                const isOccupied = !!assigned;
+                const isViewerSite = viewerAssignedSiteKey === site.key;
+
+                return (
+                  <div
+                    key={site.key}
+                    style={{
+                      position: "absolute",
+                      left: `${(x / 100) * naturalSize.width}px`,
+                      top: `${(y / 100) * naturalSize.height}px`,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                  >
+                    {isSelected && (
                       <div
                         style={{
-                          width: 14,
-                          height: 14,
-                          borderRadius: 4,
-                          background: getLocationColor(location.category),
-                          border: "2px solid white",
-                          boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+                          position: "absolute",
+                          left: "50%",
+                          top: "50%",
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          background: "rgba(255,59,48,0.4)",
+                          transform: "translate(-50%, -50%)",
+                          animation: "fcoc-pulse 1.5s ease-out",
+                          pointerEvents: "none",
+                          zIndex: 1,
                         }}
                       />
-                    </div>
-                  );
-                })}
-              </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => goToSite(site.key)}
+                      title={site.display_label || site.site_number}
+                      style={{
+                        position: "relative",
+                        width: isSelected ? 26 : isViewerSite ? 24 : 22,
+                        height: isSelected ? 26 : isViewerSite ? 24 : 22,
+                        borderRadius: "50%",
+                        border: isSelected
+                          ? "3px solid #ffffff"
+                          : "1px solid rgba(255,255,255,0.85)",
+                        background: isSelected
+                          ? "#ff3b30"
+                          : isViewerSite
+                            ? "#16a34a"
+                            : isOccupied
+                              ? "#2563eb"
+                              : "#6b7280",
+                        boxShadow: isSelected
+                          ? "0 0 0 4px rgba(255,59,48,0.25), 0 4px 10px rgba(0,0,0,0.35)"
+                          : "0 1px 3px rgba(0,0,0,0.25)",
+                        padding: 0,
+                        cursor: "pointer",
+                        display: "block",
+                        zIndex: 2,
+                        touchAction: "manipulation",
+                      }}
+                    />
+
+                    {showLabels && (
+                      <div
+                        style={{
+                          marginTop: 3,
+                          marginLeft: "auto",
+                          marginRight: "auto",
+                          background: isSelected
+                            ? "rgba(255,244,214,0.98)"
+                            : "rgba(255,255,255,0.92)",
+                          border: isSelected
+                            ? "1px solid rgba(255,59,48,0.55)"
+                            : "1px solid rgba(0,0,0,0.18)",
+                          borderRadius: 4,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          lineHeight: 1.1,
+                          padding: "1px 4px",
+                          color: "#111",
+                          whiteSpace: "nowrap",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
+                          display: "table",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        {site.display_label || site.site_number}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {locations.map((location) => {
+                const x =
+                  typeof location.map_x === "number" ? location.map_x : null;
+
+                const y =
+                  typeof location.map_y === "number" ? location.map_y : null;
+
+                if (x === null || y === null) {
+                  return null;
+                }
+
+                return (
+                  <div
+                    key={location.id}
+                    style={{
+                      position: "absolute",
+                      left: `${(x / 100) * naturalSize.width}px`,
+                      top: `${(y / 100) * naturalSize.height}px`,
+                      transform: "translate(-50%, -50%)",
+                      zIndex: 5,
+                    }}
+                    title={location.name}
+                  >
+                    <div
+                      style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: 4,
+                        background: getLocationColor(location.category),
+                        border: "2px solid white",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+                      }}
+                    />
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          </GestureMapViewportV2>
 
           {selectedSite && floatingPanelStyle && (
             <div

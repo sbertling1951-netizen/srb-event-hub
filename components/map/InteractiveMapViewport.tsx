@@ -1,11 +1,23 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
+import {
+  forwardRef,
+  type ReactNode,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from "react";
 import {
   type ReactZoomPanPinchRef,
   TransformComponent,
   TransformWrapper,
 } from "react-zoom-pan-pinch";
+
+export type InteractiveMapViewportHandle = {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  reset: () => void;
+};
 
 type InteractiveMapViewportProps = {
   imageUrl: string;
@@ -19,17 +31,36 @@ type InteractiveMapViewportProps = {
   children?: ReactNode;
 };
 
-export default function InteractiveMapViewport({
-  imageUrl,
-  width,
-  height,
-  initialScale = 0.6,
-  minScale = 0.1,
-  maxScale = 4,
-  children,
-}: InteractiveMapViewportProps) {
+const InteractiveMapViewport = forwardRef<
+  InteractiveMapViewportHandle,
+  InteractiveMapViewportProps
+>(function InteractiveMapViewport(
+  {
+    imageUrl,
+    width,
+    height,
+    initialScale = 0.6,
+    minScale = 0.1,
+    maxScale = 4,
+    children,
+  },
+  ref,
+) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
+  useImperativeHandle(ref, () => ({
+    zoomIn() {
+      transformRef.current?.zoomIn();
+    },
+
+    zoomOut() {
+      transformRef.current?.zoomOut();
+    },
+
+    reset() {
+      transformRef.current?.resetTransform();
+    },
+  }));
   useEffect(() => {
     const preventGesture = (e: Event) => {
       e.preventDefault();
@@ -62,30 +93,46 @@ export default function InteractiveMapViewport({
         width: "100%",
         height: "100%",
         overflow: "hidden",
-        touchAction: "pan-x pan-y",
+        touchAction: "none",
         overscrollBehavior: "none",
         background: "#f2f2f2",
       }}
     >
       <TransformWrapper
+        ref={transformRef}
         initialScale={initialScale}
         minScale={minScale}
         maxScale={maxScale}
         limitToBounds={true}
         centerZoomedOut={true}
+        panning={{
+          disabled: false,
+          velocityDisabled: true,
+          lockAxisX: false,
+          lockAxisY: false,
+          excluded: ["button"],
+          allowLeftClickPan: true,
+        }}
+        wheel={{
+          wheelDisabled: false,
+          touchPadDisabled: false,
+        }}
+        pinch={{
+          disabled: false,
+        }}
         doubleClick={{
           disabled: false,
           step: 1.2,
         }}
-        panning={{
-          disabled: false,
+        zoomAnimation={{
+          disabled: true,
         }}
       >
         <TransformComponent
           wrapperStyle={{
             width: "100%",
             height: "100%",
-            overflow: "hidden",
+            overflow: "visible",
             touchAction: "none",
           }}
           contentStyle={{
@@ -109,4 +156,6 @@ export default function InteractiveMapViewport({
       </TransformWrapper>
     </div>
   );
-}
+});
+
+export default InteractiveMapViewport;
