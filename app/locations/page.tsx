@@ -471,7 +471,7 @@ export default function PublicLocationsPage() {
                         left: `${loc.map_x}%`,
                         top: `${loc.map_y}%`,
                         transform: "translate(-50%, -50%)",
-                        pointerEvents: "none",
+                        pointerEvents: "auto",
                         zIndex: loc.id === selectedLocationId ? 4 : 2,
                       }}
                     >
