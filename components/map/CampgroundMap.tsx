@@ -56,38 +56,8 @@ function CampgroundMapInner({
     height,
   });
 
-  console.log("NEW VIEWPORT CAMPGROUND MAP ACTIVE");
-
   return (
-    <GestureMapViewportV2
-      width={mapSize.width}
-      height={mapSize.height}
-      onTap={({ mapX, mapY }) => {
-        let closestSite: SiteMarker | null = null;
-
-        let closestDistance = Infinity;
-
-        for (const site of sites) {
-          if (site.map_x == null || site.map_y == null) {
-            continue;
-          }
-
-          const dx = mapX - site.map_x;
-          const dy = mapY - site.map_y;
-
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestSite = site;
-          }
-        }
-
-        if (closestSite && closestDistance < 32) {
-          onMarkerClick?.(closestSite);
-        }
-      }}
-    >
+    <GestureMapViewportV2 width={mapSize.width} height={mapSize.height}>
       <div
         ref={mapRef}
         style={{
@@ -99,8 +69,6 @@ function CampgroundMapInner({
           backgroundColor: "#f2f2f2",
           touchAction: "none",
           overscrollBehavior: "none",
-          outline: "6px solid red",
-          outlineOffset: "-6px",
         }}
       >
         <img

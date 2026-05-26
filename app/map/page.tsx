@@ -524,11 +524,11 @@ export default function CoachMapPage() {
           border: "1px solid #ddd",
           borderRadius: 10,
           background: "white",
-          padding: 8,
+          padding: 0,
           minHeight: 260,
           height: "clamp(260px, 52vh, 560px)",
           overflow: "hidden",
-          touchAction: "auto",
+          touchAction: "none",
         }}
       >
         {mapImageUrl ? (
