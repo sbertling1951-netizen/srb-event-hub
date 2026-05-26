@@ -386,6 +386,13 @@ const GestureMapViewportV2 = forwardRef<
       memo,
       event,
     }) => {
+      const touchCount =
+        "touches" in event ? (event as TouchEvent).touches.length : 0;
+
+      if (touchCount > 1) {
+        return memo;
+      }
+
       event.preventDefault();
 
       if (first) {
@@ -629,14 +636,8 @@ const GestureMapViewportV2 = forwardRef<
           return;
         }
 
-        const now = Date.now();
 
-        const lastTap = Number(viewportRef.current.dataset.lastTapTime || "0");
-
-        const isDoubleTap = now - lastTap < 300;
-
-        if (!isDoubleTap) {
-          viewportRef.current.dataset.lastTapTime = String(now);
+        {
 
           const pointerX = touch.clientX - rect.left;
           const pointerY = touch.clientY - rect.top;
@@ -657,36 +658,8 @@ const GestureMapViewportV2 = forwardRef<
           return;
         }
 
-        viewportRef.current.dataset.lastTapTime = "0";
 
-        const pointerX = touch.clientX - rect.left;
-        const pointerY = touch.clientY - rect.top;
-
-        const currentScale = stateRef.current.scale;
-        const targetScale = clamp(currentScale * 1.8, minScale, maxScale);
-
-        const currentX = stateRef.current.x;
-        const currentY = stateRef.current.y;
-
-        const contentX = (pointerX - currentX) / currentScale;
-
-        const contentY = (pointerY - currentY) / currentScale;
-
-        const nextX = pointerX - contentX * targetScale;
-
-        const nextY = pointerY - contentY * targetScale;
-
-        const next = clampPan(
-          nextX,
-          nextY,
-          targetScale,
-          rect.width,
-          rect.height,
-          width,
-          height,
-        );
-
-        animateTo(next.x, next.y, targetScale);
+        return;
       }}
       style={{
         position: "relative",
