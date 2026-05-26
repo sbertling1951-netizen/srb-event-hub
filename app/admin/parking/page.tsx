@@ -98,6 +98,7 @@ function ParkingAdminPageInner() {
   const pinchFrameRef = useRef<number | null>(null);
   const liveZoomRef = useRef(0.6);
   const liveTranslateRef = useRef({ x: 0, y: 0 });
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -1109,6 +1110,54 @@ function ParkingAdminPageInner() {
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.pointerType === "touch" || e.pointerType === "mouse") {
+      const now = Date.now();
+      const lastTap = lastTapRef.current;
+      const isDoubleTap =
+        lastTap &&
+        now - lastTap.time < 320 &&
+        Math.abs(e.clientX - lastTap.x) < 28 &&
+        Math.abs(e.clientY - lastTap.y) < 28;
+
+      if (isDoubleTap) {
+        lastTapRef.current = null;
+
+        const container = mapRef.current;
+        if (container) {
+          const rect = container.getBoundingClientRect();
+          const tapX = e.clientX - rect.left;
+          const tapY = e.clientY - rect.top;
+
+          const currentZoom = liveZoomRef.current;
+          const nextZoom =
+            currentZoom > defaultZoom + 0.25 ? defaultZoom : clampZoom(currentZoom * 1.8);
+
+          const currentTranslate = liveTranslateRef.current;
+          const mapX = (tapX - currentTranslate.x) / currentZoom;
+          const mapY = (tapY - currentTranslate.y) / currentZoom;
+
+          const nextTranslate = {
+            x: tapX - mapX * nextZoom,
+            y: tapY - mapY * nextZoom,
+          };
+
+          liveZoomRef.current = nextZoom;
+          liveTranslateRef.current = nextTranslate;
+          setZoom(nextZoom);
+          setTranslate(nextTranslate);
+        }
+
+        e.preventDefault();
+        return;
+      }
+
+      lastTapRef.current = {
+        time: now,
+        x: e.clientX,
+        y: e.clientY,
+      };
+    }
+
     pointersRef.current.set(e.pointerId, {
       x: e.clientX,
       y: e.clientY,
