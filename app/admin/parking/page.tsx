@@ -1229,7 +1229,7 @@ function ParkingAdminPageInner() {
         const nextZoom = clampZoom(rawZoom);
 
         // ignore microscopic zoom changes
-        if (Math.abs(nextZoom - liveZoomRef.current) < 0.02) {
+        if (Math.abs(nextZoom - liveZoomRef.current) < 0.05) {
           return;
         }
 
@@ -1251,8 +1251,8 @@ function ParkingAdminPageInner() {
         const currentTranslate = liveTranslateRef.current;
 
         if (
-          Math.abs(currentTranslate.x - nextTranslateX) < 1.5 &&
-          Math.abs(currentTranslate.y - nextTranslateY) < 1.5
+          Math.abs(currentTranslate.x - nextTranslateX) < 3 &&
+          Math.abs(currentTranslate.y - nextTranslateY) < 3
         ) {
           return;
         }
