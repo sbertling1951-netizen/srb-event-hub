@@ -165,22 +165,23 @@ function ParkingAdminPageInner() {
   }
 
   const focusSite = useCallback((site: ParkingSite) => {
-    const siteKey = site.id || site.master_site_id;
+    const container = mapRef.current;
 
-    window.setTimeout(() => {
-      const marker = siteMarkerRefs.current[siteKey];
+    if (!container || site.map_x === null || site.map_y === null) {
+      return;
+    }
 
-      if (!marker) {
-        return;
-      }
+    const siteX = (site.map_x / 100) * naturalSize.width;
+    const siteY = (site.map_y / 100) * naturalSize.height;
 
-      marker.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-        inline: "center",
-      });
-    }, 120);
-  }, []);
+    const nextTranslate = {
+      x: container.clientWidth / 2 - siteX * zoom,
+      y: container.clientHeight / 2 - siteY * zoom,
+    };
+
+    liveTranslateRef.current = nextTranslate;
+    setTranslate(nextTranslate);
+  }, [naturalSize.width, naturalSize.height, zoom]);
 
   const loadPage = useCallback(async () => {
     setLoading(true);
