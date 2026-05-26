@@ -51,34 +51,13 @@ type DragState = {
   startTop: number;
 };
 
-type PinchState = {
-  startDistance: number;
-  startZoom: number;
-  contentX: number;
-  contentY: number;
-};
 
-function clampZoom(next: number) {
-  return Math.min(Math.max(next, 0.25), 3);
-}
 
-function getTouchDistance(touches: TouchList) {
-  const dx = touches[0].clientX - touches[1].clientX;
-  const dy = touches[0].clientY - touches[1].clientY;
-  return Math.sqrt(dx * dx + dy * dy);
-}
 
-function getTouchMidpoint(touches: TouchList) {
-  return {
-    x: (touches[0].clientX + touches[1].clientX) / 2,
-    y: (touches[0].clientY + touches[1].clientY) / 2,
-  };
-}
 
 function AdminLocationsPageInner() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
-  const pinchRef = useRef<PinchState | null>(null);
   const zoomRef = useRef(0.6);
 
   const [event, setEvent] = useState<ActiveEvent | null>(null);
@@ -117,87 +96,6 @@ function AdminLocationsPageInner() {
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  useEffect(() => {
-    const el = mapRef.current;
-    if (!el) {
-      return;
-    }
-
-    const container = el as HTMLDivElement;
-
-    function onTouchStart(e: TouchEvent) {
-      if (e.touches.length !== 2) {
-        return;
-      }
-
-      const rect = container.getBoundingClientRect();
-      const midpoint = getTouchMidpoint(e.touches);
-      const startZoom = zoomRef.current;
-
-      const viewportX = midpoint.x - rect.left;
-      const viewportY = midpoint.y - rect.top;
-
-      const contentX = (container.scrollLeft + viewportX) / startZoom;
-      const contentY = (container.scrollTop + viewportY) / startZoom;
-
-      pinchRef.current = {
-        startDistance: getTouchDistance(e.touches),
-        startZoom,
-        contentX,
-        contentY,
-      };
-
-      e.preventDefault();
-    }
-
-    function onTouchMove(e: TouchEvent) {
-      const pinch = pinchRef.current;
-      if (e.touches.length !== 2 || !pinch) {
-        return;
-      }
-
-      const rect = container.getBoundingClientRect();
-      const midpoint = getTouchMidpoint(e.touches);
-      const currentDistance = getTouchDistance(e.touches);
-
-      const nextZoom = clampZoom(
-        pinch.startZoom * (currentDistance / pinch.startDistance),
-      );
-
-      const viewportX = midpoint.x - rect.left;
-      const viewportY = midpoint.y - rect.top;
-
-      setZoom(nextZoom);
-      zoomRef.current = nextZoom;
-
-      const nextLeft = pinch.contentX * nextZoom - viewportX;
-      const nextTop = pinch.contentY * nextZoom - viewportY;
-
-      requestAnimationFrame(() => {
-        container.scrollLeft = Math.max(0, nextLeft);
-        container.scrollTop = Math.max(0, nextTop);
-      });
-
-      e.preventDefault();
-    }
-
-    function onTouchEnd() {
-      pinchRef.current = null;
-    }
-
-    container.addEventListener("touchstart", onTouchStart, { passive: false });
-    container.addEventListener("touchmove", onTouchMove, { passive: false });
-    container.addEventListener("touchend", onTouchEnd, { passive: false });
-    container.addEventListener("touchcancel", onTouchEnd, { passive: false });
-
-    return () => {
-      container.removeEventListener("touchstart", onTouchStart);
-      container.removeEventListener("touchmove", onTouchMove);
-      container.removeEventListener("touchend", onTouchEnd);
-      container.removeEventListener("touchcancel", onTouchEnd);
-    };
   }, []);
 
   useEffect(() => {
@@ -1140,6 +1038,10 @@ function AdminLocationsPageInner() {
       </div>
     </div>
   );
+}
+
+function clampZoom(next: number) {
+  return Math.min(3, Math.max(0.3, next));
 }
 
 export default function AdminLocationsPage() {
