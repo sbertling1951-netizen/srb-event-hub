@@ -8,6 +8,7 @@ import {
   canAccessEvent,
   getCurrentAdminAccess,
 } from "@/lib/getCurrentAdminAccess";
+import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
 import { supabase } from "@/lib/supabase";
 
 type AdminEventContext = {
@@ -76,28 +77,7 @@ function ParkingAdminPageInner() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const siteMarkerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const dragRef = useRef({
-    active: false,
-    startX: 0,
-    startY: 0,
-    originX: 0,
-    originY: 0,
-  });
 
-  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-
-  const pinchRef = useRef({
-    active: false,
-    startDistance: 0,
-    startZoom: 1,
-    startTranslateX: 0,
-    startTranslateY: 0,
-    centerX: 0,
-    centerY: 0,
-  });
-  const pinchFrameRef = useRef<number | null>(null);
-  const liveZoomRef = useRef(0.6);
-  const liveTranslateRef = useRef({ x: 0, y: 0 });
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -117,33 +97,8 @@ function ParkingAdminPageInner() {
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [showParked, setShowParked] = useState(false);
   const [showArrivedOnly, setShowArrivedOnly] = useState(false);
-  const [defaultZoom, setDefaultZoom] = useState(0.6);
-  const [zoom, setZoom] = useState(0.6);
-  const [translate, setTranslate] = useState({ x: 0, y: 0 });
-  useEffect(() => {
-    liveZoomRef.current = zoom;
-  }, [zoom]);
-
-  useEffect(() => {
-    liveTranslateRef.current = translate;
-  }, [translate]);
-
-  useEffect(() => {
-    const container = mapRef.current;
-
-    if (!container || !naturalSize.width || !naturalSize.height) {
-      return;
-    }
-
-    const scaledWidth = naturalSize.width * zoom;
-    const scaledHeight = naturalSize.height * zoom;
-
-    setTranslate({
-      x: (container.clientWidth - scaledWidth) / 2,
-      y: (container.clientHeight - scaledHeight) / 2,
-    });
-  }, [naturalSize.width, naturalSize.height]);
-
+ 
+  
   function showStatus(message: string) {
     setError(null);
     setStatus(message);
@@ -154,10 +109,7 @@ function ParkingAdminPageInner() {
     setStatus("");
   }
 
-  function clampZoom(next: number) {
-    return Math.min(Math.max(next, 0.1), 3);
-  }
-
+  
   function runAfterLayout(callback: () => void, delay = 90) {
     window.setTimeout(() => {
       callback();
@@ -272,13 +224,6 @@ function ParkingAdminPageInner() {
     };
 
     setEvent(typedEvent);
-
-    const openingScale = Number(typedEvent.parking_map_open_scale ?? 0.6);
-    const safeOpeningScale = Number.isNaN(openingScale)
-      ? 0.6
-      : clampZoom(openingScale);
-    setDefaultZoom(safeOpeningScale);
-    setZoom(safeOpeningScale);
 
     const [masterSitesResult, assignmentResult, attendeeResult] =
       await Promise.all([
@@ -717,45 +662,6 @@ function ParkingAdminPageInner() {
     }, 40);
   }
 
-  function recenterMap() {
-    if (selectedSite) {
-      focusSite(selectedSite);
-      return;
-    }
-
-    if (selectedAttendee?.assigned_site) {
-      const assignedSite = sites.find(
-        (site) => site.site_number === selectedAttendee.assigned_site,
-      );
-
-      if (assignedSite) {
-        focusSite(assignedSite);
-        return;
-      }
-    }
-
-    const container = mapRef.current;
-    if (!container) {
-      return;
-    }
-
-    setZoom(defaultZoom);
-
-    runAfterLayout(() => {
-      container.scrollTo({
-        left: Math.max(
-          0,
-          (naturalSize.width * defaultZoom - container.clientWidth) / 2,
-        ),
-        top: Math.max(
-          0,
-          (naturalSize.height * defaultZoom - container.clientHeight) / 2,
-        ),
-        behavior: "smooth",
-      });
-    }, 120);
-  }
-
   useEffect(() => {
     if (!selectedAttendee || !selectedAttendee.assigned_site) {
       return;
@@ -1105,153 +1011,6 @@ function ParkingAdminPageInner() {
         </div>
       </div>
     );
-  }
-
-  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    pointersRef.current.set(e.pointerId, {
-      x: e.clientX,
-      y: e.clientY,
-    });
-
-    if (pointersRef.current.size === 2) {
-      const points = Array.from(pointersRef.current.values());
-
-      const dx = points[0].x - points[1].x;
-      const dy = points[0].y - points[1].y;
-
-      pinchRef.current.active = true;
-      pinchRef.current.startDistance = Math.hypot(dx, dy);
-      pinchRef.current.startZoom = zoom;
-
-      pinchRef.current.startTranslateX = translate.x;
-      pinchRef.current.startTranslateY = translate.y;
-
-      pinchRef.current.centerX = (points[0].x + points[1].x) / 2;
-      pinchRef.current.centerY = (points[0].y + points[1].y) / 2;
-
-      dragRef.current.active = false;
-      return;
-    } else {
-      dragRef.current.active = true;
-
-      dragRef.current.startX = e.clientX;
-      dragRef.current.startY = e.clientY;
-
-      dragRef.current.originX = translate.x;
-      dragRef.current.originY = translate.y;
-    }
-
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }
-
-  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (pointersRef.current.has(e.pointerId)) {
-      pointersRef.current.set(e.pointerId, {
-        x: e.clientX,
-        y: e.clientY,
-      });
-    }
-
-    if (pinchRef.current.active && pointersRef.current.size === 2) {
-      const points = Array.from(pointersRef.current.values());
-
-      const dx = points[0].x - points[1].x;
-      const dy = points[0].y - points[1].y;
-
-      const distance = Math.hypot(dx, dy);
-
-      // ignore tiny touch jitter
-      if (Math.abs(distance - pinchRef.current.startDistance) < 3) {
-        return;
-      }
-
-      if (pinchFrameRef.current !== null) {
-        return;
-      }
-
-      pinchFrameRef.current = window.requestAnimationFrame(() => {
-        pinchFrameRef.current = null;
-
-        const rawZoom =
-          pinchRef.current.startZoom *
-          (distance / pinchRef.current.startDistance);
-
-        const nextZoom = clampZoom(rawZoom);
-
-        // ignore microscopic zoom changes
-        if (Math.abs(nextZoom - liveZoomRef.current) < 0.02) {
-          return;
-        }
-
-        const scaleRatio = nextZoom / pinchRef.current.startZoom;
-
-        const nextTranslateX =
-          pinchRef.current.centerX -
-          (pinchRef.current.centerX - pinchRef.current.startTranslateX) *
-            scaleRatio;
-
-        const nextTranslateY =
-          pinchRef.current.centerY -
-          (pinchRef.current.centerY - pinchRef.current.startTranslateY) *
-            scaleRatio;
-
-        liveZoomRef.current = nextZoom;
-        setZoom(nextZoom);
-
-        const currentTranslate = liveTranslateRef.current;
-
-        if (
-          Math.abs(currentTranslate.x - nextTranslateX) < 1.5 &&
-          Math.abs(currentTranslate.y - nextTranslateY) < 1.5
-        ) {
-          return;
-        }
-
-        const nextTranslate = {
-          x: nextTranslateX,
-          y: nextTranslateY,
-        };
-
-        liveTranslateRef.current = nextTranslate;
-        setTranslate(nextTranslate);
-      });
-
-      return;
-    }
-
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
-
-    setTranslate((current) => {
-      const nextX = dragRef.current.originX + dx;
-      const nextY = dragRef.current.originY + dy;
-
-      if (
-        Math.abs(current.x - nextX) < 0.5 &&
-        Math.abs(current.y - nextY) < 0.5
-      ) {
-        return current;
-      }
-
-      return {
-        x: nextX,
-        y: nextY,
-      };
-    });
-  }
-
-  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    pointersRef.current.delete(e.pointerId);
-
-    if (pointersRef.current.size < 2) {
-      pinchRef.current.active = false;
-    }
-
-    if (pinchFrameRef.current !== null) {
-      cancelAnimationFrame(pinchFrameRef.current);
-      pinchFrameRef.current = null;
-    }
-    dragRef.current.active = false;
   }
 
   const queuePanel = (
@@ -1907,66 +1666,26 @@ function ParkingAdminPageInner() {
           }}
         >
           <div
-            ref={mapRef}
-            onTouchStart={(e) => {
-              if (e.touches.length > 1) {
-                e.preventDefault();
-              }
-            }}
-            onTouchMove={(e) => {
-              if (e.touches.length > 1) {
-                e.preventDefault();
-              }
-            }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
             style={{
-              height: isNarrow ? "56vh" : undefined,
-              minHeight: isNarrow ? 320 : undefined,
-              maxHeight: isNarrow ? "56vh" : "82vh",
-
+              height: isNarrow ? "56vh" : "82vh",
+              minHeight: isNarrow ? 320 : 420,
               border: "1px solid #ddd",
               background: "#f2f2f2",
-
               overflow: "hidden",
-
-              overscrollBehavior: "contain",
-              WebkitOverflowScrolling: "touch",
-
               touchAction: "none",
-              contain: "layout paint size",
-
               position: "relative",
-
               width: "100%",
               maxWidth: "100vw",
-
               borderRadius: 10,
             }}
           >
-            <div
-              style={{
-                position: "absolute",
-                left: 0,
-                top: 0,
-
-                width: naturalSize.width,
-                height: naturalSize.height,
-
-                transform: `translate(${translate.x}px, ${translate.y}px) scale(${zoom})`,
-                transformOrigin: "top left",
-
-                touchAction: "none",
-                contain: "layout paint size",
-                willChange: "transform",
-                backfaceVisibility: "hidden",
-                WebkitBackfaceVisibility: "hidden",
-                transformStyle: "preserve-3d",
-              }}
+            <GestureMapViewportV2
+              width={naturalSize.width}
+              height={naturalSize.height}
+              initialScale={event?.parking_map_open_scale || 0.6}
             >
               <div
+                ref={mapRef}
                 style={{
                   position: "relative",
                   width: naturalSize.width,
@@ -1993,8 +1712,6 @@ function ParkingAdminPageInner() {
                       pointerEvents: "none",
                       touchAction: "none",
                       WebkitTouchCallout: "none",
-                      backfaceVisibility: "hidden",
-                      WebkitBackfaceVisibility: "hidden",
                     }}
                   />
                 )}
@@ -2017,9 +1734,7 @@ function ParkingAdminPageInner() {
                     >
                       <button
                         ref={(el) => {
-                          siteMarkerRefs.current[
-                            site.id || site.master_site_id
-                          ] = el;
+                          siteMarkerRefs.current[site.id || site.master_site_id] = el;
                         }}
                         type="button"
                         onClick={() => handleSiteClick(site)}
@@ -2043,9 +1758,7 @@ function ParkingAdminPageInner() {
                                 : 22,
                           borderRadius: "50%",
                           background: getSiteColor(site),
-                          border: isNarrow
-                            ? "3px solid white"
-                            : "2px solid white",
+                          border: isNarrow ? "3px solid white" : "2px solid white",
                           boxShadow:
                             (site.id || site.master_site_id) === selectedSiteId
                               ? "0 0 0 8px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(0,0,0,0.45)"
@@ -2059,6 +1772,7 @@ function ParkingAdminPageInner() {
                           display: "block",
                           margin: "0 auto",
                           pointerEvents: "auto",
+                          touchAction: "none",
                         }}
                       />
 
@@ -2087,34 +1801,13 @@ function ParkingAdminPageInner() {
                   );
                 })}
               </div>
-            </div>
+            </GestureMapViewportV2>
+          </div>
           </div>
 
-          <div
-            style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
-          >
-            <button
-              type="button"
-              onClick={() => setZoom((z) => clampZoom(z - 0.1))}
-            >
-              −
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => clampZoom(z + 0.1))}
-            >
-              +
-            </button>
-            <button type="button" onClick={() => setZoom(defaultZoom)}>
-              Reset Zoom
-            </button>
-            <button type="button" onClick={recenterMap}>
-              Re-center Map
-            </button>
-          </div>
+        
         </div>
       </div>
-    </div>
   );
 }
 
