@@ -1908,16 +1908,6 @@ function ParkingAdminPageInner() {
         >
           <div
             ref={mapRef}
-            onTouchStart={(e) => {
-              if (e.touches.length > 1) {
-                e.preventDefault();
-              }
-            }}
-            onTouchMove={(e) => {
-              if (e.touches.length > 1) {
-                e.preventDefault();
-              }
-            }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
