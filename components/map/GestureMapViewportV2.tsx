@@ -191,8 +191,8 @@ const GestureMapViewportV2 = forwardRef<
       return;
     }
 
-    const friction = 0.985;
-    const minimumVelocity = 0.08;
+    const friction = 0.92;
+    const minimumVelocity = 0.25;
 
     const step = () => {
       momentumRef.current.velocityX *= friction;
@@ -436,9 +436,8 @@ const GestureMapViewportV2 = forwardRef<
       stateRef.current.x = next.x;
       stateRef.current.y = next.y;
 
-      momentumRef.current.velocityX = vx * dx * 38;
-      momentumRef.current.velocityY = vy * dy * 38;
-
+      momentumRef.current.velocityX = vx * dx * 16;
+      momentumRef.current.velocityY = vy * dy * 16;
       requestRender();
 
       if (last) {
@@ -461,8 +460,71 @@ const GestureMapViewportV2 = forwardRef<
     },
   );
 
-  // const pinchBind = usePinch(
-  const pinchBind = () => ({});
+  const pinchBind = usePinch(
+    ({ origin: [ox, oy], offset: [nextScale], first, last, event }) => {
+      event.preventDefault();
+
+      const viewport = viewportRef.current;
+      if (!viewport) {
+        return;
+      }
+
+      viewport.dataset.isPinching = "true";
+
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+
+      const rect = viewport.getBoundingClientRect();
+
+      const pointerX = ox - rect.left;
+      const pointerY = oy - rect.top;
+
+      const currentScale = stateRef.current.scale;
+      const targetScale = clamp(nextScale, minScale, maxScale);
+
+      const mapX = (pointerX - stateRef.current.x) / currentScale;
+      const mapY = (pointerY - stateRef.current.y) / currentScale;
+
+      const next = clampPan(
+        pointerX - mapX * targetScale,
+        pointerY - mapY * targetScale,
+        targetScale,
+        rect.width,
+        rect.height,
+        width,
+        height,
+      );
+
+      stateRef.current.x = next.x;
+      stateRef.current.y = next.y;
+      stateRef.current.scale = targetScale;
+
+      requestRender();
+
+      if (last) {
+        requestAnimationFrame(() => {
+          if (viewportRef.current) {
+            viewportRef.current.dataset.isPinching = "false";
+            viewportRef.current.dataset.tapCandidate = "false";
+          }
+        });
+      }
+    },
+    {
+      scaleBounds: {
+        min: minScale,
+        max: maxScale,
+      },
+      rubberband: false,
+      pinchOnWheel: false,
+      eventOptions: {
+        passive: false,
+        capture: true,
+      },
+    },
+  ); 
+  
   const wheelBind = useWheel(
     ({ event, delta: [dx, dy], ctrlKey }) => {
       event.preventDefault();
