@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
@@ -966,44 +965,33 @@ function AdminLocationsPageInner() {
           }}
         >
           <div
+            ref={mapRef}
+            onClick={handleMapClick}
             style={{
-              height: isNarrow ? "60vh" : "82vh",
-              minHeight: isNarrow ? 320 : 420,
+              overflow: "hidden",
+              maxHeight: isNarrow ? "60vh" : "82vh",
               border: "1px solid #ddd",
               background: "#f2f2f2",
-              overflow: "hidden",
+              WebkitOverflowScrolling: "touch",
               touchAction: "none",
-              position: "relative",
-              width: "100%",
-              borderRadius: 10,
+              overflowX: "scroll",
+              overflowY: "scroll",
             }}
           >
-            <GestureMapViewportV2
-              width={naturalSize.width}
-              height={naturalSize.height}
-              initialScale={event?.locations_map_open_scale || 0.6}
-              onTap={({ mapX, mapY }) => {
-                if (!isPlacing) {
-                  return;
-                }
-
-                const xPercent = (mapX / naturalSize.width) * 100;
-                const yPercent = (mapY / naturalSize.height) * 100;
-
-                const safeX = Math.max(0, Math.min(100, Number(xPercent.toFixed(2))));
-                const safeY = Math.max(0, Math.min(100, Number(yPercent.toFixed(2))));
-
-                setFormX(String(safeX));
-                setFormY(String(safeY));
-                setStatus(`Placed marker at X ${safeX}, Y ${safeY}. Save to keep it.`);
+            <div
+              style={{
+                position: "relative",
+                width: naturalSize.width * zoom,
+                height: naturalSize.height * zoom,
               }}
             >
               <div
-                ref={mapRef}
                 style={{
                   position: "relative",
                   width: naturalSize.width,
                   height: naturalSize.height,
+                  transform: `scale(${zoom})`,
+                  transformOrigin: "top left",
                 }}
               >
                 {event?.map_image_url && (
@@ -1024,7 +1012,6 @@ function AdminLocationsPageInner() {
                       display: "block",
                       userSelect: "none",
                       pointerEvents: "none",
-                      touchAction: "none",
                     }}
                   />
                 )}
@@ -1057,14 +1044,15 @@ function AdminLocationsPageInner() {
                           height: getMarkerSize(location),
                           borderRadius: "50%",
                           background: getMarkerColor(location),
-                          border: isNarrow ? "3px solid white" : "2px solid white",
+                          border: isNarrow
+                            ? "3px solid white"
+                            : "2px solid white",
                           boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
                           cursor: "pointer",
                           padding: 0,
                           display: "block",
                           margin: "0 auto",
                           pointerEvents: "auto",
-                          touchAction: "none",
                         }}
                       />
 
@@ -1092,8 +1080,42 @@ function AdminLocationsPageInner() {
                   );
                 })}
               </div>
-            </GestureMapViewportV2>
-          </div> 
+            </div>
+          </div>
+
+          <div
+            style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                const next = clampZoom(zoomRef.current - 0.1);
+                setZoom(next);
+                zoomRef.current = next;
+              }}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const next = clampZoom(zoomRef.current + 0.1);
+                setZoom(next);
+                zoomRef.current = next;
+              }}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setZoom(defaultZoom);
+                zoomRef.current = defaultZoom;
+              }}
+            >
+              Reset Zoom
+            </button>
+          </div>
 
           {selectedLocation && (
             <div
