@@ -436,8 +436,8 @@ const GestureMapViewportV2 = forwardRef<
       stateRef.current.x = next.x;
       stateRef.current.y = next.y;
 
-      momentumRef.current.velocityX = vx * dx * 16;
-      momentumRef.current.velocityY = vy * dy * 16;
+      momentumRef.current.velocityX = vx * dx * 20;
+      momentumRef.current.velocityY = vy * dy * 20;
       requestRender();
 
       if (last) {
@@ -552,7 +552,6 @@ const GestureMapViewportV2 = forwardRef<
           minScale,
           maxScale,
         );
-
         const mapX =
           (pointerX - stateRef.current.x) /
           stateRef.current.scale;
@@ -705,6 +704,16 @@ const GestureMapViewportV2 = forwardRef<
 
           const currentScale = stateRef.current.scale;
 
+          const fitScale = clamp(
+            Math.min(rect.width / width, rect.height / height, 1),
+            minScale,
+            maxScale,
+          );
+
+          const targetScale =
+            currentScale > fitScale * 1.4
+              ? fitScale
+              : clamp(currentScale * 1.8, minScale, maxScale);
           const mapX = (pointerX - stateRef.current.x) / currentScale;
 
           const mapY = (pointerY - stateRef.current.y) / currentScale;
@@ -753,7 +762,7 @@ const GestureMapViewportV2 = forwardRef<
       style={{
         position: "relative",
         width: "100%",
-        height: "100dvh",
+        height: "100%",
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",
