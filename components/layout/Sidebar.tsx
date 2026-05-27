@@ -187,6 +187,8 @@ export default function Sidebar() {
     }
   }
 
+  const isAdminRoute = pathname?.startsWith("/admin") ?? false;
+
   const isPreAuthPage =
     pathname === "/" ||
     pathname === "/member/login" ||
@@ -235,7 +237,7 @@ export default function Sidebar() {
 
       window.removeEventListener("resize", handleWindowResize);
     };
-  }, []);
+  }, [isAdminRoute]);
 
   useEffect(() => {
     if (!mounted) {
@@ -348,6 +350,13 @@ export default function Sidebar() {
         setAdminPrivilegeGroup("");
         return;
       }
+      if (!isAdminRoute) {
+        setAdminAccess(null);
+        setAdminDisplayName("");
+        setAdminPrivilegeGroup("");
+        return;
+      }
+
       const admin = await getCurrentAdminAccess();
       setAdminAccess(admin);
 

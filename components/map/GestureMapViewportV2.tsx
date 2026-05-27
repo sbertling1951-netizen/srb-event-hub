@@ -17,6 +17,7 @@ type GestureMapViewportProps = {
   minScale?: number;
   maxScale?: number;
   initialScale?: number;
+  viewportHeight?: string | number;
   onTap?: (args: {
     screenX: number;
     screenY: number;
@@ -48,19 +49,22 @@ function clampPan(
   const scaledWidth = contentWidth * scale;
   const scaledHeight = contentHeight * scale;
 
-  const minX = Math.min(0, viewportWidth - scaledWidth);
-  const minY = Math.min(0, viewportHeight - scaledHeight);
+  const overscrollX = Math.min(420, viewportWidth * 0.45);
+  const overscrollY = Math.min(260, viewportHeight * 0.28);
+
+  const minX = Math.min(0, viewportWidth - scaledWidth) - overscrollX;
+  const minY = Math.min(0, viewportHeight - scaledHeight) - overscrollY;
 
   return {
     x:
       scaledWidth <= viewportWidth
-        ? (viewportWidth - scaledWidth) / 2
-        : clamp(x, minX, 0),
+        ? clamp(x, -overscrollX * 1.5, overscrollX * 1.5)
+        : clamp(x, minX, overscrollX),
 
     y:
       scaledHeight <= viewportHeight
-        ? (viewportHeight - scaledHeight) / 2
-        : clamp(y, minY, 0),
+        ? clamp(y, -overscrollY * 1.5, overscrollY * 1.5)
+        : clamp(y, minY, overscrollY),
   };
 }
 
@@ -75,6 +79,7 @@ const GestureMapViewportV2 = forwardRef<
     minScale = 0.4,
     maxScale = 4,
     initialScale = 0.8,
+    viewportHeight = "100dvh",
     onTap,
   }: GestureMapViewportProps,
   ref,
@@ -90,6 +95,7 @@ const GestureMapViewportV2 = forwardRef<
 
   const rafRef = useRef<number | null>(null);
   const animationRef = useRef<number | null>(null);
+  const isPinchingRef = useRef(false);
 
   const momentumRef = useRef<{
     velocityX: number;
@@ -191,8 +197,8 @@ const GestureMapViewportV2 = forwardRef<
       return;
     }
 
-    const friction = 0.92;
-    const minimumVelocity = 0.25;
+    const friction = 0.94;
+    const minimumVelocity = 0.18;
 
     const step = () => {
       momentumRef.current.velocityX *= friction;
@@ -243,14 +249,14 @@ const GestureMapViewportV2 = forwardRef<
 
     momentumRef.current.velocityX = clamp(
       momentumRef.current.velocityX,
-      -42,
-      42,
+      -18,
+      18,
     );
 
     momentumRef.current.velocityY = clamp(
       momentumRef.current.velocityY,
-      -42,
-      42,
+      -18,
+      18,
     );
 
     animationRef.current = requestAnimationFrame(step);
@@ -262,15 +268,16 @@ const GestureMapViewportV2 = forwardRef<
     }
 
     const { x, y, scale } = stateRef.current;
-    contentRef.current.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) scale(${scale})`;
-    contentRef.current.style.transformOrigin = "0 0";
+    contentRef.current.style.transform = `translate3d(${x}px, ${y}px, 0) scale3d(${scale}, ${scale}, 1)`;
   };
 
   const requestRender = () => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
+    if (rafRef.current != null) {
+      return;
     }
+
     rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
       renderTransform();
     });
   };
@@ -386,6 +393,19 @@ const GestureMapViewportV2 = forwardRef<
       memo,
       event,
     }) => {
+      const touchEvent =
+        "touches" in event ? (event as TouchEvent) : null;
+
+      const touchCount = touchEvent?.touches?.length || 0;
+
+      // Ignore only ACTIVE multi-touch drags.
+      if (touchCount >= 2) {
+        return memo;
+      }
+
+      isPinchingRef.current = false;
+      document.body.classList.remove("coach-map-pinching");
+
       event.preventDefault();
 
       if (first) {
@@ -404,10 +424,6 @@ const GestureMapViewportV2 = forwardRef<
           originX: stateRef.current.x,
           originY: stateRef.current.y,
         };
-      }
-
-      if (viewportRef.current?.dataset.isPinching === "true") {
-        return memo;
       }
 
       if (first) {
@@ -436,8 +452,9 @@ const GestureMapViewportV2 = forwardRef<
       stateRef.current.x = next.x;
       stateRef.current.y = next.y;
 
-      momentumRef.current.velocityX = vx * dx * 20;
-      momentumRef.current.velocityY = vy * dy * 20;
+      momentumRef.current.velocityX = vx * dx * 18;
+      momentumRef.current.velocityY = vy * dy * 18;
+
       requestRender();
 
       if (last) {
@@ -448,11 +465,11 @@ const GestureMapViewportV2 = forwardRef<
     },
     {
       pointer: {
-        touch: true,
+        touch: false,
       },
       preventDefault: true,
-      pointerCapture: false,
-      threshold: 0,
+      pointerCapture: true,
+      threshold: 1,
       eventOptions: {
         passive: false,
         capture: true,
@@ -461,70 +478,101 @@ const GestureMapViewportV2 = forwardRef<
   );
 
   const pinchBind = usePinch(
-    ({ origin: [ox, oy], offset: [nextScale], first, last, event }) => {
+    ({ event, origin: [originX, originY], first, last, da: [gestureDistance], memo }) => {
       event.preventDefault();
 
       const viewport = viewportRef.current;
-      if (!viewport) {
-        return;
-      }
-
-      viewport.dataset.isPinching = "true";
-
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
+      if (!viewport) return memo;
 
       const rect = viewport.getBoundingClientRect();
+      const touchEvent = event as TouchEvent;
+      const firstTouch = touchEvent.touches?.[0];
+      const secondTouch = touchEvent.touches?.[1];
 
-      const pointerX = ox - rect.left;
-      const pointerY = oy - rect.top;
+      if (last && (!firstTouch || !secondTouch)) {
+        isPinchingRef.current = false;
+        document.body.classList.remove("coach-map-pinching");
+        return memo;
+      }
 
-      const currentScale = stateRef.current.scale;
-      const targetScale = clamp(nextScale, minScale, maxScale);
+      let pointerX = originX - rect.left;
+      let pointerY = originY - rect.top;
+      let distance = Math.max(gestureDistance, 1);
 
-      const mapX = (pointerX - stateRef.current.x) / currentScale;
-      const mapY = (pointerY - stateRef.current.y) / currentScale;
+      if (firstTouch && secondTouch) {
+        const firstX = firstTouch.clientX - rect.left;
+        const firstY = firstTouch.clientY - rect.top;
+        const secondX = secondTouch.clientX - rect.left;
+        const secondY = secondTouch.clientY - rect.top;
 
-      const next = clampPan(
-        pointerX - mapX * targetScale,
-        pointerY - mapY * targetScale,
-        targetScale,
-        rect.width,
-        rect.height,
+        pointerX = (firstX + secondX) / 2;
+        pointerY = (firstY + secondY) / 2;
+
+        const dx = secondX - firstX;
+        const dy = secondY - firstY;
+        distance = Math.max(Math.hypot(dx, dy), 1);
+      }
+
+      if (first || !memo) {
+        isPinchingRef.current = true;
+        document.body.classList.add("coach-map-pinching");
+        document.body.classList.add("coach-map-pinching");
+
+        if (animationRef.current != null) {
+          cancelAnimationFrame(animationRef.current);
+          animationRef.current = null;
+        }
+
+        momentumRef.current.active = false;
+
+        const startScale = stateRef.current.scale;
+
+        memo = {
+          startDistance: distance,
+          startScale,
+          mapX: (pointerX - stateRef.current.x) / startScale,
+          mapY: (pointerY - stateRef.current.y) / startScale,
+        };
+      }
+
+      const distanceRatio = distance / memo.startDistance;
+      const nextScale = clamp(memo.startScale * distanceRatio, minScale, maxScale);
+
+      const bounded = clampPan(
+        pointerX - memo.mapX * nextScale,
+        pointerY - memo.mapY * nextScale,
+        nextScale,
+        viewport.clientWidth,
+        viewport.clientHeight,
         width,
         height,
       );
 
-      stateRef.current.x = next.x;
-      stateRef.current.y = next.y;
-      stateRef.current.scale = targetScale;
+      stateRef.current.x = bounded.x;
+      stateRef.current.y = bounded.y;
+      stateRef.current.scale = nextScale;
 
       requestRender();
 
       if (last) {
-        requestAnimationFrame(() => {
-          if (viewportRef.current) {
-            viewportRef.current.dataset.isPinching = "false";
-            viewportRef.current.dataset.tapCandidate = "false";
-          }
-        });
+        isPinchingRef.current = false;
+        document.body.classList.remove("coach-map-pinching");
       }
+
+      return memo;
     },
     {
-      scaleBounds: {
-        min: minScale,
-        max: maxScale,
+      pointer: {
+        touch: true,
       },
-      rubberband: false,
-      pinchOnWheel: false,
+      preventDefault: true,
+      pointerCapture: false,
       eventOptions: {
         passive: false,
         capture: true,
       },
     },
-  ); 
-  
+  );
   const wheelBind = useWheel(
     ({ event, delta: [dx, dy], ctrlKey }) => {
       event.preventDefault();
@@ -552,6 +600,7 @@ const GestureMapViewportV2 = forwardRef<
           minScale,
           maxScale,
         );
+
         const mapX =
           (pointerX - stateRef.current.x) /
           stateRef.current.scale;
@@ -640,6 +689,11 @@ const GestureMapViewportV2 = forwardRef<
       {...pinchBind()}
       {...wheelBind()}
       onTouchStart={(e) => {
+        if (e.touches.length < 2) {
+          isPinchingRef.current = false;
+          document.body.classList.remove("coach-map-pinching");
+        }
+
         const touch = e.touches[0];
 
         if (!touch || !viewportRef.current) {
@@ -651,6 +705,7 @@ const GestureMapViewportV2 = forwardRef<
         viewportRef.current.dataset.tapStartY = String(touch.clientY);
 
         viewportRef.current.dataset.tapCandidate = "true";
+        viewportRef.current.dataset.touchCountStart = String(e.touches.length);
       }}
       onTouchMove={(e) => {
         const touch = e.touches[0];
@@ -671,6 +726,14 @@ const GestureMapViewportV2 = forwardRef<
         }
       }}
       onTouchEnd={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (e.touches.length < 2) {
+          isPinchingRef.current = false;
+          document.body.classList.remove("coach-map-pinching");
+        }
+
         if (!viewportRef.current) {
           return;
         }
@@ -678,7 +741,10 @@ const GestureMapViewportV2 = forwardRef<
         const tapCandidate =
           viewportRef.current.dataset.tapCandidate === "true";
 
-        if (!tapCandidate) {
+        const startedWithTwoTouches =
+          viewportRef.current.dataset.touchCountStart === "2";
+
+        if (!tapCandidate && !startedWithTwoTouches) {
           return;
         }
 
@@ -690,30 +756,74 @@ const GestureMapViewportV2 = forwardRef<
           return;
         }
 
+        if (startedWithTwoTouches) {
+          const pointerX = touch.clientX - rect.left;
+          const pointerY = touch.clientY - rect.top;
+
+          const currentScale = stateRef.current.scale;
+          const nextScale = clamp(currentScale / 1.55, minScale, maxScale);
+
+          const mapX = (pointerX - stateRef.current.x) / currentScale;
+          const mapY = (pointerY - stateRef.current.y) / currentScale;
+
+          const next = clampPan(
+            pointerX - mapX * nextScale,
+            pointerY - mapY * nextScale,
+            nextScale,
+            viewportRef.current.clientWidth,
+            viewportRef.current.clientHeight,
+            width,
+            height,
+          );
+
+          animateTo(next.x, next.y, nextScale, 120);
+          viewportRef.current.dataset.tapCandidate = "false";
+          viewportRef.current.dataset.touchCountStart = "0";
+          return;
+        }
+
         const now = Date.now();
+        const lastTapTime = Number(viewportRef.current.dataset.lastTapTime || "0");
+        const isDoubleTap = now - lastTapTime < 320;
 
-        const lastTap = Number(viewportRef.current.dataset.lastTapTime || "0");
+        viewportRef.current.dataset.lastTapTime = String(now);
 
-        const isDoubleTap = now - lastTap < 300;
+        if (isDoubleTap) {
+          const pointerX = touch.clientX - rect.left;
+          const pointerY = touch.clientY - rect.top;
 
-        if (!isDoubleTap) {
-          viewportRef.current.dataset.lastTapTime = String(now);
+          const currentScale = stateRef.current.scale;
+          const nextScale =
+            currentScale < maxScale * 0.72
+              ? clamp(currentScale * 1.55, minScale, maxScale)
+              : clamp(currentScale / 1.55, minScale, maxScale);
+
+          const mapX = (pointerX - stateRef.current.x) / currentScale;
+          const mapY = (pointerY - stateRef.current.y) / currentScale;
+
+          const next = clampPan(
+            pointerX - mapX * nextScale,
+            pointerY - mapY * nextScale,
+            nextScale,
+            viewportRef.current.clientWidth,
+            viewportRef.current.clientHeight,
+            width,
+            height,
+          );
+
+          animateTo(next.x, next.y, nextScale, 120);
+          viewportRef.current.dataset.tapCandidate = "false";
+          return;
+        }
+
+
+        {
 
           const pointerX = touch.clientX - rect.left;
           const pointerY = touch.clientY - rect.top;
 
           const currentScale = stateRef.current.scale;
 
-          const fitScale = clamp(
-            Math.min(rect.width / width, rect.height / height, 1),
-            minScale,
-            maxScale,
-          );
-
-          const targetScale =
-            currentScale > fitScale * 1.4
-              ? fitScale
-              : clamp(currentScale * 1.8, minScale, maxScale);
           const mapX = (pointerX - stateRef.current.x) / currentScale;
 
           const mapY = (pointerY - stateRef.current.y) / currentScale;
@@ -728,41 +838,13 @@ const GestureMapViewportV2 = forwardRef<
           return;
         }
 
-        viewportRef.current.dataset.lastTapTime = "0";
 
-        const pointerX = touch.clientX - rect.left;
-        const pointerY = touch.clientY - rect.top;
-
-        const currentScale = stateRef.current.scale;
-        const targetScale = clamp(currentScale * 1.8, minScale, maxScale);
-
-        const currentX = stateRef.current.x;
-        const currentY = stateRef.current.y;
-
-        const contentX = (pointerX - currentX) / currentScale;
-
-        const contentY = (pointerY - currentY) / currentScale;
-
-        const nextX = pointerX - contentX * targetScale;
-
-        const nextY = pointerY - contentY * targetScale;
-
-        const next = clampPan(
-          nextX,
-          nextY,
-          targetScale,
-          rect.width,
-          rect.height,
-          width,
-          height,
-        );
-
-        animateTo(next.x, next.y, targetScale);
+        return;
       }}
       style={{
         position: "relative",
         width: "100%",
-        height: "100%",
+        height: viewportHeight,
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",
@@ -772,6 +854,10 @@ const GestureMapViewportV2 = forwardRef<
         WebkitTapHighlightColor: "transparent",
         userSelect: "none",
         background: "#f2f2f2",
+        contain: "layout paint size",
+        isolation: "isolate",
+        transform: "translateZ(0)",
+        willChange: "transform",
       }}
     >
       <div
@@ -785,7 +871,11 @@ const GestureMapViewportV2 = forwardRef<
           flexShrink: 0,
           transformOrigin: "0 0",
           willChange: "transform",
+          backfaceVisibility: "hidden",
+          WebkitBackfaceVisibility: "hidden",
+          transform: "translate3d(0, 0, 0) scale3d(1, 1, 1)",
           touchAction: "none",
+          contain: "layout paint",
         }}
       >
         {children}

@@ -1386,3 +1386,8 @@ button[style*="background-color: #fafafa"] * {
     padding-bottom: 20px !important;
   }
 }
+
+
+body.coach-map-pinching [data-coach-map-status="true"] {
+  visibility: hidden;
+}
