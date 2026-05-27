@@ -17,6 +17,7 @@ type GestureMapViewportProps = {
   minScale?: number;
   maxScale?: number;
   initialScale?: number;
+  viewportHeight?: string | number;
   onTap?: (args: {
     screenX: number;
     screenY: number;
@@ -62,7 +63,7 @@ function clampPan(
 
     y:
       scaledHeight <= viewportHeight
-        ? (viewportHeight - scaledHeight) / 2
+        ? clamp(y, -overscrollY * 1.5, overscrollY * 1.5)
         : clamp(y, minY, overscrollY),
   };
 }
@@ -78,6 +79,7 @@ const GestureMapViewportV2 = forwardRef<
     minScale = 0.4,
     maxScale = 4,
     initialScale = 0.8,
+    viewportHeight = "100dvh",
     onTap,
   }: GestureMapViewportProps,
   ref,
@@ -487,6 +489,12 @@ const GestureMapViewportV2 = forwardRef<
       const firstTouch = touchEvent.touches?.[0];
       const secondTouch = touchEvent.touches?.[1];
 
+      if (last && (!firstTouch || !secondTouch)) {
+        isPinchingRef.current = false;
+        document.body.classList.remove("coach-map-pinching");
+        return memo;
+      }
+
       let pointerX = originX - rect.left;
       let pointerY = originY - rect.top;
       let distance = Math.max(gestureDistance, 1);
@@ -718,6 +726,9 @@ const GestureMapViewportV2 = forwardRef<
         }
       }}
       onTouchEnd={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
         if (e.touches.length < 2) {
           isPinchingRef.current = false;
           document.body.classList.remove("coach-map-pinching");
@@ -833,7 +844,7 @@ const GestureMapViewportV2 = forwardRef<
       style={{
         position: "relative",
         width: "100%",
-        height: "100dvh",
+        height: viewportHeight,
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",

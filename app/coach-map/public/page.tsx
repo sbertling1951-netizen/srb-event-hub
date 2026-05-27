@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
-import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
+import GestureMapViewportV2, { type GestureMapViewportHandle } from "@/components/map/GestureMapViewportV2";
 import { fullName, preferredDisplayLine } from "@/lib/displayNames";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
@@ -166,6 +166,7 @@ function CoachMapPublicPageInner() {
   const [locations, setLocations] = useState<MasterMapLocation[]>([]);
   const [viewerAttendeeId, setViewerAttendeeId] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading map...");
+  const mapViewportRef = useRef<GestureMapViewportHandle | null>(null);
   const [selectedSiteKey, setSelectedSiteKey] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
   const [search, setSearch] = useState("");
@@ -529,9 +530,15 @@ function CoachMapPublicPageInner() {
     occupantHasOptedIn;
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
-  function centerSiteInViewport(_site: RenderedSite) {
-    // GestureMapViewportV2 now handles viewport movement internally.
-    // Selection/pulse still works without manual scroll positioning.
+  function centerSiteInViewport(site: RenderedSite) {
+    if (site.map_x === null || site.map_y === null) {
+      return;
+    }
+
+    mapViewportRef.current?.centerOn(
+      (site.map_x / 100) * naturalSize.width,
+      (site.map_y / 100) * naturalSize.height,
+    );
   }
 
   function goToSite(siteKey: string) {
@@ -784,10 +791,11 @@ function CoachMapPublicPageInner() {
           }}
         >
           <GestureMapViewportV2
+            ref={mapViewportRef}
             width={naturalSize.width}
             height={naturalSize.height}
             initialScale={Number(event?.coach_map_open_scale || 1)}
-            minScale={0.18}
+            minScale={0.1}
             maxScale={3}
           >
             <div

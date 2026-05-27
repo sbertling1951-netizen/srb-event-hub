@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import TouchMapViewport from "@/components/map/TouchMapViewport";
+import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   canAccessEvent,
@@ -2192,12 +2192,20 @@ function MasterMapEditorPageInner() {
             borderRadius: 10,
             background: "white",
             padding: 12,
+            height: "78vh",
+            minHeight: 420,
+            overflow: "hidden",
+            overscrollBehavior: "none",
+            touchAction: "none",
           }}
         >
-          <TouchMapViewport
-            imageUrl={masterMap?.map_image_url || ""}
+          <GestureMapViewportV2
             width={naturalSize.width}
             height={naturalSize.height}
+            minScale={0.1}
+            maxScale={3}
+            initialScale={0.6}
+            viewportHeight="100%"
           >
             <div
               ref={mapCanvasRef}
@@ -2217,6 +2225,10 @@ function MasterMapEditorPageInner() {
                 userSelect: "none",
                 WebkitUserSelect: "none",
                 outline: "none",
+                touchAction: "none",
+                overscrollBehavior: "none",
+                WebkitTouchCallout: "none",
+                WebkitTapHighlightColor: "transparent",
               }}
             >
               {masterMap?.map_image_url && (
@@ -2284,6 +2296,12 @@ function MasterMapEditorPageInner() {
                       onMouseUp={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
+                      }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        focusMapCanvasNow();
+                        handleMarkerSelect(site, e);
                       }}
                       title={site.site_number}
                       style={{
@@ -2354,6 +2372,12 @@ function MasterMapEditorPageInner() {
                         onMouseUp={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          focusMapCanvasNow();
+                          handleMarkerSelect(site, e);
                         }}
                         title={`Site ${site.site_number}`}
                         style={{
@@ -2433,7 +2457,7 @@ function MasterMapEditorPageInner() {
                 </div>
               )}
             </div>
-          </TouchMapViewport>
+          </GestureMapViewportV2>
         </div>
       </div>
     </div>
