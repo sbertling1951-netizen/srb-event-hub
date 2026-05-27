@@ -70,6 +70,7 @@ type EventContext = {
 type AdminAccessState = Awaited<ReturnType<typeof getCurrentAdminAccess>>;
 
 const SIDEBAR_WIDTH = 260;
+const MOBILE_SIDEBAR_WIDTH = "min(340px, calc(100vw - 24px))";
 const MOBILE_BREAKPOINT = 900;
 
 function formatDateRange(startDate?: string | null, endDate?: string | null) {
@@ -194,7 +195,13 @@ export default function Sidebar() {
     pathname === "/member/login" ||
     pathname === "/admin/login";
 
-  const effectiveUserMode = mounted ? userMode : "none";
+  const effectiveUserMode = mounted
+    ? pathname?.startsWith("/admin")
+      ? "admin"
+      : pathname?.startsWith("/member") || pathname?.startsWith("/coach-map")
+        ? "member"
+        : userMode
+    : "none";
 
   const showLoggedInLogout = !isPreAuthPage && effectiveUserMode !== "none";
 
@@ -628,7 +635,7 @@ export default function Sidebar() {
     );
   }
 
-  if (userMode === "none") {
+  if (effectiveUserMode === "none") {
     return null;
   }
 
@@ -691,13 +698,14 @@ export default function Sidebar() {
         style={{
           position: "fixed",
           top: 0,
-          left: isMobile ? (open ? 0 : -SIDEBAR_WIDTH - 16) : 0,
-          width: SIDEBAR_WIDTH,
+          left: 0,
+          width: isMobile ? MOBILE_SIDEBAR_WIDTH : SIDEBAR_WIDTH,
+          transform: isMobile && !open ? "translateX(calc(-100% - 16px))" : "translateX(0)",
           height: "100dvh",
           maxHeight: "100dvh",
           background: "#1f2937",
           color: "white",
-          transition: isMobile ? "left 0.25s ease" : "none",
+          transition: isMobile ? "transform 0.25s ease" : "none",
           zIndex: 1100,
           boxSizing: "border-box",
           display: "flex",
@@ -716,7 +724,7 @@ export default function Sidebar() {
             : isShortScreen
               ? 12
               : 16,
-          willChange: isMobile ? "left" : undefined,
+          willChange: isMobile ? "transform" : undefined,
         }}
       >
         {!isPreAuthPage ? (
