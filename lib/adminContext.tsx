@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -18,8 +19,11 @@ const AdminContext = createContext<AdminContextType>({
 });
 
 export function AdminProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isAdminRoute = pathname?.startsWith("/admin") ?? false;
+
   const [admin, setAdmin] = useState<AdminContextType["admin"]>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isAdminRoute);
 
   async function loadAdmin() {
     try {
@@ -51,6 +55,14 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+
+    if (!isAdminRoute) {
+      setAdmin(null);
+      setLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
 
     async function bootstrap() {
       const {
@@ -95,7 +107,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [isAdminRoute]);
 
   return (
     <AdminContext.Provider value={{ admin, loading, refresh: loadAdmin }}>

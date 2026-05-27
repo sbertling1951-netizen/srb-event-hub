@@ -655,7 +655,7 @@ function CoachMapPublicPageInner() {
           </label>
         </div>
         <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-          {status}
+          <span data-coach-map-status="true">{status}</span>
         </div>
       </div>
 
@@ -787,7 +787,7 @@ function CoachMapPublicPageInner() {
             width={naturalSize.width}
             height={naturalSize.height}
             initialScale={Number(event?.coach_map_open_scale || 1)}
-            minScale={0.35}
+            minScale={0.18}
             maxScale={3}
           >
             <div
