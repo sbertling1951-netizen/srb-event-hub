@@ -340,6 +340,7 @@ function AdminDashboardPageInner() {
   const [switching, setSwitching] = useState(false);
   const [isWide, setIsWide] = useState(false);
   const [isNarrow, setIsNarrow] = useState(false);
+  const [showMobileStats, setShowMobileStats] = useState(true);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
 
   const didInitialLoad = useRef(false);
@@ -653,7 +654,34 @@ function AdminDashboardPageInner() {
   }
 
   return (
-    <div style={pageStyle}>
+    <div
+      style={{
+        ...pageStyle,
+        padding: isNarrow ? 12 : 24,
+      }}
+    >
+      {isNarrow ? (
+        <button
+          type="button"
+          onClick={() => setShowMobileStats((v) => !v)}
+          style={{
+            position: "fixed",
+            left: "calc(env(safe-area-inset-left, 0px) + 82px)",
+            top: "calc(env(safe-area-inset-top, 0px) + 16px)",
+            zIndex: 9998,
+            padding: "9px 13px",
+            borderRadius: 999,
+            border: "1px solid #cbd5e1",
+            background: "#fff",
+            fontWeight: 900,
+            color: "#0b5cff",
+            boxShadow: "0 3px 10px rgba(0,0,0,0.18)",
+          }}
+        >
+          📊 {showMobileStats ? "Hide Stats" : "Show Stats"}
+        </button>
+      ) : null}
+
       <div className="card" style={headerCardStyle}>
         <div style={headerTopRowStyle}>
           <div>
@@ -703,156 +731,265 @@ function AdminDashboardPageInner() {
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: isWide
-            ? "repeat(4, minmax(0, 1fr))"
-            : "repeat(3, minmax(0, 1fr))",
-          gap: 16,
-        }}
-      >
-        <MetricCard
-          label="Registered Coaches"
-          value={
-            loading && attendees.length === 0 ? "…" : metrics.registeredCoaches
-          }
-        />
-        <MetricCard
-          label="Coaches Arrived"
-          value={
-            loading && attendees.length === 0 ? "…" : metrics.coachesArrived
-          }
-          footer={`${metrics.coachArrivedPercent}%`}
-        />
-        <MetricCard
-          label="People Registered"
-          value={
-            loading && householdMembers.length === 0
-              ? "…"
-              : metrics.peopleRegistered
-          }
-        />
-        <MetricCard
-          label="People Arrived"
-          value={
-            loading && householdMembers.length === 0
-              ? "…"
-              : metrics.peopleArrived
-          }
-          footer={`${metrics.peopleArrivedPercent}%`}
-        />
-      </div>
+      {isNarrow ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: showMobileStats ? "120px minmax(0, 1fr)" : "1fr",
+            gap: 12,
+            alignItems: "start",
+          }}
+        >
+          {showMobileStats && (
+            <div
+              style={{
+                position: "sticky",
+                top: "calc(env(safe-area-inset-top, 0px) + 76px)",
+                display: "grid",
+                gap: 8,
+                alignSelf: "start",
+              }}
+            >
+              <MetricCard label="Coaches" value={loading && attendees.length === 0 ? "…" : metrics.registeredCoaches} />
+              <MetricCard label="Arrived" value={loading && attendees.length === 0 ? "…" : metrics.coachesArrived} footer={`${metrics.coachArrivedPercent}%`} />
+              <MetricCard label="Queue" value={loading && attendees.length === 0 ? "…" : metrics.queueSize} />
+              <MetricCard label="Parked" value={loading && attendees.length === 0 ? "…" : `${metrics.parkedPercent}%`} footer={`${metrics.parkedCount}`} />
+              <MetricCard label="Sites" value={loading && attendees.length === 0 ? "…" : `${metrics.assignedPercent}%`} footer={`${metrics.assignedCount}`} />
+            </div>
+          )}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: isWide
-            ? "repeat(3, minmax(0, 1fr))"
-            : "repeat(3, minmax(0, 1fr))",
-          gap: 16,
-        }}
-      >
-        <MetricCard
-          label="Parked"
-          value={
-            loading && attendees.length === 0
-              ? "…"
-              : `${metrics.parkedPercent}%`
-          }
-          footer={`${metrics.parkedCount} of ${metrics.registeredCoaches}`}
-        />
-        <MetricCard
-          label="Queue Size"
-          value={loading && attendees.length === 0 ? "…" : metrics.queueSize}
-          footer="still needing final parking"
-        />
-        <MetricCard
-          label="Assigned Sites"
-          value={
-            loading && attendees.length === 0
-              ? "…"
-              : `${metrics.assignedPercent}%`
-          }
-          footer={`${metrics.assignedCount} of ${metrics.registeredCoaches}`}
-        />
-      </div>
+          <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+            {adminAccess?.isSuperAdmin ? (
+              <div className="card" style={sectionCardStyle}>
+                <div style={sectionTitleStyle}>Super Admin System Status</div>
 
-      {adminAccess?.isSuperAdmin ? (
-        <div className="card" style={sectionCardStyle}>
-          <div style={sectionTitleStyle}>Super Admin System Status</div>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 10,
+                    fontSize: 14,
+                  }}
+                >
+                  <div>
+                    <strong>App Health:</strong>{" "}
+                    {systemStatus?.status || "Refreshing..."}
+                  </div>
+
+                  <div>
+                    <strong>Last Good Deploy:</strong>{" "}
+                    {systemStatus?.lastDeployedAt
+                      ? new Date(systemStatus.lastDeployedAt).toLocaleString()
+                      : "Refreshing..."}
+                  </div>
+
+                  <div>
+                    <strong>Environment:</strong>{" "}
+                    {systemStatus?.environment || "Unknown"}
+                  </div>
+
+                  <div>
+                    <strong>Version:</strong>{" "}
+                    {systemStatus?.commit
+                      ? `${systemStatus.commit.slice(0, 7)}${systemStatus?.dirty ? "*" : ""}`
+                      : "Refreshing..."}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="card" style={sectionCardStyle}>
+              <div style={sectionTitleStyle}>Admin Tools</div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr",
+                  gap: 12,
+                }}
+              >
+                {visibleAdminCards.map((card) => (
+                  <button
+                    key={card.href}
+                    type="button"
+                    onClick={() => goTo(card.href)}
+                    className={`admin-tool-button ${getAdminToolClass(card.href)}`}
+                  >
+                    <span className="admin-tool-icon" aria-hidden="true">
+                      {getAdminToolIcon(card.href)}
+                    </span>
+
+                    <span>
+                      <span className="admin-tool-title">{card.title}</span>
+                      <span className="admin-tool-description">
+                        {card.description}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+
+                {visibleAdminCards.length === 0 ? (
+                  <div style={emptyCardStyle}>
+                    No admin tools are enabled for your current permissions.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isWide
+                ? "repeat(4, minmax(0, 1fr))"
+                : "repeat(3, minmax(0, 1fr))",
+              gap: 16,
+            }}
+          >
+            <MetricCard
+              label="Registered Coaches"
+              value={
+                loading && attendees.length === 0 ? "…" : metrics.registeredCoaches
+              }
+            />
+            <MetricCard
+              label="Coaches Arrived"
+              value={
+                loading && attendees.length === 0 ? "…" : metrics.coachesArrived
+              }
+              footer={`${metrics.coachArrivedPercent}%`}
+            />
+            <MetricCard
+              label="People Registered"
+              value={
+                loading && householdMembers.length === 0
+                  ? "…"
+                  : metrics.peopleRegistered
+              }
+            />
+            <MetricCard
+              label="People Arrived"
+              value={
+                loading && householdMembers.length === 0
+                  ? "…"
+                  : metrics.peopleArrived
+              }
+              footer={`${metrics.peopleArrivedPercent}%`}
+            />
+          </div>
 
           <div
             style={{
               display: "grid",
-              gap: 10,
-              fontSize: 14,
+              gridTemplateColumns: isWide
+                ? "repeat(3, minmax(0, 1fr))"
+                : "repeat(3, minmax(0, 1fr))",
+              gap: 16,
             }}
           >
-            <div>
-              <strong>App Health:</strong>{" "}
-              {systemStatus?.status || "Refreshing..."}
-            </div>
-
-            <div>
-              <strong>Last Good Deploy:</strong>{" "}
-              {systemStatus?.lastDeployedAt
-                ? new Date(systemStatus.lastDeployedAt).toLocaleString()
-                : "Refreshing..."}
-            </div>
-
-            <div>
-              <strong>Environment:</strong>{" "}
-              {systemStatus?.environment || "Unknown"}
-            </div>
-
-            <div>
-              <strong>Version:</strong>{" "}
-              {systemStatus?.commit
-                ? `${systemStatus.commit.slice(0, 7)}${systemStatus?.dirty ? "*" : ""}`
-                : "Refreshing..."}
-            </div>
+            <MetricCard
+              label="Parked"
+              value={
+                loading && attendees.length === 0
+                  ? "…"
+                  : `${metrics.parkedPercent}%`
+              }
+              footer={`${metrics.parkedCount} of ${metrics.registeredCoaches}`}
+            />
+            <MetricCard
+              label="Queue Size"
+              value={loading && attendees.length === 0 ? "…" : metrics.queueSize}
+              footer="still needing final parking"
+            />
+            <MetricCard
+              label="Assigned Sites"
+              value={
+                loading && attendees.length === 0
+                  ? "…"
+                  : `${metrics.assignedPercent}%`
+              }
+              footer={`${metrics.assignedCount} of ${metrics.registeredCoaches}`}
+            />
           </div>
-        </div>
-      ) : null}
 
-      <div className="card" style={sectionCardStyle}>
-        <div style={sectionTitleStyle}>Admin Tools</div>
+          {adminAccess?.isSuperAdmin ? (
+            <div className="card" style={sectionCardStyle}>
+              <div style={sectionTitleStyle}>Super Admin System Status</div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 16,
-          }}
-        >
-          {visibleAdminCards.map((card) => (
-            <button
-              key={card.href}
-              type="button"
-              onClick={() => goTo(card.href)}
-              className={`admin-tool-button ${getAdminToolClass(card.href)}`}
-            >
-              <span className="admin-tool-icon" aria-hidden="true">
-                {getAdminToolIcon(card.href)}
-              </span>
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                  fontSize: 14,
+                }}
+              >
+                <div>
+                  <strong>App Health:</strong>{" "}
+                  {systemStatus?.status || "Refreshing..."}
+                </div>
 
-              <span>
-                <span className="admin-tool-title">{card.title}</span>
-                <span className="admin-tool-description">
-                  {card.description}
-                </span>
-              </span>
-            </button>
-          ))}
+                <div>
+                  <strong>Last Good Deploy:</strong>{" "}
+                  {systemStatus?.lastDeployedAt
+                    ? new Date(systemStatus.lastDeployedAt).toLocaleString()
+                    : "Refreshing..."}
+                </div>
 
-          {visibleAdminCards.length === 0 ? (
-            <div style={emptyCardStyle}>
-              No admin tools are enabled for your current permissions.
+                <div>
+                  <strong>Environment:</strong>{" "}
+                  {systemStatus?.environment || "Unknown"}
+                </div>
+
+                <div>
+                  <strong>Version:</strong>{" "}
+                  {systemStatus?.commit
+                    ? `${systemStatus.commit.slice(0, 7)}${systemStatus?.dirty ? "*" : ""}`
+                    : "Refreshing..."}
+                </div>
+              </div>
             </div>
           ) : null}
-        </div>
-      </div>
+
+          <div className="card" style={sectionCardStyle}>
+            <div style={sectionTitleStyle}>Admin Tools</div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                gap: 16,
+              }}
+            >
+              {visibleAdminCards.map((card) => (
+                <button
+                  key={card.href}
+                  type="button"
+                  onClick={() => goTo(card.href)}
+                  className={`admin-tool-button ${getAdminToolClass(card.href)}`}
+                >
+                  <span className="admin-tool-icon" aria-hidden="true">
+                    {getAdminToolIcon(card.href)}
+                  </span>
+
+                  <span>
+                    <span className="admin-tool-title">{card.title}</span>
+                    <span className="admin-tool-description">
+                      {card.description}
+                    </span>
+                  </span>
+                </button>
+              ))}
+
+              {visibleAdminCards.length === 0 ? (
+                <div style={emptyCardStyle}>
+                  No admin tools are enabled for your current permissions.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
