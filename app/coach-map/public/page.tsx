@@ -535,9 +535,12 @@ function CoachMapPublicPageInner() {
       return;
     }
 
+    const focusScale = 1.25;
+
     mapViewportRef.current?.centerOn(
       (site.map_x / 100) * naturalSize.width,
       (site.map_y / 100) * naturalSize.height,
+      focusScale,
     );
   }
 

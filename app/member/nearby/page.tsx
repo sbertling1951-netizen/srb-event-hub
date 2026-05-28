@@ -681,21 +681,7 @@ function NearbyPageInner() {
                 </div>
               )}
 
-              {/* Website as link */}
-              {place.website && (
-                <div className="nearby-contact-row">
-                  <span className="nearby-contact-icon">🌐</span>
 
-                  <a
-                    href={place.website}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="nearby-contact-link"
-                  >
-                    {place.website}
-                  </a>
-                </div>
-              )}
 
               {/* Notes */}
               {place.notes && (
