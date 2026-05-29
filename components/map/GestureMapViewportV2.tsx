@@ -49,8 +49,8 @@ function clampPan(
   const scaledWidth = contentWidth * scale;
   const scaledHeight = contentHeight * scale;
 
-  const overscrollX = Math.min(420, viewportWidth * 0.45);
-  const overscrollY = Math.min(260, viewportHeight * 0.28);
+  const overscrollX = Math.min(60, viewportWidth * 0.08);
+  const overscrollY = Math.min(40, viewportHeight * 0.06);
 
   const minX = Math.min(0, viewportWidth - scaledWidth) - overscrollX;
   const minY = Math.min(0, viewportHeight - scaledHeight) - overscrollY;
@@ -465,7 +465,7 @@ const GestureMapViewportV2 = forwardRef<
     },
     {
       pointer: {
-        touch: false,
+        touch: true,
       },
       preventDefault: true,
       pointerCapture: true,
