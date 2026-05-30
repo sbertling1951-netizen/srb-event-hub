@@ -177,11 +177,11 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
   inflightAdminAccess = (async () => {
     try {
       const auth = await withTimeout(
-        supabase.auth.getUser(),
+        supabase.auth.getSession(),
         "Admin auth check",
       );
 
-      const user = auth.data.user;
+      const user = auth.data.session?.user ?? null;
 
       if (!user) {
         clearAdminAccessCache();

@@ -6,10 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import {
-  getCurrentAdminAccess,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { hasPermission } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentMemberEvent,
   getStoredMemberHasArrived,
@@ -67,7 +65,7 @@ type EventContext = {
   end_date?: string | null;
 };
 
-type AdminAccessState = Awaited<ReturnType<typeof getCurrentAdminAccess>>;
+type AdminAccessState = ReturnType<typeof useAdmin>["admin"];
 
 const SIDEBAR_WIDTH = 260;
 const MOBILE_SIDEBAR_WIDTH = "min(340px, calc(100vw - 24px))";
@@ -155,6 +153,7 @@ export default function Sidebar() {
   const [_isCheckedIn, setIsCheckedIn] = useState(false);
   const [userMode, setUserMode] = useState<"member" | "admin" | "none">("none");
   const [isShortScreen, setIsShortScreen] = useState(false);
+  const { admin: sharedAdminAccess, loading: adminAccessLoading } = useAdmin();
   const [adminAccess, setAdminAccess] = useState<AdminAccessState>(null);
   const [adminDisplayName, setAdminDisplayName] = useState("");
   const [adminPrivilegeGroup, setAdminPrivilegeGroup] = useState("");
@@ -349,76 +348,27 @@ export default function Sidebar() {
       return;
     }
 
-    async function loadAdminAccess() {
-      const mode = getStoredUserMode();
-      if (mode !== "admin") {
-        setAdminAccess(null);
-        setAdminDisplayName("");
-        setAdminPrivilegeGroup("");
-        return;
-      }
-      if (!isAdminRoute) {
-        setAdminAccess(null);
-        setAdminDisplayName("");
-        setAdminPrivilegeGroup("");
-        return;
-      }
+    const mode = getStoredUserMode();
 
-      const admin = await getCurrentAdminAccess();
-      setAdminAccess(admin);
-
-      const displayName = admin?.display_name || admin?.email || "";
-      const privilegeGroup = admin?.privilege_group || "";
-
-      setAdminDisplayName(displayName);
-      setAdminPrivilegeGroup(privilegeGroup);
+    if (mode !== "admin" || !isAdminRoute) {
+      setAdminAccess(null);
+      setAdminDisplayName("");
+      setAdminPrivilegeGroup("");
+      return;
     }
 
-    void loadAdminAccess();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void loadAdminAccess();
-    });
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === STORAGE_KEYS.adminEventContext ||
-        e.key === STORAGE_KEYS.adminEventChanged ||
-        e.key === STORAGE_KEYS.userMode ||
-        e.key === STORAGE_KEYS.userModeChanged
-      ) {
-        void loadAdminAccess();
-      }
+    if (adminAccessLoading) {
+      return;
     }
 
-    function handleAdminEventUpdated() {
-      void loadAdminAccess();
-      loadContextsFromStorage();
-    }
+    setAdminAccess(sharedAdminAccess);
 
-    function handlePageShow() {
-      void loadAdminAccess();
-    }
+    const displayName = sharedAdminAccess?.display_name || sharedAdminAccess?.email || "";
+    const privilegeGroup = sharedAdminAccess?.privilege_group || "";
 
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      APP_EVENT_NAMES.adminEventUpdated,
-      handleAdminEventUpdated,
-    );
-    window.addEventListener("pageshow", handlePageShow);
-
-    return () => {
-      subscription.unsubscribe();
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        APP_EVENT_NAMES.adminEventUpdated,
-        handleAdminEventUpdated,
-      );
-      window.removeEventListener("pageshow", handlePageShow);
-    };
-  }, [mounted]);
+    setAdminDisplayName(displayName);
+    setAdminPrivilegeGroup(privilegeGroup);
+  }, [mounted, isAdminRoute, adminAccessLoading, sharedAdminAccess]);
 
   function clearKnownAppStorageKeys() {
     Object.values(STORAGE_KEYS).forEach((key) => {
