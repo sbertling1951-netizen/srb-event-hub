@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 import {
   getCurrentMemberEvent,
@@ -22,6 +22,25 @@ export default function MemberRouteGuard({
   const [status, setStatus] = useState<"checking" | "allowed" | "denied">(
     "checking",
   );
+
+  useLayoutEffect(() => {
+    try {
+      const mode = getStoredUserMode();
+      const attendeeId = getStoredMemberAttendeeId();
+      const entryId = getStoredMemberEntryId();
+      const email = getStoredMemberEmail();
+      const memberEvent = getCurrentMemberEvent();
+
+      const hasIdentity = !!(attendeeId || entryId || email);
+      const hasEvent = !!memberEvent;
+
+      if (mode === "member" && hasIdentity && hasEvent) {
+        setStatus("allowed");
+      }
+    } catch {
+      // Fall through to the normal verification effect.
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
