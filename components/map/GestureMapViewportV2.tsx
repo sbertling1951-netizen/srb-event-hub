@@ -563,7 +563,7 @@ const GestureMapViewportV2 = forwardRef<
     },
     {
       pointer: {
-        touch: false,
+        touch: true,
       },
       preventDefault: true,
       pointerCapture: false,
