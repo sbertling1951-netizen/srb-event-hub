@@ -86,12 +86,6 @@ export default function PublicLocationsPage() {
   const [isNarrow, setIsNarrow] = useState(false);
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [defaultZoom, setDefaultZoom] = useState(0.6);
-  const [zoom, setZoom] = useState(0.6);
-
-  function clampZoom(next: number) {
-    return Math.min(Math.max(next, 0.25), 3);
-  }
 
   useEffect(() => {
     function handleResize() {
@@ -159,13 +153,6 @@ export default function PublicLocationsPage() {
       ...typedEvent,
       map_image_url: resolvedMapImageUrl,
     });
-
-    const openingScale = Number(typedEvent.locations_map_open_scale ?? 0.6);
-    const safeOpeningScale = Number.isNaN(openingScale)
-      ? 0.6
-      : clampZoom(openingScale);
-    setDefaultZoom(safeOpeningScale);
-    setZoom(safeOpeningScale);
 
     const { data: locationData, error: locationError } = await supabase
       .from("event_locations")
@@ -236,13 +223,8 @@ export default function PublicLocationsPage() {
     );
   }, [locations]);
 
-  function focusLocation(location: EventLocation, targetZoom = zoom) {
-    // Implement focusLocation as needed for new InteractiveMapViewport, or leave as no-op if handled inside.
-  }
-
   function handleLocationClick(location: EventLocation) {
     setSelectedLocationId(location.id);
-    focusLocation(location);
     setStatus({ type: "info", text: `Focused map on ${location.name}.` });
   }
 
@@ -616,33 +598,6 @@ export default function PublicLocationsPage() {
                 </div>
               ))}
             </div>
-          </div>
-          <div
-            style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
-          >
-            <button
-              type="button"
-              onClick={() => setZoom((z) => clampZoom(z - 0.2))}
-            >
-              −
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => clampZoom(z + 0.2))}
-            >
-              +
-            </button>
-            <button type="button" onClick={() => setZoom(defaultZoom)}>
-              Reset Zoom
-            </button>
-            {selectedLocation && (
-              <button
-                type="button"
-                onClick={() => focusLocation(selectedLocation)}
-              >
-                Recenter Selected
-              </button>
-            )}
           </div>
         </div>
       </div>
