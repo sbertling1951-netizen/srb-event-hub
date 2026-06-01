@@ -670,6 +670,27 @@ const GestureMapViewportV2 = forwardRef<
       e.preventDefault();
     };
 
+    // IMPORTANT:
+    // Gestures are bound using `target: viewportRef` rather than spread
+    // bindings (`...dragBind()` / `...pinchBind()` / `...wheelBind()`).
+    //
+    // This forces @use-gesture to attach native non-passive listeners,
+    // allowing preventDefault() to work correctly.
+    //
+    // Reverting to spread bindings reintroduces desktop page-scroll and
+    // trackpad zoom issues. See commit 91d2a76.
+    // DO NOT re-enable Safari gesturestart/gesturechange/gestureend
+    // prevention listeners.
+    //
+    // Testing during gesture stabilization (commit 91d2a76) showed
+    // that these listeners interfere with iPad touch gesture handling.
+    // Current touch behavior is stable with these disabled.
+    //
+    // If revisiting, perform controlled testing on:
+    // - iPhone touchscreen
+    // - iPad touchscreen
+    // - iPad Magic Keyboard trackpad
+
     // document.addEventListener("gesturestart", preventGesture, {
     //   passive: false,
     // });
