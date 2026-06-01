@@ -1,6 +1,6 @@
 "use client";
 
-import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
+import MapCanvas from "@/components/map/MapCanvas";
 
 export default function MapTestPage() {
   return (
@@ -12,7 +12,7 @@ export default function MapTestPage() {
         background: "#111827",
       }}
     >
-      <GestureMapViewportV2 width={4000} height={2500}>
+      <MapCanvas width={4000} height={2500}>
         <div
           style={{
             position: "absolute",
@@ -51,7 +51,7 @@ export default function MapTestPage() {
             transform: "translate(-50%, -50%)",
           }}
         />
-      </GestureMapViewportV2>
+      </MapCanvas>
     </div>
   );
 }
