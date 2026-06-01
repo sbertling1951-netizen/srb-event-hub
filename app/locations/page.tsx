@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import InteractiveMapViewport from "@/components/map/InteractiveMapViewport";
+import MapCanvas from "@/components/map/MapCanvas";
 import { supabase } from "@/lib/supabase";
 
 type ActiveEvent = {
@@ -10,6 +10,7 @@ type ActiveEvent = {
   name: string;
   location: string | null;
   map_image_url: string | null;
+  master_map_id: string | null;
   locations_map_open_scale: number | null;
 };
 
@@ -107,7 +108,9 @@ export default function PublicLocationsPage() {
 
     const { data: activeEvent, error: eventError } = await supabase
       .from("events")
-      .select("id,name,location,map_image_url,locations_map_open_scale")
+      .select(
+        "id,name,location,map_image_url,master_map_id,locations_map_open_scale",
+      )
       .eq("is_active", true)
       .limit(1)
       .maybeSingle();
@@ -121,8 +124,41 @@ export default function PublicLocationsPage() {
     }
 
     const typedEvent = activeEvent as ActiveEvent;
-    setEvent(typedEvent);
     setImageLoaded(false);
+
+    let resolvedMapId: string | null = null;
+    let resolvedMapImageUrl: string | null = typedEvent.map_image_url;
+
+    const { data: mapSettingsRow } = await supabase
+      .from("event_map_settings")
+      .select("event_id,selected_master_map_id")
+      .eq("event_id", typedEvent.id)
+      .maybeSingle();
+
+    resolvedMapId =
+      (mapSettingsRow as { selected_master_map_id?: string | null } | null)
+        ?.selected_master_map_id || null;
+
+    if (!resolvedMapId) {
+      resolvedMapId = typedEvent.master_map_id || null;
+    }
+
+    if (resolvedMapId) {
+      const { data: masterMapRow } = await supabase
+        .from("master_maps")
+        .select("id,name,map_image_url")
+        .eq("id", resolvedMapId)
+        .maybeSingle();
+
+      resolvedMapImageUrl =
+        (masterMapRow as { map_image_url?: string | null } | null)
+          ?.map_image_url || resolvedMapImageUrl;
+    }
+
+    setEvent({
+      ...typedEvent,
+      map_image_url: resolvedMapImageUrl,
+    });
 
     const openingScale = Number(typedEvent.locations_map_open_scale ?? 0.6);
     const safeOpeningScale = Number.isNaN(openingScale)
@@ -414,11 +450,10 @@ export default function PublicLocationsPage() {
             minHeight: 420,
           }}
         >
-          <InteractiveMapViewport
-            imageUrl={event?.map_image_url || ""}
+          <MapCanvas
             width={naturalSize.width}
             height={naturalSize.height}
-            initialScale={defaultZoom}
+            viewportHeight="100%"
           >
             <div
               style={{
@@ -546,7 +581,7 @@ export default function PublicLocationsPage() {
                 </div>
               )}
             </div>
-          </InteractiveMapViewport>
+          </MapCanvas>{" "}
           <div
             style={{
               display: "grid",
@@ -582,7 +617,6 @@ export default function PublicLocationsPage() {
               ))}
             </div>
           </div>
-
           <div
             style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
           >
