@@ -383,7 +383,12 @@ const GestureMapViewportV2 = forwardRef<
     renderTransform();
   }, [width, height, maxScale]);
 
-  const dragBind = useDrag(
+  // --- Gestures ---------------------------------------------------------
+  // Bound via `target: viewportRef` (NOT spread onto the element) so that
+  // @use-gesture attaches native non-passive listeners. This is what makes
+  // `eventOptions: { passive: false }` real, so `event.preventDefault()`
+  // actually cancels the browser's own pan/zoom instead of being ignored.
+  useDrag(
     ({
       movement: [mx, my],
       velocity: [vx, vy],
@@ -425,7 +430,7 @@ const GestureMapViewportV2 = forwardRef<
         };
       }
 
-      if (first) {
+      if (first || !memo) {
         memo = {
           originX: stateRef.current.x,
           originY: stateRef.current.y,
@@ -463,6 +468,7 @@ const GestureMapViewportV2 = forwardRef<
       return memo;
     },
     {
+      target: viewportRef,
       pointer: {
         touch: true,
       },
@@ -476,7 +482,7 @@ const GestureMapViewportV2 = forwardRef<
     },
   );
 
-  const pinchBind = usePinch(
+  usePinch(
     ({
       event,
       origin: [originX, originY],
@@ -523,7 +529,6 @@ const GestureMapViewportV2 = forwardRef<
 
       if (first || !memo) {
         isPinchingRef.current = true;
-        document.body.classList.add("coach-map-pinching");
         document.body.classList.add("coach-map-pinching");
 
         if (animationRef.current != null) {
@@ -574,6 +579,7 @@ const GestureMapViewportV2 = forwardRef<
       return memo;
     },
     {
+      target: viewportRef,
       pointer: {
         touch: true,
       },
@@ -585,7 +591,8 @@ const GestureMapViewportV2 = forwardRef<
       },
     },
   );
-  const wheelBind = useWheel(
+
+  useWheel(
     ({ event, delta: [dx, dy], ctrlKey }) => {
       event.preventDefault();
 
@@ -651,27 +658,29 @@ const GestureMapViewportV2 = forwardRef<
       requestRender();
     },
     {
+      target: viewportRef,
       eventOptions: {
         passive: false,
       },
     },
   );
+
   useEffect(() => {
     const preventGesture = (e: Event) => {
       e.preventDefault();
     };
 
-    document.addEventListener("gesturestart", preventGesture, {
-      passive: false,
-    });
+    // document.addEventListener("gesturestart", preventGesture, {
+    //   passive: false,
+    // });
 
-    document.addEventListener("gesturechange", preventGesture, {
-      passive: false,
-    });
+    // document.addEventListener("gesturechange", preventGesture, {
+    //   passive: false,
+    // });
 
-    document.addEventListener("gestureend", preventGesture, {
-      passive: false,
-    });
+    // document.addEventListener("gestureend", preventGesture, {
+    //   passive: false,
+    // });
 
     return () => {
       if (animationRef.current) {
@@ -681,9 +690,7 @@ const GestureMapViewportV2 = forwardRef<
         cancelAnimationFrame(rafRef.current);
       }
       document.removeEventListener("gesturestart", preventGesture);
-
       document.removeEventListener("gesturechange", preventGesture);
-
       document.removeEventListener("gestureend", preventGesture);
     };
   }, []);
@@ -691,9 +698,6 @@ const GestureMapViewportV2 = forwardRef<
   return (
     <div
       ref={viewportRef}
-      {...dragBind()}
-      {...pinchBind()}
-      {...wheelBind()}
       onTouchStart={(e) => {
         if (e.touches.length < 2) {
           isPinchingRef.current = false;
@@ -843,8 +847,6 @@ const GestureMapViewportV2 = forwardRef<
 
           return;
         }
-
-        return;
       }}
       style={{
         position: "relative",
