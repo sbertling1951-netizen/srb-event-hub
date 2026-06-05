@@ -31,6 +31,9 @@ export type GestureMapViewportHandle = {
   zoomOut: () => void;
   reset: () => void;
   centerOn: (mapX: number, mapY: number, scale?: number) => void;
+  getViewportTransform: () => { x: number; y: number; scale: number };
+  setViewportTransform: (t: { x: number; y: number; scale: number }) => void;
+  setGestureLocked: (locked: boolean) => void;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -86,6 +89,15 @@ const GestureMapViewportV2 = forwardRef<
 ) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const onTapRef = useRef(onTap);
+
+  useEffect(() => {
+    onTapRef.current = onTap;
+  }, [onTap]);
+
+  // MapCanvas authoring layer + parity harness use these.
+  const gestureLockedRef = useRef(false);
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
 
   const stateRef = useRef({
     x: 0,
@@ -344,6 +356,27 @@ const GestureMapViewportV2 = forwardRef<
     centerOn(mapX, mapY, scale) {
       centerOnPoint(mapX, mapY, scale || stateRef.current.scale);
     },
+
+    getViewportTransform() {
+      return {
+        x: stateRef.current.x,
+        y: stateRef.current.y,
+        scale: stateRef.current.scale,
+      };
+    },
+
+    setViewportTransform({ x, y, scale }) {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+      stateRef.current = { x, y, scale };
+      renderTransform();
+    },
+
+    setGestureLocked(locked) {
+      gestureLockedRef.current = locked;
+    },
   }));
 
   useLayoutEffect(() => {
@@ -398,6 +431,15 @@ const GestureMapViewportV2 = forwardRef<
       memo,
       event,
     }) => {
+      if (gestureLockedRef.current) {
+        return memo;
+      }
+      console.log("DRAG EVENT", {
+        first,
+        last,
+        mx,
+        my,
+      });
       const touchEvent = "touches" in event ? (event as TouchEvent) : null;
 
       const touchCount = touchEvent?.touches?.length || 0;
@@ -473,8 +515,8 @@ const GestureMapViewportV2 = forwardRef<
         touch: true,
       },
       preventDefault: true,
-      pointerCapture: true,
-      threshold: 1,
+      pointerCapture: false,
+      threshold: 10,
       eventOptions: {
         passive: false,
         capture: true,
@@ -491,6 +533,9 @@ const GestureMapViewportV2 = forwardRef<
       da: [gestureDistance],
       memo,
     }) => {
+      if (gestureLockedRef.current) {
+        return memo;
+      }
       event.preventDefault();
 
       const viewport = viewportRef.current;
@@ -719,7 +764,44 @@ const GestureMapViewportV2 = forwardRef<
   return (
     <div
       ref={viewportRef}
+      onPointerDown={(e) => {
+        pointerDownRef.current = { x: e.clientX, y: e.clientY };
+      }}
+      onPointerUp={(e) => {
+        if (e.pointerType === "mouse") {
+          const down = pointerDownRef.current;
+          pointerDownRef.current = null;
+          if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) {
+            return; // a drag, not a tap — do not fire placement
+          }
+
+          const rect = viewportRef.current?.getBoundingClientRect();
+          if (!rect) {
+            return;
+          }
+
+          const pointerX = e.clientX - rect.left;
+          const pointerY = e.clientY - rect.top;
+
+          const currentScale = stateRef.current.scale;
+
+          const mapX = (pointerX - stateRef.current.x) / currentScale;
+          const mapY = (pointerY - stateRef.current.y) / currentScale;
+
+          onTapRef.current?.({
+            screenX: pointerX,
+            screenY: pointerY,
+            mapX,
+            mapY,
+          });
+        }
+      }}
+      onPointerCancel={() => {
+        console.log("VIEWPORT POINTER CANCEL");
+      }}
       onTouchStart={(e) => {
+        console.log("VIEWPORT TOUCH START");
+
         if (e.touches.length < 2) {
           isPinchingRef.current = false;
           document.body.classList.remove("coach-map-pinching");
@@ -775,7 +857,14 @@ const GestureMapViewportV2 = forwardRef<
         const startedWithTwoTouches =
           viewportRef.current.dataset.touchCountStart === "2";
 
+        console.log("TOUCH END", {
+          tapCandidate,
+          startedWithTwoTouches,
+          touchCountStart: viewportRef.current.dataset.touchCountStart,
+        });
+
         if (!tapCandidate && !startedWithTwoTouches) {
+          console.log("TAP REJECTED");
           return;
         }
 
@@ -859,7 +948,9 @@ const GestureMapViewportV2 = forwardRef<
 
           const mapY = (pointerY - stateRef.current.y) / currentScale;
 
-          onTap?.({
+          console.log("MAP TAP", { mapX, mapY });
+
+          onTapRef.current?.({
             screenX: pointerX,
             screenY: pointerY,
             mapX,

@@ -2,7 +2,7 @@
 
 import React from "react";
 
-import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
+import MapCanvas from "@/components/map/MapCanvas";
 
 type SiteMarker = {
   id: string;
@@ -57,7 +57,7 @@ function CampgroundMapInner({
   });
 
   return (
-    <GestureMapViewportV2 width={mapSize.width} height={mapSize.height}>
+    <MapCanvas width={mapSize.width} height={mapSize.height}>
       <div
         ref={mapRef}
         style={{
@@ -252,7 +252,6 @@ function CampgroundMapInner({
           </div>
         </div>
       </div>
-
       {selectedSite && (
         <div
           style={{
@@ -286,7 +285,7 @@ function CampgroundMapInner({
           )}
         </div>
       )}
-    </GestureMapViewportV2>
+    </MapCanvas>
   );
 }
 

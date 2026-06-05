@@ -45,7 +45,7 @@ export type AdminAccessResult = {
 };
 
 const ADMIN_ACCESS_CACHE_TTL_MS = 1000 * 60 * 30;
-const ADMIN_ACCESS_TIMEOUT_MS = 15000;
+const ADMIN_ACCESS_TIMEOUT_MS = 8000;
 
 let inflightAdminAccess: Promise<AdminAccessResult | null> | null = null;
 
@@ -196,29 +196,46 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
 
       clearAdminAccessCache();
 
-      let { data: adminUser } = await supabase
-        .from("admin_users")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("is_active", true)
-        .maybeSingle();
+      let adminUser: AdminUserAccessRow | null = null;
+
+      {
+        const { data } = await withTimeout(
+          supabase
+            .from("admin_users")
+            .select("*")
+            .eq("user_id", user.id)
+            .eq("is_active", true)
+            .maybeSingle(),
+          "Admin user lookup",
+        );
+
+        adminUser = data as AdminUserAccessRow | null;
+      }
 
       if (!adminUser && user.email) {
-        const { data: fallback } = await supabase
-          .from("admin_users")
-          .select("*")
-          .eq("email", user.email)
-          .eq("is_active", true)
-          .maybeSingle();
+        const fallbackResult = await withTimeout(
+          supabase
+            .from("admin_users")
+            .select("*")
+            .eq("email", user.email)
+            .eq("is_active", true)
+            .maybeSingle(),
+          "Admin user email lookup",
+        );
+
+        const fallback = fallbackResult.data as AdminUserAccessRow | null;
 
         if (fallback) {
           adminUser = fallback;
 
           if (!adminUser.user_id) {
-            await supabase
-              .from("admin_users")
-              .update({ user_id: user.id })
-              .eq("id", adminUser.id);
+            await withTimeout(
+              supabase
+                .from("admin_users")
+                .update({ user_id: user.id })
+                .eq("id", adminUser.id),
+              "Admin user id update",
+            );
 
             adminUser.user_id = user.id;
           }
@@ -229,10 +246,13 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         return null;
       }
 
-      const { data: accessRows } = await supabase
-        .from("admin_event_access")
-        .select("*")
-        .eq("admin_user_id", adminUser.id);
+      const { data: accessRows } = await withTimeout(
+        supabase
+          .from("admin_event_access")
+          .select("*")
+          .eq("admin_user_id", adminUser.id),
+        "Admin event access lookup",
+      );
 
       const eventIds = unique((accessRows || []).map((r: any) => r.event_id));
 
@@ -301,10 +321,13 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
 
       const basePermissions = PRESETS[privilegeGroup] || PRESETS.read_only;
 
-      const { data: overrideRows, error: permissionError } = await supabase
-        .from("admin_privilege_group_permissions")
-        .select("permission_key, is_enabled")
-        .eq("privilege_group", privilegeGroup);
+      const { data: overrideRows, error: permissionError } = await withTimeout(
+        supabase
+          .from("admin_privilege_group_permissions")
+          .select("permission_key, is_enabled")
+          .eq("privilege_group", privilegeGroup),
+        "Privilege permission lookup",
+      );
 
       if (permissionError) {
         console.error("Permission load error:", permissionError);

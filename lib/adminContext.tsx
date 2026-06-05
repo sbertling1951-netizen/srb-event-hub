@@ -1,7 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { createContext, useContext, useEffect, useState } from "react";
 
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -28,10 +28,11 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   async function loadAdmin() {
     try {
       setLoading(true);
-
+      console.log("ADMINCTX BEFORE getCurrentAdminAccess");
       const result = await getCurrentAdminAccess();
 
       setAdmin(result);
+      console.log("ADMINCTX AFTER getCurrentAdminAccess", result);
 
       if (typeof window !== "undefined") {
         if (result) {
@@ -49,6 +50,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         sessionStorage.removeItem("fcoc-admin-access");
       }
     } finally {
+      console.log("ADMINCTX LOADING FALSE");
       setLoading(false);
     }
   }

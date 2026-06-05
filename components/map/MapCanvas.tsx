@@ -1,29 +1,105 @@
 "use client";
 
-import { ReactNode } from "react";
+import { forwardRef, ReactNode, useImperativeHandle, useRef } from "react";
 
-import GestureMapViewportV2 from "./GestureMapViewportV2";
+import GestureMapViewportV2, {
+  type GestureMapViewportHandle,
+} from "./GestureMapViewportV2";
+
+export type MapCanvasHandle = {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  reset: () => void;
+  centerOn: (x: number, y: number) => void;
+};
 
 interface MapCanvasProps {
   width: number;
   height: number;
   children: ReactNode;
   viewportHeight?: string | number;
+
+  initialScale?: number;
+  minScale?: number;
+  maxScale?: number;
+
+  onTap?: (args: {
+    screenX: number;
+    screenY: number;
+    mapX: number;
+    mapY: number;
+  }) => void;
 }
 
-export default function MapCanvas({
-  width,
-  height,
-  children,
-  viewportHeight = "100dvh",
-}: MapCanvasProps) {
-  return (
-    <GestureMapViewportV2
-      width={width}
-      height={height}
-      viewportHeight={viewportHeight}
-    >
-      {children}
-    </GestureMapViewportV2>
-  );
-}
+/**
+ * MapCanvas
+ *
+ * Shared map rendering entry point.
+ *
+ * Future responsibilities:
+ * - Shared coordinate system
+ * - Shared marker rendering
+ * - Shared zoom/pan state
+ * - Shared gesture handling
+ * - Shared bounds logic
+ *
+ * Pages should render maps through MapCanvas rather than
+ * directly consuming GestureMapViewportV2.
+ */
+
+const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
+  function MapCanvas(
+    {
+      width,
+      height,
+      children,
+      viewportHeight = "100dvh",
+      initialScale,
+      minScale,
+      maxScale,
+      onTap,
+    },
+    ref,
+  ) {
+    console.log("MAPCANVAS RENDERED", {
+      width,
+      height,
+      hasOnTap: !!onTap,
+      onTapIdentity: onTap,
+    });
+
+    const viewportRef = useRef<GestureMapViewportHandle | null>(null);
+
+    const lastOnTapRef = useRef(onTap);
+
+    console.log("ONTAP SAME?", lastOnTapRef.current === onTap);
+
+    lastOnTapRef.current = onTap;
+
+    useImperativeHandle(ref, () => ({
+      zoomIn: () => viewportRef.current?.zoomIn(),
+      zoomOut: () => viewportRef.current?.zoomOut(),
+      reset: () => viewportRef.current?.reset(),
+      centerOn: (x, y) => viewportRef.current?.centerOn(x, y),
+    }));
+
+    console.log("MapCanvas received onTap:", !!onTap);
+
+    return (
+      <GestureMapViewportV2
+        ref={viewportRef}
+        width={width}
+        height={height}
+        viewportHeight={viewportHeight}
+        initialScale={initialScale}
+        minScale={minScale}
+        maxScale={maxScale}
+        onTap={onTap}
+      >
+        {children}
+      </GestureMapViewportV2>
+    );
+  },
+);
+
+export default MapCanvas;

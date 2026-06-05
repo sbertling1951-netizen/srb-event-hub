@@ -6,7 +6,7 @@ import {
   edgeCaseMarkers,
   edgeCaseViewports,
   runParity,
-} from "@/lib/map/parity";
+} from "@/lib/map/parity/parity";
 
 export default function ParityLabPage() {
   const green = runParity(
@@ -14,7 +14,7 @@ export default function ParityLabPage() {
     currentPositioner,
     edgeCaseMarkers,
     edgeCaseViewports,
-    0
+    0,
   );
 
   const red = runParity(
@@ -22,7 +22,7 @@ export default function ParityLabPage() {
     containDivergencePositioner,
     edgeCaseMarkers,
     edgeCaseViewports,
-    0
+    0,
   );
 
   return (
@@ -80,14 +80,20 @@ export default function ParityLabPage() {
         <tbody>
           {green.rows.map((r, i) => (
             <tr key={`${r.scenario}-${r.site}-${i}`}>
-              <td style={{ border: "1px solid #ccc", padding: 6 }}>{r.scenario}</td>
+              <td style={{ border: "1px solid #ccc", padding: 6 }}>
+                {r.scenario}
+              </td>
               <td style={{ border: "1px solid #ccc", padding: 6 }}>{r.site}</td>
               <td style={{ border: "1px solid #ccc", padding: 6 }}>{r.oldX}</td>
               <td style={{ border: "1px solid #ccc", padding: 6 }}>{r.oldY}</td>
               <td style={{ border: "1px solid #ccc", padding: 6 }}>{r.newX}</td>
               <td style={{ border: "1px solid #ccc", padding: 6 }}>{r.newY}</td>
-              <td style={{ border: "1px solid #ccc", padding: 6 }}>{r.deltaX}</td>
-              <td style={{ border: "1px solid #ccc", padding: 6 }}>{r.deltaY}</td>
+              <td style={{ border: "1px solid #ccc", padding: 6 }}>
+                {r.deltaX}
+              </td>
+              <td style={{ border: "1px solid #ccc", padding: 6 }}>
+                {r.deltaY}
+              </td>
               <td style={{ border: "1px solid #ccc", padding: 6 }}>
                 {r.pass ? "PASS" : "FAIL"}
               </td>

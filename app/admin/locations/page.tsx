@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import MapCanvas from "@/components/map/MapCanvas";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   canAccessEvent,
@@ -45,22 +45,7 @@ type EventLocation = {
   priority: number | null;
 };
 
-type DragState = {
-  startX: number;
-  startY: number;
-  startLeft: number;
-  startTop: number;
-};
-
-
-
-
-
 function AdminLocationsPageInner() {
-  const mapRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<DragState | null>(null);
-  const zoomRef = useRef(0.6);
-
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [locations, setLocations] = useState<EventLocation[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState("");
@@ -68,8 +53,6 @@ function AdminLocationsPageInner() {
   const [status, setStatus] = useState("Loading...");
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
   const [isNarrow, setIsNarrow] = useState(false);
-  const [defaultZoom, setDefaultZoom] = useState(0.6);
-  const [zoom, setZoom] = useState(0.6);
 
   const [formId, setFormId] = useState("");
   const [formName, setFormName] = useState("");
@@ -86,10 +69,6 @@ function AdminLocationsPageInner() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
-
-  useEffect(() => {
     function handleResize() {
       setIsNarrow(window.innerWidth < 900);
     }
@@ -98,70 +77,6 @@ function AdminLocationsPageInner() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
-  useEffect(() => {
-    const el = mapRef.current;
-    if (!el) {
-      return;
-    }
-
-    const container = el as HTMLDivElement;
-    container.style.cursor = isNarrow ? "auto" : "grab";
-
-    function onMouseDown(e: MouseEvent) {
-      if (isNarrow) {
-        return;
-      }
-      if (e.button !== 0) {
-        return;
-      }
-
-      const target = e.target as HTMLElement;
-      if (target.closest("button")) {
-        return;
-      }
-
-      dragRef.current = {
-        startX: e.clientX,
-        startY: e.clientY,
-        startLeft: container.scrollLeft,
-        startTop: container.scrollTop,
-      };
-
-      container.style.cursor = "grabbing";
-      e.preventDefault();
-    }
-
-    function onMouseMove(e: MouseEvent) {
-      if (isNarrow) {
-        return;
-      }
-      if (!dragRef.current) {
-        return;
-      }
-
-      const dx = e.clientX - dragRef.current.startX;
-      const dy = e.clientY - dragRef.current.startY;
-
-      container.scrollLeft = dragRef.current.startLeft - dx;
-      container.scrollTop = dragRef.current.startTop - dy;
-    }
-
-    function onMouseUp() {
-      dragRef.current = null;
-      container.style.cursor = isNarrow ? "auto" : "grab";
-    }
-
-    container.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-
-    return () => {
-      container.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
-  }, [isNarrow]);
 
   const loadLocationIntoForm = useCallback((location: EventLocation) => {
     setFormId(location.id);
@@ -260,14 +175,7 @@ function AdminLocationsPageInner() {
 
     setEvent(typedEvent);
 
-    const openingScale = Number(typedEvent.locations_map_open_scale ?? 0.6);
-    const safeOpeningScale = Number.isNaN(openingScale)
-      ? 0.6
-      : clampZoom(openingScale);
-
-    setDefaultZoom(safeOpeningScale);
-    setZoom(safeOpeningScale);
-    zoomRef.current = safeOpeningScale;
+    // Removed openingScale, safeOpeningScale, setDefaultZoom, setZoom
 
     const { data: locationData, error: locationError } = await supabase
       .from("event_locations")
@@ -391,34 +299,9 @@ function AdminLocationsPageInner() {
   const selectedLocation =
     locations.find((loc) => loc.id === selectedLocationId) || null;
 
-  function focusLocation(
-    location: EventLocation,
-    targetZoom = zoomRef.current,
-  ) {
-    if (!mapRef.current || location.map_x === null || location.map_y === null) {
-      return;
-    }
-
-    const container = mapRef.current;
-    const scaledWidth = naturalSize.width * targetZoom;
-    const scaledHeight = naturalSize.height * targetZoom;
-
-    const x = (location.map_x / 100) * scaledWidth;
-    const y = (location.map_y / 100) * scaledHeight;
-
-    requestAnimationFrame(() => {
-      container.scrollTo({
-        left: Math.max(0, x - container.clientWidth / 2),
-        top: Math.max(0, y - container.clientHeight / 2),
-        behavior: "smooth",
-      });
-    });
-  }
-
   function handleLocationClick(location: EventLocation) {
     setSelectedLocationId(location.id);
     setIsPlacing(false);
-    focusLocation(location);
     loadLocationIntoForm(location);
     setStatus(`Focused map on ${location.name}.`);
   }
@@ -449,7 +332,7 @@ function AdminLocationsPageInner() {
     if (location.id === selectedLocationId) {
       return isNarrow ? 44 : 36;
     }
-    return isNarrow ? 22 : 16;
+    return isNarrow ? 32 : 24;
   }
 
   function resetForm() {
@@ -462,31 +345,6 @@ function AdminLocationsPageInner() {
     setFormY("");
     setIsPlacing(false);
     setSelectedLocationId("");
-  }
-
-  function handleMapClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (!isPlacing || !mapRef.current) {
-      return;
-    }
-
-    const container = mapRef.current;
-    const rect = container.getBoundingClientRect();
-
-    const viewportX = e.clientX - rect.left;
-    const viewportY = e.clientY - rect.top;
-
-    const contentX = (container.scrollLeft + viewportX) / zoomRef.current;
-    const contentY = (container.scrollTop + viewportY) / zoomRef.current;
-
-    const xPercent = (contentX / naturalSize.width) * 100;
-    const yPercent = (contentY / naturalSize.height) * 100;
-
-    const safeX = Math.max(0, Math.min(100, Number(xPercent.toFixed(2))));
-    const safeY = Math.max(0, Math.min(100, Number(yPercent.toFixed(2))));
-
-    setFormX(String(safeX));
-    setFormY(String(safeY));
-    setStatus(`Placed marker at X ${safeX}, Y ${safeY}. Save to keep it.`);
   }
 
   async function saveLocation() {
@@ -720,7 +578,10 @@ function AdminLocationsPageInner() {
             </button>
             <button
               type="button"
-              onClick={() => setIsPlacing((v) => !v)}
+              onClick={() => {
+                const next = !isPlacing;
+                setIsPlacing(next);
+              }}
               style={{
                 background: isPlacing ? "#0b5cff" : undefined,
                 color: isPlacing ? "white" : undefined,
@@ -876,11 +737,12 @@ function AdminLocationsPageInner() {
               borderRadius: 10,
             }}
           >
-            <GestureMapViewportV2
+            <MapCanvas
               width={naturalSize.width}
               height={naturalSize.height}
+              viewportHeight={isNarrow ? "60vh" : "82vh"}
               initialScale={event?.locations_map_open_scale || 0.6}
-              onTap={({ mapX, mapY }) => {
+              onTap={({ mapX, mapY }: { mapX: number; mapY: number }) => {
                 if (!isPlacing) {
                   return;
                 }
@@ -888,16 +750,24 @@ function AdminLocationsPageInner() {
                 const xPercent = (mapX / naturalSize.width) * 100;
                 const yPercent = (mapY / naturalSize.height) * 100;
 
-                const safeX = Math.max(0, Math.min(100, Number(xPercent.toFixed(2))));
-                const safeY = Math.max(0, Math.min(100, Number(yPercent.toFixed(2))));
+                const safeX = Math.max(
+                  0,
+                  Math.min(100, Number(xPercent.toFixed(2))),
+                );
+                const safeY = Math.max(
+                  0,
+                  Math.min(100, Number(yPercent.toFixed(2))),
+                );
 
                 setFormX(String(safeX));
                 setFormY(String(safeY));
-                setStatus(`Placed marker at X ${safeX}, Y ${safeY}. Save to keep it.`);
+                setIsPlacing(false);
+                setStatus(
+                  `Placed marker at X ${safeX}, Y ${safeY}. Save to keep it.`,
+                );
               }}
             >
               <div
-                ref={mapRef}
                 style={{
                   position: "relative",
                   width: naturalSize.width,
@@ -941,6 +811,7 @@ function AdminLocationsPageInner() {
                         top: `${location.map_y}%`,
                         transform: "translate(-50%, -50%)",
                         pointerEvents: "none",
+                        zIndex: 99999,
                       }}
                     >
                       <button
@@ -951,11 +822,13 @@ function AdminLocationsPageInner() {
                         }}
                         title={location.name}
                         style={{
-                          width: getMarkerSize(location),
-                          height: getMarkerSize(location),
+                          width: 60,
+                          height: 60,
                           borderRadius: "50%",
                           background: getMarkerColor(location),
-                          border: isNarrow ? "3px solid white" : "2px solid white",
+                          border: isNarrow
+                            ? "3px solid white"
+                            : "2px solid white",
                           boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
                           cursor: "pointer",
                           padding: 0,
@@ -990,8 +863,8 @@ function AdminLocationsPageInner() {
                   );
                 })}
               </div>
-            </GestureMapViewportV2>
-          </div> 
+            </MapCanvas>
+          </div>
 
           {selectedLocation && (
             <div
@@ -1016,10 +889,6 @@ function AdminLocationsPageInner() {
       </div>
     </div>
   );
-}
-
-function clampZoom(next: number) {
-  return Math.min(3, Math.max(0.3, next));
 }
 
 export default function AdminLocationsPage() {

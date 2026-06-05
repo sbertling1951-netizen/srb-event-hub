@@ -1,0 +1,254 @@
+<!-- MapCanvas Parity Harness — synthetic
+     Open this file from the same folder as parity-test-map.png.
+     If your browser blocks the local image over file://, serve the folder:
+        python3 -m http.server   (then open http://localhost:8000/parity-harness.html)
+
+     WHAT THIS DOES
+       Renders two viewports that apply the SAME transform model as
+       GestureMapViewportV2 (content box sized to natural dims; transform =
+       translate(pan) scale(s); markers positioned inside). It sweeps every
+       required viewport state, measures each marker's on-screen center in both
+       panes via getBoundingClientRect, and reports drift with a 0.5px gate.
+
+       Pane A = REFERENCE  (percentage positioning — MME / Parking / Locations convention)
+       Pane B = CANDIDATE  (pixel positioning      — Coach Map convention)
+
+     WIRING REAL COMPONENTS
+       The measurement core `measurePane()` / `diffPanes()` is renderer-agnostic:
+       it only needs two container elements whose markers carry data-marker-id.
+       To run true component-level parity, mount your old page renderer in
+       #paneA and <MapCanvas> in #paneB (each emitting data-marker-id on the
+       marker element), drive both to the same {scale,pan}, then call runMatrix().
+-->
+<meta charset="utf-8" />
+<style>
+  :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  body { margin: 0; padding: 16px; color: #111827; background: #f6f7f9; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #6b7280; font-size: 13px; margin-bottom: 14px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .controls .group { display: flex; gap: 4px; align-items: center; border: 1px solid #d1d5db; border-radius: 8px; padding: 4px 6px; background: #fff; }
+  .controls label { font-size: 12px; color: #6b7280; margin-right: 2px; }
+  button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+  button.active { background: #111827; color: #fff; border-color: #111827; }
+  button.run { background: #2563eb; color: #fff; border-color: #2563eb; font-weight: 700; }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .paneWrap { border: 1px solid #d1d5db; border-radius: 8px; background: #fff; overflow: hidden; }
+  .paneTitle { font-size: 12px; font-weight: 700; padding: 6px 10px; border-bottom: 1px solid #eee; background: #fafafa; }
+  .viewport { position: relative; overflow: hidden; background: #e9eaee; touch-action: none; }
+  .content { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  .content img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; user-select: none; }
+  .mk { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #ef4444; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.4); transform: translate(-50%, -50%); }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 14px; background: #fff; }
+  th, td { border: 1px solid #e5e7eb; padding: 4px 8px; text-align: right; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3) { text-align: left; }
+  tr.fail td { background: #fef2f2; color: #991b1b; font-weight: 700; }
+  .verdict { margin-top: 12px; font-size: 16px; font-weight: 800; padding: 10px 14px; border-radius: 8px; display: inline-block; }
+  .verdict.pass { background: #dcfce7; color: #166534; }
+  .verdict.fail { background: #fee2e2; color: #991b1b; }
+  .meta { font-size: 12px; color: #6b7280; margin-top: 6px; }
+</style>
+
+<h1>MapCanvas Parity Harness <span style="color:#6b7280;font-weight:400;">— synthetic</span></h1>
+<div class="sub">Reference (% positioning) vs Candidate (px positioning), same transform model as GestureMapViewportV2. Gate: ≤ 0.5 px drift per marker, every state.</div>
+
+<div class="controls">
+  <div class="group"><label>viewport</label>
+    <input id="vw" type="number" value="1200" style="width:64px"> ×
+    <input id="vh" type="number" value="800" style="width:64px"> px
+    <button id="applyVp">apply</button>
+  </div>
+  <div class="group" id="scaleBtns"><label>scale</label></div>
+  <div class="group" id="panBtns"><label>pan</label></div>
+  <button class="run" id="runBtn">Run full matrix</button>
+</div>
+
+<div class="panes">
+  <div class="paneWrap">
+    <div class="paneTitle">Pane A — REFERENCE (percentage positioning)</div>
+    <div class="viewport" id="vpA"><div class="content" id="contentA"></div></div>
+  </div>
+  <div class="paneWrap">
+    <div class="paneTitle">Pane B — CANDIDATE (pixel positioning)</div>
+    <div class="viewport" id="vpB"><div class="content" id="contentB"></div></div>
+  </div>
+</div>
+
+<div id="verdict"></div>
+<div id="results"></div>
+
+<script>
+// ---- synthetic dataset (kept in sync with parity-seed-markers.json) ----
+const DATA = {
+  image: "parity-test-map.png", naturalWidth: 4000, naturalHeight: 3000,
+  markers: [
+    {id:"c-tl",xPct:0,yPct:0},{id:"c-tr",xPct:100,yPct:0},{id:"c-bl",xPct:0,yPct:100},{id:"c-br",xPct:100,yPct:100},
+    {id:"e-top",xPct:50,yPct:0},{id:"e-bot",xPct:50,yPct:100},{id:"e-left",xPct:0,yPct:50},{id:"e-right",xPct:100,yPct:50},
+    {id:"center",xPct:50,yPct:50},
+    {id:"q-tl",xPct:25,yPct:25},{id:"q-tr",xPct:75,yPct:25},{id:"q-bl",xPct:25,yPct:75},{id:"q-br",xPct:75,yPct:75},
+    {id:"r-1",xPct:62.27,yPct:8.2},{id:"r-2",xPct:30.2,yPct:25.64},{id:"r-3",xPct:70.81,yPct:65.55},
+    {id:"r-4",xPct:84.51,yPct:13.65},{id:"r-5",xPct:43.13,yPct:8.62},{id:"r-6",xPct:25.24,yPct:50.47},
+  ]
+};
+const W = DATA.naturalWidth, H = DATA.naturalHeight, TOL = 0.5;
+let VW = 1200, VH = 800;
+
+const contentA = document.getElementById("contentA");
+const contentB = document.getElementById("contentB");
+const vpA = document.getElementById("vpA");
+const vpB = document.getElementById("vpB");
+
+// Build a pane. strategy: "pct" => left:xPct%  |  "px" => left:(xPct/100*W)px
+function buildPane(content, strategy) {
+  content.style.width = W + "px";
+  content.style.height = H + "px";
+  content.innerHTML = "";
+  const img = new Image();
+  img.src = DATA.image;
+  content.appendChild(img);
+  for (const m of DATA.markers) {
+    const el = document.createElement("div");
+    el.className = "mk";
+    el.dataset.markerId = m.id;
+    if (strategy === "pct") {
+      el.style.left = m.xPct + "%";
+      el.style.top = m.yPct + "%";
+    } else {
+      el.style.left = (m.xPct / 100 * W) + "px";
+      el.style.top = (m.yPct / 100 * H) + "px";
+    }
+    content.appendChild(el);
+  }
+}
+
+function sizeViewports() {
+  for (const vp of [vpA, vpB]) { vp.style.width = VW + "px"; vp.style.height = VH + "px"; }
+}
+
+function applyTransform(content, s, panX, panY) {
+  content.style.transform =
+    `translate3d(${panX}px, ${panY}px, 0) scale3d(${s}, ${s}, 1)`;
+}
+
+// ---- viewport state matrix ----
+function fitScale() { return Math.min(VW / W, VH / H, 1); }
+function scaleStates() {
+  return { fit: fitScale(), "0.5x": 0.5, "1.0x": 1.0, "2.0x": 2.0, "max(3x)": 3.0 };
+}
+function panStates(s) {
+  const sw = W * s, sh = H * s;
+  return {
+    center: [(VW - sw) / 2, (VH - sh) / 2],
+    "pan-TL": [0, 0],
+    "pan-TR": [VW - sw, 0],
+    "pan-BL": [0, VH - sh],
+    "pan-BR": [VW - sw, VH - sh],
+  };
+}
+
+// ---- measurement core (renderer-agnostic) ----
+function measurePane(viewportEl) {
+  const base = viewportEl.getBoundingClientRect();
+  const out = {};
+  viewportEl.querySelectorAll("[data-marker-id]").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    out[el.dataset.markerId] = {
+      x: r.left + r.width / 2 - base.left,
+      y: r.top + r.height / 2 - base.top,
+    };
+  });
+  return out;
+}
+function diffPanes(aEl, bEl) {
+  const A = measurePane(aEl), B = measurePane(bEl), rows = [];
+  for (const id of Object.keys(A)) {
+    if (!(id in B)) continue;
+    const dx = B[id].x - A[id].x, dy = B[id].y - A[id].y;
+    const drift = Math.hypot(dx, dy);
+    rows.push({ id, drift, pass: drift <= TOL });
+  }
+  return rows;
+}
+
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+async function setState(sName, pName) {
+  const s = scaleStates()[sName];
+  const [px, py] = panStates(s)[pName];
+  applyTransform(contentA, s, px, py);
+  applyTransform(contentB, s, px, py);
+  await nextFrame();
+}
+
+async function runMatrix() {
+  const scales = scaleStates(), report = [];
+  let worst = 0, fails = 0, checks = 0;
+  for (const sName of Object.keys(scales)) {
+    for (const pName of Object.keys(panStates(scales[sName]))) {
+      await setState(sName, pName);
+      for (const row of diffPanes(vpA, vpB)) {
+        checks++;
+        if (row.drift > worst) worst = row.drift;
+        if (!row.pass) fails++;
+        report.push({ scale: sName, pan: pName, ...row });
+      }
+    }
+  }
+  renderReport(report, worst, fails, checks);
+}
+
+function renderReport(report, worst, fails, checks) {
+  const v = document.getElementById("verdict");
+  const pass = fails === 0;
+  v.innerHTML = `<span class="verdict ${pass ? "pass" : "fail"}">${pass ? "PASS" : "FAIL"}</span>`
+    + `<div class="meta">${checks} checks · ${DATA.markers.length} markers × ${Object.keys(scaleStates()).length} scales × 5 pans · `
+    + `max drift ${worst.toFixed(4)} px · gate ${TOL} px · ${fails} failure(s)</div>`;
+  // show only failures + a sample, to keep the table readable
+  const shown = report.filter((r) => !r.pass);
+  const sample = shown.length ? shown : report.filter((_, i) => i % 25 === 0);
+  let html = `<table><tr><th>scale</th><th>pan</th><th>marker</th><th>drift (px)</th><th>pass</th></tr>`;
+  for (const r of sample) {
+    html += `<tr class="${r.pass ? "" : "fail"}"><td>${r.scale}</td><td>${r.pan}</td><td>${r.id}</td>`
+      + `<td>${r.drift.toFixed(4)}</td><td>${r.pass ? "✓" : "✗"}</td></tr>`;
+  }
+  html += `</table>`;
+  if (!shown.length) html += `<div class="meta">All states passed; showing a sampled slice. Failures, if any, are listed in full.</div>`;
+  document.getElementById("results").innerHTML = html;
+}
+
+// ---- manual state buttons ----
+function buildStateButtons() {
+  const sb = document.getElementById("scaleBtns"), pb = document.getElementById("panBtns");
+  sb.querySelectorAll("button").forEach((b) => b.remove());
+  pb.querySelectorAll("button").forEach((b) => b.remove());
+  let curS = "fit", curP = "center";
+  const refresh = () => setState(curS, curP);
+  Object.keys(scaleStates()).forEach((name) => {
+    const b = document.createElement("button");
+    b.textContent = name; if (name === curS) b.classList.add("active");
+    b.onclick = () => { curS = name; sb.querySelectorAll("button").forEach((x) => x.classList.remove("active")); b.classList.add("active"); refresh(); };
+    sb.appendChild(b);
+  });
+  ["center", "pan-TL", "pan-TR", "pan-BL", "pan-BR"].forEach((name) => {
+    const b = document.createElement("button");
+    b.textContent = name; if (name === curP) b.classList.add("active");
+    b.onclick = () => { curP = name; pb.querySelectorAll("button").forEach((x) => x.classList.remove("active")); b.classList.add("active"); refresh(); };
+    pb.appendChild(b);
+  });
+}
+
+function init() {
+  sizeViewports();
+  buildPane(contentA, "pct");
+  buildPane(contentB, "px");
+  buildStateButtons();
+  setState("fit", "center");
+}
+document.getElementById("applyVp").onclick = () => {
+  VW = Math.max(200, parseInt(document.getElementById("vw").value) || 1200);
+  VH = Math.max(200, parseInt(document.getElementById("vh").value) || 800);
+  init();
+};
+document.getElementById("runBtn").onclick = runMatrix;
+init();
+</script>

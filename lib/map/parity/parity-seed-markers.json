@@ -1,0 +1,140 @@
+{
+  "image": "parity-test-map.png",
+  "naturalWidth": 4000,
+  "naturalHeight": 3000,
+  "markers": [
+    {
+      "id": "c-tl",
+      "xPct": 0,
+      "yPct": 0,
+      "kind": "corner",
+      "label": "c-tl"
+    },
+    {
+      "id": "c-tr",
+      "xPct": 100,
+      "yPct": 0,
+      "kind": "corner",
+      "label": "c-tr"
+    },
+    {
+      "id": "c-bl",
+      "xPct": 0,
+      "yPct": 100,
+      "kind": "corner",
+      "label": "c-bl"
+    },
+    {
+      "id": "c-br",
+      "xPct": 100,
+      "yPct": 100,
+      "kind": "corner",
+      "label": "c-br"
+    },
+    {
+      "id": "e-top",
+      "xPct": 50,
+      "yPct": 0,
+      "kind": "edge",
+      "label": "e-top"
+    },
+    {
+      "id": "e-bot",
+      "xPct": 50,
+      "yPct": 100,
+      "kind": "edge",
+      "label": "e-bot"
+    },
+    {
+      "id": "e-left",
+      "xPct": 0,
+      "yPct": 50,
+      "kind": "edge",
+      "label": "e-left"
+    },
+    {
+      "id": "e-right",
+      "xPct": 100,
+      "yPct": 50,
+      "kind": "edge",
+      "label": "e-right"
+    },
+    {
+      "id": "center",
+      "xPct": 50,
+      "yPct": 50,
+      "kind": "center",
+      "label": "center"
+    },
+    {
+      "id": "q-tl",
+      "xPct": 25,
+      "yPct": 25,
+      "kind": "quarter",
+      "label": "q-tl"
+    },
+    {
+      "id": "q-tr",
+      "xPct": 75,
+      "yPct": 25,
+      "kind": "quarter",
+      "label": "q-tr"
+    },
+    {
+      "id": "q-bl",
+      "xPct": 25,
+      "yPct": 75,
+      "kind": "quarter",
+      "label": "q-bl"
+    },
+    {
+      "id": "q-br",
+      "xPct": 75,
+      "yPct": 75,
+      "kind": "quarter",
+      "label": "q-br"
+    },
+    {
+      "id": "r-1",
+      "xPct": 62.27,
+      "yPct": 8.2,
+      "kind": "random",
+      "label": "r-1"
+    },
+    {
+      "id": "r-2",
+      "xPct": 30.2,
+      "yPct": 25.64,
+      "kind": "random",
+      "label": "r-2"
+    },
+    {
+      "id": "r-3",
+      "xPct": 70.81,
+      "yPct": 65.55,
+      "kind": "random",
+      "label": "r-3"
+    },
+    {
+      "id": "r-4",
+      "xPct": 84.51,
+      "yPct": 13.65,
+      "kind": "random",
+      "label": "r-4"
+    },
+    {
+      "id": "r-5",
+      "xPct": 43.13,
+      "yPct": 8.62,
+      "kind": "random",
+      "label": "r-5"
+    },
+    {
+      "id": "r-6",
+      "xPct": 25.24,
+      "yPct": 50.47,
+      "kind": "random",
+      "label": "r-6"
+    }
+  ]
+}

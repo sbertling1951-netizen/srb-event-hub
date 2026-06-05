@@ -28,28 +28,48 @@ export default function AdminLoginPage() {
         return;
       }
 
+      console.log("LOGIN START");
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password: normalizedPassword,
+      });
+
+      console.log("LOGIN RETURNED", {
+        hasData: !!data,
+        hasSession: !!data?.session,
+        error: error?.message,
       });
 
       if (error) {
         throw error;
       }
 
+      console.log("AFTER ERROR CHECK");
+
       if (!data.session) {
+        console.log("NO SESSION - CHECKING GETSESSION");
+
         const { data: sessionData, error: sessionError } =
           await supabase.auth.getSession();
+
+        console.log("GETSESSION RETURNED", {
+          hasSession: !!sessionData?.session,
+          error: sessionError?.message,
+        });
 
         if (sessionError) {
           throw sessionError;
         }
+
         if (!sessionData.session) {
           throw new Error(
             "Login succeeded but no session was available yet. Please try again.",
           );
         }
       }
+
+      console.log("LOGIN COMPLETE");
 
       localStorage.setItem("fcoc-user-mode", "admin");
       localStorage.setItem("fcoc-admin-email", normalizedEmail);

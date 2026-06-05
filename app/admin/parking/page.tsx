@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import GestureMapViewportV2, { type GestureMapViewportHandle } from "@/components/map/GestureMapViewportV2";
+import MapCanvas, { type MapCanvasHandle } from "@/components/map/MapCanvas";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   canAccessEvent,
@@ -74,7 +74,7 @@ type Attendee = {
 };
 
 function ParkingAdminPageInner() {
-  const mapViewportRef = useRef<GestureMapViewportHandle | null>(null);
+  const mapViewportRef = useRef<MapCanvasHandle | null>(null);
   const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
@@ -116,16 +116,19 @@ function ParkingAdminPageInner() {
     }, delay);
   }
 
-  const focusSite = useCallback((site: ParkingSite) => {
-    if (site.map_x === null || site.map_y === null) {
-      return;
-    }
+  const focusSite = useCallback(
+    (site: ParkingSite) => {
+      if (site.map_x === null || site.map_y === null) {
+        return;
+      }
 
-    mapViewportRef.current?.centerOn(
-      (site.map_x / 100) * naturalSize.width,
-      (site.map_y / 100) * naturalSize.height,
-    );
-  }, [naturalSize.width, naturalSize.height]);
+      mapViewportRef.current?.centerOn(
+        (site.map_x / 100) * naturalSize.width,
+        (site.map_y / 100) * naturalSize.height,
+      );
+    },
+    [naturalSize.width, naturalSize.height],
+  );
 
   const loadPage = useCallback(async () => {
     setLoading(true);
@@ -1684,7 +1687,7 @@ function ParkingAdminPageInner() {
             zIndex: isNarrow ? 40 : undefined,
           }}
         >
-          <GestureMapViewportV2
+          <MapCanvas
             ref={mapViewportRef}
             width={naturalSize.width}
             height={naturalSize.height}
@@ -1692,126 +1695,132 @@ function ParkingAdminPageInner() {
             maxScale={3}
             initialScale={defaultZoom}
           >
-                {event?.map_image_url && (
-                  <img
-                    src={event.map_image_url}
-                    alt="Parking map"
-                    draggable={false}
-                    onLoad={(e) => {
-                      const img = e.currentTarget;
-                      setNaturalSize({
-                        width: img.naturalWidth || 1200,
-                        height: img.naturalHeight || 800,
-                      });
-                    }}
+            {event?.map_image_url && (
+              <img
+                src={event.map_image_url}
+                alt="Parking map"
+                draggable={false}
+                onLoad={(e) => {
+                  const img = e.currentTarget;
+                  setNaturalSize({
+                    width: img.naturalWidth || 1200,
+                    height: img.naturalHeight || 800,
+                  });
+                }}
+                style={{
+                  width: naturalSize.width,
+                  height: naturalSize.height,
+                  display: "block",
+                  userSelect: "none",
+                  pointerEvents: "none",
+                  touchAction: "none",
+                  WebkitTouchCallout: "none",
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                }}
+              />
+            )}
+
+            {sites.map((site) => {
+              if (site.map_x === null || site.map_y === null) {
+                return null;
+              }
+
+              return (
+                <div
+                  key={site.id || site.master_site_id}
+                  style={{
+                    position: "absolute",
+                    left: `${site.map_x}%`,
+                    top: `${site.map_y}%`,
+                    transform: "translate(-50%, -50%)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleSiteClick(site)}
+                    title={getSiteTitle(site)}
                     style={{
-                      width: naturalSize.width,
-                      height: naturalSize.height,
+                      width:
+                        (site.id || site.master_site_id) === selectedSiteId
+                          ? isNarrow
+                            ? 44
+                            : 32
+                          : isNarrow
+                            ? 32
+                            : 22,
+                      height:
+                        (site.id || site.master_site_id) === selectedSiteId
+                          ? isNarrow
+                            ? 44
+                            : 32
+                          : isNarrow
+                            ? 32
+                            : 22,
+                      borderRadius: "50%",
+                      background: getSiteColor(site),
+                      border: isNarrow ? "3px solid white" : "2px solid white",
+                      boxShadow:
+                        (site.id || site.master_site_id) === selectedSiteId
+                          ? "0 0 0 8px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(0,0,0,0.45)"
+                          : "0 1px 4px rgba(0,0,0,0.35)",
+                      animation:
+                        (site.id || site.master_site_id) === selectedSiteId
+                          ? "parkingSelectedPulse 2.2s ease-in-out infinite"
+                          : undefined,
+                      cursor: "pointer",
+                      padding: 0,
                       display: "block",
-                      userSelect: "none",
-                      pointerEvents: "none",
-                      touchAction: "none",
-                      WebkitTouchCallout: "none",
-                      backfaceVisibility: "hidden",
-                      WebkitBackfaceVisibility: "hidden",
+                      margin: "0 auto",
+                      pointerEvents: "auto",
                     }}
                   />
-                )}
 
-                {sites.map((site) => {
-                  if (site.map_x === null || site.map_y === null) {
-                    return null;
-                  }
-
-                  return (
+                  {showLabels && (
                     <div
-                      key={site.id || site.master_site_id}
                       style={{
-                        position: "absolute",
-                        left: `${site.map_x}%`,
-                        top: `${site.map_y}%`,
-                        transform: "translate(-50%, -50%)",
+                        marginTop: 4,
+                        marginLeft: "auto",
+                        marginRight: "auto",
+                        background: "rgba(255,255,255,0.92)",
+                        border: "1px solid rgba(0,0,0,0.2)",
+                        borderRadius: 4,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "1px 4px",
+                        color: "#111",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                        display: "table",
                         pointerEvents: "none",
                       }}
                     >
-                      <button
-                        type="button"
-                        onClick={() => handleSiteClick(site)}
-                        title={getSiteTitle(site)}
-                        style={{
-                          width:
-                            (site.id || site.master_site_id) === selectedSiteId
-                              ? isNarrow
-                                ? 44
-                                : 32
-                              : isNarrow
-                                ? 32
-                                : 22,
-                          height:
-                            (site.id || site.master_site_id) === selectedSiteId
-                              ? isNarrow
-                                ? 44
-                                : 32
-                              : isNarrow
-                                ? 32
-                                : 22,
-                          borderRadius: "50%",
-                          background: getSiteColor(site),
-                          border: isNarrow
-                            ? "3px solid white"
-                            : "2px solid white",
-                          boxShadow:
-                            (site.id || site.master_site_id) === selectedSiteId
-                              ? "0 0 0 8px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(0,0,0,0.45)"
-                              : "0 1px 4px rgba(0,0,0,0.35)",
-                          animation:
-                            (site.id || site.master_site_id) === selectedSiteId
-                              ? "parkingSelectedPulse 2.2s ease-in-out infinite"
-                              : undefined,
-                          cursor: "pointer",
-                          padding: 0,
-                          display: "block",
-                          margin: "0 auto",
-                          pointerEvents: "auto",
-                        }}
-                      />
-
-                      {showLabels && (
-                        <div
-                          style={{
-                            marginTop: 4,
-                            marginLeft: "auto",
-                            marginRight: "auto",
-                            background: "rgba(255,255,255,0.92)",
-                            border: "1px solid rgba(0,0,0,0.2)",
-                            borderRadius: 4,
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: "1px 4px",
-                            color: "#111",
-                            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-                            display: "table",
-                            pointerEvents: "none",
-                          }}
-                        >
-                          {site.display_label || site.site_number}
-                        </div>
-                      )}
+                      {site.display_label || site.site_number}
                     </div>
-                  );
-                })}
-          </GestureMapViewportV2>
-
+                  )}
+                </div>
+              );
+            })}
+          </MapCanvas>
           <div
             style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
           >
-            <button type="button" onClick={() => mapViewportRef.current?.zoomOut()}>
+            <button
+              type="button"
+              onClick={() => mapViewportRef.current?.zoomOut()}
+            >
               −
             </button>
-            <button type="button" onClick={() => mapViewportRef.current?.zoomIn()}>
+            <button
+              type="button"
+              onClick={() => mapViewportRef.current?.zoomIn()}
+            >
               +
             </button>
-            <button type="button" onClick={() => mapViewportRef.current?.reset()}>
+            <button
+              type="button"
+              onClick={() => mapViewportRef.current?.reset()}
+            >
               Reset Zoom
             </button>
             <button type="button" onClick={recenterMap}>

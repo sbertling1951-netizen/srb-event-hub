@@ -1,0 +1,3352 @@
+{
+  "summary": {
+    "tolerance_px": 0.5,
+    "states": [
+      "fit",
+      "0.5x",
+      "1.0x",
+      "2.0x",
+      "max(3x)"
+    ],
+    "pans": [
+      "center",
+      "pan-TL",
+      "pan-TR",
+      "pan-BL",
+      "pan-BR"
+    ],
+    "markers": 19,
+    "checks": 475,
+    "max_drift_px": 0.0,
+    "failures": 0,
+    "verdict": "PASS",
+    "note": "Model-level (coordinate-math) parity between % and px marker positioning. Drift is identically 0 because every consumer sizes the content box to the natural image dimensions, so % and px resolve to the same CSS pixel before the shared transform. Sub-pixel browser compositing must still be confirmed in-browser via parity-harness.html against the real components."
+  },
+  "results": [
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "center",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-TR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "fit",
+      "pan": "pan-BR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "center",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-TR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "0.5x",
+      "pan": "pan-BR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "center",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-TR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "1.0x",
+      "pan": "pan-BR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "center",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-TR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "2.0x",
+      "pan": "pan-BR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "center",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-TR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BL",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "c-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "c-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "c-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "c-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "e-top",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "e-bot",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "e-left",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "e-right",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "center",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "q-tl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "q-tr",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "q-bl",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "q-br",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "r-1",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "r-2",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "r-3",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "r-4",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "r-5",
+      "drift_px": 0.0,
+      "pass": true
+    },
+    {
+      "scale": "max(3x)",
+      "pan": "pan-BR",
+      "marker": "r-6",
+      "drift_px": 0.0,
+      "pass": true
+    }
+  ]
+}
