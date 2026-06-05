@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { MapCanvas } from "@/components/map/canvas";
+import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { supabase } from "@/lib/supabase";
 
@@ -88,6 +88,9 @@ export default function PublicLocationsPage() {
   // NOTE: naturalSize state removed — the MapCanvas engine measures the image's
   // intrinsic dimensions itself (we intentionally do NOT pass naturalWidth/Height).
   const [imageLoaded, setImageLoaded] = useState(false);
+
+  const mapRef = useRef<MapCanvasHandle | null>(null);
+  const mapWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     function handleResize() {
@@ -266,13 +269,60 @@ export default function PublicLocationsPage() {
     [locations],
   );
 
+  // Comfortably within the viewport right now? Measures painted DOM rects
+  // (same technique as the parity harness), not the engine's transform math.
+  // null = can't tell yet (treated as "no move").
+  function isMarkerComfortablyVisible(id: string): boolean | null {
+    const wrap = mapWrapRef.current;
+    if (!wrap) {
+      return null;
+    }
+    const markerEl = wrap.querySelector<HTMLElement>(
+      `[data-marker-id="${id}"]`,
+    );
+    if (!markerEl) {
+      return null;
+    }
+    const box = wrap.getBoundingClientRect();
+    const m = markerEl.getBoundingClientRect();
+    const cx = m.left + m.width / 2;
+    const cy = m.top + m.height / 2;
+    const marginX = box.width * 0.08; // edge comfort band — tune to taste
+    const marginY = box.height * 0.08;
+    return (
+      cx >= box.left + marginX &&
+      cx <= box.right - marginX &&
+      cy >= box.top + marginY &&
+      cy <= box.bottom - marginY
+    );
+  }
+
   function handleLocationClick(location: EventLocation) {
     setSelectedLocationId(location.id);
-    setStatus({ type: "info", text: `Focused map on ${location.name}.` });
+
+    const visible = isMarkerComfortablyVisible(location.id);
+
+    // Tap to center marker...
+    if (visible === false) {
+      const vp = mapRef.current?.getViewport();
+
+      mapRef.current?.centerOnMarker(location.id, vp?.scale);
+
+      setStatus({
+        type: "info",
+        text: `Centered on ${location.name}.`,
+      });
+    } else {
+      setStatus({
+        type: "info",
+        text: `Selected ${location.name}.`,
+      });
+    }
   }
 
   // Marker tap comes back from the engine as an id; route it through the same
-  // selection handler the list uses. (Phase 1: highlight only — no auto-pan/zoom.)
+  // selection handler the list uses. A tapped marker is by definition visible,
+  // so this lands in the "highlight only" branch.
   const handleMarkerTap = useCallback(
     (id: string) => {
       const loc = locationById.get(id);
@@ -399,8 +449,7 @@ export default function PublicLocationsPage() {
             overflow: isNarrow ? "visible" : "auto",
           }}
         >
-          <div style={{ fontWeight: 700 }}>Locations</div>
-
+          <div style={{ fontWeight: 700 }}>Event Locations</div>{" "}
           <input
             type="text"
             placeholder="Search locations"
@@ -408,7 +457,6 @@ export default function PublicLocationsPage() {
             onChange={(e) => setSearch(e.target.value)}
             style={{ padding: 8 }}
           />
-
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
               type="button"
@@ -456,12 +504,10 @@ export default function PublicLocationsPage() {
               );
             })}
           </div>
-
           <div style={{ fontSize: 13, color: "#666" }}>
             Showing {filteredLocations.length} of {locations.length}
             {categoryFilter !== "all" ? ` • Category: ${categoryFilter}` : ""}
           </div>
-
           {filteredLocations.map((loc) => {
             const selected = loc.id === selectedLocationId;
 
@@ -495,12 +541,11 @@ export default function PublicLocationsPage() {
                 )}
 
                 <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
-                  Priority {loc.priority ?? 100} · Tap to center map
+                  Priority {loc.priority ?? 100} · Tap to center marker
                 </div>
               </button>
             );
           })}
-
           {selectedLocation && (
             <div
               style={{
@@ -546,8 +591,12 @@ export default function PublicLocationsPage() {
             minHeight: 420,
           }}
         >
-          <div style={{ position: "relative", width: "100%", height: "100%" }}>
+          <div
+            ref={mapWrapRef}
+            style={{ position: "relative", width: "100%", height: "100%" }}
+          >
             <MapCanvas
+              ref={mapRef}
               imageUrl={event?.map_image_url ?? null}
               markers={markers}
               viewportHeight="100%"
