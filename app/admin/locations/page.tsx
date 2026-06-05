@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import MapCanvas from "@/components/map/MapCanvas";
+import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
+import type { MapMarker } from "@/components/map/canvas/types";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   canAccessEvent,
@@ -51,7 +52,8 @@ function AdminLocationsPageInner() {
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading...");
-  const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
+  // naturalSize removed — the engine measures the image and onMapTap returns
+  // percent directly, so we no longer convert pixel->percent by hand.
   const [isNarrow, setIsNarrow] = useState(false);
 
   const [formId, setFormId] = useState("");
@@ -67,6 +69,7 @@ function AdminLocationsPageInner() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mapRef = useRef<MapCanvasHandle | null>(null);
 
   useEffect(() => {
     function handleResize() {
@@ -174,8 +177,6 @@ function AdminLocationsPageInner() {
     };
 
     setEvent(typedEvent);
-
-    // Removed openingScale, safeOpeningScale, setDefaultZoom, setZoom
 
     const { data: locationData, error: locationError } = await supabase
       .from("event_locations")
@@ -299,10 +300,39 @@ function AdminLocationsPageInner() {
   const selectedLocation =
     locations.find((loc) => loc.id === selectedLocationId) || null;
 
+  // Fast id -> location lookup for marker rendering + tap routing.
+  const locationById = useMemo(() => {
+    const map = new Map<string, EventLocation>();
+    for (const loc of locations) {
+      map.set(loc.id, loc);
+    }
+    return map;
+  }, [locations]);
+
+  // Engine markers: PERCENT coordinates only (map_x/map_y are already 0..100).
+  const markers = useMemo<MapMarker[]>(
+    () =>
+      locations
+        .filter((loc) => loc.map_x !== null && loc.map_y !== null)
+        .map((loc) => ({
+          id: loc.id,
+          xPct: loc.map_x as number,
+          yPct: loc.map_y as number,
+          data: loc,
+        })),
+    [locations],
+  );
+
   function handleLocationClick(location: EventLocation) {
     setSelectedLocationId(location.id);
     setIsPlacing(false);
     loadLocationIntoForm(location);
+
+    // Viewport-only: center on the selected marker, preserving current zoom.
+    // No-op when the location has no placed position yet (not in `markers`).
+    const vp = mapRef.current?.getViewport();
+    mapRef.current?.centerOnMarker(location.id, vp?.scale);
+
     setStatus(`Focused map on ${location.name}.`);
   }
 
@@ -328,12 +358,73 @@ function AdminLocationsPageInner() {
     }
   }
 
-  function getMarkerSize(location: EventLocation) {
-    if (location.id === selectedLocationId) {
-      return isNarrow ? 44 : 36;
-    }
-    return isNarrow ? 32 : 24;
-  }
+  // Marker tap comes back from the engine as an id; route it through the same
+  // handler the list uses (loads the marker into the form for editing).
+  const handleMarkerTap = useCallback(
+    (id: string) => {
+      const loc = locationById.get(id);
+      if (loc) {
+        handleLocationClick(loc);
+      }
+    },
+    // handleLocationClick only touches stable setters + loadLocationIntoForm
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [locationById],
+  );
+
+  // Page-supplied marker visual (faithful: 60px disc, category color, gold when
+  // selected, name chip). MarkerLayer owns positioning + the click target.
+  const renderMarker = useCallback(
+    (m: MapMarker) => {
+      const loc = locationById.get(m.id);
+      if (!loc) {
+        return null;
+      }
+
+      return (
+        <>
+          <div
+            title={loc.name}
+            style={{
+              width: 60,
+              height: 60,
+              borderRadius: "50%",
+              background: getMarkerColor(loc),
+              border: isNarrow ? "3px solid white" : "2px solid white",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+              padding: 0,
+              display: "block",
+              margin: "0 auto",
+            }}
+          />
+
+          <div
+            style={{
+              marginTop: 4,
+              marginLeft: "auto",
+              marginRight: "auto",
+              background: "rgba(255,255,255,0.92)",
+              border: "1px solid rgba(0,0,0,0.2)",
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 700,
+              padding: "1px 4px",
+              color: "#111",
+              whiteSpace: "nowrap",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+              display: "table",
+              pointerEvents: "none",
+            }}
+          >
+            {loc.name}
+          </div>
+        </>
+      );
+    },
+    // getMarkerColor reads selectedLocationId, so re-create on selection change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [locationById, selectedLocationId, isNarrow],
+  );
 
   function resetForm() {
     setFormId("");
@@ -738,25 +829,28 @@ function AdminLocationsPageInner() {
             }}
           >
             <MapCanvas
-              width={naturalSize.width}
-              height={naturalSize.height}
+              ref={mapRef}
+              imageUrl={event?.map_image_url ?? null}
+              markers={markers}
               viewportHeight={isNarrow ? "60vh" : "82vh"}
-              initialScale={event?.locations_map_open_scale || 0.6}
-              onTap={({ mapX, mapY }: { mapX: number; mapY: number }) => {
+              initialScale={
+                event ? (event.locations_map_open_scale ?? 0.6) : undefined
+              }
+              editable={isPlacing}
+              selectionMode="none"
+              showLabels={false}
+              onMapTap={({ xPct, yPct }) => {
                 if (!isPlacing) {
                   return;
                 }
 
-                const xPercent = (mapX / naturalSize.width) * 100;
-                const yPercent = (mapY / naturalSize.height) * 100;
-
                 const safeX = Math.max(
                   0,
-                  Math.min(100, Number(xPercent.toFixed(2))),
+                  Math.min(100, Number(xPct.toFixed(2))),
                 );
                 const safeY = Math.max(
                   0,
-                  Math.min(100, Number(yPercent.toFixed(2))),
+                  Math.min(100, Number(yPct.toFixed(2))),
                 );
 
                 setFormX(String(safeX));
@@ -766,104 +860,9 @@ function AdminLocationsPageInner() {
                   `Placed marker at X ${safeX}, Y ${safeY}. Save to keep it.`,
                 );
               }}
-            >
-              <div
-                style={{
-                  position: "relative",
-                  width: naturalSize.width,
-                  height: naturalSize.height,
-                }}
-              >
-                {event?.map_image_url && (
-                  <img
-                    src={event.map_image_url}
-                    alt="Event map"
-                    draggable={false}
-                    onLoad={(e) => {
-                      const img = e.currentTarget;
-                      setNaturalSize({
-                        width: img.naturalWidth || 1200,
-                        height: img.naturalHeight || 800,
-                      });
-                    }}
-                    style={{
-                      width: naturalSize.width,
-                      height: naturalSize.height,
-                      display: "block",
-                      userSelect: "none",
-                      pointerEvents: "none",
-                      touchAction: "none",
-                    }}
-                  />
-                )}
-
-                {locations.map((location) => {
-                  if (location.map_x === null || location.map_y === null) {
-                    return null;
-                  }
-
-                  return (
-                    <div
-                      key={location.id}
-                      style={{
-                        position: "absolute",
-                        left: `${location.map_x}%`,
-                        top: `${location.map_y}%`,
-                        transform: "translate(-50%, -50%)",
-                        pointerEvents: "none",
-                        zIndex: 99999,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleLocationClick(location);
-                        }}
-                        title={location.name}
-                        style={{
-                          width: 60,
-                          height: 60,
-                          borderRadius: "50%",
-                          background: getMarkerColor(location),
-                          border: isNarrow
-                            ? "3px solid white"
-                            : "2px solid white",
-                          boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
-                          cursor: "pointer",
-                          padding: 0,
-                          display: "block",
-                          margin: "0 auto",
-                          pointerEvents: "auto",
-                          touchAction: "none",
-                        }}
-                      />
-
-                      <div
-                        style={{
-                          marginTop: 4,
-                          marginLeft: "auto",
-                          marginRight: "auto",
-                          background: "rgba(255,255,255,0.92)",
-                          border: "1px solid rgba(0,0,0,0.2)",
-                          borderRadius: 4,
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: "1px 4px",
-                          color: "#111",
-                          whiteSpace: "nowrap",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-                          display: "table",
-                          pointerEvents: "none",
-                        }}
-                      >
-                        {location.name}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </MapCanvas>
+              onMarkerTap={handleMarkerTap}
+              renderMarker={renderMarker}
+            />
           </div>
 
           {selectedLocation && (

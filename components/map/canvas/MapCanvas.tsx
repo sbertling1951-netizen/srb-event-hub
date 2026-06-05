@@ -66,7 +66,7 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       selectedIds,
       primaryId,
       viewportHeight = "100%",
-      initialScale = 0.6,
+      initialScale,
       minScale = 0.1,
       maxScale = 3,
       lockPageScroll = false,
@@ -82,15 +82,21 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
   ) {
     const viewportRef = useRef<V2Handle | null>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
+    const appliedScaleRef = useRef(false);
 
     const [measuredNatural, setMeasuredNatural] = useState<Size>({
       width: naturalWidth || 1200,
       height: naturalHeight || 800,
     });
+
+    const [imgReady, setImgReady] = useState(false);
+
     const natural: Size = {
       width: naturalWidth || measuredNatural.width,
       height: naturalHeight || measuredNatural.height,
     };
+
+    const seedScale = initialScale ?? 0.6;
 
     const [marquee, setMarquee] = useState<{
       minX: number;
@@ -147,8 +153,8 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
         return { scale: t.scale, panX: t.x, panY: t.y };
       }
       // Fallback until V2 exposes its transform; centered-fit-ish default.
-      return { scale: initialScale, panX: 0, panY: 0 };
-    }, [initialScale]);
+      return { scale: seedScale, panX: 0, panY: 0 };
+    }, [seedScale]);
 
     const viewportPixelSize = useCallback((): Size => {
       const el = rootRef.current;
@@ -288,6 +294,81 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       ],
     );
 
+    // ---- honor an explicitly-configured opening scale ------------------------
+
+    useEffect(() => {
+      appliedScaleRef.current = false;
+      setImgReady(false);
+
+      if (!imageUrl) {
+        return;
+      }
+
+      const probe = new Image();
+
+      const onReady = () => {
+        if (!naturalWidth || !naturalHeight) {
+          setMeasuredNatural({
+            width: probe.naturalWidth || 1200,
+            height: probe.naturalHeight || 800,
+          });
+        }
+
+        setImgReady(true);
+      };
+
+      probe.onload = onReady;
+
+      probe.onerror = () => {
+        setImgReady(true);
+      };
+
+      probe.src = imageUrl;
+
+      if (probe.complete && probe.naturalWidth > 0) {
+        onReady();
+      }
+
+      return () => {
+        probe.onload = null;
+        probe.onerror = null;
+      };
+    }, [imageUrl, naturalWidth, naturalHeight]);
+
+    useEffect(() => {
+      if (initialScale == null || appliedScaleRef.current) {
+        return;
+      }
+
+      const dimsReady = (!!naturalWidth && !!naturalHeight) || imgReady;
+
+      if (!dimsReady) {
+        return;
+      }
+
+      const w = natural.width;
+      const h = natural.height;
+
+      if (!w || !h) {
+        return;
+      }
+
+      const target = Math.min(maxScale, Math.max(minScale, initialScale));
+
+      viewportRef.current?.centerOn(w / 2, h / 2, target);
+
+      appliedScaleRef.current = true;
+    }, [
+      initialScale,
+      naturalWidth,
+      naturalHeight,
+      imgReady,
+      natural.width,
+      natural.height,
+      minScale,
+      maxScale,
+    ]);
+
     // ---- viewport-change reporting (best effort) -----------------------------
     useEffect(() => {
       if (!onViewportChange) {
@@ -334,12 +415,15 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
                 draggable={false}
                 onLoad={(e) => {
                   const img = e.currentTarget;
+
                   if (!naturalWidth || !naturalHeight) {
                     setMeasuredNatural({
                       width: img.naturalWidth || 1200,
                       height: img.naturalHeight || 800,
                     });
                   }
+
+                  setImgReady(true);
                 }}
                 style={{
                   position: "absolute",
