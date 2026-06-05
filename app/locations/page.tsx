@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import MapCanvas from "@/components/map/MapCanvas";
+import { MapCanvas } from "@/components/map/canvas";
+import type { MapMarker } from "@/components/map/canvas/types";
 import { supabase } from "@/lib/supabase";
 
 type ActiveEvent = {
@@ -84,7 +85,8 @@ export default function PublicLocationsPage() {
     text: "Loading...",
   });
   const [isNarrow, setIsNarrow] = useState(false);
-  const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
+  // NOTE: naturalSize state removed — the MapCanvas engine measures the image's
+  // intrinsic dimensions itself (we intentionally do NOT pass naturalWidth/Height).
   const [imageLoaded, setImageLoaded] = useState(false);
 
   useEffect(() => {
@@ -180,6 +182,22 @@ export default function PublicLocationsPage() {
     void loadPage();
   }, [loadPage]);
 
+  // Preload the map image purely to drive the "Loading map markers..." overlay.
+  // The engine owns the rendered <img> now, so we no longer learn about load
+  // completion from an onLoad handler we own — this preloader restores that hook
+  // without coupling to the engine internals.
+  useEffect(() => {
+    setImageLoaded(false);
+    const url = event?.map_image_url;
+    if (!url) {
+      return;
+    }
+    const img = new Image();
+    img.onload = () => setImageLoaded(true);
+    img.onerror = () => setImageLoaded(true); // never trap the overlay on a bad URL
+    img.src = url;
+  }, [event?.map_image_url]);
+
   const filteredLocations = useMemo(() => {
     const q = search.trim().toLowerCase();
 
@@ -223,10 +241,106 @@ export default function PublicLocationsPage() {
     );
   }, [locations]);
 
+  // Fast id -> location lookup for marker rendering + tap routing.
+  const locationById = useMemo(() => {
+    const map = new Map<string, EventLocation>();
+    for (const loc of locations) {
+      map.set(loc.id, loc);
+    }
+    return map;
+  }, [locations]);
+
+  // Engine markers: PERCENT coordinates only. map_x/map_y are already 0..100.
+  // We deliberately omit color/size/label here — presentation is supplied by
+  // renderMarker below so the existing look is reproduced exactly.
+  const markers = useMemo<MapMarker[]>(
+    () =>
+      locations
+        .filter((loc) => loc.map_x !== null && loc.map_y !== null)
+        .map((loc) => ({
+          id: loc.id,
+          xPct: loc.map_x as number,
+          yPct: loc.map_y as number,
+          data: loc,
+        })),
+    [locations],
+  );
+
   function handleLocationClick(location: EventLocation) {
     setSelectedLocationId(location.id);
     setStatus({ type: "info", text: `Focused map on ${location.name}.` });
   }
+
+  // Marker tap comes back from the engine as an id; route it through the same
+  // selection handler the list uses. (Phase 1: highlight only — no auto-pan/zoom.)
+  const handleMarkerTap = useCallback(
+    (id: string) => {
+      const loc = locationById.get(id);
+      if (loc) {
+        handleLocationClick(loc);
+      }
+    },
+    [locationById],
+  );
+
+  // Page-supplied marker visual. MarkerLayer owns positioning, the click target,
+  // and z-index layering; this returns only the dot + name chip, reading the
+  // current selection from closure so colors/sizes match the previous page 1:1.
+  const renderMarker = useCallback(
+    (m: MapMarker) => {
+      const loc = locationById.get(m.id);
+      if (!loc) {
+        return null;
+      }
+
+      const selected = loc.id === selectedLocationId;
+      const size = getMarkerSize(loc, selectedLocationId, isNarrow);
+      const color = getMarkerColor(loc, selectedLocationId);
+
+      return (
+        <>
+          <div
+            title={loc.name}
+            style={{
+              width: size,
+              height: size,
+              borderRadius: "50%",
+              background: color,
+              border: isNarrow ? "3px solid white" : "2px solid white",
+              boxShadow: selected
+                ? "0 0 0 4px rgba(255,215,0,0.35), 0 1px 4px rgba(0,0,0,0.35)"
+                : "0 1px 4px rgba(0,0,0,0.35)",
+              padding: 0,
+              display: "block",
+              margin: "0 auto",
+            }}
+          />
+
+          <div
+            style={{
+              marginTop: 4,
+              marginLeft: "auto",
+              marginRight: "auto",
+              background: "rgba(255,255,255,0.92)",
+              border: "1px solid rgba(0,0,0,0.2)",
+              borderRadius: 4,
+              fontSize: selected ? 12 : 10,
+              fontWeight: 700,
+              padding: selected ? "2px 6px" : "1px 4px",
+              color: "#111",
+              whiteSpace: "nowrap",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+              display: "table",
+              pointerEvents: "none",
+            }}
+          >
+            {loc.name}
+          </div>
+        </>
+      );
+    },
+    [locationById, selectedLocationId, isNarrow],
+  );
 
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
@@ -432,138 +546,38 @@ export default function PublicLocationsPage() {
             minHeight: 420,
           }}
         >
-          <MapCanvas
-            width={naturalSize.width}
-            height={naturalSize.height}
-            viewportHeight="100%"
-          >
-            <div
-              style={{
-                position: "relative",
-                width: naturalSize.width,
-                height: naturalSize.height,
-              }}
-            >
-              {event?.map_image_url && (
-                <img
-                  src={event.map_image_url}
-                  alt="Event map"
-                  draggable={false}
-                  onLoad={(e) => {
-                    const img = e.currentTarget;
-                    setNaturalSize({
-                      width: img.naturalWidth || 1200,
-                      height: img.naturalHeight || 800,
-                    });
-                    setImageLoaded(true);
-                  }}
-                  style={{
-                    width: naturalSize.width,
-                    height: naturalSize.height,
-                    display: "block",
-                    userSelect: "none",
-                    pointerEvents: "none",
-                    touchAction: "none",
-                    WebkitTouchCallout: "none",
-                    backfaceVisibility: "hidden",
-                    WebkitBackfaceVisibility: "hidden",
-                  }}
-                />
-              )}
+          <div style={{ position: "relative", width: "100%", height: "100%" }}>
+            <MapCanvas
+              imageUrl={event?.map_image_url ?? null}
+              markers={markers}
+              viewportHeight="100%"
+              selectionMode="none"
+              showLabels={false}
+              selectedIds={selectedLocationId ? [selectedLocationId] : []}
+              primaryId={selectedLocationId || null}
+              onMarkerTap={handleMarkerTap}
+              renderMarker={renderMarker}
+            />
 
-              {imageLoaded &&
-                locations.map((loc) => {
-                  if (loc.map_x === null || loc.map_y === null) {
-                    return null;
-                  }
+            {event?.map_image_url && !imageLoaded && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#475569",
+                  fontWeight: 700,
+                  background: "rgba(255,255,255,0.72)",
+                  pointerEvents: "none",
+                }}
+              >
+                Loading map markers...
+              </div>
+            )}
+          </div>
 
-                  const markerSize = getMarkerSize(
-                    loc,
-                    selectedLocationId,
-                    isNarrow,
-                  );
-
-                  return (
-                    <div
-                      key={loc.id}
-                      style={{
-                        position: "absolute",
-                        left: `${loc.map_x}%`,
-                        top: `${loc.map_y}%`,
-                        transform: "translate(-50%, -50%)",
-                        pointerEvents: "auto",
-                        zIndex: loc.id === selectedLocationId ? 4 : 2,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleLocationClick(loc)}
-                        title={loc.name}
-                        style={{
-                          width: markerSize,
-                          height: markerSize,
-                          borderRadius: "50%",
-                          background: getMarkerColor(loc, selectedLocationId),
-                          border: isNarrow
-                            ? "3px solid white"
-                            : "2px solid white",
-                          boxShadow:
-                            loc.id === selectedLocationId
-                              ? "0 0 0 4px rgba(255,215,0,0.35), 0 1px 4px rgba(0,0,0,0.35)"
-                              : "0 1px 4px rgba(0,0,0,0.35)",
-                          cursor: "pointer",
-                          padding: 0,
-                          display: "block",
-                          margin: "0 auto",
-                          pointerEvents: "auto",
-                        }}
-                      />
-
-                      <div
-                        style={{
-                          marginTop: 4,
-                          marginLeft: "auto",
-                          marginRight: "auto",
-                          background: "rgba(255,255,255,0.92)",
-                          border: "1px solid rgba(0,0,0,0.2)",
-                          borderRadius: 4,
-                          fontSize: loc.id === selectedLocationId ? 12 : 10,
-                          fontWeight: 700,
-                          padding:
-                            loc.id === selectedLocationId
-                              ? "2px 6px"
-                              : "1px 4px",
-                          color: "#111",
-                          whiteSpace: "nowrap",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-                          display: "table",
-                          pointerEvents: "none",
-                        }}
-                      >
-                        {loc.name}
-                      </div>
-                    </div>
-                  );
-                })}
-
-              {event?.map_image_url && !imageLoaded && (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#475569",
-                    fontWeight: 700,
-                    background: "rgba(255,255,255,0.72)",
-                  }}
-                >
-                  Loading map markers...
-                </div>
-              )}
-            </div>
-          </MapCanvas>{" "}
           <div
             style={{
               display: "grid",
