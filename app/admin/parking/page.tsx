@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import MapCanvas, { type MapCanvasHandle } from "@/components/map/MapCanvas";
+import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
+import type { MapMarker } from "@/components/map/canvas/types";
 import { useAdmin } from "@/lib/adminContext";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
@@ -86,7 +87,6 @@ function ParkingAdminPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
   const [showLabels, setShowLabels] = useState(true);
   const [isNarrow, setIsNarrow] = useState(false);
   const [showQueuePanel, setShowQueuePanel] = useState(true);
@@ -94,6 +94,7 @@ function ParkingAdminPageInner() {
   const [showParked, setShowParked] = useState(false);
   const [showArrivedOnly, setShowArrivedOnly] = useState(false);
   const [defaultZoom, setDefaultZoom] = useState(0.6);
+
   function showStatus(message: string) {
     setError(null);
     setStatus(message);
@@ -114,19 +115,30 @@ function ParkingAdminPageInner() {
     }, delay);
   }
 
-  const focusSite = useCallback(
-    (site: ParkingSite) => {
-      if (site.map_x === null || site.map_y === null) {
-        return;
-      }
+  // ─── Map viewport controls ───────────────────────────────────────────────────
 
-      mapViewportRef.current?.centerOn(
-        (site.map_x / 100) * naturalSize.width,
-        (site.map_y / 100) * naturalSize.height,
-      );
-    },
-    [naturalSize.width, naturalSize.height],
-  );
+  const focusSite = useCallback((site: ParkingSite) => {
+    if (site.map_x === null || site.map_y === null) {
+      return;
+    }
+    const siteId = site.id || site.master_site_id;
+    const vp = mapViewportRef.current?.getViewport();
+    mapViewportRef.current?.centerOnMarker(siteId, vp?.scale);
+  }, []);
+
+  function zoomIn() {
+    mapViewportRef.current?.zoomIn();
+  }
+
+  function zoomOut() {
+    mapViewportRef.current?.zoomOut();
+  }
+
+  function resetZoom() {
+    mapViewportRef.current?.reset();
+  }
+
+  // ─── Data loading ────────────────────────────────────────────────────────────
 
   const loadPage = useCallback(async () => {
     setLoading(true);
@@ -344,7 +356,9 @@ function ParkingAdminPageInner() {
     );
 
     setLoading(false);
-  }, [focusSite, isNarrow]);
+  }, [focusSite]);
+
+  // ─── Effects ─────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!admin) {
@@ -355,7 +369,10 @@ function ParkingAdminPageInner() {
 
     if (!adminEvent?.id) {
       setEvent(null);
-      /* keep whatever other reset state the old effect was doing */
+      setSites([]);
+      setAttendees([]);
+      setSelectedAttendeeId("");
+      setSelectedSiteId("");
       setStatus("No admin working event selected.");
       setLoading(false);
       return;
@@ -363,7 +380,10 @@ function ParkingAdminPageInner() {
 
     if (!canAccessEvent(admin, adminEvent.id)) {
       setEvent(null);
-      /* keep whatever other reset state the old effect was doing */
+      setSites([]);
+      setAttendees([]);
+      setSelectedAttendeeId("");
+      setSelectedSiteId("");
       showError("You do not have access to this event.");
       setLoading(false);
       return;
@@ -417,25 +437,17 @@ function ParkingAdminPageInner() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  function siteMatchKey(value: string | null | undefined) {
-    return String(value || "")
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "");
-  }
-  useEffect(() => {
-    document.body.classList.add("coach-map-lock");
-
-    return () => {
-      document.body.classList.remove("coach-map-lock");
-    };
-  }, []);
+  // useEffect(() => {
+  // document.body.classList.add("coach-map-lock");
+  //  return () => {
+  //   document.body.classList.remove("coach-map-lock");
+  // };
+  // }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedSearch(search);
     }, 250);
-
     return () => window.clearTimeout(timer);
   }, [search]);
 
@@ -482,6 +494,15 @@ function ParkingAdminPageInner() {
     };
   }, [event?.id, loadPage]);
 
+  // ─── Derived state ────────────────────────────────────────────────────────────
+
+  function siteMatchKey(value: string | null | undefined) {
+    return String(value || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+  }
+
   const attendeeById = useMemo(() => {
     const map = new Map<string, Attendee>();
     for (const attendee of attendees) {
@@ -489,22 +510,46 @@ function ParkingAdminPageInner() {
     }
     return map;
   }, [attendees]);
+
   const siteLabelByAttendeeId = useMemo(() => {
     const map = new Map<string, string>();
-
     sites.forEach((site) => {
       if (!site.assigned_attendee_id) {
         return;
       }
-
       const label = site.display_label || site.site_number;
       if (label) {
         map.set(site.assigned_attendee_id, label);
       }
     });
-
     return map;
   }, [sites]);
+
+  // Lookup map for renderMarker — keyed by site.id || site.master_site_id
+  const siteById = useMemo(() => {
+    const map = new Map<string, ParkingSite>();
+    for (const site of sites) {
+      const key = site.id || site.master_site_id;
+      if (key) {
+        map.set(key, site);
+      }
+    }
+    return map;
+  }, [sites]);
+
+  // Data-driven markers array for MapCanvas engine
+  const markers = useMemo<MapMarker[]>(
+    () =>
+      sites
+        .filter((s) => s.map_x !== null && s.map_y !== null)
+        .map((s) => ({
+          id: s.id || s.master_site_id,
+          xPct: s.map_x as number,
+          yPct: s.map_y as number,
+          data: s,
+        })),
+    [sites],
+  );
 
   const filteredAttendees = useMemo(() => {
     const rawSearch = search.trim();
@@ -551,7 +596,6 @@ function ParkingAdminPageInner() {
           return false;
         }
       }
-
       return true;
     });
 
@@ -563,26 +607,19 @@ function ParkingAdminPageInner() {
         const bSite = siteMatchKey(
           b.assigned_site || siteLabelByAttendeeId.get(b.id) || "",
         );
-
         const aExact = aSite === siteQ ? 0 : 1;
         const bExact = bSite === siteQ ? 0 : 1;
-
         if (aExact !== bExact) {
           return aExact - bExact;
         }
-
         return aSite.localeCompare(bSite, undefined, {
           numeric: true,
           sensitivity: "base",
         });
       }
-
       const aName = `${a.pilot_last || ""} ${a.pilot_first || ""}`.trim();
       const bName = `${b.pilot_last || ""} ${b.pilot_first || ""}`.trim();
-
-      return aName.localeCompare(bName, undefined, {
-        sensitivity: "base",
-      });
+      return aName.localeCompare(bName, undefined, { sensitivity: "base" });
     });
 
     return sorted;
@@ -608,11 +645,9 @@ function ParkingAdminPageInner() {
 
   const searchedSite = useMemo(() => {
     const searchKey = siteMatchKey(debouncedSearch);
-
     if (!searchKey || !/^[A-Z]+\d+/i.test(searchKey)) {
       return null;
     }
-
     return (
       sites.find(
         (site) =>
@@ -626,21 +661,124 @@ function ParkingAdminPageInner() {
     if (!searchedSite) {
       return;
     }
-
     const siteId = searchedSite.id || searchedSite.master_site_id;
-
     setSelectedSiteId(siteId);
-
     setTimeout(() => {
       focusSite(searchedSite);
     }, 180);
-
     showStatus(
-      `Focused map on site ${
-        searchedSite.display_label || searchedSite.site_number
-      }.`,
+      `Focused map on site ${searchedSite.display_label || searchedSite.site_number}.`,
     );
   }, [searchedSite, focusSite]);
+
+  // ─── Map marker rendering ─────────────────────────────────────────────────────
+
+  const renderMarker = useCallback(
+    (marker: MapMarker) => {
+      const site = siteById.get(marker.id);
+      if (!site) {
+        return null;
+      }
+
+      const siteId = site.id || site.master_site_id;
+      const isSelected = siteId === selectedSiteId;
+
+      // Color logic (preserves getSiteColor exactly)
+      let color: string;
+      if (isSelected) {
+        color = "gold";
+      } else if (!site.assigned_attendee_id) {
+        color = "green";
+      } else {
+        const attendee = attendeeById.get(site.assigned_attendee_id);
+        const arrivalStatus = attendee?.arrival_status || "not_arrived";
+        if (arrivalStatus === "parked") {
+          color = "red";
+        } else if (arrivalStatus === "arrived") {
+          color = "orange";
+        } else {
+          color = "#0b5cff";
+        }
+      }
+
+      // Title logic (preserves getSiteTitle exactly)
+      let title: string;
+      if (!site.assigned_attendee_id) {
+        title = `${site.display_label || site.site_number} - open`;
+      } else {
+        const attendee = attendeeById.get(site.assigned_attendee_id);
+        const name = attendee
+          ? `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim()
+          : "assigned attendee";
+        title = `${site.display_label || site.site_number} - ${name}`;
+      }
+
+      const circleSize = isSelected ? (isNarrow ? 44 : 32) : isNarrow ? 32 : 22;
+      const border = isNarrow ? "3px solid white" : "2px solid white";
+      const boxShadow = isSelected
+        ? "0 0 0 8px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(0,0,0,0.45)"
+        : "0 1px 4px rgba(0,0,0,0.35)";
+      const animation = isSelected
+        ? "parkingSelectedPulse 2.2s ease-in-out infinite"
+        : undefined;
+
+      return (
+        <>
+          <div
+            title={title}
+            style={{
+              width: circleSize,
+              height: circleSize,
+              borderRadius: "50%",
+              background: color,
+              border,
+              boxShadow,
+              animation,
+              cursor: "pointer",
+              padding: 0,
+              display: "block",
+              margin: "0 auto",
+            }}
+          />
+          {showLabels && (
+            <div
+              style={{
+                marginTop: 4,
+                marginLeft: "auto",
+                marginRight: "auto",
+                background: "rgba(255,255,255,0.92)",
+                border: "1px solid rgba(0,0,0,0.2)",
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "1px 4px",
+                color: "#111",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                display: "table",
+                pointerEvents: "none",
+              }}
+            >
+              {site.display_label || site.site_number}
+            </div>
+          )}
+        </>
+      );
+    },
+    [siteById, selectedSiteId, attendeeById, isNarrow, showLabels],
+  );
+
+  const handleMarkerTap = useCallback(
+    (id: string) => {
+      const site = siteById.get(id);
+      if (site) {
+        handleSiteClick(site);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [siteById],
+  );
+
+  // ─── Attendee/site interaction ────────────────────────────────────────────────
 
   function scrollAttendeeIntoView(attendeeId: string) {
     runAfterLayout(() => {
@@ -656,34 +794,28 @@ function ParkingAdminPageInner() {
       focusSite(selectedSite);
       return;
     }
-
     if (selectedAttendee?.assigned_site) {
       const assignedSite = sites.find(
         (site) => site.site_number === selectedAttendee.assigned_site,
       );
-
       if (assignedSite) {
         focusSite(assignedSite);
         return;
       }
     }
-
-    mapViewportRef.current?.reset();
+    resetZoom();
   }
 
   useEffect(() => {
     if (!selectedAttendee || !selectedAttendee.assigned_site) {
       return;
     }
-
     const site = sites.find(
       (s) => s.site_number === selectedAttendee.assigned_site,
     );
-
     if (!site) {
       return;
     }
-
     focusSite(site);
   }, [selectedAttendee, sites, focusSite]);
 
@@ -727,7 +859,9 @@ function ParkingAdminPageInner() {
       }
 
       const confirmed = window.confirm(
-        `Site ${siteLabel} is already assigned to ${occupiedName}.\n\nMove ${
+        `Site ${siteLabel} is already assigned to ${occupiedName}.
+
+Move ${
           `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim() ||
           "this attendee"
         } to this site and clear the previous assignment?`,
@@ -750,6 +884,7 @@ function ParkingAdminPageInner() {
         return false;
       }
     }
+
     const currentSiteKey = siteMatchKey(
       attendee.assigned_site || siteLabelByAttendeeId.get(attendee.id) || "",
     );
@@ -781,7 +916,6 @@ function ParkingAdminPageInner() {
         .from("parking_sites")
         .update({ assigned_attendee_id: attendee.id })
         .eq("id", site.id);
-
       parkingError = result.error;
     } else {
       const result = await supabase.from("parking_sites").insert({
@@ -789,7 +923,6 @@ function ParkingAdminPageInner() {
         master_site_id: site.master_site_id,
         assigned_attendee_id: attendee.id,
       });
-
       parkingError = result.error;
     }
 
@@ -840,7 +973,6 @@ function ParkingAdminPageInner() {
       showError("Select an attendee first.");
       return;
     }
-
     await assignAttendeeToSite({
       attendee: selectedAttendee,
       site,
@@ -854,12 +986,10 @@ function ParkingAdminPageInner() {
       showError("Select an attendee first.");
       return;
     }
-
     if (!selectedSite) {
       showError("Select an open site first.");
       return;
     }
-
     await assignAttendeeToSite({
       attendee: selectedAttendee,
       site: selectedSite,
@@ -872,7 +1002,6 @@ function ParkingAdminPageInner() {
     if (!site.assigned_attendee_id || !site.id) {
       return;
     }
-
     const confirmed = window.confirm(`Clear site ${site.site_number}?`);
     if (!confirmed) {
       return;
@@ -924,7 +1053,6 @@ function ParkingAdminPageInner() {
 
     showStatus(`Arrival status updated to ${nextStatus}.`);
 
-    // Preserve selection + re-center after update
     const updatedAttendee = attendees.find((a) => a.id === attendeeId);
     if (updatedAttendee?.assigned_site) {
       const siteKey = siteMatchKey(updatedAttendee.assigned_site);
@@ -972,44 +1100,7 @@ function ParkingAdminPageInner() {
     setSelectedSiteId("");
   }
 
-  function _normalizeSite(value: string | null | undefined) {
-    return String(value || "")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, ""); // removes dashes, spaces, etc
-  }
-
-  function getSiteColor(site: ParkingSite) {
-    if ((site.id || site.master_site_id) === selectedSiteId) {
-      return "gold";
-    }
-    if (!site.assigned_attendee_id) {
-      return "green";
-    }
-
-    const attendee = attendeeById.get(site.assigned_attendee_id);
-    const arrivalStatus = attendee?.arrival_status || "not_arrived";
-
-    if (arrivalStatus === "parked") {
-      return "red";
-    }
-    if (arrivalStatus === "arrived") {
-      return "orange";
-    }
-    return "#0b5cff";
-  }
-
-  function getSiteTitle(site: ParkingSite) {
-    if (!site.assigned_attendee_id) {
-      return `${site.display_label || site.site_number} - open`;
-    }
-
-    const attendee = attendeeById.get(site.assigned_attendee_id);
-    const name = attendee
-      ? `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim()
-      : "assigned attendee";
-
-    return `${site.display_label || site.site_number} - ${name}`;
-  }
+  // ─── Queue panel ─────────────────────────────────────────────────────────────
 
   const queuePanel = (
     <div
@@ -1068,7 +1159,6 @@ function ParkingAdminPageInner() {
           />
           Show site labels
         </label>
-
         <label
           style={{
             display: "flex",
@@ -1084,7 +1174,6 @@ function ParkingAdminPageInner() {
           />
           Unassigned only
         </label>
-
         {!isNarrow && (
           <label
             style={{
@@ -1102,7 +1191,6 @@ function ParkingAdminPageInner() {
             Show parked
           </label>
         )}
-
         <label
           style={{
             display: "flex",
@@ -1163,26 +1251,21 @@ function ParkingAdminPageInner() {
             <div style={{ fontWeight: 700, marginBottom: 6 }}>
               Selected Attendee
             </div>
-
             {selectedAttendee ? (
               <>
                 <div>
                   {selectedAttendee.pilot_first} {selectedAttendee.pilot_last}
                 </div>
-
                 <div style={{ fontSize: 13, color: "#555" }}>
                   {selectedAttendee.coach_make || ""}{" "}
                   {selectedAttendee.coach_model || ""}
                 </div>
-
                 <div style={{ fontSize: 13, marginTop: 4 }}>
                   Current site: {selectedAttendee.assigned_site || "Unassigned"}
                 </div>
-
                 <div style={{ fontSize: 13 }}>
                   Arrival: {selectedAttendee.arrival_status || "not_arrived"}
                 </div>
-
                 <div
                   style={{
                     display: "flex",
@@ -1205,7 +1288,6 @@ function ParkingAdminPageInner() {
                       ? "Undo Arrived"
                       : "Mark Arrived"}
                   </button>
-
                   <button
                     type="button"
                     onClick={() =>
@@ -1214,7 +1296,6 @@ function ParkingAdminPageInner() {
                   >
                     Parked
                   </button>
-
                   <button
                     type="button"
                     onClick={() => void quickParkSelected()}
@@ -1227,7 +1308,6 @@ function ParkingAdminPageInner() {
                   >
                     Quick Park
                   </button>
-
                   {selectedSite?.assigned_attendee_id && (
                     <button
                       type="button"
@@ -1256,7 +1336,6 @@ function ParkingAdminPageInner() {
             <div style={{ fontWeight: 700, marginBottom: 6 }}>
               Selected Site
             </div>
-
             {selectedSite ? (
               <>
                 <div>
@@ -1265,7 +1344,6 @@ function ParkingAdminPageInner() {
                 <div style={{ fontSize: 13, color: "#555" }}>
                   {selectedSite.assigned_attendee_id ? "Occupied" : "Open"}
                 </div>
-
                 {selectedSite.assigned_attendee_id && (
                   <button
                     type="button"
@@ -1312,13 +1390,10 @@ function ParkingAdminPageInner() {
           placeholder="Search attendee, coach, site, or status"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{
-            width: "100%",
-            padding: 8,
-            boxSizing: "border-box",
-          }}
+          style={{ width: "100%", padding: 8, boxSizing: "border-box" }}
         />
       </div>
+
       <div style={{ fontWeight: 700, marginTop: 4 }}>
         {isNarrow ? "Active Check-In Queue" : "Attendees"}
       </div>
@@ -1340,7 +1415,6 @@ function ParkingAdminPageInner() {
             tabIndex={0}
             onClick={() => {
               setSelectedAttendeeId(attendee.id);
-
               if (attendee.assigned_site) {
                 const assignedSiteKey = siteMatchKey(attendee.assigned_site);
                 const site = sites.find(
@@ -1348,7 +1422,6 @@ function ParkingAdminPageInner() {
                     siteMatchKey(s.site_number) === assignedSiteKey ||
                     siteMatchKey(s.display_label) === assignedSiteKey,
                 );
-
                 if (site) {
                   setSelectedSiteId(site.id || site.master_site_id);
                   focusSite(site);
@@ -1424,7 +1497,6 @@ function ParkingAdminPageInner() {
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedAttendeeId(attendee.id);
-
                   if (attendee.assigned_site) {
                     const siteKey = siteMatchKey(attendee.assigned_site);
                     const site = sites.find(
@@ -1447,7 +1519,6 @@ function ParkingAdminPageInner() {
                       }
                     }
                   }
-
                   void setArrivalStatus(attendee.id, "parked");
                 }}
                 disabled={attendee.arrival_status === "parked"}
@@ -1473,6 +1544,9 @@ function ParkingAdminPageInner() {
       })}
     </div>
   );
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
+
   return (
     <div
       style={{
@@ -1484,24 +1558,14 @@ function ParkingAdminPageInner() {
     >
       <style>{`
         @keyframes parkingSelectedPulse {
-          0% {
-            box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.85), 0 1px 4px rgba(0,0,0,0.35);
-          }
-          70% {
-            box-shadow: 0 0 0 22px rgba(245, 158, 11, 0), 0 1px 4px rgba(0,0,0,0.35);
-          }
-          100% {
-            box-shadow: 0 0 0 0 rgba(245, 158, 11, 0), 0 1px 4px rgba(0,0,0,0.35);
-          }
+          0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.85), 0 1px 4px rgba(0,0,0,0.35); }
+          70% { box-shadow: 0 0 0 22px rgba(245, 158, 11, 0), 0 1px 4px rgba(0,0,0,0.35); }
+          100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0), 0 1px 4px rgba(0,0,0,0.35); }
         }
       `}</style>
 
       <h1
-        style={{
-          marginTop: 0,
-          marginBottom: 12,
-          fontSize: isNarrow ? 30 : 40,
-        }}
+        style={{ marginTop: 0, marginBottom: 12, fontSize: isNarrow ? 30 : 40 }}
       >
         Parking Admin
       </h1>
@@ -1561,18 +1625,15 @@ function ParkingAdminPageInner() {
           <div style={{ fontWeight: 700, marginBottom: 6 }}>
             {`${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""}`.trim()}
           </div>
-
           <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>
             Current: {selectedAttendee.assigned_site || "Unassigned"}
           </div>
-
           <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
             Selected:{" "}
             {selectedSite
               ? selectedSite.display_label || selectedSite.site_number
               : "None"}
           </div>
-
           <div
             style={{
               display: "flex",
@@ -1595,7 +1656,6 @@ function ParkingAdminPageInner() {
                 ? "Undo Arrived"
                 : "Mark Arrived"}
             </button>
-
             <button
               type="button"
               onClick={() =>
@@ -1604,7 +1664,6 @@ function ParkingAdminPageInner() {
             >
               Parked
             </button>
-
             <button
               type="button"
               onClick={() => void quickParkSelected()}
@@ -1617,7 +1676,6 @@ function ParkingAdminPageInner() {
               Quick Park
             </button>
           </div>
-
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {selectedSite?.assigned_attendee_id && (
               <button
@@ -1627,7 +1685,6 @@ function ParkingAdminPageInner() {
                 Clear Site
               </button>
             )}
-
             <button type="button" onClick={closeMobilePalette}>
               Close
             </button>
@@ -1665,138 +1722,26 @@ function ParkingAdminPageInner() {
         >
           <MapCanvas
             ref={mapViewportRef}
-            width={naturalSize.width}
-            height={naturalSize.height}
+            imageUrl={event?.map_image_url ?? null}
+            markers={markers}
+            viewportHeight={isNarrow ? "60vh" : "82vh"}
+            initialScale={defaultZoom}
             minScale={0.1}
             maxScale={3}
-            initialScale={defaultZoom}
-          >
-            {event?.map_image_url && (
-              <img
-                src={event.map_image_url}
-                alt="Parking map"
-                draggable={false}
-                onLoad={(e) => {
-                  const img = e.currentTarget;
-                  setNaturalSize({
-                    width: img.naturalWidth || 1200,
-                    height: img.naturalHeight || 800,
-                  });
-                }}
-                style={{
-                  width: naturalSize.width,
-                  height: naturalSize.height,
-                  display: "block",
-                  userSelect: "none",
-                  pointerEvents: "none",
-                  touchAction: "none",
-                  WebkitTouchCallout: "none",
-                  backfaceVisibility: "hidden",
-                  WebkitBackfaceVisibility: "hidden",
-                }}
-              />
-            )}
-
-            {sites.map((site) => {
-              if (site.map_x === null || site.map_y === null) {
-                return null;
-              }
-
-              return (
-                <div
-                  key={site.id || site.master_site_id}
-                  style={{
-                    position: "absolute",
-                    left: `${site.map_x}%`,
-                    top: `${site.map_y}%`,
-                    transform: "translate(-50%, -50%)",
-                    pointerEvents: "none",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => handleSiteClick(site)}
-                    title={getSiteTitle(site)}
-                    style={{
-                      width:
-                        (site.id || site.master_site_id) === selectedSiteId
-                          ? isNarrow
-                            ? 44
-                            : 32
-                          : isNarrow
-                            ? 32
-                            : 22,
-                      height:
-                        (site.id || site.master_site_id) === selectedSiteId
-                          ? isNarrow
-                            ? 44
-                            : 32
-                          : isNarrow
-                            ? 32
-                            : 22,
-                      borderRadius: "50%",
-                      background: getSiteColor(site),
-                      border: isNarrow ? "3px solid white" : "2px solid white",
-                      boxShadow:
-                        (site.id || site.master_site_id) === selectedSiteId
-                          ? "0 0 0 8px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(0,0,0,0.45)"
-                          : "0 1px 4px rgba(0,0,0,0.35)",
-                      animation:
-                        (site.id || site.master_site_id) === selectedSiteId
-                          ? "parkingSelectedPulse 2.2s ease-in-out infinite"
-                          : undefined,
-                      cursor: "pointer",
-                      padding: 0,
-                      display: "block",
-                      margin: "0 auto",
-                      pointerEvents: "auto",
-                    }}
-                  />
-
-                  {showLabels && (
-                    <div
-                      style={{
-                        marginTop: 4,
-                        marginLeft: "auto",
-                        marginRight: "auto",
-                        background: "rgba(255,255,255,0.92)",
-                        border: "1px solid rgba(0,0,0,0.2)",
-                        borderRadius: 4,
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: "1px 4px",
-                        color: "#111",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-                        display: "table",
-                        pointerEvents: "none",
-                      }}
-                    >
-                      {site.display_label || site.site_number}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </MapCanvas>
+            selectionMode="none"
+            onMarkerTap={handleMarkerTap}
+            renderMarker={renderMarker}
+          />
           <div
             style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
           >
-            <button
-              type="button"
-              onClick={() => mapViewportRef.current?.zoomOut()}
-            >
+            <button type="button" onClick={zoomOut}>
               −
             </button>
-            <button
-              type="button"
-              onClick={() => mapViewportRef.current?.zoomIn()}
-            >
+            <button type="button" onClick={zoomIn}>
               +
             </button>
-            <button
-              type="button"
-              onClick={() => mapViewportRef.current?.reset()}
-            >
+            <button type="button" onClick={resetZoom}>
               Reset Zoom
             </button>
             <button type="button" onClick={recenterMap}>
