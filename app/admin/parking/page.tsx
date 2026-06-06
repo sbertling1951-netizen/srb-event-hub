@@ -4,11 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import MapCanvas, { type MapCanvasHandle } from "@/components/map/MapCanvas";
+import { useAdmin } from "@/lib/adminContext";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type AdminEventContext = {
@@ -74,6 +72,7 @@ type Attendee = {
 };
 
 function ParkingAdminPageInner() {
+  const { admin } = useAdmin();
   const mapViewportRef = useRef<MapCanvasHandle | null>(null);
   const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [event, setEvent] = useState<ActiveEvent | null>(null);
@@ -85,7 +84,6 @@ function ParkingAdminPageInner() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState("Loading...");
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
@@ -132,7 +130,6 @@ function ParkingAdminPageInner() {
 
   const loadPage = useCallback(async () => {
     setLoading(true);
-    setAccessDenied(false);
     showStatus("Loading...");
 
     const adminEvent = getAdminEvent() as AdminEventContext | null;
@@ -350,56 +347,29 @@ function ParkingAdminPageInner() {
   }, [focusSite, isNarrow]);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setAccessDenied(false);
-      showStatus("Checking admin access...");
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setEvent(null);
-        setSites([]);
-        setAttendees([]);
-        setSelectedAttendeeId("");
-        setSelectedSiteId("");
-        showError("No admin access.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      const adminEvent = getAdminEvent() as AdminEventContext | null;
-
-      if (!adminEvent?.id) {
-        setEvent(null);
-        setSites([]);
-        setAttendees([]);
-        setSelectedAttendeeId("");
-        setSelectedSiteId("");
-        showStatus(
-          "No admin working event selected. Choose one on the Admin Dashboard.",
-        );
-        setLoading(false);
-        return;
-      }
-
-      if (!canAccessEvent(admin, adminEvent.id)) {
-        setEvent(null);
-        setSites([]);
-        setAttendees([]);
-        setSelectedAttendeeId("");
-        setSelectedSiteId("");
-        showError("You do not have access to this event.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      await loadPage();
+    if (!admin) {
+      return;
     }
 
-    void init();
+    const adminEvent = getAdminEvent();
+
+    if (!adminEvent?.id) {
+      setEvent(null);
+      /* keep whatever other reset state the old effect was doing */
+      setStatus("No admin working event selected.");
+      setLoading(false);
+      return;
+    }
+
+    if (!canAccessEvent(admin, adminEvent.id)) {
+      setEvent(null);
+      /* keep whatever other reset state the old effect was doing */
+      showError("You do not have access to this event.");
+      setLoading(false);
+      return;
+    }
+
+    void loadPage();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -408,13 +378,30 @@ function ParkingAdminPageInner() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        void init();
+        void loadPage();
       }
     }
 
+    function handleAdminEventUpdated() {
+      void loadPage();
+    }
+
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, [loadPage]);
+    window.addEventListener(
+      "fcoc-admin-event-updated",
+      handleAdminEventUpdated as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "fcoc-admin-event-updated",
+        handleAdminEventUpdated as EventListener,
+      );
+    };
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admin]);
 
   useEffect(() => {
     function handleResize() {
@@ -453,7 +440,7 @@ function ParkingAdminPageInner() {
   }, [search]);
 
   useEffect(() => {
-    if (!event?.id || accessDenied) {
+    if (!event?.id) {
       return;
     }
 
@@ -493,7 +480,7 @@ function ParkingAdminPageInner() {
       void supabase.removeChannel(parkingChannel);
       void supabase.removeChannel(attendeesChannel);
     };
-  }, [event?.id, accessDenied, loadPage]);
+  }, [event?.id, loadPage]);
 
   const attendeeById = useMemo(() => {
     const map = new Map<string, Attendee>();
@@ -1022,17 +1009,6 @@ function ParkingAdminPageInner() {
       : "assigned attendee";
 
     return `${site.display_label || site.site_number} - ${name}`;
-  }
-
-  if (!loading && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Parking Admin</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
   }
 
   const queuePanel = (
