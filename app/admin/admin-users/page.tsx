@@ -4,15 +4,14 @@ import {
   type CSSProperties,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   canAccessEvent,
-  getCurrentAdminAccess,
 } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type AdminUserRow = {
@@ -34,7 +33,6 @@ type EventRow = {
   start_date?: string | null;
   location?: string | null;
 };
-// --- New permission structure and presets ---
 
 type PrivilegeGroup =
   | "super_admin"
@@ -81,149 +79,46 @@ const PERMISSION_LABELS: Record<keyof AdminPermissions, string> = {
 function getPresetPermissions(group: PrivilegeGroup): AdminPermissions {
   switch (group) {
     case "super_admin":
-      return {
-        can_manage_admins: true,
-        can_manage_event_admins: true,
-        can_view_admin_dashboard: true,
-        can_manage_events: true,
-        can_manage_checkin: true,
-        can_manage_parking: true,
-        can_manage_agenda: true,
-        can_manage_announcements: true,
-        can_manage_nearby: true,
-        can_manage_locations: true,
-        can_manage_reports: true,
-        can_manage_imports: true,
-        can_manage_event_staff: true,
-        can_manage_master_maps: true,
-      };
+      return { can_manage_admins: true, can_manage_event_admins: true, can_view_admin_dashboard: true, can_manage_events: true, can_manage_checkin: true, can_manage_parking: true, can_manage_agenda: true, can_manage_announcements: true, can_manage_nearby: true, can_manage_locations: true, can_manage_reports: true, can_manage_imports: true, can_manage_event_staff: true, can_manage_master_maps: true };
     case "event_admin":
-      return {
-        can_manage_admins: false,
-        can_manage_event_admins: true,
-        can_view_admin_dashboard: true,
-        can_manage_events: true,
-        can_manage_checkin: true,
-        can_manage_parking: true,
-        can_manage_agenda: true,
-        can_manage_announcements: true,
-        can_manage_nearby: true,
-        can_manage_locations: true,
-        can_manage_reports: true,
-        can_manage_imports: true,
-        can_manage_event_staff: true,
-        can_manage_master_maps: false,
-      };
+      return { can_manage_admins: false, can_manage_event_admins: true, can_view_admin_dashboard: true, can_manage_events: true, can_manage_checkin: true, can_manage_parking: true, can_manage_agenda: true, can_manage_announcements: true, can_manage_nearby: true, can_manage_locations: true, can_manage_reports: true, can_manage_imports: true, can_manage_event_staff: true, can_manage_master_maps: false };
     case "checkin":
-      return {
-        can_manage_admins: false,
-        can_manage_event_admins: false,
-        can_view_admin_dashboard: true,
-        can_manage_events: false,
-        can_manage_checkin: true,
-        can_manage_parking: false,
-        can_manage_agenda: false,
-        can_manage_announcements: false,
-        can_manage_nearby: false,
-        can_manage_locations: false,
-        can_manage_reports: false,
-        can_manage_imports: false,
-        can_manage_event_staff: false,
-        can_manage_master_maps: false,
-      };
+      return { can_manage_admins: false, can_manage_event_admins: false, can_view_admin_dashboard: true, can_manage_events: false, can_manage_checkin: true, can_manage_parking: false, can_manage_agenda: false, can_manage_announcements: false, can_manage_nearby: false, can_manage_locations: false, can_manage_reports: false, can_manage_imports: false, can_manage_event_staff: false, can_manage_master_maps: false };
     case "parking":
-      return {
-        can_manage_admins: false,
-        can_manage_event_admins: false,
-        can_view_admin_dashboard: true,
-        can_manage_events: false,
-        can_manage_checkin: false,
-        can_manage_parking: true,
-        can_manage_agenda: false,
-        can_manage_announcements: false,
-        can_manage_nearby: false,
-        can_manage_locations: false,
-        can_manage_reports: false,
-        can_manage_imports: false,
-        can_manage_event_staff: false,
-        can_manage_master_maps: false,
-      };
+      return { can_manage_admins: false, can_manage_event_admins: false, can_view_admin_dashboard: true, can_manage_events: false, can_manage_checkin: false, can_manage_parking: true, can_manage_agenda: false, can_manage_announcements: false, can_manage_nearby: false, can_manage_locations: false, can_manage_reports: false, can_manage_imports: false, can_manage_event_staff: false, can_manage_master_maps: false };
     case "content_admin":
-      return {
-        can_manage_admins: false,
-        can_manage_event_admins: false,
-        can_view_admin_dashboard: true,
-        can_manage_events: false,
-        can_manage_checkin: false,
-        can_manage_parking: false,
-        can_manage_agenda: true,
-        can_manage_announcements: true,
-        can_manage_nearby: true,
-        can_manage_locations: true,
-        can_manage_reports: false,
-        can_manage_imports: false,
-        can_manage_event_staff: false,
-        can_manage_master_maps: false,
-      };
+      return { can_manage_admins: false, can_manage_event_admins: false, can_view_admin_dashboard: true, can_manage_events: false, can_manage_checkin: false, can_manage_parking: false, can_manage_agenda: true, can_manage_announcements: true, can_manage_nearby: true, can_manage_locations: true, can_manage_reports: false, can_manage_imports: false, can_manage_event_staff: false, can_manage_master_maps: false };
     case "read_only":
     default:
-      return {
-        can_manage_admins: false,
-        can_manage_event_admins: false,
-        can_view_admin_dashboard: true,
-        can_manage_events: false,
-        can_manage_checkin: false,
-        can_manage_parking: false,
-        can_manage_agenda: false,
-        can_manage_announcements: false,
-        can_manage_nearby: false,
-        can_manage_locations: false,
-        can_manage_reports: false,
-        can_manage_imports: false,
-        can_manage_event_staff: false,
-        can_manage_master_maps: false,
-      };
+      return { can_manage_admins: false, can_manage_event_admins: false, can_view_admin_dashboard: true, can_manage_events: false, can_manage_checkin: false, can_manage_parking: false, can_manage_agenda: false, can_manage_announcements: false, can_manage_nearby: false, can_manage_locations: false, can_manage_reports: false, can_manage_imports: false, can_manage_event_staff: false, can_manage_master_maps: false };
   }
 }
+
 function getEventAccessRole(privilegeGroup: PrivilegeGroup) {
   switch (privilegeGroup) {
-    case "super_admin":
-      return "event_admin";
-    case "event_admin":
-      return "event_admin";
-    case "content_admin":
-      return "content_admin";
-    case "checkin":
-      return "event_admin";
-    case "parking":
-      return "event_admin";
-    case "read_only":
-      return "content_admin";
-    default:
-      return "event_admin";
+    case "super_admin": return "event_admin";
+    case "event_admin": return "event_admin";
+    case "content_admin": return "content_admin";
+    case "checkin": return "event_admin";
+    case "parking": return "event_admin";
+    case "read_only": return "content_admin";
+    default: return "event_admin";
   }
 }
+
 function formatPrivilegeGroup(value?: string | null) {
-  if (!value) {
-    return "";
-  }
+  if (!value) { return ""; }
   switch (value) {
-    case "super_admin":
-      return "Super Admin";
-    case "event_admin":
-      return "Event Admin";
-    case "checkin":
-      return "Check-In";
-    case "parking":
-      return "Parking";
-    case "content_admin":
-      return "Content Admin";
-    case "read_only":
-      return "Read Only";
-    default:
-      return value.replace(/_/g, " ");
+    case "super_admin": return "Super Admin";
+    case "event_admin": return "Event Admin";
+    case "checkin": return "Check-In";
+    case "parking": return "Parking";
+    case "content_admin": return "Content Admin";
+    case "read_only": return "Read Only";
+    default: return value.replace(/_/g, " ");
   }
 }
+
 const defaultGroup: PrivilegeGroup = "event_admin";
 
 export default function AdminUsersPage() {
@@ -235,9 +130,7 @@ export default function AdminUsersPage() {
 }
 
 function AdminUsersPageInner() {
-  const adminAccessRef = useRef<Awaited<
-    ReturnType<typeof getCurrentAdminAccess>
-  > | null>(null);
+  const { admin } = useAdmin();
   const [rows, setRows] = useState<AdminUserWithPermissions[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -248,11 +141,8 @@ function AdminUsersPageInner() {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [isActive, setIsActive] = useState(true);
-  const [privilegeGroup, setPrivilegeGroup] =
-    useState<PrivilegeGroup>(defaultGroup);
-  const [permissions, setPermissions] = useState<AdminPermissions>(
-    getPresetPermissions(defaultGroup),
-  );
+  const [privilegeGroup, setPrivilegeGroup] = useState<PrivilegeGroup>(defaultGroup);
+  const [permissions, setPermissions] = useState<AdminPermissions>(getPresetPermissions(defaultGroup));
   const [assignedEventIds, setAssignedEventIds] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState("");
   const [password, setPassword] = useState("");
@@ -260,45 +150,18 @@ function AdminUsersPageInner() {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 900);
-    }
-
+    function handleResize() { setIsMobile(window.innerWidth < 900); }
     handleResize();
-
     window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setStatus("Checking admin access...");
+    if (!admin) return;
+    void loadPageData();
+  }, [admin]);
 
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        adminAccessRef.current = null;
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      adminAccessRef.current = admin;
-      await loadPageData(admin);
-    }
-
-    void init();
-  }, []);
-
-  async function loadPageData(
-    adminAccess?: Awaited<ReturnType<typeof getCurrentAdminAccess>>,
-  ) {
+  async function loadPageData() {
     setLoading(true);
     setError(null);
     setStatus("Loading admin users...");
@@ -307,47 +170,20 @@ function AdminUsersPageInner() {
       { data: adminUsers, error: adminError },
       { data: eventRows, error: eventError },
     ] = await Promise.all([
-      supabase
-        .from("admin_users")
-        .select("id, email, display_name, is_active, privilege_group, user_id")
-        .order("email", { ascending: true }),
-
-      supabase
-        .from("events")
-        .select("id, name, start_date, location")
-        .order("start_date", { ascending: false }),
+      supabase.from("admin_users").select("id, email, display_name, is_active, privilege_group, user_id").order("email", { ascending: true }),
+      supabase.from("events").select("id, name, start_date, location").order("start_date", { ascending: false }),
     ]);
 
-    if (adminError) {
-      setError(adminError.message);
-      setStatus("Could not load admin users.");
-      setLoading(false);
-      return;
-    }
+    if (adminError) { setError(adminError.message); setStatus("Could not load admin users."); setLoading(false); return; }
+    if (eventError) { setError(eventError.message); setStatus("Could not load events."); setLoading(false); return; }
 
-    if (eventError) {
-      setError(eventError.message);
-      setStatus("Could not load events.");
-      setLoading(false);
-      return;
-    }
-
-    const merged = ((adminUsers || []) as AdminUserRow[]).map((admin) => ({
-      ...admin,
-      permissions: getPresetPermissions(admin.privilege_group || defaultGroup),
+    const merged = ((adminUsers || []) as AdminUserRow[]).map((a) => ({
+      ...a,
+      permissions: getPresetPermissions(a.privilege_group || defaultGroup),
     }));
 
-    const resolvedAdmin =
-      adminAccess || adminAccessRef.current || (await getCurrentAdminAccess());
-
-    if (resolvedAdmin) {
-      adminAccessRef.current = resolvedAdmin;
-    }
-
-    const accessibleEvents = resolvedAdmin
-      ? ((eventRows || []) as EventRow[]).filter(
-          (event) => !!event.id && canAccessEvent(resolvedAdmin, event.id),
-        )
+    const accessibleEvents = admin
+      ? ((eventRows || []) as EventRow[]).filter((event) => !!event.id && canAccessEvent(admin, event.id))
       : [];
 
     setRows(merged);
@@ -362,10 +198,7 @@ function AdminUsersPageInner() {
   );
 
   useEffect(() => {
-    if (!selectedRow) {
-      return;
-    }
-
+    if (!selectedRow) { return; }
     setEmail(selectedRow.email || "");
     setDisplayName(selectedRow.display_name || "");
     setIsActive(selectedRow.is_active);
@@ -374,21 +207,12 @@ function AdminUsersPageInner() {
     setPassword("");
     setSaveStatus("");
     setResetStatus("");
-
     void loadAssignedEvents(selectedRow.id);
   }, [selectedRow]);
 
   async function loadAssignedEvents(adminUserId: string) {
-    const { data, error } = await supabase
-      .from("admin_event_access")
-      .select("event_id")
-      .eq("admin_user_id", adminUserId);
-
-    if (error) {
-      setAssignedEventIds([]);
-      return;
-    }
-
+    const { data, error } = await supabase.from("admin_event_access").select("event_id").eq("admin_user_id", adminUserId);
+    if (error) { setAssignedEventIds([]); return; }
     setAssignedEventIds((data || []).map((row) => row.event_id));
   }
 
@@ -408,169 +232,52 @@ function AdminUsersPageInner() {
   function handlePrivilegeGroupChange(nextGroup: PrivilegeGroup) {
     setPrivilegeGroup(nextGroup);
     setPermissions(getPresetPermissions(nextGroup));
-
-    if (nextGroup === "super_admin") {
-      setAssignedEventIds([]);
-    }
+    if (nextGroup === "super_admin") { setAssignedEventIds([]); }
   }
 
   function toggleAssignedEvent(eventId: string) {
     setAssignedEventIds((prev) =>
-      prev.includes(eventId)
-        ? prev.filter((id) => id !== eventId)
-        : [...prev, eventId],
+      prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId],
     );
   }
 
   async function upsertAdminUser() {
-    if (!email.trim()) {
-      return { adminUserId: null, errorMessage: "Email is required." };
-    }
+    if (!email.trim()) { return { adminUserId: null, errorMessage: "Email is required." }; }
 
     if (selectedAdminId) {
-      const { error: updateError } = await supabase
-        .from("admin_users")
-        .update({
-          email: email.trim(),
-          display_name: displayName.trim() || null,
-          is_active: isActive,
-          privilege_group: privilegeGroup,
-        })
-        .eq("id", selectedAdminId);
-
-      if (updateError) {
-        return {
-          adminUserId: null,
-          errorMessage: `Could not update admin user: ${updateError.message}`,
-        };
-      }
-
+      const { error: updateError } = await supabase.from("admin_users").update({ email: email.trim(), display_name: displayName.trim() || null, is_active: isActive, privilege_group: privilegeGroup }).eq("id", selectedAdminId);
+      if (updateError) { return { adminUserId: null, errorMessage: `Could not update admin user: ${updateError.message}` }; }
       return { adminUserId: selectedAdminId, errorMessage: null };
     }
 
-    const { data: inserted, error: insertError } = await supabase
-      .from("admin_users")
-      .insert({
-        email: email.trim(),
-        display_name: displayName.trim() || null,
-        is_active: isActive,
-        privilege_group: privilegeGroup,
-        is_super_admin: false,
-      })
-      .select("id")
-      .single();
-
-    if (insertError || !inserted?.id) {
-      return {
-        adminUserId: null,
-        errorMessage: `Could not create admin user: ${
-          insertError?.message || "Unknown error"
-        }`,
-      };
-    }
-
+    const { data: inserted, error: insertError } = await supabase.from("admin_users").insert({ email: email.trim(), display_name: displayName.trim() || null, is_active: isActive, privilege_group: privilegeGroup, is_super_admin: false }).select("id").single();
+    if (insertError || !inserted?.id) { return { adminUserId: null, errorMessage: `Could not create admin user: ${insertError?.message || "Unknown error"}` }; }
     setSelectedAdminId(inserted.id);
     return { adminUserId: inserted.id as string, errorMessage: null };
   }
 
-  async function syncEventAccess(
-    adminUserId: string,
-    group: PrivilegeGroup,
-    eventIds: string[],
-  ) {
-    const { error: deleteAccessError } = await supabase
-      .from("admin_event_access")
-      .delete()
-      .eq("admin_user_id", adminUserId);
-
-    if (deleteAccessError) {
-      return group === "super_admin"
-        ? `Saved admin user, but could not clear event access: ${deleteAccessError.message}`
-        : `Saved admin user, but could not reset event access: ${deleteAccessError.message}`;
-    }
-
-    if (group === "super_admin" || eventIds.length === 0) {
-      return null;
-    }
-
-    const { error: insertAccessError } = await supabase
-      .from("admin_event_access")
-      .insert(
-        eventIds.map((eventId) => ({
-          admin_user_id: adminUserId,
-          event_id: eventId,
-          role: getEventAccessRole(group),
-        })),
-      );
-
-    if (insertAccessError) {
-      return `Saved admin user, but event access failed: ${insertAccessError.message}`;
-    }
-
+  async function syncEventAccess(adminUserId: string, group: PrivilegeGroup, eventIds: string[]) {
+    const { error: deleteAccessError } = await supabase.from("admin_event_access").delete().eq("admin_user_id", adminUserId);
+    if (deleteAccessError) { return group === "super_admin" ? `Saved admin user, but could not clear event access: ${deleteAccessError.message}` : `Saved admin user, but could not reset event access: ${deleteAccessError.message}`; }
+    if (group === "super_admin" || eventIds.length === 0) { return null; }
+    const { error: insertAccessError } = await supabase.from("admin_event_access").insert(eventIds.map((eventId) => ({ admin_user_id: adminUserId, event_id: eventId, role: getEventAccessRole(group) })));
+    if (insertAccessError) { return `Saved admin user, but event access failed: ${insertAccessError.message}`; }
     return null;
   }
 
-  async function ensureAuthUser(
-    adminEmail: string,
-  ): Promise<{ error: string | null; userId: string | null }> {
-    const res = await fetch("/api/admins/ensure-user", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: adminEmail.trim() }),
-    });
-
-    if (!res.ok) {
-      const result = await res.json().catch(() => null);
-      return {
-        error: result?.error || "Failed to ensure auth user exists.",
-        userId: null,
-      };
-    }
-
+  async function ensureAuthUser(adminEmail: string): Promise<{ error: string | null; userId: string | null }> {
+    const res = await fetch("/api/admins/ensure-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: adminEmail.trim() }) });
+    if (!res.ok) { const result = await res.json().catch(() => null); return { error: result?.error || "Failed to ensure auth user exists.", userId: null }; }
     const result = await res.json().catch(() => null);
-
-    return {
-      error: null,
-      userId: result?.userId || null,
-    };
+    return { error: null, userId: result?.userId || null };
   }
 
-  async function setPasswordIfProvided(
-    userId: string | null,
-    nextPassword: string,
-  ): Promise<{ error: string | null; passwordWasSet: boolean }> {
+  async function setPasswordIfProvided(userId: string | null, nextPassword: string): Promise<{ error: string | null; passwordWasSet: boolean }> {
     const trimmedPassword = nextPassword.trim();
-
-    if (!trimmedPassword) {
-      return { error: null, passwordWasSet: false };
-    }
-
-    if (!userId) {
-      return {
-        error: "No linked auth user. Save again to sync user.",
-        passwordWasSet: false,
-      };
-    }
-
-    const passwordResponse = await fetch("/api/admins/set-password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        password: trimmedPassword,
-      }),
-    });
-
-    if (!passwordResponse.ok) {
-      const result = await passwordResponse.json().catch(() => null);
-      return {
-        error: `Admin saved, but password was not set: ${
-          result?.error || "Unknown password error"
-        }`,
-        passwordWasSet: false,
-      };
-    }
-
+    if (!trimmedPassword) { return { error: null, passwordWasSet: false }; }
+    if (!userId) { return { error: "No linked auth user. Save again to sync user.", passwordWasSet: false }; }
+    const passwordResponse = await fetch("/api/admins/set-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, password: trimmedPassword }) });
+    if (!passwordResponse.ok) { const result = await passwordResponse.json().catch(() => null); return { error: `Admin saved, but password was not set: ${result?.error || "Unknown password error"}`, passwordWasSet: false }; }
     setPassword("");
     return { error: null, passwordWasSet: true };
   }
@@ -578,143 +285,60 @@ function AdminUsersPageInner() {
   async function handleSave() {
     try {
       setSaveStatus("Saving...");
-
       const { adminUserId, errorMessage } = await upsertAdminUser();
-
-      if (errorMessage || !adminUserId) {
-        setSaveStatus(errorMessage || "Could not save admin user.");
-        return;
-      }
-
-      const eventAccessError = await syncEventAccess(
-        adminUserId,
-        privilegeGroup,
-        assignedEventIds,
-      );
-
-      if (eventAccessError) {
-        setSaveStatus(eventAccessError);
-        return;
-      }
-
-      // Only ensure auth user if we need to (new user OR setting password)
+      if (errorMessage || !adminUserId) { setSaveStatus(errorMessage || "Could not save admin user."); return; }
+      const eventAccessError = await syncEventAccess(adminUserId, privilegeGroup, assignedEventIds);
+      if (eventAccessError) { setSaveStatus(eventAccessError); return; }
       let resolvedUserId = selectedRow?.user_id || null;
-
       if (password || !resolvedUserId) {
         const { error: ensureError, userId } = await ensureAuthUser(email);
-
-        if (ensureError) {
-          setSaveStatus(
-            `Saved admin user, but auth setup failed: ${ensureError}`,
-          );
-          return;
-        }
-
+        if (ensureError) { setSaveStatus(`Saved admin user, but auth setup failed: ${ensureError}`); return; }
         if (userId) {
           resolvedUserId = userId;
-
-          await supabase
-            .from("admin_users")
-            .update({ user_id: userId })
-            .eq("id", adminUserId);
+          await supabase.from("admin_users").update({ user_id: userId }).eq("id", adminUserId);
         }
       }
-
-      const { error: passwordError, passwordWasSet } =
-        await setPasswordIfProvided(resolvedUserId, password);
-
-      if (passwordError) {
-        setSaveStatus(passwordError);
-        return;
-      }
-
+      const { error: passwordError, passwordWasSet } = await setPasswordIfProvided(resolvedUserId, password);
+      if (passwordError) { setSaveStatus(passwordError); return; }
       setSaveStatus(passwordWasSet ? "Saved and password set." : "Saved.");
-      await loadPageData(adminAccessRef.current);
+      await loadPageData();
       await loadAssignedEvents(adminUserId);
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Could not save admin user.";
+      const msg = err instanceof Error ? err.message : "Could not save admin user.";
       setSaveStatus(msg);
     }
   }
 
   async function handleSendPasswordReset() {
     const trimmedEmail = email.trim();
-
-    if (!trimmedEmail) {
-      setResetStatus("Email is required before sending a reset email.");
-      return;
-    }
-
+    if (!trimmedEmail) { setResetStatus("Email is required before sending a reset email."); return; }
     try {
       setResetStatus("Sending reset email...");
-
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        trimmedEmail,
-        {
-          redirectTo:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/reset-password`
-              : undefined,
-        },
-      );
-
-      if (resetError) {
-        setResetStatus(`Could not send reset email: ${resetError.message}`);
-        return;
-      }
-
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, { redirectTo: typeof window !== "undefined" ? `${window.location.origin}/reset-password` : undefined });
+      if (resetError) { setResetStatus(`Could not send reset email: ${resetError.message}`); return; }
       setResetStatus("Password reset email sent.");
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Could not send reset email.";
+      const msg = err instanceof Error ? err.message : "Could not send reset email.";
       setResetStatus(msg);
     }
   }
 
   async function handleDeleteAdminUser() {
-    if (!selectedAdminId || !selectedRow) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Delete admin user ${selectedRow.display_name || selectedRow.email}? This removes their app admin record and event access.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
+    if (!selectedAdminId || !selectedRow) { return; }
+    const confirmed = window.confirm(`Delete admin user ${selectedRow.display_name || selectedRow.email}? This removes their app admin record and event access.`);
+    if (!confirmed) { return; }
     try {
       setSaveStatus("Deleting admin user...");
       setError(null);
-
-      const { error: accessError } = await supabase
-        .from("admin_event_access")
-        .delete()
-        .eq("admin_user_id", selectedAdminId);
-
-      if (accessError) {
-        setSaveStatus(`Could not remove event access: ${accessError.message}`);
-        return;
-      }
-
-      const { error: adminError } = await supabase
-        .from("admin_users")
-        .delete()
-        .eq("id", selectedAdminId);
-
-      if (adminError) {
-        setSaveStatus(`Could not delete admin user: ${adminError.message}`);
-        return;
-      }
-
+      const { error: accessError } = await supabase.from("admin_event_access").delete().eq("admin_user_id", selectedAdminId);
+      if (accessError) { setSaveStatus(`Could not remove event access: ${accessError.message}`); return; }
+      const { error: adminError } = await supabase.from("admin_users").delete().eq("id", selectedAdminId);
+      if (adminError) { setSaveStatus(`Could not delete admin user: ${adminError.message}`); return; }
       startNewAdmin();
       setSaveStatus("Admin user deleted.");
-      await loadPageData(adminAccessRef.current);
+      await loadPageData();
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Could not delete admin user.";
+      const msg = err instanceof Error ? err.message : "Could not delete admin user.";
       setSaveStatus(msg);
     }
   }
@@ -723,44 +347,16 @@ function AdminUsersPageInner() {
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Users</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          Default privilege groups with independent permission switches and
-          event access.
-        </div>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>Default privilege groups with independent permission switches and event access.</div>
       </div>
-
-      {status ? (
-        <div className="card" style={{ padding: 18 }}>
-          {status}
-        </div>
-      ) : null}
-
+      {status ? <div className="card" style={{ padding: 18 }}>{status}</div> : null}
       {error ? <div style={errorBoxStyle}>{error}</div> : null}
-      <div
-        style={{
-          display: "grid",
-          gap: 18,
-          gridTemplateColumns: isMobile ? "1fr" : "minmax(280px, 340px) 1fr",
-        }}
-      >
+      <div style={{ display: "grid", gap: 18, gridTemplateColumns: isMobile ? "1fr" : "minmax(280px, 340px) 1fr" }}>
         <div className="card" style={{ padding: 18 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: 12,
-            }}
-          >
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
             <strong>Existing Admins — click one to edit</strong>
-            <button
-              type="button"
-              onClick={startNewAdmin}
-              style={secondaryButtonStyle}
-            >
-              New
-            </button>
+            <button type="button" onClick={startNewAdmin} style={secondaryButtonStyle}>New</button>
           </div>
-
           {loading ? (
             <div>Loading...</div>
           ) : rows.length === 0 ? (
@@ -768,26 +364,10 @@ function AdminUsersPageInner() {
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               {rows.map((row) => (
-                <button
-                  key={row.id}
-                  type="button"
-                  onClick={() => setSelectedAdminId(row.id)}
-                  style={{
-                    ...listButtonStyle,
-                    borderColor:
-                      selectedAdminId === row.id ? "#111827" : "#ddd",
-                    background:
-                      selectedAdminId === row.id ? "#f8fafc" : "white",
-                  }}
-                >
-                  <div style={{ fontWeight: 700 }}>
-                    {row.display_name || row.email}
-                  </div>
+                <button key={row.id} type="button" onClick={() => setSelectedAdminId(row.id)} style={{ ...listButtonStyle, borderColor: selectedAdminId === row.id ? "#111827" : "#ddd", background: selectedAdminId === row.id ? "#f8fafc" : "white" }}>
+                  <div style={{ fontWeight: 700 }}>{row.display_name || row.email}</div>
                   <div style={{ fontSize: 13, opacity: 0.8 }}>{row.email}</div>
-                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
-                    {formatPrivilegeGroup(row.privilege_group)} •{" "}
-                    {row.is_active ? "active" : "inactive"}
-                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{formatPrivilegeGroup(row.privilege_group)} • {row.is_active ? "active" : "inactive"}</div>
                 </button>
               ))}
             </div>
@@ -795,127 +375,41 @@ function AdminUsersPageInner() {
         </div>
 
         <div className="card" style={{ padding: 18 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              alignItems: "start",
-              marginBottom: 14,
-            }}
-          >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start", marginBottom: 14 }}>
             <div>
-              <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-                {selectedAdminId ? "Edit Admin User" : "New Admin User"}
-              </h2>
-              <div style={{ fontSize: 14, opacity: 0.75 }}>
-                {selectedAdminId
-                  ? "Update this admin user, privilege group, and event access."
-                  : "Create a new admin user and assign event access."}
-              </div>
+              <h2 style={{ marginTop: 0, marginBottom: 6 }}>{selectedAdminId ? "Edit Admin User" : "New Admin User"}</h2>
+              <div style={{ fontSize: 14, opacity: 0.75 }}>{selectedAdminId ? "Update this admin user, privilege group, and event access." : "Create a new admin user and assign event access."}</div>
             </div>
-
-            {selectedAdminId ? (
-              <button
-                type="button"
-                onClick={() => void handleDeleteAdminUser()}
-                style={dangerButtonStyle}
-              >
-                Delete Admin User
-              </button>
-            ) : null}
+            {selectedAdminId ? <button type="button" onClick={() => void handleDeleteAdminUser()} style={dangerButtonStyle}>Delete Admin User</button> : null}
           </div>
 
           <div style={{ display: "grid", gap: 14 }}>
-            <div
-              style={{
-                display: "grid",
-                gap: 14,
-                gridTemplateColumns: "1fr 1fr",
-              }}
-            >
+            <div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" }}>
               <div>
                 <label style={labelStyle}>Email</label>
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={inputStyle}
-                />
+                <input value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} />
               </div>
-
               <div>
                 <label style={labelStyle}>Display Name</label>
-                <input
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  style={inputStyle}
-                />
+                <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputStyle} />
               </div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gap: 14,
-                gridTemplateColumns: selectedAdminId
-                  ? "minmax(260px, 1fr) auto"
-                  : "1fr",
-                alignItems: "end",
-              }}
-            >
+            <div style={{ display: "grid", gap: 14, gridTemplateColumns: selectedAdminId ? "minmax(260px, 1fr) auto" : "1fr", alignItems: "end" }}>
               <div>
-                <label style={labelStyle}>
-                  {selectedAdminId ? "Set New Password" : "Initial Password"}
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={
-                    selectedAdminId
-                      ? "Leave blank to keep existing password"
-                      : "Enter temporary password"
-                  }
-                  style={inputStyle}
-                />
-                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
-                  {selectedAdminId
-                    ? "Only enter a password if you want to change it."
-                    : "Temporary password for first login."}
-                </div>
+                <label style={labelStyle}>{selectedAdminId ? "Set New Password" : "Initial Password"}</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={selectedAdminId ? "Leave blank to keep existing password" : "Enter temporary password"} style={inputStyle} />
+                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{selectedAdminId ? "Only enter a password if you want to change it." : "Temporary password for first login."}</div>
               </div>
-
-              {selectedAdminId ? (
-                <button
-                  type="button"
-                  onClick={handleSendPasswordReset}
-                  style={resetEmailButtonStyle}
-                >
-                  Send Reset Email
-                </button>
-              ) : null}
+              {selectedAdminId ? <button type="button" onClick={handleSendPasswordReset} style={resetEmailButtonStyle}>Send Reset Email</button> : null}
             </div>
 
-            {resetStatus ? (
-              <div style={{ fontSize: 14, opacity: 0.85 }}>{resetStatus}</div>
-            ) : null}
+            {resetStatus ? <div style={{ fontSize: 14, opacity: 0.85 }}>{resetStatus}</div> : null}
 
-            <div
-              style={{
-                display: "grid",
-                gap: 14,
-                gridTemplateColumns: "1fr 1fr",
-              }}
-            >
+            <div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" }}>
               <div>
                 <label style={labelStyle}>Privilege Group</label>
-                <select
-                  value={privilegeGroup}
-                  onChange={(e) =>
-                    handlePrivilegeGroupChange(e.target.value as PrivilegeGroup)
-                  }
-                  style={inputStyle}
-                >
+                <select value={privilegeGroup} onChange={(e) => handlePrivilegeGroupChange(e.target.value as PrivilegeGroup)} style={inputStyle}>
                   <option value="super_admin">Super Admin</option>
                   <option value="event_admin">Event Admin</option>
                   <option value="checkin">Check-In</option>
@@ -924,15 +418,10 @@ function AdminUsersPageInner() {
                   <option value="read_only">Read Only</option>
                 </select>
               </div>
-
               <div>
                 <label style={labelStyle}>Status</label>
                 <label style={checkLabelStyle}>
-                  <input
-                    type="checkbox"
-                    checked={isActive}
-                    onChange={(e) => setIsActive(e.target.checked)}
-                  />
+                  <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
                   <span>Active admin user</span>
                 </label>
               </div>
@@ -940,39 +429,11 @@ function AdminUsersPageInner() {
 
             <div>
               <strong>Permissions</strong>
-              <div
-                style={{
-                  fontSize: 13,
-                  opacity: 0.75,
-                  marginTop: 4,
-                  marginBottom: 12,
-                }}
-              >
-                Permissions are derived from the selected privilege group. Use
-                Event Staff for event-specific permission assignments.
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gap: 10,
-                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                }}
-              >
-                {(
-                  Object.keys(PERMISSION_LABELS) as Array<
-                    keyof AdminPermissions
-                  >
-                ).map((key) => (
+              <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4, marginBottom: 12 }}>Permissions are derived from the selected privilege group. Use Event Staff for event-specific permission assignments.</div>
+              <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+                {(Object.keys(PERMISSION_LABELS) as Array<keyof AdminPermissions>).map((key) => (
                   <label key={key} style={permissionLabelStyle}>
-                    <input
-                      type="checkbox"
-                      checked={!!permissions[key]}
-                      readOnly
-                      aria-readonly="true"
-                      title="Permission is controlled by the selected privilege group"
-                      style={{ cursor: "not-allowed", opacity: 0.6 }}
-                    />
+                    <input type="checkbox" checked={!!permissions[key]} readOnly aria-readonly="true" title="Permission is controlled by the selected privilege group" style={{ cursor: "not-allowed", opacity: 0.6 }} />
                     <span>{PERMISSION_LABELS[key]}</span>
                   </label>
                 ))}
@@ -981,67 +442,26 @@ function AdminUsersPageInner() {
 
             <div>
               <strong>Event Access</strong>
-              <div
-                style={{
-                  fontSize: 13,
-                  opacity: 0.75,
-                  marginTop: 4,
-                  marginBottom: 12,
-                }}
-              >
-                Super Admin automatically has access to all events. For other
-                admins, select allowed events.
-              </div>
-
+              <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4, marginBottom: 12 }}>Super Admin automatically has access to all events. For other admins, select allowed events.</div>
               {privilegeGroup === "super_admin" ? (
-                <div style={{ opacity: 0.8 }}>
-                  Super Admin automatically has access to all events.
-                </div>
+                <div style={{ opacity: 0.8 }}>Super Admin automatically has access to all events.</div>
               ) : events.length === 0 ? (
                 <div style={{ opacity: 0.8 }}>No events found.</div>
               ) : (
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 10,
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  }}
-                >
+                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
                   {events.map((event) => (
                     <label key={event.id} style={permissionLabelStyle}>
-                      <input
-                        type="checkbox"
-                        checked={assignedEventIds.includes(event.id)}
-                        onChange={() => toggleAssignedEvent(event.id)}
-                      />
-                      <span>
-                        {event.name || "Untitled Event"}
-                        {event.location ? ` • ${event.location}` : ""}
-                      </span>
+                      <input type="checkbox" checked={assignedEventIds.includes(event.id)} onChange={() => toggleAssignedEvent(event.id)} />
+                      <span>{event.name || "Untitled Event"}{event.location ? ` • ${event.location}` : ""}</span>
                     </label>
                   ))}
                 </div>
               )}
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                type="button"
-                onClick={handleSave}
-                style={primaryButtonStyle}
-              >
-                {selectedAdminId ? "Save Changes" : "Create Admin User"}
-              </button>
-              {saveStatus ? (
-                <span style={{ fontSize: 14 }}>{saveStatus}</span>
-              ) : null}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button type="button" onClick={handleSave} style={primaryButtonStyle}>{selectedAdminId ? "Save Changes" : "Create Admin User"}</button>
+              {saveStatus ? <span style={{ fontSize: 14 }}>{saveStatus}</span> : null}
             </div>
           </div>
         </div>
@@ -1050,98 +470,13 @@ function AdminUsersPageInner() {
   );
 }
 
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: 6,
-  fontWeight: 600,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  boxSizing: "border-box",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  minWidth: 150,
-  padding: "12px 18px",
-  borderRadius: 12,
-  border: "none",
-  background: "#111827",
-  color: "#ffffff",
-  WebkitTextFillColor: "#ffffff",
-  fontWeight: 800,
-  cursor: "pointer",
-  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.18)",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  color: "#111827",
-  WebkitTextFillColor: "#111827",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const resetEmailButtonStyle: CSSProperties = {
-  ...secondaryButtonStyle,
-  minHeight: 42,
-  border: "1px solid #93c5fd",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  WebkitTextFillColor: "#1d4ed8",
-  boxShadow: "0 8px 18px rgba(37, 99, 235, 0.12)",
-  whiteSpace: "nowrap",
-};
-
-const dangerButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #fecaca",
-  background: "#fff1f2",
-  color: "#b91c1c",
-  WebkitTextFillColor: "#b91c1c",
-  fontWeight: 800,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
-
-const errorBoxStyle: CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #e2b4b4",
-  background: "#fff3f3",
-  color: "#8a1f1f",
-};
-
-const listButtonStyle: CSSProperties = {
-  textAlign: "left",
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ddd",
-  background: "white",
-  cursor: "pointer",
-};
-
-const checkLabelStyle: CSSProperties = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  minHeight: 42,
-};
-
-const permissionLabelStyle: CSSProperties = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  padding: "8px 10px",
-  border: "1px solid #eee",
-  borderRadius: 10,
-};
+const labelStyle: CSSProperties = { display: "block", marginBottom: 6, fontWeight: 600 };
+const inputStyle: CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #ccc", background: "white", boxSizing: "border-box" };
+const primaryButtonStyle: CSSProperties = { minWidth: 150, padding: "12px 18px", borderRadius: 12, border: "none", background: "#111827", color: "#ffffff", WebkitTextFillColor: "#ffffff", fontWeight: 800, cursor: "pointer", boxShadow: "0 8px 18px rgba(15, 23, 42, 0.18)" };
+const secondaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 10, border: "1px solid #ccc", background: "white", color: "#111827", WebkitTextFillColor: "#111827", fontWeight: 700, cursor: "pointer" };
+const resetEmailButtonStyle: CSSProperties = { ...secondaryButtonStyle, minHeight: 42, border: "1px solid #93c5fd", background: "#eff6ff", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", boxShadow: "0 8px 18px rgba(37, 99, 235, 0.12)", whiteSpace: "nowrap" };
+const dangerButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 10, border: "1px solid #fecaca", background: "#fff1f2", color: "#b91c1c", WebkitTextFillColor: "#b91c1c", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" };
+const errorBoxStyle: CSSProperties = { padding: "10px 12px", borderRadius: 10, border: "1px solid #e2b4b4", background: "#fff3f3", color: "#8a1f1f" };
+const listButtonStyle: CSSProperties = { textAlign: "left", width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", background: "white", cursor: "pointer" };
+const checkLabelStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", minHeight: 42 };
+const permissionLabelStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", border: "1px solid #eee", borderRadius: 10 };

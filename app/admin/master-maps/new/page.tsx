@@ -4,10 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import {
-  getCurrentAdminAccess,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { hasPermission } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 function NewMasterMapPageInner() {
@@ -17,44 +15,35 @@ function NewMasterMapPageInner() {
   const [parkName, setParkName] = useState("");
   const [location, setLocation] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState(
-    "Fill in the form to create a new master map.",
-  );
+  const [status, setStatus] = useState("Fill in the form to create a new master map.");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const { admin } = useAdmin();
+
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setStatus("Checking admin access...");
+    if (!admin) return;
 
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      if (!hasPermission(admin, "can_manage_master_maps")) {
-        setError("You do not have permission to create master maps.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      setStatus("Fill in the form to create a new master map.");
+    if (!hasPermission(admin, "can_manage_master_maps")) {
+      setError("You do not have permission to create master maps.");
+      setStatus("Access denied.");
       setLoading(false);
+      return;
     }
 
-    void init();
-  }, []);
+    setStatus("Fill in the form to create a new master map.");
+    setLoading(false);
+  }, [admin]);
 
   async function createMasterMap() {
-    if (loading) {return;}
+    if (loading) { return; }
+
+    if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
+      setError("No admin access.");
+      setStatus("Access denied.");
+      return;
+    }
 
     if (!name.trim()) {
       setStatus("Enter a master map name.");
@@ -78,14 +67,6 @@ function NewMasterMapPageInner() {
       setBusy(true);
       setError(null);
       setStatus("Creating master map...");
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin || !hasPermission(admin, "can_manage_master_maps")) {
-        setError("You do not have permission to create master maps.");
-        setStatus("Access denied.");
-        return;
-      }
 
       const { data: created, error: createError } = await supabase
         .from("master_maps")

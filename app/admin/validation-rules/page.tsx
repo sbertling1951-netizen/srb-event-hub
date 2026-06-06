@@ -10,11 +10,8 @@ import {
 } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
+import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type EventContext = {
@@ -67,7 +64,6 @@ function getStoredAdminEvent(): EventContext | null {
   if (typeof window === "undefined") {
     return null;
   }
-
   try {
     const raw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
     if (!raw) {
@@ -165,7 +161,6 @@ function AdminValidationRulesPageInner() {
   const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading validation rules...");
-  const [accessDenied, setAccessDenied] = useState(false);
   const [form, setForm] = useState<RuleFormState>(createEmptyForm());
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -173,54 +168,37 @@ function AdminValidationRulesPageInner() {
   const isEmbedded = searchParams.get("embedded") === "1";
   const pageTitle = "Validation Rules";
 
+  const { admin } = useAdmin();
+
   useEffect(() => {
     if (!isEmbedded) {
       return;
     }
-
     document.body.classList.add("admin-embedded-shell");
-
     return () => {
       document.body.classList.remove("admin-embedded-shell");
     };
   }, [isEmbedded]);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setAccessDenied(false);
-      setStatus("Checking admin access...");
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setAccessDenied(true);
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      if (
-        !hasPermission(admin, "can_manage_admins") &&
-        !hasPermission(admin, "can_manage_validation_rules")
-      ) {
-        setAccessDenied(true);
-        setError("You do not have permission to manage validation rules.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      const event = getStoredAdminEvent();
-      setCurrentEvent(event);
-
-      await loadPage(admin);
+    if (!admin) {
+      return;
     }
 
-    void init();
+    if (
+      !hasPermission(admin, "can_manage_admins") &&
+      !hasPermission(admin, "can_manage_validation_rules")
+    ) {
+      setError("You do not have permission to manage validation rules.");
+      setStatus("Access denied.");
+      setLoading(false);
+      return;
+    }
 
+    const event = getStoredAdminEvent();
+    setCurrentEvent(event);
+
+    void loadPage(admin!);
     function handleStorage(e: StorageEvent) {
       if (
         e.key === "fcoc-admin-event-context" ||
@@ -228,12 +206,16 @@ function AdminValidationRulesPageInner() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        void init();
+        const nextEvent = getStoredAdminEvent();
+        setCurrentEvent(nextEvent);
+        void loadPage(admin!);
       }
     }
 
     function handleAdminEventUpdated() {
-      void init();
+      const nextEvent = getStoredAdminEvent();
+      setCurrentEvent(nextEvent);
+      void loadPage(admin!);
     }
 
     window.addEventListener("storage", handleStorage);
@@ -249,21 +231,13 @@ function AdminValidationRulesPageInner() {
         handleAdminEventUpdated,
       );
     };
-  }, []);
+  }, [admin]);
 
-  async function loadPage(
-    admin?: Awaited<ReturnType<typeof getCurrentAdminAccess>>,
-  ) {
+  async function loadPage(resolvedAdmin: NonNullable<typeof admin>) {
     try {
       setLoading(true);
       setError(null);
       setStatus("Loading validation rules...");
-
-      const resolvedAdmin = admin || (await getCurrentAdminAccess());
-
-      if (!resolvedAdmin) {
-        throw new Error("No admin access.");
-      }
 
       const [
         { data: rulesData, error: rulesError },
@@ -275,7 +249,6 @@ function AdminValidationRulesPageInner() {
           .order("priority", { ascending: true })
           .order("field_name", { ascending: true })
           .order("created_at", { ascending: true }),
-
         supabase
           .from("events")
           .select("id, name, location, start_date")
@@ -349,27 +322,22 @@ function AdminValidationRulesPageInner() {
 
   async function handleSaveRule() {
     const priority = Number(form.priority);
-
     if (!form.field_name.trim()) {
       setError("Field name is required.");
       return;
     }
-
     if (!form.rule_type.trim()) {
       setError("Rule type is required.");
       return;
     }
-
     if (form.rule_type !== "required" && !form.rule_value.trim()) {
       setError("Rule value is required for this rule type.");
       return;
     }
-
     if (!form.message.trim()) {
       setError("Message is required.");
       return;
     }
-
     if (!Number.isFinite(priority)) {
       setError("Priority must be a valid number.");
       return;
@@ -396,28 +364,26 @@ function AdminValidationRulesPageInner() {
           .from("validation_rules")
           .update(payload)
           .eq("id", form.id);
-
         if (error) {
           throw error;
         }
-
         setStatus("Rule updated.");
         showFlash("Rule updated.");
       } else {
         const { error } = await supabase
           .from("validation_rules")
           .insert(payload);
-
         if (error) {
           throw error;
         }
-
         setStatus("Rule created.");
         showFlash("Rule created.");
       }
 
       setForm(createEmptyForm());
-      await loadPage();
+      if (admin) {
+        await loadPage(admin);
+      }
     } catch (err: any) {
       console.error("handleSaveRule error:", err);
       setError(err?.message || "Could not save rule.");
@@ -444,7 +410,6 @@ function AdminValidationRulesPageInner() {
         .from("validation_rules")
         .delete()
         .eq("id", ruleId);
-
       if (error) {
         throw error;
       }
@@ -452,10 +417,11 @@ function AdminValidationRulesPageInner() {
       if (form.id === ruleId) {
         setForm(createEmptyForm());
       }
-
       setStatus("Rule deleted.");
       showFlash("Rule deleted.");
-      await loadPage();
+      if (admin) {
+        await loadPage(admin);
+      }
     } catch (err: any) {
       console.error("handleDeleteRule error:", err);
       setError(err?.message || "Could not delete rule.");
@@ -469,18 +435,17 @@ function AdminValidationRulesPageInner() {
     try {
       setError(null);
       setStatus(rule.is_active ? "Disabling rule..." : "Enabling rule...");
-
       const { error } = await supabase
         .from("validation_rules")
         .update({ is_active: !rule.is_active })
         .eq("id", rule.id);
-
       if (error) {
         throw error;
       }
-
       showFlash(rule.is_active ? "Rule disabled." : "Rule enabled.");
-      await loadPage();
+      if (admin) {
+        await loadPage(admin);
+      }
     } catch (err: any) {
       console.error("handleToggleActive error:", err);
       setError(err?.message || "Could not update rule status.");
@@ -493,7 +458,6 @@ function AdminValidationRulesPageInner() {
     if (!term) {
       return rules;
     }
-
     return rules.filter((rule) =>
       [
         rule.field_name,
@@ -508,21 +472,6 @@ function AdminValidationRulesPageInner() {
         .includes(term),
     );
   }, [rules, search]);
-
-  if (!loading && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        {isEmbedded ? (
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h2>
-        ) : (
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h1>
-        )}
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -546,9 +495,7 @@ function AdminValidationRulesPageInner() {
               ? ` Current admin event: ${currentEvent.name || currentEvent.eventName}`
               : ""}
           </div>
-
           <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
-
           {isEmbedded ? (
             <div
               style={{
@@ -566,7 +513,6 @@ function AdminValidationRulesPageInner() {
               when an event-specific rule is selected.
             </div>
           ) : null}
-
           {flashMessage ? (
             <div style={successBoxStyle}>{flashMessage}</div>
           ) : null}
@@ -591,7 +537,6 @@ function AdminValidationRulesPageInner() {
                 style={inputStyle}
               />
             </div>
-
             <button
               type="button"
               onClick={startNewRule}
@@ -606,7 +551,6 @@ function AdminValidationRulesPageInner() {
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>
             {form.id ? "Edit Rule" : "Create Rule"}
           </h2>
-
           <div
             style={{
               display: "grid",
@@ -631,7 +575,6 @@ function AdminValidationRulesPageInner() {
                 <option value="state">State</option>
               </select>
             </div>
-
             <div>
               <label style={labelStyle}>Rule Type</label>
               <select
@@ -646,7 +589,6 @@ function AdminValidationRulesPageInner() {
                 <option value="min_length">Minimum Length</option>
               </select>
             </div>
-
             <div>
               <label style={labelStyle}>Rule Value</label>
               <input
@@ -661,7 +603,6 @@ function AdminValidationRulesPageInner() {
                 disabled={form.rule_type === "required"}
               />
             </div>
-
             <div>
               <label style={labelStyle}>Severity</label>
               <select
@@ -675,7 +616,6 @@ function AdminValidationRulesPageInner() {
                 <option value="warning">Warning</option>
               </select>
             </div>
-
             <div>
               <label style={labelStyle}>Priority</label>
               <input
@@ -685,7 +625,6 @@ function AdminValidationRulesPageInner() {
                 placeholder="Lower runs first"
               />
             </div>
-
             <div>
               <label style={labelStyle}>Scope</label>
               <select
@@ -704,7 +643,6 @@ function AdminValidationRulesPageInner() {
               </select>
             </div>
           </div>
-
           <div style={{ marginTop: 14 }}>
             <label style={labelStyle}>Message</label>
             <textarea
@@ -715,7 +653,6 @@ function AdminValidationRulesPageInner() {
               placeholder="Message shown in Data Review"
             />
           </div>
-
           <div
             style={{
               marginTop: 14,
@@ -734,7 +671,6 @@ function AdminValidationRulesPageInner() {
               Rule is active
             </label>
           </div>
-
           <div
             style={{
               marginTop: 18,
@@ -751,7 +687,6 @@ function AdminValidationRulesPageInner() {
             >
               {saving ? "Saving..." : form.id ? "Update Rule" : "Create Rule"}
             </button>
-
             <button
               type="button"
               onClick={startNewRule}
@@ -771,7 +706,6 @@ function AdminValidationRulesPageInner() {
               {filteredRules.length === 1 ? "" : "s"}
             </div>
           </div>
-
           {loading ? (
             <div>Loading...</div>
           ) : filteredRules.length === 0 ? (
@@ -795,7 +729,6 @@ function AdminValidationRulesPageInner() {
                 <tbody>
                   {filteredRules.map((rule) => {
                     const deleting = deletingRuleId === rule.id;
-
                     return (
                       <tr key={rule.id}>
                         <td style={tdStyle}>{fieldLabel(rule.field_name)}</td>
@@ -869,47 +802,28 @@ function ValidationRulesEmbeddedStyles() {
     if (existing) {
       return;
     }
-
     const style = document.createElement("style");
     style.id = "validation-rules-embedded-styles";
     style.innerHTML = `
-      body.admin-embedded-shell > :first-child {
-        display: none !important;
-      }
-
-      body.admin-embedded-shell .app-main {
-        margin-left: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-      }
-
-      body.admin-embedded-shell .app-inner {
-        max-width: 100% !important;
-        padding: 0 !important;
-      }
-
-      body.admin-embedded-shell .app-header-card {
-        display: none !important;
-      }
+      body.admin-embedded-shell > :first-child { display: none !important; }
+      body.admin-embedded-shell .app-main { margin-left: 0 !important; width: 100% !important; max-width: 100% !important; }
+      body.admin-embedded-shell .app-inner { max-width: 100% !important; padding: 0 !important; }
+      body.admin-embedded-shell .app-header-card { display: none !important; }
     `;
     document.head.appendChild(style);
-
     return () => {
       style.remove();
     };
   }, []);
-
   return null;
 }
 
 function AdminValidationRulesPageContent() {
   const searchParams = useSearchParams();
   const isEmbedded = searchParams.get("embedded") === "1";
-
   if (isEmbedded) {
     return <AdminValidationRulesPageInner />;
   }
-
   return (
     <AdminRouteGuard requiredPermission="can_manage_validation_rules">
       <AdminValidationRulesPageInner />
@@ -928,13 +842,11 @@ const backLinkStyle: CSSProperties = {
   fontWeight: 700,
   textDecoration: "none",
 };
-
 const labelStyle: CSSProperties = {
   display: "block",
   marginBottom: 6,
   fontWeight: 600,
 };
-
 const inputStyle: CSSProperties = {
   width: "100%",
   padding: "10px 12px",
@@ -942,7 +854,6 @@ const inputStyle: CSSProperties = {
   border: "1px solid #ccc",
   background: "white",
 };
-
 const textareaStyle: CSSProperties = {
   width: "100%",
   padding: "10px 12px",
@@ -951,7 +862,6 @@ const textareaStyle: CSSProperties = {
   background: "white",
   resize: "vertical",
 };
-
 const primaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
@@ -961,7 +871,6 @@ const primaryButtonStyle: CSSProperties = {
   fontWeight: 700,
   cursor: "pointer",
 };
-
 const secondaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
@@ -970,7 +879,6 @@ const secondaryButtonStyle: CSSProperties = {
   fontWeight: 700,
   cursor: "pointer",
 };
-
 const dangerButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
@@ -980,7 +888,6 @@ const dangerButtonStyle: CSSProperties = {
   fontWeight: 700,
   cursor: "pointer",
 };
-
 const errorBoxStyle: CSSProperties = {
   marginTop: 12,
   padding: "10px 12px",
@@ -989,7 +896,6 @@ const errorBoxStyle: CSSProperties = {
   background: "#fff3f3",
   color: "#8a1f1f",
 };
-
 const successBoxStyle: CSSProperties = {
   marginTop: 12,
   padding: "10px 12px",
@@ -998,7 +904,6 @@ const successBoxStyle: CSSProperties = {
   background: "#f0fdf4",
   color: "#166534",
 };
-
 const errorBadgeStyle: CSSProperties = {
   display: "inline-block",
   padding: "3px 8px",
@@ -1009,7 +914,6 @@ const errorBadgeStyle: CSSProperties = {
   fontSize: 12,
   textTransform: "uppercase",
 };
-
 const warningBadgeStyle: CSSProperties = {
   display: "inline-block",
   padding: "3px 8px",
@@ -1020,12 +924,7 @@ const warningBadgeStyle: CSSProperties = {
   fontSize: 12,
   textTransform: "uppercase",
 };
-
-const tableStyle: CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-
+const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse" };
 const thStyle: CSSProperties = {
   textAlign: "left",
   padding: "10px 8px",
@@ -1035,7 +934,6 @@ const thStyle: CSSProperties = {
   fontSize: 12,
   lineHeight: 1.2,
 };
-
 const tdStyle: CSSProperties = {
   textAlign: "left",
   padding: "10px 8px",
