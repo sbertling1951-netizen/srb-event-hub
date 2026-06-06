@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
-import GestureMapViewportV2, { type GestureMapViewportHandle } from "@/components/map/GestureMapViewportV2";
+import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
+import type { MapMarker } from "@/components/map/canvas/types";
 import { fullName, preferredDisplayLine } from "@/lib/displayNames";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
@@ -134,7 +135,7 @@ function formatDateRange(
     return "";
   }
   if (startDate && endDate) {
-    return `${startDate} – ${endDate}`;
+    return `${startDate} \u2013 ${endDate}`;
   }
   return startDate || endDate || "";
 }
@@ -166,25 +167,23 @@ function CoachMapPublicPageInner() {
   const [locations, setLocations] = useState<MasterMapLocation[]>([]);
   const [viewerAttendeeId, setViewerAttendeeId] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading map...");
-  const mapViewportRef = useRef<GestureMapViewportHandle | null>(null);
+  const mapViewportRef = useRef<MapCanvasHandle | null>(null);
   const [selectedSiteKey, setSelectedSiteKey] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
   const [search, setSearch] = useState("");
   const [isNarrow, setIsNarrow] = useState(false);
   const [pulseKey, setPulseKey] = useState<string | null>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
 
-  const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
+  // ─── Map focus ───────────────────────────────────────────────────────────────
 
-  const refreshMapSize = useCallback(() => {
-    if (!imageRef.current) {
+  const centerSiteInViewport = useCallback((site: RenderedSite) => {
+    if (site.map_x === null || site.map_y === null) {
       return;
     }
-    setNaturalSize({
-      width: imageRef.current.naturalWidth || 1200,
-      height: imageRef.current.naturalHeight || 800,
-    });
+    mapViewportRef.current?.centerOnMarker(site.key, 1.25);
   }, []);
+
+  // ─── Data loading ─────────────────────────────────────────────────────────────
 
   const loadMap = useCallback(async () => {
     try {
@@ -375,7 +374,6 @@ function CoachMapPublicPageInner() {
       }
 
       setStatus("Coach map ready.");
-      setTimeout(refreshMapSize, 50);
     } catch (err: any) {
       console.error("loadMap error:", err);
       setEvent(null);
@@ -385,12 +383,15 @@ function CoachMapPublicPageInner() {
       setHouseholdMembers([]);
       setStatus(err?.message || "Failed to load coach map.");
     }
-  }, [refreshMapSize]);
+  }, []);
+
+  // ─── Effects ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     setViewerAttendeeId(getStoredViewerAttendeeId());
     setIsNarrow(window.innerWidth < 800);
     void loadMap();
+
     function handleStorage(e: StorageEvent) {
       if (
         e.key === "fcoc-member-event-changed" ||
@@ -402,22 +403,19 @@ function CoachMapPublicPageInner() {
     }
     function handleResize() {
       setIsNarrow(window.innerWidth < 800);
-      refreshMapSize();
     }
+
     window.addEventListener("storage", handleStorage);
     window.addEventListener("resize", handleResize);
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("resize", handleResize);
     };
-  }, [loadMap, refreshMapSize]);
+  }, [loadMap]);
 
-  // Lock body scrolling only while the coach map page is active.
-  // Do NOT globally disable touch gestures.
   useEffect(() => {
     document.body.classList.add("coach-map-lock");
     document.documentElement.classList.add("coach-map-lock");
-
     return () => {
       document.body.classList.remove("coach-map-lock");
       document.documentElement.classList.remove("coach-map-lock");
@@ -433,6 +431,8 @@ function CoachMapPublicPageInner() {
     }, 1500);
     return () => clearTimeout(t);
   }, [pulseKey]);
+
+  // ─── Derived state ────────────────────────────────────────────────────────────
 
   const attendeeLookup = useMemo(() => {
     const map = new Map<string, Attendee>();
@@ -530,33 +530,7 @@ function CoachMapPublicPageInner() {
     occupantHasOptedIn;
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
-  function centerSiteInViewport(site: RenderedSite) {
-    if (site.map_x === null || site.map_y === null) {
-      return;
-    }
-
-    const focusScale = 1.25;
-
-    mapViewportRef.current?.centerOn(
-      (site.map_x / 100) * naturalSize.width,
-      (site.map_y / 100) * naturalSize.height,
-      focusScale,
-    );
-  }
-
-  function goToSite(siteKey: string) {
-    const site = renderedSites.find((s) => s.key === siteKey);
-    if (!site) {
-      return;
-    }
-    setSelectedSiteKey(siteKey);
-    setSearch("");
-    setPulseKey(siteKey);
-    requestAnimationFrame(() => {
-      refreshMapSize();
-      centerSiteInViewport(site);
-    });
-  }
+  // ─── Helpers ──────────────────────────────────────────────────────────────────
 
   function getLocationColor(category?: string | null) {
     const c = (category || "").toLowerCase();
@@ -578,23 +552,207 @@ function CoachMapPublicPageInner() {
     return "#6b7280";
   }
 
+  function goToSite(siteKey: string) {
+    const site = renderedSites.find((s) => s.key === siteKey);
+    if (!site) {
+      return;
+    }
+    setSelectedSiteKey(siteKey);
+    setSearch("");
+    setPulseKey(siteKey);
+    requestAnimationFrame(() => {
+      centerSiteInViewport(site);
+    });
+  }
+
   function handleGoToFirstMatch() {
     if (searchResults.length > 0) {
       goToSite(searchResults[0].key);
     }
   }
 
+  // ─── MapCanvas data ───────────────────────────────────────────────────────────
+
+  // Sites and location markers in a single array.
+  // Locations use "loc-{id}" IDs so handleMarkerTap can ignore them.
+  const markers = useMemo<MapMarker[]>(() => {
+    const siteMarkers: MapMarker[] = renderedSites
+      .filter((s) => s.map_x !== null && s.map_y !== null)
+      .map((s) => ({
+        id: s.key,
+        xPct: s.map_x as number,
+        yPct: s.map_y as number,
+        data: { type: "site" as const, site: s },
+      }));
+
+    const locationMarkers: MapMarker[] = locations
+      .filter((l) => l.map_x !== null && l.map_y !== null)
+      .map((l) => ({
+        id: `loc-${l.id}`,
+        xPct: l.map_x as number,
+        yPct: l.map_y as number,
+        data: { type: "location" as const, location: l },
+      }));
+
+    // Site markers first so location markers render on top
+    return [...siteMarkers, ...locationMarkers];
+  }, [renderedSites, locations]);
+
+  type SiteMarkerData = {
+    type: "site";
+    site: RenderedSite;
+  };
+
+  type LocationMarkerData = {
+    type: "location";
+    location: MasterMapLocation;
+  };
+
+  type CoachMapMarkerData = SiteMarkerData | LocationMarkerData;
+
+  const renderMarker = useCallback(
+    (marker: MapMarker) => {
+      const data = marker.data as CoachMapMarkerData;
+
+      if (data.type === "location") {
+        const loc = data.location;
+
+        return (
+          <div
+            title={loc.name}
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: 4,
+              background: getLocationColor(loc.category),
+              border: "2px solid white",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+            }}
+          />
+        );
+      }
+
+      const site = data.site;
+      const assigned = site.assigned_attendee_id
+        ? attendeeLookup.get(site.assigned_attendee_id)
+        : null;
+      const isSelected = selectedSiteKey === site.key;
+      const isViewerSite = viewerAssignedSiteKey === site.key;
+      const isOccupied = !!assigned;
+
+      return (
+        <>
+          {isSelected && (
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                background: "rgba(255,59,48,0.4)",
+                transform: "translate(-50%, -50%)",
+                animation: "fcoc-pulse 1.5s ease-out",
+                pointerEvents: "none",
+                zIndex: 1,
+              }}
+            />
+          )}
+
+          <div
+            title={site.display_label || site.site_number}
+            style={{
+              position: "relative",
+              width: isSelected ? 26 : isViewerSite ? 24 : 22,
+              height: isSelected ? 26 : isViewerSite ? 24 : 22,
+              borderRadius: "50%",
+              border: isSelected
+                ? "3px solid #ffffff"
+                : "1px solid rgba(255,255,255,0.85)",
+              background: isSelected
+                ? "#ff3b30"
+                : isViewerSite
+                  ? "#16a34a"
+                  : isOccupied
+                    ? "#2563eb"
+                    : "#6b7280",
+              boxShadow: isSelected
+                ? "0 0 0 4px rgba(255,59,48,0.25), 0 4px 10px rgba(0,0,0,0.35)"
+                : "0 1px 3px rgba(0,0,0,0.25)",
+              cursor: "pointer",
+              display: "block",
+              zIndex: 2,
+              touchAction: "manipulation",
+            }}
+          />
+
+          {showLabels && (
+            <div
+              style={{
+                marginTop: 3,
+                marginLeft: "auto",
+                marginRight: "auto",
+                background: isSelected
+                  ? "rgba(255,244,214,0.98)"
+                  : "rgba(255,255,255,0.92)",
+                border: isSelected
+                  ? "1px solid rgba(255,59,48,0.55)"
+                  : "1px solid rgba(0,0,0,0.18)",
+                borderRadius: 4,
+                fontSize: 9,
+                fontWeight: 700,
+                lineHeight: 1.1,
+                padding: "1px 4px",
+                color: "#111",
+                whiteSpace: "nowrap",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
+                display: "table",
+                pointerEvents: "none",
+              }}
+            >
+              {site.display_label || site.site_number}
+            </div>
+          )}
+        </>
+      );
+    },
+    [selectedSiteKey, viewerAssignedSiteKey, attendeeLookup, showLabels],
+  );
+
+  const handleMarkerTap = useCallback(
+    (id: string) => {
+      if (id.startsWith("loc-")) {
+        return;
+      } // location markers are view-only
+      const site = renderedSites.find((s) => s.key === id);
+      if (!site) {
+        return;
+      }
+      setSelectedSiteKey(id);
+      setSearch("");
+      setPulseKey(id);
+      requestAnimationFrame(() => {
+        centerSiteInViewport(site);
+      });
+    },
+    [renderedSites, centerSiteInViewport],
+  );
+
+  // ─── Floating panel ───────────────────────────────────────────────────────────
+
   const floatingPanelStyle = selectedSite
     ? {
         position: "fixed" as const,
         right: isNarrow ? "calc(env(safe-area-inset-right, 0px) + 12px)" : 24,
-
         bottom: isNarrow ? "calc(env(safe-area-inset-bottom, 0px) + 12px)" : 24,
         width: isNarrow ? "min(340px, calc(100vw - 24px))" : 340,
         maxHeight: isNarrow ? "45dvh" : "55dvh",
         overflowY: "auto" as const,
       }
     : null;
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div
@@ -793,181 +951,18 @@ function CoachMapPublicPageInner() {
             overscrollBehavior: "none",
           }}
         >
-          <GestureMapViewportV2
+          <MapCanvas
             ref={mapViewportRef}
-            width={naturalSize.width}
-            height={naturalSize.height}
+            imageUrl={event.map_image_url}
+            markers={markers}
+            viewportHeight="100%"
             initialScale={Number(event?.coach_map_open_scale || 1)}
             minScale={0.1}
             maxScale={3}
-          >
-            <div
-              style={{
-                position: "relative",
-                width: naturalSize.width,
-                height: naturalSize.height,
-              }}
-            >
-              <img
-                ref={imageRef}
-                src={event?.map_image_url || ""}
-                alt="Coach map"
-                onLoad={refreshMapSize}
-                draggable={false}
-                style={{
-                  width: `${naturalSize.width}px`,
-                  height: `${naturalSize.height}px`,
-                  display: "block",
-                  borderRadius: 8,
-                  pointerEvents: "none",
-                  userSelect: "none",
-                  WebkitUserSelect: "none",
-                }}
-              />
-
-              {renderedSites.map((site) => {
-                const x = typeof site.map_x === "number" ? site.map_x : null;
-                const y = typeof site.map_y === "number" ? site.map_y : null;
-
-                if (x === null || y === null) {
-                  return null;
-                }
-
-                const assigned = site.assigned_attendee_id
-                  ? attendeeLookup.get(site.assigned_attendee_id)
-                  : null;
-
-                const isSelected = selectedSiteKey === site.key;
-                const isOccupied = !!assigned;
-                const isViewerSite = viewerAssignedSiteKey === site.key;
-
-                return (
-                  <div
-                    key={site.key}
-                    style={{
-                      position: "absolute",
-                      left: `${(x / 100) * naturalSize.width}px`,
-                      top: `${(y / 100) * naturalSize.height}px`,
-                      transform: "translate(-50%, -50%)",
-                    }}
-                  >
-                    {isSelected && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: "50%",
-                          top: "50%",
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          background: "rgba(255,59,48,0.4)",
-                          transform: "translate(-50%, -50%)",
-                          animation: "fcoc-pulse 1.5s ease-out",
-                          pointerEvents: "none",
-                          zIndex: 1,
-                        }}
-                      />
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => goToSite(site.key)}
-                      title={site.display_label || site.site_number}
-                      style={{
-                        position: "relative",
-                        width: isSelected ? 26 : isViewerSite ? 24 : 22,
-                        height: isSelected ? 26 : isViewerSite ? 24 : 22,
-                        borderRadius: "50%",
-                        border: isSelected
-                          ? "3px solid #ffffff"
-                          : "1px solid rgba(255,255,255,0.85)",
-                        background: isSelected
-                          ? "#ff3b30"
-                          : isViewerSite
-                            ? "#16a34a"
-                            : isOccupied
-                              ? "#2563eb"
-                              : "#6b7280",
-                        boxShadow: isSelected
-                          ? "0 0 0 4px rgba(255,59,48,0.25), 0 4px 10px rgba(0,0,0,0.35)"
-                          : "0 1px 3px rgba(0,0,0,0.25)",
-                        padding: 0,
-                        cursor: "pointer",
-                        display: "block",
-                        zIndex: 2,
-                        touchAction: "manipulation",
-                      }}
-                    />
-
-                    {showLabels && (
-                      <div
-                        style={{
-                          marginTop: 3,
-                          marginLeft: "auto",
-                          marginRight: "auto",
-                          background: isSelected
-                            ? "rgba(255,244,214,0.98)"
-                            : "rgba(255,255,255,0.92)",
-                          border: isSelected
-                            ? "1px solid rgba(255,59,48,0.55)"
-                            : "1px solid rgba(0,0,0,0.18)",
-                          borderRadius: 4,
-                          fontSize: 9,
-                          fontWeight: 700,
-                          lineHeight: 1.1,
-                          padding: "1px 4px",
-                          color: "#111",
-                          whiteSpace: "nowrap",
-                          boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
-                          display: "table",
-                          pointerEvents: "none",
-                        }}
-                      >
-                        {site.display_label || site.site_number}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {locations.map((location) => {
-                const x =
-                  typeof location.map_x === "number" ? location.map_x : null;
-
-                const y =
-                  typeof location.map_y === "number" ? location.map_y : null;
-
-                if (x === null || y === null) {
-                  return null;
-                }
-
-                return (
-                  <div
-                    key={location.id}
-                    style={{
-                      position: "absolute",
-                      left: `${(x / 100) * naturalSize.width}px`,
-                      top: `${(y / 100) * naturalSize.height}px`,
-                      transform: "translate(-50%, -50%)",
-                      zIndex: 5,
-                    }}
-                    title={location.name}
-                  >
-                    <div
-                      style={{
-                        width: 14,
-                        height: 14,
-                        borderRadius: 4,
-                        background: getLocationColor(location.category),
-                        border: "2px solid white",
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </GestureMapViewportV2>
+            selectionMode="none"
+            onMarkerTap={handleMarkerTap}
+            renderMarker={renderMarker}
+          />
 
           {selectedSite && floatingPanelStyle && (
             <div
@@ -1046,7 +1041,7 @@ function CoachMapPublicPageInner() {
                       .filter(Boolean)
                       .join(" ") || "Coach information not available"}
                     {selectedAttendee.coach_length
-                      ? ` · ${selectedAttendee.coach_length} ft`
+                      ? ` \u00b7 ${selectedAttendee.coach_length} ft`
                       : ""}
                   </div>
                   <div style={{ fontSize: 13, color: "#555" }}>
