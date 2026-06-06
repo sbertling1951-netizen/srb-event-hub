@@ -9,12 +9,10 @@ import AgendaImportPanel from "@/components/admin/agenda/AgendaImportPanel";
 import AgendaTemplatePanel from "@/components/admin/agenda/AgendaTemplatePanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { useAdmin } from "@/lib/adminContext";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type AgendaItem = {
@@ -547,6 +545,7 @@ function buildAgendaCalendarBlocks(
 }
 
 function AdminAgendaPageInner() {
+  const { admin } = useAdmin();
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
   const [items, setItems] = useState<AgendaItem[]>([]);
   const [status, setStatus] = useState("Loading...");
@@ -732,42 +731,29 @@ function AdminAgendaPageInner() {
   }, []);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      showStatus("Checking admin access...");
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setActiveEvent(null);
-        setItems([]);
-        showError("No admin access.");
-        setLoading(false);
-        return;
-      }
-
-      const adminEvent = getAdminEvent();
-
-      if (!adminEvent?.id) {
-        setActiveEvent(null);
-        setItems([]);
-        setStatus("No admin working event selected.");
-        setLoading(false);
-        return;
-      }
-
-      if (!canAccessEvent(admin, adminEvent.id)) {
-        setActiveEvent(null);
-        setItems([]);
-        showError("You do not have access to this event.");
-        setLoading(false);
-        return;
-      }
-
-      await loadPage();
+    if (!admin) {
+      return;
     }
 
-    void init();
+    const adminEvent = getAdminEvent();
+
+    if (!adminEvent?.id) {
+      setActiveEvent(null);
+      setItems([]);
+      setStatus("No admin working event selected.");
+      setLoading(false);
+      return;
+    }
+
+    if (!canAccessEvent(admin, adminEvent.id)) {
+      setActiveEvent(null);
+      setItems([]);
+      showError("You do not have access to this event.");
+      setLoading(false);
+      return;
+    }
+
+    void loadPage();
     void loadTemplates();
 
     function handleStorage(e: StorageEvent) {
@@ -775,13 +761,13 @@ function AdminAgendaPageInner() {
         e.key === "fcoc-admin-event-context" ||
         e.key === "fcoc-admin-event-changed"
       ) {
-        void init();
+        void loadPage();
         void loadTemplates();
       }
     }
 
     function handleAdminEventUpdated() {
-      void init();
+      void loadPage();
       void loadTemplates();
     }
 
@@ -798,7 +784,7 @@ function AdminAgendaPageInner() {
         handleAdminEventUpdated,
       );
     };
-  }, [loadPage, loadTemplates]);
+  }, [admin, loadPage, loadTemplates]);
 
   function moveItemUp(id: string) {
     setItems((prev) => {
