@@ -3,12 +3,9 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { useAdmin } from "@/lib/adminContext";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type AdminEventContext = {
@@ -362,7 +359,7 @@ function AdminPrintPageInner() {
   const [settings, setSettings] = useState<PrintSettingsRow | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [accessDenied, setAccessDenied] = useState(false);
+  const { admin } = useAdmin();
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading print center...");
   const [editAttendeeId, setEditAttendeeId] = useState<string | null>(null);
@@ -399,21 +396,14 @@ function AdminPrintPageInner() {
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!admin) {
+      return;
+    }
+
     async function init() {
       setLoading(true);
       setError(null);
-      setAccessDenied(false);
-      setStatus("Checking admin access...");
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setAccessDenied(true);
-        setLoading(false);
-        return;
-      }
+      setStatus("Loading print center...");
 
       if (
         !hasPermission(admin, "can_manage_print_settings") &&
@@ -421,7 +411,6 @@ function AdminPrintPageInner() {
       ) {
         setError("You do not have permission to use the print center.");
         setStatus("Access denied.");
-        setAccessDenied(true);
         setLoading(false);
         return;
       }
@@ -431,7 +420,6 @@ function AdminPrintPageInner() {
         admin,
         "can_manage_admins",
       );
-
       setCanSelectPrintEvent(superAdminCanSelectEvents);
 
       if (superAdminCanSelectEvents) {
@@ -440,22 +428,17 @@ function AdminPrintPageInner() {
           .select("id,name,location,venue_name,start_date,end_date")
           .order("start_date", { ascending: false })
           .order("name", { ascending: true });
-
         if (eventError) {
           throw eventError;
         }
-
         const eventRows = (eventData || []) as EventRow[];
         setAvailableEvents(eventRows);
-
         const preferredEventId =
           selectedEventId ||
-          (adminEvent?.id && eventRows.some((row) => row.id === adminEvent.id)
+          (adminEvent?.id && eventRows.some((r) => r.id === adminEvent.id)
             ? adminEvent.id
             : eventRows[0]?.id || "");
-
         setSelectedEventId(preferredEventId);
-
         if (!preferredEventId) {
           setEvent(null);
           setSettings(null);
@@ -466,7 +449,6 @@ function AdminPrintPageInner() {
           setLoading(false);
           return;
         }
-
         await loadPage(preferredEventId);
         return;
       }
@@ -487,7 +469,6 @@ function AdminPrintPageInner() {
       if (!canAccessEvent(admin, adminEvent.id)) {
         setError("You do not have access to this event.");
         setStatus("Access denied.");
-        setAccessDenied(true);
         setLoading(false);
         return;
       }
@@ -508,7 +489,6 @@ function AdminPrintPageInner() {
         void init();
       }
     }
-
     function handleAdminEventUpdated() {
       void init();
     }
@@ -518,7 +498,6 @@ function AdminPrintPageInner() {
       "fcoc-admin-event-updated",
       handleAdminEventUpdated,
     );
-
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(
@@ -526,7 +505,7 @@ function AdminPrintPageInner() {
         handleAdminEventUpdated,
       );
     };
-  }, [selectedEventId]);
+  }, [admin, selectedEventId]);
 
   async function handleSelectedPrintEventChange(eventId: string) {
     setSelectedEventId(eventId);
@@ -871,17 +850,6 @@ function AdminPrintPageInner() {
 
   function handlePrint() {
     window.print();
-  }
-
-  if (!loading && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Print Center</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
   }
 
   const backgroundUrl =

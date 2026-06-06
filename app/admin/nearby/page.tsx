@@ -18,12 +18,10 @@ import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { useAdmin } from "@/lib/adminContext";
 import { geocodeLocation } from "@/lib/geocodeLocation";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type AdminEventContext = {
@@ -421,6 +419,7 @@ export default function AdminNearbyPage() {
 }
 
 function AdminNearbyPageInner() {
+  const { admin } = useAdmin();
   const [adminEvent, setAdminEvent] = useState<AdminEventContext | null>(null);
   const [status, setStatus] = useState("Loading nearby admin...");
 
@@ -525,7 +524,6 @@ function AdminNearbyPageInner() {
   const [bulkGeocoding, setBulkGeocoding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [isNarrow, setIsNarrow] = useState(false);
 
   const [googleQuery, setGoogleQuery] = useState("");
@@ -578,61 +576,38 @@ function AdminNearbyPageInner() {
   }, []);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setAccessDenied(false);
-      showStatus("Checking admin access...");
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        resetAllState();
-        showError("No admin access.");
-        setAccessDenied(true);
-        setLoading(false);
-        return;
-      }
-
-      const evt = getAdminEvent() as AdminEventContext | null;
-
-      if (evt?.id && !canAccessEvent(admin, evt.id)) {
-        resetAllState();
-        showError("You do not have access to this event.");
-        setAccessDenied(true);
-        setLoading(false);
-        return;
-      }
-
-      setAdminEvent(evt ?? null);
-      setLoading(false);
+    if (!admin) {
+      return;
     }
 
-    void init();
-  }, []);
+    const evt = getAdminEvent() as AdminEventContext | null;
+
+    if (evt?.id && !canAccessEvent(admin, evt.id)) {
+      resetAllState();
+      showError("You do not have access to this event.");
+      setLoading(false);
+      return;
+    }
+
+    setAdminEvent(evt ?? null);
+    setLoading(false);
+  }, [admin]);
 
   useEffect(() => {
+    if (!admin) {
+      return;
+    }
+
     async function refreshAdminEvent() {
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        resetAllState();
-        showError("No admin access.");
-        setAccessDenied(true);
-        return;
-      }
-
       const evt = getAdminEvent() as AdminEventContext | null;
 
       if (evt?.id && !canAccessEvent(admin, evt.id)) {
         resetAllState();
         showError("You do not have access to this event.");
-        setAccessDenied(true);
         return;
       }
 
       setError(null);
-      setAccessDenied(false);
       setAdminEvent(evt ?? null);
     }
 
@@ -664,7 +639,7 @@ function AdminNearbyPageInner() {
         handleAdminEventUpdated as EventListener,
       );
     };
-  }, []);
+  }, [admin]);
 
   const selectedArea =
     storedAreas.find((area) => area.id === selectedAreaId) || null;
@@ -944,17 +919,14 @@ function AdminNearbyPageInner() {
   }, []);
 
   useEffect(() => {
-    if (accessDenied) {
+    if (!admin) {
       return;
     }
-
     void loadStoredAreas();
-  }, [accessDenied, loadStoredAreas]);
+  }, [admin, loadStoredAreas]);
 
   useEffect(() => {
-    if (accessDenied) {
-      setStoredPlaces([]);
-      setStoredForm(emptyStoredPlaceForm);
+    if (!admin) {
       return;
     }
 
@@ -963,12 +935,10 @@ function AdminNearbyPageInner() {
     } else {
       setStoredPlaces([]);
     }
-  }, [selectedAreaId, accessDenied, loadStoredPlaces]);
+  }, [admin, selectedAreaId, loadStoredPlaces]);
 
   useEffect(() => {
-    if (accessDenied) {
-      setEventPlaces([]);
-      setEventForm(emptyEventPlaceForm);
+    if (!admin) {
       return;
     }
 
@@ -978,11 +948,11 @@ function AdminNearbyPageInner() {
       setEventPlaces([]);
       setEventForm(emptyEventPlaceForm);
     }
-  }, [adminEvent?.id, accessDenied, loadEventPlaces]);
+  }, [admin, adminEvent?.id, loadEventPlaces]);
 
   async function createStoredArea() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
     if (!areaName.trim()) {
@@ -1053,8 +1023,8 @@ function AdminNearbyPageInner() {
   }
 
   async function updateStoredArea() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
     if (!selectedAreaId) {
@@ -1101,8 +1071,8 @@ function AdminNearbyPageInner() {
   }
 
   async function deleteStoredArea() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
     if (!selectedAreaId || !selectedArea) {
@@ -1144,10 +1114,11 @@ function AdminNearbyPageInner() {
   }
 
   async function saveStoredPlace() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
+
     if (!selectedAreaId) {
       showError("Select a stored area first.");
       return;
@@ -1259,8 +1230,8 @@ function AdminNearbyPageInner() {
   }
 
   async function deleteStoredPlace() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
     if (!storedForm.id) {
@@ -1302,8 +1273,8 @@ function AdminNearbyPageInner() {
   }
 
   async function replaceEventListFromStored() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
     if (!adminEvent?.id) {
@@ -1414,8 +1385,8 @@ function AdminNearbyPageInner() {
   }
 
   async function mergeStoredAreaIntoEvent() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
 
@@ -1586,8 +1557,8 @@ function AdminNearbyPageInner() {
   }
 
   async function saveEventPlace() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
     if (!adminEvent?.id) {
@@ -1703,8 +1674,8 @@ function AdminNearbyPageInner() {
   }
 
   async function deleteEventPlace() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
     if (!eventForm.id) {
@@ -1815,8 +1786,8 @@ function AdminNearbyPageInner() {
     }
   }
   async function bulkGeocodeStoredPlaces() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
 
@@ -1883,8 +1854,8 @@ function AdminNearbyPageInner() {
   }
 
   async function reGeocodeStoredPlace() {
-    if (accessDenied) {
-      showError("You do not have access to this page.");
+    if (!admin) {
+      showError("Admin context not available.");
       return;
     }
 
@@ -1934,37 +1905,6 @@ function AdminNearbyPageInner() {
     } finally {
       setSavingStoredPlace(false);
     }
-  }
-
-  if (!loading && accessDenied) {
-    return (
-      <div style={{ padding: 24 }}>
-        <div className="app-card-section">
-          <div style={{ marginBottom: 16 }}>
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href = "/admin/map-admin";
-              }}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                background: "#fff",
-                cursor: "pointer",
-              }}
-            >
-              ← Back to Map Admin
-            </button>
-          </div>
-
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Nearby Admin</h1>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            You do not have access to this page.
-          </div>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -2053,7 +1993,7 @@ function AdminNearbyPageInner() {
             <>
               <select
                 value={selectedAreaId}
-                disabled={accessDenied || loadingAreas}
+                disabled={!admin || loadingAreas}
                 onChange={(e) => {
                   setSelectedAreaId(e.target.value);
 
@@ -2084,7 +2024,7 @@ function AdminNearbyPageInner() {
                 onChange={(e) => setAreaName(e.target.value)}
                 placeholder="Stored area name"
                 style={{ padding: 10 }}
-                disabled={accessDenied || savingArea}
+                disabled={!admin || savingArea}
               />
 
               <textarea
@@ -2093,7 +2033,7 @@ function AdminNearbyPageInner() {
                 placeholder="Stored area description"
                 rows={3}
                 style={{ padding: 10, resize: "vertical" }}
-                disabled={accessDenied || savingArea}
+                disabled={!admin || savingArea}
               />
 
               {selectedArea?.google_last_run ? (
@@ -2117,21 +2057,21 @@ function AdminNearbyPageInner() {
                 <button
                   type="button"
                   onClick={() => void createStoredArea()}
-                  disabled={accessDenied || savingArea}
+                  disabled={!admin || savingArea}
                 >
                   New Stored Area
                 </button>
                 <button
                   type="button"
                   onClick={() => void updateStoredArea()}
-                  disabled={accessDenied || !selectedAreaId || savingArea}
+                  disabled={!admin || !selectedAreaId || savingArea}
                 >
                   Save Area Changes
                 </button>
                 <button
                   type="button"
                   onClick={() => void deleteStoredArea()}
-                  disabled={accessDenied || !selectedAreaId || savingArea}
+                  disabled={!admin || !selectedAreaId || savingArea}
                 >
                   Delete Area
                 </button>
@@ -2141,10 +2081,7 @@ function AdminNearbyPageInner() {
                 type="button"
                 onClick={() => void replaceEventListFromStored()}
                 disabled={
-                  accessDenied ||
-                  !adminEvent?.id ||
-                  !selectedAreaId ||
-                  copyingToEvent
+                  !admin || !adminEvent?.id || !selectedAreaId || copyingToEvent
                 }
               >
                 {copyingToEvent
@@ -2155,10 +2092,7 @@ function AdminNearbyPageInner() {
                 type="button"
                 onClick={() => void mergeStoredAreaIntoEvent()}
                 disabled={
-                  accessDenied ||
-                  !adminEvent?.id ||
-                  !selectedAreaId ||
-                  copyingToEvent
+                  !admin || !adminEvent?.id || !selectedAreaId || copyingToEvent
                 }
               >
                 {copyingToEvent
@@ -2241,7 +2175,7 @@ function AdminNearbyPageInner() {
               className="app-button app-button-muted"
               onClick={() => void bulkGeocodeStoredPlaces()}
               disabled={
-                accessDenied ||
+                !admin ||
                 bulkGeocoding ||
                 loadingStoredPlaces ||
                 storedPlaces.length === 0
@@ -2314,7 +2248,7 @@ function AdminNearbyPageInner() {
                   }
                   placeholder="Place name"
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingStoredPlace}
+                  disabled={!admin || savingStoredPlace}
                 />
                 <select
                   data-stored-field="category"
@@ -2342,7 +2276,7 @@ function AdminNearbyPageInner() {
                     }));
                   }}
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingStoredPlace}
+                  disabled={!admin || savingStoredPlace}
                 >
                   <option value="">Select category</option>
 
@@ -2391,7 +2325,7 @@ function AdminNearbyPageInner() {
                     }}
                     placeholder="Enter new category"
                     style={{ padding: 10 }}
-                    disabled={accessDenied || savingStoredPlace}
+                    disabled={!admin || savingStoredPlace}
                   />
                 ) : null}
 
@@ -2407,7 +2341,7 @@ function AdminNearbyPageInner() {
                   }
                   placeholder="Address"
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingStoredPlace}
+                  disabled={!admin || savingStoredPlace}
                 />
                 <input
                   data-stored-field="phone"
@@ -2421,7 +2355,7 @@ function AdminNearbyPageInner() {
                   }
                   placeholder="Phone"
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingStoredPlace}
+                  disabled={!admin || savingStoredPlace}
                 />
                 <input
                   data-stored-field="website"
@@ -2435,7 +2369,7 @@ function AdminNearbyPageInner() {
                   }
                   placeholder="Website"
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingStoredPlace}
+                  disabled={!admin || savingStoredPlace}
                 />
                 <textarea
                   data-stored-field="notes"
@@ -2450,7 +2384,7 @@ function AdminNearbyPageInner() {
                   placeholder="Notes"
                   rows={4}
                   style={{ padding: 10, resize: "vertical" }}
-                  disabled={accessDenied || savingStoredPlace}
+                  disabled={!admin || savingStoredPlace}
                 />
 
                 <div
@@ -2472,7 +2406,7 @@ function AdminNearbyPageInner() {
                     }
                     placeholder="Latitude"
                     style={{ padding: 10 }}
-                    disabled={accessDenied || savingStoredPlace}
+                    disabled={!admin || savingStoredPlace}
                   />
                   <input
                     data-stored-field="lng"
@@ -2486,7 +2420,7 @@ function AdminNearbyPageInner() {
                     }
                     placeholder="Longitude"
                     style={{ padding: 10 }}
-                    disabled={accessDenied || savingStoredPlace}
+                    disabled={!admin || savingStoredPlace}
                   />
                 </div>
 
@@ -2502,7 +2436,7 @@ function AdminNearbyPageInner() {
                   }
                   placeholder="Location code"
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingStoredPlace}
+                  disabled={!admin || savingStoredPlace}
                 />
 
                 <div className="app-button-row">
@@ -2510,7 +2444,7 @@ function AdminNearbyPageInner() {
                   <button
                     type="button"
                     onClick={() => void saveStoredPlace()}
-                    disabled={accessDenied || savingStoredPlace}
+                    disabled={!admin || savingStoredPlace}
                   >
                     {storedForm.id ? "Update Stored Place" : "Add Stored Place"}
                   </button>
@@ -2526,25 +2460,21 @@ function AdminNearbyPageInner() {
                         ...emptyStoredPlaceForm,
                       });
                     }}
-                    disabled={accessDenied || savingStoredPlace}
+                    disabled={!admin || savingStoredPlace}
                   >
                     New Blank
                   </button>
                   <button
                     type="button"
                     onClick={() => void reGeocodeStoredPlace()}
-                    disabled={
-                      accessDenied || savingStoredPlace || !storedForm.id
-                    }
+                    disabled={!admin || savingStoredPlace || !storedForm.id}
                   >
                     Re-Geocode This Place
                   </button>
                   <button
                     type="button"
                     onClick={() => void deleteStoredPlace()}
-                    disabled={
-                      accessDenied || !storedForm.id || savingStoredPlace
-                    }
+                    disabled={!admin || !storedForm.id || savingStoredPlace}
                   >
                     Delete Stored Place
                   </button>
@@ -2848,7 +2778,7 @@ function AdminNearbyPageInner() {
                 }
                 placeholder="Event place name"
                 style={{ padding: 10 }}
-                disabled={accessDenied || savingEventPlace}
+                disabled={!admin || savingEventPlace}
               />
               <input
                 value={eventForm.category}
@@ -2860,7 +2790,7 @@ function AdminNearbyPageInner() {
                 }
                 placeholder="Category"
                 style={{ padding: 10 }}
-                disabled={accessDenied || savingEventPlace}
+                disabled={!admin || savingEventPlace}
               />
               <input
                 value={eventForm.address}
@@ -2869,7 +2799,7 @@ function AdminNearbyPageInner() {
                 }
                 placeholder="Address"
                 style={{ padding: 10 }}
-                disabled={accessDenied || savingEventPlace}
+                disabled={!admin || savingEventPlace}
               />
               <input
                 value={eventForm.phone}
@@ -2878,7 +2808,7 @@ function AdminNearbyPageInner() {
                 }
                 placeholder="Phone"
                 style={{ padding: 10 }}
-                disabled={accessDenied || savingEventPlace}
+                disabled={!admin || savingEventPlace}
               />
               <input
                 value={eventForm.website}
@@ -2887,7 +2817,7 @@ function AdminNearbyPageInner() {
                 }
                 placeholder="Website"
                 style={{ padding: 10 }}
-                disabled={accessDenied || savingEventPlace}
+                disabled={!admin || savingEventPlace}
               />
               <textarea
                 value={eventForm.notes}
@@ -2897,7 +2827,7 @@ function AdminNearbyPageInner() {
                 placeholder="Notes"
                 rows={4}
                 style={{ padding: 10, resize: "vertical" }}
-                disabled={accessDenied || savingEventPlace}
+                disabled={!admin || savingEventPlace}
               />
 
               <div
@@ -2917,7 +2847,7 @@ function AdminNearbyPageInner() {
                   }
                   placeholder="Latitude"
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingEventPlace}
+                  disabled={!admin || savingEventPlace}
                 />
                 <input
                   value={eventForm.lng}
@@ -2929,7 +2859,7 @@ function AdminNearbyPageInner() {
                   }
                   placeholder="Longitude"
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingEventPlace}
+                  disabled={!admin || savingEventPlace}
                 />
               </div>
 
@@ -2950,7 +2880,7 @@ function AdminNearbyPageInner() {
                   }
                   placeholder="Miles"
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingEventPlace}
+                  disabled={!admin || savingEventPlace}
                 />
                 <input
                   value={eventForm.location_code}
@@ -2962,7 +2892,7 @@ function AdminNearbyPageInner() {
                   }
                   placeholder="Location code"
                   style={{ padding: 10 }}
-                  disabled={accessDenied || savingEventPlace}
+                  disabled={!admin || savingEventPlace}
                 />
               </div>
 
@@ -2976,7 +2906,7 @@ function AdminNearbyPageInner() {
                       is_hidden: e.target.checked,
                     }))
                   }
-                  disabled={accessDenied || savingEventPlace}
+                  disabled={!admin || savingEventPlace}
                 />
                 Hidden from members
               </label>
@@ -2986,21 +2916,21 @@ function AdminNearbyPageInner() {
                 <button
                   type="button"
                   onClick={() => void saveEventPlace()}
-                  disabled={accessDenied || savingEventPlace}
+                  disabled={!admin || savingEventPlace}
                 >
                   {eventForm.id ? "Update Event Place" : "Add Event-Only Place"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setEventForm(emptyEventPlaceForm)}
-                  disabled={accessDenied || savingEventPlace}
+                  disabled={!admin || savingEventPlace}
                 >
                   New Blank
                 </button>
                 <button
                   type="button"
                   onClick={() => void deleteEventPlace()}
-                  disabled={accessDenied || !eventForm.id || savingEventPlace}
+                  disabled={!admin || !eventForm.id || savingEventPlace}
                 >
                   Delete Event Place
                 </button>
