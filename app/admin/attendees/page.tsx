@@ -10,11 +10,8 @@ import {
 } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
+import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type EventContext = {
@@ -2097,11 +2094,11 @@ function ValidationRulesEmbedPanel() {
 
 function AdminAttendeesPageInner() {
   const storedPrefs = getStoredAttendeeCommandCenterPrefs();
+  const { admin } = useAdmin();
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
   const [loading, setLoading] = useState(true);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading attendee records...");
   const [search, setSearch] = useState(storedPrefs.search || "");
@@ -2150,6 +2147,7 @@ function AdminAttendeesPageInner() {
     );
   }
   const [showReviewQueue, setShowReviewQueue] = useState(false);
+
   const loadQueue = useCallback(async (eventId: string) => {
     try {
       setLoading(true);
@@ -2238,136 +2236,118 @@ function AdminAttendeesPageInner() {
       setLoading(false);
     }
   }, []);
-  useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setAccessDenied(false);
-      setError(null);
-      setStatus("Checking admin access...");
 
-      const admin = await getCurrentAdminAccess();
+  const loadEventAndData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setStatus("Loading attendee records...");
 
-      if (!admin) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setRules([]);
-        setAccessDenied(true);
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
+    const storedEvent = getStoredAdminEvent();
 
-      if (
-        !hasPermission(admin, "can_edit_attendees") &&
-        !hasPermission(admin, "can_manage_imports") &&
-        !hasPermission(admin, "can_manage_reports") &&
-        !hasPermission(admin, "can_manage_validation_rules")
-      ) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setRules([]);
-        setAccessDenied(true);
-        setError("You do not have permission to use Attendee Management.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
+    const { data: eventsData, error: eventsError } = await supabase
+      .from("events")
+      .select("id, name, location, start_date, end_date, status")
+      .order("start_date", { ascending: false });
 
-      const storedEvent = getStoredAdminEvent();
-
-      // Always load events to validate active status
-      const { data: eventsData, error: eventsError } = await supabase
-        .from("events")
-        .select("id, name, location, start_date, end_date, status")
-        .order("start_date", { ascending: false });
-
-      if (eventsError) {
-        console.error("Error loading events:", eventsError);
-        setCurrentEvent(null);
-        setAttendees([]);
-        setRules([]);
-        setError(eventsError.message || "Could not load events.");
-        setStatus("Load failed.");
-        setLoading(false);
-        return;
-      }
-
-      const activeEvents = (eventsData || []).filter((e: any) =>
-        isActiveEventStatus(e.status),
-      );
-
-      let eventToUse: EventContext | null = null;
-
-      if (storedEvent?.id) {
-        const matched = (eventsData || []).find(
-          (e: any) => e.id === storedEvent.id,
-        );
-
-        // Only use stored event if it's still active
-        if (matched && isActiveEventStatus(matched.status)) {
-          eventToUse = {
-            ...storedEvent,
-            id: matched.id,
-            name:
-              matched.name || storedEvent.name || storedEvent.eventName || null,
-            eventName:
-              matched.name || storedEvent.eventName || storedEvent.name || null,
-            location: matched.location || storedEvent.location || null,
-            venue_name: storedEvent.venue_name || matched.location || null,
-            start_date: matched.start_date || storedEvent.start_date || null,
-            end_date: matched.end_date || storedEvent.end_date || null,
-          };
-        }
-      }
-
-      // Fallback to first active event if stored one is inactive
-      if (!eventToUse && activeEvents.length > 0) {
-        const fallback = activeEvents[0];
-        eventToUse = {
-          id: fallback.id,
-          name: fallback.name || "Selected Event",
-          eventName: fallback.name || "Selected Event",
-          location: fallback.location || null,
-          venue_name: fallback.location || null,
-          start_date: fallback.start_date || null,
-          end_date: fallback.end_date || null,
-        };
-
-        // Update localStorage so app stays consistent
-        localStorage.setItem(
-          ADMIN_EVENT_STORAGE_KEY,
-          JSON.stringify(eventToUse),
-        );
-        localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-        window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
-      }
-
-      if (!eventToUse) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setRules([]);
-        setStatus("No active event available.");
-        setLoading(false);
-        return;
-      }
-
-      if (!canAccessEvent(admin, eventToUse.id!)) {
-        setCurrentEvent(null);
-        setAttendees([]);
-        setRules([]);
-        setAccessDenied(true);
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      setCurrentEvent(eventToUse);
-      await loadQueue(eventToUse.id!);
+    if (eventsError) {
+      setCurrentEvent(null);
+      setAttendees([]);
+      setRules([]);
+      setError(eventsError.message || "Could not load events.");
+      setStatus("Load failed.");
+      setLoading(false);
+      return;
     }
 
-    void init();
+    const activeEvents = (eventsData || []).filter((e: any) =>
+      isActiveEventStatus(e.status),
+    );
+
+    let eventToUse: EventContext | null = null;
+
+    if (storedEvent?.id) {
+      const matched = (eventsData || []).find(
+        (e: any) => e.id === storedEvent.id,
+      );
+
+      if (matched && isActiveEventStatus(matched.status)) {
+        eventToUse = {
+          ...storedEvent,
+          id: matched.id,
+          name:
+            matched.name || storedEvent.name || storedEvent.eventName || null,
+          eventName:
+            matched.name || storedEvent.eventName || storedEvent.name || null,
+          location: matched.location || storedEvent.location || null,
+          venue_name: storedEvent.venue_name || matched.location || null,
+          start_date: matched.start_date || storedEvent.start_date || null,
+          end_date: matched.end_date || storedEvent.end_date || null,
+        };
+      }
+    }
+
+    if (!eventToUse && activeEvents.length > 0) {
+      const fallback = activeEvents[0];
+
+      eventToUse = {
+        id: fallback.id,
+        name: fallback.name || "Selected Event",
+        eventName: fallback.name || "Selected Event",
+        location: fallback.location || null,
+        venue_name: fallback.location || null,
+        start_date: fallback.start_date || null,
+        end_date: fallback.end_date || null,
+      };
+
+      localStorage.setItem(ADMIN_EVENT_STORAGE_KEY, JSON.stringify(eventToUse));
+      localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+      window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
+    }
+
+    if (!eventToUse) {
+      setCurrentEvent(null);
+      setAttendees([]);
+      setRules([]);
+      setStatus("No active event available.");
+      setLoading(false);
+      return;
+    }
+
+    if (!canAccessEvent(admin!, eventToUse.id!)) {
+      setCurrentEvent(null);
+      setAttendees([]);
+      setRules([]);
+      setError("You do not have access to this event.");
+      setStatus("Access denied.");
+      setLoading(false);
+      return;
+    }
+
+    setCurrentEvent(eventToUse);
+    await loadQueue(eventToUse.id!);
+  }, [admin, loadQueue]);
+
+  useEffect(() => {
+    if (!admin) {
+      return;
+    }
+
+    if (
+      !hasPermission(admin, "can_edit_attendees") &&
+      !hasPermission(admin, "can_manage_imports") &&
+      !hasPermission(admin, "can_manage_reports") &&
+      !hasPermission(admin, "can_manage_validation_rules")
+    ) {
+      setCurrentEvent(null);
+      setAttendees([]);
+      setRules([]);
+      setError("You do not have permission to use Attendee Management.");
+      setStatus("Access denied.");
+      setLoading(false);
+      return;
+    }
+
+    void loadEventAndData();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -2376,12 +2356,12 @@ function AdminAttendeesPageInner() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        void init();
+        void loadEventAndData();
       }
     }
 
     function handleAdminEventUpdated() {
-      void init();
+      void loadEventAndData();
     }
 
     window.addEventListener("storage", handleStorage);
@@ -2397,7 +2377,7 @@ function AdminAttendeesPageInner() {
         handleAdminEventUpdated,
       );
     };
-  }, [loadQueue]);
+  }, [admin, loadEventAndData]);
 
   useEffect(() => {
     saveAttendeeCommandCenterPrefs({
@@ -3075,26 +3055,6 @@ function AdminAttendeesPageInner() {
     } finally {
       setInlineSaving(false);
     }
-  }
-
-  if (!loading && accessDenied) {
-    return (
-      <div
-        className="card"
-        style={{
-          padding: 18,
-          position: "sticky",
-          top: 140,
-          zIndex: 40,
-          background: "white",
-        }}
-      >
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Command Center</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
   }
 
   const eventName =
