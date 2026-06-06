@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { useAdmin } from "@/lib/adminContext";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   type AdminAccessResult,
   canAccessEvent,
-  getCurrentAdminAccess,
   hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -321,9 +321,7 @@ function AdminDashboardPageInner() {
   const initialEvent = getInitialAdminEvent();
   const router = useRouter();
 
-  const [adminAccess, setAdminAccess] = useState<AdminAccessResult | null>(
-    null,
-  );
+  const { admin: adminAccess } = useAdmin();
   const [events, setEvents] = useState<EventRow[]>([]);
   const [selectedEventId, setSelectedEventId] = useState(
     initialEvent?.id || "",
@@ -447,26 +445,21 @@ function AdminDashboardPageInner() {
   const loadPage = useCallback(async () => {
     try {
       setLoading(true);
-
-      if (!activeEvent) {
-        setStatus("Loading dashboard...");
-      }
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setAdminAccess(null);
+      if (!adminAccess) {
         setSelectedEventId("");
         setActiveEvent(null);
         setAttendees([]);
         setHouseholdMembers([]);
         setStatus("No admin access.");
+        setLoading(false);
         return;
       }
 
-      setAdminAccess(admin);
+      if (!activeEvent) {
+        setStatus("Loading dashboard...");
+      }
 
-      const loadedEvents = await loadEvents(admin);
+      const loadedEvents = await loadEvents(adminAccess);
       setEvents(loadedEvents);
 
       if (loadedEvents.length === 0) {
@@ -514,7 +507,7 @@ function AdminDashboardPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [activeEvent]);
+  }, [activeEvent, adminAccess]);
 
   useEffect(() => {
     function handleResize() {
@@ -735,7 +728,9 @@ function AdminDashboardPageInner() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: showMobileStats ? "120px minmax(0, 1fr)" : "1fr",
+            gridTemplateColumns: showMobileStats
+              ? "120px minmax(0, 1fr)"
+              : "1fr",
             gap: 12,
             alignItems: "start",
           }}
@@ -750,11 +745,47 @@ function AdminDashboardPageInner() {
                 alignSelf: "start",
               }}
             >
-              <MetricCard label="Coaches" value={loading && attendees.length === 0 ? "…" : metrics.registeredCoaches} />
-              <MetricCard label="Arrived" value={loading && attendees.length === 0 ? "…" : metrics.coachesArrived} footer={`${metrics.coachArrivedPercent}%`} />
-              <MetricCard label="Queue" value={loading && attendees.length === 0 ? "…" : metrics.queueSize} />
-              <MetricCard label="Parked" value={loading && attendees.length === 0 ? "…" : `${metrics.parkedPercent}%`} footer={`${metrics.parkedCount}`} />
-              <MetricCard label="Sites" value={loading && attendees.length === 0 ? "…" : `${metrics.assignedPercent}%`} footer={`${metrics.assignedCount}`} />
+              <MetricCard
+                label="Coaches"
+                value={
+                  loading && attendees.length === 0
+                    ? "…"
+                    : metrics.registeredCoaches
+                }
+              />
+              <MetricCard
+                label="Arrived"
+                value={
+                  loading && attendees.length === 0
+                    ? "…"
+                    : metrics.coachesArrived
+                }
+                footer={`${metrics.coachArrivedPercent}%`}
+              />
+              <MetricCard
+                label="Queue"
+                value={
+                  loading && attendees.length === 0 ? "…" : metrics.queueSize
+                }
+              />
+              <MetricCard
+                label="Parked"
+                value={
+                  loading && attendees.length === 0
+                    ? "…"
+                    : `${metrics.parkedPercent}%`
+                }
+                footer={`${metrics.parkedCount}`}
+              />
+              <MetricCard
+                label="Sites"
+                value={
+                  loading && attendees.length === 0
+                    ? "…"
+                    : `${metrics.assignedPercent}%`
+                }
+                footer={`${metrics.assignedCount}`}
+              />
             </div>
           )}
 
@@ -850,7 +881,9 @@ function AdminDashboardPageInner() {
             <MetricCard
               label="Registered Coaches"
               value={
-                loading && attendees.length === 0 ? "…" : metrics.registeredCoaches
+                loading && attendees.length === 0
+                  ? "…"
+                  : metrics.registeredCoaches
               }
             />
             <MetricCard
@@ -899,7 +932,9 @@ function AdminDashboardPageInner() {
             />
             <MetricCard
               label="Queue Size"
-              value={loading && attendees.length === 0 ? "…" : metrics.queueSize}
+              value={
+                loading && attendees.length === 0 ? "…" : metrics.queueSize
+              }
               footer="still needing final parking"
             />
             <MetricCard
