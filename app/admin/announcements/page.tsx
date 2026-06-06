@@ -5,10 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { type AdminEventContext, getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type Announcement = {
@@ -155,6 +153,7 @@ function AdminAnnouncementsPageInner() {
     null,
   );
 
+  const { admin } = useAdmin();
   const eventId = currentEvent?.id ?? null;
 
   useEffect(() => {
@@ -231,26 +230,16 @@ function AdminAnnouncementsPageInner() {
   }, []);
 
   useEffect(() => {
-    async function init() {
+    if (!admin) return;
+
+    function loadCurrentEvent() {
       setLoadingEvent(true);
       setError(null);
-      showStatus("Checking admin access...");
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setCurrentEvent(null);
-        setAnnouncements([]);
-        resetForm();
-        showError("No admin access.");
-        setLoadingEvent(false);
-        return;
-      }
 
       const stored = getAdminEvent();
 
       if (stored?.id) {
-        if (!canAccessEvent(admin, stored.id)) {
+        if (!canAccessEvent(admin!, stored.id)) {
           setCurrentEvent(null);
           setAnnouncements([]);
           resetForm();
@@ -274,7 +263,7 @@ function AdminAnnouncementsPageInner() {
       setLoadingEvent(false);
     }
 
-    void init();
+    loadCurrentEvent();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -283,12 +272,12 @@ function AdminAnnouncementsPageInner() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        void init();
+        loadCurrentEvent();
       }
     }
 
     function handleAdminEventUpdated() {
-      void init();
+      loadCurrentEvent();
     }
 
     window.addEventListener("storage", handleStorage);
@@ -304,7 +293,7 @@ function AdminAnnouncementsPageInner() {
         handleAdminEventUpdated,
       );
     };
-  }, []);
+  }, [admin]);
 
   useEffect(() => {
     if (!eventId) {

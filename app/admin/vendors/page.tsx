@@ -4,10 +4,8 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type Vendor = {
@@ -87,13 +85,12 @@ function AdminVendorsPageInner() {
   const [saving, setSaving] = useState(false);
 
   const adminEvent = getAdminEvent();
+  const { admin } = useAdmin();
 
   async function loadPage() {
     try {
       setStatus("Loading vendors...");
       setError(null);
-
-      const admin = await getCurrentAdminAccess();
 
       if (!admin) {
         setError("No admin access.");
@@ -144,9 +141,10 @@ function AdminVendorsPageInner() {
   }
 
   useEffect(() => {
+    if (!admin) return;
     void loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [admin]);
 
   const _selectedVendor = useMemo(
     () => vendors.find((v) => v.id === selectedVendorId) || null,

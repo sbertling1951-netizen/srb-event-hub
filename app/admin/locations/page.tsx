@@ -6,10 +6,8 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type AdminEventContext = {
@@ -52,8 +50,6 @@ function AdminLocationsPageInner() {
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading...");
-  // naturalSize removed — the engine measures the image and onMapTap returns
-  // percent directly, so we no longer convert pixel->percent by hand.
   const [isNarrow, setIsNarrow] = useState(false);
 
   const [formId, setFormId] = useState("");
@@ -70,6 +66,8 @@ function AdminLocationsPageInner() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mapRef = useRef<MapCanvasHandle | null>(null);
+
+  const { admin } = useAdmin();
 
   useEffect(() => {
     function handleResize() {
@@ -210,47 +208,30 @@ function AdminLocationsPageInner() {
   }, [loadLocationIntoForm, selectedLocationId]);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setStatus("Checking admin access...");
+    if (!admin) return;
 
-      const admin = await getCurrentAdminAccess();
+    const adminEvent = getAdminEvent() as AdminEventContext | null;
 
-      if (!admin) {
-        setEvent(null);
-        setLocations([]);
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      const adminEvent = getAdminEvent() as AdminEventContext | null;
-
-      if (!adminEvent?.id) {
-        setEvent(null);
-        setLocations([]);
-        setStatus(
-          "No admin working event selected. Choose one on the Admin Dashboard.",
-        );
-        setLoading(false);
-        return;
-      }
-
-      if (!canAccessEvent(admin, adminEvent.id)) {
-        setEvent(null);
-        setLocations([]);
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      await loadPage();
+    if (!adminEvent?.id) {
+      setEvent(null);
+      setLocations([]);
+      setStatus(
+        "No admin working event selected. Choose one on the Admin Dashboard.",
+      );
+      setLoading(false);
+      return;
     }
 
-    void init();
+    if (!canAccessEvent(admin, adminEvent.id)) {
+      setEvent(null);
+      setLocations([]);
+      setError("You do not have access to this event.");
+      setStatus("Access denied.");
+      setLoading(false);
+      return;
+    }
+
+    void loadPage();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -259,12 +240,12 @@ function AdminLocationsPageInner() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        void init();
+        void loadPage();
       }
     }
 
     function handleAdminEventUpdated() {
-      void init();
+      void loadPage();
     }
 
     window.addEventListener("storage", handleStorage);
@@ -280,7 +261,7 @@ function AdminLocationsPageInner() {
         handleAdminEventUpdated as EventListener,
       );
     };
-  }, [loadPage]);
+  }, [admin, loadPage]);
 
   const filteredLocations = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -300,7 +281,6 @@ function AdminLocationsPageInner() {
   const selectedLocation =
     locations.find((loc) => loc.id === selectedLocationId) || null;
 
-  // Fast id -> location lookup for marker rendering + tap routing.
   const locationById = useMemo(() => {
     const map = new Map<string, EventLocation>();
     for (const loc of locations) {
@@ -309,7 +289,6 @@ function AdminLocationsPageInner() {
     return map;
   }, [locations]);
 
-  // Engine markers: PERCENT coordinates only (map_x/map_y are already 0..100).
   const markers = useMemo<MapMarker[]>(
     () =>
       locations
@@ -328,8 +307,6 @@ function AdminLocationsPageInner() {
     setIsPlacing(false);
     loadLocationIntoForm(location);
 
-    // Viewport-only: center on the selected marker, preserving current zoom.
-    // No-op when the location has no placed position yet (not in `markers`).
     const vp = mapRef.current?.getViewport();
     mapRef.current?.centerOnMarker(location.id, vp?.scale);
 
@@ -358,8 +335,6 @@ function AdminLocationsPageInner() {
     }
   }
 
-  // Marker tap comes back from the engine as an id; route it through the same
-  // handler the list uses (loads the marker into the form for editing).
   const handleMarkerTap = useCallback(
     (id: string) => {
       const loc = locationById.get(id);
@@ -367,13 +342,10 @@ function AdminLocationsPageInner() {
         handleLocationClick(loc);
       }
     },
-    // handleLocationClick only touches stable setters + loadLocationIntoForm
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [locationById],
   );
 
-  // Page-supplied marker visual (faithful: 60px disc, category color, gold when
-  // selected, name chip). MarkerLayer owns positioning + the click target.
   const renderMarker = useCallback(
     (m: MapMarker) => {
       const loc = locationById.get(m.id);
@@ -421,7 +393,6 @@ function AdminLocationsPageInner() {
         </>
       );
     },
-    // getMarkerColor reads selectedLocationId, so re-create on selection change
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [locationById, selectedLocationId, isNarrow],
   );

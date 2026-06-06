@@ -5,10 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type MasterMapRow = {
@@ -78,9 +76,10 @@ function MasterMapsPageInner() {
   const [loading, setLoading] = useState(true);
   const [savingScales, setSavingScales] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
-  const [canManageMaps, setCanManageMaps] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+
+  const { admin } = useAdmin();
+  const canManageMaps = !!admin;
 
   useEffect(() => {
     function handleResize() {
@@ -153,8 +152,6 @@ function MasterMapsPageInner() {
       return;
     }
 
-    const admin = await getCurrentAdminAccess();
-
     if (!admin || !canAccessEvent(admin, String(currentEvent.id))) {
       setSelectedEventId("");
       setSelectedEventName("");
@@ -190,7 +187,7 @@ function MasterMapsPageInner() {
     setCoachMapOpenScale(String(event.coach_map_open_scale ?? 0.6));
     setParkingMapOpenScale(String(event.parking_map_open_scale ?? 0.6));
     setLocationsMapOpenScale(String(event.locations_map_open_scale ?? 0.6));
-  }, []);
+  }, [admin]);
 
   async function saveMapScales() {
     if (!selectedEventId) {
@@ -200,7 +197,6 @@ function MasterMapsPageInner() {
       return;
     }
 
-    const admin = await getCurrentAdminAccess();
     if (!admin) {
       setError("No admin access.");
       setStatus("Access denied.");
@@ -252,7 +248,6 @@ function MasterMapsPageInner() {
 
   async function handleEditMap(map: MasterMapRow) {
     try {
-      const admin = await getCurrentAdminAccess();
       if (!admin) {
         setError("No admin access.");
         setStatus("Access denied.");
@@ -366,6 +361,7 @@ function MasterMapsPageInner() {
       setOpeningMapId(null);
     }
   }
+
   async function handleArchiveMap(map: MasterMapRow) {
     const confirmed = window.confirm(
       `Archive this map?\n\n${map.name}\n\nIt will be moved out of the active list and can be restored later.`,
@@ -376,7 +372,6 @@ function MasterMapsPageInner() {
     }
 
     try {
-      const admin = await getCurrentAdminAccess();
       if (!admin) {
         setError("No admin access.");
         setStatus("Access denied.");
@@ -412,7 +407,6 @@ function MasterMapsPageInner() {
 
   async function handleRestoreMap(map: MasterMapRow) {
     try {
-      const admin = await getCurrentAdminAccess();
       if (!admin) {
         setError("No admin access.");
         setStatus("Access denied.");
@@ -516,7 +510,6 @@ function MasterMapsPageInner() {
     }
 
     try {
-      const admin = await getCurrentAdminAccess();
       if (!admin) {
         setError("No admin access.");
         setStatus("Access denied.");
@@ -590,7 +583,6 @@ function MasterMapsPageInner() {
     }
 
     try {
-      const admin = await getCurrentAdminAccess();
       if (!admin) {
         setError("No admin access.");
         setStatus("Access denied.");
@@ -631,32 +623,16 @@ function MasterMapsPageInner() {
   }
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setAccessDenied(false);
-      setStatus("Checking admin access...");
+    if (!admin) return;
 
-      const admin = await getCurrentAdminAccess();
+    setLoading(true);
+    setError(null);
 
-      if (!admin) {
-        setMaps([]);
-        setSelectedEventId("");
-        setSelectedEventName("");
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setAccessDenied(true);
-        setLoading(false);
-        return;
-      }
-
-      setCanManageMaps(true);
-
+    async function load() {
       await Promise.all([loadMasterMaps(), loadSelectedEventSettings()]);
       setLoading(false);
     }
-
-    void init();
+    void load();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -686,7 +662,7 @@ function MasterMapsPageInner() {
         handleAdminEventUpdated as EventListener,
       );
     };
-  }, [loadMasterMaps, loadSelectedEventSettings]);
+  }, [admin, loadMasterMaps, loadSelectedEventSettings]);
 
   useEffect(() => {
     if (loading) {
@@ -694,44 +670,6 @@ function MasterMapsPageInner() {
     }
     void loadMasterMaps();
   }, [loadMasterMaps, loading]);
-
-  if (!loading && accessDenied) {
-    return (
-      <div style={{ padding: 24 }}>
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 18,
-          }}
-        >
-          <div style={{ marginBottom: 16 }}>
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href = "/admin/map-admin";
-              }}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                background: "#fff",
-                cursor: "pointer",
-              }}
-            >
-              ← Back to Map Admin
-            </button>
-          </div>
-
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Master Maps</h1>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            You do not have access to this page.
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{ padding: 24 }}>

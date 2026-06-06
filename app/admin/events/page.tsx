@@ -4,10 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type EventRow = {
@@ -136,8 +134,6 @@ function EventAdminPageInner() {
   const [masterMaps, setMasterMaps] = useState<MasterMapRow[]>([]);
   const [nearbyLists, setNearbyLists] = useState<NearbyAreaRow[]>([]);
 
-  const [adminState, setAdminState] = useState<any | null>(null);
-
   const [selectedEventId, setSelectedEventId] = useState("");
   const [form, setForm] = useState<EventFormState>(emptyForm);
 
@@ -149,17 +145,16 @@ function EventAdminPageInner() {
   const [savingAssignments, setSavingAssignments] = useState(false);
   const [status, setStatus] = useState("Loading event admin...");
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [eventStatusFilter, setEventStatusFilter] =
     useState<EventStatusFilter>("active");
+
+  const { admin } = useAdmin();
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
 
   const loadAssignmentsForEvent = useCallback(async (eventId: string) => {
     try {
-      const admin = await getCurrentAdminAccess();
-      setAdminState(admin);
       if (!admin || !canAccessEvent(admin, eventId)) {
         setSelectedMasterMapId("");
         setSelectedNearbyListId("");
@@ -204,15 +199,13 @@ function EventAdminPageInner() {
       setSelectedNearbyListId("");
       setStatus(err?.message || "Failed to load event assignments.");
     }
-  }, []);
+  }, [admin]);
 
   const loadPage = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       setStatus("Loading events, maps, and nearby lists...");
-
-      const admin = await getCurrentAdminAccess();
 
       if (!admin) {
         setEvents([]);
@@ -222,9 +215,7 @@ function EventAdminPageInner() {
         setForm(emptyForm);
         setSelectedMasterMapId("");
         setSelectedNearbyListId("");
-        setError("No admin access.");
         setStatus("Access denied.");
-        setAccessDenied(true);
         return;
       }
 
@@ -329,36 +320,12 @@ function EventAdminPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [eventStatusFilter]);
+  }, [admin, eventStatusFilter]);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setAccessDenied(false);
-      setStatus("Checking admin access...");
+    if (!admin) return;
 
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setEvents([]);
-        setMasterMaps([]);
-        setNearbyLists([]);
-        setSelectedEventId("");
-        setForm(emptyForm);
-        setSelectedMasterMapId("");
-        setSelectedNearbyListId("");
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setAccessDenied(true);
-        setLoading(false);
-        return;
-      }
-
-      await loadPage();
-    }
-
-    void init();
+    void loadPage();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -367,13 +334,13 @@ function EventAdminPageInner() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        void init();
+        void loadPage();
       }
     }
 
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
-  }, [loadPage]);
+  }, [admin, loadPage]);
 
   useEffect(() => {
     if (selectedEventId) {
@@ -504,8 +471,6 @@ function EventAdminPageInner() {
       setSavingEvent(true);
       setError(null);
 
-      const admin = await getCurrentAdminAccess();
-
       if (!admin) {
         setError("No admin access.");
         setStatus("Access denied.");
@@ -632,8 +597,6 @@ function EventAdminPageInner() {
       setSavingAssignments(true);
       setError(null);
 
-      const admin = await getCurrentAdminAccess();
-
       if (!admin) {
         setError("No admin access.");
         setStatus("Access denied.");
@@ -695,26 +658,6 @@ function EventAdminPageInner() {
 
   function openNearbyAdmin() {
     window.location.href = "/admin/nearby";
-  }
-
-  if (!loading && accessDenied) {
-    return (
-      <div style={{ padding: 24 }}>
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 18,
-          }}
-        >
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Event Admin</h1>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            You do not have access to this page.
-          </div>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -802,7 +745,7 @@ function EventAdminPageInner() {
               fontSize: 14,
             }}
           >
-            {adminState?.isSuperAdmin ? (
+            {admin?.isSuperAdmin ? (
               <>
                 <option value="active">Active events</option>
                 <option value="inactive">Inactive events</option>

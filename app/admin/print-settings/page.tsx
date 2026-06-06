@@ -4,11 +4,8 @@ import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type AdminEventContext = {
@@ -79,7 +76,6 @@ function AdminPrintSettingsPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
   const [settings, setSettings] = useState<PrintSettingsRow | null>(null);
   const [loading, setLoading] = useState(true);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading print settings...");
 
@@ -90,27 +86,15 @@ function AdminPrintSettingsPageInner() {
   const [savingNameTagBg, setSavingNameTagBg] = useState(false);
   const [savingCoachPlateBg, setSavingCoachPlateBg] = useState(false);
 
+  const { admin } = useAdmin();
+
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setAccessDenied(false);
-      setStatus("Checking admin access...");
+    if (!admin) return;
 
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setAccessDenied(true);
-        setLoading(false);
-        return;
-      }
-
-      if (!hasPermission(admin, "can_manage_print_settings")) {
+    function loadForCurrentEvent() {
+      if (!hasPermission(admin!, "can_manage_print_settings")) {
         setError("You do not have permission to manage print settings.");
         setStatus("Access denied.");
-        setAccessDenied(true);
         setLoading(false);
         return;
       }
@@ -125,18 +109,17 @@ function AdminPrintSettingsPageInner() {
         return;
       }
 
-      if (!canAccessEvent(admin, adminEvent.id)) {
+      if (!canAccessEvent(admin!, adminEvent.id)) {
         setError("You do not have access to this event.");
         setStatus("Access denied.");
-        setAccessDenied(true);
         setLoading(false);
         return;
       }
 
-      await loadPage(adminEvent.id);
+      void loadPage(adminEvent.id);
     }
 
-    void init();
+    loadForCurrentEvent();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -145,12 +128,12 @@ function AdminPrintSettingsPageInner() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        void init();
+        loadForCurrentEvent();
       }
     }
 
     function handleAdminEventUpdated() {
-      void init();
+      loadForCurrentEvent();
     }
 
     window.addEventListener("storage", handleStorage);
@@ -166,7 +149,7 @@ function AdminPrintSettingsPageInner() {
         handleAdminEventUpdated,
       );
     };
-  }, []);
+  }, [admin]);
 
   async function loadPage(eventId: string) {
     try {
@@ -400,17 +383,6 @@ function AdminPrintSettingsPageInner() {
     () => withCacheBust(settings?.coach_plate_bg_url) || null,
     [settings?.coach_plate_bg_url],
   );
-
-  if (!loading && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Print Settings</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{ display: "grid", gap: 18 }}>

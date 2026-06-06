@@ -7,9 +7,9 @@ import { fullName, preferredDisplayLine } from "@/lib/displayNames";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import {
   canAccessEvent,
-  getCurrentAdminAccess,
   hasPermission,
 } from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type AttendeeRow = {
@@ -138,8 +138,9 @@ function AdminCheckinPageInner() {
   const [editState, setEditState] = useState<Record<string, EditState>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+
+  const { admin } = useAdmin();
 
   useEffect(() => {
     function handleResize() {
@@ -164,58 +165,41 @@ function AdminCheckinPageInner() {
   }
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setAccessDenied(false);
-      showStatus("Checking admin access...");
+    if (!admin) return;
 
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        showError("No admin access.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      if (!hasPermission(admin, "can_mark_arrived")) {
-        setEvent(null);
-        setAttendees([]);
-        setHouseholdMembers([]);
-        setParkingSites([]);
-        showError("You do not have permission to manage check-in.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      const adminEvent = getAdminEvent();
-
-      if (!adminEvent?.id) {
-        setEvent(null);
-        setAttendees([]);
-        setHouseholdMembers([]);
-        setParkingSites([]);
-        showStatus("No admin working event selected.");
-        setLoading(false);
-        return;
-      }
-
-      if (!canAccessEvent(admin, adminEvent.id)) {
-        setEvent(null);
-        setAttendees([]);
-        setHouseholdMembers([]);
-        setParkingSites([]);
-        showError("You do not have access to this event.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      await loadPage();
+    if (!hasPermission(admin, "can_mark_arrived")) {
+      setEvent(null);
+      setAttendees([]);
+      setHouseholdMembers([]);
+      setParkingSites([]);
+      showError("You do not have permission to manage check-in.");
+      setLoading(false);
+      return;
     }
 
-    void init();
+    const adminEvent = getAdminEvent();
+
+    if (!adminEvent?.id) {
+      setEvent(null);
+      setAttendees([]);
+      setHouseholdMembers([]);
+      setParkingSites([]);
+      showStatus("No admin working event selected.");
+      setLoading(false);
+      return;
+    }
+
+    if (!canAccessEvent(admin, adminEvent.id)) {
+      setEvent(null);
+      setAttendees([]);
+      setHouseholdMembers([]);
+      setParkingSites([]);
+      showError("You do not have access to this event.");
+      setLoading(false);
+      return;
+    }
+
+    void loadPage();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -224,12 +208,12 @@ function AdminCheckinPageInner() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        void init();
+        void loadPage();
       }
     }
 
     function handleAdminEventUpdated() {
-      void init();
+      void loadPage();
     }
 
     window.addEventListener("storage", handleStorage);
@@ -245,12 +229,12 @@ function AdminCheckinPageInner() {
         handleAdminEventUpdated,
       );
     };
-    // loadPage is intentionally omitted to avoid changing the established admin event reload flow.
+    // loadPage is intentionally omitted from deps to avoid changing the established admin event reload flow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [admin]);
 
   useEffect(() => {
-    if (!event?.id || accessDenied) {
+    if (!event?.id) {
       return;
     }
 
@@ -292,7 +276,7 @@ function AdminCheckinPageInner() {
     };
     // loadPage is intentionally omitted to avoid resubscribing on every reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [event?.id, accessDenied]);
+  }, [event?.id]);
 
   async function loadPage() {
     try {
@@ -797,26 +781,6 @@ function AdminCheckinPageInner() {
   }
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
-
-  if (!loading && accessDenied) {
-    return (
-      <div style={{ padding: 24 }}>
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 18,
-          }}
-        >
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Check-In</h1>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            You do not have access to this page.
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{ padding: 24, display: "grid", gap: 16 }}>
