@@ -12,11 +12,8 @@ import {
 import * as XLSX from "xlsx";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
+import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type EventContext = {
@@ -360,6 +357,7 @@ function AdminReportsPageContent() {
 }
 
 function AdminReportsPageInner() {
+  const { admin } = useAdmin();
   const searchParams = useSearchParams();
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
@@ -377,7 +375,6 @@ function AdminReportsPageInner() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("Loading reports...");
   const [error, setError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [canExport, setCanExport] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [savedPresets, setSavedPresets] = useState<ReportPreset[]>([]);
@@ -405,61 +402,56 @@ function AdminReportsPageInner() {
     setActivities([]);
     setParkingSites([]);
     setCanExport(false);
-    setAccessDenied(false);
   }
 
-  const loadData = useCallback(async (activeEventId: string) => {
-    setLoading(true);
-    setError(null);
-    setStatus("Loading reports...");
+  const loadData = useCallback(
+    async (activeEventId: string) => {
+      setLoading(true);
+      setError(null);
+      setStatus("Loading reports...");
 
-    const admin = await getCurrentAdminAccess();
+      if (!admin) {
+        resetPageState();
+        setError("No admin access.");
+        setStatus("Access denied.");
+        setLoading(false);
+        return;
+      }
 
-    if (!admin) {
-      resetPageState();
-      setError("No admin access.");
-      setStatus("Access denied.");
-      setLoading(false);
-      setAccessDenied(true);
-      return;
-    }
+      if (
+        !hasPermission(admin, "can_manage_reports") &&
+        !hasPermission(admin, "can_edit_attendees")
+      ) {
+        resetPageState();
+        setError("You do not have permission to manage reports.");
+        setStatus("Access denied.");
+        setLoading(false);
+        return;
+      }
 
-    if (
-      !hasPermission(admin, "can_manage_reports") &&
-      !hasPermission(admin, "can_edit_attendees")
-    ) {
-      resetPageState();
-      setError("You do not have permission to manage reports.");
-      setStatus("Access denied.");
-      setLoading(false);
-      setAccessDenied(true);
-      return;
-    }
+      if (!canAccessEvent(admin, activeEventId)) {
+        resetPageState();
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        setLoading(false);
+        return;
+      }
 
-    if (!canAccessEvent(admin, activeEventId)) {
-      resetPageState();
-      setError("You do not have access to this event.");
-      setStatus("Access denied.");
-      setLoading(false);
-      setAccessDenied(true);
-      return;
-    }
+      setCanExport(
+        hasPermission(admin, "can_export_reports") ||
+          hasPermission(admin, "can_manage_reports") ||
+          hasPermission(admin, "can_edit_attendees"),
+      );
 
-    setCanExport(
-      hasPermission(admin, "can_export_reports") ||
-        hasPermission(admin, "can_manage_reports") ||
-        hasPermission(admin, "can_edit_attendees"),
-    );
-
-    const [
-      { data: attendeeData, error: attendeeError },
-      { data: activityData, error: activityError },
-      { data: parkingData, error: parkingError },
-    ] = await Promise.all([
-      supabase
-        .from("attendees")
-        .select(
-          `
+      const [
+        { data: attendeeData, error: attendeeError },
+        { data: activityData, error: activityError },
+        { data: parkingData, error: parkingError },
+      ] = await Promise.all([
+        supabase
+          .from("attendees")
+          .select(
+            `
             id,
             event_id,
             entry_id,
@@ -495,122 +487,104 @@ function AdminReportsPageInner() {
             data_status,
             created_at
           `,
-        )
-        .eq("event_id", activeEventId)
-        .order("pilot_last", { ascending: true })
-        .order("pilot_first", { ascending: true }),
+          )
+          .eq("event_id", activeEventId)
+          .order("pilot_last", { ascending: true })
+          .order("pilot_first", { ascending: true }),
 
-      supabase
-        .from("attendee_activities")
-        .select("*")
-        .eq("event_id", activeEventId)
-        .order("activity_name", { ascending: true }),
+        supabase
+          .from("attendee_activities")
+          .select("*")
+          .eq("event_id", activeEventId)
+          .order("activity_name", { ascending: true }),
 
-      supabase
-        .from("parking_sites")
-        .select("id,event_id,site_number,display_label,assigned_attendee_id")
-        .eq("event_id", activeEventId)
-        .order("site_number", { ascending: true }),
-    ]);
+        supabase
+          .from("parking_sites")
+          .select("id,event_id,site_number,display_label,assigned_attendee_id")
+          .eq("event_id", activeEventId)
+          .order("site_number", { ascending: true }),
+      ]);
 
-    if (attendeeError) {
-      setError(attendeeError.message);
-      setStatus("Could not load attendees.");
+      if (attendeeError) {
+        setError(attendeeError.message);
+        setStatus("Could not load attendees.");
+        setLoading(false);
+        return;
+      }
+
+      if (activityError) {
+        setError(activityError.message);
+        setStatus("Could not load activities.");
+        setLoading(false);
+        return;
+      }
+
+      if (parkingError) {
+        setError(parkingError.message);
+        setStatus("Could not load parking sites.");
+        setLoading(false);
+        return;
+      }
+
+      setAttendees((attendeeData || []) as AttendeeRow[]);
+      setActivities((activityData || []) as ActivityRow[]);
+      setParkingSites((parkingData || []) as ParkingSiteRow[]);
+      setCurrentEvent((prev) =>
+        prev?.id === activeEventId
+          ? prev
+          : { ...(prev || {}), id: activeEventId },
+      );
+      setStatus("Reports ready.");
       setLoading(false);
-      return;
-    }
-
-    if (activityError) {
-      setError(activityError.message);
-      setStatus("Could not load activities.");
-      setLoading(false);
-      return;
-    }
-
-    if (parkingError) {
-      setError(parkingError.message);
-      setStatus("Could not load parking sites.");
-      setLoading(false);
-      return;
-    }
-
-    setAttendees((attendeeData || []) as AttendeeRow[]);
-    setActivities((activityData || []) as ActivityRow[]);
-    setParkingSites((parkingData || []) as ParkingSiteRow[]);
-    setCurrentEvent((prev) =>
-      prev?.id === activeEventId
-        ? prev
-        : { ...(prev || {}), id: activeEventId },
-    );
-    setStatus("Reports ready.");
-    setAccessDenied(false);
-    setLoading(false);
-  }, []);
+    },
+    [admin],
+  );
 
   useEffect(() => {
     setSavedPresets(loadStoredReportPresets());
   }, []);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setStatus("Checking admin access...");
-      setAccessDenied(false);
-      setCanExport(false);
-
-      const admin = await getCurrentAdminAccess();
-
-      if (!admin) {
-        resetPageState();
-        setError("No admin access.");
-        setStatus("Access denied.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      if (
-        !hasPermission(admin, "can_manage_reports") &&
-        !hasPermission(admin, "can_edit_attendees")
-      ) {
-        resetPageState();
-        setError("You do not have permission to manage reports.");
-        setStatus("Access denied.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      setCanExport(
-        hasPermission(admin, "can_export_reports") ||
-          hasPermission(admin, "can_manage_reports") ||
-          hasPermission(admin, "can_edit_attendees"),
-      );
-
-      const event = getStoredAdminEvent();
-
-      if (!event?.id) {
-        resetPageState();
-        setStatus("No admin event selected.");
-        setLoading(false);
-        return;
-      }
-
-      if (!canAccessEvent(admin, event.id)) {
-        resetPageState();
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
-        setLoading(false);
-        setAccessDenied(true);
-        return;
-      }
-
-      setCurrentEvent(event);
-      await loadData(event.id);
+    if (!admin) {
+      return;
     }
 
-    void init();
+    if (
+      !hasPermission(admin, "can_manage_reports") &&
+      !hasPermission(admin, "can_edit_attendees")
+    ) {
+      resetPageState();
+      setError("You do not have permission to manage reports.");
+      setStatus("Access denied.");
+      setLoading(false);
+      return;
+    }
+
+    setCanExport(
+      hasPermission(admin, "can_export_reports") ||
+        hasPermission(admin, "can_manage_reports") ||
+        hasPermission(admin, "can_edit_attendees"),
+    );
+
+    const event = getStoredAdminEvent();
+
+    if (!event?.id) {
+      resetPageState();
+      setStatus("No admin event selected.");
+      setLoading(false);
+      return;
+    }
+
+    if (!canAccessEvent(admin, event.id)) {
+      resetPageState();
+      setError("You do not have access to this event.");
+      setStatus("Access denied.");
+      setLoading(false);
+      return;
+    }
+
+    setCurrentEvent(event);
+    void loadData(event.id);
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -619,12 +593,48 @@ function AdminReportsPageInner() {
         e.key === USER_MODE_KEY ||
         e.key === USER_MODE_CHANGED_KEY
       ) {
-        void init();
+        const nextEvent = getStoredAdminEvent();
+
+        if (!nextEvent?.id) {
+          resetPageState();
+          setStatus("No admin event selected.");
+          setLoading(false);
+          return;
+        }
+
+        if (!canAccessEvent(admin, nextEvent.id)) {
+          resetPageState();
+          setError("You do not have access to this event.");
+          setStatus("Access denied.");
+          setLoading(false);
+          return;
+        }
+
+        setCurrentEvent(nextEvent);
+        void loadData(nextEvent.id);
       }
     }
 
     function handleAdminEventUpdated() {
-      void init();
+      const nextEvent = getStoredAdminEvent();
+
+      if (!nextEvent?.id) {
+        resetPageState();
+        setStatus("No admin event selected.");
+        setLoading(false);
+        return;
+      }
+
+      if (!canAccessEvent(admin, nextEvent.id)) {
+        resetPageState();
+        setError("You do not have access to this event.");
+        setStatus("Access denied.");
+        setLoading(false);
+        return;
+      }
+
+      setCurrentEvent(nextEvent);
+      void loadData(nextEvent.id);
     }
 
     window.addEventListener("storage", handleStorage);
@@ -640,7 +650,7 @@ function AdminReportsPageInner() {
         handleAdminEventUpdated as EventListener,
       );
     };
-  }, [loadData]);
+  }, [admin, loadData]);
 
   useEffect(() => {
     if (reportType === "parking_assignments") {
@@ -1196,21 +1206,6 @@ function AdminReportsPageInner() {
     win.document.write(html);
     win.document.close();
     win.print();
-  }
-
-  if (!loading && accessDenied) {
-    return (
-      <div className="card" style={{ padding: 18 }}>
-        {isEmbedded ? (
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Reports</h2>
-        ) : (
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Reports</h1>
-        )}
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          You do not have access to this page.
-        </div>
-      </div>
-    );
   }
 
   return (
