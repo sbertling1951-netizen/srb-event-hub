@@ -45,7 +45,9 @@ function MarkerLayerImpl({
   return (
     <>
       {markers.map((m) => {
-        if (!Number.isFinite(m.xPct) || !Number.isFinite(m.yPct)) return null;
+        if (!Number.isFinite(m.xPct) || !Number.isFinite(m.yPct)) {
+          return null;
+        }
         const selected = selectedSet.has(m.id);
         const primary = m.id === primaryId;
         const size = m.size ?? 14;
@@ -67,10 +69,14 @@ function MarkerLayerImpl({
             {renderMarker ? (
               <div
                 onClick={(e) => {
+                  console.log("CUSTOM MARKER CLICK", m.id);
                   e.stopPropagation();
                   onMarkerActivate(m.id, e.shiftKey);
                 }}
-                style={{ pointerEvents: m.selectable === false ? "none" : "auto", cursor: "pointer" }}
+                style={{
+                  pointerEvents: m.selectable === false ? "none" : "auto",
+                  cursor: "pointer",
+                }}
               >
                 {renderMarker(m, { selected, primary })}
               </div>
@@ -80,6 +86,7 @@ function MarkerLayerImpl({
                 tabIndex={-1}
                 title={m.label || m.id}
                 onClick={(e) => {
+                  console.log("MARKER BUTTON CLICK", m.id);
                   e.preventDefault();
                   e.stopPropagation();
                   onMarkerActivate(m.id, e.shiftKey);

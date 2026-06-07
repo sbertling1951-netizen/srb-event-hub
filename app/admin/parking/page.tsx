@@ -683,12 +683,6 @@ function ParkingAdminPageInner() {
       const siteId = site.id || site.master_site_id;
       const isSelected = siteId === selectedSiteId;
 
-      console.log("MARKER", {
-        siteId,
-        selectedSiteId,
-        isSelected,
-      });
-
       // Color logic (preserves getSiteColor exactly)
       let color: string;
       if (isSelected) {
@@ -775,12 +769,7 @@ function ParkingAdminPageInner() {
 
   const handleMarkerTap = useCallback(
     (id: string) => {
-      console.log("MARKER TAP", id);
-      console.log("MARKER TAP SELECTED ATTENDEE", selectedAttendeeId);
-
       const site = siteById.get(id);
-
-      console.log("SITE FOUND", !!site);
 
       if (site) {
         handleSiteClick(site);
@@ -1073,7 +1062,6 @@ Move ${
       );
       if (site) {
         setSelectedSiteId(site.id || site.master_site_id);
-        console.log("SET SELECTED SITE", site.id || site.master_site_id);
         setTimeout(() => {
           focusSite(site);
         }, 100);
@@ -1084,29 +1072,12 @@ Move ${
   }
 
   function handleSiteClick(site: ParkingSite) {
-    console.log("SITE CLICK", {
-      site: site.site_number,
-      assigned: site.assigned_attendee_id,
-      isNarrow,
-      selectedAttendeeId,
-    });
-
     const selectedId = site.id || site.master_site_id;
 
-    console.log("SETTING SITE ID", {
-      selectedId,
-      siteId: site.id,
-      masterSiteId: site.master_site_id,
-      siteNumber: site.site_number,
-    });
     setSelectedSiteId(selectedId);
     focusSite(site);
 
-    console.log("ASSIGNED", site.assigned_attendee_id);
-
     if (site.assigned_attendee_id) {
-      console.log("SELECTING ATTENDEE", site.assigned_attendee_id);
-
       setSelectedAttendeeId(site.assigned_attendee_id);
       scrollAttendeeIntoView(site.assigned_attendee_id);
       focusSite(site);
@@ -1117,15 +1088,9 @@ Move ${
       return;
     }
 
-    console.log("OPEN SITE");
-    console.log("SELECTED ATTENDEE ID", selectedAttendeeId);
-    console.log("SELECTED ATTENDEE", selectedAttendee?.pilot_last);
-
     if (selectedAttendeeId) {
-      console.log("ASSIGNING SITE");
       void assignSelectedToSite(site);
     } else {
-      console.log("NO ATTENDEE SELECTED");
       showStatus(
         `Selected open site ${site.site_number}. Choose an attendee to assign.`,
       );
@@ -1770,7 +1735,6 @@ Move ${
           }}
         >
           <MapCanvas
-            key={selectedSiteId}
             ref={mapViewportRef}
             imageUrl={event?.map_image_url ?? null}
             markers={markers}
