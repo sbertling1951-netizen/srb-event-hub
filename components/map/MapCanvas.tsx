@@ -1,3 +1,23 @@
+/**
+ * ⚠️ LEGACY MAPCANVAS WRAPPER ⚠️
+ *
+ * DO NOT USE FOR NEW DEVELOPMENT.
+ *
+ * Active MapCanvas engine lives in:
+ *
+ *   components/map/canvas/
+ *
+ * This file exists only for:
+ *   - components/map/CampgroundMap.tsx
+ *   - app/dev/map-test/page.tsx
+ *
+ * Master Maps, Parking Admin, Locations, and all new map work
+ * should use:
+ *
+ *   import { MapCanvas } from "@/components/map/canvas";
+ *
+ */
+
 "use client";
 
 import { forwardRef, ReactNode, useImperativeHandle, useRef } from "react";

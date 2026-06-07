@@ -79,6 +79,7 @@ function MasterMapEditorPageInner() {
   // Kept as refs so keyboard handler never has stale closure issues
   const primarySelectedSiteIdRef = useRef<string | null>(null);
   const readOnlyMarkersRef = useRef(false);
+  const selectedSiteIdsRef = useRef<string[]>([]);
 
   // ── Page state ──────────────────────────────────────────────────────────────
   const [isMobile, setIsMobile] = useState(false);
@@ -132,6 +133,10 @@ function MasterMapEditorPageInner() {
   useEffect(() => {
     primarySelectedSiteIdRef.current = primarySelectedSiteId;
   }, [primarySelectedSiteId]);
+
+  useEffect(() => {
+    selectedSiteIdsRef.current = selectedSiteIds;
+  }, [selectedSiteIds]);
 
   const primarySelectedSite = useMemo(
     () => sites.find((s) => s.id === primarySelectedSiteId) ?? null,
@@ -311,9 +316,16 @@ function MasterMapEditorPageInner() {
 
   // onMapTap: clean tap on empty map space → place pending marker.
   // Does NOT fire when a marker is tapped (onMarkerTap handles that).
-  function handleMapTap(pt: MapPercentPoint) {
+  async function handleMapTap(pt: MapPercentPoint) {
     if (readOnlyMarkersRef.current) {
       return;
+    }
+
+    // Old workflow:
+    // click map -> type site -> click map again
+    // automatically save previous marker and start next one.
+    if (pendingMarker && siteNumber.trim()) {
+      await saveNewMarkerInternal(true);
     }
 
     setPendingMarker({ xPct: pt.xPct, yPct: pt.yPct });
@@ -326,9 +338,25 @@ function MasterMapEditorPageInner() {
     focusSiteNumber();
   }
 
-  // onMarkerTap: tap on an existing marker → select only, do NOT recenter.
-  // Lesson 3: if the user can tap the marker, they can already see it.
+  // onMarkerTap: fired by MapCanvas after every marker activation — single tap,
+  // shift-click toggle, and pointer-up on a marker after a rectangle drag.
+  //
+  // IMPORTANT: do NOT set selectedSiteIds or primarySelectedSiteId here.
+  // onSelectionChange owns all selection state. If handleMarkerTap also sets
+  // selectedSiteIds([id]), it collapses any multi-selection that onSelectionChange
+  // just delivered (rectangle drag, shift-click) back to a single marker.
+  //
+  // handleMarkerTap handles side effects only:
+  //   - cancel pending marker placement
+  //   - populate the property panel (editX/editY/siteNumber) for the tapped marker
+  //   - set status
+  //   - NO centering (Lesson 3: marker is already visible if user can tap it)
+  //
+  // onSelectionChange handles all selectedIds/primaryId updates, including the
+  // single-tap case where MapCanvas emits selectSingle before calling onMarkerTap.
   function handleMarkerTap(id: string) {
+    console.log("MARKER TAP", id);
+    console.log("SELECTED BEFORE TAP", selectedSiteIdsRef.current);
     const site = sites.find((s) => s.id === id);
     if (!site) {
       return;
@@ -337,9 +365,9 @@ function MasterMapEditorPageInner() {
     // Cancel any in-progress placement
     setPendingMarker(null);
 
-    // Select
-    setSelectedSiteIds([id]);
-    setPrimarySelectedSiteId(id);
+    // Populate property panel for the tapped marker.
+    // Selection state (selectedSiteIds, primarySelectedSiteId) is set by
+    // onSelectionChange — do not override it here.
     setEditX(site.map_x);
     setEditY(site.map_y);
     setSiteNumber(site.site_number);
@@ -613,21 +641,26 @@ function MasterMapEditorPageInner() {
       return;
     }
 
-    const id = primarySelectedSiteIdRef.current;
-    if (!id) {
-      setStatus("Select a marker first.");
+    const ids = selectedSiteIdsRef.current;
+
+    if (ids.length === 0) {
+      setStatus("Select one or more markers first.");
       return;
     }
 
-    const confirmed = window.confirm("Delete the selected marker?");
+    const confirmed = window.confirm(
+      `Delete ${ids.length} selected marker${ids.length === 1 ? "" : "s"}?`,
+    );
     if (!confirmed) {
       return;
     }
+    console.log("DELETE IDS", ids);
 
     const { error } = await supabase
       .from("master_map_sites")
       .delete()
-      .eq("id", id);
+      .in("id", ids);
+    console.log("DELETE RESULT", error);
 
     if (error) {
       setStatus(`Could not delete marker: ${error.message}`);
@@ -635,8 +668,9 @@ function MasterMapEditorPageInner() {
     }
 
     clearFormFields();
+    mapRef.current?.clearSelection();
     await loadSites();
-    setStatus("Marker deleted.");
+    setStatus(`${ids.length} marker${ids.length === 1 ? "" : "s"} deleted.`);
     focusSiteNumber();
   }, [loadSites]);
 
@@ -1064,9 +1098,12 @@ function MasterMapEditorPageInner() {
         return;
       }
 
-      // Delete selected marker
+      // Delete selected marker(s)
       if (e.key === "Delete" || e.key === "Backspace") {
-        if (primarySelectedSiteIdRef.current) {
+        console.log("DELETE KEY PRESSED");
+        console.log("SELECTED IDS", selectedSiteIdsRef.current);
+
+        if (selectedSiteIdsRef.current.length > 0) {
           e.preventDefault();
           void deleteSelectedMarker();
         }
@@ -1103,31 +1140,45 @@ function MasterMapEditorPageInner() {
     (marker: MapMarker, state: { selected: boolean; primary: boolean }) => {
       const site = marker.data as MasterMapSiteRow;
       const { selected, primary } = state;
+      if (selected || primary) {
+        console.log(
+          "MARKER STATE",
+          marker.id,
+          "selected=",
+          selected,
+          "primary=",
+          primary,
+        );
+      }
 
       return (
         <>
-          <div
-            style={{
-              width: 14,
-              height: 14,
-              borderRadius: "50%",
-              border: primary
-                ? "2px solid white"
-                : selected
-                  ? "2px solid #0b5cff"
-                  : "1px solid rgba(255,255,255,0.85)",
-              background: primary
-                ? "#f4b400"
-                : selected
-                  ? "#60a5fa"
-                  : "#1f9d55",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
-              cursor: "pointer",
-              display: "block",
-              margin: "0 auto",
-            }}
-          />
-          {/* Delete button — only on the primary marker in edit mode */}
+          {/* Dot — shown only when labels are OFF. Color cues: yellow=primary,
+              blue=selected, green=normal. When labels are ON the label chip
+              carries the color cue instead and the dot is hidden to avoid
+              double-rendering at the same position. */}
+          {!showLabels && (
+            <div
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: "50%",
+                border:
+                  primary || selected
+                    ? "2px solid white"
+                    : "1px solid rgba(255,255,255,0.85)",
+
+                background: primary || selected ? "#f4b400" : "#1f9d55",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+                cursor: "pointer",
+                display: "block",
+                margin: "0 auto",
+              }}
+            />
+          )}
+
+          {/* Delete button — only on the primary marker in edit mode.
+              Rendered regardless of showLabels so it's always reachable. */}
           {primary && !readOnlyMarkers && (
             <button
               type="button"
@@ -1162,21 +1213,22 @@ function MasterMapEditorPageInner() {
               ×
             </button>
           )}
+
+          {/* Label chip — shown only when labels are ON. Background color carries
+              the state cue: yellow=primary, blue=selected, white=normal. */}
           {showLabels && (
             <div
               style={{
-                marginTop: 4,
+                marginTop: 0,
                 marginLeft: "auto",
                 marginRight: "auto",
-                background: primary
-                  ? "rgba(255,255,255,0.98)"
-                  : selected
-                    ? "rgba(219,234,254,0.98)"
-                    : "rgba(255,255,255,0.92)",
-                border: selected
-                  ? "1px solid rgba(11,92,255,0.45)"
-                  : "1px solid rgba(0,0,0,0.2)",
-                borderRadius: 4,
+                border:
+                  primary || selected
+                    ? "2px solid white"
+                    : "1px solid rgba(255,255,255,0.85)",
+
+                background: primary || selected ? "#f4b400" : "#1f9d55",
+
                 fontSize: 11,
                 fontWeight: 700,
                 padding: "1px 5px",
