@@ -4,14 +4,19 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import GestureMapViewportV2 from "@/components/map/GestureMapViewportV2";
-import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
+import type {
+  MapMarker,
+  MapPercentPoint,
+  MarkerPositionUpdate,
+  Selection,
+} from "@/components/map/canvas/types";
 import { useAdmin } from "@/lib/adminContext";
+import { getAdminEvent } from "@/lib/getAdminEvent";
+import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type MasterMapRow = {
   id: string;
@@ -34,15 +39,12 @@ type MasterMapSiteRow = {
   map_y: number | null;
 };
 
-type Point = {
-  x: number;
-  y: number;
-};
-
 type AdminEventContext = {
   id?: string | null;
   name?: string | null;
 };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value));
@@ -63,93 +65,129 @@ function normalizeMapGroup(value: string | null | undefined) {
     .replace(/^-+|-+$/g, "");
 }
 
+// ─── Inner component ──────────────────────────────────────────────────────────
+
 function MasterMapEditorPageInner() {
   const params = useParams();
   const router = useRouter();
   const masterMapId = params?.id as string;
-  const [isMobile, setIsMobile] = useState(false);
+  const { admin } = useAdmin();
 
+  // ── Refs ────────────────────────────────────────────────────────────────────
+  const mapRef = useRef<MapCanvasHandle | null>(null);
   const siteNumberRef = useRef<HTMLInputElement | null>(null);
-  const mapCanvasRef = useRef<HTMLDivElement | null>(null);
-  const ignoreCanvasClickUntilRef = useRef(0);
-  const suppressCanvasClickUntilRef = useRef(0);
-  const suppressCanvasMouseUpUntilRef = useRef(0);
-  const readOnlyMarkersRef = useRef(false);
+  // Kept as refs so keyboard handler never has stale closure issues
   const primarySelectedSiteIdRef = useRef<string | null>(null);
-  const pendingPointRef = useRef<{ x: number | null; y: number | null }>({
-    x: null,
-    y: null,
-  });
-  const undoStackRef = useRef<
-    Array<Array<{ id: string; map_x: number | null; map_y: number | null }>>
-  >([]);
+  const readOnlyMarkersRef = useRef(false);
 
+  // ── Page state ──────────────────────────────────────────────────────────────
+  const [isMobile, setIsMobile] = useState(false);
   const [masterMap, setMasterMap] = useState<MasterMapRow | null>(null);
   const [sites, setSites] = useState<MasterMapSiteRow[]>([]);
-  const [primarySelectedSiteId, setPrimarySelectedSiteId] = useState<
-    string | null
-  >(null);
-  const [selectedSiteIds, setSelectedSiteIds] = useState<string[]>([]);
-  const [siteNumber, setSiteNumber] = useState("");
-  const [pendingX, setPendingX] = useState<number | null>(null);
-  const [pendingY, setPendingY] = useState<number | null>(null);
-  const [editX, setEditX] = useState<number | null>(null);
-  const [editY, setEditY] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading master map...");
-  const [naturalSize, setNaturalSize] = useState({ width: 1200, height: 800 });
-  const [saveAndNextMode, setSaveAndNextMode] = useState(true);
-  const [showLabels, setShowLabels] = useState(true);
-  const [isPointerDown, setIsPointerDown] = useState(false);
-  const [isDraggingSelect, setIsDraggingSelect] = useState(false);
-  const [dragStart, setDragStart] = useState<Point | null>(null);
-  const [dragCurrent, setDragCurrent] = useState<Point | null>(null);
-  const [_replaceImageFile, _setReplaceImageFile] = useState<File | null>(null);
-  const [_replacingImage, _setReplacingImage] = useState(false);
   const [isSavingMarker, setIsSavingMarker] = useState(false);
-  const [undoStack, setUndoStack] = useState<
-    Array<Array<{ id: string; map_x: number | null; map_y: number | null }>>
-  >([]);
 
+  // ── Map details form ────────────────────────────────────────────────────────
   const [mapName, setMapName] = useState("");
   const [parkName, setParkName] = useState("");
   const [mapLocation, setMapLocation] = useState("");
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // ── Selection — page owns the string arrays; MapCanvas owns the visual box ──
+  const [selectedSiteIds, setSelectedSiteIds] = useState<string[]>([]);
+  const [primarySelectedSiteId, setPrimarySelectedSiteId] = useState<
+    string | null
+  >(null);
 
-  const { admin } = useAdmin();
+  // ── Marker placement ────────────────────────────────────────────────────────
+  // pendingMarker is the yellow ghost before the user types a site number.
+  // MapCanvas renders it via the pendingMarker prop.
+  const [pendingMarker, setPendingMarker] = useState<MapPercentPoint | null>(
+    null,
+  );
+  const [siteNumber, setSiteNumber] = useState("");
+
+  // ── Live coordinate preview while editing the selected marker ───────────────
+  // editX/editY mirror the primary marker's current position in the property
+  // panel. They update optimistically from onMarkersChange so the panel stays
+  // in sync after nudge/align/undo without waiting for a DB round-trip.
+  const [editX, setEditX] = useState<number | null>(null);
+  const [editY, setEditY] = useState<number | null>(null);
+
+  // ── Display options ─────────────────────────────────────────────────────────
+  const [saveAndNextMode, setSaveAndNextMode] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
+
+  // ─── Derived ─────────────────────────────────────────────────────────────────
 
   const readOnlyMarkers =
     masterMap?.status === "published" || masterMap?.is_read_only === true;
+
+  // Keep refs in sync so keyboard handler is never stale
   useEffect(() => {
-    readOnlyMarkersRef.current = !!readOnlyMarkers;
+    readOnlyMarkersRef.current = readOnlyMarkers;
   }, [readOnlyMarkers]);
 
   useEffect(() => {
     primarySelectedSiteIdRef.current = primarySelectedSiteId;
   }, [primarySelectedSiteId]);
 
-  useEffect(() => {
-    pendingPointRef.current = { x: pendingX, y: pendingY };
-  }, [pendingX, pendingY]);
+  const primarySelectedSite = useMemo(
+    () => sites.find((s) => s.id === primarySelectedSiteId) ?? null,
+    [sites, primarySelectedSiteId],
+  );
+
+  const selectedSites = useMemo(() => {
+    const idSet = new Set(selectedSiteIds);
+    return sites.filter((s) => idSet.has(s.id));
+  }, [sites, selectedSiteIds]);
+
+  // For the property panel coordinate display: show editX/editY while the
+  // primary marker has unsaved positional edits, otherwise show persisted coords.
+  const displayX =
+    editX !== null ? editX : (primarySelectedSite?.map_x ?? null);
+  const displayY =
+    editY !== null ? editY : (primarySelectedSite?.map_y ?? null);
+
+  // markers array for MapCanvas — includes live editX/editY for the primary
+  // marker so the dot moves on the map during nudging before persistence.
+  const markers = useMemo<MapMarker[]>(() => {
+    return sites
+      .filter((s) => s.map_x !== null && s.map_y !== null)
+      .map((s) => {
+        const isPrimary = s.id === primarySelectedSiteId;
+        return {
+          id: s.id,
+          xPct: isPrimary && editX !== null ? editX : (s.map_x as number),
+          yPct: isPrimary && editY !== null ? editY : (s.map_y as number),
+          label: s.display_label || s.site_number,
+          data: s,
+        };
+      });
+  }, [sites, primarySelectedSiteId, editX, editY]);
+
+  // ── Workspace layout — removes max-width cap while this page is mounted ───
 
   useEffect(() => {
-    undoStackRef.current = undoStack;
-  }, [undoStack]);
+    document.body.classList.add("admin-map-workspace");
+    return () => {
+      document.body.classList.remove("admin-map-workspace");
+    };
+  }, []);
+
+  // ── Resize ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     function handleResize() {
       setIsMobile(window.innerWidth < 900);
     }
-
     handleResize();
-
     window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // ─── Data loading ─────────────────────────────────────────────────────────
 
   const loadMasterMap = useCallback(async () => {
     const { data, error } = await supabase
@@ -207,7 +245,6 @@ function MasterMapEditorPageInner() {
       }
 
       const adminEvent = getAdminEvent() as AdminEventContext | null;
-
       if (adminEvent?.id && !canAccessEvent(admin, adminEvent.id)) {
         setMasterMap(null);
         setSites([]);
@@ -220,87 +257,407 @@ function MasterMapEditorPageInner() {
       await loadMasterMap();
       await loadSites();
       setStatus("Ready");
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to load master map.";
       console.error("loadPage error:", err);
       setMasterMap(null);
       setSites([]);
-      setError(err?.message || "Failed to load master map.");
+      setError(msg);
       setStatus("Load failed.");
     } finally {
       setLoading(false);
     }
   }, [admin, loadMasterMap, loadSites]);
 
-  async function _replaceMasterMapImage() {
-    if (!masterMap) {
-      setStatus("No master map loaded.");
+  useEffect(() => {
+    if (!masterMapId) {
+      return;
+    }
+    void loadPage();
+  }, [masterMapId, loadPage]);
+
+  // ─── Utility ──────────────────────────────────────────────────────────────
+
+  function focusSiteNumber() {
+    requestAnimationFrame(() => {
+      siteNumberRef.current?.focus();
+      siteNumberRef.current?.select();
+    });
+  }
+
+  function findDuplicateSite(trimmedSiteNumber: string) {
+    const normalized = trimmedSiteNumber.toLowerCase();
+    return sites.find((site) => {
+      if (!site.site_number) {
+        return false;
+      }
+      if (primarySelectedSiteId && site.id === primarySelectedSiteId) {
+        return false;
+      }
+      return site.site_number.trim().toLowerCase() === normalized;
+    });
+  }
+
+  function clearFormFields() {
+    setSiteNumber("");
+    setPrimarySelectedSiteId(null);
+    setSelectedSiteIds([]);
+    setEditX(null);
+    setEditY(null);
+  }
+
+  // ─── MapCanvas callbacks ──────────────────────────────────────────────────
+
+  // onMapTap: clean tap on empty map space → place pending marker.
+  // Does NOT fire when a marker is tapped (onMarkerTap handles that).
+  function handleMapTap(pt: MapPercentPoint) {
+    if (readOnlyMarkersRef.current) {
       return;
     }
 
-    if (!_replaceImageFile) {
-      setStatus("Choose a new image first.");
+    setPendingMarker({ xPct: pt.xPct, yPct: pt.yPct });
+    setSelectedSiteIds([]);
+    setPrimarySelectedSiteId(null);
+    setEditX(null);
+    setEditY(null);
+    setSiteNumber("");
+    setStatus("Position selected. Type site number and press Enter to save.");
+    focusSiteNumber();
+  }
+
+  // onMarkerTap: tap on an existing marker → select only, do NOT recenter.
+  // Lesson 3: if the user can tap the marker, they can already see it.
+  function handleMarkerTap(id: string) {
+    const site = sites.find((s) => s.id === id);
+    if (!site) {
+      return;
+    }
+
+    // Cancel any in-progress placement
+    setPendingMarker(null);
+
+    // Select
+    setSelectedSiteIds([id]);
+    setPrimarySelectedSiteId(id);
+    setEditX(site.map_x);
+    setEditY(site.map_y);
+    setSiteNumber(site.site_number);
+    setStatus(`Selected site ${site.display_label || site.site_number}.`);
+    // NO centerOnMarker call here — this is the no-auto-center contract.
+  }
+
+  // onSelectionChange: MapCanvas reports rectangle-drag or shift-click results.
+  function handleSelectionChange(sel: Selection) {
+    setSelectedSiteIds(sel.selectedIds);
+    setPrimarySelectedSiteId(sel.primaryId);
+
+    if (sel.primaryId) {
+      const site = sites.find((s) => s.id === sel.primaryId);
+      if (site) {
+        setEditX(site.map_x);
+        setEditY(site.map_y);
+        setSiteNumber(site.site_number);
+      }
+    } else {
+      setEditX(null);
+      setEditY(null);
+    }
+
+    if (sel.selectedIds.length > 0) {
+      setStatus(
+        `Selected ${sel.selectedIds.length} marker${sel.selectedIds.length === 1 ? "" : "s"}.`,
+      );
+    }
+
+    // Cancel any pending placement when a drag-select completes
+    setPendingMarker(null);
+  }
+
+  // onMarkersChange: fires after nudge / align / distribute / undo from the engine.
+  // This is the single persistence path for all geometry mutations that originate
+  // inside MapCanvas. Page mutations (saveNewMarkerInternal, saveSelectedPosition)
+  // write directly to Supabase and then call loadSites.
+  const handleMarkersChange = useCallback(
+    async (updates: MarkerPositionUpdate[]) => {
+      if (updates.length === 0) {
+        return;
+      }
+
+      // 1. Optimistic local state update
+      setSites((prev) =>
+        prev.map((site) => {
+          const u = updates.find((u) => u.id === site.id);
+          return u ? { ...site, map_x: u.xPct, map_y: u.yPct } : site;
+        }),
+      );
+
+      // 2. Sync editX/editY for the property panel
+      const primaryUpdate = updates.find(
+        (u) => u.id === primarySelectedSiteIdRef.current,
+      );
+      if (primaryUpdate) {
+        setEditX(primaryUpdate.xPct);
+        setEditY(primaryUpdate.yPct);
+      }
+
+      // 3. Persist — serial writes preserve audit semantics
+      for (const u of updates) {
+        const { error } = await supabase
+          .from("master_map_sites")
+          .update({ map_x: u.xPct, map_y: u.yPct })
+          .eq("id", u.id);
+
+        if (error) {
+          setStatus(`Could not save position: ${error.message}`);
+          // Reload to recover consistent state
+          await loadSites();
+          return;
+        }
+      }
+
+      if (updates.length === 1) {
+        const u = updates[0];
+        setStatus(
+          `Position saved at X ${u.xPct.toFixed(2)}, Y ${u.yPct.toFixed(2)}.`,
+        );
+      } else {
+        setStatus(`Saved ${updates.length} marker positions.`);
+      }
+    },
+    [loadSites],
+  );
+
+  // ─── Marker creation ───────────────────────────────────────────────────────
+
+  async function saveNewMarkerInternal(nextMode: boolean) {
+    if (readOnlyMarkers) {
+      setStatus(
+        "Published master maps are read-only. Create a draft copy to edit markers.",
+      );
+      return;
+    }
+    if (isSavingMarker) {
+      return;
+    }
+
+    if (!pendingMarker) {
+      setStatus("Click on the map first.");
+      return;
+    }
+
+    const trimmedSiteNumber = siteNumber.trim();
+    if (!trimmedSiteNumber) {
+      setStatus("Enter a site number.");
+      focusSiteNumber();
+      return;
+    }
+
+    const duplicate = findDuplicateSite(trimmedSiteNumber);
+    if (duplicate) {
+      setStatus(
+        `Site ${trimmedSiteNumber} already exists. Rename the new marker before saving.`,
+      );
+      focusSiteNumber();
       return;
     }
 
     try {
-      _setReplacingImage(true);
-      setStatus("Uploading replacement image...");
+      setIsSavingMarker(true);
+      setStatus("Saving marker...");
 
-      const safeName = _replaceImageFile.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
-      const filePath = `master-maps/${masterMap.id}-${Date.now()}-${safeName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("master-maps")
-        .upload(filePath, _replaceImageFile, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        setStatus(`Could not upload image: ${uploadError.message}`);
-        return;
-      }
-
-      const { data: publicData } = supabase.storage
-        .from("master-maps")
-        .getPublicUrl(filePath);
-
-      const publicUrl = publicData?.publicUrl || null;
-
-      if (!publicUrl) {
-        setStatus("Upload succeeded, but no public URL was returned.");
-        return;
-      }
-
-      const { error: updateError } = await supabase
-        .from("master_maps")
-        .update({
-          map_image_url: publicUrl,
+      const { data: insertedSite, error } = await supabase
+        .from("master_map_sites")
+        .insert({
+          master_map_id: masterMapId,
+          site_number: trimmedSiteNumber,
+          display_label: trimmedSiteNumber,
+          map_x: pendingMarker.xPct,
+          map_y: pendingMarker.yPct,
         })
-        .eq("id", masterMap.id);
+        .select("id,master_map_id,site_number,display_label,map_x,map_y")
+        .single();
 
-      if (updateError) {
-        setStatus(`Could not update master map image: ${updateError.message}`);
-        return;
+      if (error) {
+        throw error;
       }
 
-      _setReplaceImageFile(null);
-      await loadMasterMap();
-      setStatus("Master map image replaced successfully.");
-    } catch (err: any) {
-      console.error("replaceMasterMapImage error:", err);
-      setStatus(err?.message || "Failed to replace master map image.");
+      const savedSite = insertedSite as MasterMapSiteRow;
+
+      setSites((prev) => {
+        if (prev.some((s) => s.id === savedSite.id)) {
+          return prev;
+        }
+        return [...prev, savedSite].sort((a, b) =>
+          a.site_number.localeCompare(b.site_number, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          }),
+        );
+      });
+
+      if (nextMode) {
+        setPendingMarker(null);
+        clearFormFields();
+        setStatus("Marker saved. Click the map to place the next marker.");
+      } else {
+        setPendingMarker(null);
+        setSiteNumber("");
+        setPrimarySelectedSiteId(savedSite.id);
+        setSelectedSiteIds([savedSite.id]);
+        setEditX(savedSite.map_x);
+        setEditY(savedSite.map_y);
+        setStatus(`Marker ${trimmedSiteNumber} saved.`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not save marker.";
+      setStatus(`Could not save marker: ${msg}`);
     } finally {
-      _setReplacingImage(false);
+      setIsSavingMarker(false);
     }
   }
+
+  async function saveNewMarker() {
+    await saveNewMarkerInternal(false);
+  }
+  async function saveAndNextMarker() {
+    await saveNewMarkerInternal(true);
+  }
+
+  // ─── Marker editing ───────────────────────────────────────────────────────
+
+  async function updateSelectedMarker() {
+    if (readOnlyMarkers) {
+      setStatus(
+        "Published master maps are read-only. Create a draft copy to edit markers.",
+      );
+      return;
+    }
+    if (!primarySelectedSiteId) {
+      setStatus("Select a marker first.");
+      return;
+    }
+
+    const trimmedSiteNumber = siteNumber.trim();
+    if (!trimmedSiteNumber) {
+      setStatus("Enter a site number.");
+      focusSiteNumber();
+      return;
+    }
+
+    const duplicate = findDuplicateSite(trimmedSiteNumber);
+    if (duplicate) {
+      setStatus(
+        `Site ${trimmedSiteNumber} already exists. Rename this marker before saving.`,
+      );
+      focusSiteNumber();
+      return;
+    }
+
+    const { error } = await supabase
+      .from("master_map_sites")
+      .update({
+        site_number: trimmedSiteNumber,
+        display_label: trimmedSiteNumber,
+      })
+      .eq("id", primarySelectedSiteId);
+
+    if (error) {
+      setStatus(`Could not update marker: ${error.message}`);
+      return;
+    }
+
+    await loadSites();
+    setStatus("Marker updated.");
+    focusSiteNumber();
+  }
+
+  // Explicit "Save Position" — persists editX/editY for the selected marker.
+  // Distinct from onMarkersChange which handles engine-driven nudge/align/undo.
+  async function saveSelectedPosition() {
+    if (readOnlyMarkers) {
+      setStatus(
+        "Published master maps are read-only. Create a draft copy to edit markers.",
+      );
+      return;
+    }
+    if (!primarySelectedSiteId) {
+      setStatus("Select a marker first.");
+      return;
+    }
+    if (editX === null || editY === null) {
+      setStatus("No changed position to save.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("master_map_sites")
+      .update({ map_x: editX, map_y: editY })
+      .eq("id", primarySelectedSiteId);
+
+    if (error) {
+      setStatus(`Could not save position: ${error.message}`);
+      return;
+    }
+
+    await loadSites();
+    setStatus("Position saved.");
+    focusSiteNumber();
+  }
+
+  const deleteSelectedMarker = useCallback(async () => {
+    if (readOnlyMarkersRef.current) {
+      setStatus(
+        "Published master maps are read-only. Create a draft copy to edit markers.",
+      );
+      return;
+    }
+
+    const id = primarySelectedSiteIdRef.current;
+    if (!id) {
+      setStatus("Select a marker first.");
+      return;
+    }
+
+    const confirmed = window.confirm("Delete the selected marker?");
+    if (!confirmed) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("master_map_sites")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      setStatus(`Could not delete marker: ${error.message}`);
+      return;
+    }
+
+    clearFormFields();
+    await loadSites();
+    setStatus("Marker deleted.");
+    focusSiteNumber();
+  }, [loadSites]);
+
+  // Enter key on the site number input dispatches to the right save action
+  async function saveFromKeyboard() {
+    if (primarySelectedSiteId) {
+      await updateSelectedMarker();
+    } else if (saveAndNextMode) {
+      await saveAndNextMarker();
+    } else {
+      await saveNewMarker();
+    }
+  }
+
+  // ─── Map details / map management ─────────────────────────────────────────
 
   async function saveMapDetails() {
     if (!masterMap) {
       setStatus("No master map loaded.");
       return;
     }
-
     const trimmedName = mapName.trim();
     if (!trimmedName) {
       setStatus("Map name is required.");
@@ -335,13 +692,11 @@ function MasterMapEditorPageInner() {
       setStatus("No master map loaded.");
       return;
     }
-
     const trimmedName = mapName.trim();
     if (!trimmedName) {
       setStatus("Map name is required.");
       return;
     }
-
     if (masterMap.status !== "draft") {
       setStatus("Only draft maps can be saved as the updated current map.");
       return;
@@ -375,16 +730,13 @@ function MasterMapEditorPageInner() {
         if (row.id === masterMap.id) {
           return false;
         }
-
         const rowGroup =
           normalizeMapGroup(row.map_group) ||
           normalizeMapGroup(row.park_name) ||
           normalizeMapGroup(stripDraftSuffix(row.name));
-
         if (nextMapGroup && rowGroup === nextMapGroup) {
           return true;
         }
-
         return stripDraftSuffix(row.name) === baseName;
       });
 
@@ -428,9 +780,7 @@ function MasterMapEditorPageInner() {
       if (matchingPublished?.id) {
         const { error: reassignError } = await supabase
           .from("event_map_settings")
-          .update({
-            selected_master_map_id: masterMap.id,
-          })
+          .update({ selected_master_map_id: masterMap.id })
           .eq("selected_master_map_id", matchingPublished.id);
 
         if (reassignError) {
@@ -445,1119 +795,968 @@ function MasterMapEditorPageInner() {
       setStatus("Updated map saved. Previous published version archived.");
       router.replace(`/admin/master-maps/${masterMap.id}`);
       router.refresh();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Could not save updated map.";
       console.error("saveUpdatedMap error:", err);
-      setStatus(err?.message || "Could not save updated map.");
+      setStatus(msg);
     }
   }
 
-  useEffect(() => {
-    if (!masterMapId) {
+  async function publishToSelectedEvent() {
+    if (!masterMap) {
+      setStatus("No master map loaded.");
       return;
     }
-    void loadPage();
-  }, [masterMapId, loadPage]);
-
-  useEffect(() => {
-    if (!loading) {
-      focusMapCanvasNow();
-      focusMapCanvas();
-      setTimeout(() => {
-        focusMapCanvasNow();
-      }, 0);
-    }
-  }, [loading]);
-
-  const primarySelectedSite = useMemo(() => {
-    return sites.find((s) => s.id === primarySelectedSiteId) || null;
-  }, [sites, primarySelectedSiteId]);
-
-  const selectedSites = useMemo(() => {
-    const idSet = new Set(selectedSiteIds);
-    return sites.filter((s) => idSet.has(s.id));
-  }, [sites, selectedSiteIds]);
-
-  const renderedSites = useMemo(() => {
-    return sites.map((site) => {
-      const isPrimary = site.id === primarySelectedSiteId;
-      const useEditCoords = isPrimary && editX !== null && editY !== null;
-
-      return {
-        ...site,
-        map_x: useEditCoords ? editX : site.map_x,
-        map_y: useEditCoords ? editY : site.map_y,
-      };
-    });
-  }, [sites, primarySelectedSiteId, editX, editY]);
-
-  const selectionBox = useMemo(() => {
-    if (!dragStart || !dragCurrent || !isDraggingSelect) {
-      return null;
-    }
-
-    return {
-      left: Math.min(dragStart.x, dragCurrent.x),
-      top: Math.min(dragStart.y, dragCurrent.y),
-      width: Math.abs(dragStart.x - dragCurrent.x),
-      height: Math.abs(dragStart.y - dragCurrent.y),
-    };
-  }, [dragStart, dragCurrent, isDraggingSelect]);
-
-  function focusSiteNumber() {
-    requestAnimationFrame(() => {
-      siteNumberRef.current?.focus();
-      siteNumberRef.current?.select();
-    });
-  }
-
-  function focusMapCanvas() {
-    requestAnimationFrame(() => {
-      mapCanvasRef.current?.focus({ preventScroll: true });
-    });
-  }
-  function focusMapCanvasNow() {
-    mapCanvasRef.current?.focus({ preventScroll: true });
-  }
-
-  const capturePositionSnapshot = useCallback(
-    (siteIds: string[]) => {
-      const idSet = new Set(siteIds);
-      const snapshot = sites
-        .filter((site) => idSet.has(site.id))
-        .map((site) => ({
-          id: site.id,
-          map_x: site.map_x,
-          map_y: site.map_y,
-        }));
-
-      if (snapshot.length === 0) {
-        return;
-      }
-
-      setUndoStack((prev) => [...prev, snapshot]);
-    },
-    [sites],
-  );
-
-  function clearNativeSelection() {
-    if (typeof window !== "undefined") {
-      window.getSelection()?.removeAllRanges();
-    }
-  }
-
-  function clearFormFieldsOnly() {
-    setSiteNumber("");
-    setPrimarySelectedSiteId(null);
-    setSelectedSiteIds([]);
-    setEditX(null);
-    setEditY(null);
-  }
-
-  function resetForNextMarker() {
-    pendingPointRef.current = { x: null, y: null };
-    clearFormFieldsOnly();
-    setPendingX(null);
-    setPendingY(null);
-  }
-
-  function findDuplicateSite(trimmedSiteNumber: string) {
-    const normalized = trimmedSiteNumber.toLowerCase();
-    return sites.find((site) => {
-      if (!site.site_number) {
-        return false;
-      }
-      if (primarySelectedSiteId && site.id === primarySelectedSiteId) {
-        return false;
-      }
-      return site.site_number.trim().toLowerCase() === normalized;
-    });
-  }
-
-  function getRelativePoint(e: React.MouseEvent<HTMLDivElement>): Point {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = clampPercent(((e.clientX - rect.left) / rect.width) * 100);
-    const y = clampPercent(((e.clientY - rect.top) / rect.height) * 100);
-    return {
-      x: Number(x.toFixed(2)),
-      y: Number(y.toFixed(2)),
-    };
-  }
-
-  function handleMapMouseDown(e: React.MouseEvent<HTMLDivElement>) {
-    if (readOnlyMarkers) {
-      return;
-    }
-    if (e.button !== 0) {
+    const currentEvent = getAdminEvent() as AdminEventContext | null;
+    if (!currentEvent?.id) {
+      setStatus("No admin working event selected.");
       return;
     }
 
-    const target = e.target as HTMLElement | null;
-    if (target?.closest("button")) {
-      return;
-    }
-
-    e.preventDefault();
-    clearNativeSelection();
-
-    const point = getRelativePoint(e);
-    setIsPointerDown(true);
-    setIsDraggingSelect(false);
-    setDragStart(point);
-    setDragCurrent(point);
-  }
-
-  function handleMapMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    if (!isPointerDown || !dragStart) {
-      return;
-    }
-
-    e.preventDefault();
-
-    const point = getRelativePoint(e);
-    const dx = Math.abs(point.x - dragStart.x);
-    const dy = Math.abs(point.y - dragStart.y);
-
-    if (!isDraggingSelect && (dx > 0.4 || dy > 0.4)) {
-      setIsDraggingSelect(true);
-    }
-
-    if (isDraggingSelect || dx > 0.4 || dy > 0.4) {
-      setDragCurrent(point);
-    }
-  }
-
-  function placePendingMarkerFromPoint(point: Point) {
-    pendingPointRef.current = { x: point.x, y: point.y };
-    setPendingX(point.x);
-    setPendingY(point.y);
-    setSelectedSiteIds([]);
-    setPrimarySelectedSiteId(null);
-    setEditX(null);
-    setEditY(null);
-    setSiteNumber("");
-    setStatus(
-      "Marker position selected. Type site number and press Enter to save.",
+    const confirmed = window.confirm(
+      `This will replace all parking sites for the selected event "${currentEvent.name}" with the sites from this master map. Continue?`,
     );
-    focusSiteNumber();
-  }
-
-  function handleMapMouseUp(e: React.MouseEvent<HTMLDivElement>) {
-    const now = Date.now();
-
-    if (now < suppressCanvasMouseUpUntilRef.current) {
-      setIsPointerDown(false);
-      setIsDraggingSelect(false);
-      setDragStart(null);
-      setDragCurrent(null);
-      return;
-    }
-
-    if (!isPointerDown) {
-      return;
-    }
-
-    e.preventDefault();
-    clearNativeSelection();
-
-    if (isDraggingSelect && dragStart && dragCurrent) {
-      const minX = Math.min(dragStart.x, dragCurrent.x);
-      const maxX = Math.max(dragStart.x, dragCurrent.x);
-      const minY = Math.min(dragStart.y, dragCurrent.y);
-      const maxY = Math.max(dragStart.y, dragCurrent.y);
-
-      const selected = sites
-        .filter(
-          (site) =>
-            site.map_x !== null &&
-            site.map_y !== null &&
-            site.map_x >= minX &&
-            site.map_x <= maxX &&
-            site.map_y >= minY &&
-            site.map_y <= maxY,
-        )
-        .map((site) => site.id);
-
-      setSelectedSiteIds(selected);
-      setPrimarySelectedSiteId(selected[0] || null);
-
-      if (selected.length > 0) {
-        const first = sites.find((s) => s.id === selected[0]);
-        if (first) {
-          setSiteNumber(first.site_number);
-          setEditX(first.map_x);
-          setEditY(first.map_y);
-        }
-      } else {
-        setSiteNumber("");
-        setEditX(null);
-        setEditY(null);
-      }
-
-      pendingPointRef.current = { x: null, y: null };
-      setPendingX(null);
-      setPendingY(null);
-      setStatus(
-        `Selected ${selected.length} marker${selected.length === 1 ? "" : "s"}.`,
-      );
-    } else if (!readOnlyMarkers) {
-      const target = e.target as HTMLElement | null;
-      const clickedMarker = !!target?.closest("button");
-
-      if (!clickedMarker && now >= suppressCanvasClickUntilRef.current) {
-        const point = getRelativePoint(e);
-        placePendingMarkerFromPoint(point);
-      }
-    }
-
-    setIsPointerDown(false);
-    setIsDraggingSelect(false);
-    setDragStart(null);
-    setDragCurrent(null);
-  }
-
-  function handleMarkerSelect(
-    site: MasterMapSiteRow,
-    e: React.MouseEvent<HTMLButtonElement>,
-  ) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const until = Date.now() + 250;
-    ignoreCanvasClickUntilRef.current = until;
-    suppressCanvasMouseUpUntilRef.current = until;
-    suppressCanvasClickUntilRef.current = until;
-
-    pendingPointRef.current = { x: null, y: null };
-    setPendingX(null);
-    setPendingY(null);
-
-    if (e.shiftKey) {
-      setSelectedSiteIds((prev) => {
-        const exists = prev.includes(site.id);
-        return exists
-          ? prev.filter((id) => id !== site.id)
-          : [...prev, site.id];
-      });
-      setPrimarySelectedSiteId(site.id);
-    } else {
-      setSelectedSiteIds([site.id]);
-      setPrimarySelectedSiteId(site.id);
-    }
-
-    setSiteNumber(site.site_number);
-    setEditX(site.map_x);
-    setEditY(site.map_y);
-    focusMapCanvasNow();
-    focusMapCanvas();
-  }
-
-  async function saveNewMarkerInternal(nextMode: boolean) {
-    if (readOnlyMarkers) {
-      setStatus(
-        "Published master maps are read\u2011only. Create a draft copy to edit markers.",
-      );
-      return;
-    }
-
-    if (isSavingMarker) {
-      return;
-    }
-
-    const pendingPoint = pendingPointRef.current;
-    const nextPendingX = pendingPoint.x ?? pendingX;
-    const nextPendingY = pendingPoint.y ?? pendingY;
-
-    if (nextPendingX === null || nextPendingY === null) {
-      setStatus("Click on the map first.");
-      return;
-    }
-
-    const trimmedSiteNumber = siteNumber.trim();
-    if (!trimmedSiteNumber) {
-      setStatus("Enter a site number.");
-      focusSiteNumber();
-      return;
-    }
-
-    const duplicate = findDuplicateSite(trimmedSiteNumber);
-    if (duplicate) {
-      setStatus(
-        `Site ${trimmedSiteNumber} already exists. Rename the new marker before saving.`,
-      );
-      focusSiteNumber();
-      return;
-    }
-
-    try {
-      setIsSavingMarker(true);
-      setStatus("Saving marker...");
-
-      const { data: insertedSite, error } = await supabase
-        .from("master_map_sites")
-        .insert({
-          master_map_id: masterMapId,
-          site_number: trimmedSiteNumber,
-          display_label: trimmedSiteNumber,
-          map_x: nextPendingX,
-          map_y: nextPendingY,
-        })
-        .select("id,master_map_id,site_number,display_label,map_x,map_y")
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      const savedSite = insertedSite as MasterMapSiteRow;
-
-      setSites((prev) => {
-        const exists = prev.some((site) => site.id === savedSite.id);
-        if (exists) {
-          return prev;
-        }
-        return [...prev, savedSite].sort((a, b) =>
-          a.site_number.localeCompare(b.site_number, undefined, {
-            numeric: true,
-            sensitivity: "base",
-          }),
-        );
-      });
-
-      if (nextMode) {
-        resetForNextMarker();
-        setStatus("Marker saved. Click the map to place the next marker.");
-      } else {
-        pendingPointRef.current = { x: null, y: null };
-        setPendingX(null);
-        setPendingY(null);
-        setSiteNumber("");
-        setPrimarySelectedSiteId(savedSite.id);
-        setSelectedSiteIds([savedSite.id]);
-        setEditX(savedSite.map_x);
-        setEditY(savedSite.map_y);
-        setStatus(`Marker ${trimmedSiteNumber} saved.`);
-      }
-    } catch (err: any) {
-      setStatus(`Could not save marker: ${err.message}`);
-    } finally {
-      setIsSavingMarker(false);
-    }
-  }
-
-  async function saveNewMarker() {
-    await saveNewMarkerInternal(false);
-  }
-
-  async function saveAndNextMarker() {
-    await saveNewMarkerInternal(true);
-  }
-
-  async function updateSelectedMarker() {
-    if (readOnlyMarkers) {
-      setStatus(
-        "Published master maps are read-only. Create a draft copy to edit markers.",
-      );
-      return;
-    }
-
-    if (!primarySelectedSiteId) {
-      setStatus("Select a marker first.");
-      return;
-    }
-
-    const trimmedSiteNumber = siteNumber.trim();
-
-    if (!trimmedSiteNumber) {
-      setStatus("Enter a site number.");
-      focusSiteNumber();
-      return;
-    }
-
-    const duplicate = findDuplicateSite(trimmedSiteNumber);
-    if (duplicate) {
-      setStatus(
-        `Site ${trimmedSiteNumber} already exists. Rename this marker before saving.`,
-      );
-      focusSiteNumber();
-      return;
-    }
-
-    const { error } = await supabase
-      .from("master_map_sites")
-      .update({
-        site_number: trimmedSiteNumber,
-        display_label: trimmedSiteNumber,
-      })
-      .eq("id", primarySelectedSiteId);
-
-    if (error) {
-      setStatus(`Could not update marker: ${error.message}`);
-      return;
-    }
-
-    await loadSites();
-    setStatus("Marker updated.");
-    focusSiteNumber();
-  }
-
-  async function saveFromKeyboard() {
-    if (primarySelectedSiteId) {
-      await updateSelectedMarker();
-    } else if (saveAndNextMode) {
-      await saveAndNextMarker();
-    } else {
-      await saveNewMarker();
-    }
-  }
-
-  const getNudgeStep = useCallback((e: KeyboardEvent) => {
-    if (e.altKey) {
-      return 0.01;
-    }
-    if (e.shiftKey) {
-      return 0.25;
-    }
-    return 0.05;
-  }, []);
-
-  const nudgePending = useCallback(
-    (dx: number, dy: number) => {
-      const currentPendingX = pendingPointRef.current.x ?? pendingX;
-      const currentPendingY = pendingPointRef.current.y ?? pendingY;
-
-      if (currentPendingX === null || currentPendingY === null) {
-        setStatus("Click the map first to place a pending marker.");
-        return;
-      }
-
-      const nextX = clampPercent(Number((currentPendingX + dx).toFixed(2)));
-      const nextY = clampPercent(Number((currentPendingY + dy).toFixed(2)));
-
-      pendingPointRef.current = { x: nextX, y: nextY };
-      setPendingX(nextX);
-      setPendingY(nextY);
-      setStatus(
-        `Pending marker moved to X ${nextX.toFixed(2)}, Y ${nextY.toFixed(2)}.`,
-      );
-    },
-    [pendingX, pendingY],
-  );
-
-  const nudgeSelected = useCallback(
-    async (dx: number, dy: number) => {
-      if (readOnlyMarkersRef.current) {
-        setStatus(
-          "Published master maps are read-only. Create a draft copy to edit markers.",
-        );
-        return;
-      }
-
-      if (!primarySelectedSiteIdRef.current) {
-        setStatus("Select a marker first.");
-        return;
-      }
-
-      const currentPrimarySelectedSite =
-        sites.find((site) => site.id === primarySelectedSiteIdRef.current) ||
-        null;
-
-      if (!currentPrimarySelectedSite) {
-        setStatus("Select a marker first.");
-        return;
-      }
-
-      const currentPrimarySelectedSiteId = primarySelectedSiteIdRef.current;
-      const baseX = editX ?? currentPrimarySelectedSite.map_x ?? 0;
-      const baseY = editY ?? currentPrimarySelectedSite.map_y ?? 0;
-      capturePositionSnapshot([currentPrimarySelectedSiteId]);
-
-      const nextX = clampPercent(Number((baseX + dx).toFixed(2)));
-      const nextY = clampPercent(Number((baseY + dy).toFixed(2)));
-
-      setEditX(nextX);
-      setEditY(nextY);
-
-      const { error } = await supabase
-        .from("master_map_sites")
-        .update({
-          map_x: nextX,
-          map_y: nextY,
-        })
-        .eq("id", currentPrimarySelectedSiteId);
-
-      if (error) {
-        setStatus(`Could not save nudged position: ${error.message}`);
-        return;
-      }
-
-      setSites((prev) =>
-        prev.map((site) =>
-          site.id === currentPrimarySelectedSiteId
-            ? { ...site, map_x: nextX, map_y: nextY }
-            : site,
-        ),
-      );
-
-      setStatus(
-        `Marker position saved at X ${nextX.toFixed(2)}, Y ${nextY.toFixed(2)}.`,
-      );
-    },
-    [sites, editX, editY, capturePositionSnapshot],
-  );
-
-  async function saveSelectedPosition() {
-    if (readOnlyMarkers) {
-      setStatus(
-        "Published master maps are read-only. Create a draft copy to edit markers.",
-      );
-      return;
-    }
-
-    if (!primarySelectedSiteId) {
-      setStatus("Select a marker first.");
-      return;
-    }
-
-    if (editX === null || editY === null) {
-      setStatus("No changed position to save.");
-      return;
-    }
-    capturePositionSnapshot([primarySelectedSiteId]);
-
-    const { error } = await supabase
-      .from("master_map_sites")
-      .update({
-        map_x: editX,
-        map_y: editY,
-      })
-      .eq("id", primarySelectedSiteId);
-
-    if (error) {
-      setStatus(`Could not save position: ${error.message}`);
-      return;
-    }
-
-    await loadSites();
-    setStatus("Position saved.");
-    focusSiteNumber();
-  }
-
-  const deleteSelectedMarker = useCallback(async () => {
-    if (readOnlyMarkersRef.current) {
-      setStatus(
-        "Published master maps are read-only. Create a draft copy to edit markers.",
-      );
-      return;
-    }
-
-    const currentPrimarySelectedSiteId = primarySelectedSiteIdRef.current;
-
-    if (!currentPrimarySelectedSiteId) {
-      setStatus("Select a marker first.");
-      return;
-    }
-
-    const confirmed = window.confirm("Delete the selected marker?");
     if (!confirmed) {
       return;
     }
 
-    const { error } = await supabase
-      .from("master_map_sites")
+    const { error: deleteError } = await supabase
+      .from("parking_sites")
       .delete()
-      .eq("id", currentPrimarySelectedSiteId);
+      .eq("event_id", currentEvent.id);
 
-    if (error) {
-      setStatus(`Could not delete marker: ${error.message}`);
+    if (deleteError) {
+      setStatus(
+        `Could not clear existing parking sites: ${deleteError.message}`,
+      );
       return;
     }
 
-    clearFormFieldsOnly();
-    await loadSites();
-    setStatus("Marker deleted.");
-    focusSiteNumber();
-  }, [loadSites]);
+    const rowsToInsert = sites.map((site) => ({
+      event_id: currentEvent.id,
+      site_number: site.site_number,
+      notes: null,
+      map_x: site.map_x,
+      map_y: site.map_y,
+      assigned_attendee_id: null,
+      display_label: site.display_label || site.site_number,
+      map_image_url: masterMap.map_image_url,
+    }));
 
-  async function applyBulkPositions(
-    updates: Array<{ id: string; map_x: number; map_y: number }>,
-  ) {
-    if (updates.length === 0) {
-      return false;
+    if (rowsToInsert.length === 0) {
+      setStatus("No master map sites found to publish.");
+      return;
     }
 
-    capturePositionSnapshot(updates.map((update) => update.id));
+    const { error: insertError } = await supabase
+      .from("parking_sites")
+      .insert(rowsToInsert);
 
-    for (const update of updates) {
-      const { error } = await supabase
-        .from("master_map_sites")
-        .update({
-          map_x: update.map_x,
-          map_y: update.map_y,
-        })
-        .eq("id", update.id);
-
-      if (error) {
-        setStatus(`Could not save alignment: ${error.message}`);
-        return false;
-      }
+    if (insertError) {
+      setStatus(`Could not publish to selected event: ${insertError.message}`);
+      return;
     }
 
-    setSites((prev) =>
-      prev.map((site) => {
-        const match = updates.find((u) => u.id === site.id);
-        return match
-          ? { ...site, map_x: match.map_x, map_y: match.map_y }
-          : site;
-      }),
+    setStatus(
+      `Published ${rowsToInsert.length} parking sites to selected event "${currentEvent.name}".`,
     );
-
-    if (primarySelectedSiteId) {
-      const primaryUpdate = updates.find((u) => u.id === primarySelectedSiteId);
-      if (primaryUpdate) {
-        setEditX(primaryUpdate.map_x);
-        setEditY(primaryUpdate.map_y);
-      }
-    }
-
-    return true;
   }
 
-  const undoLastPositionChange = useCallback(async () => {
-    if (readOnlyMarkersRef.current) {
-      setStatus(
-        "Published master maps are read-only. Create a draft copy to edit markers.",
-      );
+  async function safeSyncToSelectedEvent() {
+    if (!masterMap) {
+      setStatus("No master map loaded.");
+      return;
+    }
+    const currentEvent = getAdminEvent() as AdminEventContext | null;
+    if (!currentEvent?.id) {
+      setStatus("No admin working event selected.");
       return;
     }
 
-    const snapshot =
-      undoStackRef.current[undoStackRef.current.length - 1] || [];
-
-    if (snapshot.length === 0) {
-      setStatus("No position change to undo.");
-      return;
-    }
-
-    for (const item of snapshot) {
-      const { error } = await supabase
-        .from("master_map_sites")
-        .update({
-          map_x: item.map_x,
-          map_y: item.map_y,
-        })
-        .eq("id", item.id);
-
-      if (error) {
-        setStatus(`Could not undo position change: ${error.message}`);
-        return;
-      }
-    }
-
-    setSites((prev) =>
-      prev.map((site) => {
-        const prior = snapshot.find((p) => p.id === site.id);
-        return prior
-          ? { ...site, map_x: prior.map_x, map_y: prior.map_y }
-          : site;
-      }),
+    const confirmed = window.confirm(
+      `Safe Sync will update matching parking sites for "${currentEvent.name}" by site number, preserve assignments and notes, and add any new sites from this master map. Continue?`,
     );
-
-    if (primarySelectedSiteIdRef.current) {
-      const primary = snapshot.find(
-        (p) => p.id === primarySelectedSiteIdRef.current,
-      );
-      if (primary) {
-        setEditX(primary.map_x);
-        setEditY(primary.map_y);
-      }
+    if (!confirmed) {
+      return;
     }
 
-    setStatus(`Undid position change for ${snapshot.length} marker(s).`);
-    setUndoStack((prev) => prev.slice(0, -1));
-  }, []);
+    const { data: existingSites, error: existingError } = await supabase
+      .from("parking_sites")
+      .select("id, site_number")
+      .eq("event_id", currentEvent.id);
 
-  const undoAllPositionChanges = useCallback(async () => {
-    if (readOnlyMarkersRef.current) {
+    if (existingError) {
       setStatus(
-        "Published master maps are read-only. Create a draft copy to edit markers.",
+        `Could not load existing event parking sites: ${existingError.message}`,
       );
       return;
     }
 
-    if (undoStackRef.current.length === 0) {
-      setStatus("No position changes to undo.");
-      return;
-    }
-
-    const latestById = new Map<
+    const existingBySiteNumber = new Map<
       string,
-      { id: string; map_x: number | null; map_y: number | null }
+      { id: string; site_number: string | null }
     >();
+    (existingSites || []).forEach((site) => {
+      const key = (site.site_number || "").trim().toLowerCase();
+      if (key) {
+        existingBySiteNumber.set(key, site);
+      }
+    });
 
-    for (const snapshot of undoStackRef.current) {
-      for (const item of snapshot) {
-        if (!latestById.has(item.id)) {
-          latestById.set(item.id, item);
+    let updatedCount = 0;
+    let insertedCount = 0;
+
+    for (const site of sites) {
+      const normalizedSiteNumber = (site.site_number || "")
+        .trim()
+        .toLowerCase();
+      if (!normalizedSiteNumber) {
+        continue;
+      }
+
+      const existing = existingBySiteNumber.get(normalizedSiteNumber);
+      if (existing) {
+        const { error: updateError } = await supabase
+          .from("parking_sites")
+          .update({
+            display_label: site.display_label || site.site_number,
+            map_x: site.map_x,
+            map_y: site.map_y,
+            map_image_url: masterMap.map_image_url,
+          })
+          .eq("id", existing.id);
+
+        if (updateError) {
+          setStatus(
+            `Could not safe sync site ${site.site_number}: ${updateError.message}`,
+          );
+          return;
         }
-      }
-    }
+        updatedCount += 1;
+      } else {
+        const { error: insertError } = await supabase
+          .from("parking_sites")
+          .insert({
+            event_id: currentEvent.id,
+            site_number: site.site_number,
+            notes: null,
+            map_x: site.map_x,
+            map_y: site.map_y,
+            assigned_attendee_id: null,
+            display_label: site.display_label || site.site_number,
+            map_image_url: masterMap.map_image_url,
+          });
 
-    const restoreItems = Array.from(latestById.values());
-
-    for (const item of restoreItems) {
-      const { error } = await supabase
-        .from("master_map_sites")
-        .update({
-          map_x: item.map_x,
-          map_y: item.map_y,
-        })
-        .eq("id", item.id);
-
-      if (error) {
-        setStatus(`Could not undo all position changes: ${error.message}`);
-        return;
-      }
-    }
-
-    setSites((prev) =>
-      prev.map((site) => {
-        const prior = latestById.get(site.id);
-        return prior
-          ? { ...site, map_x: prior.map_x, map_y: prior.map_y }
-          : site;
-      }),
-    );
-
-    if (primarySelectedSiteIdRef.current) {
-      const primary = latestById.get(primarySelectedSiteIdRef.current);
-      if (primary) {
-        setEditX(primary.map_x);
-        setEditY(primary.map_y);
+        if (insertError) {
+          setStatus(
+            `Could not insert new site ${site.site_number}: ${insertError.message}`,
+          );
+          return;
+        }
+        insertedCount += 1;
       }
     }
 
     setStatus(
-      `Undid all position changes for ${restoreItems.length} marker(s).`,
+      `Safe Sync complete for "${currentEvent.name}". Updated ${updatedCount} site(s), inserted ${insertedCount} new site(s), preserved assignments and notes on existing sites.`,
     );
-    setUndoStack([]);
-  }, []);
-
-  async function alignHorizontalSelected() {
-    if (readOnlyMarkers) { setStatus("Published master maps are read-only. Create a draft copy to edit markers."); return; }
-    if (selectedSites.length < 2) { setStatus("Select at least 2 markers to align horizontally."); return; }
-    const validSites = selectedSites.filter((s) => typeof s.map_x === "number" && typeof s.map_y === "number");
-    if (validSites.length < 2) { setStatus("Selected markers must have valid coordinates."); return; }
-    const averageY = validSites.reduce((sum, site) => sum + Number(site.map_y), 0) / validSites.length;
-    const updates = validSites.map((site) => ({ id: site.id, map_x: Number(site.map_x), map_y: Number(averageY.toFixed(2)) }));
-    const ok = await applyBulkPositions(updates);
-    if (ok) {
-      const until = Date.now() + 150;
-      suppressCanvasMouseUpUntilRef.current = until;
-      suppressCanvasClickUntilRef.current = until;
-      setStatus(`Aligned ${updates.length} markers horizontally.`);
-      focusMapCanvasNow();
-    }
-  }
-
-  async function distributeHorizontallySelected() {
-    if (readOnlyMarkers) { setStatus("Published master maps are read-only. Create a draft copy to edit markers."); return; }
-    if (selectedSites.length < 3) { setStatus("Select at least 3 markers to distribute horizontally."); return; }
-    const validSites = selectedSites.filter((s) => typeof s.map_x === "number" && typeof s.map_y === "number").sort((a, b) => Number(a.map_x) - Number(b.map_x));
-    if (validSites.length < 3) { setStatus("Selected markers must have valid coordinates."); return; }
-    const first = validSites[0]; const last = validSites[validSites.length - 1];
-    const startX = Number(first.map_x); const endX = Number(last.map_x);
-    const step = (endX - startX) / (validSites.length - 1);
-    const updates = validSites.map((site, index) => ({ id: site.id, map_x: Number((startX + step * index).toFixed(2)), map_y: Number(site.map_y) }));
-    const ok = await applyBulkPositions(updates);
-    if (ok) { const until = Date.now() + 150; suppressCanvasMouseUpUntilRef.current = until; suppressCanvasClickUntilRef.current = until; setStatus(`Aligned ${updates.length} markers vertically.`); focusMapCanvasNow(); }
-  }
-
-  async function alignVerticalSelected() {
-    if (readOnlyMarkers) { setStatus("Published master maps are read-only. Create a draft copy to edit markers."); return; }
-    if (selectedSites.length < 2) { setStatus("Select at least 2 markers to align vertically."); return; }
-    const validSites = selectedSites.filter((s) => typeof s.map_x === "number" && typeof s.map_y === "number");
-    if (validSites.length < 2) { setStatus("Selected markers must have valid coordinates."); return; }
-    const averageX = validSites.reduce((sum, site) => sum + Number(site.map_x), 0) / validSites.length;
-    const updates = validSites.map((site) => ({ id: site.id, map_x: Number(averageX.toFixed(2)), map_y: Number(site.map_y) }));
-    const ok = await applyBulkPositions(updates);
-    if (ok) { setStatus(`Aligned ${updates.length} markers vertically.`); }
-  }
-
-  async function distributeVerticallySelected() {
-    if (readOnlyMarkers) { setStatus("Published master maps are read-only. Create a draft copy to edit markers."); return; }
-    if (selectedSites.length < 3) { setStatus("Select at least 3 markers to distribute vertically."); return; }
-    const validSites = selectedSites.filter((s) => typeof s.map_x === "number" && typeof s.map_y === "number").sort((a, b) => Number(a.map_y) - Number(b.map_y));
-    if (validSites.length < 3) { setStatus("Selected markers must have valid coordinates."); return; }
-    const first = validSites[0]; const last = validSites[validSites.length - 1];
-    const startY = Number(first.map_y); const endY = Number(last.map_y);
-    const step = (endY - startY) / (validSites.length - 1);
-    const updates = validSites.map((site, index) => ({ id: site.id, map_x: Number(site.map_x), map_y: Number((startY + step * index).toFixed(2)) }));
-    const ok = await applyBulkPositions(updates);
-    if (ok) { setStatus(`Distributed ${updates.length} markers vertically.`); }
-  }
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (readOnlyMarkersRef.current) { return; }
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName?.toLowerCase();
-      if (tag === "input" || tag === "textarea" || target?.isContentEditable) { return; }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        if (e.shiftKey) { void undoAllPositionChanges(); } else { void undoLastPositionChange(); }
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); void undoAllPositionChanges(); return; }
-      if (e.key === "Escape") {
-        if (pendingPointRef.current.x !== null || pendingPointRef.current.y !== null) {
-          e.preventDefault();
-          pendingPointRef.current = { x: null, y: null };
-          setPendingX(null); setPendingY(null); setSiteNumber("");
-          setStatus("Pending marker canceled.");
-          focusMapCanvasNow();
-          return;
-        }
-      }
-      if (e.key === "Delete" || e.key === "Backspace") {
-        if (primarySelectedSiteIdRef.current) { e.preventDefault(); void deleteSelectedMarker(); return; }
-      }
-      const step = getNudgeStep(e);
-      if (e.key === "ArrowLeft") { e.preventDefault(); if (primarySelectedSiteIdRef.current) { void nudgeSelected(-step, 0); } else { nudgePending(-step, 0); } }
-      else if (e.key === "ArrowRight") { e.preventDefault(); if (primarySelectedSiteIdRef.current) { void nudgeSelected(step, 0); } else { nudgePending(step, 0); } }
-      else if (e.key === "ArrowUp") { e.preventDefault(); if (primarySelectedSiteIdRef.current) { void nudgeSelected(0, -step); } else { nudgePending(0, -step); } }
-      else if (e.key === "ArrowDown") { e.preventDefault(); if (primarySelectedSiteIdRef.current) { void nudgeSelected(0, step); } else { nudgePending(0, step); } }
-    }
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [deleteSelectedMarker, getNudgeStep, nudgePending, nudgeSelected, undoAllPositionChanges, undoLastPositionChange]);
-
-  async function publishToSelectedEvent() {
-    if (!masterMap) { setStatus("No master map loaded."); return; }
-    const currentEvent = getAdminEvent() as AdminEventContext | null;
-    if (!currentEvent?.id) { setStatus("No admin working event selected."); return; }
-    const confirmed = window.confirm(`This will replace all parking sites for the selected event "${currentEvent.name}" with the sites from this master map. Continue?`);
-    if (!confirmed) { return; }
-    const { error: deleteError } = await supabase.from("parking_sites").delete().eq("event_id", currentEvent.id);
-    if (deleteError) { setStatus(`Could not clear existing parking sites: ${deleteError.message}`); return; }
-    const rowsToInsert = sites.map((site) => ({ event_id: currentEvent.id, site_number: site.site_number, notes: null, map_x: site.map_x, map_y: site.map_y, assigned_attendee_id: null, display_label: site.display_label || site.site_number, map_image_url: masterMap.map_image_url }));
-    if (rowsToInsert.length === 0) { setStatus("No master map sites found to publish."); return; }
-    const { error: insertError } = await supabase.from("parking_sites").insert(rowsToInsert);
-    if (insertError) { setStatus(`Could not publish to selected event: ${insertError.message}`); return; }
-    setStatus(`Published ${rowsToInsert.length} parking sites to selected event "${currentEvent.name}".`);
-  }
-
-  async function safeSyncToSelectedEvent() {
-    if (!masterMap) { setStatus("No master map loaded."); return; }
-    const currentEvent = getAdminEvent() as AdminEventContext | null;
-    if (!currentEvent?.id) { setStatus("No admin working event selected."); return; }
-    const confirmed = window.confirm(`Safe Sync will update matching parking sites for "${currentEvent.name}" by site number, preserve assignments and notes, and add any new sites from this master map. Continue?`);
-    if (!confirmed) { return; }
-    const { data: existingSites, error: existingError } = await supabase.from("parking_sites").select("id, site_number").eq("event_id", currentEvent.id);
-    if (existingError) { setStatus(`Could not load existing event parking sites: ${existingError.message}`); return; }
-    const existingBySiteNumber = new Map<string, { id: string; site_number: string | null }>();
-    (existingSites || []).forEach((site) => { const key = (site.site_number || "").trim().toLowerCase(); if (key) { existingBySiteNumber.set(key, site); } });
-    let updatedCount = 0; let insertedCount = 0;
-    for (const site of sites) {
-      const normalizedSiteNumber = (site.site_number || "").trim().toLowerCase();
-      if (!normalizedSiteNumber) { continue; }
-      const existing = existingBySiteNumber.get(normalizedSiteNumber);
-      if (existing) {
-        const { error: updateError } = await supabase.from("parking_sites").update({ display_label: site.display_label || site.site_number, map_x: site.map_x, map_y: site.map_y, map_image_url: masterMap.map_image_url }).eq("id", existing.id);
-        if (updateError) { setStatus(`Could not safe sync site ${site.site_number}: ${updateError.message}`); return; }
-        updatedCount += 1;
-      } else {
-        const { error: insertError } = await supabase.from("parking_sites").insert({ event_id: currentEvent.id, site_number: site.site_number, notes: null, map_x: site.map_x, map_y: site.map_y, assigned_attendee_id: null, display_label: site.display_label || site.site_number, map_image_url: masterMap.map_image_url });
-        if (insertError) { setStatus(`Could not insert new site ${site.site_number}: ${insertError.message}`); return; }
-        insertedCount += 1;
-      }
-    }
-    setStatus(`Safe Sync complete for "${currentEvent.name}". Updated ${updatedCount} site(s), inserted ${insertedCount} new site(s), preserved assignments and notes on existing sites.`);
   }
 
   async function createDraftCopy() {
-    if (!masterMap) { return; }
-    const mapGroup = normalizeMapGroup(masterMap.map_group) || normalizeMapGroup(masterMap.park_name) || normalizeMapGroup(stripDraftSuffix(masterMap.name));
-    const { data: newMap, error: newMapError } = await supabase.from("master_maps").insert({ name: `${stripDraftSuffix(masterMap.name)} Draft`, park_name: masterMap.park_name, location: masterMap.location, map_group: mapGroup || null, map_image_path: null, map_image_url: masterMap.map_image_url, status: "draft", is_read_only: false, site_count: masterMap.site_count }).select("id").single();
-    if (newMapError || !newMap) { setStatus(`Could not create draft copy: ${newMapError?.message || "Unknown error"}`); return; }
-    const newSites = sites.map((site) => ({ master_map_id: newMap.id, site_number: site.site_number, display_label: site.display_label, map_x: site.map_x, map_y: site.map_y }));
-    if (newSites.length > 0) {
-      const { error: copyError } = await supabase.from("master_map_sites").insert(newSites);
-      if (copyError) { setStatus(`Draft copy created, but site copy failed: ${copyError.message}`); return; }
+    if (!masterMap) {
+      return;
     }
+
+    const mapGroup =
+      normalizeMapGroup(masterMap.map_group) ||
+      normalizeMapGroup(masterMap.park_name) ||
+      normalizeMapGroup(stripDraftSuffix(masterMap.name));
+
+    const { data: newMap, error: newMapError } = await supabase
+      .from("master_maps")
+      .insert({
+        name: `${stripDraftSuffix(masterMap.name)} Draft`,
+        park_name: masterMap.park_name,
+        location: masterMap.location,
+        map_group: mapGroup || null,
+        map_image_path: null,
+        map_image_url: masterMap.map_image_url,
+        status: "draft",
+        is_read_only: false,
+        site_count: masterMap.site_count,
+      })
+      .select("id")
+      .single();
+
+    if (newMapError || !newMap) {
+      setStatus(
+        `Could not create draft copy: ${newMapError?.message || "Unknown error"}`,
+      );
+      return;
+    }
+
+    const newSites = sites.map((site) => ({
+      master_map_id: newMap.id,
+      site_number: site.site_number,
+      display_label: site.display_label,
+      map_x: site.map_x,
+      map_y: site.map_y,
+    }));
+
+    if (newSites.length > 0) {
+      const { error: copyError } = await supabase
+        .from("master_map_sites")
+        .insert(newSites);
+
+      if (copyError) {
+        setStatus(
+          `Draft copy created, but site copy failed: ${copyError.message}`,
+        );
+        return;
+      }
+    }
+
     router.push(`/admin/master-maps/${newMap.id}`);
   }
+
+  // ─── Keyboard handler ─────────────────────────────────────────────────────
+  // Uses refs for readOnlyMarkers and primarySelectedSiteId to avoid stale
+  // closures. All geometry operations delegate to mapRef (engine) which then
+  // fires onMarkersChange → handleMarkersChange → persist.
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (readOnlyMarkersRef.current) {
+        return;
+      }
+
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || target?.isContentEditable) {
+        return;
+      }
+
+      // Undo
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          mapRef.current?.undoAll();
+        } else {
+          mapRef.current?.undo();
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        mapRef.current?.undoAll();
+        return;
+      }
+
+      // Cancel pending marker
+      if (e.key === "Escape") {
+        if (pendingMarker) {
+          e.preventDefault();
+          setPendingMarker(null);
+          setSiteNumber("");
+          setStatus("Pending marker canceled.");
+        }
+        return;
+      }
+
+      // Delete selected marker
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (primarySelectedSiteIdRef.current) {
+          e.preventDefault();
+          void deleteSelectedMarker();
+        }
+        return;
+      }
+
+      // Arrow nudge
+      const step = e.altKey ? 0.01 : e.shiftKey ? 0.25 : 0.05;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        mapRef.current?.nudgeSelected(-step, 0);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        mapRef.current?.nudgeSelected(step, 0);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        mapRef.current?.nudgeSelected(0, -step);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        mapRef.current?.nudgeSelected(0, step);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [deleteSelectedMarker, pendingMarker]);
+
+  // ─── renderMarker ─────────────────────────────────────────────────────────
+  // MapCanvas calls this for every visible marker. Receives the marker and
+  // clean {selected, primary} flags — no manual selectedSiteIds lookup needed.
+
+  const renderMarker = useCallback(
+    (marker: MapMarker, state: { selected: boolean; primary: boolean }) => {
+      const site = marker.data as MasterMapSiteRow;
+      const { selected, primary } = state;
+
+      return (
+        <>
+          <div
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: "50%",
+              border: primary
+                ? "2px solid white"
+                : selected
+                  ? "2px solid #0b5cff"
+                  : "1px solid rgba(255,255,255,0.85)",
+              background: primary
+                ? "#f4b400"
+                : selected
+                  ? "#60a5fa"
+                  : "#1f9d55",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+              cursor: "pointer",
+              display: "block",
+              margin: "0 auto",
+            }}
+          />
+          {/* Delete button — only on the primary marker in edit mode */}
+          {primary && !readOnlyMarkers && (
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void deleteSelectedMarker();
+              }}
+              title="Delete marker"
+              style={{
+                position: "absolute",
+                top: -8,
+                right: -8,
+                width: 16,
+                height: 16,
+                borderRadius: "50%",
+                background: "#dc2626",
+                color: "white",
+                border: "1px solid white",
+                fontSize: 10,
+                lineHeight: "14px",
+                textAlign: "center",
+                cursor: "pointer",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+          )}
+          {showLabels && (
+            <div
+              style={{
+                marginTop: 4,
+                marginLeft: "auto",
+                marginRight: "auto",
+                background: primary
+                  ? "rgba(255,255,255,0.98)"
+                  : selected
+                    ? "rgba(219,234,254,0.98)"
+                    : "rgba(255,255,255,0.92)",
+                border: selected
+                  ? "1px solid rgba(11,92,255,0.45)"
+                  : "1px solid rgba(0,0,0,0.2)",
+                borderRadius: 4,
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "1px 5px",
+                color: "#111",
+                whiteSpace: "nowrap",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                display: "table",
+                pointerEvents: "none",
+              }}
+            >
+              {site.display_label || site.site_number}
+            </div>
+          )}
+        </>
+      );
+    },
+    [showLabels, readOnlyMarkers, deleteSelectedMarker],
+  );
+
+  // ─── Viewport helpers ─────────────────────────────────────────────────────
+
+  function zoomIn() {
+    mapRef.current?.zoomIn();
+  }
+  function zoomOut() {
+    mapRef.current?.zoomOut();
+  }
+  function resetZoom() {
+    mapRef.current?.reset();
+  }
+
+  // Explicit "locate" — the ONLY place we center on a marker.
+  // Lesson 3: marker tap must never auto-center. Only explicit user action does.
+  function locateSelectedMarker() {
+    if (!primarySelectedSiteId) {
+      return;
+    }
+    mapRef.current?.centerOnMarker(primarySelectedSiteId);
+  }
+
+  // ─── Undo depth for button label ──────────────────────────────────────────
+  // MapCanvas tracks the undo stack internally. We read depth each render via
+  // the imperative handle. This is safe because renders are driven by state
+  // changes that already account for stack mutations.
+  const undoDepth = mapRef.current?.undoDepth() ?? 0;
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div style={{ padding: 24 }}>
       <h1>Master Map Editor</h1>
 
-      {error ? (
-        <div style={{ border: "1px solid #e2b4b4", borderRadius: 10, background: "#fff3f3", color: "#8a1f1f", padding: 12, marginBottom: 12 }}>
+      {error && (
+        <div
+          style={{
+            border: "1px solid #e2b4b4",
+            borderRadius: 10,
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
           {error}
         </div>
-      ) : null}
+      )}
 
-      <div style={{ fontSize: 14, color: "#555", marginBottom: 12 }}>
-        Editing: <strong>{masterMap?.name || "Loading..."}</strong>
-      </div>
-
-      <div style={{ border: "1px solid #ddd", borderRadius: 10, background: "#f8f9fb", padding: 14, marginBottom: 16 }}>
+      {/* Status bar */}
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 10,
+          background: "#f8f9fb",
+          padding: 14,
+          marginBottom: 16,
+        }}
+      >
         <div style={{ fontWeight: 700 }}>{masterMap?.name || "Loading..."}</div>
         <div style={{ color: "#555" }}>{masterMap?.park_name || "—"}</div>
         <div style={{ color: "#555" }}>{masterMap?.location || "—"}</div>
-        <div style={{ fontSize: 13, marginTop: 4 }}>Status: {masterMap?.status || "—"}</div>
-        <div style={{ fontSize: 13 }}>Read only markers: {readOnlyMarkers ? "Yes" : "No"}</div>
+        <div style={{ fontSize: 13, marginTop: 4 }}>
+          Status: {masterMap?.status || "—"}
+        </div>
+        <div style={{ fontSize: 13 }}>
+          Read only markers: {readOnlyMarkers ? "Yes" : "No"}
+        </div>
         <div style={{ fontSize: 13 }}>Site count: {sites.length}</div>
         <div style={{ fontSize: 13 }}>Selected: {selectedSiteIds.length}</div>
-        <div style={{ fontSize: 13, marginTop: 4 }}>Editor status: {loading ? "Loading..." : status}</div>
+        <div style={{ fontSize: 13, marginTop: 4 }}>
+          Editor status: {loading ? "Loading..." : status}
+        </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "340px minmax(0, 1fr)", gap: 24, alignItems: "start", width: "100%", overflow: "hidden" }}>
-        <div style={{ position: isMobile ? "relative" : "sticky", top: isMobile ? 0 : 16, display: "grid", gap: 12 }}>
-          <div style={{ border: "1px solid #ddd", borderRadius: 10, background: "white", padding: 12, display: "grid", gap: 10 }}>
+      {/* Two-column layout: sidebar + map */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "340px minmax(0, 1fr)",
+          gap: 24,
+          alignItems: "start",
+          width: "100%",
+          overflow: "hidden",
+        }}
+      >
+        {/* ── LEFT SIDEBAR ────────────────────────────────────────────────── */}
+        <div
+          style={{
+            position: isMobile ? "relative" : "sticky",
+            top: isMobile ? 0 : 16,
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          {/* Map details */}
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 10,
+              background: "white",
+              padding: 12,
+              display: "grid",
+              gap: 10,
+            }}
+          >
             <div style={{ fontWeight: 700 }}>Map Details</div>
             <label style={{ display: "grid", gap: 4 }}>
               <span style={{ fontSize: 13 }}>Map Name</span>
-              <input value={mapName} onChange={(e) => setMapName(e.target.value)} style={{ padding: 8 }} disabled={loading} />
+              <input
+                value={mapName}
+                onChange={(e) => setMapName(e.target.value)}
+                style={{ padding: 8 }}
+                disabled={loading}
+              />
             </label>
             <label style={{ display: "grid", gap: 4 }}>
               <span style={{ fontSize: 13 }}>Park Name</span>
-              <input value={parkName} onChange={(e) => setParkName(e.target.value)} style={{ padding: 8 }} disabled={loading} />
+              <input
+                value={parkName}
+                onChange={(e) => setParkName(e.target.value)}
+                style={{ padding: 8 }}
+                disabled={loading}
+              />
             </label>
             <label style={{ display: "grid", gap: 4 }}>
               <span style={{ fontSize: 13 }}>Location</span>
-              <input value={mapLocation} onChange={(e) => setMapLocation(e.target.value)} style={{ padding: 8 }} disabled={loading} />
+              <input
+                value={mapLocation}
+                onChange={(e) => setMapLocation(e.target.value)}
+                style={{ padding: 8 }}
+                disabled={loading}
+              />
             </label>
-            <button type="button" onClick={() => void saveMapDetails()} disabled={loading}>Save Map Details</button>
+            <button
+              type="button"
+              onClick={() => void saveMapDetails()}
+              disabled={loading}
+            >
+              Save Map Details
+            </button>
           </div>
 
-          <div style={{ border: "1px solid #ddd", borderRadius: 10, background: "white", padding: 12, display: "grid", gap: 12 }}>
+          {/* Marker tools */}
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 10,
+              background: "white",
+              padding: 12,
+              display: "grid",
+              gap: 12,
+            }}
+          >
             <div style={{ fontWeight: 700 }}>Marker Tools</div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
-              <input type="checkbox" checked={saveAndNextMode} onChange={(e) => setSaveAndNextMode(e.target.checked)} disabled={readOnlyMarkers || loading} style={{ width: 16, height: 16, flex: "0 0 auto" }} />
+
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 14,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={saveAndNextMode}
+                onChange={(e) => setSaveAndNextMode(e.target.checked)}
+                disabled={readOnlyMarkers || loading}
+                style={{ width: 16, height: 16, flex: "0 0 auto" }}
+              />
               <span>Save + Next Marker mode</span>
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
-              <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} disabled={loading} style={{ width: 16, height: 16, flex: "0 0 auto" }} />
+
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 14,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showLabels}
+                onChange={(e) => setShowLabels(e.target.checked)}
+                disabled={loading}
+                style={{ width: 16, height: 16, flex: "0 0 auto" }}
+              />
               <span>Show labels on map</span>
             </label>
-            <input ref={siteNumberRef} value={siteNumber} onChange={(e) => setSiteNumber(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void saveFromKeyboard(); } }} placeholder="Site number" disabled={readOnlyMarkers || loading || isSavingMarker} style={{ padding: 8 }} />
-            <div style={{ fontSize: 12, color: "#666" }}>Click to place a marker. Type the site number and press Enter to save. Shift-click to add/remove markers from selection.</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button disabled={readOnlyMarkers || loading || isSavingMarker} onClick={() => void saveNewMarker()} style={{ flex: 1 }}>Save New</button>
-              <button disabled={readOnlyMarkers || loading || isSavingMarker} onClick={() => void saveAndNextMarker()} style={{ flex: 1 }}>Save + Next</button>
-              <button disabled={readOnlyMarkers || loading || isSavingMarker} onClick={() => void updateSelectedMarker()} style={{ flex: 1 }}>Update</button>
+
+            {/* Site number input — create new or rename selected */}
+            <input
+              ref={siteNumberRef}
+              value={siteNumber}
+              onChange={(e) => setSiteNumber(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void saveFromKeyboard();
+                }
+              }}
+              placeholder="Site number"
+              disabled={readOnlyMarkers || loading || isSavingMarker}
+              style={{ padding: 8 }}
+            />
+
+            <div style={{ fontSize: 12, color: "#666" }}>
+              Tap the map to place a marker. Type the site number and press
+              Enter to save. Rectangle-drag to multi-select.
             </div>
-            <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, background: "#fafafa" }}>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                disabled={
+                  readOnlyMarkers || loading || isSavingMarker || !pendingMarker
+                }
+                onClick={() => void saveNewMarker()}
+                style={{ flex: 1 }}
+              >
+                Save New
+              </button>
+              <button
+                disabled={
+                  readOnlyMarkers || loading || isSavingMarker || !pendingMarker
+                }
+                onClick={() => void saveAndNextMarker()}
+                style={{ flex: 1 }}
+              >
+                Save + Next
+              </button>
+              <button
+                disabled={
+                  readOnlyMarkers ||
+                  loading ||
+                  isSavingMarker ||
+                  !primarySelectedSiteId
+                }
+                onClick={() => void updateSelectedMarker()}
+                style={{ flex: 1 }}
+              >
+                Update
+              </button>
+            </div>
+
+            {/* Property panel — shown when a marker is selected */}
+            {primarySelectedSite && (
+              <div
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 8,
+                  padding: 10,
+                  background: "#f8faff",
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                  Selected Marker
+                </div>
+                <div style={{ fontSize: 13, marginBottom: 4 }}>
+                  Site: {primarySelectedSite.site_number}
+                </div>
+                {primarySelectedSite.display_label &&
+                  primarySelectedSite.display_label !==
+                    primarySelectedSite.site_number && (
+                    <div style={{ fontSize: 13, marginBottom: 4 }}>
+                      Label: {primarySelectedSite.display_label}
+                    </div>
+                  )}
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
+                  X: {displayX !== null ? displayX.toFixed(2) : "—"} | Y:{" "}
+                  {displayY !== null ? displayY.toFixed(2) : "—"}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={locateSelectedMarker}
+                    title="Center the map on this marker"
+                  >
+                    Locate
+                  </button>
+                  <button
+                    type="button"
+                    disabled={readOnlyMarkers || loading}
+                    onClick={() => void saveSelectedPosition()}
+                  >
+                    Save Position
+                  </button>
+                  <button
+                    type="button"
+                    disabled={readOnlyMarkers || loading}
+                    onClick={() => void deleteSelectedMarker()}
+                    style={{
+                      background: "#fff1f2",
+                      color: "#991b1b",
+                      border: "1px solid #dc2626",
+                      borderRadius: 8,
+                      padding: "8px 10px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Row / alignment tools */}
+            <div
+              style={{
+                border: "1px solid #eee",
+                borderRadius: 8,
+                padding: 10,
+                background: "#fafafa",
+              }}
+            >
               <div style={{ fontWeight: 700, marginBottom: 8 }}>Row Tools</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button disabled={readOnlyMarkers || loading || selectedSiteIds.length < 2} onClick={() => void alignHorizontalSelected()} style={{ flex: 1 }}>Align Horizontal</button>
-                <button disabled={readOnlyMarkers || loading || selectedSiteIds.length < 3} onClick={() => void distributeHorizontallySelected()} style={{ flex: 1 }}>Distribute Horizontally</button>
-                <button disabled={readOnlyMarkers || loading || selectedSiteIds.length < 2} onClick={() => void alignVerticalSelected()} style={{ flex: 1 }}>Align Vertical</button>
-                <button disabled={readOnlyMarkers || loading || selectedSiteIds.length < 3} onClick={() => void distributeVerticallySelected()} style={{ flex: 1 }}>Distribute Vertically</button>
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || selectedSiteIds.length < 2
+                  }
+                  onClick={() => mapRef.current?.alignSelected("horizontal")}
+                  style={{ flex: 1 }}
+                >
+                  Align Horizontal
+                </button>
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || selectedSiteIds.length < 3
+                  }
+                  onClick={() =>
+                    mapRef.current?.distributeSelected("horizontal")
+                  }
+                  style={{ flex: 1 }}
+                >
+                  Distribute H
+                </button>
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || selectedSiteIds.length < 2
+                  }
+                  onClick={() => mapRef.current?.alignSelected("vertical")}
+                  style={{ flex: 1 }}
+                >
+                  Align Vertical
+                </button>
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || selectedSiteIds.length < 3
+                  }
+                  onClick={() => mapRef.current?.distributeSelected("vertical")}
+                  style={{ flex: 1 }}
+                >
+                  Distribute V
+                </button>
               </div>
               <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                <button disabled={readOnlyMarkers || loading || undoStack.length === 0} onClick={() => void undoLastPositionChange()} style={{ width: "100%" }}>Undo Last Move ({undoStack.length})</button>
-                <button disabled={readOnlyMarkers || loading || undoStack.length === 0} onClick={() => void undoAllPositionChanges()} style={{ width: "100%" }}>Undo All Moves</button>
-                <button disabled={loading || selectedSiteIds.length === 0} onClick={() => { setSelectedSiteIds([]); setPrimarySelectedSiteId(null); setEditX(null); setEditY(null); setStatus("Selection cleared."); }} style={{ width: "100%" }}>Clear Selection</button>
+                <button
+                  disabled={readOnlyMarkers || loading || undoDepth === 0}
+                  onClick={() => mapRef.current?.undo()}
+                  style={{ width: "100%" }}
+                >
+                  Undo Last Move ({undoDepth})
+                </button>
+                <button
+                  disabled={readOnlyMarkers || loading || undoDepth === 0}
+                  onClick={() => mapRef.current?.undoAll()}
+                  style={{ width: "100%" }}
+                >
+                  Undo All Moves
+                </button>
+                <button
+                  disabled={loading || selectedSiteIds.length === 0}
+                  onClick={() => {
+                    setSelectedSiteIds([]);
+                    setPrimarySelectedSiteId(null);
+                    setEditX(null);
+                    setEditY(null);
+                    mapRef.current?.clearSelection();
+                    setStatus("Selection cleared.");
+                  }}
+                  style={{ width: "100%" }}
+                >
+                  Clear Selection
+                </button>
               </div>
             </div>
-            <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, background: "#fafafa" }}>
+
+            {/* Position nudge pad */}
+            <div
+              style={{
+                border: "1px solid #eee",
+                borderRadius: 8,
+                padding: 10,
+                background: "#fafafa",
+              }}
+            >
               <div style={{ fontWeight: 700, marginBottom: 8 }}>Position</div>
-              <div style={{ fontSize: 12, marginBottom: 8 }}>X: {editX ?? primarySelectedSite?.map_x ?? pendingX ?? "—"} | Y: {editY ?? primarySelectedSite?.map_y ?? pendingY ?? "—"}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                <div /><button disabled={readOnlyMarkers || loading} onClick={() => primarySelectedSiteId ? void nudgeSelected(0, -0.05) : nudgePending(0, -0.05)}>↑</button><div />
-                <button disabled={readOnlyMarkers || loading} onClick={() => primarySelectedSiteId ? void nudgeSelected(-0.05, 0) : nudgePending(-0.05, 0)}>←</button>
-                <button disabled={readOnlyMarkers || loading} onClick={() => void saveSelectedPosition()}>Save Pos</button>
-                <button disabled={readOnlyMarkers || loading} onClick={() => primarySelectedSiteId ? void nudgeSelected(0.05, 0) : nudgePending(0.05, 0)}>→</button>
-                <div /><button disabled={readOnlyMarkers || loading} onClick={() => primarySelectedSiteId ? void nudgeSelected(0, 0.05) : nudgePending(0, 0.05)}>↓</button><div />
+              <div style={{ fontSize: 12, marginBottom: 8 }}>
+                X: {displayX !== null ? displayX.toFixed(2) : "—"} | Y:{" "}
+                {displayY !== null ? displayY.toFixed(2) : "—"}
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  gap: 6,
+                }}
+              >
+                <div />
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || !primarySelectedSiteId
+                  }
+                  onClick={() => mapRef.current?.nudgeSelected(0, -0.05)}
+                >
+                  ↑
+                </button>
+                <div />
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || !primarySelectedSiteId
+                  }
+                  onClick={() => mapRef.current?.nudgeSelected(-0.05, 0)}
+                >
+                  ←
+                </button>
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || !primarySelectedSiteId
+                  }
+                  onClick={() => void saveSelectedPosition()}
+                >
+                  Save Pos
+                </button>
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || !primarySelectedSiteId
+                  }
+                  onClick={() => mapRef.current?.nudgeSelected(0.05, 0)}
+                >
+                  →
+                </button>
+                <div />
+                <button
+                  disabled={
+                    readOnlyMarkers || loading || !primarySelectedSiteId
+                  }
+                  onClick={() => mapRef.current?.nudgeSelected(0, 0.05)}
+                >
+                  ↓
+                </button>
+                <div />
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button disabled={readOnlyMarkers || loading || !primarySelectedSiteId} onClick={() => void deleteSelectedMarker()} style={{ flex: 1 }}>Delete Selected Marker</button>
-            </div>
+
+            {/* Map publish / sync actions */}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {!readOnlyMarkers && (
                 <>
-                  <button onClick={() => void saveUpdatedMap()} style={{ flex: 1 }} disabled={loading}>Save Updated Map</button>
-                  <button onClick={() => void publishToSelectedEvent()} style={{ flex: 1 }} disabled={loading}>Replace Selected Event Sites From Map</button>
+                  <button
+                    onClick={() => void saveUpdatedMap()}
+                    style={{ flex: 1 }}
+                    disabled={loading}
+                  >
+                    Save Updated Map
+                  </button>
+                  <button
+                    onClick={() => void publishToSelectedEvent()}
+                    style={{ flex: 1 }}
+                    disabled={loading}
+                  >
+                    Replace Selected Event Sites From Map
+                  </button>
                 </>
               )}
-              <button onClick={() => void safeSyncToSelectedEvent()} style={{ flex: 1 }} disabled={loading}>{readOnlyMarkers ? "Sync Published Map to Selected Event" : "Update Selected Event From Map"}</button>
-              {readOnlyMarkers && (<button onClick={() => void createDraftCopy()} style={{ flex: 1 }} disabled={loading}>Create Editable Draft</button>)}
+              <button
+                onClick={() => void safeSyncToSelectedEvent()}
+                style={{ flex: 1 }}
+                disabled={loading}
+              >
+                {readOnlyMarkers
+                  ? "Sync Published Map to Selected Event"
+                  : "Update Selected Event From Map"}
+              </button>
+              {readOnlyMarkers && (
+                <button
+                  onClick={() => void createDraftCopy()}
+                  style={{ flex: 1 }}
+                  disabled={loading}
+                >
+                  Create Editable Draft
+                </button>
+              )}
             </div>
           </div>
         </div>
 
-        <div style={{ border: "1px solid #ddd", borderRadius: 10, background: "white", padding: 12, height: "78vh", minHeight: 420, overflow: "hidden", overscrollBehavior: "none", touchAction: "none" }}>
-          <GestureMapViewportV2 width={naturalSize.width} height={naturalSize.height} minScale={0.1} maxScale={3} initialScale={0.6} viewportHeight="100%">
-            <div
-              ref={mapCanvasRef}
-              tabIndex={0}
-              onMouseDown={(e) => { focusMapCanvasNow(); handleMapMouseDown(e); }}
-              onMouseMove={handleMapMouseMove}
-              onMouseUp={handleMapMouseUp}
-              onMouseLeave={handleMapMouseUp}
-              style={{ position: "relative", width: naturalSize.width, height: naturalSize.height, cursor: readOnlyMarkers ? "default" : "crosshair", userSelect: "none", WebkitUserSelect: "none", outline: "none", touchAction: "none", overscrollBehavior: "none", WebkitTouchCallout: "none", WebkitTapHighlightColor: "transparent" }}
-            >
-              {masterMap?.map_image_url && (
-                <img draggable={false} src={masterMap.map_image_url} alt="Master map"
-                  onLoad={(e) => { const img = e.currentTarget; setNaturalSize({ width: img.naturalWidth || 1200, height: img.naturalHeight || 800 }); }}
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }}
-                />
-              )}
-              {selectionBox && (
-                <div style={{ position: "absolute", left: `${selectionBox.left}%`, top: `${selectionBox.top}%`, width: `${selectionBox.width}%`, height: `${selectionBox.height}%`, border: "2px dashed #0b5cff", background: "rgba(11,92,255,0.14)", pointerEvents: "none" }} />
-              )}
-              {renderedSites.map((site) => {
-                const isSelected = selectedSiteIds.includes(site.id);
-                const isPrimary = site.id === primarySelectedSiteId;
-                return (
-                  <div key={site.id} style={{ position: "absolute", left: `${site.map_x}%`, top: `${site.map_y}%`, transform: "translate(-50%, -50%)", pointerEvents: "auto", zIndex: 2 }}>
-                    <button type="button" tabIndex={-1}
-                      onMouseDown={(e) => { focusMapCanvasNow(); handleMarkerSelect(site, e); }}
-                      onMouseUp={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); focusMapCanvasNow(); handleMarkerSelect(site, e); }}
-                      title={site.site_number}
-                      style={{ width: 14, height: 14, borderRadius: "50%", border: isPrimary ? "2px solid white" : isSelected ? "2px solid #0b5cff" : "1px solid rgba(255,255,255,0.85)", background: isPrimary ? "#f4b400" : isSelected ? "#60a5fa" : "#1f9d55", boxShadow: "0 1px 4px rgba(0,0,0,0.35)", cursor: "pointer", padding: 0, display: "block", margin: "0 auto", pointerEvents: "auto" }}
-                    />
-                    {isPrimary && !readOnlyMarkers && (
-                      <button type="button"
-                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); void deleteSelectedMarker(); }}
-                        title="Delete marker"
-                        style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, borderRadius: "50%", background: "#dc2626", color: "white", border: "1px solid white", fontSize: 10, lineHeight: "14px", textAlign: "center", cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,0.4)" }}>×</button>
-                    )}
-                    {showLabels && (
-                      <button type="button" tabIndex={-1}
-                        onMouseDown={(e) => { focusMapCanvasNow(); handleMarkerSelect(site, e); }}
-                        onMouseUp={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); focusMapCanvasNow(); handleMarkerSelect(site, e); }}
-                        title={`Site ${site.site_number}`}
-                        style={{ marginTop: 4, marginLeft: "auto", marginRight: "auto", background: isPrimary ? "rgba(255,255,255,0.98)" : isSelected ? "rgba(219,234,254,0.98)" : "rgba(255,255,255,0.92)", border: isSelected ? "1px solid rgba(11,92,255,0.45)" : "1px solid rgba(0,0,0,0.2)", borderRadius: 4, fontSize: 11, fontWeight: 700, padding: "1px 5px", color: "#111", whiteSpace: "nowrap", boxShadow: "0 1px 3px rgba(0,0,0,0.25)", cursor: "pointer", pointerEvents: "auto", display: "table" }}>
-                        {site.display_label || site.site_number}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              {pendingX !== null && pendingY !== null && (
-                <div style={{ position: "absolute", left: `${pendingX}%`, top: `${pendingY}%`, transform: "translate(-50%, -50%)", pointerEvents: "none" }}>
-                  <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#f4b400", border: "2px solid white", boxShadow: "0 1px 4px rgba(0,0,0,0.35)", margin: "0 auto" }} />
-                  {showLabels && siteNumber.trim() && (
-                    <div style={{ marginTop: 4, marginLeft: "auto", marginRight: "auto", background: "rgba(255,255,255,0.96)", border: "1px solid rgba(0,0,0,0.2)", borderRadius: 4, fontSize: 11, fontWeight: 700, padding: "1px 5px", color: "#111", whiteSpace: "nowrap", boxShadow: "0 1px 3px rgba(0,0,0,0.25)", display: "table" }}>
-                      {siteNumber.trim()}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </GestureMapViewportV2>
+        {/* ── MAP CANVAS ──────────────────────────────────────────────────── */}
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 8,
+            overflow: "hidden",
+          }}
+        >
+          <MapCanvas
+            ref={mapRef}
+            imageUrl={masterMap?.map_image_url ?? null}
+            markers={markers}
+            viewportHeight={isMobile ? "60vh" : "78vh"}
+            initialScale={0.6}
+            minScale={0.1}
+            maxScale={3}
+            editable={!readOnlyMarkers}
+            selectionMode="rectangle"
+            showLabels={showLabels}
+            pendingMarker={pendingMarker}
+            selectedIds={selectedSiteIds}
+            primaryId={primarySelectedSiteId}
+            onMapTap={handleMapTap}
+            onMarkerTap={handleMarkerTap}
+            onSelectionChange={handleSelectionChange}
+            onMarkersChange={handleMarkersChange}
+            renderMarker={renderMarker}
+          />
+
+          {/* Zoom controls */}
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              marginTop: 10,
+            }}
+          >
+            <button type="button" onClick={zoomOut}>
+              −
+            </button>
+            <button type="button" onClick={zoomIn}>
+              +
+            </button>
+            <button type="button" onClick={resetZoom}>
+              Reset Zoom
+            </button>
+            {primarySelectedSiteId && (
+              <button type="button" onClick={locateSelectedMarker}>
+                Locate Selected
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
+// ─── Page wrapper ─────────────────────────────────────────────────────────────
 
 export default function MasterMapEditorPage() {
   return (
