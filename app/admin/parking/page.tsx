@@ -683,6 +683,12 @@ function ParkingAdminPageInner() {
       const siteId = site.id || site.master_site_id;
       const isSelected = siteId === selectedSiteId;
 
+      console.log("MARKER", {
+        siteId,
+        selectedSiteId,
+        isSelected,
+      });
+
       // Color logic (preserves getSiteColor exactly)
       let color: string;
       if (isSelected) {
@@ -769,13 +775,18 @@ function ParkingAdminPageInner() {
 
   const handleMarkerTap = useCallback(
     (id: string) => {
+      console.log("MARKER TAP", id);
+      console.log("MARKER TAP SELECTED ATTENDEE", selectedAttendeeId);
+
       const site = siteById.get(id);
+
+      console.log("SITE FOUND", !!site);
+
       if (site) {
         handleSiteClick(site);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [siteById],
+    [siteById, selectedAttendeeId],
   );
 
   // ─── Attendee/site interaction ────────────────────────────────────────────────
@@ -954,7 +965,6 @@ Move ${
       return false;
     }
 
-    setSelectedAttendeeId(attendee.id);
     setSelectedSiteId(site.id || site.master_site_id);
     focusSite(site);
     showStatus(
@@ -1063,6 +1073,7 @@ Move ${
       );
       if (site) {
         setSelectedSiteId(site.id || site.master_site_id);
+        console.log("SET SELECTED SITE", site.id || site.master_site_id);
         setTimeout(() => {
           focusSite(site);
         }, 100);
@@ -1073,22 +1084,44 @@ Move ${
   }
 
   function handleSiteClick(site: ParkingSite) {
-    setSelectedSiteId(site.id || site.master_site_id);
+    console.log("SITE CLICK", {
+      site: site.site_number,
+      assigned: site.assigned_attendee_id,
+      isNarrow,
+      selectedAttendeeId,
+    });
+
+    const selectedId = site.id || site.master_site_id;
+
+    console.log("SETTING SITE ID", selectedId);
+
+    setSelectedSiteId(selectedId);
     focusSite(site);
 
+    console.log("ASSIGNED", site.assigned_attendee_id);
+
     if (site.assigned_attendee_id) {
+      console.log("SELECTING ATTENDEE", site.assigned_attendee_id);
+
       setSelectedAttendeeId(site.assigned_attendee_id);
       scrollAttendeeIntoView(site.assigned_attendee_id);
       focusSite(site);
+
       if (isNarrow) {
         setShowQueuePanel(true);
       }
       return;
     }
 
+    console.log("OPEN SITE");
+    console.log("SELECTED ATTENDEE ID", selectedAttendeeId);
+    console.log("SELECTED ATTENDEE", selectedAttendee?.pilot_last);
+
     if (selectedAttendeeId) {
+      console.log("ASSIGNING SITE");
       void assignSelectedToSite(site);
     } else {
+      console.log("NO ATTENDEE SELECTED");
       showStatus(
         `Selected open site ${site.site_number}. Choose an attendee to assign.`,
       );
@@ -1290,11 +1323,18 @@ Move ${
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      void setArrivalStatus(selectedAttendee.id, "parked")
-                    }
+                    onClick={() => {
+                      const nextStatus =
+                        selectedAttendee.arrival_status === "parked"
+                          ? "arrived"
+                          : "parked";
+
+                      void setArrivalStatus(selectedAttendee.id, nextStatus);
+                    }}
                   >
-                    Parked
+                    {selectedAttendee.arrival_status === "parked"
+                      ? "Undo Parked"
+                      : "Mark Parked"}
                   </button>
                   <button
                     type="button"
@@ -1344,13 +1384,18 @@ Move ${
                 <div style={{ fontSize: 13, color: "#555" }}>
                   {selectedSite.assigned_attendee_id ? "Occupied" : "Open"}
                 </div>
-                {selectedSite.assigned_attendee_id && (
+                {!selectedSite.assigned_attendee_id && (
                   <button
                     type="button"
                     style={{ marginTop: 10 }}
-                    onClick={() => void clearSite(selectedSite)}
+                    disabled={!selectedAttendee}
+                    onClick={() => {
+                      if (selectedAttendee) {
+                        void assignSelectedToSite(selectedSite);
+                      }
+                    }}
                   >
-                    Clear Site
+                    Assign Selected Attendee
                   </button>
                 )}
               </>
@@ -1496,47 +1541,26 @@ Move ${
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setSelectedAttendeeId(attendee.id);
-                  if (attendee.assigned_site) {
-                    const siteKey = siteMatchKey(attendee.assigned_site);
-                    const site = sites.find(
-                      (s) =>
-                        siteMatchKey(s.site_number) === siteKey ||
-                        siteMatchKey(s.display_label) === siteKey,
-                    );
-                    if (site) {
-                      setSelectedSiteId(site.id || site.master_site_id);
-                      focusSite(site);
-                      const attendeeSite = attendee.assigned_site;
-                      if (attendeeSite && site) {
-                        void assignAttendeeToSite({
-                          attendee,
-                          site,
-                          markParked: true,
-                          allowOverride: true,
-                        });
-                        return;
-                      }
-                    }
-                  }
-                  void setArrivalStatus(attendee.id, "parked");
+
+                  const nextStatus =
+                    attendee.arrival_status === "parked" ? "arrived" : "parked";
+
+                  void setArrivalStatus(attendee.id, nextStatus);
                 }}
-                disabled={attendee.arrival_status === "parked"}
                 style={{
                   padding: "5px 8px",
                   borderRadius: 6,
                   border: "1px solid #ccc",
                   background:
                     attendee.arrival_status === "parked" ? "#f3f4f6" : "white",
-                  cursor:
-                    attendee.arrival_status === "parked"
-                      ? "not-allowed"
-                      : "pointer",
+                  cursor: "pointer",
                   fontSize: 12,
                   fontWeight: 700,
                 }}
               >
-                Mark Parked
+                {attendee.arrival_status === "parked"
+                  ? "Undo Parked"
+                  : "Mark Parked"}
               </button>
             </div>
           </div>
@@ -1658,11 +1682,18 @@ Move ${
             </button>
             <button
               type="button"
-              onClick={() =>
-                void setArrivalStatus(selectedAttendee.id, "parked")
-              }
+              onClick={() => {
+                const nextStatus =
+                  selectedAttendee.arrival_status === "parked"
+                    ? "arrived"
+                    : "parked";
+
+                void setArrivalStatus(selectedAttendee.id, nextStatus);
+              }}
             >
-              Parked
+              {selectedAttendee.arrival_status === "parked"
+                ? "Undo Parked"
+                : "Mark Parked"}
             </button>
             <button
               type="button"
@@ -1677,6 +1708,20 @@ Move ${
             </button>
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {selectedSite && !selectedSite.assigned_attendee_id && (
+              <button
+                type="button"
+                style={{ marginTop: 10 }}
+                disabled={!selectedAttendee}
+                onClick={() => {
+                  if (selectedAttendee) {
+                    void assignSelectedToSite(selectedSite);
+                  }
+                }}
+              >
+                Assign Selected Attendee
+              </button>
+            )}
             {selectedSite?.assigned_attendee_id && (
               <button
                 type="button"
