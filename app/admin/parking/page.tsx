@@ -1093,8 +1093,12 @@ Move ${
 
     const selectedId = site.id || site.master_site_id;
 
-    console.log("SETTING SITE ID", selectedId);
-
+    console.log("SETTING SITE ID", {
+      selectedId,
+      siteId: site.id,
+      masterSiteId: site.master_site_id,
+      siteNumber: site.site_number,
+    });
     setSelectedSiteId(selectedId);
     focusSite(site);
 
@@ -1766,6 +1770,7 @@ Move ${
           }}
         >
           <MapCanvas
+            key={selectedSiteId}
             ref={mapViewportRef}
             imageUrl={event?.map_image_url ?? null}
             markers={markers}
