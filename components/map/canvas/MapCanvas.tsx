@@ -124,6 +124,10 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
 
     const undo = useUndoStack();
 
+    // Guard: suppress marker activate that fires as a click immediately after
+    // a rectangle-drag marquee completes.
+    const suppressActivateRef = useRef(false);
+
     // current positions for the given ids, for an undo snapshot
     const snapshotFor = useCallback(
       (ids: string[]): MarkerPositionUpdate[] => {
@@ -171,8 +175,15 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       onMarqueeStart: (p) => setMarquee(normalizeRectPct(p, p)),
       onMarqueeUpdate: (a, b) => setMarquee(normalizeRectPct(a, b)),
       onMarqueeEnd: (a, b) => {
+        suppressActivateRef.current = true;
+
         selectInRect(a, b);
+
         setMarquee(null);
+
+        setTimeout(() => {
+          suppressActivateRef.current = false;
+        }, 50);
       },
       lockViewport: () => viewportRef.current?.setGestureLocked?.(true),
       unlockViewport: () => viewportRef.current?.setGestureLocked?.(false),
@@ -181,11 +192,16 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
     // ---- marker tap ----------------------------------------------------------
     const onMarkerActivate = useCallback(
       (id: string, additive: boolean) => {
+        if (suppressActivateRef.current) {
+          return;
+        }
+
         if (selectionMode === "multi" || additive) {
           toggle(id);
         } else if (selectionMode !== "none") {
           selectSingle(id);
         }
+
         onMarkerTap?.(id);
       },
       [selectionMode, toggle, selectSingle, onMarkerTap],

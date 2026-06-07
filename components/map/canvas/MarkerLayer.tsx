@@ -115,7 +115,7 @@ function MarkerLayerImpl({
               />
             )}
 
-            {showLabels && m.label && (
+            {showLabels && m.label && !renderMarker && (
               <div
                 style={{
                   marginTop: 4,

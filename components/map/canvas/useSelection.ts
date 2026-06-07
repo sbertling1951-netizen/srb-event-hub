@@ -19,13 +19,25 @@ type Args = {
 
 const EMPTY: Selection = { selectedIds: [], primaryId: null };
 
-export function useSelection({ markers, controlledIds, controlledPrimary, onSelectionChange }: Args) {
+export function useSelection({
+  markers,
+  controlledIds,
+  controlledPrimary,
+  onSelectionChange,
+}: Args) {
   const controlled = controlledIds !== undefined;
   const [internal, setInternal] = useState<Selection>(EMPTY);
 
-  const selection: Selection = controlled
-    ? { selectedIds: controlledIds ?? [], primaryId: controlledPrimary ?? null }
-    : internal;
+  const selection: Selection = useMemo(
+    () =>
+      controlled
+        ? {
+            selectedIds: controlledIds ?? [],
+            primaryId: controlledPrimary ?? null,
+          }
+        : internal,
+    [controlled, controlledIds, controlledPrimary, internal],
+  );
 
   // keep a ref so event handlers read live selection without re-subscribing
   const selRef = useRef(selection);
@@ -35,7 +47,9 @@ export function useSelection({ markers, controlledIds, controlledPrimary, onSele
 
   const emit = useCallback(
     (next: Selection) => {
-      if (!controlled) setInternal(next);
+      if (!controlled) {
+        setInternal(next);
+      }
       onSelectionChange?.(next);
     },
     [controlled, onSelectionChange],
@@ -51,7 +65,9 @@ export function useSelection({ markers, controlledIds, controlledPrimary, onSele
 
   const selectSingle = useCallback(
     (id: string) => {
-      if (!isSelectable(id)) return;
+      if (!isSelectable(id)) {
+        return;
+      }
       emit({ selectedIds: [id], primaryId: id });
     },
     [emit, isSelectable],
@@ -59,10 +75,14 @@ export function useSelection({ markers, controlledIds, controlledPrimary, onSele
 
   const toggle = useCallback(
     (id: string) => {
-      if (!isSelectable(id)) return;
+      if (!isSelectable(id)) {
+        return;
+      }
       const cur = selRef.current;
       const has = cur.selectedIds.includes(id);
-      const ids = has ? cur.selectedIds.filter((x) => x !== id) : [...cur.selectedIds, id];
+      const ids = has
+        ? cur.selectedIds.filter((x) => x !== id)
+        : [...cur.selectedIds, id];
       const primaryId = has ? (ids[0] ?? null) : id;
       emit({ selectedIds: ids, primaryId });
     },
@@ -95,12 +115,23 @@ export function useSelection({ markers, controlledIds, controlledPrimary, onSele
             pointInRectPct(m.xPct, m.yPct, rect),
         )
         .map((m) => m.id);
-      emit({ selectedIds: ids, primaryId: ids[0] ?? null });
+      const currentPrimary = selRef.current.primaryId;
+
+      console.log("RECT SELECT IDS", ids.length, ids);
+
+      const primaryId = ids.includes(currentPrimary ?? "")
+        ? currentPrimary
+        : (ids[0] ?? null);
+
+      emit({ selectedIds: ids, primaryId });
     },
     [emit, markers],
   );
 
-  const selectedSet = useMemo(() => new Set(selection.selectedIds), [selection.selectedIds]);
+  const selectedSet = useMemo(
+    () => new Set(selection.selectedIds),
+    [selection.selectedIds],
+  );
 
   return {
     selection,

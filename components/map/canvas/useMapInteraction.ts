@@ -6,19 +6,17 @@
 //
 // Disambiguation that keeps this from becoming a second gesture system:
 //   - single-finger immediate drag on empty space  -> PAN  (left to V2)
-//   - long-press (touch) or Shift+drag (desktop) on empty -> MARQUEE (claimed here)
-//   - two-finger                                     -> PINCH (left to V2)
-//   - tap on empty (editable)                        -> PLACE (via V2 onTap)
-//   - tap / shift-tap on a marker                    -> SELECT (MarkerLayer onClick)
+//   - plain left-drag (mouse) past threshold       -> MARQUEE (claimed here)
+//   - Shift+drag (mouse) immediate                 -> MARQUEE (claimed here)
+//   - long-press (touch) on empty                  -> MARQUEE (claimed here)
+//   - two-finger                                   -> PINCH (left to V2)
+//   - tap on empty (editable)                      -> PLACE (via V2 onTap)
+//   - tap / shift-tap on a marker                  -> SELECT (MarkerLayer onClick)
 //
-// Desktop marquee requires Shift held during the drag. selectionMode="rectangle"
-// enables this hook but does NOT itself trigger marquee capture — that would
-// override V2 pan for every unmodified drag. Shift is the explicit signal.
-//
-// When this layer claims a gesture it (a) calls lockViewport() so V2 suspends
-// pan for the duration, (b) captures the pointer, (c) preventDefaults. On
-// release it unlocks. The lockViewport/unlockViewport + getTransform seam are
-// the two small additions required on GestureMapViewportV2 (see README).
+// Key rule: lockViewport() is NEVER called in onPointerDown for plain mouse
+// drags. It is called only inside beginMarquee(), which is only reached after
+// movement exceeds moveThresholdPx in onPointerMove. This keeps V2 free to pan
+// until we are certain the user is drawing a rectangle, not tapping.
 
 import { useEffect, useRef } from "react";
 
@@ -59,7 +57,7 @@ export function useMapInteraction(args: Args) {
     unlockViewport,
   } = args;
 
-  // keep latest args in a ref so the effect can attach once
+  // keep latest args in a ref so the effect closure never goes stale
   const ref = useRef(args);
   ref.current = args;
 
@@ -74,21 +72,19 @@ export function useMapInteraction(args: Args) {
       return;
     }
 
-    let armed = false; // marquee active
+    let armed = false; // marquee actively drawing
     let pointerId: number | null = null;
     let startPct: MapPercentPoint | null = null;
     let startScreen: { x: number; y: number } | null = null;
     let longPressTimer: number | null = null;
 
-    const a = () => ref.current; // live args
+    const a = () => ref.current; // always-live args
 
     const toPct = (clientX: number, clientY: number): MapPercentPoint => {
       const rect = el.getBoundingClientRect();
-      const sx = clientX - rect.left;
-      const sy = clientY - rect.top;
       const { xPct, yPct } = screenToPercent(
-        sx,
-        sy,
+        clientX - rect.left,
+        clientY - rect.top,
         a().getTransform(),
         a().natural,
       );
@@ -98,10 +94,12 @@ export function useMapInteraction(args: Args) {
     const isOnMarker = (target: EventTarget | null) =>
       !!(target as HTMLElement | null)?.closest?.("[data-marker-id]");
 
+    // Arm the marquee. Called only after we are committed to a drag gesture
+    // (either Shift+down, long-press, or plain-drag past threshold).
     const beginMarquee = (clientX: number, clientY: number) => {
       armed = true;
       startPct = toPct(clientX, clientY);
-      a().lockViewport?.();
+      a().lockViewport?.(); // suspend V2 pan for the duration
       a().onMarqueeStart?.(startPct);
     };
 
@@ -112,23 +110,23 @@ export function useMapInteraction(args: Args) {
       }
     };
 
+    // ── pointerdown ──────────────────────────────────────────────────────────
     const onPointerDown = (e: PointerEvent) => {
       if (e.button != null && e.button !== 0) {
         return;
-      } // primary only
+      } // primary button only
       if (isOnMarker(e.target)) {
         return;
-      } // marker handled by MarkerLayer
+      } // markers handled by MarkerLayer
 
       pointerId = e.pointerId;
       startScreen = { x: e.clientX, y: e.clientY };
 
+      const shift = e.shiftKey;
+
       if (e.pointerType === "mouse") {
-        // Desktop marquee requires Shift — matching the design spec:
-        // "Shift+drag (desktop) -> MARQUEE". An unmodified desktop drag is
-        // always a pan (V2). selectionMode enables this hook but does not
-        // itself claim the pointer; only Shift does.
-        if (e.shiftKey) {
+        if (shift) {
+          // Shift+click: arm immediately, same as before.
           try {
             el.setPointerCapture(e.pointerId);
           } catch {
@@ -137,9 +135,11 @@ export function useMapInteraction(args: Args) {
           e.preventDefault();
           beginMarquee(e.clientX, e.clientY);
         }
-        // No Shift = fall through, V2 handles pan normally.
+        // Plain left-drag: do NOT arm yet. startScreen is recorded above.
+        // onPointerMove will call beginMarquee once the threshold is crossed.
+        // This keeps V2's pan handler free until we are certain.
       } else {
-        // Touch: arm on long-press; if the finger moves first it becomes a pan (V2).
+        // Touch: arm on long-press; early movement cancels and yields to V2 pan.
         clearLongPress();
         longPressTimer = window.setTimeout(() => {
           if (pointerId === e.pointerId && startScreen) {
@@ -154,59 +154,72 @@ export function useMapInteraction(args: Args) {
       }
     };
 
+    // ── pointermove ──────────────────────────────────────────────────────────
     const onPointerMove = (e: PointerEvent) => {
       if (pointerId !== e.pointerId) {
         return;
       }
 
       if (!armed) {
-        if (startScreen) {
-          const dx = Math.abs(e.clientX - startScreen.x);
-          const dy = Math.abs(e.clientY - startScreen.y);
-          if (dx > moveThresholdPx || dy > moveThresholdPx) {
-            if (e.pointerType !== "mouse") {
-              // Touch moved past threshold before long-press fired — pan intent.
-              // Cancel long-press and yield to V2.
-              clearLongPress();
-            } else if (e.shiftKey) {
-              // Shift was not held at pointerdown but is held now during the
-              // drag — arm the marquee from the original press position.
-              try {
-                el.setPointerCapture(e.pointerId);
-              } catch {
-                /* noop */
-              }
-              e.preventDefault();
-              beginMarquee(startScreen.x, startScreen.y);
+        if (!startScreen) {
+          return;
+        }
+
+        const dx = Math.abs(e.clientX - startScreen.x);
+        const dy = Math.abs(e.clientY - startScreen.y);
+        const threshold = a().moveThresholdPx ?? moveThresholdPx;
+
+        if (dx > threshold || dy > threshold) {
+          if (e.pointerType === "mouse") {
+            // Plain mouse drag has exceeded threshold — commit to marquee now.
+            // Capture the pointer so we receive events outside the element,
+            // lock the viewport so V2 stops panning, then start the rectangle
+            // from the original down position (not the current position) so
+            // the rect origin matches where the user first pressed.
+            try {
+              el.setPointerCapture(e.pointerId);
+            } catch {
+              /* noop */
             }
-            // No Shift on desktop = unmodified pan, stay out of V2's way.
+            beginMarquee(startScreen.x, startScreen.y);
+            // Immediately push the current position so the rect is visible.
+            if (startPct) {
+              a().onMarqueeUpdate?.(startPct, toPct(e.clientX, e.clientY));
+            }
+          } else {
+            // Touch moved before long-press fired → pan intent, cancel timer.
+            clearLongPress();
           }
         }
         return;
       }
 
-      // Marquee is armed — update the rectangle.
+      // Marquee is armed — update the live rectangle.
       e.preventDefault();
       if (startPct) {
         a().onMarqueeUpdate?.(startPct, toPct(e.clientX, e.clientY));
       }
     };
 
+    // ── pointerup / pointercancel ────────────────────────────────────────────
     const finish = (e: PointerEvent) => {
       clearLongPress();
       if (pointerId !== e.pointerId) {
         return;
       }
+
       if (armed && startPct) {
         e.preventDefault();
         a().onMarqueeEnd?.(startPct, toPct(e.clientX, e.clientY));
         a().unlockViewport?.();
       }
+
       try {
         el.releasePointerCapture(e.pointerId);
       } catch {
         /* noop */
       }
+
       armed = false;
       pointerId = null;
       startPct = null;
@@ -217,6 +230,7 @@ export function useMapInteraction(args: Args) {
     el.addEventListener("pointermove", onPointerMove);
     el.addEventListener("pointerup", finish);
     el.addEventListener("pointercancel", finish);
+
     return () => {
       clearLongPress();
       el.removeEventListener("pointerdown", onPointerDown);
@@ -224,6 +238,7 @@ export function useMapInteraction(args: Args) {
       el.removeEventListener("pointerup", finish);
       el.removeEventListener("pointercancel", finish);
     };
-    // re-attach only when these structural inputs change
+
+    // re-attach only when structural inputs change
   }, [viewportRef, enabled, selectionMode, longPressMs, moveThresholdPx]);
 }
