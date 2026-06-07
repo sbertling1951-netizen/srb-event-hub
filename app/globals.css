@@ -1391,3 +1391,16 @@ button[style*="background-color: #fafafa"] * {
 body.coach-map-pinching [data-coach-map-status="true"] {
   visibility: hidden;
 }
+
+/* ─── Full-width workstation pages ───────────────────────────────────────────
+ * Editor-style pages (Master Maps, Parking Admin, Locations, future canvas
+ * editors) opt in by adding "admin-map-workspace" to document.body.classList
+ * on mount and removing it on unmount. Normal content pages are unaffected.
+ */
+body.admin-map-workspace .app-inner {
+  max-width: none !important;
+}
+
+body.admin-map-workspace .app-main {
+  width: 100%;
+}
