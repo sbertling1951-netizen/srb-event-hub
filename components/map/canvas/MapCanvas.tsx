@@ -183,7 +183,7 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
 
         setTimeout(() => {
           suppressActivateRef.current = false;
-        }, 50);
+        }, 500);
       },
       lockViewport: () => viewportRef.current?.setGestureLocked?.(true),
       unlockViewport: () => viewportRef.current?.setGestureLocked?.(false),
@@ -192,13 +192,31 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
     // ---- marker tap ----------------------------------------------------------
     const onMarkerActivate = useCallback(
       (id: string, additive: boolean) => {
+        console.log(
+          "MARKER ACTIVATE",
+          id,
+          "suppressed=",
+          suppressActivateRef.current,
+        );
+
         if (suppressActivateRef.current) {
           return;
         }
 
+        console.log(
+          "ACTIVATE PATH",
+          id,
+          "mode=",
+          selectionMode,
+          "additive=",
+          additive,
+        );
+
         if (selectionMode === "multi" || additive) {
+          console.log("TOGGLE", id);
           toggle(id);
         } else if (selectionMode !== "none") {
+          console.log("SELECT SINGLE", id);
           selectSingle(id);
         }
 
