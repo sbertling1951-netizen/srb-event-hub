@@ -192,31 +192,13 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
     // ---- marker tap ----------------------------------------------------------
     const onMarkerActivate = useCallback(
       (id: string, additive: boolean) => {
-        console.log(
-          "MARKER ACTIVATE",
-          id,
-          "suppressed=",
-          suppressActivateRef.current,
-        );
-
         if (suppressActivateRef.current) {
           return;
         }
 
-        console.log(
-          "ACTIVATE PATH",
-          id,
-          "mode=",
-          selectionMode,
-          "additive=",
-          additive,
-        );
-
         if (selectionMode === "multi" || additive) {
-          console.log("TOGGLE", id);
           toggle(id);
         } else if (selectionMode !== "none") {
-          console.log("SELECT SINGLE", id);
           selectSingle(id);
         }
 

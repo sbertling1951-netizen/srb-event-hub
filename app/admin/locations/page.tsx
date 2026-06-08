@@ -5,9 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
+import { useAdmin } from "@/lib/adminContext";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
-import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type AdminEventContext = {
@@ -208,7 +208,9 @@ function AdminLocationsPageInner() {
   }, [loadLocationIntoForm, selectedLocationId]);
 
   useEffect(() => {
-    if (!admin) return;
+    if (!admin) {
+      return;
+    }
 
     const adminEvent = getAdminEvent() as AdminEventContext | null;
 
@@ -262,7 +264,14 @@ function AdminLocationsPageInner() {
       );
     };
   }, [admin, loadPage]);
+  // Workspace layout — removes max-width cap while this page is mounted
+  useEffect(() => {
+    document.body.classList.add("admin-map-workspace");
 
+    return () => {
+      document.body.classList.remove("admin-map-workspace");
+    };
+  }, []);
   const filteredLocations = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) {
@@ -807,6 +816,7 @@ function AdminLocationsPageInner() {
               initialScale={
                 event ? (event.locations_map_open_scale ?? 0.6) : undefined
               }
+              maxScale={8}
               editable={isPlacing}
               selectionMode="none"
               showLabels={false}

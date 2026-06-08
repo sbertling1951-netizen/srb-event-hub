@@ -1400,7 +1400,3 @@ body.coach-map-pinching [data-coach-map-status="true"] {
 body.admin-map-workspace .app-inner {
   max-width: none !important;
 }
-
-body.admin-map-workspace .app-main {
-  width: 100%;
-}

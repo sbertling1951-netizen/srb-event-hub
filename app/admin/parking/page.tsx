@@ -235,6 +235,11 @@ function ParkingAdminPageInner() {
       ? 0.6
       : clampZoom(openingScale);
     setDefaultZoom(safeOpeningScale);
+    console.log(
+      "PARKING SCALE",
+      typedEvent.parking_map_open_scale,
+      safeOpeningScale,
+    );
 
     const [masterSitesResult, assignmentResult, attendeeResult] =
       await Promise.all([
@@ -423,6 +428,16 @@ function ParkingAdminPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
 
+  // Workspace layout
+
+  useEffect(() => {
+    document.body.classList.add("admin-map-workspace");
+
+    return () => {
+      document.body.classList.remove("admin-map-workspace");
+    };
+  }, []);
+
   useEffect(() => {
     function handleResize() {
       const narrow = window.innerWidth < 900;
@@ -546,6 +561,7 @@ function ParkingAdminPageInner() {
           id: s.id || s.master_site_id,
           xPct: s.map_x as number,
           yPct: s.map_y as number,
+          label: s.display_label || s.site_number,
           data: s,
         })),
     [sites],
@@ -701,6 +717,10 @@ function ParkingAdminPageInner() {
         }
       }
 
+      if (showLabels) {
+        return null;
+      }
+
       // Title logic (preserves getSiteTitle exactly)
       let title: string;
       if (!site.assigned_attendee_id) {
@@ -740,27 +760,6 @@ function ParkingAdminPageInner() {
               margin: "0 auto",
             }}
           />
-          {showLabels && (
-            <div
-              style={{
-                marginTop: 4,
-                marginLeft: "auto",
-                marginRight: "auto",
-                background: "rgba(255,255,255,0.92)",
-                border: "1px solid rgba(0,0,0,0.2)",
-                borderRadius: 4,
-                fontSize: 10,
-                fontWeight: 700,
-                padding: "1px 4px",
-                color: "#111",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-                display: "table",
-                pointerEvents: "none",
-              }}
-            >
-              {site.display_label || site.site_number}
-            </div>
-          )}
         </>
       );
     },
@@ -1075,12 +1074,10 @@ Move ${
     const selectedId = site.id || site.master_site_id;
 
     setSelectedSiteId(selectedId);
-    focusSite(site);
 
     if (site.assigned_attendee_id) {
       setSelectedAttendeeId(site.assigned_attendee_id);
       scrollAttendeeIntoView(site.assigned_attendee_id);
-      focusSite(site);
 
       if (isNarrow) {
         setShowQueuePanel(true);
@@ -1543,7 +1540,7 @@ Move ${
   return (
     <div
       style={{
-        padding: isNarrow ? 12 : "16px 12px 16px 0",
+        padding: isNarrow ? 12 : "8px 8px 8px 0",
         width: "100%",
         maxWidth: "none",
         boxSizing: "border-box",
@@ -1709,7 +1706,7 @@ Move ${
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isNarrow ? "1fr" : "330px minmax(0, 1fr)",
+          gridTemplateColumns: isNarrow ? "1fr" : "340px minmax(0, 1fr)",
           gap: isNarrow ? 12 : 10,
           alignItems: "start",
           width: "100%",
@@ -1725,7 +1722,7 @@ Move ${
             border: "1px solid #ddd",
             borderRadius: 10,
             background: "white",
-            padding: 8,
+            padding: 4,
             order: isNarrow ? 1 : 0,
             position: isNarrow ? "sticky" : "static",
             top: isNarrow
@@ -1738,11 +1735,12 @@ Move ${
             ref={mapViewportRef}
             imageUrl={event?.map_image_url ?? null}
             markers={markers}
-            viewportHeight={isNarrow ? "60vh" : "82vh"}
+            viewportHeight={isNarrow ? "60vh" : "78vh"}
             initialScale={defaultZoom}
             minScale={0.1}
             maxScale={3}
             selectionMode="none"
+            showLabels={showLabels}
             onMarkerTap={handleMarkerTap}
             renderMarker={renderMarker}
           />
