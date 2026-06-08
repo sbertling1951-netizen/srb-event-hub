@@ -94,17 +94,24 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      if (session) {
-        void loadAdmin();
-      } else {
-        setAdmin(null);
-
-        if (typeof window !== "undefined") {
-          sessionStorage.removeItem("fcoc-admin-access");
-        }
-
-        setLoading(false);
+      if (event === "INITIAL_SESSION") {
+        console.log("AUTH EVENT ignored INITIAL_SESSION");
+        return;
       }
+
+      if (session && event === "SIGNED_IN") {
+        console.log("AUTH EVENT processing SIGNED_IN");
+        void loadAdmin();
+        return;
+      }
+
+      setAdmin(null);
+
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("fcoc-admin-access");
+      }
+
+      setLoading(false);
     });
 
     return () => {
