@@ -99,9 +99,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      if (session && event === "SIGNED_IN") {
-        console.log("AUTH EVENT processing SIGNED_IN");
-        void loadAdmin();
+      if (event === "SIGNED_IN") {
+        console.log("AUTH EVENT SIGNED_IN IGNORED");
         return;
       }
 
