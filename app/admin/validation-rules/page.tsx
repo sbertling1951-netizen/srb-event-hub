@@ -75,6 +75,14 @@ function getStoredAdminEvent(): EventContext | null {
   }
 }
 
+function isEmbeddedMode() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return new URLSearchParams(window.location.search).get("embedded") === "1";
+}
+
 function createEmptyForm(): RuleFormState {
   return {
     id: null,
@@ -218,18 +226,22 @@ function AdminValidationRulesPageInner() {
       void loadPage(admin!);
     }
 
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
+    if (!isEmbeddedMode()) {
+      window.addEventListener("storage", handleStorage);
+      window.addEventListener(
         "fcoc-admin-event-updated",
         handleAdminEventUpdated,
       );
+    }
+
+    return () => {
+      if (!isEmbeddedMode()) {
+        window.removeEventListener("storage", handleStorage);
+        window.removeEventListener(
+          "fcoc-admin-event-updated",
+          handleAdminEventUpdated,
+        );
+      }
     };
   }, [admin]);
 

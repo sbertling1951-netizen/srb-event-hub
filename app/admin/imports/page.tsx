@@ -669,6 +669,7 @@ function AdminAttendeeImportsPageInner() {
     useState<VendorFormState>(emptyVendorForm);
 
   useEffect(() => {
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
     async function loadEvents() {
       setLoadingEvent(true);
       setError(null);
@@ -740,6 +741,17 @@ function AdminAttendeeImportsPageInner() {
 
     void loadEvents();
 
+    function scheduleReload() {
+      if (reloadTimer) {
+        clearTimeout(reloadTimer);
+      }
+
+      reloadTimer = setTimeout(() => {
+        reloadTimer = null;
+        void loadEvents();
+      }, 500);
+    }
+
     function handleStorage(e: StorageEvent) {
       if (
         e.key === "fcoc-admin-event-context" ||
@@ -747,12 +759,12 @@ function AdminAttendeeImportsPageInner() {
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
-        void loadEvents();
+        scheduleReload();
       }
     }
 
     function handleAdminEventUpdated() {
-      void loadEvents();
+      scheduleReload();
     }
 
     window.addEventListener("storage", handleStorage);
@@ -767,6 +779,9 @@ function AdminAttendeeImportsPageInner() {
         "fcoc-admin-event-updated",
         handleAdminEventUpdated,
       );
+      if (reloadTimer) {
+        clearTimeout(reloadTimer);
+      }
     };
   }, []);
 

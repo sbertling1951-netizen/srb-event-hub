@@ -2299,9 +2299,13 @@ function AdminAttendeesPageInner() {
         end_date: fallback.end_date || null,
       };
 
-      localStorage.setItem(ADMIN_EVENT_STORAGE_KEY, JSON.stringify(eventToUse));
-      localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-      window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
+      const existingRaw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
+      const nextRaw = JSON.stringify(eventToUse);
+
+      if (existingRaw !== nextRaw) {
+        localStorage.setItem(ADMIN_EVENT_STORAGE_KEY, nextRaw);
+        localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
+      }
     }
 
     if (!eventToUse) {
@@ -3076,12 +3080,13 @@ function AdminAttendeesPageInner() {
           {eventDates ? ` • ${eventDates}` : ""}
         </div>
 
-        {status ? <div style={statusBoxStyle}>{status}</div> : null}
+        {!loading && status ? <div style={statusBoxStyle}>{status}</div> : null}
 
         {flashMessage ? (
           <div style={successBoxStyle}>{flashMessage}</div>
         ) : null}
-        {error ? <div style={errorBoxStyle}>{error}</div> : null}
+
+        {!loading && error ? <div style={errorBoxStyle}>{error}</div> : null}
 
         <div
           style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}
