@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import PageNavigation from "@/components/layout/PageNavigation";
 import { useAdmin } from "@/lib/adminContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -3071,6 +3072,13 @@ function AdminAttendeesPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
+      <PageNavigation
+        homeHref="/admin/dashboard"
+        homeLabel="Dashboard"
+        parentHref="/admin/events"
+        parentLabel="Events"
+      />
+
       <div className="card" style={{ padding: 18 }}>
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Command Center</h1>
 
