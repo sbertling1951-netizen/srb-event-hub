@@ -1278,7 +1278,7 @@ function MasterMapEditorPageInner() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 12 }}>
       <h1>Master Map Editor</h1>
 
       {error && (
@@ -1327,7 +1327,7 @@ function MasterMapEditorPageInner() {
         style={{
           display: "grid",
           gridTemplateColumns: isMobile ? "1fr" : "340px minmax(0, 1fr)",
-          gap: 24,
+          gap: 16,
           alignItems: "start",
           width: "100%",
           overflow: "hidden",

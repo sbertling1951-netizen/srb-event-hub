@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { useAdmin } from "@/lib/adminContext";
 import { getAdminEvent } from "@/lib/getAdminEvent";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
-import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type MasterMapRow = {
@@ -72,6 +72,9 @@ function MasterMapsPageInner() {
     Record<string, File | null>
   >({});
   const [archivingMapId, setArchivingMapId] = useState<string | null>(null);
+  const [imageSizes, setImageSizes] = useState<
+    Record<string, { width: number; height: number }>
+  >({});
 
   const [loading, setLoading] = useState(true);
   const [savingScales, setSavingScales] = useState(false);
@@ -92,6 +95,14 @@ function MasterMapsPageInner() {
 
     return () => {
       window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.add("admin-map-workspace");
+
+    return () => {
+      document.body.classList.remove("admin-map-workspace");
     };
   }, []);
 
@@ -623,7 +634,9 @@ function MasterMapsPageInner() {
   }
 
   useEffect(() => {
-    if (!admin) return;
+    if (!admin) {
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -867,15 +880,14 @@ function MasterMapsPageInner() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: showArchived
-                  ? "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1.4fr"
-                  : "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1fr",
+                gridTemplateColumns: "220px 2.8fr 1.8fr 2fr 1fr 0.9fr 2.6fr",
                 gap: 12,
                 padding: 12,
                 fontWeight: 700,
                 borderBottom: "1px solid #eee",
               }}
             >
+              <div>Preview</div>
               <div>Name</div>
               <div>Park</div>
               <div>Location</div>
@@ -889,26 +901,128 @@ function MasterMapsPageInner() {
                 key={map.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: showArchived
-                    ? "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1.4fr"
-                    : "2fr 1.5fr 1.2fr 0.9fr 0.9fr 1fr",
+                  gridTemplateColumns: "220px 2.8fr 1.8fr 2fr 1fr 0.9fr 2.6fr",
                   gap: 12,
-                  padding: 12,
+                  padding: 20,
                   borderBottom: "1px solid #eee",
                   alignItems: "center",
                 }}
               >
-                <div style={{ fontWeight: 600 }}>{map.name}</div>
-                <div>{map.park_name || "—"}</div>
-                <div>{map.location || "—"}</div>
-                <div>{map.status}</div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {map.map_image_url ? (
+                    <>
+                      <img
+                        src={map.map_image_url}
+                        alt={map.name}
+                        width={220}
+                        height={145}
+                        onLoad={(e) => {
+                          const img = e.currentTarget;
+                          setImageSizes((prev) => ({
+                            ...prev,
+                            [map.id]: {
+                              width: img.naturalWidth,
+                              height: img.naturalHeight,
+                            },
+                          }));
+                        }}
+                        style={{
+                          width: 220,
+                          height: 145,
+                          objectFit: "cover",
+                          borderRadius: 8,
+                          border: "1px solid #ddd",
+                          display: "block",
+                        }}
+                      />
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "#666",
+                          textAlign: "center",
+                        }}
+                      >
+                        {imageSizes[map.id]
+                          ? `${imageSizes[map.id].width} × ${imageSizes[map.id].height}`
+                          : "Loading..."}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          width: 220,
+                          height: 145,
+                          borderRadius: 8,
+                          border: "1px solid #ddd",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#666",
+                          fontSize: 12,
+                        }}
+                      >
+                        No Image
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "#666",
+                          textAlign: "center",
+                        }}
+                      >
+                        No dimensions
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 24,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {map.name}
+                </div>
+                <div style={{ fontSize: 18 }}>{map.park_name || "—"}</div>
+                <div style={{ fontSize: 18 }}>{map.location || "—"}</div>
+                <div>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "6px 12px",
+                      borderRadius: 999,
+                      fontSize: 15,
+                      fontWeight: 700,
+                      background:
+                        map.status === "published"
+                          ? "#dcfce7"
+                          : map.status === "draft"
+                            ? "#fef3c7"
+                            : "#e5e7eb",
+                      color:
+                        map.status === "published"
+                          ? "#166534"
+                          : map.status === "draft"
+                            ? "#92400e"
+                            : "#374151",
+                    }}
+                  >
+                    {map.status === "published"
+                      ? "Published"
+                      : map.status === "draft"
+                        ? "Draft"
+                        : "Archived"}
+                  </span>
+                </div>
                 <div>{map.site_count}</div>
 
                 {showArchived ? (
                   <div
                     style={{
                       display: "grid",
-                      gap: 8,
+                      gap: 4,
                       minWidth: 0,
                       overflowWrap: "anywhere",
                     }}
@@ -953,10 +1067,12 @@ function MasterMapsPageInner() {
                       disabled={
                         replacingImageMapId === map.id || !canManageMaps
                       }
-                      style={{ fontSize: 12 }}
+                      style={{ fontSize: 12, maxWidth: 180 }}
                     />
 
-                    <div style={{ fontSize: 12, color: "#666" }}>
+                    <div
+                      style={{ fontSize: 11, color: "#666", lineHeight: 1.2 }}
+                    >
                       {replaceImageFiles[map.id]
                         ? `Selected: ${replaceImageFiles[map.id]?.name}`
                         : "Choose a new image file to enable Replace Image."}
@@ -980,7 +1096,7 @@ function MasterMapsPageInner() {
                   <div
                     style={{
                       display: "grid",
-                      gap: 8,
+                      gap: 4,
                       minWidth: 0,
                       overflowWrap: "anywhere",
                     }}
@@ -1025,10 +1141,12 @@ function MasterMapsPageInner() {
                       disabled={
                         replacingImageMapId === map.id || !canManageMaps
                       }
-                      style={{ fontSize: 12 }}
+                      style={{ fontSize: 12, maxWidth: 180 }}
                     />
 
-                    <div style={{ fontSize: 12, color: "#666" }}>
+                    <div
+                      style={{ fontSize: 11, color: "#666", lineHeight: 1.2 }}
+                    >
                       {replaceImageFiles[map.id]
                         ? `Selected: ${replaceImageFiles[map.id]?.name}`
                         : "Choose a new image file to enable Replace Image."}
