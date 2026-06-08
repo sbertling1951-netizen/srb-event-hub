@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import PageNavigation from "@/components/layout/PageNavigation";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { useAdmin } from "@/lib/adminContext";
@@ -528,55 +529,12 @@ function AdminLocationsPageInner() {
 
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
-      <div
-        style={{
-          display: "grid",
-          gap: 12,
-          marginBottom: 18,
-          width: "100%",
-          maxWidth: 420,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            window.location.href = "/admin/dashboard";
-          }}
-          style={{
-            width: "100%",
-            padding: "14px 18px",
-            borderRadius: 18,
-            border: "1px solid #cbd5e1",
-            background: "#fff",
-            cursor: "pointer",
-            fontWeight: 700,
-            fontSize: 16,
-            boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
-          }}
-        >
-          ← Return to Dashboard
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            window.location.href = "/admin/map-admin";
-          }}
-          style={{
-            width: "100%",
-            padding: "14px 18px",
-            borderRadius: 18,
-            border: "1px solid #cbd5e1",
-            background: "#fff",
-            cursor: "pointer",
-            fontWeight: 700,
-            fontSize: 16,
-            boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
-          }}
-        >
-          ← Back to Map Admin
-        </button>
-      </div>
+      <PageNavigation
+        homeHref="/admin/dashboard"
+        homeLabel="Dashboard"
+        parentHref="/admin/map-admin"
+        parentLabel="Map Admin"
+      />
 
       <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
         Map Locations
