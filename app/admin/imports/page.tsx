@@ -5,6 +5,7 @@ import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import PageNavigation from "@/components/layout/PageNavigation";
 import {
   canAccessEvent,
   getCurrentAdminAccess,
@@ -1980,9 +1981,12 @@ function AdminAttendeeImportsPageInner() {
   return (
     <div style={{ display: "grid", gap: 18 }}>
       {!isEmbedded ? (
-        <a href="/admin/attendees" style={backLinkStyle}>
-          ← Back to Attendee Management
-        </a>
+        <PageNavigation
+          homeHref="/admin/dashboard"
+          homeLabel="Dashboard"
+          parentHref="/admin/attendees"
+          parentLabel="Attendees"
+        />
       ) : null}
 
       <div className="card" style={{ padding: 18 }}>
@@ -3394,18 +3398,6 @@ function AdminAttendeeImportsPageInner() {
     </div>
   );
 }
-
-const backLinkStyle: CSSProperties = {
-  display: "inline-block",
-  width: "fit-content",
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  color: "#111827",
-  fontWeight: 700,
-  textDecoration: "none",
-};
 
 const darkButtonStyle: CSSProperties = {
   padding: "10px 14px",
