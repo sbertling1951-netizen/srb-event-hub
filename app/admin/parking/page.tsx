@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import PageNavigation from "@/components/layout/PageNavigation";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { useAdmin } from "@/lib/adminContext";
@@ -1553,6 +1554,13 @@ Move ${
           100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0), 0 1px 4px rgba(0,0,0,0.35); }
         }
       `}</style>
+
+      <PageNavigation
+        homeHref="/admin/dashboard"
+        homeLabel="Dashboard"
+        parentHref="/admin/map-admin"
+        parentLabel="Map Admin"
+      />
 
       <h1
         style={{ marginTop: 0, marginBottom: 12, fontSize: isNarrow ? 30 : 40 }}
