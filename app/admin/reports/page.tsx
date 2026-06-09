@@ -11,6 +11,7 @@ import {
 } from "react";
 import * as XLSX from "xlsx";
 
+import ReportsPanel from "@/components/admin/reports/ReportsPanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { useAdmin } from "@/lib/adminContext";
@@ -1557,10 +1558,6 @@ function AdminReportsPageInner() {
       </div>
     </>
   );
-}
-
-export function ReportsPanel({ embedded = false }: { embedded?: boolean }) {
-  return <AdminReportsPageInner />;
 }
 
 function ReportControlsPanel(props: {
