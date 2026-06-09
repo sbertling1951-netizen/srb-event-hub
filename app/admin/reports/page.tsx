@@ -347,12 +347,12 @@ function AdminReportsPageContent() {
   const isEmbedded = searchParams.get("embedded") === "1";
 
   if (isEmbedded) {
-    return <AdminReportsPageInner />;
+    return <ReportsPanel embedded />;
   }
 
   return (
     <AdminRouteGuard requiredPermission="can_manage_reports">
-      <AdminReportsPageInner />
+      <ReportsPanel />
     </AdminRouteGuard>
   );
 }
@@ -1557,6 +1557,10 @@ function AdminReportsPageInner() {
       </div>
     </>
   );
+}
+
+export function ReportsPanel({ embedded = false }: { embedded?: boolean }) {
+  return <AdminReportsPageInner />;
 }
 
 function ReportControlsPanel(props: {
