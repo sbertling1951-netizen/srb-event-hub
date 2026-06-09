@@ -3,11 +3,8 @@
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
+import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type Attendee = {
@@ -37,6 +34,7 @@ function fullName(first: string | null, last: string | null) {
 export default function AttendeeProfilePage() {
   const params = useParams();
   const attendeeId = params?.id as string;
+  const { admin, loading: adminLoading } = useAdmin();
 
   const [attendee, setAttendee] = useState<Attendee | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +47,10 @@ export default function AttendeeProfilePage() {
       setAccessDenied(false);
       setStatus("Checking access...");
 
-      const admin = await getCurrentAdminAccess();
+      if (adminLoading) {
+        setStatus("Loading admin access...");
+        return;
+      }
 
       if (!admin) {
         setAttendee(null);
@@ -120,8 +121,7 @@ export default function AttendeeProfilePage() {
     if (attendeeId) {
       void loadAttendee();
     }
-  }, [attendeeId]);
-
+  }, [attendeeId, admin, adminLoading]);
   if (accessDenied) {
     return (
       <div style={{ padding: 24 }}>
