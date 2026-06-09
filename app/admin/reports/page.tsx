@@ -11,6 +11,7 @@ import {
 } from "react";
 import * as XLSX from "xlsx";
 
+import ReportControlsPanel from "@/components/admin/reports/ReportControlsPanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { useAdmin } from "@/lib/adminContext";
@@ -1559,7 +1560,7 @@ function AdminReportsPageInner() {
   );
 }
 
-function ReportControlsPanel(props: {
+function ReportControlsPanelLegacy(props: {
   reportType: ReportType;
   setReportType: (value: ReportType) => void;
   sortType: SortType;
