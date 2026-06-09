@@ -6,10 +6,8 @@ import * as XLSX from "xlsx";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
-import {
-  canAccessEvent,
-  getCurrentAdminAccess,
-} from "@/lib/getCurrentAdminAccess";
+import { useAdmin } from "@/lib/adminContext";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type EventContext = {
@@ -618,6 +616,8 @@ export default function AdminAttendeeImportsPage() {
 }
 
 function AdminAttendeeImportsPageInner() {
+  const { admin, loading: adminLoading } = useAdmin();
+
   const searchParams = useSearchParams();
   const isEmbedded = searchParams.get("embedded") === "1";
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
@@ -677,7 +677,9 @@ function AdminAttendeeImportsPageInner() {
       setStatus("Checking admin access...");
 
       try {
-        const admin = await getCurrentAdminAccess();
+        if (adminLoading) {
+          return;
+        }
 
         if (!admin) {
           setCurrentEvent(null);
