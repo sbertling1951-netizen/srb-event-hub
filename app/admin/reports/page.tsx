@@ -13,6 +13,10 @@ import * as XLSX from "xlsx";
 
 import ReportControlsPanel from "@/components/admin/reports/ReportControlsPanel";
 import { buildExportRows } from "@/components/admin/reports/reportExport";
+import {
+  loadStoredReportPresets,
+  saveStoredReportPresets,
+} from "@/components/admin/reports/reportPresets";
 import { printReportPack } from "@/components/admin/reports/reportPrintPack";
 import ReportsPanel from "@/components/admin/reports/ReportsPanel";
 import ReportsSummaryCards from "@/components/admin/reports/ReportsSummaryCards";
@@ -308,30 +312,6 @@ function sortRosterRows(rows: RosterRow[], sortType: SortType) {
         return byName;
     }
   });
-}
-
-function loadStoredReportPresets(): ReportPreset[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  try {
-    const raw = localStorage.getItem(REPORT_PRESETS_STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as ReportPreset[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveStoredReportPresets(presets: ReportPreset[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  localStorage.setItem(REPORT_PRESETS_STORAGE_KEY, JSON.stringify(presets));
 }
 
 export default function AdminReportsPage() {
