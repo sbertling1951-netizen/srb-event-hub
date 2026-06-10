@@ -1295,6 +1295,8 @@ function AdminReportsPageInner() {
           unassignedParkingRows={unassignedParkingRows}
           notArrivedCount={notArrivedRows.length}
           notArrivedRows={notArrivedRows}
+          firstTimerCount={firstTimerRows.length}
+          firstTimerRows={firstTimerRows}
         />
         <div
           style={{
@@ -1303,31 +1305,6 @@ function AdminReportsPageInner() {
             gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
           }}
         >
-          <div className="card" style={{ padding: 18 }}>
-            <h2 style={{ marginTop: 0, marginBottom: 10 }}>First Timers</h2>
-            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
-              {firstTimerRows.length} attendee
-              {firstTimerRows.length === 1 ? "" : "s"}
-            </div>
-            {firstTimerRows.length === 0 ? (
-              <div style={{ opacity: 0.8 }}>No first timers found.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {firstTimerRows.slice(0, 12).map((row, index) => (
-                  <div
-                    key={`${row.pilot}-${row.email}-${index}`}
-                    style={quickListRowStyle}
-                  >
-                    <strong>{row.pilot || "Unnamed"}</strong>
-                    <div style={quickListMetaStyle}>
-                      {row.cityState || "No city/state"}
-                      {row.email ? ` • ${row.email}` : ""}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
           <div className="card" style={{ padding: 18 }}>
             <h2 style={{ marginTop: 0, marginBottom: 10 }}>
               Vendors / Staff / Speakers / Hosts
