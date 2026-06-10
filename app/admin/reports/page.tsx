@@ -1291,6 +1291,8 @@ function AdminReportsPageInner() {
         <ReportsSummaryCards
           participantBreakdown={participantBreakdown}
           dataStatusBreakdown={dataStatusBreakdown}
+          unassignedParkingCount={unassignedParkingRows.length}
+          unassignedParkingRows={unassignedParkingRows}
         />
         <div
           style={{
@@ -1299,35 +1301,6 @@ function AdminReportsPageInner() {
             gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
           }}
         >
-          <div className="card" style={{ padding: 18 }}>
-            <h2 style={{ marginTop: 0, marginBottom: 10 }}>
-              Unassigned Parking Needed
-            </h2>
-            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
-              {unassignedParkingRows.length} attendee
-              {unassignedParkingRows.length === 1 ? "" : "s"}
-            </div>
-            {unassignedParkingRows.length === 0 ? (
-              <div style={{ opacity: 0.8 }}>
-                No unassigned parking-needed attendees.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {unassignedParkingRows.slice(0, 12).map((row, index) => (
-                  <div
-                    key={`${row.pilot}-${row.email}-${index}`}
-                    style={quickListRowStyle}
-                  >
-                    <strong>{row.pilot || "Unnamed"}</strong>
-                    <div style={quickListMetaStyle}>
-                      {row.email || "No email"}
-                      {row.cityState ? ` • ${row.cityState}` : ""}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
           <div className="card" style={{ padding: 18 }}>
             <h2 style={{ marginTop: 0, marginBottom: 10 }}>Not Arrived</h2>
             <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
