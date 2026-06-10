@@ -4,6 +4,7 @@ type BreakdownRow = {
 };
 
 type RosterRow = {
+  site: string;
   pilot: string;
   email: string;
   cityState: string;
@@ -14,6 +15,8 @@ type ReportsSummaryCardsProps = {
   dataStatusBreakdown: BreakdownRow[];
   unassignedParkingCount: number;
   unassignedParkingRows: RosterRow[];
+  notArrivedCount: number;
+  notArrivedRows: RosterRow[];
 };
 
 export default function ReportsSummaryCards({
@@ -21,6 +24,8 @@ export default function ReportsSummaryCards({
   dataStatusBreakdown,
   unassignedParkingCount,
   unassignedParkingRows,
+  notArrivedCount,
+  notArrivedRows,
 }: ReportsSummaryCardsProps) {
   return (
     <div
@@ -107,6 +112,31 @@ export default function ReportsSummaryCards({
                 <div style={quickListMetaStyle}>
                   {row.email || "No email"}
                   {row.cityState ? ` • ${row.cityState}` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="card" style={{ padding: 18 }}>
+        <h2 style={{ marginTop: 0, marginBottom: 10 }}>Not Arrived</h2>
+        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
+          {notArrivedRows.length} attendee
+          {notArrivedRows.length === 1 ? "" : "s"}
+        </div>
+        {notArrivedRows.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>All attendees are marked arrived.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {notArrivedRows.slice(0, 12).map((row, index) => (
+              <div
+                key={`${row.pilot}-${row.email}-${index}`}
+                style={quickListRowStyle}
+              >
+                <strong>{row.pilot || "Unnamed"}</strong>
+                <div style={quickListMetaStyle}>
+                  {row.site ? `Site ${row.site}` : "No site assigned"}
+                  {row.email ? ` • ${row.email}` : ""}
                 </div>
               </div>
             ))}
