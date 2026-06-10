@@ -12,6 +12,8 @@ import {
 import * as XLSX from "xlsx";
 
 import ReportControlsPanel from "@/components/admin/reports/ReportControlsPanel";
+import { buildExportRows } from "@/components/admin/reports/reportExport";
+import { printReportPack } from "@/components/admin/reports/reportPrintPack";
 import ReportsPanel from "@/components/admin/reports/ReportsPanel";
 import ReportsSummaryCards from "@/components/admin/reports/ReportsSummaryCards";
 import SavedPresetsCard from "@/components/admin/reports/SavedPresetsCard";
@@ -981,69 +983,21 @@ function AdminReportsPageInner() {
     );
   }, [attendees, participantTypeFilter, dataStatusFilter]);
 
-  function buildExportRows(): string[][] {
-    if (reportType === "activity_summary") {
-      return [
-        [reportTitle],
-        ["Event", currentEvent?.name || currentEvent?.eventName || ""],
-        ["Location", currentEvent?.location || ""],
-        ["Sort", sortType],
-        ["Participant Type Filter", participantTypeFilter],
-        ["Data Status Filter", dataStatusFilter],
-        [],
-        ["Activity", "Participant Count", "Total Quantity", "Total Revenue"],
-        ...activitySummaryRows.map((row) => [
-          row.activityName,
-          String(row.participantCount),
-          String(row.totalQty),
-          row.totalRevenue.toFixed(2),
-        ]),
-      ];
-    }
-
-    return [
-      [reportTitle],
-      ["Event", currentEvent?.name || currentEvent?.eventName || ""],
-      ["Location", currentEvent?.location || ""],
-      ["Sort", sortType],
-      ["Participant Type Filter", participantTypeFilter],
-      ["Data Status Filter", dataStatusFilter],
-      [],
-      [
-        "Site",
-        "Participant Type",
-        "Pilot",
-        "Co-Pilot",
-        "Email",
-        "City/State",
-        "Arrived",
-        "Active",
-        "First Timer",
-        "Volunteer",
-        "Source",
-      ],
-      ...sortedRosterRows.map((row) => [
-        row.site,
-        row.participantType,
-        row.pilot,
-        row.copilot,
-        row.email,
-        row.cityState,
-        row.arrived,
-        row.active,
-        row.firstTimer,
-        row.volunteer,
-        row.source,
-      ]),
-    ];
-  }
-
   function handleExportCsv() {
     if (!canExport) {
       return;
     }
 
-    const rows = buildExportRows();
+    const rows = buildExportRows({
+      reportType,
+      reportTitle,
+      currentEvent,
+      sortType,
+      participantTypeFilter,
+      dataStatusFilter,
+      activitySummaryRows,
+      sortedRosterRows,
+    });
     const filenameBase = `${(
       currentEvent?.name ||
       currentEvent?.eventName ||
@@ -1061,7 +1015,16 @@ function AdminReportsPageInner() {
       return;
     }
 
-    const rows = buildExportRows();
+    const rows = buildExportRows({
+      reportType,
+      reportTitle,
+      currentEvent,
+      sortType,
+      participantTypeFilter,
+      dataStatusFilter,
+      activitySummaryRows,
+      sortedRosterRows,
+    });
     const filenameBase = `${(
       currentEvent?.name ||
       currentEvent?.eventName ||
@@ -1120,97 +1083,14 @@ function AdminReportsPageInner() {
   }
 
   function handlePrintPack() {
-    const titleMap = {
-      parking_ops: "Parking Operations Pack",
-      checkin_ops: "Check-In Pack",
-      hospitality_ops: "Hospitality Pack",
-    };
-
-    const packTitle = titleMap[reportPackType];
-
-    function makeSection(title: string, rows: RosterRow[]) {
-      return `
-      <h2>${title}</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Site</th>
-            <th>Pilot</th>
-            <th>Co-Pilot</th>
-            <th>Email</th>
-            <th>City/State</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            rows.length === 0
-              ? `<tr><td colspan="5">No data</td></tr>`
-              : rows
-                  .map(
-                    (r) => `
-              <tr>
-                <td>${r.site}</td>
-                <td>${r.pilot}</td>
-                <td>${r.copilot}</td>
-                <td>${r.email}</td>
-                <td>${r.cityState}</td>
-              </tr>
-            `,
-                  )
-                  .join("")
-          }
-        </tbody>
-      </table>
-    `;
-    }
-
-    let sections = "";
-
-    if (reportPackType === "parking_ops") {
-      sections += makeSection("Parking Assignments", sortedRosterRows);
-      sections += makeSection("Needs Parking", unassignedParkingRows);
-    }
-
-    if (reportPackType === "checkin_ops") {
-      sections += makeSection("Not Arrived", notArrivedRows);
-      sections += makeSection("First Timers", firstTimerRows);
-    }
-
-    if (reportPackType === "hospitality_ops") {
-      sections += makeSection("First Timers", firstTimerRows);
-      sections += makeSection(
-        "Vendors / Staff / Speakers / Hosts",
-        vendorStaffRows,
-      );
-    }
-
-    const html = `
-    <html>
-      <head>
-        <title>${packTitle}</title>
-        <style>
-          body { font-family: Arial; margin: 20px; }
-          h1 { margin-bottom: 10px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          th, td { border: 1px solid #ccc; padding: 6px; font-size: 12px; }
-          th { background: #f3f4f6; }
-        </style>
-      </head>
-      <body>
-        <h1>${packTitle}</h1>
-        ${sections}
-      </body>
-    </html>
-  `;
-
-    const win = window.open("", "_blank");
-    if (!win) {
-      return;
-    }
-
-    win.document.write(html);
-    win.document.close();
-    win.print();
+    printReportPack({
+      reportPackType,
+      sortedRosterRows,
+      unassignedParkingRows,
+      notArrivedRows,
+      firstTimerRows,
+      vendorStaffRows,
+    });
   }
 
   return (
@@ -1311,94 +1191,6 @@ function AdminReportsPageInner() {
           activitySummaryRows={activitySummaryRows}
           sortedRosterRows={sortedRosterRows}
         />
-
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ marginBottom: 14 }}>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>{reportTitle}</h2>
-            <div style={{ fontSize: 14, opacity: 0.8 }}>
-              {reportType === "activity_summary"
-                ? `${activitySummaryRows.length} activity rows`
-                : `${sortedRosterRows.length} roster rows`}{" "}
-              • Participant type:{" "}
-              {participantTypeFilter === "all"
-                ? "All Types"
-                : participantTypeLabel(participantTypeFilter)}{" "}
-              • Data status:{" "}
-              {dataStatusFilter === "all"
-                ? "All Statuses"
-                : dataStatusLabel(dataStatusFilter)}
-            </div>
-          </div>
-          {loading ? (
-            <div>Loading...</div>
-          ) : reportType === "activity_summary" ? (
-            activitySummaryRows.length === 0 ? (
-              <div style={{ opacity: 0.8 }}>No activity rows found.</div>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={tableStyle}>
-                  <thead>
-                    <tr>
-                      <th style={thStyle}>Activity</th>
-                      <th style={thStyle}>Participants</th>
-                      <th style={thStyle}>Total Qty</th>
-                      <th style={thStyle}>Total Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activitySummaryRows.map((row) => (
-                      <tr key={row.activityName}>
-                        <td style={tdStyle}>{row.activityName}</td>
-                        <td style={tdStyle}>{row.participantCount}</td>
-                        <td style={tdStyle}>{row.totalQty}</td>
-                        <td style={tdStyle}>${row.totalRevenue.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )
-          ) : sortedRosterRows.length === 0 ? (
-            <div style={{ opacity: 0.8 }}>No rows found for this report.</div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Site</th>
-                    <th style={thStyle}>Type</th>
-                    <th style={thStyle}>Pilot</th>
-                    <th style={thStyle}>Co-Pilot</th>
-                    <th style={thStyle}>Email</th>
-                    <th style={thStyle}>City / State</th>
-                    <th style={thStyle}>Arrived</th>
-                    <th style={thStyle}>Active</th>
-                    <th style={thStyle}>First Timer</th>
-                    <th style={thStyle}>Volunteer</th>
-                    <th style={thStyle}>Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRosterRows.map((row, index) => (
-                    <tr key={`${row.site}-${row.email}-${index}`}>
-                      <td style={tdStyle}>{row.site}</td>
-                      <td style={tdStyle}>{row.participantType}</td>
-                      <td style={tdStyle}>{row.pilot}</td>
-                      <td style={tdStyle}>{row.copilot}</td>
-                      <td style={tdStyle}>{row.email}</td>
-                      <td style={tdStyle}>{row.cityState}</td>
-                      <td style={tdStyle}>{row.arrived}</td>
-                      <td style={tdStyle}>{row.active}</td>
-                      <td style={tdStyle}>{row.firstTimer}</td>
-                      <td style={tdStyle}>{row.volunteer}</td>
-                      <td style={tdStyle}>{row.source}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
       </div>
     </>
   );
@@ -1467,34 +1259,4 @@ const errorBoxStyle: CSSProperties = {
   background: "#fef2f2",
   color: "#b91c1c",
   marginBottom: 12,
-};
-
-const quickListRowStyle: CSSProperties = {
-  borderTop: "1px solid #eee",
-  paddingTop: 8,
-};
-
-const quickListMetaStyle: CSSProperties = {
-  fontSize: 13,
-  color: "#666",
-  marginTop: 2,
-};
-
-const tableStyle: CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-
-const thStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "10px 8px",
-  borderBottom: "2px solid #ddd",
-  whiteSpace: "nowrap",
-};
-
-const tdStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "10px 8px",
-  borderTop: "1px solid #ddd",
-  verticalAlign: "top",
 };
