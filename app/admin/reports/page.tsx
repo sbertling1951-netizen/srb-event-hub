@@ -12,6 +12,7 @@ import {
 import * as XLSX from "xlsx";
 
 import ReportControlsPanel from "@/components/admin/reports/ReportControlsPanel";
+import ReportsPanel from "@/components/admin/reports/ReportsPanel";
 import ReportsSummaryCards from "@/components/admin/reports/ReportsSummaryCards";
 import SavedPresetsCard from "@/components/admin/reports/SavedPresetsCard";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -1299,6 +1300,16 @@ function AdminReportsPageInner() {
           firstTimerRows={firstTimerRows}
           vendorStaffCount={vendorStaffRows.length}
           vendorStaffRows={vendorStaffRows}
+        />
+
+        <ReportsPanel
+          reportTitle={reportTitle}
+          loading={loading}
+          reportType={reportType}
+          participantTypeFilter={participantTypeFilter}
+          dataStatusFilter={dataStatusFilter}
+          activitySummaryRows={activitySummaryRows}
+          sortedRosterRows={sortedRosterRows}
         />
 
         <div className="card" style={{ padding: 18 }}>
