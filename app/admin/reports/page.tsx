@@ -1297,44 +1297,10 @@ function AdminReportsPageInner() {
           notArrivedRows={notArrivedRows}
           firstTimerCount={firstTimerRows.length}
           firstTimerRows={firstTimerRows}
+          vendorStaffCount={vendorStaffRows.length}
+          vendorStaffRows={vendorStaffRows}
         />
-        <div
-          style={{
-            display: "grid",
-            gap: 18,
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          }}
-        >
-          <div className="card" style={{ padding: 18 }}>
-            <h2 style={{ marginTop: 0, marginBottom: 10 }}>
-              Vendors / Staff / Speakers / Hosts
-            </h2>
-            <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
-              {vendorStaffRows.length} attendee
-              {vendorStaffRows.length === 1 ? "" : "s"}
-            </div>
-            {vendorStaffRows.length === 0 ? (
-              <div style={{ opacity: 0.8 }}>
-                No vendor or staff-type attendees found.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {vendorStaffRows.slice(0, 12).map((row, index) => (
-                  <div
-                    key={`${row.pilot}-${row.email}-${index}`}
-                    style={quickListRowStyle}
-                  >
-                    <strong>{row.pilot || "Unnamed"}</strong>
-                    <div style={quickListMetaStyle}>
-                      {row.participantType}
-                      {row.site ? ` • Site ${row.site}` : ""}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+
         <div className="card" style={{ padding: 18 }}>
           <div style={{ marginBottom: 14 }}>
             <h2 style={{ marginTop: 0, marginBottom: 6 }}>{reportTitle}</h2>

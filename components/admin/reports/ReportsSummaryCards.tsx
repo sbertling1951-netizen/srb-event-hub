@@ -8,6 +8,7 @@ type RosterRow = {
   pilot: string;
   email: string;
   cityState: string;
+  participantType: string;
 };
 
 type ReportsSummaryCardsProps = {
@@ -19,6 +20,8 @@ type ReportsSummaryCardsProps = {
   notArrivedRows: RosterRow[];
   firstTimerCount: number;
   firstTimerRows: RosterRow[];
+  vendorStaffCount: number;
+  vendorStaffRows: RosterRow[];
 };
 
 export default function ReportsSummaryCards({
@@ -30,6 +33,8 @@ export default function ReportsSummaryCards({
   notArrivedRows,
   firstTimerCount,
   firstTimerRows,
+  vendorStaffCount,
+  vendorStaffRows,
 }: ReportsSummaryCardsProps) {
   return (
     <div
@@ -166,6 +171,35 @@ export default function ReportsSummaryCards({
                 <div style={quickListMetaStyle}>
                   {row.cityState || "No city/state"}
                   {row.email ? ` • ${row.email}` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="card" style={{ padding: 18 }}>
+        <h2 style={{ marginTop: 0, marginBottom: 10 }}>
+          Vendors / Staff / Speakers / Hosts
+        </h2>
+        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
+          {vendorStaffCount} attendee
+          {vendorStaffCount === 1 ? "" : "s"}
+        </div>
+        {vendorStaffRows.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>
+            No vendor or staff-type attendees found.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {vendorStaffRows.slice(0, 12).map((row, index) => (
+              <div
+                key={`${row.pilot}-${row.email}-${index}`}
+                style={quickListRowStyle}
+              >
+                <strong>{row.pilot || "Unnamed"}</strong>
+                <div style={quickListMetaStyle}>
+                  {row.participantType}
+                  {row.site ? ` • Site ${row.site}` : ""}
                 </div>
               </div>
             ))}
