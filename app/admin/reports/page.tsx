@@ -364,6 +364,8 @@ function AdminReportsPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [canExport, setCanExport] = useState(false);
   const [presetName, setPresetName] = useState("");
+  const [showControls, setShowControls] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
   const [savedPresets, setSavedPresets] = useState<ReportPreset[]>([]);
   const [reportPackType, setReportPackType] = useState<
     "parking_ops" | "checkin_ops" | "hospitality_ops"
@@ -1123,44 +1125,119 @@ function AdminReportsPageInner() {
 
           {error ? <div style={errorBoxStyle}>{error}</div> : null}
 
-          <ReportControlsPanel
-            reportType={reportType}
-            setReportType={setReportType}
-            sortType={sortType}
-            setSortType={setSortType}
-            participantTypeFilter={participantTypeFilter}
-            setParticipantTypeFilter={setParticipantTypeFilter}
-            dataStatusFilter={dataStatusFilter}
-            setDataStatusFilter={setDataStatusFilter}
-            loading={loading}
-            canExport={canExport}
-            onExportCsv={handleExportCsv}
-            onExportXlsx={handleExportXlsx}
-            presetName={presetName}
-            setPresetName={setPresetName}
-            onSavePreset={handleSavePreset}
-            reportPackType={reportPackType}
-            setReportPackType={setReportPackType}
-            onPrintPack={handlePrintPack}
-          />
+          <div className="card" style={{ padding: 18, marginBottom: 12 }}>
+            <h3 style={{ marginTop: 0 }}>Saved Reports</h3>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              <button
+                className="btn"
+                onClick={() => setReportType("parking_assignments")}
+              >
+                Parking Assignments
+              </button>
+
+              <button
+                className="btn"
+                onClick={() => setReportType("unassigned_parking_needed")}
+              >
+                Needs Parking
+              </button>
+
+              <button
+                className="btn"
+                onClick={() => setReportType("first_timers")}
+              >
+                First Timers
+              </button>
+
+              <button
+                className="btn"
+                onClick={() => setReportType("volunteers")}
+              >
+                Volunteers
+              </button>
+
+              <button className="btn" onClick={() => setReportType("vendors")}>
+                Vendors
+              </button>
+
+              <button
+                className="btn"
+                onClick={() => setReportType("staff_hosts_helpers")}
+              >
+                Staff / Speakers
+              </button>
+
+              <button
+                className="btn"
+                onClick={() => setReportType("activity_summary")}
+              >
+                Activity Summary
+              </button>
+            </div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <button className="btn" onClick={() => setShowControls((v) => !v)}>
+              {showControls ? "▼ Hide Report Controls" : "▶ Report Controls"}
+            </button>
+          </div>
+
+          {showControls ? (
+            <ReportControlsPanel
+              reportType={reportType}
+              setReportType={setReportType}
+              sortType={sortType}
+              setSortType={setSortType}
+              participantTypeFilter={participantTypeFilter}
+              setParticipantTypeFilter={setParticipantTypeFilter}
+              dataStatusFilter={dataStatusFilter}
+              setDataStatusFilter={setDataStatusFilter}
+              loading={loading}
+              canExport={canExport}
+              onExportCsv={handleExportCsv}
+              onExportXlsx={handleExportXlsx}
+              presetName={presetName}
+              setPresetName={setPresetName}
+              onSavePreset={handleSavePreset}
+              reportPackType={reportPackType}
+              setReportPackType={setReportPackType}
+              onPrintPack={handlePrintPack}
+            />
+          ) : null}
         </div>
         <SavedPresetsCard
           presets={savedPresets}
           onApply={handleApplyPreset}
           onDelete={handleDeletePreset}
         />
-        <ReportsSummaryCards
-          participantBreakdown={participantBreakdown}
-          dataStatusBreakdown={dataStatusBreakdown}
-          unassignedParkingCount={unassignedParkingRows.length}
-          unassignedParkingRows={unassignedParkingRows}
-          notArrivedCount={notArrivedRows.length}
-          notArrivedRows={notArrivedRows}
-          firstTimerCount={firstTimerRows.length}
-          firstTimerRows={firstTimerRows}
-          vendorStaffCount={vendorStaffRows.length}
-          vendorStaffRows={vendorStaffRows}
-        />
+
+        <div style={{ marginBottom: 12 }}>
+          <button className="btn" onClick={() => setShowSummary((v) => !v)}>
+            {showSummary ? "▼ Hide Summary" : "▶ Summary"}
+          </button>
+        </div>
+
+        {showSummary ? (
+          <ReportsSummaryCards
+            participantBreakdown={participantBreakdown}
+            dataStatusBreakdown={dataStatusBreakdown}
+            unassignedParkingCount={unassignedParkingRows.length}
+            unassignedParkingRows={unassignedParkingRows}
+            notArrivedCount={notArrivedRows.length}
+            notArrivedRows={notArrivedRows}
+            firstTimerCount={firstTimerRows.length}
+            firstTimerRows={firstTimerRows}
+            vendorStaffCount={vendorStaffRows.length}
+            vendorStaffRows={vendorStaffRows}
+          />
+        ) : null}
 
         <ReportsPanel
           reportTitle={reportTitle}
