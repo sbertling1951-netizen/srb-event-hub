@@ -975,7 +975,7 @@ Move ${
     await assignAttendeeToSite({
       attendee: selectedAttendee,
       site,
-      markParked: false,
+      markParked: true,
       allowOverride: true,
     });
   }
