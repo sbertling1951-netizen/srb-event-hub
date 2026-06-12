@@ -719,7 +719,22 @@ function ParkingAdminPageInner() {
       }
 
       if (showLabels) {
-        return null;
+        return (
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color,
+              background: "rgba(255,255,255,0.9)",
+              border: "1px solid rgba(0,0,0,0.2)",
+              borderRadius: 4,
+              padding: "1px 4px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {site.display_label || site.site_number}
+          </div>
+        );
       }
 
       // Title logic (preserves getSiteTitle exactly)
