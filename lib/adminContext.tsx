@@ -117,6 +117,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
       if (event === "SIGNED_IN") {
         console.count("AUTH EVENT SIGNED_IN");
+        void loadAdmin();
         return;
       }
 
