@@ -96,6 +96,10 @@ type ParkingSiteRow = {
 };
 
 type ReportType =
+  | "all_attendees"
+  | "household_contact_sheet"
+  | "arrived"
+  | "not_arrived"
   | "first_timers"
   | "volunteers"
   | "vendors"
@@ -350,9 +354,7 @@ function AdminReportsPageInner() {
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [activities, setActivities] = useState<ActivityRow[]>([]);
   const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
-  const [reportType, setReportType] = useState<ReportType>(
-    "parking_assignments",
-  );
+  const [reportType, setReportType] = useState<ReportType>("all_attendees");
   const [sortType, setSortType] = useState<SortType>("name_asc");
   const [participantTypeFilter, setParticipantTypeFilter] =
     useState<ParticipantTypeFilter>("all");
@@ -364,6 +366,8 @@ function AdminReportsPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [canExport, setCanExport] = useState(false);
   const [presetName, setPresetName] = useState("");
+  const [showReports, setShowReports] = useState(false);
+  const [showReportMenu, setShowReportMenu] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [savedPresets, setSavedPresets] = useState<ReportPreset[]>([]);
@@ -659,6 +663,51 @@ function AdminReportsPageInner() {
 
   const rosterRows = useMemo(() => {
     switch (reportType) {
+      case "all_attendees":
+        return attendees
+          .filter((row) =>
+            attendeeMatchesFilters(
+              row,
+              participantTypeFilter,
+              dataStatusFilter,
+            ),
+          )
+          .map(attendeeToRosterRow);
+      case "household_contact_sheet":
+        return attendees
+          .filter((row) =>
+            attendeeMatchesFilters(
+              row,
+              participantTypeFilter,
+              dataStatusFilter,
+            ),
+          )
+          .map(attendeeToRosterRow);
+
+      case "arrived":
+        return attendees
+          .filter((row) => !!row.has_arrived)
+          .filter((row) =>
+            attendeeMatchesFilters(
+              row,
+              participantTypeFilter,
+              dataStatusFilter,
+            ),
+          )
+          .map(attendeeToRosterRow);
+
+      case "not_arrived":
+        return attendees
+          .filter((row) => !row.has_arrived)
+          .filter((row) =>
+            attendeeMatchesFilters(
+              row,
+              participantTypeFilter,
+              dataStatusFilter,
+            ),
+          )
+          .map(attendeeToRosterRow);
+
       case "first_timers":
         return attendees
           .filter((row) => row.is_first_timer)
@@ -864,6 +913,14 @@ function AdminReportsPageInner() {
 
   const reportTitle = useMemo(() => {
     switch (reportType) {
+      case "all_attendees":
+        return "All Attendees";
+      case "household_contact_sheet":
+        return "Household Contact Sheet";
+      case "arrived":
+        return "Arrived";
+      case "not_arrived":
+        return "Not Arrived";
       case "first_timers":
         return "First Timers";
       case "volunteers":
@@ -1125,98 +1182,139 @@ function AdminReportsPageInner() {
 
           {error ? <div style={errorBoxStyle}>{error}</div> : null}
 
-          <div className="card" style={{ padding: 18, marginBottom: 12 }}>
-            <h3 style={{ marginTop: 0 }}>Saved Reports</h3>
-
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-                marginTop: 12,
-              }}
-            >
-              <button
-                className="btn"
-                onClick={() => setReportType("parking_assignments")}
-              >
-                Parking Assignments
-              </button>
-
-              <button
-                className="btn"
-                onClick={() => setReportType("unassigned_parking_needed")}
-              >
-                Needs Parking
-              </button>
-
-              <button
-                className="btn"
-                onClick={() => setReportType("first_timers")}
-              >
-                First Timers
-              </button>
-
-              <button
-                className="btn"
-                onClick={() => setReportType("volunteers")}
-              >
-                Volunteers
-              </button>
-
-              <button className="btn" onClick={() => setReportType("vendors")}>
-                Vendors
-              </button>
-
-              <button
-                className="btn"
-                onClick={() => setReportType("staff_hosts_helpers")}
-              >
-                Staff / Speakers
-              </button>
-
-              <button
-                className="btn"
-                onClick={() => setReportType("activity_summary")}
-              >
-                Activity Summary
-              </button>
-            </div>
-          </div>
           <div style={{ marginBottom: 12 }}>
-            <button className="btn" onClick={() => setShowControls((v) => !v)}>
-              {showControls ? "▼ Hide Report Controls" : "▶ Report Controls"}
+            <button
+              className="btn"
+              onClick={() => setShowReportMenu((v) => !v)}
+            >
+              {showReportMenu ? "▼ Select Report" : "▶ Select Report"}
             </button>
           </div>
 
-          {showControls ? (
-            <ReportControlsPanel
-              reportType={reportType}
-              setReportType={setReportType}
-              sortType={sortType}
-              setSortType={setSortType}
-              participantTypeFilter={participantTypeFilter}
-              setParticipantTypeFilter={setParticipantTypeFilter}
-              dataStatusFilter={dataStatusFilter}
-              setDataStatusFilter={setDataStatusFilter}
-              loading={loading}
-              canExport={canExport}
-              onExportCsv={handleExportCsv}
-              onExportXlsx={handleExportXlsx}
-              presetName={presetName}
-              setPresetName={setPresetName}
-              onSavePreset={handleSavePreset}
-              reportPackType={reportPackType}
-              setReportPackType={setReportPackType}
-              onPrintPack={handlePrintPack}
-            />
+          {showReportMenu ? (
+            <div className="card" style={{ padding: 18, marginBottom: 12 }}>
+              <h3 style={{ marginTop: 0 }}>Reports</h3>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginTop: 12,
+                  marginBottom: 18,
+                }}
+              >
+                <button
+                  className="btn"
+                  onClick={() => setReportType("all_attendees")}
+                >
+                  All Attendees
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("household_contact_sheet")}
+                >
+                  Contact Sheet
+                </button>
+
+                <button
+                  className="btn"
+                  onClick={() => setReportType("arrived")}
+                >
+                  Arrived
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("not_arrived")}
+                >
+                  Not Arrived
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("parking_assignments")}
+                >
+                  Parking Assignments
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("unassigned_parking_needed")}
+                >
+                  Needs Parking
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("first_timers")}
+                >
+                  First Timers
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("volunteers")}
+                >
+                  Volunteers
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("vendors")}
+                >
+                  Vendors
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("staff_hosts_helpers")}
+                >
+                  Staff / Speakers
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("activity_summary")}
+                >
+                  Activity Summary
+                </button>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <button
+                  className="btn"
+                  onClick={() => setShowControls((v) => !v)}
+                >
+                  {showControls ? "▼ Report Controls" : "▶ Report Controls"}
+                </button>
+              </div>
+
+              {showControls ? (
+                <ReportControlsPanel
+                  reportType={reportType}
+                  setReportType={setReportType}
+                  sortType={sortType}
+                  setSortType={setSortType}
+                  participantTypeFilter={participantTypeFilter}
+                  setParticipantTypeFilter={setParticipantTypeFilter}
+                  dataStatusFilter={dataStatusFilter}
+                  setDataStatusFilter={setDataStatusFilter}
+                  loading={loading}
+                  canExport={canExport}
+                  onExportCsv={handleExportCsv}
+                  onExportXlsx={handleExportXlsx}
+                  presetName={presetName}
+                  setPresetName={setPresetName}
+                  onSavePreset={handleSavePreset}
+                  reportPackType={reportPackType}
+                  setReportPackType={setReportPackType}
+                  onPrintPack={handlePrintPack}
+                />
+              ) : null}
+
+              <div style={{ marginTop: 12 }}>
+                <SavedPresetsCard
+                  presets={savedPresets}
+                  onApply={handleApplyPreset}
+                  onDelete={handleDeletePreset}
+                />
+              </div>
+            </div>
           ) : null}
         </div>
-        <SavedPresetsCard
-          presets={savedPresets}
-          onApply={handleApplyPreset}
-          onDelete={handleDeletePreset}
-        />
 
         <div style={{ marginBottom: 12 }}>
           <button className="btn" onClick={() => setShowSummary((v) => !v)}>

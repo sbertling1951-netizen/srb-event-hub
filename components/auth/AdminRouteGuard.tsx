@@ -20,17 +20,19 @@ export default function AdminRouteGuard({
   const router = useRouter();
   const { admin, loading } = useAdmin();
 
+  const userId = admin?.adminUser?.user_id ?? null;
+
   useEffect(() => {
-    if (!loading && !admin?.adminUser?.user_id) {
+    if (!loading && !userId) {
       router.replace(fallbackPath);
     }
-  }, [loading, admin, fallbackPath, router]);
+  }, [loading, userId, fallbackPath, router]);
 
   if (loading) {
-    return <div style={{ padding: 24 }}>Checking access...</div>;
+    return null;
   }
 
-  if (!admin?.adminUser?.user_id) {
+  if (!userId) {
     return null;
   }
 

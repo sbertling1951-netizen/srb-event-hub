@@ -2094,8 +2094,14 @@ function ValidationRulesEmbedPanel() {
 }
 
 function AdminAttendeesPageInner() {
-  const storedPrefs = getStoredAttendeeCommandCenterPrefs();
+  const storedPrefs = useMemo(() => getStoredAttendeeCommandCenterPrefs(), []);
   const { admin } = useAdmin();
+  const adminRef = useRef(admin);
+
+  useEffect(() => {
+    adminRef.current = admin;
+  }, [admin]);
+
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
@@ -2142,6 +2148,7 @@ function AdminAttendeesPageInner() {
   const [expandedAttendeeId, setExpandedAttendeeId] = useState<string | null>(
     null,
   );
+
   function toggleExpandedAttendee(attendeeId: string) {
     setExpandedAttendeeId((current) =>
       current === attendeeId ? null : attendeeId,
@@ -2318,7 +2325,7 @@ function AdminAttendeesPageInner() {
       return;
     }
 
-    if (!canAccessEvent(admin!, eventToUse.id!)) {
+    if (!canAccessEvent(adminRef.current!, eventToUse.id!)) {
       setCurrentEvent(null);
       setAttendees([]);
       setRules([]);
@@ -2328,10 +2335,20 @@ function AdminAttendeesPageInner() {
       return;
     }
 
-    setCurrentEvent(eventToUse);
-    await loadQueue(eventToUse.id!);
-  }, [admin, loadQueue]);
+    setCurrentEvent((prev) => {
+      if (
+        prev?.id === eventToUse?.id &&
+        prev?.name === eventToUse?.name &&
+        prev?.start_date === eventToUse?.start_date &&
+        prev?.end_date === eventToUse?.end_date
+      ) {
+        return prev;
+      }
 
+      return eventToUse;
+    });
+    await loadQueue(eventToUse.id!);
+  }, [loadQueue]);
   useEffect(() => {
     if (!admin) {
       return;
@@ -2353,37 +2370,7 @@ function AdminAttendeesPageInner() {
     }
 
     void loadEventAndData();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void loadEventAndData();
-      }
-    }
-
-    function handleAdminEventUpdated() {
-      void loadEventAndData();
-    }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated,
-      );
-    };
-  }, [admin, loadEventAndData]);
-
+  }, [admin?.adminUser?.id]);
   useEffect(() => {
     saveAttendeeCommandCenterPrefs({
       search,

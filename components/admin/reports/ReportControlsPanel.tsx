@@ -1,6 +1,10 @@
 import { type CSSProperties } from "react";
 
 export type ReportType =
+  | "all_attendees"
+  | "household_contact_sheet"
+  | "arrived"
+  | "not_arrived"
   | "first_timers"
   | "volunteers"
   | "vendors"
@@ -109,6 +113,12 @@ export default function ReportControlsPanel(props: {
           onChange={(e) => setReportType(e.target.value as ReportType)}
           style={inputStyle}
         >
+          <option value="all_attendees">All Attendees</option>
+          <option value="household_contact_sheet">
+            Household Contact Sheet
+          </option>
+          <option value="arrived">Arrived</option>
+          <option value="not_arrived">Not Arrived</option>
           <option value="first_timers">First Timers</option>
           <option value="volunteers">Volunteers</option>
           <option value="vendors">Vendors</option>

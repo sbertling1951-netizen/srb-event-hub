@@ -81,18 +81,9 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
     },
     ref,
   ) {
-    console.log("MAPCANVAS RENDERED", {
-      width,
-      height,
-      hasOnTap: !!onTap,
-      onTapIdentity: onTap,
-    });
-
     const viewportRef = useRef<GestureMapViewportHandle | null>(null);
 
     const lastOnTapRef = useRef(onTap);
-
-    console.log("ONTAP SAME?", lastOnTapRef.current === onTap);
 
     lastOnTapRef.current = onTap;
 
@@ -102,8 +93,6 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       reset: () => viewportRef.current?.reset(),
       centerOn: (x, y) => viewportRef.current?.centerOn(x, y),
     }));
-
-    console.log("MapCanvas received onTap:", !!onTap);
 
     return (
       <GestureMapViewportV2

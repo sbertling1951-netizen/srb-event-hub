@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -19,6 +19,8 @@ const AdminContext = createContext<AdminContextType>({
 });
 
 export function AdminProvider({ children }: { children: React.ReactNode }) {
+  const instanceId = useRef(Math.random().toString(36).slice(2));
+
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
 
@@ -26,13 +28,29 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(isAdminRoute);
 
   async function loadAdmin() {
+    console.count("LOAD ADMIN");
     try {
       setLoading(true);
-      console.log("ADMINCTX BEFORE getCurrentAdminAccess");
       const result = await getCurrentAdminAccess();
+      console.count("SET ADMIN CALLED");
 
-      setAdmin(result);
-      console.log("ADMINCTX AFTER getCurrentAdminAccess", result);
+      setAdmin((prev) => {
+        if (
+          prev?.adminUser?.id === result?.adminUser?.id &&
+          prev?.currentEventId === result?.currentEventId
+        ) {
+          console.log("ADMIN GUARD HELD");
+          return prev;
+        }
+
+        console.log("ADMIN GUARD FAILED", {
+          prevUserId: prev?.adminUser?.id,
+          nextUserId: result?.adminUser?.id,
+          prevEventId: prev?.currentEventId,
+          nextEventId: result?.currentEventId,
+        });
+        return result;
+      });
 
       if (typeof window !== "undefined") {
         if (result) {
@@ -50,7 +68,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         sessionStorage.removeItem("fcoc-admin-access");
       }
     } finally {
-      console.log("ADMINCTX LOADING FALSE");
       setLoading(false);
     }
   }
@@ -61,6 +78,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     if (!isAdminRoute) {
       setAdmin(null);
       setLoading(false);
+
       return () => {
         mounted = false;
       };
@@ -88,8 +106,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("AUTH EVENT", event);
-
       if (!mounted) {
         return;
       }
@@ -100,7 +116,12 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (event === "SIGNED_IN") {
-        console.log("AUTH EVENT SIGNED_IN IGNORED");
+        console.count("AUTH EVENT SIGNED_IN");
+        return;
+      }
+
+      if (event === "TOKEN_REFRESHED") {
+        console.log("AUTH EVENT ignored TOKEN_REFRESHED");
         return;
       }
 

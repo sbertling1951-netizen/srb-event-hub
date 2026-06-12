@@ -182,6 +182,10 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
       );
 
       const user = auth.data.session?.user ?? null;
+      console.log("ADMIN ACCESS USER", {
+        id: user?.id,
+        email: user?.email,
+      });
 
       if (!user) {
         clearAdminAccessCache();
@@ -210,6 +214,7 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         );
 
         adminUser = data as AdminUserAccessRow | null;
+        console.log("ADMIN LOOKUP BY USER_ID", adminUser);
       }
 
       if (!adminUser && user.email) {
@@ -224,6 +229,7 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         );
 
         const fallback = fallbackResult.data as AdminUserAccessRow | null;
+        console.log("ADMIN LOOKUP BY EMAIL", fallback);
 
         if (fallback) {
           adminUser = fallback;
@@ -243,6 +249,7 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
       }
 
       if (!adminUser) {
+        console.log("ADMIN USER NOT FOUND");
         return null;
       }
 

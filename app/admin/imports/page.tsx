@@ -674,10 +674,10 @@ function AdminAttendeeImportsPageInner() {
     async function loadEvents() {
       setLoadingEvent(true);
       setError(null);
-      setStatus("Checking admin access...");
 
       try {
         if (adminLoading) {
+          setLoadingEvent(false);
           return;
         }
 
