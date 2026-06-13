@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   type CSSProperties,
   useCallback,
@@ -133,7 +134,6 @@ type ParticipantTypeFilter =
   | "event_host";
 type ViewMode = "all" | "review";
 type AttendeeSortMode = "last_name" | "site";
-type CommandCenterTab = "attendees" | "reports" | "imports" | "validation";
 
 type SummaryCardItem = {
   label: string;
@@ -159,7 +159,6 @@ type AttendeeCommandCenterPrefs = {
   viewMode?: ViewMode;
   attendeeSortMode?: AttendeeSortMode;
   showResolvedInfo?: boolean;
-  commandCenterTab?: CommandCenterTab;
 };
 
 const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
@@ -2094,9 +2093,11 @@ function ValidationRulesEmbedPanel() {
 }
 
 function AdminAttendeesPageInner() {
+  console.count("ATTENDEES RENDER");
   const storedPrefs = useMemo(() => getStoredAttendeeCommandCenterPrefs(), []);
   const { admin } = useAdmin();
   const adminRef = useRef(admin);
+  const router = useRouter();
 
   useEffect(() => {
     adminRef.current = admin;
@@ -2136,9 +2137,7 @@ function AdminAttendeesPageInner() {
     emptyAttendeeEditorState(),
   );
   const [editorSaving, setEditorSaving] = useState(false);
-  const [commandCenterTab, setCommandCenterTab] = useState<CommandCenterTab>(
-    storedPrefs.commandCenterTab || "attendees",
-  );
+
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   const [inlineEditState, setInlineEditState] = useState<InlineEditState>(
     emptyInlineEditState(),
@@ -2380,7 +2379,6 @@ function AdminAttendeesPageInner() {
       viewMode,
       attendeeSortMode,
       showResolvedInfo,
-      commandCenterTab,
     });
   }, [
     search,
@@ -2390,7 +2388,6 @@ function AdminAttendeesPageInner() {
     viewMode,
     attendeeSortMode,
     showResolvedInfo,
-    commandCenterTab,
   ]);
 
   function showFlash(message: string) {
@@ -2576,7 +2573,6 @@ function AdminAttendeesPageInner() {
     }
 
     localStorage.removeItem("fcoc-attendee-open-edit-id");
-    setCommandCenterTab("attendees");
     setExpandedAttendeeId(attendee.id);
     openEditAttendeeEditor(attendee);
     // openEditAttendeeEditor is intentionally omitted because it is declared later in this component.
@@ -3082,305 +3078,275 @@ function AdminAttendeesPageInner() {
         ) : null}
 
         {!loading && error ? <div style={errorBoxStyle}>{error}</div> : null}
-
         <div
-          style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}
+          style={{
+            marginTop: 14,
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
         >
           <button
             type="button"
-            onClick={() => {
-              window.location.href = "/admin/attendees";
-            }}
-            style={secondaryButtonStyle}
-          >
-            Open Command Center
-          </button>
-          <button
-            type="button"
-            onClick={() => setCommandCenterTab("attendees")}
-            style={
-              commandCenterTab === "attendees"
-                ? primaryButtonStyle
-                : secondaryButtonStyle
-            }
+            onClick={() => router.push("/admin/attendees")}
+            style={primaryButtonStyle}
           >
             Attendee Management
           </button>
 
           <button
             type="button"
-            onClick={() => setCommandCenterTab("reports")}
-            style={
-              commandCenterTab === "reports"
-                ? primaryButtonStyle
-                : secondaryButtonStyle
-            }
+            onClick={() => router.push("/admin/reports")}
+            style={secondaryButtonStyle}
           >
             Reports
           </button>
+
           <button
             type="button"
-            onClick={() => setCommandCenterTab("imports")}
-            style={
-              commandCenterTab === "imports"
-                ? primaryButtonStyle
-                : secondaryButtonStyle
-            }
+            onClick={() => router.push("/admin/imports")}
+            style={secondaryButtonStyle}
           >
             Imports
           </button>
 
           <button
             type="button"
-            onClick={() => setCommandCenterTab("validation")}
-            style={
-              commandCenterTab === "validation"
-                ? primaryButtonStyle
-                : secondaryButtonStyle
-            }
+            onClick={() => router.push("/admin/validation-rules")}
+            style={secondaryButtonStyle}
           >
             Validation Rules
           </button>
         </div>
       </div>
 
-      {commandCenterTab === "attendees" ? (
-        <>
-          <QuickActionBar
-            onAddAttendee={openCreateAttendeeEditor}
-            onSetReviewMode={() => {
-              setViewMode("review");
+      <>
+        <QuickActionBar
+          onAddAttendee={openCreateAttendeeEditor}
+          onSetReviewMode={() => {
+            setViewMode("review");
+            const firstReviewItem = filteredReviewItems[0];
+            if (firstReviewItem) {
+              openEditAttendeeEditor(firstReviewItem.attendee);
+            } else {
+              showFlash("No attendee records need review.");
+            }
+          }}
+          onSetAllMode={() => setViewMode("all")}
+          onRefresh={() => {
+            if (currentEvent?.id) {
+              void loadQueue(currentEvent.id);
+            }
+          }}
+        />
+        <div
+          style={{
+            display: "grid",
+            gap: 18,
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            alignItems: "start",
+          }}
+        >
+          <div
+            className="card"
+            style={{ padding: 18, display: "grid", gap: 14 }}
+          >
+            <div>
+              <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+                Attendee Management
+              </h2>
+              <div style={{ fontSize: 14, opacity: 0.8 }}>
+                One-stop attendee management for the selected event.
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={openCreateAttendeeEditor}
+                style={primaryButtonStyle}
+              >
+                Add Attendee Record
+              </button>
+            </div>
+
+            <SummaryCards items={summaryItems.slice(0, 6)} />
+          </div>
+
+          <div
+            className="card"
+            style={{ padding: 18, display: "grid", gap: 14 }}
+          >
+            <div>
+              <h2 style={{ marginTop: 0, marginBottom: 6 }}>Data Review</h2>
+              <div style={{ fontSize: 14, opacity: 0.8 }}>
+                Review queue status and quick correction workflow for attendee
+                data.
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              }}
+            >
+              <div className="card" style={summaryCardStyle}>
+                <strong>Visible Flagged</strong>
+                <div style={summaryValueStyle}>
+                  {filteredReviewItems.length}
+                </div>
+              </div>
+              <div className="card" style={summaryCardStyle}>
+                <strong>Pending</strong>
+                <div style={summaryValueStyle}>
+                  {
+                    attendees.filter(
+                      (row) => dataStatusLabel(row.data_status) === "pending",
+                    ).length
+                  }
+                </div>
+              </div>
+              <div className="card" style={summaryCardStyle}>
+                <strong>Corrected</strong>
+                <div style={summaryValueStyle}>
+                  {
+                    attendees.filter(
+                      (row) => dataStatusLabel(row.data_status) === "corrected",
+                    ).length
+                  }
+                </div>
+              </div>
+              <div className="card" style={summaryCardStyle}>
+                <strong>Reviewed</strong>
+                <div style={summaryValueStyle}>
+                  {
+                    attendees.filter(
+                      (row) => dataStatusLabel(row.data_status) === "reviewed",
+                    ).length
+                  }
+                </div>
+              </div>
+              <div className="card" style={summaryCardStyle}>
+                <strong>Locked</strong>
+                <div style={summaryValueStyle}>
+                  {
+                    attendees.filter(
+                      (row) => dataStatusLabel(row.data_status) === "locked",
+                    ).length
+                  }
+                </div>
+              </div>
+              <div className="card" style={summaryCardStyle}>
+                <strong>Fully Valid</strong>
+                <div style={summaryValueStyle}>{fullyValidCount}</div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 13, color: "#555" }}>
+              {viewMode === "review"
+                ? "Review focus is on. The attendee list remains visible below while the review queue stays available on the same page."
+                : "The attendee list stays visible below, with the review queue available on the same page."}
+            </div>
+          </div>
+        </div>
+
+        <FilterBar
+          search={search}
+          setSearch={setSearch}
+          viewMode={viewMode}
+          setViewMode={(nextViewMode) => {
+            setViewMode(nextViewMode);
+            if (nextViewMode === "review") {
               const firstReviewItem = filteredReviewItems[0];
               if (firstReviewItem) {
                 openEditAttendeeEditor(firstReviewItem.attendee);
               } else {
                 showFlash("No attendee records need review.");
               }
-            }}
-            onSetAllMode={() => setViewMode("all")}
-            onRefresh={() => {
-              if (currentEvent?.id) {
-                void loadQueue(currentEvent.id);
-              }
-            }}
-          />
+            }
+          }}
+          pageSize={pageSize}
+          setPageSize={setPageSize}
+          dataStatusFilter={dataStatusFilter}
+          setDataStatusFilter={setDataStatusFilter}
+          participantTypeFilter={participantTypeFilter}
+          setParticipantTypeFilter={setParticipantTypeFilter}
+          attendeeSortMode={attendeeSortMode}
+          setAttendeeSortMode={setAttendeeSortMode}
+          showResolvedInfo={showResolvedInfo}
+          setShowResolvedInfo={setShowResolvedInfo}
+        />
+
+        <div className="card" style={{ padding: 18 }}>
           <div
             style={{
-              display: "grid",
-              gap: 18,
-              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-              alignItems: "start",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
             }}
           >
-            <div
-              className="card"
-              style={{ padding: 18, display: "grid", gap: 14 }}
-            >
-              <div>
-                <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-                  Attendee Management
-                </h2>
-                <div style={{ fontSize: 14, opacity: 0.8 }}>
-                  One-stop attendee management for the selected event.
-                </div>
-              </div>
+            <div>
+              <h2 style={{ marginTop: 0, marginBottom: 6 }}>Review Queue</h2>
 
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  onClick={openCreateAttendeeEditor}
-                  style={primaryButtonStyle}
-                >
-                  Add Attendee Record
-                </button>
-              </div>
-
-              <SummaryCards items={summaryItems.slice(0, 6)} />
-            </div>
-
-            <div
-              className="card"
-              style={{ padding: 18, display: "grid", gap: 14 }}
-            >
-              <div>
-                <h2 style={{ marginTop: 0, marginBottom: 6 }}>Data Review</h2>
-                <div style={{ fontSize: 14, opacity: 0.8 }}>
-                  Review queue status and quick correction workflow for attendee
-                  data.
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gap: 12,
-                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-                }}
-              >
-                <div className="card" style={summaryCardStyle}>
-                  <strong>Visible Flagged</strong>
-                  <div style={summaryValueStyle}>
-                    {filteredReviewItems.length}
-                  </div>
-                </div>
-                <div className="card" style={summaryCardStyle}>
-                  <strong>Pending</strong>
-                  <div style={summaryValueStyle}>
-                    {
-                      attendees.filter(
-                        (row) => dataStatusLabel(row.data_status) === "pending",
-                      ).length
-                    }
-                  </div>
-                </div>
-                <div className="card" style={summaryCardStyle}>
-                  <strong>Corrected</strong>
-                  <div style={summaryValueStyle}>
-                    {
-                      attendees.filter(
-                        (row) =>
-                          dataStatusLabel(row.data_status) === "corrected",
-                      ).length
-                    }
-                  </div>
-                </div>
-                <div className="card" style={summaryCardStyle}>
-                  <strong>Reviewed</strong>
-                  <div style={summaryValueStyle}>
-                    {
-                      attendees.filter(
-                        (row) =>
-                          dataStatusLabel(row.data_status) === "reviewed",
-                      ).length
-                    }
-                  </div>
-                </div>
-                <div className="card" style={summaryCardStyle}>
-                  <strong>Locked</strong>
-                  <div style={summaryValueStyle}>
-                    {
-                      attendees.filter(
-                        (row) => dataStatusLabel(row.data_status) === "locked",
-                      ).length
-                    }
-                  </div>
-                </div>
-                <div className="card" style={summaryCardStyle}>
-                  <strong>Fully Valid</strong>
-                  <div style={summaryValueStyle}>{fullyValidCount}</div>
-                </div>
-              </div>
-
-              <div style={{ fontSize: 13, color: "#555" }}>
-                {viewMode === "review"
-                  ? "Review focus is on. The attendee list remains visible below while the review queue stays available on the same page."
-                  : "The attendee list stays visible below, with the review queue available on the same page."}
+              <div style={{ fontSize: 14, opacity: 0.8 }}>
+                {filteredReviewItems.length} flagged attendee
+                {filteredReviewItems.length === 1 ? "" : "s"}
+                {showReviewQueue
+                  ? " shown below."
+                  : " hidden while you work the attendee list."}
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowReviewQueue((prev) => !prev)}
+              style={secondaryButtonStyle}
+            >
+              {showReviewQueue ? "Hide Review Queue" : "Show Review Queue"}
+            </button>
           </div>
+        </div>
 
-          <FilterBar
-            search={search}
-            setSearch={setSearch}
-            viewMode={viewMode}
-            setViewMode={(nextViewMode) => {
-              setViewMode(nextViewMode);
-              if (nextViewMode === "review") {
-                const firstReviewItem = filteredReviewItems[0];
-                if (firstReviewItem) {
-                  openEditAttendeeEditor(firstReviewItem.attendee);
-                } else {
-                  showFlash("No attendee records need review.");
-                }
-              }
-            }}
-            pageSize={pageSize}
-            setPageSize={setPageSize}
-            dataStatusFilter={dataStatusFilter}
-            setDataStatusFilter={setDataStatusFilter}
-            participantTypeFilter={participantTypeFilter}
-            setParticipantTypeFilter={setParticipantTypeFilter}
-            attendeeSortMode={attendeeSortMode}
-            setAttendeeSortMode={setAttendeeSortMode}
-            showResolvedInfo={showResolvedInfo}
-            setShowResolvedInfo={setShowResolvedInfo}
-          />
-
-          <div className="card" style={{ padding: 18 }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <div>
-                <h2 style={{ marginTop: 0, marginBottom: 6 }}>Review Queue</h2>
-
-                <div style={{ fontSize: 14, opacity: 0.8 }}>
-                  {filteredReviewItems.length} flagged attendee
-                  {filteredReviewItems.length === 1 ? "" : "s"}
-                  {showReviewQueue
-                    ? " shown below."
-                    : " hidden while you work the attendee list."}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowReviewQueue((prev) => !prev)}
-                style={secondaryButtonStyle}
-              >
-                {showReviewQueue ? "Hide Review Queue" : "Show Review Queue"}
-              </button>
-            </div>
-          </div>
-
-          {showReviewQueue ? (
-            <ReviewQueue
-              loading={loading}
-              filteredReviewItems={filteredReviewItems}
-              visibleReviewItems={visibleReviewItems}
-              drafts={drafts}
-              savingRowId={savingRowId}
-              dataStatusFilter={dataStatusFilter}
-              participantTypeFilter={participantTypeFilter}
-              onDraftChange={updateDraft}
-              onSaveMembership={saveMembershipNumber}
-              onOpenEdit={openEditAttendeeEditor}
-              onUpdateDataStatus={updateDataStatus}
-            />
-          ) : null}
-
-          <AttendeeList
+        {showReviewQueue ? (
+          <ReviewQueue
             loading={loading}
-            filteredAttendees={filteredAttendees}
-            visibleAttendees={visibleAttendees}
-            reviewItems={reviewItems}
-            inlineEditId={inlineEditId}
-            inlineEditState={inlineEditState}
-            inlineSaving={inlineSaving}
-            recentlySavedId={recentlySavedId}
-            attendeeSortMode={attendeeSortMode}
-            expandedAttendeeId={expandedAttendeeId}
-            onToggleExpanded={toggleExpandedAttendee}
+            filteredReviewItems={filteredReviewItems}
+            visibleReviewItems={visibleReviewItems}
+            drafts={drafts}
+            savingRowId={savingRowId}
+            dataStatusFilter={dataStatusFilter}
+            participantTypeFilter={participantTypeFilter}
+            onDraftChange={updateDraft}
+            onSaveMembership={saveMembershipNumber}
             onOpenEdit={openEditAttendeeEditor}
-            onStartInlineEdit={startInlineEdit}
-            onCancelInlineEdit={cancelInlineEdit}
-            onInlineEditChange={updateInlineEditField}
-            onSaveInlineEdit={handleSaveInlineEdit}
             onUpdateDataStatus={updateDataStatus}
           />
-        </>
-      ) : commandCenterTab === "reports" ? (
-        <ReportsEmbedPanel />
-      ) : commandCenterTab === "imports" ? (
-        <ImportsEmbedPanel />
-      ) : (
-        <ValidationRulesEmbedPanel />
-      )}
+        ) : null}
+
+        <AttendeeList
+          loading={loading}
+          filteredAttendees={filteredAttendees}
+          visibleAttendees={visibleAttendees}
+          reviewItems={reviewItems}
+          inlineEditId={inlineEditId}
+          inlineEditState={inlineEditState}
+          inlineSaving={inlineSaving}
+          recentlySavedId={recentlySavedId}
+          attendeeSortMode={attendeeSortMode}
+          expandedAttendeeId={expandedAttendeeId}
+          onToggleExpanded={toggleExpandedAttendee}
+          onOpenEdit={openEditAttendeeEditor}
+          onStartInlineEdit={startInlineEdit}
+          onCancelInlineEdit={cancelInlineEdit}
+          onInlineEditChange={updateInlineEditField}
+          onSaveInlineEdit={handleSaveInlineEdit}
+          onUpdateDataStatus={updateDataStatus}
+        />
+      </>
 
       <AttendeeEditorModal
         open={editorOpen}

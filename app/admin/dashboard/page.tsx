@@ -170,6 +170,13 @@ const adminCards = [
     permission: "can_manage_agenda",
   },
   {
+    title: "Attendee Management",
+    description:
+      "Manage attendees, data review, reports, imports, and validation rules.",
+    href: "/admin/attendees",
+    permission: "can_edit_attendees",
+  },
+  {
     title: "Check-In",
     description: "Manage arrivals, check-in flow, and site-ready coaches.",
     href: "/admin/checkin",
