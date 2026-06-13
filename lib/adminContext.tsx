@@ -26,22 +26,11 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(isAdminRoute);
 
   async function loadAdmin() {
-    console.log("LOAD ADMIN START");
     try {
       setLoading(true);
       const result = await getCurrentAdminAccess();
-      console.log("LOAD ADMIN RESULT", {
-        hasResult: !!result,
-        adminId: result?.adminUser?.id,
-        userId: result?.adminUser?.user_id,
-      });
-      console.count("SET ADMIN CALLED");
 
       setAdmin((prev) => {
-        console.log("SETADMIN", {
-          prevAdmin: !!prev,
-          nextAdmin: !!result,
-        });
         if (
           prev?.adminUser?.id === result?.adminUser?.id &&
           prev?.currentEventId === result?.currentEventId
@@ -94,10 +83,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (session) {
-        console.log("BOOTSTRAP FOUND SESSION");
         await loadAdmin();
       } else {
-        console.log("BOOTSTRAP NO SESSION");
         setAdmin(null);
         setLoading(false);
       }
@@ -108,8 +95,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("AUTH EVENT", event, !!session, Date.now());
-
       if (!mounted) {
         return;
       }
@@ -119,7 +104,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (event === "SIGNED_IN") {
-        console.log("SIGNED_IN -> LOADADMIN");
         void loadAdmin();
         return;
       }
