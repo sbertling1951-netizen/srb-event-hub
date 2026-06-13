@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -19,8 +19,6 @@ const AdminContext = createContext<AdminContextType>({
 });
 
 export function AdminProvider({ children }: { children: React.ReactNode }) {
-  const instanceId = useRef(Math.random().toString(36).slice(2));
-
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
 
@@ -28,27 +26,29 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(isAdminRoute);
 
   async function loadAdmin() {
-    console.count("LOAD ADMIN");
+    console.log("LOAD ADMIN START");
     try {
       setLoading(true);
       const result = await getCurrentAdminAccess();
+      console.log("LOAD ADMIN RESULT", {
+        hasResult: !!result,
+        adminId: result?.adminUser?.id,
+        userId: result?.adminUser?.user_id,
+      });
       console.count("SET ADMIN CALLED");
 
       setAdmin((prev) => {
+        console.log("SETADMIN", {
+          prevAdmin: !!prev,
+          nextAdmin: !!result,
+        });
         if (
           prev?.adminUser?.id === result?.adminUser?.id &&
           prev?.currentEventId === result?.currentEventId
         ) {
-          console.log("ADMIN GUARD HELD");
           return prev;
         }
 
-        console.log("ADMIN GUARD FAILED", {
-          prevUserId: prev?.adminUser?.id,
-          nextUserId: result?.adminUser?.id,
-          prevEventId: prev?.currentEventId,
-          nextEventId: result?.currentEventId,
-        });
         return result;
       });
 
@@ -94,8 +94,10 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (session) {
+        console.log("BOOTSTRAP FOUND SESSION");
         await loadAdmin();
       } else {
+        console.log("BOOTSTRAP NO SESSION");
         setAdmin(null);
         setLoading(false);
       }
@@ -106,23 +108,23 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("AUTH EVENT", event, !!session, Date.now());
+
       if (!mounted) {
         return;
       }
 
       if (event === "INITIAL_SESSION") {
-        console.log("AUTH EVENT ignored INITIAL_SESSION");
         return;
       }
 
       if (event === "SIGNED_IN") {
-        console.count("AUTH EVENT SIGNED_IN");
+        console.log("SIGNED_IN -> LOADADMIN");
         void loadAdmin();
         return;
       }
 
       if (event === "TOKEN_REFRESHED") {
-        console.log("AUTH EVENT ignored TOKEN_REFRESHED");
         return;
       }
 
