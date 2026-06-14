@@ -73,6 +73,12 @@ export default function MemberPhotosPage() {
   }
 
   async function uploadPhoto(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setError(
+        "Videos are not currently supported. Please upload photos only.",
+      );
+      return;
+    }
     if (!event?.id) {
       setError("No current event selected.");
       return;
@@ -86,7 +92,7 @@ export default function MemberPhotosPage() {
     try {
       setUploading(true);
       setError(null);
-      setStatus("Uploading photo...");
+      // Removed setStatus("Uploading photo...");
 
       const extension = file.name.split(".").pop() || "jpg";
 
@@ -116,6 +122,8 @@ export default function MemberPhotosPage() {
         throw insertError;
       }
 
+      await loadUploads(attendeeId);
+
       setStatus("Photo uploaded successfully.");
     } catch (err) {
       console.error("photo upload error:", err);
@@ -123,14 +131,10 @@ export default function MemberPhotosPage() {
       setError(err instanceof Error ? err.message : "Could not upload photo.");
 
       setStatus("");
-    } finally {
-      setUploading(false);
     }
   }
   async function deletePhoto(photo: UploadedPhoto) {
-    const confirmed = window.confirm(
-      "Delete this photo? This cannot be undone.",
-    );
+    const confirmed = window.confirm("Delete this photo?");
 
     if (!confirmed) {
       return;
@@ -138,6 +142,12 @@ export default function MemberPhotosPage() {
 
     try {
       setError(null);
+      if (photo.photo_status !== "pending") {
+        setError(
+          "This photo has already been reviewed and can no longer be deleted.",
+        );
+        return;
+      }
 
       const { error: storageError } = await supabase.storage
         .from("event-photos")
@@ -175,19 +185,44 @@ export default function MemberPhotosPage() {
           in the event gallery or slideshow.
         </p>
 
+        <div style={{ marginBottom: 8, fontWeight: 600 }}>
+          Select one or more photos from your Photo Library or take a new photo.
+        </div>
         <input
           type="file"
           accept="image/*"
-          capture="environment"
+          multiple
           onChange={(e) => {
-            const file = e.target.files?.[0];
+            const files = Array.from(e.target.files || []);
 
-            if (file) {
-              void uploadPhoto(file);
+            if (files.length === 0) {
+              return;
             }
+
+            void (async () => {
+              setUploading(true);
+              setError(null);
+
+              for (let i = 0; i < files.length; i += 1) {
+                setStatus(
+                  `Uploading ${i + 1} of ${files.length} photos. Please keep this page open...`,
+                );
+
+                await uploadPhoto(files[i]);
+              }
+
+              await loadUploads(attendeeId);
+
+              setStatus(`Successfully uploaded ${files.length} photo(s).`);
+              setUploading(false);
+            })();
           }}
         />
-        {status && <div style={{ marginTop: 8 }}>{status}</div>}
+        {status && (
+          <div style={{ marginTop: 8, color: "#2563eb", fontWeight: 600 }}>
+            {status}
+          </div>
+        )}
 
         {error && <div style={{ marginTop: 8, color: "red" }}>{error}</div>}
         <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>
@@ -258,7 +293,7 @@ export default function MemberPhotosPage() {
                       >
                         View
                       </button>
-                      {photo.photo_status !== "approved" && (
+                      {photo.photo_status === "pending" && (
                         <button
                           type="button"
                           onClick={() => {
