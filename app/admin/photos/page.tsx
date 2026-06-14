@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 
 export default function AdminPhotosPage() {
   const [pendingCount, setPendingCount] = useState(0);
+  const [totalSubmitted, setTotalSubmitted] = useState(0);
 
   type PendingPhoto = {
     id: string;
@@ -20,6 +21,7 @@ export default function AdminPhotosPage() {
     admin_caption?: string;
     show_caption?: boolean;
     imageUrl?: string;
+    reviewImageUrl?: string;
   };
 
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
@@ -83,14 +85,12 @@ export default function AdminPhotosPage() {
       .eq("id", photoId)
       .select();
 
-    console.log("PHOTO MODERATION");
-    console.log("photoId:", photoId);
-    console.log("status:", status);
-    console.log("updateData:", updateData);
-    console.log("error:", error);
-
     if (error) {
       console.error("update photo status error:", error);
+      return;
+    }
+    if (!updateData || updateData.length === 0) {
+      console.error("Photo moderation updated 0 rows.");
       return;
     }
 
@@ -153,6 +153,12 @@ export default function AdminPhotosPage() {
   }, []);
 
   async function loadPendingPhotos() {
+    const { count: totalCount } = await supabase
+      .from("event_photos")
+      .select("id", { count: "exact", head: true });
+
+    setTotalSubmitted(totalCount || 0);
+
     const { data, error } = await supabase
       .from("event_photos")
       .select(
@@ -167,13 +173,29 @@ export default function AdminPhotosPage() {
 
     const photosWithUrls = await Promise.all(
       ((data || []) as PendingPhoto[]).map(async (photo) => {
-        const { data: signed } = await supabase.storage
+        const { data: thumbnail } = await supabase.storage
           .from("event-photos")
-          .createSignedUrl(photo.storage_path, 60 * 60);
+          .createSignedUrl(photo.storage_path, 60 * 60, {
+            transform: {
+              width: 160,
+              height: 160,
+              resize: "cover",
+            },
+          });
+
+        const { data: review } = await supabase.storage
+          .from("event-photos")
+          .createSignedUrl(photo.storage_path, 60 * 60, {
+            transform: {
+              width: 800,
+              resize: "contain",
+            },
+          });
 
         return {
           ...photo,
-          imageUrl: signed?.signedUrl,
+          imageUrl: thumbnail?.signedUrl,
+          reviewImageUrl: review?.signedUrl,
         };
       }),
     );
@@ -191,13 +213,34 @@ export default function AdminPhotosPage() {
           parentLabel="Events"
         />
         <h1>Admin Photos</h1>
-        <p>Pending Photos: {pendingCount}</p>
+        <p>
+          Pending Photos: {pendingCount} of {totalSubmitted}
+        </p>
         <p style={{ opacity: 0.8 }}>
           Click any photo to review, approve, or reject. Reviewed photos are
           removed from the queue.
         </p>
         <div style={{ marginTop: 12, fontWeight: 600 }}>
-          {pendingCount} Remaining
+          {pendingCount} of {totalSubmitted} Remaining
+        </div>
+        <div style={{ marginTop: 4, opacity: 0.8 }}>
+          {totalSubmitted - pendingCount} Reviewed
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <a
+            href="/admin/slideshow"
+            style={{
+              display: "inline-block",
+              padding: "8px 14px",
+              backgroundColor: "#2563eb",
+              color: "white",
+              borderRadius: 6,
+              textDecoration: "none",
+              fontWeight: 600,
+            }}
+          >
+            Launch Slideshow
+          </a>
         </div>
         <div
           style={{
@@ -220,6 +263,7 @@ export default function AdminPhotosPage() {
             >
               {photo.imageUrl && (
                 <img
+                  loading="lazy"
                   src={photo.imageUrl}
                   alt="Uploaded photo"
                   style={{
@@ -259,7 +303,7 @@ export default function AdminPhotosPage() {
             <div
               style={{
                 background: "white",
-                padding: 16,
+                padding: 12,
                 borderRadius: 8,
                 maxWidth: 900,
                 width: "90%",
@@ -269,13 +313,13 @@ export default function AdminPhotosPage() {
             >
               <h2>Photo Moderation</h2>
 
-              {selectedPhoto.imageUrl ? (
+              {selectedPhoto.reviewImageUrl ? (
                 <img
-                  src={selectedPhoto.imageUrl}
+                  src={selectedPhoto.reviewImageUrl}
                   alt="Moderation"
                   style={{
                     width: "100%",
-                    maxHeight: "60vh",
+                    maxHeight: "45vh",
                     objectFit: "contain",
                     borderRadius: 8,
                   }}
@@ -297,12 +341,12 @@ export default function AdminPhotosPage() {
                 </div>
               )}
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 6 }}>
                 <strong>Member:</strong>{" "}
                 {selectedPhoto.member_name || "Unknown"}
               </div>
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 6 }}>
                 <label>
                   <strong>Caption</strong>
                 </label>
@@ -314,7 +358,7 @@ export default function AdminPhotosPage() {
                 />
               </div>
 
-              <label style={{ display: "block", marginTop: 12 }}>
+              <label style={{ display: "block", marginTop: 6 }}>
                 <input
                   type="checkbox"
                   checked={showCaption}
@@ -323,7 +367,7 @@ export default function AdminPhotosPage() {
                 Show Caption In Slideshow
               </label>
 
-              <div style={{ marginTop: 16 }}>
+              <div style={{ marginTop: 8 }}>
                 <button
                   type="button"
                   onClick={() => void approvePhoto(selectedPhoto.id)}

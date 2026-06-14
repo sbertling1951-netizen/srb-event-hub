@@ -122,9 +122,7 @@ export default function MemberPhotosPage() {
         throw insertError;
       }
 
-      await loadUploads(attendeeId);
-
-      setStatus("Photo uploaded successfully.");
+      // Removed: await loadUploads(attendeeId);
     } catch (err) {
       console.error("photo upload error:", err);
 
@@ -251,7 +249,10 @@ export default function MemberPhotosPage() {
                   }}
                 >
                   <div>
-                    <strong>Status:</strong> {photo.photo_status}
+                    <strong>Status:</strong>{" "}
+                    {photo.photo_status === "pending"
+                      ? "Pending Review"
+                      : "Reviewed"}
                   </div>
 
                   <div>
@@ -260,22 +261,6 @@ export default function MemberPhotosPage() {
                   </div>
 
                   <>
-                    {photo.imageUrl && (
-                      <img
-                        src={photo.imageUrl}
-                        alt="Uploaded photo"
-                        style={{
-                          width: 120,
-                          height: 120,
-                          objectFit: "cover",
-                          borderRadius: 8,
-                          display: "block",
-                          marginTop: 8,
-                          marginBottom: 8,
-                        }}
-                      />
-                    )}
-
                     <div
                       style={{
                         marginTop: 8,
@@ -304,6 +289,21 @@ export default function MemberPhotosPage() {
                         </button>
                       )}
                     </div>
+                    {photo.imageUrl && (
+                      <img
+                        src={photo.imageUrl}
+                        alt="Uploaded photo"
+                        style={{
+                          width: 120,
+                          height: 120,
+                          objectFit: "cover",
+                          borderRadius: 8,
+                          display: "block",
+                          marginTop: 8,
+                          marginBottom: 8,
+                        }}
+                      />
+                    )}
                   </>
                 </div>
               ))}
