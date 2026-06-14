@@ -127,7 +127,44 @@ export default function MemberPhotosPage() {
       setUploading(false);
     }
   }
+  async function deletePhoto(photo: UploadedPhoto) {
+    const confirmed = window.confirm(
+      "Delete this photo? This cannot be undone.",
+    );
 
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError(null);
+
+      const { error: storageError } = await supabase.storage
+        .from("event-photos")
+        .remove([photo.storage_path]);
+
+      if (storageError) {
+        throw storageError;
+      }
+
+      const { error: deleteError } = await supabase
+        .from("event_photos")
+        .delete()
+        .eq("id", photo.id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      await loadUploads(attendeeId);
+
+      setStatus("Photo deleted.");
+    } catch (err) {
+      console.error("photo delete error:", err);
+
+      setError(err instanceof Error ? err.message : "Could not delete photo.");
+    }
+  }
   return (
     <div className="card" style={{ padding: 16 }}>
       <h1>EpicentraX Photos</h1>
@@ -221,6 +258,16 @@ export default function MemberPhotosPage() {
                       >
                         View
                       </button>
+                      {photo.photo_status !== "approved" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void deletePhoto(photo);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </>
                 </div>
