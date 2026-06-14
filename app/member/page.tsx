@@ -240,6 +240,13 @@ export default function MemberDashboardPage() {
         >
           📣 {announcementsNavLabel}
         </button>
+        <button
+          type="button"
+          onClick={() => goTo("/member/photos")}
+          style={memberGridButtonStyle}
+        >
+          📸 Photos
+        </button>
 
         <button
           type="button"
