@@ -23,8 +23,8 @@ export default function MemberPhotosPage() {
     storage_path: string;
     photo_status: string;
     uploaded_at: string;
+    imageUrl?: string;
   };
-
   const [uploads, setUploads] = useState<UploadedPhoto[]>([]);
 
   useEffect(() => {
@@ -58,7 +58,42 @@ export default function MemberPhotosPage() {
 
     console.log("UPLOADS FOUND", data);
 
-    setUploads((data || []) as UploadedPhoto[]);
+    const photos = await Promise.all(
+      ((data || []) as UploadedPhoto[]).map(async (photo) => {
+        console.log("CHECKING FILE", JSON.stringify(photo.storage_path));
+        const { data: fileCheck, error: fileCheckError } =
+          await supabase.storage
+            .from("event-photos")
+            .list(
+              photo.storage_path.substring(
+                0,
+                photo.storage_path.lastIndexOf("/"),
+              ),
+            );
+
+        console.log("FILE CHECK", {
+          fileCheck,
+          fileCheckError,
+        });
+
+        const { data: signed, error: signedError } = await supabase.storage
+          .from("event-photos")
+          .createSignedUrl(photo.storage_path, 60 * 60);
+
+        console.log("SIGNED URL", {
+          path: photo.storage_path,
+          signed,
+          signedError,
+        });
+
+        return {
+          ...photo,
+          imageUrl: signed?.signedUrl,
+        };
+      }),
+    );
+
+    setUploads(photos);
   }
 
   async function uploadPhoto(file: File) {
@@ -193,15 +228,33 @@ export default function MemberPhotosPage() {
                     {new Date(photo.uploaded_at).toLocaleString()}
                   </div>
 
-                  <div
-                    style={{
-                      fontSize: 12,
-                      opacity: 0.7,
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {photo.storage_path}
-                  </div>
+                  <>
+                    {photo.imageUrl && (
+                      <img
+                        src={photo.imageUrl}
+                        alt="Uploaded photo"
+                        style={{
+                          width: 120,
+                          height: 120,
+                          objectFit: "cover",
+                          borderRadius: 8,
+                          display: "block",
+                          marginTop: 8,
+                          marginBottom: 8,
+                        }}
+                      />
+                    )}
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        opacity: 0.7,
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {photo.storage_path}
+                    </div>
+                  </>
                 </div>
               ))}
             </div>
