@@ -18,16 +18,48 @@ export default function MemberPhotosPage() {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  type UploadedPhoto = {
+    id: string;
+    storage_path: string;
+    photo_status: string;
+    uploaded_at: string;
+  };
+
+  const [uploads, setUploads] = useState<UploadedPhoto[]>([]);
+
   useEffect(() => {
     const currentEvent = getCurrentMemberEvent();
 
     setEvent(currentEvent);
 
-    setAttendeeId(getStoredMemberAttendeeId() || "");
+    const storedAttendeeId = getStoredMemberAttendeeId() || "";
+
+    setAttendeeId(storedAttendeeId);
     setMemberEmail(getStoredMemberEmail() || "");
+
+    if (storedAttendeeId) {
+      void loadUploads(storedAttendeeId);
+    }
 
     void supabase;
   }, []);
+
+  async function loadUploads(attendeeId: string) {
+    const { data, error } = await supabase
+      .from("event_photos")
+      .select("id, storage_path, photo_status, uploaded_at")
+      .eq("attendee_id", attendeeId)
+      .order("uploaded_at", { ascending: false });
+
+    if (error) {
+      console.error("load uploads error:", error);
+      return;
+    }
+
+    console.log("UPLOADS FOUND", data);
+
+    setUploads((data || []) as UploadedPhoto[]);
+  }
 
   async function uploadPhoto(file: File) {
     if (!event?.id) {
@@ -138,7 +170,42 @@ export default function MemberPhotosPage() {
         <div style={{ marginTop: 20 }}>
           <h3>My Uploads</h3>
 
-          <p>No photos uploaded yet.</p>
+          {uploads.length === 0 ? (
+            <p>No photos uploaded yet.</p>
+          ) : (
+            <div>
+              {uploads.map((photo) => (
+                <div
+                  key={photo.id}
+                  style={{
+                    border: "1px solid #ddd",
+                    borderRadius: 8,
+                    padding: 12,
+                    marginBottom: 8,
+                  }}
+                >
+                  <div>
+                    <strong>Status:</strong> {photo.photo_status}
+                  </div>
+
+                  <div>
+                    <strong>Uploaded:</strong>{" "}
+                    {new Date(photo.uploaded_at).toLocaleString()}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      opacity: 0.7,
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {photo.storage_path}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

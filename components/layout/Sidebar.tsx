@@ -6,8 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { hasPermission } from "@/lib/getCurrentAdminAccess";
 import { useAdmin } from "@/lib/adminContext";
+import { hasPermission } from "@/lib/getCurrentAdminAccess";
 import {
   getCurrentMemberEvent,
   getStoredMemberHasArrived,
@@ -32,6 +32,7 @@ const ICON_MAP: Record<string, string> = {
   "/member": "🏠",
   "/member/agenda": "📅",
   "/member/announcements": "📣",
+  "/member/photos": "📸",
   "/member/attendees": "👥",
   "/coach-map": "🗺️",
   "/member/checkin": "🪪",
@@ -363,7 +364,8 @@ export default function Sidebar() {
 
     setAdminAccess(sharedAdminAccess);
 
-    const displayName = sharedAdminAccess?.display_name || sharedAdminAccess?.email || "";
+    const displayName =
+      sharedAdminAccess?.display_name || sharedAdminAccess?.email || "";
     const privilegeGroup = sharedAdminAccess?.privilege_group || "";
 
     setAdminDisplayName(displayName);
@@ -439,6 +441,7 @@ export default function Sidebar() {
       { label: "Dashboard", href: "/member" },
       { label: "Agenda", href: "/member/agenda" },
       { label: "Announcements", href: "/member/announcements" },
+      { label: "Photos", href: "/member/photos" },
       { label: "Attendee Locator", href: "/member/attendees" },
       { label: mapNavLabel, href: "/coach-map" },
       { label: "My Check-In", href: "/member/checkin" },
@@ -650,7 +653,10 @@ export default function Sidebar() {
           top: 0,
           left: 0,
           width: isMobile ? MOBILE_SIDEBAR_WIDTH : SIDEBAR_WIDTH,
-          transform: isMobile && !open ? "translateX(calc(-100% - 16px))" : "translateX(0)",
+          transform:
+            isMobile && !open
+              ? "translateX(calc(-100% - 16px))"
+              : "translateX(0)",
           height: "100dvh",
           maxHeight: "100dvh",
           background: "#1f2937",
