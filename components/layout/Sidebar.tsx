@@ -44,6 +44,7 @@ const ICON_MAP: Record<string, string> = {
   "/admin/events": "📅",
   "/admin/agenda": "📅",
   "/admin/announcements": "📣",
+  "/admin/photos": "📸",
   "/admin/attendees": "👥",
   "/admin/checkin": "🪪",
   "/admin/parking": "🅿️",
@@ -504,6 +505,10 @@ export default function Sidebar() {
         hasPermission(adminAccess, "can_manage_announcements") && {
           label: "Announcements",
           href: "/admin/announcements",
+        },
+        hasPermission(adminAccess, "can_manage_reports") && {
+          label: "Photos",
+          href: "/admin/photos",
         },
         hasPermission(adminAccess, "can_manage_master_maps") && {
           label: "Map Admin",

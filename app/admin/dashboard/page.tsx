@@ -197,6 +197,12 @@ const adminCards = [
     permission: "can_manage_reports",
   },
   {
+    title: "Photos",
+    description: "Review, approve, reject, and manage member photo uploads.",
+    href: "/admin/photos",
+    permission: "can_manage_reports",
+  },
+  {
     title: "Event Staff",
     description: "Assign event staff and manage role-based permissions.",
     href: "/admin/event-staff",
