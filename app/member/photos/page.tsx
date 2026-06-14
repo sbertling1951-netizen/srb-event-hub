@@ -56,35 +56,11 @@ export default function MemberPhotosPage() {
       return;
     }
 
-    console.log("UPLOADS FOUND", data);
-
     const photos = await Promise.all(
       ((data || []) as UploadedPhoto[]).map(async (photo) => {
-        console.log("CHECKING FILE", JSON.stringify(photo.storage_path));
-        const { data: fileCheck, error: fileCheckError } =
-          await supabase.storage
-            .from("event-photos")
-            .list(
-              photo.storage_path.substring(
-                0,
-                photo.storage_path.lastIndexOf("/"),
-              ),
-            );
-
-        console.log("FILE CHECK", {
-          fileCheck,
-          fileCheckError,
-        });
-
         const { data: signed, error: signedError } = await supabase.storage
           .from("event-photos")
           .createSignedUrl(photo.storage_path, 60 * 60);
-
-        console.log("SIGNED URL", {
-          path: photo.storage_path,
-          signed,
-          signedError,
-        });
 
         return {
           ...photo,
@@ -112,36 +88,20 @@ export default function MemberPhotosPage() {
       setError(null);
       setStatus("Uploading photo...");
 
-      console.log("UPLOAD START", {
-        fileName: file.name,
-        size: file.size,
-        type: file.type,
-        eventId: event.id,
-        attendeeId,
-      });
-
       const extension = file.name.split(".").pop() || "jpg";
 
       const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
       const fileName = `${event.id}/${attendeeId}/${uniqueId}.${extension}`;
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      console.log("SESSION USER", session?.user?.id);
-      console.log("BEFORE STORAGE UPLOAD");
 
       const { error: uploadError } = await supabase.storage
         .from("event-photos")
         .upload(fileName, file);
-      console.log("AFTER STORAGE UPLOAD", uploadError);
 
       if (uploadError) {
         throw uploadError;
       }
 
-      console.log("BEFORE DB INSERT");
       const { error: insertError } = await supabase
         .from("event_photos")
         .insert({
@@ -151,7 +111,6 @@ export default function MemberPhotosPage() {
           photo_status: "pending",
           caption_status: "pending",
         });
-      console.log("AFTER DB INSERT", insertError);
 
       if (insertError) {
         throw insertError;
@@ -247,12 +206,21 @@ export default function MemberPhotosPage() {
 
                     <div
                       style={{
-                        fontSize: 12,
-                        opacity: 0.7,
-                        wordBreak: "break-all",
+                        marginTop: 8,
+                        display: "flex",
+                        gap: 8,
                       }}
                     >
-                      {photo.storage_path}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (photo.imageUrl) {
+                            window.open(photo.imageUrl, "_blank");
+                          }
+                        }}
+                      >
+                        View
+                      </button>
                     </div>
                   </>
                 </div>
