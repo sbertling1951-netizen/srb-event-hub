@@ -1,8 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 export default function AdminSlideshowPage() {
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "epic_slideshow_current",
+      String(currentSlide),
+    );
+  }, [currentSlide]);
+
   return (
     <div
       style={{
@@ -47,7 +57,19 @@ export default function AdminSlideshowPage() {
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <button>Previous</button> <button>Pause</button> <button>Next</button>
+        <button
+          onClick={() => setCurrentSlide((s) => Math.max(0, s - 1))}
+        >
+          Previous
+        </button>{" "}
+        <button>Pause</button>{" "}
+        <button onClick={() => setCurrentSlide((s) => s + 1)}>
+          Next
+        </button>
+      </div>
+
+      <div style={{ marginTop: 12, opacity: 0.8 }}>
+        Current Slide: {currentSlide}
       </div>
 
       <div style={{ marginTop: 24 }}>
