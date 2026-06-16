@@ -17,15 +17,22 @@ export default function MemberPhotosPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [memberCaption, setMemberCaption] = useState("");
+  const [memberName, setMemberName] = useState("");
 
   type UploadedPhoto = {
     id: string;
     storage_path: string;
     photo_status: string;
     uploaded_at: string;
+    member_caption?: string | null;
     imageUrl?: string;
+    pendingLocal?: boolean;
   };
   const [uploads, setUploads] = useState<UploadedPhoto[]>([]);
+  const [uploadTotal, setUploadTotal] = useState(0);
+  const [uploadCompleted, setUploadCompleted] = useState(0);
 
   useEffect(() => {
     const currentEvent = getCurrentMemberEvent();
@@ -41,13 +48,32 @@ export default function MemberPhotosPage() {
       void loadUploads(storedAttendeeId);
     }
 
+    if (storedAttendeeId) {
+      void (async () => {
+        const { data } = await supabase
+          .from("attendees")
+          .select("pilot_first, pilot_last")
+          .eq("id", storedAttendeeId)
+          .maybeSingle();
+
+        if (data) {
+          const fullName = [data.pilot_first, data.pilot_last]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+
+          setMemberName(fullName);
+        }
+      })();
+    }
+
     void supabase;
   }, []);
 
   async function loadUploads(attendeeId: string) {
     const { data, error } = await supabase
       .from("event_photos")
-      .select("id, storage_path, photo_status, uploaded_at")
+      .select("id, storage_path, photo_status, uploaded_at, member_caption")
       .eq("attendee_id", attendeeId)
       .order("uploaded_at", { ascending: false });
 
@@ -70,6 +96,22 @@ export default function MemberPhotosPage() {
     );
 
     setUploads(photos);
+  }
+
+  async function refreshUploads() {
+    if (!attendeeId) {
+      return;
+    }
+
+    try {
+      setRefreshing(true);
+      setError(null);
+      await loadUploads(attendeeId);
+    } catch (err) {
+      setError("Unable to refresh. Check connection.");
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function uploadPhoto(file: File) {
@@ -113,20 +155,30 @@ export default function MemberPhotosPage() {
         .insert({
           event_id: event.id,
           attendee_id: attendeeId,
+          photographer_name_snapshot: memberName || null,
           storage_path: fileName,
           photo_status: "pending",
-          caption_status: "pending",
+          caption_status: memberCaption.trim() ? "pending" : "pending",
+          member_caption: memberCaption.trim() || null,
         });
 
       if (insertError) {
         throw insertError;
       }
 
-      // Removed: await loadUploads(attendeeId);
+      setUploadCompleted((prev) => prev + 1);
+      await loadUploads(attendeeId);
     } catch (err) {
-      console.error("photo upload error:", err);
+      console.error(
+        "photo upload error:",
+        JSON.stringify(err, null, 2),
+      );
 
-      setError(err instanceof Error ? err.message : "Could not upload photo.");
+      setError(
+        typeof err === "object" && err !== null
+          ? JSON.stringify(err, null, 2)
+          : String(err),
+      );
 
       setStatus("");
     }
@@ -186,6 +238,38 @@ export default function MemberPhotosPage() {
         <div style={{ marginBottom: 8, fontWeight: 600 }}>
           Select one or more photos from your Photo Library or take a new photo.
         </div>
+        <div style={{ marginBottom: 12 }}>
+          <label
+            style={{
+              display: "block",
+              fontWeight: 600,
+              marginBottom: 4,
+            }}
+          >
+            Batch Upload Caption (optional)
+          </label>
+          <textarea
+            value={memberCaption}
+            onChange={(e) => setMemberCaption(e.target.value)}
+            placeholder="This caption will be attached to every photo selected in this upload."
+            rows={3}
+            style={{
+              width: "100%",
+              padding: 8,
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+            }}
+          />
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 12,
+              color: "#64748b",
+            }}
+          >
+            Useful when uploading multiple photos from the same activity, meal, tour, or event.
+          </div>
+        </div>
         <input
           type="file"
           accept="image/*"
@@ -200,6 +284,8 @@ export default function MemberPhotosPage() {
             void (async () => {
               setUploading(true);
               setError(null);
+              setUploadTotal(files.length);
+              setUploadCompleted(0);
 
               for (let i = 0; i < files.length; i += 1) {
                 setStatus(
@@ -209,16 +295,71 @@ export default function MemberPhotosPage() {
                 await uploadPhoto(files[i]);
               }
 
-              await loadUploads(attendeeId);
-
               setStatus(`Successfully uploaded ${files.length} photo(s).`);
+              setMemberCaption("");
               setUploading(false);
+              setUploadTotal(0);
+              setUploadCompleted(0);
             })();
           }}
         />
         {status && (
           <div style={{ marginTop: 8, color: "#2563eb", fontWeight: 600 }}>
             {status}
+          </div>
+        )}
+
+        {uploading && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 12,
+              borderRadius: 8,
+              background: "#eff6ff",
+              border: "1px solid #93c5fd",
+            }}
+          >
+            <div style={{ fontWeight: 700 }}>
+              Please keep this page open until all uploads complete.
+            </div>
+            <div style={{ marginTop: 6 }}>
+              Uploaded: {uploadCompleted} of {uploadTotal}
+            </div>
+            <div>
+              Remaining: {Math.max(uploadTotal - uploadCompleted, 0)}
+            </div>
+            <div
+              style={{
+                marginTop: 10,
+                width: "100%",
+                height: 16,
+                background: "#dbeafe",
+                borderRadius: 999,
+                overflow: "hidden",
+                border: "1px solid #93c5fd",
+              }}
+            >
+              <div
+                style={{
+                  width: `${uploadTotal > 0 ? (uploadCompleted / uploadTotal) * 100 : 0}%`,
+                  height: "100%",
+                  background: "#2563eb",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                textAlign: "center",
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              {uploadTotal > 0
+                ? Math.round((uploadCompleted / uploadTotal) * 100)
+                : 0}% Complete
+            </div>
           </div>
         )}
 
@@ -232,7 +373,44 @@ export default function MemberPhotosPage() {
         </div>
 
         <div style={{ marginTop: 20 }}>
-          <h3>My Uploads</h3>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <div>
+              <h3 style={{ margin: 0 }}>My Uploads</h3>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "#374151",
+                  marginTop: 4,
+                }}
+              >
+                {
+                  uploads.filter(
+                    (photo) => photo.photo_status !== "pending",
+                  ).length
+                }{" "}
+                of {uploads.length} Reviewed
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={refreshing}
+              onClick={() => {
+                void refreshUploads();
+              }}
+            >
+              {refreshing ? "⟳ Refreshing..." : "↻ Refresh"}
+            </button>
+          </div>
 
           {uploads.length === 0 ? (
             <p>No photos uploaded yet.</p>
@@ -259,6 +437,7 @@ export default function MemberPhotosPage() {
                     <strong>Uploaded:</strong>{" "}
                     {new Date(photo.uploaded_at).toLocaleString()}
                   </div>
+
 
                   <>
                     <div
@@ -290,19 +469,36 @@ export default function MemberPhotosPage() {
                       )}
                     </div>
                     {photo.imageUrl && (
-                      <img
-                        src={photo.imageUrl}
-                        alt="Uploaded photo"
-                        style={{
-                          width: 120,
-                          height: 120,
-                          objectFit: "cover",
-                          borderRadius: 8,
-                          display: "block",
-                          marginTop: 8,
-                          marginBottom: 8,
-                        }}
-                      />
+                      <>
+                        <img
+                          src={photo.imageUrl}
+                          alt="Uploaded photo"
+                          style={{
+                            width: 120,
+                            height: 120,
+                            objectFit: "cover",
+                            borderRadius: 8,
+                            display: "block",
+                            marginTop: 8,
+                            marginBottom: 8,
+                          }}
+                        />
+                        <div style={{ marginTop: 8 }}>
+                          <strong>Caption:</strong>
+                          <div
+                            style={{
+                              marginTop: 4,
+                              padding: 8,
+                              background: "#f8fafc",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: 8,
+                              color: "#334155",
+                            }}
+                          >
+                            {photo.member_caption?.trim() || "No caption added."}
+                          </div>
+                        </div>
+                      </>
                     )}
                   </>
                 </div>
