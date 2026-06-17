@@ -9,6 +9,8 @@ import { supabase } from "@/lib/supabase";
 export default function AdminPhotosPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [totalSubmitted, setTotalSubmitted] = useState(0);
+  const [approvedCount, setApprovedCount] = useState(0);
+  const [rejectedCount, setRejectedCount] = useState(0);
 
   type PendingPhoto = {
     id: string;
@@ -159,6 +161,19 @@ export default function AdminPhotosPage() {
 
     setTotalSubmitted(totalCount || 0);
 
+    const { count: approvedTotal } = await supabase
+      .from("event_photos")
+      .select("id", { count: "exact", head: true })
+      .eq("photo_status", "approved");
+
+    const { count: rejectedTotal } = await supabase
+      .from("event_photos")
+      .select("id", { count: "exact", head: true })
+      .eq("photo_status", "rejected");
+
+    setApprovedCount(approvedTotal || 0);
+    setRejectedCount(rejectedTotal || 0);
+
     const { data, error } = await supabase
       .from("event_photos")
       .select(
@@ -213,18 +228,26 @@ export default function AdminPhotosPage() {
           parentLabel="Events"
         />
         <h1>Admin Photos</h1>
-        <p>
-          Pending Photos: {pendingCount} of {totalSubmitted}
-        </p>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: 12,
+            marginTop: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div><strong>Submitted</strong><br />{totalSubmitted}</div>
+          <div><strong>Approved</strong><br />{approvedCount}</div>
+          <div><strong>Rejected</strong><br />{rejectedCount}</div>
+          <div><strong>Pending</strong><br />{pendingCount}</div>
+        </div>
         <p style={{ opacity: 0.8 }}>
           Click any photo to review, approve, or reject. Reviewed photos are
           removed from the queue.
         </p>
         <div style={{ marginTop: 12, fontWeight: 600 }}>
-          {pendingCount} of {totalSubmitted} Remaining
-        </div>
-        <div style={{ marginTop: 4, opacity: 0.8 }}>
-          {totalSubmitted - pendingCount} Reviewed
+          {pendingCount} Remaining For Review
         </div>
         <div style={{ marginTop: 12 }}>
           <a
@@ -240,6 +263,21 @@ export default function AdminPhotosPage() {
             }}
           >
             Launch Slideshow
+          </a>
+          <a
+            href="/admin/photo-library"
+            style={{
+              display: "inline-block",
+              marginLeft: 12,
+              padding: "8px 14px",
+              backgroundColor: "#475569",
+              color: "white",
+              borderRadius: 6,
+              textDecoration: "none",
+              fontWeight: 600,
+            }}
+          >
+            Photo Library
           </a>
         </div>
         <div
@@ -346,9 +384,26 @@ export default function AdminPhotosPage() {
                 {selectedPhoto.member_name || "Unknown"}
               </div>
 
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 10,
+                  background: "#f8fafc",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 8,
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                  Member Caption
+                </div>
+                <div style={{ color: "#334155" }}>
+                  {selectedPhoto.member_caption?.trim() || "(No member caption provided)"}
+                </div>
+              </div>
+
               <div style={{ marginTop: 6 }}>
                 <label>
-                  <strong>Caption</strong>
+                  <strong>Admin Caption</strong>
                 </label>
                 <textarea
                   value={captionText}
@@ -356,6 +411,16 @@ export default function AdminPhotosPage() {
                   rows={3}
                   style={{ width: "100%", marginTop: 4 }}
                 />
+              </div>
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 12,
+                  color: "#64748b",
+                }}
+              >
+                Member captions require admin review before being shown in the slideshow.
+                Admin caption may be used to replace or improve the submitted caption.
               </div>
 
               <label style={{ display: "block", marginTop: 6 }}>

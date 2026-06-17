@@ -1400,3 +1400,24 @@ body.coach-map-pinching [data-coach-map-status="true"] {
 body.admin-map-workspace .app-inner {
   max-width: none !important;
 }
+
+/* ===== SLIDESHOW VIEWER FULL SCREEN MODE ===== */
+body.slideshow-view-mode .app-sidebar,
+body.slideshow-view-mode aside {
+  display: none !important;
+}
+
+body.slideshow-view-mode .app-main {
+  margin-left: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+body.slideshow-view-mode .app-inner {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+body.slideshow-view-mode .app-header-card {
+  display: none !important;
+}

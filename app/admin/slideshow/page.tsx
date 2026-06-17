@@ -7,10 +7,7 @@ export default function AdminSlideshowPage() {
   const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
-    localStorage.setItem(
-      "epic_slideshow_current",
-      String(currentSlide),
-    );
+    localStorage.setItem("epic_slideshow_current", String(currentSlide));
   }, [currentSlide]);
 
   return (
@@ -24,6 +21,16 @@ export default function AdminSlideshowPage() {
     >
       <h1>Slideshow Presenter</h1>
       <p>V1 Presenter Console</p>
+      <p
+        style={{
+          color: "#fbbf24",
+          marginTop: 8,
+          marginBottom: 16,
+        }}
+      >
+        Presenter preview panels are not implemented yet. Use the Audience
+        Screen link below for the live slideshow.
+      </p>
 
       <div
         style={{
@@ -42,6 +49,9 @@ export default function AdminSlideshowPage() {
           }}
         >
           <h3>Current Photo</h3>
+          <div style={{ opacity: 0.6, marginTop: 12 }}>
+            Preview not yet connected to slideshow data.
+          </div>
         </div>
 
         <div
@@ -53,19 +63,18 @@ export default function AdminSlideshowPage() {
           }}
         >
           <h3>Next Photo</h3>
+          <div style={{ opacity: 0.6, marginTop: 12 }}>
+            Next-photo preview not yet connected.
+          </div>
         </div>
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <button
-          onClick={() => setCurrentSlide((s) => Math.max(0, s - 1))}
-        >
+        <button onClick={() => setCurrentSlide((s) => Math.max(0, s - 1))}>
           Previous
         </button>{" "}
         <button>Pause</button>{" "}
-        <button onClick={() => setCurrentSlide((s) => s + 1)}>
-          Next
-        </button>
+        <button onClick={() => setCurrentSlide((s) => s + 1)}>Next</button>
       </div>
 
       <div style={{ marginTop: 12, opacity: 0.8 }}>

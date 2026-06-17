@@ -45,7 +45,7 @@ export type AdminAccessResult = {
 };
 
 const ADMIN_ACCESS_CACHE_TTL_MS = 1000 * 60 * 30;
-const ADMIN_ACCESS_TIMEOUT_MS = 8000;
+const ADMIN_ACCESS_TIMEOUT_MS = 15000;
 
 let inflightAdminAccess: Promise<AdminAccessResult | null> | null = null;
 
@@ -199,6 +199,7 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
       let adminUser: AdminUserAccessRow | null = null;
 
       {
+        console.log("[ADMIN] Looking up admin user", user.id);
         const { data } = await withTimeout(
           supabase
             .from("admin_users")
@@ -208,6 +209,7 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
             .maybeSingle(),
           "Admin user lookup",
         );
+        console.log("[ADMIN] Admin user lookup complete");
 
         adminUser = data as AdminUserAccessRow | null;
       }
