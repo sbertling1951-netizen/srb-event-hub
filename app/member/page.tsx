@@ -250,6 +250,14 @@ export default function MemberDashboardPage() {
 
         <button
           type="button"
+          onClick={() => goTo("/member/evaluation")}
+          style={memberGridButtonStyle}
+        >
+          📝 Evaluation
+        </button>
+
+        <button
+          type="button"
           onClick={() => goTo("/member/attendees")}
           style={memberGridButtonStyle}
         >

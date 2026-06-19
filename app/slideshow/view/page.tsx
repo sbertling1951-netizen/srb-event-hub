@@ -13,16 +13,83 @@ export default function SlideshowViewPage() {
     url: string;
     member_caption: string | null;
     admin_caption: string | null;
+    photographer_name_snapshot: string | null;
     show_caption: boolean;
+    featured_level: number;
   };
 
   const [photos, setPhotos] = useState<SlidePhoto[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Publishes the current and next photo/caption state to epix-presentation-state
+  const publishViewerState = (currentIdx: number) => {
+    try {
+      const current = photos[currentIdx];
+
+      const nextIdx =
+        photos.length > 1
+          ? (currentIdx + 1) % photos.length
+          : currentIdx;
+
+      const next = photos[nextIdx];
+
+      const raw = localStorage.getItem("epix-presentation-state");
+      const existing = raw ? JSON.parse(raw) : {};
+
+      localStorage.setItem(
+        "epix-presentation-state",
+        JSON.stringify({
+          ...existing,
+          currentIndex: currentIdx,
+          currentPhotoUrl: current?.url ?? null,
+          currentCaption:
+            current?.admin_caption?.trim() ||
+            current?.member_caption?.trim() ||
+            "",
+          nextIndex: nextIdx,
+          nextPhotoUrl: next?.url ?? null,
+          nextCaption:
+            next?.admin_caption?.trim() ||
+            next?.member_caption?.trim() ||
+            "",
+          totalSlides: photos.length,
+          paused: pausedRef.current,
+          historyMode: historyModeRef.current,
+        }),
+      );
+    } catch (error) {
+      console.error("Publish viewer state failed", error);
+    }
+  };
+
+  const showSlide = (index: number) => {
+    setCurrentIndex(index);
+
+    const history = slideHistoryRef.current;
+
+    if (historyPositionRef.current < history.length - 1) {
+      history.splice(historyPositionRef.current + 1);
+    }
+
+    history.push(index);
+    historyPositionRef.current = history.length - 1;
+  };
+
   const [imagesReady, setImagesReady] = useState(false);
   const [preloadedCount, setPreloadedCount] = useState(0);
   const [totalSlides, setTotalSlides] = useState(0);
+  const recentSlidesRef = useRef<number[]>([]);
+  const featuredCooldownRef = useRef<Record<number, number>>({});
   const [showCursor, setShowCursor] = useState(true);
   const cursorTimerRef = useRef<number | null>(null);
+  const wakeLockRef = useRef<any>(null);
+
+  const lastCommandAtRef = useRef<number>(0);
+  const pausedRef = useRef(false);
+  const slideHistoryRef = useRef<number[]>([]);
+  const historyPositionRef = useRef(-1);
+  const historyModeRef = useRef(false);
+  const livePositionRef = useRef(0);
 
   useLayoutEffect(() => {
     document.body.classList.add("slideshow-view-mode");
@@ -94,7 +161,7 @@ export default function SlideshowViewPage() {
 
       const { data, error } = await supabase
         .from("event_photos")
-        .select("id, storage_path, member_caption, admin_caption, show_caption")
+        .select("id, storage_path, member_caption, admin_caption, photographer_name_snapshot, show_caption, featured_level")
         .eq("event_id", eventId)
         .eq("photo_status", "approved")
         .order("uploaded_at", { ascending: true })
@@ -126,7 +193,9 @@ export default function SlideshowViewPage() {
             url: signed.signedUrl,
             member_caption: photo.member_caption,
             admin_caption: photo.admin_caption,
+            photographer_name_snapshot: photo.photographer_name_snapshot,
             show_caption: photo.show_caption ?? false,
+            featured_level: photo.featured_level ?? 0,
           });
         } else {
           console.log("FAILED SIGN URL:", photo.storage_path);
@@ -159,7 +228,13 @@ export default function SlideshowViewPage() {
       );
 
       setPhotos(slides);
+      slideHistoryRef.current = [0];
+      historyPositionRef.current = 0;
       setCurrentIndex(0);
+      setTimeout(() => publishViewerState(0), 100);
+      livePositionRef.current = 0;
+      historyModeRef.current = false;
+      pausedRef.current = false;
       setImagesReady(true);
       setStatus(`Loaded and preloaded ${slides.length} approved photos`);
     }
@@ -168,24 +243,286 @@ export default function SlideshowViewPage() {
   }, [eventId]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    async function requestWakeLock() {
+      try {
+        if (
+          imagesReady &&
+          photos.length > 0 &&
+          "wakeLock" in navigator
+        ) {
+          wakeLockRef.current = await (navigator as any).wakeLock.request("screen");
+
+          wakeLockRef.current?.addEventListener?.("release", () => {
+            console.log("Wake Lock released");
+          });
+
+          console.log("Wake Lock active");
+        }
+      } catch (error: any) {
+        if (error?.name === "NotAllowedError") {
+          console.log("Wake Lock unavailable in this browser");
+        } else {
+          console.error("Wake Lock failed:", error);
+        }
+      }
+    }
+
+    void requestWakeLock();
+
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" &&
+        isMounted &&
+        imagesReady &&
+        photos.length > 0
+      ) {
+        void requestWakeLock();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+
+      if (wakeLockRef.current) {
+        void wakeLockRef.current.release();
+        wakeLockRef.current = null;
+      }
+    };
+  }, [imagesReady, photos.length]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      try {
+        const raw = localStorage.getItem("epix-presentation-state");
+        if (!raw) return;
+
+        const state = JSON.parse(raw);
+        const commandAt = Number(state.commandAt ?? 0);
+
+        if (!commandAt || commandAt <= lastCommandAtRef.current) {
+          return;
+        }
+
+        lastCommandAtRef.current = commandAt;
+
+        // Update paused and historyMode refs from state
+        pausedRef.current = state.paused === true;
+        historyModeRef.current = state.historyMode === true;
+
+        switch (state.command) {
+          case "previous": {
+            const history = slideHistoryRef.current;
+
+            if (!historyModeRef.current) {
+              historyModeRef.current = true;
+              pausedRef.current = true;
+              // Publish back updated state
+              localStorage.setItem(
+                "epix-presentation-state",
+                JSON.stringify({
+                  ...state,
+                  paused: true,
+                  historyMode: true,
+                  commandAt: Date.now(),
+                }),
+              );
+            }
+
+            if (history.length > 1 && historyPositionRef.current > 0) {
+              historyPositionRef.current -= 1;
+              setCurrentIndex(history[historyPositionRef.current]);
+            }
+
+            break;
+          }
+
+          case "next": {
+            const history = slideHistoryRef.current;
+
+            if (historyModeRef.current) {
+              if (historyPositionRef.current < history.length - 1) {
+                historyPositionRef.current += 1;
+                setCurrentIndex(history[historyPositionRef.current]);
+              }
+
+              break;
+            }
+
+            const recent = recentSlidesRef.current;
+            const cooldownSize = Math.min(10, Math.floor(photos.length / 5));
+
+            const candidates = photos
+              .map((photo, index) => ({ photo, index }))
+              .filter(({ index }) => !recent.includes(index));
+
+            const usable =
+              candidates.length > 0
+                ? candidates
+                : photos.map((photo, index) => ({ photo, index }));
+
+            const weightedPool: number[] = [];
+
+            usable.forEach(({ photo, index }) => {
+              const lastShown = featuredCooldownRef.current[index] ?? -9999;
+              const slidesSinceShown = slideHistoryRef.current.length - lastShown;
+
+              let weight = 1;
+
+              if (photo.featured_level === 3) {
+                weight = slidesSinceShown < 25 ? 0 : 8;
+              } else if (photo.featured_level === 2) {
+                weight = slidesSinceShown < 50 ? 0 : 4;
+              } else if (photo.featured_level === 1) {
+                weight = slidesSinceShown < 100 ? 0 : 2;
+              }
+
+              weight = Math.max(weight, photo.featured_level === 0 ? 1 : 0);
+
+              for (let i = 0; i < weight; i++) {
+                weightedPool.push(index);
+              }
+            });
+
+            // Safety fallback: if all featured are on cooldown, use all usable
+            if (weightedPool.length === 0) {
+              usable.forEach(({ index }) => weightedPool.push(index));
+            }
+
+            const nextIndex =
+              weightedPool[Math.floor(Math.random() * weightedPool.length)];
+
+            featuredCooldownRef.current[nextIndex] = slideHistoryRef.current.length;
+
+            recent.push(nextIndex);
+
+            while (recent.length > cooldownSize) {
+              recent.shift();
+            }
+
+            showSlide(nextIndex);
+
+            break;
+          }
+
+          case "pause":
+            pausedRef.current = true;
+            break;
+
+          case "resume":
+            historyModeRef.current = false;
+            pausedRef.current = false;
+
+            // Publish back updated state
+            localStorage.setItem(
+              "epix-presentation-state",
+              JSON.stringify({
+                ...state,
+                paused: false,
+                historyMode: false,
+                commandAt: Date.now(),
+              }),
+            );
+
+            if (slideHistoryRef.current.length > 0) {
+              historyPositionRef.current = slideHistoryRef.current.length - 1;
+              setCurrentIndex(slideHistoryRef.current[historyPositionRef.current]);
+            }
+
+            break;
+        }
+      } catch (error) {
+        console.error("Presentation command error", error);
+      }
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [photos.length]);
+
+  useEffect(() => {
     if (!imagesReady || photos.length <= 1) {
       return;
     }
 
-    const timer = window.setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % photos.length);
-    }, 8000);
+    const pickNextSlide = () => {
+      if (pausedRef.current) {
+        return;
+      }
+
+      const recent = recentSlidesRef.current;
+      const cooldownSize = Math.min(10, Math.floor(photos.length / 5));
+
+      const candidates = photos
+        .map((photo, index) => ({ photo, index }))
+        .filter(({ index }) => !recent.includes(index));
+
+      const usable = candidates.length > 0 ? candidates : photos.map((photo, index) => ({ photo, index }));
+
+      const weightedPool: number[] = [];
+
+      usable.forEach(({ photo, index }) => {
+        const lastShown = featuredCooldownRef.current[index] ?? -9999;
+        const slidesSinceShown = slideHistoryRef.current.length - lastShown;
+
+        let weight = 1;
+
+        if (photo.featured_level === 3) {
+          weight = slidesSinceShown < 25 ? 0 : 8;
+        } else if (photo.featured_level === 2) {
+          weight = slidesSinceShown < 50 ? 0 : 4;
+        } else if (photo.featured_level === 1) {
+          weight = slidesSinceShown < 100 ? 0 : 2;
+        }
+
+        weight = Math.max(weight, photo.featured_level === 0 ? 1 : 0);
+
+        for (let i = 0; i < weight; i++) {
+          weightedPool.push(index);
+        }
+      });
+
+      // Safety fallback: if all featured are on cooldown, use all usable
+      if (weightedPool.length === 0) {
+        usable.forEach(({ index }) => weightedPool.push(index));
+      }
+
+      const nextIndex = weightedPool[Math.floor(Math.random() * weightedPool.length)];
+
+      featuredCooldownRef.current[nextIndex] = slideHistoryRef.current.length;
+
+      recent.push(nextIndex);
+
+      while (recent.length > cooldownSize) {
+        recent.shift();
+      }
+
+      showSlide(nextIndex);
+      livePositionRef.current = nextIndex;
+    };
+
+    const timer = window.setInterval(pickNextSlide, 8000);
 
     return () => window.clearInterval(timer);
-  }, [imagesReady, photos.length]);
+  }, [imagesReady, photos]);
 
   const currentPhoto = photos[currentIndex] ?? null;
 
+  useEffect(() => {
+    if (photos.length === 0) {
+      return;
+    }
+    publishViewerState(currentIndex);
+  }, [currentIndex, photos]);
+
   const currentCaption = currentPhoto
-    ? currentPhoto.admin_caption?.trim() ||
-      currentPhoto.member_caption?.trim() ||
-      ""
+    ? currentPhoto.admin_caption?.trim() || currentPhoto.member_caption?.trim() || ""
     : "";
+
+  const photographerName = currentPhoto?.photographer_name_snapshot?.trim() || "";
 
   return (
     <div
@@ -259,7 +596,20 @@ export default function SlideshowViewPage() {
                     pointerEvents: "none",
                   }}
                 >
-                  {currentCaption}
+                  <>
+                    <div>{currentCaption}</div>
+                    {photographerName ? (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          fontSize: 18,
+                          opacity: 0.85,
+                        }}
+                      >
+                        Photo by {photographerName}
+                      </div>
+                    ) : null}
+                  </>
                 </div>
               ) : null}
             </div>

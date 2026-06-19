@@ -329,19 +329,39 @@ export default function PhotoLibraryPage() {
               tabIndex={0}
               title="View / Edit"
             >
-              <img
-                src={photo.thumbnailUrl || ""}
-                alt={photo.member_caption || "Photo"}
-                style={{
-                  width: "100%",
-                  maxWidth: 180,
-                  height: 120,
-                  objectFit: "cover",
-                  borderRadius: 4,
-                  marginBottom: 8,
-                  background: "#eee",
-                }}
-              />
+              {photo.thumbnailUrl ? (
+                <img
+                  src={photo.thumbnailUrl}
+                  alt={photo.member_caption || "Photo"}
+                  style={{
+                    width: "100%",
+                    maxWidth: 180,
+                    height: 120,
+                    objectFit: "cover",
+                    borderRadius: 4,
+                    marginBottom: 8,
+                    background: "#eee",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: 180,
+                    height: 120,
+                    borderRadius: 4,
+                    marginBottom: 8,
+                    background: "#eee",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#888",
+                    fontSize: 12,
+                  }}
+                >
+                  No Thumbnail
+                </div>
+              )}
               <div
                 style={{
                   fontSize: 13,
@@ -358,6 +378,16 @@ export default function PhotoLibraryPage() {
                   0,
                   32,
                 )}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "#999",
+                  marginBottom: 4,
+                  fontFamily: "monospace",
+                }}
+              >
+                {photo.id.slice(0, 8)}...
               </div>
               <div style={{ fontSize: 12, color: "#888" }}>
                 {STATUS_LABELS[photo.photo_status]}
@@ -378,18 +408,36 @@ export default function PhotoLibraryPage() {
         <div style={modalOverlayStyle} onClick={closeModal}>
           <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
             <h2 style={{ marginTop: 0, marginBottom: 12 }}>Photo Details</h2>
-            <img
-              src={modalPhoto.fullUrl || modalPhoto.thumbnailUrl || ""}
-              alt={modalPhoto.member_caption || "Photo"}
+            <div
               style={{
-                width: "100%",
-                maxHeight: 260,
-                objectFit: "contain",
-                borderRadius: 6,
-                background: "#f3f3f3",
                 marginBottom: 12,
+                padding: 8,
+                background: "#f7f7f7",
+                borderRadius: 4,
+                fontSize: 12,
               }}
-            />
+            >
+              <div>
+                <strong>Photo ID:</strong> {modalPhoto.id}
+              </div>
+              <div>
+                <strong>Featured Level:</strong> {(modalPhoto as any).featured_level ?? 0}
+              </div>
+            </div>
+            {modalPhoto.fullUrl || modalPhoto.thumbnailUrl ? (
+              <img
+                src={modalPhoto.fullUrl || modalPhoto.thumbnailUrl}
+                alt={modalPhoto.member_caption || "Photo"}
+                style={{
+                  width: "100%",
+                  maxHeight: 260,
+                  objectFit: "contain",
+                  borderRadius: 6,
+                  background: "#f3f3f3",
+                  marginBottom: 12,
+                }}
+              />
+            ) : null}
             <div style={{ marginBottom: 12 }}>
               <label
                 style={{ fontWeight: 500, display: "block", marginBottom: 4 }}

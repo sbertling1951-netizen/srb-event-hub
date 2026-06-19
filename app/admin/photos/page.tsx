@@ -22,6 +22,7 @@ export default function AdminPhotosPage() {
     member_caption?: string;
     admin_caption?: string;
     show_caption?: boolean;
+    featured_level?: number;
     imageUrl?: string;
     reviewImageUrl?: string;
   };
@@ -31,6 +32,7 @@ export default function AdminPhotosPage() {
   const [selectedPhoto, setSelectedPhoto] = useState<PendingPhoto | null>(null);
   const [captionText, setCaptionText] = useState("");
   const [showCaption, setShowCaption] = useState(true);
+  const [featuredLevel, setFeaturedLevel] = useState(0);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [undoData, setUndoData] = useState<{
@@ -45,6 +47,7 @@ export default function AdminPhotosPage() {
     setSelectedPhoto(photo);
     setCaptionText(photo.admin_caption || photo.member_caption || "");
     setShowCaption(photo.show_caption ?? true);
+    setFeaturedLevel(photo.featured_level ?? 0);
   }
 
   async function undoLastAction() {
@@ -83,6 +86,8 @@ export default function AdminPhotosPage() {
         photo_status: status,
         admin_caption: captionText,
         show_caption: showCaption,
+        featured_level: featuredLevel,
+        is_featured: featuredLevel > 0,
       })
       .eq("id", photoId)
       .select();
@@ -177,7 +182,7 @@ export default function AdminPhotosPage() {
     const { data, error } = await supabase
       .from("event_photos")
       .select(
-        "id, storage_path, photo_status, uploaded_at, member_caption, admin_caption, show_caption",
+        "id, storage_path, photo_status, uploaded_at, member_caption, admin_caption, show_caption, featured_level",
       )
       .eq("photo_status", "pending");
 
@@ -431,6 +436,36 @@ export default function AdminPhotosPage() {
                 />{" "}
                 Show Caption In Slideshow
               </label>
+
+              <div style={{ marginTop: 12 }}>
+                <label>
+                  <strong>Featured Level</strong>
+                </label>
+                <select
+                  value={featuredLevel}
+                  onChange={(e) => setFeaturedLevel(Number(e.target.value))}
+                  style={{
+                    display: "block",
+                    marginTop: 4,
+                    padding: "8px",
+                    minWidth: 220,
+                  }}
+                >
+                  <option value={0}>Level 0 - Normal Rotation</option>
+                  <option value={1}>Level 1 - Featured</option>
+                  <option value={2}>Level 2 - More Frequent</option>
+                  <option value={3}>Level 3 - Highest Priority</option>
+                </select>
+              </div>
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: "#64748b",
+                }}
+              >
+                Level 0 = normal slideshow rotation. Levels 1-3 increase display frequency.
+              </div>
 
               <div style={{ marginTop: 8 }}>
                 <button

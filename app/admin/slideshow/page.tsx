@@ -1,14 +1,69 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export default function AdminSlideshowPage() {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [loopMode, setLoopMode] = useState(true);
+  const [maxPhotos, setMaxPhotos] = useState(0);
+  const [presentationState, setPresentationState] = useState<any>(null);
+
+  const viewerPaused =
+    presentationState?.historyMode === true ||
+    presentationState?.paused === true;
+
+  const viewerMode = presentationState?.historyMode
+    ? 'History Mode'
+    : presentationState?.paused
+    ? 'Paused'
+    : 'Live';
+
+  const publishPresentationState = (updates: Record<string, any>) => {
+    try {
+      const existing = localStorage.getItem("epix-presentation-state");
+      const current = existing ? JSON.parse(existing) : {};
+
+      localStorage.setItem(
+        "epix-presentation-state",
+        JSON.stringify({
+          ...current,
+          ...updates,
+          updatedAt: Date.now(),
+        })
+      );
+    } catch (error) {
+      console.error("Failed to publish presentation state", error);
+    }
+  };
 
   useEffect(() => {
-    localStorage.setItem("epic_slideshow_current", String(currentSlide));
-  }, [currentSlide]);
+    publishPresentationState({
+      controllerSlide: currentSlide,
+      paused: isPaused,
+      loopMode,
+      maxPhotos,
+    });
+  }, [currentSlide, isPaused, loopMode, maxPhotos]);
+
+  useEffect(() => {
+    const loadState = () => {
+      try {
+        const raw =
+          localStorage.getItem("epix-presentation-state") ||
+          localStorage.getItem("epic-presentation-state");
+        if (!raw) return;
+        setPresentationState(JSON.parse(raw));
+      } catch {
+        // ignore bad data
+      }
+    };
+
+    loadState();
+
+    const timer = setInterval(loadState, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <div
@@ -21,15 +76,9 @@ export default function AdminSlideshowPage() {
     >
       <h1>Slideshow Presenter</h1>
       <p>V1 Presenter Console</p>
-      <p
-        style={{
-          color: "#fbbf24",
-          marginTop: 8,
-          marginBottom: 16,
-        }}
-      >
-        Presenter preview panels are not implemented yet. Use the Audience
-        Screen link below for the live slideshow.
+      <p style={{ opacity: 0.8 }}>
+        Foundation for future Presentation Profiles, Filters, Runtime Limits,
+        Audience Control, and Presenter View.
       </p>
 
       <div
@@ -49,9 +98,30 @@ export default function AdminSlideshowPage() {
           }}
         >
           <h3>Current Photo</h3>
-          <div style={{ opacity: 0.6, marginTop: 12 }}>
-            Preview not yet connected to slideshow data.
-          </div>
+          {presentationState?.currentPhotoUrl ? (
+            <>
+              <img
+                src={presentationState.currentPhotoUrl}
+                alt="Current"
+                style={{ width: "100%", maxHeight: 220, objectFit: "contain" }}
+              />
+              {presentationState?.currentCaption ? (
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    opacity: 0.85,
+                  }}
+                >
+                  {presentationState.currentCaption}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div style={{ opacity: 0.6, marginTop: 12 }}>
+              Waiting for slideshow data...
+            </div>
+          )}
         </div>
 
         <div
@@ -63,32 +133,139 @@ export default function AdminSlideshowPage() {
           }}
         >
           <h3>Next Photo</h3>
-          <div style={{ opacity: 0.6, marginTop: 12 }}>
-            Next-photo preview not yet connected.
-          </div>
+          {presentationState?.nextPhotoUrl ? (
+            <>
+              <img
+                src={presentationState.nextPhotoUrl}
+                alt="Next"
+                style={{ width: '100%', maxHeight: 220, objectFit: 'contain' }}
+              />
+
+              {presentationState?.nextCaption ? (
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    opacity: 0.85,
+                  }}
+                >
+                  {presentationState.nextCaption}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div style={{ opacity: 0.6, marginTop: 12 }}>
+              Waiting for next-photo data...
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 24,
+          border: '1px solid #444',
+          borderRadius: 8,
+          padding: 16,
+        }}
+      >
+        <h3>Presentation Settings</h3>
+
+        <div style={{ marginTop: 12 }}>
+          <label>
+            Loop Presentation{' '}
+            <input
+              type="checkbox"
+              checked={loopMode}
+              onChange={(e) => setLoopMode(e.target.checked)}
+            />
+          </label>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <label>
+            Max Photos:{' '}
+            <input
+              type="number"
+              value={maxPhotos}
+              min={0}
+              onChange={(e) => setMaxPhotos(Number(e.target.value) || 0)}
+              style={{ width: 100 }}
+            />
+          </label>
+          <span style={{ marginLeft: 8, opacity: 0.7 }}>
+            0 = all approved photos
+          </span>
         </div>
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <button onClick={() => setCurrentSlide((s) => Math.max(0, s - 1))}>
+        <button
+          onClick={() => {
+            setCurrentSlide((s) => Math.max(0, s - 1));
+            publishPresentationState({
+              command: "previous",
+              commandAt: Date.now(),
+            });
+          }}
+        >
           Previous
         </button>{" "}
-        <button>Pause</button>{" "}
-        <button onClick={() => setCurrentSlide((s) => s + 1)}>Next</button>
+        <button
+          onClick={() => {
+            const nextPaused = !viewerPaused;
+            setIsPaused(nextPaused);
+
+            publishPresentationState({
+              command: nextPaused ? "pause" : "resume",
+              paused: nextPaused,
+              historyMode: false,
+              commandAt: Date.now(),
+            });
+          }}
+        >
+          {viewerPaused ? 'Resume' : 'Pause'}
+        </button>{" "}
+        <button
+          onClick={() => {
+            setCurrentSlide((s) => s + 1);
+            publishPresentationState({
+              command: "next",
+              commandAt: Date.now(),
+            });
+          }}
+        >
+          Next
+        </button>
+        <div style={{ marginTop: 8, fontWeight: 'bold' }}>
+          Mode: {viewerMode}
+        </div>
       </div>
 
       <div style={{ marginTop: 12, opacity: 0.8 }}>
-        Current Slide: {currentSlide}
+        Current Slide: {currentSlide}<br />
+        Status: {viewerMode}<br />
+        Loop Mode: {loopMode ? 'Enabled' : 'Disabled'}<br />
+        Max Photos: {maxPhotos === 0 ? 'All' : maxPhotos}<br />
+        Audience Slides: {presentationState?.totalSlides ?? 0}<br />
+        Featured Level: {presentationState?.featuredLevel ?? 0}
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <Link
-          href="/slideshow/view"
-          target="_blank"
-          style={{ color: "#60a5fa" }}
+        <button
+          onClick={() => window.open('/slideshow/view', '_blank')}
+          style={{
+            padding: '10px 16px',
+            cursor: 'pointer',
+            background: '#60a5fa',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '6px',
+            fontWeight: 'bold',
+          }}
         >
           Open Audience Screen
-        </Link>
+        </button>
       </div>
     </div>
   );

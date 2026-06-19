@@ -52,17 +52,21 @@ export default function MemberPhotosPage() {
       void (async () => {
         const { data } = await supabase
           .from("attendees")
-          .select("pilot_first, pilot_last")
+          .select("nickname, badge_first_name, pilot_first, pilot_last")
           .eq("id", storedAttendeeId)
           .maybeSingle();
 
         if (data) {
-          const fullName = [data.pilot_first, data.pilot_last]
-            .filter(Boolean)
-            .join(" ")
-            .trim();
+          const photographerName =
+            data.nickname?.trim() ||
+            data.badge_first_name?.trim() ||
+            data.pilot_first?.trim() ||
+            [data.pilot_first, data.pilot_last]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
 
-          setMemberName(fullName);
+          setMemberName(photographerName || "");
         }
       })();
     }
