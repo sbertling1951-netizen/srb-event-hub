@@ -31,6 +31,7 @@ export default function MemberEvaluationPage() {
   const [currentQuestion, setCurrentQuestion] = useState(1);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [evaluationId, setEvaluationId] = useState<string | null>(null);
+  const [isSubmitted, setIsSubmitted] = useState(false);
   const totalQuestions = 7;
   const progressPercent = Math.round((currentQuestion / totalQuestions) * 100);
 
@@ -49,7 +50,7 @@ export default function MemberEvaluationPage() {
 
       let { data: evaluation, error: lookupError } = await supabase
         .from("event_evaluations")
-        .select("id")
+        .select("id,is_complete")
         .eq("event_id", currentEvent.id)
         .eq("attendee_id", attendeeId)
         .maybeSingle();
@@ -68,7 +69,7 @@ export default function MemberEvaluationPage() {
             event_id: currentEvent.id,
             attendee_id: attendeeId,
           })
-          .select("id")
+          .select("id,is_complete")
           .single();
 
         console.log("Evaluation create result", {
@@ -86,6 +87,7 @@ export default function MemberEvaluationPage() {
       }
 
       setEvaluationId(evaluation.id);
+      setIsSubmitted(Boolean(evaluation.is_complete));
 
       const { data: savedAnswers } = await supabase
         .from("event_evaluation_answers")
@@ -95,11 +97,23 @@ export default function MemberEvaluationPage() {
       if (savedAnswers?.length) {
         const restored: Record<string, any> = {};
 
+        const multiSelectQuestions = ["q2", "q3", "q4"];
+
         savedAnswers.forEach((row: any) => {
           const questionKey =
             QUESTION_KEYS[row.question_id] ?? row.question_id;
 
-          restored[questionKey] = row.answer_text;
+          if (multiSelectQuestions.includes(questionKey)) {
+            try {
+              restored[questionKey] = row.answer_text
+                ? JSON.parse(row.answer_text)
+                : [];
+            } catch {
+              restored[questionKey] = [];
+            }
+          } else {
+            restored[questionKey] = row.answer_text;
+          }
 
           if (row.comment_text) {
             restored[`${questionKey}_comment`] = row.comment_text;
@@ -118,10 +132,6 @@ export default function MemberEvaluationPage() {
       return;
     }
 
-    if (key.endsWith("_comment")) {
-      return;
-    }
-
     console.log("saveAnswer", {
       key,
       value,
@@ -129,15 +139,24 @@ export default function MemberEvaluationPage() {
     });
 
     try {
+      const isComment = key.endsWith("_comment");
+      const baseKey = isComment ? key.replace("_comment", "") : key;
       const { data, error } = await supabase
         .from("event_evaluation_answers")
         .upsert(
           {
             evaluation_id: evaluationId,
-            question_id: QUESTION_IDS[key as keyof typeof QUESTION_IDS] ?? key,
-            answer_text: Array.isArray(value)
-              ? JSON.stringify(value)
-              : String(value ?? ""),
+            question_id:
+              QUESTION_IDS[baseKey as keyof typeof QUESTION_IDS] ?? baseKey,
+            ...(isComment
+              ? {
+                  comment_text: String(value ?? ""),
+                }
+              : {
+                  answer_text: Array.isArray(value)
+                    ? JSON.stringify(value)
+                    : String(value ?? ""),
+                }),
           },
           {
             onConflict: "evaluation_id,question_id",
@@ -148,6 +167,8 @@ export default function MemberEvaluationPage() {
         data,
         error,
         key,
+        baseKey,
+        isComment,
         evaluationId,
       });
     } catch (error) {
@@ -166,14 +187,15 @@ export default function MemberEvaluationPage() {
 
   const toggleCheckbox = (questionKey: string, choice: string) => {
     const current = answers[questionKey] ?? [];
+    const normalizedCurrent = Array.isArray(current) ? current : [];
 
-    if (current.includes(choice)) {
+    if (normalizedCurrent.includes(choice)) {
       updateAnswer(
         questionKey,
-        current.filter((item: string) => item !== choice),
+        normalizedCurrent.filter((item: string) => item !== choice),
       );
     } else {
-      updateAnswer(questionKey, [...current, choice]);
+      updateAnswer(questionKey, [...normalizedCurrent, choice]);
     }
   };
 
@@ -189,6 +211,44 @@ export default function MemberEvaluationPage() {
     }
   };
 
+  // Option card reusable style
+  const optionCardClass = (selected: boolean) =>
+    `evaluation-option-card ${selected ? "evaluation-option-card-selected" : ""}`;
+
+  // Q4 split choices
+  const q4TopChoices = [
+    "More Technical Content",
+    "More Social Activities",
+    "More Vendor Participation",
+    "More Coach Tours",
+    "More Local Tours",
+    "More Entertainment",
+  ];
+  const q4BottomChoices = [
+    "More Free Time",
+    "More Freightliner Topics",
+    "Other",
+  ];
+
+  // Option card style override (diagnostic)
+  const optionCardStyle = (selected: boolean) => ({
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    width: "auto",
+    flex: "1 1 0",
+    minHeight: "56px",
+    padding: "12px 16px",
+    borderRadius: "10px",
+    border: selected ? "2px solid #2563eb" : "2px solid #d1d5db",
+    backgroundColor: selected ? "#eff6ff" : "#ffffff",
+    cursor: "pointer",
+    marginBottom: "0px",
+    boxShadow: selected
+      ? "0 2px 6px rgba(37,99,235,0.25)"
+      : "0 1px 3px rgba(0,0,0,0.08)",
+  });
+
   return (
     <div className="w-full p-6 space-y-8">
       <div>
@@ -203,6 +263,9 @@ export default function MemberEvaluationPage() {
           <div>
             <div className="text-sm font-medium mb-2">
               Question {currentQuestion} of {totalQuestions}
+            </div>
+            <div className="text-sm mb-2">
+              Progress = {progressPercent}%
             </div>
 
             <div
@@ -220,8 +283,13 @@ export default function MemberEvaluationPage() {
             >
               {" "}
               <div
-                className="bg-blue-600 h-full rounded-full transition-all"
-                style={{ width: `${progressPercent}%` }}
+                style={{
+                  width: `${progressPercent}%`,
+                  height: "100%",
+                  backgroundColor: "#2563eb",
+                  borderRadius: "14px",
+                  transition: "width 0.3s ease",
+                }}
               />
             </div>
           </div>
@@ -231,12 +299,13 @@ export default function MemberEvaluationPage() {
               <h2 className="font-semibold mb-4">
                 What was your overall impression of this event?
               </h2>
-              <div className="space-y-4 mb-6 pl-2">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
                 {["Excellent", "Very Good", "Good", "Fair", "Poor"].map(
                   (choice) => (
                     <label
                       key={choice}
-                      className="flex items-center gap-2 text-base"
+                      className={optionCardClass(answers.q1 === choice)}
+                      style={{ ...optionCardStyle(answers.q1 === choice), minHeight: "48px", padding: "10px 12px" }}
                     >
                       <input
                         type="radio"
@@ -267,27 +336,33 @@ export default function MemberEvaluationPage() {
               <h2 className="font-semibold mb-4">
                 What parts of the event provided the most value?
               </h2>
-              {[
-                "Technical Seminars",
-                "Social Activities",
-                "Friendships & Camaraderie",
-                "Vendor Displays",
-                "Coach Tours",
-                "Local Tours",
-                "Entertainment",
-                "Meals",
-                "Other",
-              ].map((choice) => (
-                <label key={choice} className="flex items-center gap-2 mb-3">
-                  <input
-                    type="checkbox"
-                    checked={Boolean((answers.q2 ?? []).includes(choice))}
-                    value={choice}
-                    onChange={() => toggleCheckbox("q2", choice)}
-                  />
-                  {choice}
-                </label>
-              ))}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
+                {[
+                  "Technical Seminars",
+                  "Social Activities",
+                  "Friendships & Camaraderie",
+                  "Vendor Displays",
+                  "Coach Tours",
+                  "Local Tours",
+                  "Entertainment",
+                  "Meals",
+                  "Other",
+                ].map((choice) => (
+                  <label
+                    key={choice}
+                    className={optionCardClass((answers.q2 ?? []).includes(choice))}
+                    style={{ ...optionCardStyle((answers.q2 ?? []).includes(choice)), minHeight: "48px", padding: "10px 12px" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean((answers.q2 ?? []).includes(choice))}
+                      value={choice}
+                      onChange={() => toggleCheckbox("q2", choice)}
+                    />
+                    {choice}
+                  </label>
+                ))}
+              </div>
               <div className="font-medium mt-6 mb-2">Additional Comments</div>
               <textarea
                 style={{ width: "100%" }}
@@ -305,28 +380,34 @@ export default function MemberEvaluationPage() {
               <h2 className="font-semibold mb-4">
                 Where did we miss the mark?
               </h2>
-              {[
-                "Registration",
-                "Check-In",
-                "Parking",
-                "Communications",
-                "Agenda",
-                "Venue",
-                "Activities",
-                "Technology/App",
-                "Meals",
-                "Other",
-              ].map((choice) => (
-                <label key={choice} className="flex items-center gap-2 mb-3">
-                  <input
-                    type="checkbox"
-                    checked={Boolean((answers.q3 ?? []).includes(choice))}
-                    value={choice}
-                    onChange={() => toggleCheckbox("q3", choice)}
-                  />
-                  {choice}
-                </label>
-              ))}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
+                {[
+                  "Registration",
+                  "Check-In",
+                  "Parking",
+                  "Communications",
+                  "Agenda",
+                  "Venue",
+                  "Activities",
+                  "Technology/App",
+                  "Meals",
+                  "Other",
+                ].map((choice) => (
+                  <label
+                    key={choice}
+                    className={optionCardClass((answers.q3 ?? []).includes(choice))}
+                    style={{ ...optionCardStyle((answers.q3 ?? []).includes(choice)), minHeight: "48px", padding: "10px 12px" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean((answers.q3 ?? []).includes(choice))}
+                      value={choice}
+                      onChange={() => toggleCheckbox("q3", choice)}
+                    />
+                    {choice}
+                  </label>
+                ))}
+              </div>
               <div className="font-medium mt-6 mb-2">Additional Comments</div>
               <textarea
                 style={{ width: "100%" }}
@@ -344,27 +425,65 @@ export default function MemberEvaluationPage() {
               <h2 className="font-semibold mb-4">
                 What would you like to see at future events?
               </h2>
-              {[
-                "More Technical Content",
-                "More Social Activities",
-                "More Vendor Participation",
-                "More Coach Tours",
-                "More Local Tours",
-                "More Entertainment",
-                "More Free Time",
-                "More Freightliner Topics",
-                "Other",
-              ].map((choice) => (
-                <label key={choice} className="flex items-center gap-2 mb-3">
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                  {q4TopChoices.map((choice) => (
+                    <label
+                      key={choice}
+                      className={optionCardClass((answers.q4 ?? []).includes(choice))}
+                      style={optionCardStyle((answers.q4 ?? []).includes(choice))}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean((answers.q4 ?? []).includes(choice))}
+                        value={choice}
+                        onChange={() => toggleCheckbox("q4", choice)}
+                      />
+                      {choice}
+                    </label>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "12px",
+                    marginBottom: "12px",
+                  }}
+                >
+                  {q4BottomChoices.slice(0, 2).map((choice) => (
+                    <label
+                      key={choice}
+                      className={optionCardClass((answers.q4 ?? []).includes(choice))}
+                      style={optionCardStyle((answers.q4 ?? []).includes(choice))}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean((answers.q4 ?? []).includes(choice))}
+                        value={choice}
+                        onChange={() => toggleCheckbox("q4", choice)}
+                      />
+                      {choice}
+                    </label>
+                  ))}
+                </div>
+                <label
+                  className={optionCardClass((answers.q4 ?? []).includes("Other"))}
+                  style={{
+                    ...optionCardStyle((answers.q4 ?? []).includes("Other")),
+                    width: "100%",
+                    marginBottom: "24px",
+                  }}
+                >
                   <input
                     type="checkbox"
-                    checked={Boolean((answers.q4 ?? []).includes(choice))}
-                    value={choice}
-                    onChange={() => toggleCheckbox("q4", choice)}
+                    checked={Boolean((answers.q4 ?? []).includes("Other"))}
+                    value="Other"
+                    onChange={() => toggleCheckbox("q4", "Other")}
                   />
-                  {choice}
+                  Other
                 </label>
-              ))}
+              </>
               <div className="font-medium mt-6 mb-2">Additional Comments</div>
               <textarea
                 style={{ width: "100%" }}
@@ -412,12 +531,13 @@ export default function MemberEvaluationPage() {
               <h2 className="font-semibold mb-4">
                 How likely are you to attend another event?
               </h2>
-              <div className="space-y-4 mb-6 pl-2">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
                 {["Definitely", "Likely", "Maybe", "Unlikely", "No"].map(
                   (choice) => (
                     <label
                       key={choice}
-                      className="flex items-center gap-2 text-base"
+                      className={optionCardClass(answers.q7 === choice)}
+                      style={{ ...optionCardStyle(answers.q7 === choice), minHeight: "48px", padding: "10px 12px" }}
                     >
                       <input
                         type="radio"
@@ -445,7 +565,16 @@ export default function MemberEvaluationPage() {
         </div>
       </div>
 
-      <div className="app-button-row pt-6">
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          gap: "16px",
+          width: "100%",
+          marginTop: "24px",
+        }}
+      >
         <button
           onClick={previousQuestion}
           disabled={currentQuestion === 1}
@@ -453,7 +582,6 @@ export default function MemberEvaluationPage() {
         >
           ← Previous
         </button>
-
         {currentQuestion < totalQuestions ? (
           <button
             onClick={nextQuestion}
@@ -468,7 +596,6 @@ export default function MemberEvaluationPage() {
               if (!evaluationId) {
                 return;
               }
-
               await supabase
                 .from("event_evaluations")
                 .update({
@@ -476,11 +603,15 @@ export default function MemberEvaluationPage() {
                   submitted_at: new Date().toISOString(),
                 })
                 .eq("id", evaluationId);
-
-              alert("Evaluation submitted. Thank you for your feedback.");
+              setIsSubmitted(true);
+              alert(
+                isSubmitted
+                  ? "Evaluation updated. Thank you for keeping your feedback current."
+                  : "Evaluation submitted. Thank you for your feedback.",
+              );
             }}
           >
-            Submit Evaluation
+            {isSubmitted ? "Update Evaluation" : "Submit Evaluation"}
           </button>
         )}
       </div>

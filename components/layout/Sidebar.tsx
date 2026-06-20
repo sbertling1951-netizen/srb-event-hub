@@ -37,6 +37,7 @@ const ICON_MAP: Record<string, string> = {
   "/member/attendees": "👥",
   "/coach-map": "🗺️",
   "/member/checkin": "🪪",
+  "/member/participants": "👤",
   "/member/nearby": "📍",
   "/member/vendor-signup": "🛠️",
 
@@ -448,6 +449,7 @@ export default function Sidebar() {
       { label: "Attendee Locator", href: "/member/attendees" },
       { label: mapNavLabel, href: "/coach-map" },
       { label: "My Check-In", href: "/member/checkin" },
+      { label: "Participants", href: "/member/participants" },
       { label: "Nearby", href: "/member/nearby" },
       { label: "Vendors / Service Requests", href: "/member/vendor-signup" },
     ];

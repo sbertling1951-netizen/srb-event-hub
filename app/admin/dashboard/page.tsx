@@ -203,6 +203,12 @@ const adminCards = [
     permission: "can_manage_reports",
   },
   {
+    title: "Evaluations",
+    description: "Review event evaluations, member feedback, memories, and survey results.",
+    href: "/admin/evaluations",
+    permission: "can_manage_reports",
+  },
+  {
     title: "Event Staff",
     description: "Assign event staff and manage role-based permissions.",
     href: "/admin/event-staff",
@@ -278,6 +284,9 @@ function getAdminToolIcon(href: string) {
   if (href.includes("reports")) {
     return "📊";
   }
+  if (href.includes("evaluations")) {
+    return "📝";
+  }
   if (href.includes("event-staff")) {
     return "👥";
   }
@@ -316,6 +325,9 @@ function getAdminToolClass(href: string) {
     return "admin-tool-vendors";
   }
   if (href.includes("reports")) {
+    return "admin-tool-reports";
+  }
+  if (href.includes("evaluations")) {
     return "admin-tool-reports";
   }
   if (href.includes("event-staff")) {
