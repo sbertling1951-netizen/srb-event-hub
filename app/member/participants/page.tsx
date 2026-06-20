@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import {
+  getCurrentMemberEvent,
+  getStoredMemberAttendeeId,
+  getStoredMemberEmail,
+  getStoredMemberEntryId,
+} from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
-import { getCurrentMemberEvent, getStoredMemberAttendeeId, getStoredMemberEmail, getStoredMemberEntryId } from "@/lib/getCurrentMemberEvent";
 
 interface Participant {
   id: string;
-  person_role: string;
+  person_role: string | null;
   first_name: string | null;
   last_name: string | null;
   display_name: string | null;
@@ -28,6 +34,9 @@ function ParticipantsPageInner() {
   const [participantCount, setParticipantCount] = useState(0);
   const [capacity, setCapacity] = useState(0);
   const [participants, setParticipants] = useState<Participant[]>([]);
+
+  const [emailInputs, setEmailInputs] = useState<Record<string, string>>({});
+  const [savingParticipantId, setSavingParticipantId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -73,7 +82,9 @@ function ParticipantsPageInner() {
 
         const { data: memberRows } = await supabase
           .from("attendee_household_members")
-          .select("id,person_role,first_name,last_name,display_name,email,participant_status,sort_order")
+          .select(
+            "id,person_role,first_name,last_name,display_name,email,participant_status,sort_order",
+          )
           .eq("attendee_id", attendee.id)
           .order("sort_order", { ascending: true });
 
@@ -88,95 +99,144 @@ function ParticipantsPageInner() {
   }, []);
 
   const registeredParticipants = participants.filter(
-    (p) => p.email && p.email.trim() !== ""
+    (p) => p.email && p.email.trim() !== "",
   ).length;
 
   const vacantSlots = Math.max(0, capacity - participantCount);
 
+  const handleAddEmail = async (participantId: string) => {
+    const email = (emailInputs[participantId] || "").trim();
+
+    if (!email) {
+      alert("Please enter an email address.");
+      return;
+    }
+
+    try {
+      setSavingParticipantId(participantId);
+
+      const { error } = await supabase
+        .from("attendee_household_members")
+        .update({
+          email,
+          participant_status: "registered",
+        })
+        .eq("id", participantId);
+
+      if (error) throw error;
+
+      setParticipants((current) =>
+        current.map((p) =>
+          p.id === participantId
+            ? {
+                ...p,
+                email,
+                participant_status: "registered",
+              }
+            : p,
+        ),
+      );
+
+      setEmailInputs((current) => {
+        const next = { ...current };
+        delete next[participantId];
+        return next;
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Unable to save email. Please try again.");
+    } finally {
+      setSavingParticipantId(null);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">Participants</h1>
-        <p className="text-sm text-gray-500">
+        <h1>Participants</h1>{" "}
+        <p>
           Manage the people associated with your registration.
         </p>
       </div>
 
-      <div className="rounded-xl border bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-lg font-semibold">
-              Registration Progress
-            </div>
-            <div className="text-sm text-gray-500">
-              Track participant identification for this registration.
-            </div>
+      <div className="card">
+        <div className="app-section-title">Participant Accounts</div>
+
+        <div className="app-card-section" style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "2rem", fontWeight: 700 }}>
+            {registeredParticipants} of {participantCount || capacity}
           </div>
 
-          <div className="text-right">
-            <div className="text-2xl font-bold text-blue-600">
-              {registeredParticipants}/{participantCount || capacity}
-            </div>
-            <div className="text-xs text-gray-500">
-              Digital Identities
-            </div>
+          <div className="app-muted-text">
+            Registered
           </div>
         </div>
 
-        <div className="mt-4">
-          <div className="flex justify-between text-sm mb-1">
-            <span className="font-medium">Participant Accounts Registered</span>
-            <span>
-              {registeredParticipants} of {participantCount}
-            </span>
-          </div>
-
-          <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200">
-            <div
-              className="h-full rounded-full bg-green-500 transition-all"
-              style={{
-                width: `${participantCount > 0
+        <div
+          style={{
+            marginTop: "1rem",
+            background: "#e5e7eb",
+            borderRadius: "999px",
+            height: "12px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            className=""
+            style={{
+              width: `${
+                participantCount > 0
                   ? (registeredParticipants / participantCount) * 100
-                  : 0}%`,
-              }}
-            />
-          </div>
+                  : 0
+              }%`,
+              background:
+                registeredParticipants === participantCount && participantCount > 0
+                  ? "#22c55e"
+                  : "#f59e0b",
+              height: "100%",
+            }}
+          />
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border bg-gray-50 p-3">
+        <div className="app-card-section" style={{ textAlign: "center" }}>
+          {participantCount > 0 &&
+          registeredParticipants === participantCount ? (
+            <div className="font-medium text-green-700">
+              ✓ All participant accounts registered
+            </div>
+          ) : (
+            <div className="font-medium text-amber-700">
+              {participantCount - registeredParticipants} participant Still needs an account.
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.75rem", marginTop: "0.75rem" }}>
+          <div className="card" style={{ textAlign: "center" }}>
             <div className="text-xs uppercase tracking-wide text-gray-500">
               Participants
             </div>
-            <div className="text-xl font-semibold">
-              {participantCount}
-            </div>
+            <div className="text-2xl font-semibold">{participantCount}</div>
           </div>
 
-          <div className="rounded-lg border bg-gray-50 p-3">
+          <div className="card" style={{ textAlign: "center" }}>
             <div className="text-xs uppercase tracking-wide text-gray-500">
-              Accounts Registered
+              Registered
             </div>
-            <div className="text-xl font-semibold text-green-600">
+            <div className="text-2xl font-semibold text-green-600">
               {registeredParticipants}
             </div>
           </div>
 
-          <div className="rounded-lg border bg-gray-50 p-3">
+          <div className="card" style={{ textAlign: "center" }}>
             <div className="text-xs uppercase tracking-wide text-gray-500">
-              Open Slots
+              Available Invitations
             </div>
-            <div className="text-xl font-semibold text-blue-600">
-              {Math.max(0, capacity - participantCount)}
+            <div className="text-2xl font-semibold text-blue-600">
+              {vacantSlots}
             </div>
           </div>
         </div>
-
-        {capacity > participantCount && (
-          <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
-            You still have {capacity - participantCount} participant slot{capacity - participantCount === 1 ? '' : 's'} available.
-          </div>
-        )}
       </div>
 
       {loading ? (
@@ -186,9 +246,16 @@ function ParticipantsPageInner() {
           {participants.map((participant) => (
             <div
               key={participant.id}
-              className="rounded-lg border p-4 bg-white"
+              className="card"
             >
-              <div className="flex items-center justify-between">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 220px",
+                  gap: "1rem",
+                  alignItems: "center",
+                }}
+              >
                 <div className="font-semibold">
                   {participant.person_role === "pilot"
                     ? "Pilot"
@@ -197,14 +264,12 @@ function ParticipantsPageInner() {
                       : "Additional Attendee"}
                 </div>
 
-                <div className="text-sm">
+                <div style={{ textAlign: "right", fontWeight: 600 }}>
                   {participant.email ? (
-                    <span className="text-green-600">
-                      ✓ Account Registered
-                    </span>
+                    <span className="text-green-600">✓ Account Registered</span>
                   ) : (
                     <span className="text-amber-600">
-                      ⚠ Uses Registration Account
+                      ⚠ Currently Using Registration Account
                     </span>
                   )}
                 </div>
@@ -214,33 +279,41 @@ function ParticipantsPageInner() {
                   `${participant.first_name ?? ""} ${participant.last_name ?? ""}`.trim()}
               </div>
               {participant.email && (
-                <div className="text-sm text-gray-500">
-                  {participant.email}
-                </div>
+                <div className="text-sm text-gray-500">{participant.email}</div>
               )}
               {!participant.email && (
-                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="app-card-section-muted" style={{ marginTop: "0.75rem" }}>
                   <div className="text-sm font-medium text-amber-800">
-                    Email needed to register this participant.
+                    Add {participant.display_name || `${participant.first_name ?? ""} ${participant.last_name ?? ""}`.trim()}'s email to complete participant registration.
                   </div>
 
-                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
                     <input
                       type="email"
                       placeholder="Enter participant email"
+                      value={emailInputs[participant.id] || ""}
+                      onChange={(e) =>
+                        setEmailInputs((current) => ({
+                          ...current,
+                          [participant.id]: e.target.value,
+                        }))
+                      }
                       className="flex-1 rounded-md border px-3 py-2 text-sm"
                     />
-
                     <button
                       type="button"
-                      className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                      className="app-button app-button-primary"
+                      disabled={savingParticipantId === participant.id}
+                      onClick={() => handleAddEmail(participant.id)}
                     >
-                      Add Email
+                      {savingParticipantId === participant.id ? "Saving..." : "Add Email"}
                     </button>
                   </div>
 
                   <div className="mt-2 text-xs text-amber-700">
-                    Adding an email allows this participant to have their own account, login, photo attribution, evaluations, and event activity history.
+                    Adding an email allows this participant to have their own
+                    account, login, photo attribution, evaluations, and event
+                    activity history.
                   </div>
                 </div>
               )}
@@ -250,7 +323,7 @@ function ParticipantsPageInner() {
           {Array.from({ length: vacantSlots }).map((_, index) => (
             <div
               key={`vacant-${index}`}
-              className="rounded-lg border-2 border-dashed p-4"
+              className="card"
             >
               <div className="font-semibold">Additional Attendee</div>
               <div className="text-sm text-gray-500">
