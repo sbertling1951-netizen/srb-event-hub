@@ -6,7 +6,6 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import {
   getCurrentMemberEvent,
   getStoredMemberAttendeeId,
-  getStoredMemberEmail,
   getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
@@ -26,6 +25,8 @@ interface AttendeeRow {
   id: string;
   entry_id?: string | null;
   email?: string | null;
+  auth_user_id?: string | null;
+  event_id?: string | null;
   participant_capacity?: number | null;
 }
 
@@ -36,7 +37,12 @@ function ParticipantsPageInner() {
   const [participants, setParticipants] = useState<Participant[]>([]);
 
   const [emailInputs, setEmailInputs] = useState<Record<string, string>>({});
-  const [savingParticipantId, setSavingParticipantId] = useState<string | null>(null);
+  const [savingParticipantId, setSavingParticipantId] = useState<string | null>(
+    null,
+  );
+  const [editingParticipantId, setEditingParticipantId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -52,24 +58,35 @@ function ParticipantsPageInner() {
 
         const attendeeId = getStoredMemberAttendeeId();
         const entryId = getStoredMemberEntryId();
-        const email = getStoredMemberEmail();
+
+        const authUserId = localStorage.getItem(
+          "fcoc-member-auth-user-id",
+        );
+
+        console.log("PARTICIPANTS AUTH USER ID", authUserId);
 
         const { data: attendeeRows } = await supabase
           .from("attendees")
-          .select("id,entry_id,email,participant_capacity")
+          .select(
+            "id,entry_id,email,participant_capacity,auth_user_id,event_id",
+          )
           .eq("event_id", currentEvent.id);
 
         const attendees = (attendeeRows || []) as AttendeeRow[];
 
-        let attendee = attendees.find((a) => attendeeId && a.id === attendeeId);
+        let attendee = attendees.find(
+          (a) => authUserId && a.auth_user_id === authUserId,
+        );
+
+        if (!attendee) {
+          attendee = attendees.find((a) => attendeeId && a.id === attendeeId);
+        }
 
         if (!attendee) {
           attendee = attendees.find((a) => entryId && a.entry_id === entryId);
         }
 
-        if (!attendee) {
-          attendee = attendees.find((a) => email && a.email === email);
-        }
+        console.log("PARTICIPANTS MATCHED ATTENDEE", attendee);
 
         if (!attendee) {
           setParticipantCount(0);
@@ -104,7 +121,7 @@ function ParticipantsPageInner() {
 
   const vacantSlots = Math.max(0, capacity - participantCount);
 
-  const handleAddEmail = async (participantId: string) => {
+  const handleSaveEmail = async (participantId: string) => {
     const email = (emailInputs[participantId] || "").trim();
 
     if (!email) {
@@ -115,15 +132,21 @@ function ParticipantsPageInner() {
     try {
       setSavingParticipantId(participantId);
 
-      const { error } = await supabase
-        .from("attendee_household_members")
-        .update({
-          email,
-          participant_status: "registered",
-        })
-        .eq("id", participantId);
+      const result = await supabase.rpc(
+        "update_participant_email",
+        {
+          p_participant_id: participantId,
+          p_email: email,
+        },
+      );
 
-      if (error) throw error;
+      console.log("PARTICIPANT UPDATE RESULT", result);
+      console.log("PARTICIPANT ID", participantId);
+      console.log("NEW EMAIL", email);
+
+      if (result.error) {
+        throw result.error;
+      }
 
       setParticipants((current) =>
         current.map((p) =>
@@ -142,6 +165,8 @@ function ParticipantsPageInner() {
         delete next[participantId];
         return next;
       });
+
+      setEditingParticipantId(null);
     } catch (err) {
       console.error(err);
       alert("Unable to save email. Please try again.");
@@ -154,9 +179,7 @@ function ParticipantsPageInner() {
     <div className="max-w-4xl mx-auto p-4 space-y-4">
       <div>
         <h1>Participants</h1>{" "}
-        <p>
-          Manage the people associated with your registration.
-        </p>
+        <p>Manage the people associated with your registration.</p>
       </div>
 
       <div className="card">
@@ -167,9 +190,7 @@ function ParticipantsPageInner() {
             {registeredParticipants} of {participantCount || capacity}
           </div>
 
-          <div className="app-muted-text">
-            Registered
-          </div>
+          <div className="app-muted-text">Registered</div>
         </div>
 
         <div
@@ -190,7 +211,8 @@ function ParticipantsPageInner() {
                   : 0
               }%`,
               background:
-                registeredParticipants === participantCount && participantCount > 0
+                registeredParticipants === participantCount &&
+                participantCount > 0
                   ? "#22c55e"
                   : "#f59e0b",
               height: "100%",
@@ -206,12 +228,20 @@ function ParticipantsPageInner() {
             </div>
           ) : (
             <div className="font-medium text-amber-700">
-              {participantCount - registeredParticipants} participant Still needs an account.
+              {participantCount - registeredParticipants} participant Still
+              needs an account.
             </div>
           )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.75rem", marginTop: "0.75rem" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: "0.75rem",
+            marginTop: "0.75rem",
+          }}
+        >
           <div className="card" style={{ textAlign: "center" }}>
             <div className="text-xs uppercase tracking-wide text-gray-500">
               Participants
@@ -244,10 +274,7 @@ function ParticipantsPageInner() {
       ) : (
         <>
           {participants.map((participant) => (
-            <div
-              key={participant.id}
-              className="card"
-            >
+            <div key={participant.id} className="card">
               <div
                 style={{
                   display: "grid",
@@ -266,7 +293,22 @@ function ParticipantsPageInner() {
 
                 <div style={{ textAlign: "right", fontWeight: 600 }}>
                   {participant.email ? (
-                    <span className="text-green-600">✓ Account Registered</span>
+                    <div>
+                      <div className="text-green-600">✓ Account Registered</div>
+                      <button
+                        type="button"
+                        className="app-link-button"
+                        onClick={() => {
+                          setEditingParticipantId(participant.id);
+                          setEmailInputs((current) => ({
+                            ...current,
+                            [participant.id]: participant.email || "",
+                          }));
+                        }}
+                      >
+                        Edit Email
+                      </button>
+                    </div>
                   ) : (
                     <span className="text-amber-600">
                       ⚠ Currently Using Registration Account
@@ -281,13 +323,66 @@ function ParticipantsPageInner() {
               {participant.email && (
                 <div className="text-sm text-gray-500">{participant.email}</div>
               )}
-              {!participant.email && (
-                <div className="app-card-section-muted" style={{ marginTop: "0.75rem" }}>
-                  <div className="text-sm font-medium text-amber-800">
-                    Add {participant.display_name || `${participant.first_name ?? ""} ${participant.last_name ?? ""}`.trim()}'s email to complete participant registration.
+              {participant.email && editingParticipantId === participant.id && (
+                <div
+                  className="app-card-section-muted"
+                  style={{ marginTop: "0.75rem" }}
+                >
+                  <div className="text-sm font-medium">
+                    Update participant email address.
                   </div>
 
-                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "0.5rem",
+                      marginTop: "0.5rem",
+                    }}
+                  >
+                    <input
+                      type="email"
+                      value={emailInputs[participant.id] || ""}
+                      onChange={(e) =>
+                        setEmailInputs((current) => ({
+                          ...current,
+                          [participant.id]: e.target.value,
+                        }))
+                      }
+                      className="flex-1 rounded-md border px-3 py-2 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      className="app-button app-button-primary"
+                      disabled={savingParticipantId === participant.id}
+                      onClick={() => handleSaveEmail(participant.id)}
+                    >
+                      {savingParticipantId === participant.id
+                        ? "Saving..."
+                        : "Save"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {!participant.email && (
+                <div
+                  className="app-card-section-muted"
+                  style={{ marginTop: "0.75rem" }}
+                >
+                  <div className="text-sm font-medium text-amber-800">
+                    Add{" "}
+                    {participant.display_name ||
+                      `${participant.first_name ?? ""} ${participant.last_name ?? ""}`.trim()}
+                    's email to complete participant registration.
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "0.5rem",
+                      marginTop: "0.5rem",
+                    }}
+                  >
                     <input
                       type="email"
                       placeholder="Enter participant email"
@@ -304,9 +399,11 @@ function ParticipantsPageInner() {
                       type="button"
                       className="app-button app-button-primary"
                       disabled={savingParticipantId === participant.id}
-                      onClick={() => handleAddEmail(participant.id)}
+                      onClick={() => handleSaveEmail(participant.id)}
                     >
-                      {savingParticipantId === participant.id ? "Saving..." : "Add Email"}
+                      {savingParticipantId === participant.id
+                        ? "Saving..."
+                        : "Add Email"}
                     </button>
                   </div>
 
@@ -321,10 +418,7 @@ function ParticipantsPageInner() {
           ))}
 
           {Array.from({ length: vacantSlots }).map((_, index) => (
-            <div
-              key={`vacant-${index}`}
-              className="card"
-            >
+            <div key={`vacant-${index}`} className="card">
               <div className="font-semibold">Additional Attendee</div>
               <div className="text-sm text-gray-500">
                 Vacant participant slot

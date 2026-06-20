@@ -29,6 +29,7 @@ type AttendeeRow = {
   copilot_first: string | null;
   copilot_last: string | null;
   has_arrived: boolean | null;
+  auth_user_id: string | null;
 };
 
 function formatDateRange(startDate: string | null, endDate: string | null) {
@@ -188,10 +189,40 @@ export default function MemberLoginPage() {
         throw error;
       }
 
-      const attendee =
+      let attendee =
         Array.isArray(data) && data.length > 0
           ? (data[0] as AttendeeRow)
           : null;
+
+      console.log("MEMBER LOGIN ATTENDEE", attendee);
+
+      if (!attendee?.id) {
+        const { data: participant } = await supabase
+          .from("attendee_household_members")
+          .select("attendee_id,id,first_name,last_name,email")
+          .eq("email", normalizedEmail)
+          .maybeSingle();
+
+        console.log("MEMBER LOGIN PARTICIPANT", participant);
+
+        if (participant?.attendee_id) {
+          const { data: attendeeData } = await supabase
+            .from("attendees")
+            .select(
+              "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,has_arrived,auth_user_id",
+            )
+            .eq("id", participant.attendee_id)
+            .eq("event_id", event.id)
+            .maybeSingle();
+
+          attendee = attendeeData as AttendeeRow | null;
+
+          console.log(
+            "MEMBER LOGIN ATTENDEE FROM PARTICIPANT",
+            attendee,
+          );
+        }
+      }
 
       if (!attendee?.id) {
         setError(
@@ -206,6 +237,16 @@ export default function MemberLoginPage() {
       if (typeof window !== "undefined") {
         localStorage.setItem("fcoc-member-attendee-id", attendee.id);
         localStorage.setItem("fcoc-member-email", normalizedEmail);
+        if (attendee.auth_user_id) {
+          localStorage.setItem(
+            "fcoc-member-auth-user-id",
+            attendee.auth_user_id,
+          );
+        }
+        console.log(
+          "MEMBER AUTH USER ID",
+          attendee.auth_user_id,
+        );
         localStorage.setItem("fcoc-member-entry-id", attendee.entry_id || "");
         localStorage.setItem("fcoc-member-has-arrived", String(arrived));
         localStorage.setItem("fcoc-user-mode", "member");
