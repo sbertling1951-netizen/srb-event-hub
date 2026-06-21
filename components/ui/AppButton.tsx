@@ -4,7 +4,15 @@ import type {
   ReactNode,
 } from "react";
 
-type ButtonVariant = "default" | "primary" | "success" | "danger" | "muted";
+type ButtonVariant =
+  | "default"
+  | "primary"
+  | "success"
+  | "danger"
+  | "warning"
+  | "muted"
+  | "start"
+  | "stop";
 
 type AppButtonProps = {
   children: ReactNode;

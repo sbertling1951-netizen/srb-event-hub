@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AppButton } from "@/components/ui/AppButton";
 
 export default function AdminSlideshowPage() {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -200,7 +201,22 @@ export default function AdminSlideshowPage() {
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <button
+        <AppButton
+          variant="start"
+          onClick={() => {
+            setIsPaused(false);
+            publishPresentationState({
+              command: 'start',
+              paused: false,
+              historyMode: false,
+              commandAt: Date.now(),
+            });
+          }}
+        >
+          Start
+        </AppButton>{' '}
+        <AppButton
+          variant="muted"
           onClick={() => {
             setCurrentSlide((s) => Math.max(0, s - 1));
             publishPresentationState({
@@ -210,8 +226,9 @@ export default function AdminSlideshowPage() {
           }}
         >
           Previous
-        </button>{" "}
-        <button
+        </AppButton>{" "}
+        <AppButton
+          variant="primary"
           onClick={() => {
             const nextPaused = !viewerPaused;
             setIsPaused(nextPaused);
@@ -225,8 +242,23 @@ export default function AdminSlideshowPage() {
           }}
         >
           {viewerPaused ? 'Resume' : 'Pause'}
-        </button>{" "}
-        <button
+        </AppButton>{' '}
+        <AppButton
+          variant="stop"
+          onClick={() => {
+            setIsPaused(true);
+            publishPresentationState({
+              command: 'stop',
+              paused: true,
+              historyMode: false,
+              commandAt: Date.now(),
+            });
+          }}
+        >
+          Stop
+        </AppButton>{' '}
+        <AppButton
+          variant="primary"
           onClick={() => {
             setCurrentSlide((s) => s + 1);
             publishPresentationState({
@@ -236,9 +268,21 @@ export default function AdminSlideshowPage() {
           }}
         >
           Next
-        </button>
+        </AppButton>
         <div style={{ marginTop: 8, fontWeight: 'bold' }}>
           Mode: {viewerMode}
+        </div>
+        <div
+          style={{
+            marginTop: 8,
+            display: 'inline-block',
+            padding: '8px 12px',
+            borderRadius: 6,
+            background: '#1f2937',
+            fontWeight: 'bold',
+          }}
+        >
+          Slides Shown: {presentationState?.slidesShown ?? 0}
         </div>
       </div>
 
@@ -252,20 +296,12 @@ export default function AdminSlideshowPage() {
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <button
+        <AppButton
+          variant="success"
           onClick={() => window.open('/slideshow/view', '_blank')}
-          style={{
-            padding: '10px 16px',
-            cursor: 'pointer',
-            background: '#60a5fa',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '6px',
-            fontWeight: 'bold',
-          }}
         >
           Open Audience Screen
-        </button>
+        </AppButton>
       </div>
     </div>
   );

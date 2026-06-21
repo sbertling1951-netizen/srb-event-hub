@@ -207,6 +207,7 @@ a.app-button-danger {
   -webkit-text-fill-color: #991b1b !important;
 }
 
+
 .app-button-muted,
 button.app-button-muted,
 a.app-button-muted {
@@ -215,6 +216,50 @@ a.app-button-muted {
   background-image: none;
   color: #334155 !important;
   -webkit-text-fill-color: #334155 !important;
+}
+
+.app-button-warning,
+button.app-button-warning,
+a.app-button-warning {
+  border-color: #f59e0b;
+  background: #fef3c7;
+  background-image: none;
+  color: #92400e !important;
+  -webkit-text-fill-color: #92400e !important;
+}
+
+.app-button-start,
+button.app-button-start,
+a.app-button-start {
+  border-color: #16a34a;
+  background: #16a34a;
+  background-image: none;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);
+}
+
+.app-button-start:hover:not(:disabled),
+a.app-button-start:hover {
+  background: #15803d;
+  border-color: #15803d;
+}
+
+.app-button-stop,
+button.app-button-stop,
+a.app-button-stop {
+  border-color: #dc2626;
+  background: #dc2626;
+  background-image: none;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+}
+
+.app-button-stop:hover:not(:disabled),
+a.app-button-stop:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
 }
 
 .app-button-row {
