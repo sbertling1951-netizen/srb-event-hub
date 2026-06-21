@@ -673,21 +673,6 @@ export default function SlideshowViewPage() {
                   objectFit: "contain",
                 }}
               />
-              <div
-                style={{
-                  position: "absolute",
-                  top: 12,
-                  right: 12,
-                  background: "rgba(0,0,0,0.45)",
-                  color: "white",
-                  padding: "6px 10px",
-                  borderRadius: 6,
-                  fontSize: 14,
-                  pointerEvents: "none",
-                }}
-              >
-                {slidesShown.toLocaleString()} slides shown
-              </div>
 
               {currentPhoto.show_caption && currentCaption ? (
                 <div
