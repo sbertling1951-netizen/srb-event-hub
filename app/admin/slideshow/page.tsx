@@ -17,7 +17,7 @@ export default function AdminSlideshowPage() {
   const viewerMode = presentationState?.historyMode
     ? 'History Mode'
     : presentationState?.paused
-    ? 'Paused'
+    ? 'Stopped'
     : 'Live';
 
   const publishPresentationState = (updates: Record<string, any>) => {
@@ -200,75 +200,71 @@ export default function AdminSlideshowPage() {
         </div>
       </div>
 
-      <div style={{ marginTop: 24 }}>
-        <AppButton
-          variant="start"
-          onClick={() => {
-            setIsPaused(false);
-            publishPresentationState({
-              command: 'start',
-              paused: false,
-              historyMode: false,
-              commandAt: Date.now(),
-            });
-          }}
-        >
-          Start
-        </AppButton>{' '}
-        <AppButton
-          variant="muted"
-          onClick={() => {
-            setCurrentSlide((s) => Math.max(0, s - 1));
-            publishPresentationState({
-              command: "previous",
-              commandAt: Date.now(),
-            });
-          }}
-        >
-          Previous
-        </AppButton>{" "}
-        <AppButton
-          variant="primary"
-          onClick={() => {
-            const nextPaused = !viewerPaused;
-            setIsPaused(nextPaused);
-
-            publishPresentationState({
-              command: nextPaused ? "pause" : "resume",
-              paused: nextPaused,
-              historyMode: false,
-              commandAt: Date.now(),
-            });
-          }}
-        >
-          {viewerPaused ? 'Resume' : 'Pause'}
-        </AppButton>{' '}
-        <AppButton
-          variant="stop"
-          onClick={() => {
-            setIsPaused(true);
-            publishPresentationState({
-              command: 'stop',
-              paused: true,
-              historyMode: false,
-              commandAt: Date.now(),
-            });
-          }}
-        >
-          Stop
-        </AppButton>{' '}
-        <AppButton
-          variant="primary"
-          onClick={() => {
-            setCurrentSlide((s) => s + 1);
-            publishPresentationState({
-              command: "next",
-              commandAt: Date.now(),
-            });
-          }}
-        >
-          Next
-        </AppButton>
+      <div
+        style={{
+          marginTop: 24,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <div style={{ display: 'flex', gap: 12 }}>
+          <AppButton
+            variant="start"
+            onClick={() => {
+              setIsPaused(false);
+              publishPresentationState({
+                command: 'start',
+                paused: false,
+                historyMode: false,
+                commandAt: Date.now(),
+              });
+            }}
+          >
+            Start
+          </AppButton>{' '}
+          <AppButton
+            variant="stop"
+            onClick={() => {
+              setIsPaused(true);
+              publishPresentationState({
+                command: 'stop',
+                paused: true,
+                historyMode: false,
+                commandAt: Date.now(),
+              });
+            }}
+          >
+            Stop
+          </AppButton>{' '}
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <AppButton
+            variant="muted"
+            onClick={() => {
+              setCurrentSlide((s) => Math.max(0, s - 1));
+              publishPresentationState({
+                command: "previous",
+                commandAt: Date.now(),
+              });
+            }}
+          >
+            ⬅ Previous
+          </AppButton>{" "}
+          <AppButton
+            variant="primary"
+            onClick={() => {
+              setCurrentSlide((s) => s + 1);
+              publishPresentationState({
+                command: "next",
+                commandAt: Date.now(),
+              });
+            }}
+          >
+            Next ➡
+          </AppButton>
+        </div>
         <div style={{ marginTop: 8, fontWeight: 'bold' }}>
           Mode: {viewerMode}
         </div>
