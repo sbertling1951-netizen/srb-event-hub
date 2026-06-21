@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
@@ -10,6 +10,7 @@ export default function SlideshowViewPage() {
   const [status, setStatus] = useState("Ready to load approved photos");
 
   type SlidePhoto = {
+    id: string;
     url: string;
     member_caption: string | null;
     admin_caption: string | null;
@@ -27,9 +28,7 @@ export default function SlideshowViewPage() {
       const current = photos[currentIdx];
 
       const nextIdx =
-        photos.length > 1
-          ? (currentIdx + 1) % photos.length
-          : currentIdx;
+        photos.length > 1 ? (currentIdx + 1) % photos.length : currentIdx;
 
       const next = photos[nextIdx];
 
@@ -49,9 +48,7 @@ export default function SlideshowViewPage() {
           nextIndex: nextIdx,
           nextPhotoUrl: next?.url ?? null,
           nextCaption:
-            next?.admin_caption?.trim() ||
-            next?.member_caption?.trim() ||
-            "",
+            next?.admin_caption?.trim() || next?.member_caption?.trim() || "",
           totalSlides: photos.length,
           paused: pausedRef.current,
           historyMode: historyModeRef.current,
@@ -73,13 +70,35 @@ export default function SlideshowViewPage() {
 
     history.push(index);
     historyPositionRef.current = history.length - 1;
+
+    // Track featured slide show counts
+    const currentPhoto = photos[index];
+    if (currentPhoto && currentPhoto.featured_level > 0) {
+      featuredCooldownRef.current = slideHistoryRef.current.length;
+
+      featuredShownCountRef.current[index] =
+        (featuredShownCountRef.current[index] ?? 0) + 1;
+    }
+
+    const photoId = currentPhoto?.id;
+
+    if (photoId) {
+      void supabase
+        .rpc("record_photo_display", {
+          p_photo_id: photoId,
+        })
+        .then((result) => {
+          console.log("DISPLAY RPC", result);
+        });
+    }
   };
 
   const [imagesReady, setImagesReady] = useState(false);
   const [preloadedCount, setPreloadedCount] = useState(0);
   const [totalSlides, setTotalSlides] = useState(0);
   const recentSlidesRef = useRef<number[]>([]);
-  const featuredCooldownRef = useRef<Record<number, number>>({});
+  const featuredCooldownRef = useRef(-9999);
+  const featuredShownCountRef = useRef<Record<number, number>>({});
   const [showCursor, setShowCursor] = useState(true);
   const cursorTimerRef = useRef<number | null>(null);
   const wakeLockRef = useRef<any>(null);
@@ -161,7 +180,9 @@ export default function SlideshowViewPage() {
 
       const { data, error } = await supabase
         .from("event_photos")
-        .select("id, storage_path, member_caption, admin_caption, photographer_name_snapshot, show_caption, featured_level")
+        .select(
+          "id, storage_path, member_caption, admin_caption, photographer_name_snapshot, show_caption, featured_level",
+        )
         .eq("event_id", eventId)
         .eq("photo_status", "approved")
         .order("uploaded_at", { ascending: true })
@@ -190,6 +211,7 @@ export default function SlideshowViewPage() {
 
         if (signed?.signedUrl) {
           slides.push({
+            id: photo.id,
             url: signed.signedUrl,
             member_caption: photo.member_caption,
             admin_caption: photo.admin_caption,
@@ -247,12 +269,10 @@ export default function SlideshowViewPage() {
 
     async function requestWakeLock() {
       try {
-        if (
-          imagesReady &&
-          photos.length > 0 &&
-          "wakeLock" in navigator
-        ) {
-          wakeLockRef.current = await (navigator as any).wakeLock.request("screen");
+        if (imagesReady && photos.length > 0 && "wakeLock" in navigator) {
+          wakeLockRef.current = await (navigator as any).wakeLock.request(
+            "screen",
+          );
 
           wakeLockRef.current?.addEventListener?.("release", () => {
             console.log("Wake Lock released");
@@ -299,7 +319,9 @@ export default function SlideshowViewPage() {
     const timer = window.setInterval(() => {
       try {
         const raw = localStorage.getItem("epix-presentation-state");
-        if (!raw) return;
+        if (!raw) {
+          return;
+        }
 
         const state = JSON.parse(raw);
         const commandAt = Number(state.commandAt ?? 0);
@@ -354,7 +376,10 @@ export default function SlideshowViewPage() {
             }
 
             const recent = recentSlidesRef.current;
-            const cooldownSize = Math.min(10, Math.floor(photos.length / 5));
+            const cooldownSize = Math.min(
+              30,
+              Math.max(15, Math.floor(photos.length / 4)),
+            );
 
             const candidates = photos
               .map((photo, index) => ({ photo, index }))
@@ -368,17 +393,27 @@ export default function SlideshowViewPage() {
             const weightedPool: number[] = [];
 
             usable.forEach(({ photo, index }) => {
-              const lastShown = featuredCooldownRef.current[index] ?? -9999;
-              const slidesSinceShown = slideHistoryRef.current.length - lastShown;
+              const featuredCooldownSize = Math.max(
+                12,
+                Math.min(25, Math.floor(photos.length / 8)),
+              );
+
+              const slidesSinceFeatured =
+                slideHistoryRef.current.length - featuredCooldownRef.current;
 
               let weight = 1;
 
-              if (photo.featured_level === 3) {
-                weight = slidesSinceShown < 25 ? 0 : 8;
+              if (
+                photo.featured_level > 0 &&
+                slidesSinceFeatured < featuredCooldownSize
+              ) {
+                weight = 0;
+              } else if (photo.featured_level === 3) {
+                weight = 8;
               } else if (photo.featured_level === 2) {
-                weight = slidesSinceShown < 50 ? 0 : 4;
+                weight = 4;
               } else if (photo.featured_level === 1) {
-                weight = slidesSinceShown < 100 ? 0 : 2;
+                weight = 2;
               }
 
               weight = Math.max(weight, photo.featured_level === 0 ? 1 : 0);
@@ -396,8 +431,6 @@ export default function SlideshowViewPage() {
             const nextIndex =
               weightedPool[Math.floor(Math.random() * weightedPool.length)];
 
-            featuredCooldownRef.current[nextIndex] = slideHistoryRef.current.length;
-
             recent.push(nextIndex);
 
             while (recent.length > cooldownSize) {
@@ -405,6 +438,35 @@ export default function SlideshowViewPage() {
             }
 
             showSlide(nextIndex);
+
+            break;
+          }
+
+          case "restart": {
+            recentSlidesRef.current = [];
+            featuredCooldownRef.current = -9999;
+            featuredShownCountRef.current = {};
+
+            slideHistoryRef.current = [0];
+            historyPositionRef.current = 0;
+
+            livePositionRef.current = 0;
+            historyModeRef.current = false;
+            pausedRef.current = false;
+
+            setCurrentIndex(0);
+
+            setTimeout(() => publishViewerState(0), 100);
+
+            localStorage.setItem(
+              "epix-presentation-state",
+              JSON.stringify({
+                ...state,
+                paused: false,
+                historyMode: false,
+                commandAt: Date.now(),
+              }),
+            );
 
             break;
           }
@@ -430,7 +492,9 @@ export default function SlideshowViewPage() {
 
             if (slideHistoryRef.current.length > 0) {
               historyPositionRef.current = slideHistoryRef.current.length - 1;
-              setCurrentIndex(slideHistoryRef.current[historyPositionRef.current]);
+              setCurrentIndex(
+                slideHistoryRef.current[historyPositionRef.current],
+              );
             }
 
             break;
@@ -454,28 +518,44 @@ export default function SlideshowViewPage() {
       }
 
       const recent = recentSlidesRef.current;
-      const cooldownSize = Math.min(10, Math.floor(photos.length / 5));
+      const cooldownSize = Math.min(
+        30,
+        Math.max(15, Math.floor(photos.length / 4)),
+      );
 
       const candidates = photos
         .map((photo, index) => ({ photo, index }))
         .filter(({ index }) => !recent.includes(index));
 
-      const usable = candidates.length > 0 ? candidates : photos.map((photo, index) => ({ photo, index }));
+      const usable =
+        candidates.length > 0
+          ? candidates
+          : photos.map((photo, index) => ({ photo, index }));
 
       const weightedPool: number[] = [];
 
       usable.forEach(({ photo, index }) => {
-        const lastShown = featuredCooldownRef.current[index] ?? -9999;
-        const slidesSinceShown = slideHistoryRef.current.length - lastShown;
+        const featuredCooldownSize = Math.max(
+          12,
+          Math.min(25, Math.floor(photos.length / 8)),
+        );
+
+        const slidesSinceFeatured =
+          slideHistoryRef.current.length - featuredCooldownRef.current;
 
         let weight = 1;
 
-        if (photo.featured_level === 3) {
-          weight = slidesSinceShown < 25 ? 0 : 8;
+        if (
+          photo.featured_level > 0 &&
+          slidesSinceFeatured < featuredCooldownSize
+        ) {
+          weight = 0;
+        } else if (photo.featured_level === 3) {
+          weight = 8;
         } else if (photo.featured_level === 2) {
-          weight = slidesSinceShown < 50 ? 0 : 4;
+          weight = 4;
         } else if (photo.featured_level === 1) {
-          weight = slidesSinceShown < 100 ? 0 : 2;
+          weight = 2;
         }
 
         weight = Math.max(weight, photo.featured_level === 0 ? 1 : 0);
@@ -490,9 +570,8 @@ export default function SlideshowViewPage() {
         usable.forEach(({ index }) => weightedPool.push(index));
       }
 
-      const nextIndex = weightedPool[Math.floor(Math.random() * weightedPool.length)];
-
-      featuredCooldownRef.current[nextIndex] = slideHistoryRef.current.length;
+      const nextIndex =
+        weightedPool[Math.floor(Math.random() * weightedPool.length)];
 
       recent.push(nextIndex);
 
@@ -519,10 +598,13 @@ export default function SlideshowViewPage() {
   }, [currentIndex, photos]);
 
   const currentCaption = currentPhoto
-    ? currentPhoto.admin_caption?.trim() || currentPhoto.member_caption?.trim() || ""
+    ? currentPhoto.admin_caption?.trim() ||
+      currentPhoto.member_caption?.trim() ||
+      ""
     : "";
 
-  const photographerName = currentPhoto?.photographer_name_snapshot?.trim() || "";
+  const photographerName =
+    currentPhoto?.photographer_name_snapshot?.trim() || "";
 
   return (
     <div
@@ -619,9 +701,7 @@ export default function SlideshowViewPage() {
               <div style={{ fontSize: 14 }}>Event ID: {eventId ?? "none"}</div>
               <div style={{ fontSize: 18 }}>{status}</div>
               <div style={{ fontSize: 14 }}>Photos Loaded: {photos.length}</div>
-              <div style={{ fontSize: 14 }}>
-                Approved Photos: {totalSlides}
-              </div>
+              <div style={{ fontSize: 14 }}>Approved Photos: {totalSlides}</div>
               <div style={{ fontSize: 14 }}>
                 Preloaded: {preloadedCount} of {totalSlides}
               </div>
