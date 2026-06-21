@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -497,6 +498,24 @@ function MemberCheckinPageInner() {
                   : ""}
               </div>
             )}
+          </div>
+
+          <div>
+            <Link
+              href="/member/participants"
+              style={{
+                display: "inline-block",
+                padding: "10px 14px",
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+                textDecoration: "none",
+                fontWeight: 600,
+                color: "inherit",
+              }}
+            >
+              ➕👤 Add Participant
+            </Link>
           </div>
 
           <div style={{ display: "grid", gap: 10, maxWidth: 360 }}>
