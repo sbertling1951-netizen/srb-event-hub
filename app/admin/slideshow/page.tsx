@@ -85,7 +85,7 @@ export default function AdminSlideshowPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
           gap: 16,
           marginTop: 24,
         }}
@@ -95,7 +95,7 @@ export default function AdminSlideshowPage() {
             border: "1px solid #444",
             borderRadius: 8,
             padding: 16,
-            minHeight: 300,
+            minHeight: 420,
           }}
         >
           <h3>Current Photo</h3>
@@ -104,7 +104,7 @@ export default function AdminSlideshowPage() {
               <img
                 src={presentationState.currentPhotoUrl}
                 alt="Current"
-                style={{ width: "100%", maxHeight: 220, objectFit: "contain" }}
+                style={{ width: "100%", maxHeight: 340, objectFit: "contain" }}
               />
               {presentationState?.currentCaption ? (
                 <div
@@ -130,7 +130,7 @@ export default function AdminSlideshowPage() {
             border: "1px solid #444",
             borderRadius: 8,
             padding: 16,
-            minHeight: 300,
+            minHeight: 420,
           }}
         >
           <h3>Next Photo</h3>
@@ -139,7 +139,7 @@ export default function AdminSlideshowPage() {
               <img
                 src={presentationState.nextPhotoUrl}
                 alt="Next"
-                style={{ width: '100%', maxHeight: 220, objectFit: 'contain' }}
+                style={{ width: '100%', maxHeight: 340, objectFit: 'contain' }}
               />
 
               {presentationState?.nextCaption ? (
@@ -167,137 +167,215 @@ export default function AdminSlideshowPage() {
           marginTop: 24,
           border: '1px solid #444',
           borderRadius: 8,
-          padding: 16,
-        }}
-      >
-        <h3>Presentation Settings</h3>
-
-        <div style={{ marginTop: 12 }}>
-          <label>
-            Loop Presentation{' '}
-            <input
-              type="checkbox"
-              checked={loopMode}
-              onChange={(e) => setLoopMode(e.target.checked)}
-            />
-          </label>
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <label>
-            Max Photos:{' '}
-            <input
-              type="number"
-              value={maxPhotos}
-              min={0}
-              onChange={(e) => setMaxPhotos(Number(e.target.value) || 0)}
-              style={{ width: 100 }}
-            />
-          </label>
-          <span style={{ marginLeft: 8, opacity: 0.7 }}>
-            0 = all approved photos
-          </span>
-        </div>
-      </div>
-
-      <div
-        style={{
-          marginTop: 24,
+          padding: 20,
+          background: '#161616',
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
-          gap: 10,
+          justifyContent: 'space-between',
+          gap: 24,
         }}
       >
-        <div style={{ display: 'flex', gap: 12 }}>
-          <AppButton
-            variant="start"
-            onClick={() => {
-              setIsPaused(false);
-              publishPresentationState({
-                command: 'start',
-                paused: false,
-                historyMode: false,
-                commandAt: Date.now(),
-              });
-            }}
-          >
-            Start
-          </AppButton>{' '}
-          <AppButton
-            variant="stop"
-            onClick={() => {
-              setIsPaused(true);
-              publishPresentationState({
-                command: 'stop',
-                paused: true,
-                historyMode: false,
-                commandAt: Date.now(),
-              });
-            }}
-          >
-            Stop
-          </AppButton>{' '}
-        </div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <AppButton
-            variant="muted"
-            onClick={() => {
-              setCurrentSlide((s) => Math.max(0, s - 1));
-              publishPresentationState({
-                command: "previous",
-                commandAt: Date.now(),
-              });
-            }}
-          >
-            ⬅ Previous
-          </AppButton>{" "}
-          <AppButton
-            variant="primary"
-            onClick={() => {
-              setCurrentSlide((s) => s + 1);
-              publishPresentationState({
-                command: "next",
-                commandAt: Date.now(),
-              });
-            }}
-          >
-            Next ➡
-          </AppButton>
-        </div>
-        <div style={{ marginTop: 8, fontWeight: 'bold' }}>
-          Mode: {viewerMode}
-        </div>
-        <div
-          style={{
-            marginTop: 8,
-            display: 'inline-block',
-            padding: '8px 12px',
-            borderRadius: 6,
-            background: '#1f2937',
-            fontWeight: 'bold',
-          }}
-        >
-          Slides Shown: {presentationState?.slidesShown ?? 0}
-        </div>
-      </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Presentation Settings</h3>
+            <div style={{ marginTop: 12 }}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={loopMode}
+                  onChange={(e) => setLoopMode(e.target.checked)}
+                />{' '}
+                Loop Presentation
+              </label>
+            </div>
+          </div>
 
-      <div style={{ marginTop: 12, opacity: 0.8 }}>
-        Current Slide: {currentSlide}<br />
-        Status: {viewerMode}<br />
-        Loop Mode: {loopMode ? 'Enabled' : 'Disabled'}<br />
-        Max Photos: {maxPhotos === 0 ? 'All' : maxPhotos}<br />
-        Audience Slides: {presentationState?.totalSlides ?? 0}<br />
-        Featured Level: {presentationState?.featuredLevel ?? 0}
-      </div>
+          <div>
+            <label>
+              Max Photos:{' '}
+              <input
+                type="number"
+                value={maxPhotos}
+                min={0}
+                onChange={(e) => setMaxPhotos(Number(e.target.value) || 0)}
+                style={{ width: 80 }}
+              />
+            </label>
+            <span style={{ marginLeft: 8, opacity: 0.7 }}>
+              0 = all approved photos
+            </span>
+          </div>
+        </div>
 
-      <div style={{ marginTop: 24 }}>
         <AppButton
           variant="success"
           onClick={() => window.open('/slideshow/view', '_blank')}
         >
           Open Audience Screen
         </AppButton>
+      </div>
+
+      <div
+        style={{
+          marginTop: 24,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
+          gap: 24,
+        }}
+      >
+        <div
+          style={{
+            marginTop: 24,
+            border: '1px solid #444',
+            borderRadius: 8,
+            padding: 20,
+            background: '#161616',
+            minHeight: 250,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-start',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Show Control</h3>
+            <div
+              style={{
+                padding: '4px 10px',
+                borderRadius: 999,
+                background: '#14532d',
+                color: '#4ade80',
+                fontWeight: 'bold',
+                fontSize: 12,
+              }}
+            >
+              ● LIVE
+            </div>
+          </div>
+          <div style={{ opacity: 0.7, marginBottom: 16 }}>Presentation Controls</div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 16,
+          }}>
+            <AppButton
+              variant="start"
+              onClick={() => {
+                setIsPaused(false);
+                publishPresentationState({
+                  command: 'start',
+                  paused: false,
+                  historyMode: false,
+                  commandAt: Date.now(),
+                });
+              }}
+              style={{ width: '100%' }}
+            >
+              Start
+            </AppButton>{' '}
+            <AppButton
+              variant="stop"
+              onClick={() => {
+                setIsPaused(true);
+                publishPresentationState({
+                  command: 'stop',
+                  paused: true,
+                  historyMode: false,
+                  commandAt: Date.now(),
+                });
+              }}
+              style={{ width: '100%' }}
+            >
+              Stop
+            </AppButton>{' '}
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 16,
+            marginTop: 16,
+          }}>
+            <AppButton
+              variant="muted"
+              onClick={() => {
+                setCurrentSlide((s) => Math.max(0, s - 1));
+                publishPresentationState({
+                  command: "previous",
+                  commandAt: Date.now(),
+                });
+              }}
+              style={{ width: '100%' }}
+            >
+              ⬅ Previous
+            </AppButton>{" "}
+            <AppButton
+              variant="primary"
+              onClick={() => {
+                setCurrentSlide((s) => s + 1);
+                publishPresentationState({
+                  command: "next",
+                  commandAt: Date.now(),
+                });
+              }}
+              style={{ width: '100%' }}
+            >
+              Next ➡
+            </AppButton>
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: '1px solid #444',
+            borderRadius: 8,
+            padding: 20,
+            background: '#161616',
+            minHeight: 250,
+          }}
+        >
+          <h3>Show Status</h3>
+          <div style={{ opacity: 0.7, marginBottom: 12 }}>
+            Live Presentation Overview
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 12,
+              marginTop: 16,
+            }}
+          >
+            <div style={{ border: '1px solid #16a34a', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 28, fontWeight: 'bold' }}>{viewerMode}</div>
+              <div style={{ opacity: 0.7 }}>Mode</div>
+            </div>
+
+            <div style={{ border: '1px solid #2563eb', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 28, fontWeight: 'bold' }}>{presentationState?.slidesShown ?? 0}</div>
+              <div style={{ opacity: 0.7 }}>Slides Shown</div>
+            </div>
+
+            <div style={{ border: '1px solid #9333ea', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 28, fontWeight: 'bold' }}>{presentationState?.totalSlides ?? 0}</div>
+              <div style={{ opacity: 0.7 }}>Audience Slides</div>
+            </div>
+
+            <div style={{ border: '1px solid #f59e0b', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 28, fontWeight: 'bold' }}>{loopMode ? 'ON' : 'OFF'}</div>
+              <div style={{ opacity: 0.7 }}>Loop Mode</div>
+            </div>
+
+            <div style={{ border: '1px solid #06b6d4', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 28, fontWeight: 'bold' }}>{maxPhotos === 0 ? 'ALL' : maxPhotos}</div>
+              <div style={{ opacity: 0.7 }}>Max Photos</div>
+            </div>
+
+            <div style={{ border: '1px solid #eab308', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 28, fontWeight: 'bold' }}>{presentationState?.featuredLevel ?? 0}</div>
+              <div style={{ opacity: 0.7 }}>Featured Level</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
