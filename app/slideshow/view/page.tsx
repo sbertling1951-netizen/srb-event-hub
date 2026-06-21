@@ -52,6 +52,7 @@ export default function SlideshowViewPage() {
           totalSlides: photos.length,
           paused: pausedRef.current,
           historyMode: historyModeRef.current,
+          slidesShown: slidesShownRef.current,
         }),
       );
     } catch (error) {
@@ -61,6 +62,9 @@ export default function SlideshowViewPage() {
 
   const showSlide = (index: number) => {
     setCurrentIndex(index);
+
+    slidesShownRef.current += 1;
+    setSlidesShown(slidesShownRef.current);
 
     const history = slideHistoryRef.current;
 
@@ -96,6 +100,8 @@ export default function SlideshowViewPage() {
   const [imagesReady, setImagesReady] = useState(false);
   const [preloadedCount, setPreloadedCount] = useState(0);
   const [totalSlides, setTotalSlides] = useState(0);
+  const [slidesShown, setSlidesShown] = useState(0);
+  const slidesShownRef = useRef(0);
   const recentSlidesRef = useRef<number[]>([]);
   const featuredCooldownRef = useRef(-9999);
   const featuredShownCountRef = useRef<Record<number, number>>({});
@@ -250,6 +256,10 @@ export default function SlideshowViewPage() {
       );
 
       setPhotos(slides);
+
+      slidesShownRef.current = 1;
+      setSlidesShown(1);
+
       slideHistoryRef.current = [0];
       historyPositionRef.current = 0;
       setCurrentIndex(0);
@@ -446,6 +456,9 @@ export default function SlideshowViewPage() {
             recentSlidesRef.current = [];
             featuredCooldownRef.current = -9999;
             featuredShownCountRef.current = {};
+
+            slidesShownRef.current = 1;
+            setSlidesShown(1);
 
             slideHistoryRef.current = [0];
             historyPositionRef.current = 0;
@@ -660,6 +673,21 @@ export default function SlideshowViewPage() {
                   objectFit: "contain",
                 }}
               />
+              <div
+                style={{
+                  position: "absolute",
+                  top: 12,
+                  right: 12,
+                  background: "rgba(0,0,0,0.45)",
+                  color: "white",
+                  padding: "6px 10px",
+                  borderRadius: 6,
+                  fontSize: 14,
+                  pointerEvents: "none",
+                }}
+              >
+                {slidesShown.toLocaleString()} slides shown
+              </div>
 
               {currentPhoto.show_caption && currentCaption ? (
                 <div
