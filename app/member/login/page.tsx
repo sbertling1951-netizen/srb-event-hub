@@ -197,30 +197,33 @@ export default function MemberLoginPage() {
       console.log("MEMBER LOGIN ATTENDEE", attendee);
 
       if (!attendee?.id) {
-        const { data: participant } = await supabase
+        const { data: participants, error: participantError } = await supabase
           .from("attendee_household_members")
           .select("attendee_id,id,first_name,last_name,email")
-          .eq("email", normalizedEmail)
-          .maybeSingle();
+          .eq("email", normalizedEmail);
 
-        console.log("MEMBER LOGIN PARTICIPANT", participant);
+        console.log("MEMBER LOGIN PARTICIPANTS", participants);
+        console.log("MEMBER LOGIN PARTICIPANT ERROR", participantError);
 
-        if (participant?.attendee_id) {
-          const { data: attendeeData } = await supabase
-            .from("attendees")
-            .select(
-              "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,has_arrived,auth_user_id",
-            )
-            .eq("id", participant.attendee_id)
-            .eq("event_id", event.id)
-            .maybeSingle();
+        if (participants?.length) {
+          for (const participant of participants) {
+            const { data: attendeeData } = await supabase
+              .from("attendees")
+              .select(
+                "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,has_arrived,auth_user_id,event_id",
+              )
+              .eq("id", participant.attendee_id)
+              .eq("event_id", event.id)
+              .maybeSingle();
 
-          attendee = attendeeData as AttendeeRow | null;
+            if (attendeeData?.id) {
+              attendee = attendeeData as AttendeeRow;
 
-          console.log(
-            "MEMBER LOGIN ATTENDEE FROM PARTICIPANT",
-            attendee,
-          );
+              console.log("MEMBER LOGIN ATTENDEE FROM PARTICIPANT", attendee);
+
+              break;
+            }
+          }
         }
       }
 
@@ -243,10 +246,7 @@ export default function MemberLoginPage() {
             attendee.auth_user_id,
           );
         }
-        console.log(
-          "MEMBER AUTH USER ID",
-          attendee.auth_user_id,
-        );
+        console.log("MEMBER AUTH USER ID", attendee.auth_user_id);
         localStorage.setItem("fcoc-member-entry-id", attendee.entry_id || "");
         localStorage.setItem("fcoc-member-has-arrived", String(arrived));
         localStorage.setItem("fcoc-user-mode", "member");

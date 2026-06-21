@@ -37,6 +37,8 @@ type AttendeeRow = {
   pilot_last: string | null;
   copilot_first: string | null;
   copilot_last: string | null;
+  copilot_email?: string | null;
+  copilot_cell_phone?: string | null;
   primary_phone?: string | null;
   cell_phone?: string | null;
   nickname: string | null;
@@ -98,6 +100,13 @@ type AttendeeEditorState = {
   nickname: string;
   copilot_nickname: string;
   email: string;
+  copilot_email: string;
+  copilot_cell_phone: string;
+  additional_first_name: string;
+  additional_last_name: string;
+  additional_nickname: string;
+  additional_email: string;
+  additional_cell_phone: string;
   membership_number: string;
   city: string;
   state: string;
@@ -301,6 +310,13 @@ function emptyAttendeeEditorState(): AttendeeEditorState {
     nickname: "",
     copilot_nickname: "",
     email: "",
+    copilot_email: "",
+    copilot_cell_phone: "",
+    additional_first_name: "",
+    additional_last_name: "",
+    additional_nickname: "",
+    additional_email: "",
+    additional_cell_phone: "",
     membership_number: "",
     city: "",
     state: "",
@@ -336,6 +352,13 @@ function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
     nickname: attendee.nickname || "",
     copilot_nickname: attendee.copilot_nickname || "",
     email: attendee.email || "",
+    copilot_email: attendee.copilot_email || "",
+    copilot_cell_phone: attendee.copilot_cell_phone || "",
+    additional_first_name: "",
+    additional_last_name: "",
+    additional_nickname: "",
+    additional_email: "",
+    additional_cell_phone: "",
     membership_number: attendee.membership_number || "",
     city: attendee.city || "",
     state: attendee.state || "",
@@ -1727,28 +1750,56 @@ function AttendeeEditorModal(props: {
   onSave: () => Promise<void>;
 }) {
   const { open, mode, state, saving, onClose, onChange, onSave } = props;
+  const [showAdditionalParticipant, setShowAdditionalParticipant] =
+    useState(false);
+  // Automatically show additional participant if any of its fields are populated
+  useEffect(() => {
+    if (
+      state.additional_first_name ||
+      state.additional_last_name ||
+      state.additional_nickname ||
+      state.additional_email ||
+      state.additional_cell_phone
+    ) {
+      setShowAdditionalParticipant(true);
+    }
+  }, [
+    state.additional_first_name,
+    state.additional_last_name,
+    state.additional_nickname,
+    state.additional_email,
+    state.additional_cell_phone,
+  ]);
   if (!open) {
     return null;
   }
 
-  const textFields: Array<{ key: keyof AttendeeEditorState; label: string }> = [
-    { key: "pilot_first", label: "Pilot First" },
-    { key: "pilot_last", label: "Pilot Last" },
-    { key: "copilot_first", label: "Co-Pilot First" },
-    { key: "copilot_last", label: "Co-Pilot Last" },
-    { key: "nickname", label: "Pilot Nickname" },
-    { key: "copilot_nickname", label: "Co-Pilot Nickname" },
-    { key: "email", label: "Email" },
-    { key: "membership_number", label: "Membership Number" },
-    { key: "city", label: "City" },
-    { key: "state", label: "State" },
-    { key: "assigned_site", label: "Assigned Site" },
-    { key: "primary_phone", label: "Primary Phone" },
-    { key: "cell_phone", label: "Cell Phone" },
-    { key: "coach_manufacturer", label: "Coach Manufacturer" },
-    { key: "coach_model", label: "Coach Model" },
-    { key: "entry_id", label: "Entry ID" },
-  ];
+  // Insert membership_number after copilot_email if not already present there
+  // Remove assigned_site from the main textFields array
+  const textFields: Array<{ key: keyof AttendeeEditorState; label: string }> =
+    (() => {
+      // Reorder and move copilot_cell_phone per requirements
+      const fields: Array<{ key: keyof AttendeeEditorState; label: string }> = [
+        { key: "pilot_first", label: "Pilot First" },
+        { key: "pilot_last", label: "Pilot Last" },
+        { key: "copilot_first", label: "Co-Pilot First" },
+        { key: "copilot_last", label: "Co-Pilot Last" },
+        { key: "nickname", label: "Pilot Nickname" },
+        { key: "copilot_nickname", label: "Co-Pilot Nickname" },
+        { key: "email", label: "Email" },
+        { key: "copilot_email", label: "Co-Pilot Email" },
+        { key: "membership_number", label: "Membership Number" },
+        { key: "city", label: "City" },
+        { key: "state", label: "State" },
+        { key: "primary_phone", label: "Primary Phone" },
+        { key: "cell_phone", label: "Cell Phone" },
+        { key: "coach_manufacturer", label: "Coach Manufacturer" },
+        { key: "coach_model", label: "Coach Model" },
+        { key: "entry_id", label: "Entry ID" },
+        { key: "copilot_cell_phone", label: "Co-Pilot Cell Phone" },
+      ];
+      return fields;
+    })();
 
   return (
     <div
@@ -1815,59 +1866,131 @@ function AttendeeEditorModal(props: {
               gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
             }}
           >
-            {textFields.map((field) => (
-              <div key={String(field.key)}>
-                <label style={labelStyle}>{field.label}</label>
-                <input
-                  value={String(state[field.key] ?? "")}
-                  onChange={(e) =>
-                    onChange(
-                      field.key,
-                      field.key === "membership_number"
-                        ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
-                        : (e.target
-                            .value as AttendeeEditorState[typeof field.key]),
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-            ))}
-
-            <div>
-              <label style={labelStyle}>Participant Type</label>
-              <select
-                value={state.participant_type}
-                onChange={(e) => onChange("participant_type", e.target.value)}
-                style={inputStyle}
+            {/* Render all fields except membership_number */}
+            {(() => {
+              const rows = [];
+              for (let i = 0; i < textFields.length; ++i) {
+                const field = textFields[i];
+                if (field.key === "membership_number") {
+                  // Skip rendering here; handled by future participant section
+                  continue;
+                }
+                rows.push(
+                  <div key={String(field.key)}>
+                    <label style={labelStyle}>{field.label}</label>
+                    <input
+                      value={String(state[field.key] ?? "")}
+                      onChange={(e) =>
+                        onChange(
+                          field.key,
+                          field.key === "membership_number"
+                            ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
+                            : (e.target
+                                .value as AttendeeEditorState[typeof field.key]),
+                        )
+                      }
+                      style={inputStyle}
+                    />
+                  </div>,
+                );
+              }
+              return rows;
+            })()}
+            {/* Single full-width Add Additional Participant button row */}
+            <div style={{ display: "flex", alignItems: "end" }}>
+              <button
+                type="button"
+                style={{
+                  ...secondaryButtonStyle,
+                  width: "100%",
+                  minWidth: "340px",
+                  whiteSpace: "nowrap",
+                }}
+                onClick={() =>
+                  setShowAdditionalParticipant((current) => !current)
+                }
               >
-                {PARTICIPANT_TYPE_OPTIONS.filter(
-                  (option) => option !== "all",
-                ).map((option) => (
-                  <option key={option} value={option}>
-                    {participantTypeLabel(option)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={labelStyle}>Data Status</label>
-              <select
-                value={state.data_status}
-                onChange={(e) => onChange("data_status", e.target.value)}
-                style={inputStyle}
-              >
-                {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
-                  (option) => (
-                    <option key={option} value={option}>
-                      {dataStatusOptionLabel(option)}
-                    </option>
-                  ),
-                )}
-              </select>
+                {showAdditionalParticipant
+                  ? "− Hide Additional Participant"
+                  : "+ Add Additional Participant"}
+              </button>
             </div>
           </div>
+
+          {/* Additional Participant fields UI */}
+          {showAdditionalParticipant ? (
+            <>
+              <div
+                style={{
+                  marginTop: 14,
+                  display: "grid",
+                  gap: 14,
+                  gridTemplateColumns: "repeat(5, minmax(180px, 1fr))",
+                  alignItems: "end",
+                }}
+              >
+                <div>
+                  <label style={labelStyle}>Participant First Name</label>
+                  <input
+                    style={inputStyle}
+                    placeholder="First name"
+                    value={state.additional_first_name}
+                    onChange={(e) =>
+                      onChange("additional_first_name", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Participant Last Name</label>
+                  <input
+                    style={inputStyle}
+                    placeholder="Last name"
+                    value={state.additional_last_name}
+                    onChange={(e) =>
+                      onChange("additional_last_name", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Participant Nickname</label>
+                  <input
+                    style={inputStyle}
+                    placeholder="Nickname"
+                    value={state.additional_nickname}
+                    onChange={(e) =>
+                      onChange("additional_nickname", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Participant Email</label>
+                  <input
+                    style={inputStyle}
+                    placeholder="Email address"
+                    value={state.additional_email}
+                    onChange={(e) =>
+                      onChange("additional_email", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Participant Cell Phone</label>
+                  <input
+                    style={inputStyle}
+                    placeholder="Cell phone (optional)"
+                    value={state.additional_cell_phone}
+                    onChange={(e) =>
+                      onChange("additional_cell_phone", e.target.value)
+                    }
+                  />
+                </div>
+              </div>
+            </>
+          ) : null}
           <div style={{ marginTop: 14 }}>
             <label style={labelStyle}>Special Events Raw</label>
             <textarea
@@ -1983,6 +2106,59 @@ function AttendeeEditorModal(props: {
               style={textareaStyle}
               rows={4}
             />
+          </div>
+          {/* Assigned Site, Participant Type, Data Status row (moved near bottom) */}
+          <div
+            style={{
+              marginTop: 14,
+              display: "grid",
+              gap: 14,
+              gridTemplateColumns: "2fr 1fr 1fr",
+              alignItems: "end",
+            }}
+          >
+            <div>
+              <label style={labelStyle}>Assigned Site</label>
+              <input
+                value={state.assigned_site}
+                onChange={(e) => onChange("assigned_site", e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Participant Type</label>
+              <select
+                value={state.participant_type}
+                onChange={(e) => onChange("participant_type", e.target.value)}
+                style={inputStyle}
+              >
+                {PARTICIPANT_TYPE_OPTIONS.filter(
+                  (option) => option !== "all",
+                ).map((option) => (
+                  <option key={option} value={option}>
+                    {participantTypeLabel(option)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Data Status</label>
+              <select
+                value={state.data_status}
+                onChange={(e) => onChange("data_status", e.target.value)}
+                style={inputStyle}
+              >
+                {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
+                  (option) => (
+                    <option key={option} value={option}>
+                      {dataStatusOptionLabel(option)}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -2177,6 +2353,8 @@ function AdminAttendeesPageInner() {
   pilot_last,
   copilot_first,
   copilot_last,
+  copilot_email,
+copilot_cell_phone,
   primary_phone,
   cell_phone,
   nickname,
@@ -2737,11 +2915,34 @@ function AdminAttendeesPageInner() {
     setEditorOpen(true);
   }
 
-  const openEditAttendeeEditor = useCallback((attendee: AttendeeRow) => {
+  const openEditAttendeeEditor = useCallback(async (attendee: AttendeeRow) => {
     cancelInlineEdit();
     setEditorMode("edit");
-    setEditorState(attendeeToEditorState(attendee));
+
+    const nextState = attendeeToEditorState(attendee);
+
+    const { data: participantRows } = await supabase
+      .from("attendee_household_members")
+      .select("person_role,email")
+      .eq("attendee_id", attendee.id);
+
+    const pilot = participantRows?.find((row) => row.person_role === "pilot");
+
+    const copilot = participantRows?.find(
+      (row) => row.person_role === "copilot",
+    );
+
+    if (pilot?.email) {
+      nextState.email = pilot.email;
+    }
+
+    if (copilot?.email) {
+      nextState.copilot_email = copilot.email;
+    }
+
+    setEditorState(nextState);
     setEditorOpen(true);
+
     // cancelInlineEdit is intentionally omitted to avoid declaration-order issues in this component.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2817,6 +3018,8 @@ function AdminAttendeesPageInner() {
         nickname: editorState.nickname.trim() || null,
         copilot_nickname: editorState.copilot_nickname.trim() || null,
         email: email || null,
+        copilot_email: editorState.copilot_email.trim().toLowerCase() || null,
+        copilot_cell_phone: editorState.copilot_cell_phone.trim() || null,
         membership_number: membershipNumber || null,
         city: editorState.city.trim() || null,
         state: editorState.state.trim() || null,
@@ -2841,11 +3044,39 @@ function AdminAttendeesPageInner() {
       };
 
       if (editorMode === "create") {
-        const { error: insertError } = await supabase
+        const { data: newAttendee, error: insertError } = await supabase
           .from("attendees")
-          .insert(payload);
+          .insert(payload)
+          .select("id")
+          .single();
+
         if (insertError) {
           throw insertError;
+        }
+
+        if (newAttendee && editorState.additional_first_name.trim()) {
+          const { error: participantError } = await supabase
+            .from("attendee_household_members")
+            .insert({
+              event_id: currentEvent.id,
+              attendee_id: newAttendee.id,
+              person_role: "additional",
+              first_name: editorState.additional_first_name.trim(),
+              last_name: editorState.additional_last_name.trim() || null,
+              nickname: editorState.additional_nickname.trim() || null,
+              display_name: [
+                editorState.additional_first_name.trim(),
+                editorState.additional_last_name.trim(),
+              ]
+                .filter(Boolean)
+                .join(" "),
+              email: editorState.additional_email.trim().toLowerCase() || null,
+              participant_status: "registered",
+            });
+
+          if (participantError) {
+            throw participantError;
+          }
         }
         showFlash("Attendee record created.");
       } else {

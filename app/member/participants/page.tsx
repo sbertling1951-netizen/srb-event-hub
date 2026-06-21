@@ -420,8 +420,22 @@ function ParticipantsPageInner() {
           {Array.from({ length: vacantSlots }).map((_, index) => (
             <div key={`vacant-${index}`} className="card">
               <div className="font-semibold">Additional Attendee</div>
-              <div className="text-sm text-gray-500">
-                Vacant participant slot
+
+              <div className="text-amber-700 font-medium" style={{ marginTop: "0.5rem" }}>
+                Participant Not Yet Identified
+              </div>
+
+              <div className="text-sm text-gray-500" style={{ marginTop: "0.25rem" }}>
+                This participant position has been reserved but has not yet been assigned to a person.
+              </div>
+
+              <div
+                className="app-card-section-muted"
+                style={{ marginTop: "0.75rem", textAlign: "center" }}
+              >
+                <div className="text-sm font-medium">
+                  Additional participant information can be added later by event staff or the registration owner.
+                </div>
               </div>
             </div>
           ))}

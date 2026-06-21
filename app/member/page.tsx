@@ -211,10 +211,66 @@ export default function MemberDashboardPage() {
         <h1 style={{ marginTop: 0, marginBottom: 8 }}>
           {currentEvent.name || dashboardTitle}
         </h1>
-
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           {currentEvent.location || ""}
         </div>
+      </div>
+
+      {/* Phase 1 Participants card */}
+      <div
+        className="card"
+        style={{
+          padding: 18,
+          border: '1px solid #ddd',
+          borderRadius: 12,
+          background: '#fff',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 12,
+          }}
+        >
+          <h2 style={{ margin: 0 }}>Participants</h2>
+          <div
+            style={{
+              padding: '4px 10px',
+              borderRadius: 999,
+              background: '#eff6ff',
+              color: '#1d4ed8',
+              fontWeight: 700,
+            }}
+          >
+            1 of 2
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 12,
+            border: '1px solid #e5e7eb',
+            borderRadius: 8,
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>✓ Primary Participant</div>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            {getStoredMemberEmail() || 'Email on file'}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          style={{
+            ...memberGridButtonStyle,
+            textAlign: 'center',
+          }}
+        >
+          + Add Participant
+        </button>
       </div>
 
       <div
