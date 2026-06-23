@@ -216,31 +216,31 @@ export default function MemberDashboardPage() {
         </div>
       </div>
 
-      {/* Phase 1 Participants card */}
+      {/* Digital Identities */}
       <div
         className="card"
         style={{
           padding: 18,
-          border: '1px solid #ddd',
+          border: "1px solid #ddd",
           borderRadius: 12,
-          background: '#fff',
+          background: "#fff",
         }}
       >
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
             marginBottom: 12,
           }}
         >
-          <h2 style={{ margin: 0 }}>Participants</h2>
+          <h2 style={{ margin: 0 }}>Digital Identities</h2>
           <div
             style={{
-              padding: '4px 10px',
+              padding: "4px 10px",
               borderRadius: 999,
-              background: '#eff6ff',
-              color: '#1d4ed8',
+              background: "#eff6ff",
+              color: "#1d4ed8",
               fontWeight: 700,
             }}
           >
@@ -250,23 +250,30 @@ export default function MemberDashboardPage() {
 
         <div
           style={{
-            padding: 12,
-            border: '1px solid #e5e7eb',
-            borderRadius: 8,
+            fontSize: 14,
+            color: "#4b5563",
             marginBottom: 12,
           }}
         >
-          <div style={{ fontWeight: 700 }}>✓ Primary Participant</div>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            {getStoredMemberEmail() || 'Email on file'}
-          </div>
+          Enter participant information to create name badges,
+          enable individual logins, and improve check-in.
         </div>
 
         <button
           type="button"
           style={{
             ...memberGridButtonStyle,
-            textAlign: 'center',
+            marginBottom: 10,
+          }}
+        >
+          Steve Bertling
+        </button>
+
+        <button
+          type="button"
+          style={{
+            ...memberGridButtonStyle,
+            textAlign: "center",
           }}
         >
           + Add Participant

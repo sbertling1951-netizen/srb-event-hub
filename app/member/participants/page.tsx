@@ -49,6 +49,7 @@ function ParticipantsPageInner() {
       try {
         const currentEvent = getCurrentMemberEvent();
 
+        console.log("PARTICIPANTS CURRENT EVENT", currentEvent);
         if (!currentEvent?.id) {
           setParticipantCount(0);
           setCapacity(0);
@@ -59,9 +60,7 @@ function ParticipantsPageInner() {
         const attendeeId = getStoredMemberAttendeeId();
         const entryId = getStoredMemberEntryId();
 
-        const authUserId = localStorage.getItem(
-          "fcoc-member-auth-user-id",
-        );
+        const authUserId = localStorage.getItem("fcoc-member-auth-user-id");
 
         console.log("PARTICIPANTS AUTH USER ID", authUserId);
 
@@ -105,8 +104,10 @@ function ParticipantsPageInner() {
           .eq("attendee_id", attendee.id)
           .order("sort_order", { ascending: true });
 
-        setParticipants((memberRows || []) as Participant[]);
-        setParticipantCount((memberRows || []).length);
+        const loadedParticipants = (memberRows || []) as Participant[];
+
+        setParticipants(loadedParticipants);
+        setParticipantCount(loadedParticipants.length);
       } finally {
         setLoading(false);
       }
@@ -121,6 +122,8 @@ function ParticipantsPageInner() {
 
   const vacantSlots = Math.max(0, capacity - participantCount);
 
+  const identifiedParticipants = participantCount;
+
   const handleSaveEmail = async (participantId: string) => {
     const email = (emailInputs[participantId] || "").trim();
 
@@ -132,13 +135,10 @@ function ParticipantsPageInner() {
     try {
       setSavingParticipantId(participantId);
 
-      const result = await supabase.rpc(
-        "update_participant_email",
-        {
-          p_participant_id: participantId,
-          p_email: email,
-        },
-      );
+      const result = await supabase.rpc("update_participant_email", {
+        p_participant_id: participantId,
+        p_email: email,
+      });
 
       console.log("PARTICIPANT UPDATE RESULT", result);
       console.log("PARTICIPANT ID", participantId);
@@ -187,7 +187,7 @@ function ParticipantsPageInner() {
 
         <div className="app-card-section" style={{ textAlign: "center" }}>
           <div style={{ fontSize: "2rem", fontWeight: 700 }}>
-            {registeredParticipants} of {participantCount || capacity}
+            {registeredParticipants} of {capacity}
           </div>
 
           <div className="app-muted-text">Registered</div>
@@ -206,13 +206,13 @@ function ParticipantsPageInner() {
             className=""
             style={{
               width: `${
-                participantCount > 0
-                  ? (registeredParticipants / participantCount) * 100
+                capacity > 0
+                  ? (registeredParticipants / capacity) * 100
                   : 0
               }%`,
               background:
-                registeredParticipants === participantCount &&
-                participantCount > 0
+                registeredParticipants === capacity &&
+                capacity > 0
                   ? "#22c55e"
                   : "#f59e0b",
               height: "100%",
@@ -221,14 +221,14 @@ function ParticipantsPageInner() {
         </div>
 
         <div className="app-card-section" style={{ textAlign: "center" }}>
-          {participantCount > 0 &&
-          registeredParticipants === participantCount ? (
+          {capacity > 0 &&
+          registeredParticipants === capacity ? (
             <div className="font-medium text-green-700">
               ✓ All participant accounts registered
             </div>
           ) : (
             <div className="font-medium text-amber-700">
-              {participantCount - registeredParticipants} participant Still
+              {Math.max(0, capacity - registeredParticipants)} participant Still
               needs an account.
             </div>
           )}
@@ -246,7 +246,7 @@ function ParticipantsPageInner() {
             <div className="text-xs uppercase tracking-wide text-gray-500">
               Participants
             </div>
-            <div className="text-2xl font-semibold">{participantCount}</div>
+            <div className="text-2xl font-semibold">{capacity}</div>
           </div>
 
           <div className="card" style={{ textAlign: "center" }}>
@@ -421,12 +421,19 @@ function ParticipantsPageInner() {
             <div key={`vacant-${index}`} className="card">
               <div className="font-semibold">Additional Attendee</div>
 
-              <div className="text-amber-700 font-medium" style={{ marginTop: "0.5rem" }}>
+              <div
+                className="text-amber-700 font-medium"
+                style={{ marginTop: "0.5rem" }}
+              >
                 Participant Not Yet Identified
               </div>
 
-              <div className="text-sm text-gray-500" style={{ marginTop: "0.25rem" }}>
-                This participant position has been reserved but has not yet been assigned to a person.
+              <div
+                className="text-sm text-gray-500"
+                style={{ marginTop: "0.25rem" }}
+              >
+                This participant position has been reserved but has not yet been
+                assigned to a person.
               </div>
 
               <div
@@ -434,7 +441,8 @@ function ParticipantsPageInner() {
                 style={{ marginTop: "0.75rem", textAlign: "center" }}
               >
                 <div className="text-sm font-medium">
-                  Additional participant information can be added later by event staff or the registration owner.
+                  Additional participant information can be added later by event
+                  staff or the registration owner.
                 </div>
               </div>
             </div>

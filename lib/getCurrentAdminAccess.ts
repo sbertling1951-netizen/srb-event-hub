@@ -248,13 +248,20 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         return null;
       }
 
-      const { data: accessRows } = await withTimeout(
-        supabase
-          .from("admin_event_access")
-          .select("*")
-          .eq("admin_user_id", adminUser.id),
-        "Admin event access lookup",
-      );
+      console.log("[ADMIN] About to load event access", adminUser.id);
+
+      const accessStarted = Date.now();
+
+      const { data: accessRows, error: accessError } = await supabase
+        .from("admin_event_access")
+        .select("*")
+        .eq("admin_user_id", adminUser.id);
+
+      console.log("[ADMIN] Event access result", {
+        elapsed: Date.now() - accessStarted,
+        rows: accessRows?.length ?? 0,
+        error: accessError,
+      });
 
       const eventIds = unique((accessRows || []).map((r: any) => r.event_id));
 

@@ -2909,6 +2909,147 @@ copilot_cell_phone,
     }
   }
 
+  // Helper to sync pilot/copilot/additional household members for an attendee
+  async function syncHouseholdMembers(
+    attendeeId: string,
+    payload: any,
+    eventId: string,
+    editorState: AttendeeEditorState,
+  ) {
+    try {
+      // 1. Query attendee_household_members for this attendee
+      const { data: memberRows, error: memberError } = await supabase
+        .from("attendee_household_members")
+        .select("id, person_role")
+        .eq("attendee_id", attendeeId);
+      if (memberError) {
+        throw memberError;
+      }
+      const pilotRow = memberRows?.find(
+        (row: any) => row.person_role === "pilot",
+      );
+      const copilotRow = memberRows?.find(
+        (row: any) => row.person_role === "copilot",
+      );
+      const additionalRow = memberRows?.find(
+        (row: any) => row.person_role === "additional",
+      );
+
+      // 3. Build pilotDisplayName
+      const pilotDisplayName = payload.nickname
+        ? payload.nickname
+        : [payload.pilot_first, payload.pilot_last].filter(Boolean).join(" ");
+      // 4. Build copilotDisplayName
+      const copilotDisplayName = payload.copilot_nickname
+        ? payload.copilot_nickname
+        : [payload.copilot_first, payload.copilot_last]
+            .filter(Boolean)
+            .join(" ");
+
+      // 5. Upsert/update the pilot row
+      const pilotUpsert = {
+        person_role: "pilot",
+        first_name: payload.pilot_first || null,
+        last_name: payload.pilot_last || null,
+        nickname: payload.nickname || null,
+        display_name: pilotDisplayName || null,
+        email: payload.email || null,
+        participant_status: "identified",
+        event_id: eventId,
+        attendee_id: attendeeId,
+      };
+      await supabase
+        .from("attendee_household_members")
+        .upsert(pilotRow ? { ...pilotUpsert, id: pilotRow.id } : pilotUpsert, {
+          onConflict: "attendee_id,person_role",
+        });
+
+      // 6. Handle copilot logic
+      const hasCopilot =
+        !!payload.copilot_first ||
+        !!payload.copilot_last ||
+        !!payload.copilot_email;
+      if (hasCopilot) {
+        const copilotUpsert = {
+          person_role: "copilot",
+          first_name: payload.copilot_first || null,
+          last_name: payload.copilot_last || null,
+          nickname: payload.copilot_nickname || null,
+          display_name: copilotDisplayName || null,
+          email: payload.copilot_email || null,
+          participant_status: "identified",
+          event_id: eventId,
+          attendee_id: attendeeId,
+        };
+        await supabase
+          .from("attendee_household_members")
+          .upsert(
+            copilotRow
+              ? { ...copilotUpsert, id: copilotRow.id }
+              : copilotUpsert,
+            { onConflict: "attendee_id,person_role" },
+          );
+      } else if (copilotRow) {
+        // 7. If no copilot info but copilot row exists, delete only the copilot row
+        await supabase
+          .from("attendee_household_members")
+          .delete()
+          .eq("id", copilotRow.id);
+      }
+
+      // Additional participant sync logic
+      const hasAdditional =
+        !!editorState.additional_first_name ||
+        !!editorState.additional_last_name ||
+        !!editorState.additional_email ||
+        !!editorState.additional_nickname ||
+        !!editorState.additional_cell_phone;
+
+      console.log("HAS ADDITIONAL", hasAdditional);
+
+      if (hasAdditional) {
+        const additionalDisplayName = editorState.additional_nickname
+          ? editorState.additional_nickname
+          : [
+              editorState.additional_first_name,
+              editorState.additional_last_name,
+            ]
+              .filter(Boolean)
+              .join(" ");
+
+        const additionalUpsert = {
+          person_role: "additional",
+          first_name: editorState.additional_first_name || null,
+          last_name: editorState.additional_last_name || null,
+          nickname: editorState.additional_nickname || null,
+          display_name: additionalDisplayName || null,
+          email: editorState.additional_email || null,
+          cell_phone: editorState.additional_cell_phone || null,
+          participant_status: "identified",
+          event_id: eventId,
+          attendee_id: attendeeId,
+        };
+
+        await supabase
+          .from("attendee_household_members")
+          .upsert(
+            additionalRow
+              ? { ...additionalUpsert, id: additionalRow.id }
+              : additionalUpsert,
+            { onConflict: "attendee_id,person_role" },
+          );
+      } else if (additionalRow) {
+        await supabase
+          .from("attendee_household_members")
+          .delete()
+          .eq("id", additionalRow.id);
+      }
+      // 8. Do not touch any other person_role rows
+    } catch (err) {
+      console.error("syncHouseholdMembers error", err);
+    }
+  }
+
   function openCreateAttendeeEditor() {
     setEditorMode("create");
     setEditorState(emptyAttendeeEditorState());
@@ -2923,7 +3064,7 @@ copilot_cell_phone,
 
     const { data: participantRows } = await supabase
       .from("attendee_household_members")
-      .select("person_role,email")
+      .select("person_role,email,first_name,last_name,nickname,cell_phone")
       .eq("attendee_id", attendee.id);
 
     const pilot = participantRows?.find((row) => row.person_role === "pilot");
@@ -2938,6 +3079,18 @@ copilot_cell_phone,
 
     if (copilot?.email) {
       nextState.copilot_email = copilot.email;
+    }
+
+    const additional = participantRows?.find(
+      (row) => row.person_role === "additional",
+    );
+
+    if (additional) {
+      nextState.additional_first_name = additional.first_name || "";
+      nextState.additional_last_name = additional.last_name || "";
+      nextState.additional_nickname = additional.nickname || "";
+      nextState.additional_email = additional.email || "";
+      nextState.additional_cell_phone = additional.cell_phone || "";
     }
 
     setEditorState(nextState);
@@ -3054,29 +3207,14 @@ copilot_cell_phone,
           throw insertError;
         }
 
-        if (newAttendee && editorState.additional_first_name.trim()) {
-          const { error: participantError } = await supabase
-            .from("attendee_household_members")
-            .insert({
-              event_id: currentEvent.id,
-              attendee_id: newAttendee.id,
-              person_role: "additional",
-              first_name: editorState.additional_first_name.trim(),
-              last_name: editorState.additional_last_name.trim() || null,
-              nickname: editorState.additional_nickname.trim() || null,
-              display_name: [
-                editorState.additional_first_name.trim(),
-                editorState.additional_last_name.trim(),
-              ]
-                .filter(Boolean)
-                .join(" "),
-              email: editorState.additional_email.trim().toLowerCase() || null,
-              participant_status: "registered",
-            });
-
-          if (participantError) {
-            throw participantError;
-          }
+        // Sync pilot, copilot, and additional household members
+        if (newAttendee) {
+          await syncHouseholdMembers(
+            newAttendee.id,
+            payload,
+            currentEvent.id,
+            editorState,
+          );
         }
         showFlash("Attendee record created.");
       } else {
@@ -3087,9 +3225,17 @@ copilot_cell_phone,
         if (updateError) {
           throw updateError;
         }
-        showFlash("Attendee record updated.");
-      }
+        if (!editorState.id) {
+          throw new Error("Missing attendee id for edit");
+        }
 
+        await syncHouseholdMembers(
+          editorState.id,
+          payload,
+          currentEvent.id,
+          editorState,
+        );
+      }
       if (editorMode === "edit" && viewMode === "review") {
         const savedAttendeeId = editorState.id;
         const updatedAttendees = attendees.map((row) =>
