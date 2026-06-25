@@ -19,6 +19,8 @@ type Vendor = {
   business_description: string | null;
   preferred_contact_method: string | null;
   is_active: boolean | null;
+  vendor_portal_enabled: boolean | null;
+  created_at: string | null;
 };
 
 type EventVendor = {
@@ -157,6 +159,70 @@ function AdminVendorsPageInner() {
     return map;
   }, [eventVendors]);
 
+  const pendingVendors = useMemo(
+    () => vendors.filter((v) => v.is_active === false),
+    [vendors],
+  );
+
+  async function approveVendor(vendor: Vendor) {
+    try {
+      setSaving(true);
+      setError(null);
+
+      const { error } = await supabase
+        .from("vendors")
+        .update({
+          is_active: true,
+          vendor_portal_enabled: true,
+        })
+        .eq("id", vendor.id);
+
+      if (error) throw error;
+
+      setStatus(`${vendor.business_name} approved.`);
+      await loadPage();
+    } catch (err: any) {
+      console.error("approve vendor error:", err);
+      setError(err?.message || "Could not approve vendor.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Vendor invitation workflow
+  function copyVendorInvitation() {
+    // Use current form values
+    const businessName = form.business_name?.trim() || "";
+    const email = form.email?.trim() || "";
+    if (!email) {
+      setError("Vendor email is required before creating an invitation.");
+      return;
+    }
+    const subject = "Invitation to Participate as an Event Vendor";
+    const body = `Hello${businessName ? ` ${businessName}` : ""},
+
+You have been invited to participate as a vendor for the Freightliner Chassis Owners Club (FCOC) event in Amana, Iowa, July 15–22, 2026—an EpicentraX-enabled event.
+
+Based on the services you provide, we believe you may be a valuable resource for our attendees and would like to invite you to be considered for this event.
+
+To get started, please take a few minutes to complete your vendor profile using the link below:
+
+https://app.eventsyncapp.com/vendor/apply
+
+Your application will be reviewed by the event administrator. Once approved, your business will become part of the EpicentraX Vendor Network, making it easy for Event Hosts to consider you for future EpicentraX-enabled events.
+
+Whether your participation begins with this event or a future one, we appreciate your interest and look forward to learning more about your business.
+
+Thank you for considering this invitation.
+
+Sincerely,
+
+EpicentraX Event Services`;
+    const invitation = `Subject: ${subject}\n\n${body}`;
+    navigator.clipboard.writeText(invitation);
+    setStatus(`Invitation copied for ${email || businessName || "vendor"}.`);
+  }
+
   function startEdit(vendor: Vendor) {
     setSelectedVendorId(vendor.id);
     setForm({
@@ -241,6 +307,7 @@ function AdminVendorsPageInner() {
 
       const payload = {
         business_name: form.business_name.trim(),
+        name: form.business_name.trim(),
         contact_name: form.contact_name.trim() || null,
         email: form.email.trim() || null,
         phone: form.phone.trim() || null,
@@ -370,6 +437,9 @@ function AdminVendorsPageInner() {
           Current event: {adminEvent?.name || "No event selected"}
         </div>
         <div style={{ marginTop: 8, fontSize: 13 }}>{status}</div>
+        <div style={{ marginTop: 8, fontWeight: 700 }}>
+          Pending Vendor Applications: {pendingVendors.length}
+        </div>
         {error ? (
           <div
             style={{
@@ -395,7 +465,6 @@ function AdminVendorsPageInner() {
         }}
       >
         <h2 style={{ margin: 0 }}>Vendor Dashboard</h2>
-
         <div
           style={{
             display: "grid",
@@ -423,6 +492,54 @@ function AdminVendorsPageInner() {
             Admin Dashboard
           </a>
         </div>
+      </div>
+
+
+      <div className="card" style={{ padding: 18 }}>
+        <h2 style={{ marginTop: 0 }}>Pending Vendor Applications</h2>
+        {pendingVendors.length === 0 ? (
+          <div style={{ opacity: 0.7 }}>No pending vendor applications.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {pendingVendors.map((vendor) => (
+              <div
+                key={vendor.id}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: 10,
+                  padding: 12,
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>
+                  {vendor.business_name}
+                </div>
+                <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
+                  {vendor.contact_name || "No contact"}
+                  {vendor.email ? ` • ${vendor.email}` : ""}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginTop: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button type="button" onClick={() => startEdit(vendor)}>
+                    Review
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void approveVendor(vendor)}
+                    disabled={saving}
+                  >
+                    Approve Vendor
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div
@@ -594,7 +711,13 @@ function AdminVendorsPageInner() {
               <button type="button" onClick={saveVendor} disabled={saving}>
                 {saving ? "Saving..." : "Save Vendor"}
               </button>
-
+              <button
+                type="button"
+                onClick={copyVendorInvitation}
+                disabled={saving}
+              >
+                Copy Invitation
+              </button>
               <button type="button" onClick={startNew}>
                 New Vendor
               </button>
