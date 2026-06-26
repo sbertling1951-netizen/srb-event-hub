@@ -406,15 +406,21 @@ export default function AnnouncementBanner() {
               </button>
             )}
           </div>
-
+          {/* IMPORTANT:
+              Do not use whiteSpace: "nowrap" here.
+              Long announcement text can force iOS Safari to expand the page's
+              intrinsic width, causing dashboard cards to overflow horizontally.
+              Allow wrapping instead.
+          */}
           <div
             style={{
               marginTop: 6,
               fontSize: 14,
               color: "#374151",
-              whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              overflowWrap: "anywhere",
+              wordBreak: "break-word",
             }}
           >
             {announcement.message || ""}
