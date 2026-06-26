@@ -255,12 +255,13 @@ export default function MemberDashboardPage() {
             marginBottom: 12,
           }}
         >
-          Enter participant information to create name badges,
-          enable individual logins, and improve check-in.
+          Enter participant information to create name badges, enable individual
+          logins, and improve check-in.
         </div>
 
         <button
           type="button"
+          onClick={() => goTo("/member/participants")}
           style={{
             ...memberGridButtonStyle,
             marginBottom: 10,
@@ -271,6 +272,7 @@ export default function MemberDashboardPage() {
 
         <button
           type="button"
+          onClick={() => goTo("/member/participants")}
           style={{
             ...memberGridButtonStyle,
             textAlign: "center",

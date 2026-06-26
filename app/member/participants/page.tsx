@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import ParticipantIdentityEditor from "@/components/participants/ParticipantIdentityEditor";
+
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import {
   getCurrentMemberEvent,
@@ -43,6 +45,7 @@ function ParticipantsPageInner() {
   const [editingParticipantId, setEditingParticipantId] = useState<
     string | null
   >(null);
+  const [showEditor, setShowEditor] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -440,15 +443,24 @@ function ParticipantsPageInner() {
                 className="app-card-section-muted"
                 style={{ marginTop: "0.75rem", textAlign: "center" }}
               >
-                <div className="text-sm font-medium">
-                  Additional participant information can be added later by event
-                  staff or the registration owner.
-                </div>
+                <button
+                  type="button"
+                  className="app-button app-button-primary"
+                  onClick={() => setShowEditor(true)}
+                >
+                  + Add Participant
+                </button>
               </div>
             </div>
           ))}
         </>
       )}
+      <ParticipantIdentityEditor
+        open={showEditor}
+        onClose={() => setShowEditor(false)}
+        registrationId=""
+        slotRole="additional"
+      />
     </div>
   );
 }
