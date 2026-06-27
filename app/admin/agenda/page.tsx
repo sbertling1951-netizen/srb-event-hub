@@ -709,8 +709,8 @@ function AdminAgendaPageInner() {
       )
       .eq("event_id", selectedEvent.id)
       .order("agenda_date", { ascending: true, nullsFirst: false })
-      .order("sort_order", { ascending: true, nullsFirst: false })
       .order("start_time", { ascending: true, nullsFirst: false })
+      .order("sort_order", { ascending: true, nullsFirst: false })
       .order("title", { ascending: true });
 
     if (error) {
