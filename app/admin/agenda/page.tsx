@@ -592,6 +592,29 @@ function AdminAgendaPageInner() {
   const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(
     null,
   );
+  const [agendaCategories, setAgendaCategories] = useState<
+    {
+      name: string;
+      color: string;
+      is_default: boolean;
+      is_active: boolean;
+    }[]
+  >([]);
+  // Load agenda categories from DB
+  const loadAgendaCategories = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("agenda_categories")
+      .select("name,color,is_default,is_active")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+    if (error) {
+      showError(error.message || "Could not load agenda categories.");
+      setAgendaCategories([]);
+      return;
+    }
+    setAgendaCategories(data || []);
+    console.log("Loaded Categories:", data);
+  }, []);
 
   function showStatus(message: string) {
     setError(null);
@@ -707,6 +730,8 @@ function AdminAgendaPageInner() {
       .eq("status", "active")
       .order("name", { ascending: true });
 
+    console.log("Agenda Categories:", data, error);
+
     if (error) {
       showError(error.message || "Could not load agenda templates.");
       return;
@@ -716,8 +741,8 @@ function AdminAgendaPageInner() {
   }, []);
 
   const refreshAgendaData = useCallback(async () => {
-    await Promise.all([loadPage(), loadTemplates()]);
-  }, [loadPage, loadTemplates]);
+    await Promise.all([loadPage(), loadTemplates(), loadAgendaCategories()]);
+  }, [loadPage, loadTemplates, loadAgendaCategories]);
 
   useEffect(() => {
     function handleResize() {
@@ -755,6 +780,7 @@ function AdminAgendaPageInner() {
 
     void loadPage();
     void loadTemplates();
+    void loadAgendaCategories();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -763,12 +789,14 @@ function AdminAgendaPageInner() {
       ) {
         void loadPage();
         void loadTemplates();
+        void loadAgendaCategories();
       }
     }
 
     function handleAdminEventUpdated() {
       void loadPage();
       void loadTemplates();
+      void loadAgendaCategories();
     }
 
     window.addEventListener("storage", handleStorage);
@@ -784,7 +812,7 @@ function AdminAgendaPageInner() {
         handleAdminEventUpdated,
       );
     };
-  }, [admin, loadPage, loadTemplates]);
+  }, [admin, loadPage, loadTemplates, loadAgendaCategories]);
 
   function moveItemUp(id: string) {
     setItems((prev) => {
@@ -2192,6 +2220,29 @@ function AdminAgendaPageInner() {
         >
           Import Agenda
         </button>
+
+        {/* Manage Categories button */}
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = "/admin/agenda/categories";
+          }}
+          style={{
+            padding: isMobile ? "14px 16px" : "10px 14px",
+            borderRadius: 12,
+            border: "1px solid #cbd5e1",
+            background: "white",
+            color: "#111827",
+            WebkitTextFillColor: "#111827",
+            textShadow: "none",
+            fontWeight: 700,
+            minHeight: 48,
+            fontSize: isMobile ? 16 : 14,
+            cursor: "pointer",
+          }}
+        >
+          Manage Categories
+        </button>
       </div>
       {error ? (
         <div
@@ -2268,11 +2319,31 @@ function AdminAgendaPageInner() {
             padding: 12,
             display: "grid",
             gap: 8,
+            position: "sticky",
+            top: 12,
+            zIndex: 20,
+            alignSelf: "start",
           }}
         >
           <div style={{ fontWeight: 800, fontSize: 15 }}>
-            {form.id ? "Edit Agenda Item" : "Add Agenda Item"}
+            {form.id
+              ? `✏️ Editing: ${form.title || "Untitled Item"}`
+              : "➕ New Agenda Item"}
           </div>
+          {form.id ? (
+            <div
+              style={{
+                fontSize: 12,
+                color: "#475569",
+                marginTop: -2,
+                marginBottom: 4,
+              }}
+            >
+              {form.category || "No Category"} • {form.agenda_date || "No Date"}
+              {form.start_time ? ` • ${form.start_time}` : ""}
+              {form.end_time ? ` – ${form.end_time}` : ""}
+            </div>
+          ) : null}
 
           <div
             style={{
@@ -2311,23 +2382,46 @@ function AdminAgendaPageInner() {
               style={{ padding: "7px 8px" }}
             />
 
-            <input
-              value={form.category}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, category: e.target.value }))
-              }
-              placeholder="Category"
-              style={{ padding: "7px 8px" }}
-            />
+            {/* CATEGORY SELECT */}
+            <label style={{ display: "grid", gap: 3 }}>
+              <span style={{ fontSize: 12, color: "#555" }}>Category</span>
+              <select
+                value={form.category}
+                onChange={(e) => {
+                  const selected = e.target.value;
 
-            <input
-              value={form.color}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, color: e.target.value }))
-              }
-              placeholder="Color"
-              style={{ padding: "7px 8px" }}
-            />
+                  if (selected === "__manage__") {
+                    window.location.href = "/admin/agenda/categories";
+                    return;
+                  }
+
+                  const found = agendaCategories.find(
+                    (cat) => cat.name === selected,
+                  );
+
+                  setForm((prev) => ({
+                    ...prev,
+                    category: selected,
+                    color: found ? found.color : "",
+                  }));
+                }}
+                style={{ padding: "7px 8px" }}
+              >
+                <option value="">-- Select Category --</option>
+
+                {agendaCategories.map((cat) => (
+                  <option key={cat.name} value={cat.name}>
+                    {cat.name}
+                  </option>
+                ))}
+
+                <option disabled>────────────────</option>
+
+                <option value="__manage__">➕ Add / Manage Categories…</option>
+              </select>
+            </label>
+
+            {/* COLOR INPUT REMOVED */}
 
             <input
               value={form.external_id}
@@ -2438,7 +2532,21 @@ function AdminAgendaPageInner() {
 
             <button
               type="button"
-              onClick={() => setForm(emptyForm)}
+              onClick={() => {
+                // On New Blank, if a default category exists, set it
+                const defaultCat = agendaCategories.find(
+                  (cat) => cat.is_default,
+                );
+                if (defaultCat) {
+                  setForm({
+                    ...emptyForm,
+                    category: defaultCat.name,
+                    color: defaultCat.color,
+                  });
+                } else {
+                  setForm(emptyForm);
+                }
+              }}
               disabled={saving}
             >
               New Blank
@@ -2476,24 +2584,45 @@ function AdminAgendaPageInner() {
             }}
           >
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {categories.map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  onClick={() => setFilterCategory(category)}
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #d1d5db",
-                    background:
-                      filterCategory === category ? "#e5eefc" : "white",
-                    cursor: "pointer",
-                    fontSize: 13,
-                  }}
-                >
-                  {category}
-                </button>
-              ))}
+              {categories.map((category) => {
+                const cat = agendaCategories.find(
+                  (c) =>
+                    c.name.trim().toLowerCase() ===
+                    category.trim().toLowerCase(),
+                );
+
+                console.log("BUTTON:", category, "MATCH:", cat);
+
+                const bgColor =
+                  category === "All" ? "#ffffff" : cat?.color || "#f3f4f6";
+
+                const selected = filterCategory === category;
+
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setFilterCategory(category)}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      border: selected
+                        ? "2px solid #1d4ed8"
+                        : "1px solid #d1d5db",
+                      background: bgColor,
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: selected ? 700 : 500,
+                      boxShadow: selected
+                        ? "0 0 0 2px rgba(37,99,235,0.15)"
+                        : "none",
+                      transition: "all .15s ease",
+                    }}
+                  >
+                    {category}
+                  </button>
+                );
+              })}
             </div>
 
             <div
@@ -2564,11 +2693,12 @@ function AdminAgendaPageInner() {
             >
               <div>
                 <div style={{ fontWeight: 900, fontSize: 18 }}>
-                  Calendar Scheduler Preview
+                  Visual Agenda Editor
                 </div>
                 <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-                  Admin-only 15-minute schedule grid. Items fill their full time
-                  duration and overlapping activities display side-by-side.
+                  Click, drag, resize, and edit agenda items visually. Changes
+                  are synchronized with the properties panel and the agenda list
+                  below.
                 </div>
               </div>
 
@@ -2593,7 +2723,8 @@ function AdminAgendaPageInner() {
 
             {calendarDays.length === 0 ? (
               <div style={{ padding: 16, color: "#666" }}>
-                Add agenda dates and start times to use the scheduler preview.
+                Add agenda dates and start times to begin visually editing your
+                event schedule.
               </div>
             ) : (
               <div
@@ -2792,6 +2923,7 @@ function AdminAgendaPageInner() {
 
                         {blocks.map((block) => {
                           const item = block.item;
+                          const isSelected = form.id === item.id;
                           const laneWidth = 100 / block.laneCount;
                           const left = block.lane * laneWidth;
 
@@ -2814,22 +2946,45 @@ function AdminAgendaPageInner() {
                                 left: `calc(${left}% + 4px)`,
                                 width: `calc(${laneWidth}% - 8px)`,
                                 height: block.height,
-                                border: "1px solid rgba(15,23,42,0.16)",
+
+                                borderTop: isSelected
+                                  ? "3px solid #2563eb"
+                                  : "1px solid rgba(15,23,42,0.16)",
+
+                                borderRight: isSelected
+                                  ? "3px solid #2563eb"
+                                  : "1px solid rgba(15,23,42,0.16)",
+
+                                borderBottom: isSelected
+                                  ? "3px solid #2563eb"
+                                  : "1px solid rgba(15,23,42,0.16)",
+
                                 borderLeft: `6px solid ${getAgendaColor(
                                   item.category || "",
                                   item.color || "",
                                 )}`,
+
                                 borderRadius: 10,
-                                background: "#ffffff",
+                                background: isSelected ? "#eff6ff" : "#ffffff",
                                 color: "#111827",
                                 textAlign: "left",
                                 padding: "16px 8px 16px",
-                                cursor: "grab",
+                                cursor: "pointer",
                                 overflow: "hidden",
-                                boxShadow:
-                                  calendarDraggingId === item.id
-                                    ? "0 0 0 3px rgba(96,165,250,0.35)"
-                                    : "0 2px 8px rgba(15,23,42,0.10)",
+
+                                boxShadow: isSelected
+                                  ? "0 0 0 3px rgba(37,99,235,.25), 0 6px 16px rgba(0,0,0,.15)"
+                                  : calendarDraggingId === item.id
+                                    ? "0 0 0 3px rgba(96,165,250,.35)"
+                                    : "0 2px 8px rgba(15,23,42,.10)",
+
+                                transform: isSelected
+                                  ? "scale(1.02)"
+                                  : "scale(1)",
+
+                                transition: "all .15s ease",
+
+                                zIndex: isSelected ? 20 : block.lane + 1,
                               }}
                               title="Drag to move. Click to edit. Drag top/bottom handles to change time."
                             >
@@ -2953,301 +3108,329 @@ function AdminAgendaPageInner() {
                 Agenda Items ({filteredItems.length})
               </div>
 
-              {filteredItems.map((item) => (
-                <div
-                  key={item.id}
-                  onDragOver={!useButtonReorder ? handleDragOver : undefined}
-                  onDrop={
-                    !useButtonReorder ? () => handleDrop(item.id) : undefined
-                  }
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: useButtonReorder
-                      ? isMobile
-                        ? "1fr"
-                        : "72px 1fr auto"
-                      : isMobile
-                        ? "1fr"
-                        : "52px 1fr auto",
-                    gap: 12,
-                    padding: isMobile ? 16 : 14,
-                    borderTop: "1px solid #eee",
-                    background: draggedId === item.id ? "#f8fafc" : "white",
-                    borderLeft: `6px solid ${getAgendaColor(
-                      item.category || "",
-                      item.color || "",
-                    )}`,
-                  }}
-                >
+              {filteredItems.map((item) => {
+                const isSelected = form.id === item.id;
+                return (
                   <div
+                    key={item.id}
+                    onDragOver={!useButtonReorder ? handleDragOver : undefined}
+                    onDrop={
+                      !useButtonReorder ? () => handleDrop(item.id) : undefined
+                    }
                     style={{
                       display: "grid",
-                      gap: 6,
-                      alignContent: "start",
-                      justifyItems: "center",
-                      gridAutoFlow: isMobile ? "column" : "row",
-                      justifyContent: isMobile ? "start" : "center",
+                      gridTemplateColumns: useButtonReorder
+                        ? isMobile
+                          ? "1fr"
+                          : "72px 1fr auto"
+                        : isMobile
+                          ? "1fr"
+                          : "52px 1fr auto",
+                      gap: 12,
+                      padding: isMobile ? 16 : 14,
+                      borderTop: "1px solid #eee",
+                      background: isSelected
+                        ? "#dbeafe"
+                        : draggedId === item.id
+                          ? "#f8fafc"
+                          : "white",
+                      borderLeft: `${isSelected ? 8 : 6}px solid ${getAgendaColor(
+                        item.category || "",
+                        item.color || "",
+                      )}`,
+                      boxShadow: isSelected
+                        ? "inset 0 0 0 2px #2563eb"
+                        : "none",
+                      transition: "all .15s ease",
                     }}
                   >
-                    {useButtonReorder ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => moveItemUp(item.id)}
-                          disabled={filteredItems[0]?.id === item.id}
-                          style={{
-                            padding: "6px 8px",
-                            minWidth: 40,
-                            cursor:
-                              filteredItems[0]?.id === item.id
-                                ? "default"
-                                : "pointer",
-                          }}
-                          title="Move up"
-                        >
-                          ↑
-                        </button>
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 6,
+                        alignContent: "start",
+                        justifyItems: "center",
+                        gridAutoFlow: isMobile ? "column" : "row",
+                        justifyContent: isMobile ? "start" : "center",
+                      }}
+                    >
+                      {useButtonReorder ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => moveItemUp(item.id)}
+                            disabled={filteredItems[0]?.id === item.id}
+                            style={{
+                              padding: "6px 8px",
+                              minWidth: 40,
+                              cursor:
+                                filteredItems[0]?.id === item.id
+                                  ? "default"
+                                  : "pointer",
+                            }}
+                            title="Move up"
+                          >
+                            ↑
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => moveItemDown(item.id)}
-                          disabled={
-                            filteredItems[filteredItems.length - 1]?.id ===
-                            item.id
-                          }
-                          style={{
-                            padding: "6px 8px",
-                            minWidth: 40,
-                            cursor:
+                          <button
+                            type="button"
+                            onClick={() => moveItemDown(item.id)}
+                            disabled={
                               filteredItems[filteredItems.length - 1]?.id ===
                               item.id
-                                ? "default"
-                                : "pointer",
+                            }
+                            style={{
+                              padding: "6px 8px",
+                              minWidth: 40,
+                              cursor:
+                                filteredItems[filteredItems.length - 1]?.id ===
+                                item.id
+                                  ? "default"
+                                  : "pointer",
+                            }}
+                            title="Move down"
+                          >
+                            ↓
+                          </button>
+                        </>
+                      ) : (
+                        <div
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, item.id)}
+                          onDragEnd={() => setDraggedId(null)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 20,
+                            color: "#666",
+                            cursor: "grab",
+                            userSelect: "none",
+                            width: 40,
+                            height: 40,
                           }}
-                          title="Move down"
+                          title="Drag to reorder"
                         >
-                          ↓
-                        </button>
-                      </>
-                    ) : (
+                          ☰
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setForm(formFromItem(item))}
+                      style={{
+                        textAlign: "left",
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        display: "grid",
+                        gap: 6,
+                      }}
+                    >
                       <div
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, item.id)}
-                        onDragEnd={() => setDraggedId(null)}
                         style={{
                           display: "flex",
+                          gap: 10,
                           alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 20,
-                          color: "#666",
-                          cursor: "grab",
-                          userSelect: "none",
-                          width: 40,
-                          height: 40,
-                        }}
-                        title="Drag to reorder"
-                      >
-                        ☰
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setForm(formFromItem(item))}
-                    style={{
-                      textAlign: "left",
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      display: "grid",
-                      gap: 6,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontWeight: 800,
-                          fontSize: isMobile ? 16 : 15,
-                          color: "#111827",
+                          flexWrap: "wrap",
                         }}
                       >
-                        {item.title}
+                        <div
+                          style={{
+                            fontWeight: 800,
+                            fontSize: isMobile ? 16 : 15,
+                            color: "#111827",
+                          }}
+                        >
+                          {item.title}
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 800,
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: item.is_published
+                              ? "#dcfce7"
+                              : "#fee2e2",
+                            color: item.is_published ? "#166534" : "#991b1b",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {item.is_published ? "Published" : "Hidden"}
+                        </div>
+                        {isSelected ? (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 800,
+                              padding: "4px 8px",
+                              borderRadius: 999,
+                              background: "#2563eb",
+                              color: "white",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            ✏️ Editing
+                          </div>
+                        ) : null}
                       </div>
 
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 800,
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          background: item.is_published ? "#dcfce7" : "#fee2e2",
-                          color: item.is_published ? "#166534" : "#991b1b",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {item.is_published ? "Published" : "Hidden"}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: "#475569",
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <span>{formatAgendaDate(item.agenda_date)}</span>
-                      <span>•</span>
-                      <span>
-                        {formatAgendaTime(item.start_time, item.end_time)}
-                      </span>
-                      <span>•</span>
-                      <span>
-                        {formatDurationLabel(agendaDurationMinutes(item))}
-                      </span>
-                    </div>
-
-                    {item.location ? (
                       <div
                         style={{
                           fontSize: 13,
-                          color: "#334155",
+                          color: "#475569",
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
                         }}
                       >
-                        📍 {item.location}
+                        <span>{formatAgendaDate(item.agenda_date)}</span>
+                        <span>•</span>
+                        <span>
+                          {formatAgendaTime(item.start_time, item.end_time)}
+                        </span>
+                        <span>•</span>
+                        <span>
+                          {formatDurationLabel(agendaDurationMinutes(item))}
+                        </span>
                       </div>
-                    ) : null}
 
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                      }}
-                    >
-                      <span
+                      {item.location ? (
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "#334155",
+                          }}
+                        >
+                          📍 {item.location}
+                        </div>
+                      ) : null}
+
+                      <div
                         style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          background: "#f1f5f9",
-                          color: "#334155",
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          alignItems: "center",
                         }}
                       >
-                        {item.category || "No category"}
-                      </span>
-
-                      {item.speaker ? (
                         <span
                           style={{
                             fontSize: 12,
-                            color: "#475569",
+                            fontWeight: 700,
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: "#f1f5f9",
+                            color: "#334155",
                           }}
                         >
-                          Speaker: {item.speaker}
+                          {item.category || "No category"}
                         </span>
-                      ) : null}
-                    </div>
 
-                    {item.description ? (
-                      <div
-                        style={{
-                          fontSize: 13,
-                          color: "#555",
-                          lineHeight: 1.45,
-                        }}
-                      >
-                        {item.description}
+                        {item.speaker ? (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#475569",
+                            }}
+                          >
+                            Speaker: {item.speaker}
+                          </span>
+                        ) : null}
                       </div>
-                    ) : null}
 
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                        marginTop: 2,
-                      }}
-                    >
+                      {item.description ? (
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "#555",
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          {item.description}
+                        </div>
+                      ) : null}
+
                       <div
                         style={{
                           display: "flex",
+                          gap: 10,
+                          flexWrap: "wrap",
                           alignItems: "center",
-                          gap: 8,
+                          marginTop: 2,
                         }}
                       >
-                        <span
+                        <div
                           style={{
-                            width: 14,
-                            height: 14,
-                            borderRadius: 999,
-                            background: item.color || "#cbd5e1",
-                            border: "1px solid rgba(0,0,0,0.15)",
-                            display: "inline-block",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
                           }}
-                        />
+                        >
+                          <span
+                            style={{
+                              width: 14,
+                              height: 14,
+                              borderRadius: 999,
+                              background: item.color || "#cbd5e1",
+                              border: "1px solid rgba(0,0,0,0.15)",
+                              display: "inline-block",
+                            }}
+                          />
+
+                          <span style={{ fontSize: 12, color: "#777" }}>
+                            {item.color || "Auto Color"}
+                          </span>
+                        </div>
 
                         <span style={{ fontSize: 12, color: "#777" }}>
-                          {item.color || "Auto Color"}
+                          Sort: {item.sort_order ?? "—"}
                         </span>
+
+                        {item.source ? (
+                          <span style={{ fontSize: 12, color: "#777" }}>
+                            Source: {item.source}
+                          </span>
+                        ) : null}
                       </div>
+                    </button>
 
-                      <span style={{ fontSize: 12, color: "#777" }}>
-                        Sort: {item.sort_order ?? "—"}
-                      </span>
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 8,
+                        alignContent: "start",
+                        gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void togglePublished(item)}
+                        style={{
+                          minHeight: 42,
+                        }}
+                      >
+                        {item.is_published ? "Unpublish" : "Publish"}
+                      </button>
 
-                      {item.source ? (
-                        <span style={{ fontSize: 12, color: "#777" }}>
-                          Source: {item.source}
-                        </span>
-                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void deleteItem(item.id)}
+                        style={{
+                          minHeight: 42,
+                        }}
+                      >
+                        Delete
+                      </button>
                     </div>
-                  </button>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 8,
-                      alignContent: "start",
-                      gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => void togglePublished(item)}
-                      style={{
-                        minHeight: 42,
-                      }}
-                    >
-                      {item.is_published ? "Unpublish" : "Publish"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => void deleteItem(item.id)}
-                      style={{
-                        minHeight: 42,
-                      }}
-                    >
-                      Delete
-                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -3263,3 +3446,5 @@ export default function AdminAgendaPage() {
     </AdminRouteGuard>
   );
 }
+
+// Automatically set default category/color on first mount or emptyForm reset
