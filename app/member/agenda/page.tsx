@@ -217,7 +217,6 @@ function sanitizeAgendaCardColor(color: string | null | undefined) {
     return fallback;
   }
 
-  // Green is reserved only for the active/current agenda item.
   const reservedGreens = new Set([
     "green",
     "#f0fdf4",
@@ -240,6 +239,10 @@ function sanitizeAgendaCardColor(color: string | null | undefined) {
 
   if (reservedGreens.has(value)) {
     return fallback;
+  }
+
+  if (value.startsWith("#") && value.length === 7) {
+    return `${value}20`; // ~12% opacity
   }
 
   return color || fallback;
@@ -269,9 +272,10 @@ function agendaCardStyle(
   }
 
   return {
-    border: "1px solid rgba(17,24,39,0.14)",
+    border: "1px solid #dbe4ef",
+    borderLeft: "5px solid #93c5fd",
     background: sanitizeAgendaCardColor(resolvedColor),
-    boxShadow: "0 2px 10px rgba(15,23,42,0.06)",
+    boxShadow: "0 1px 4px rgba(15,23,42,0.05)",
     color: "#111827",
   };
 }
@@ -501,13 +505,13 @@ function MemberAgendaPageInner() {
       ) : nextItem ? (
         <div
           style={{
-            border: "1px solid #bfdbfe",
-            background: "#eff6ff",
+            border: "1px solid #dbe4ef",
+            background: "#f8fbff",
             borderRadius: 10,
             padding: 14,
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 800, color: "#1d4ed8" }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#475569" }}>
             UP NEXT
           </div>
           <div style={{ fontSize: 18, fontWeight: 800, marginTop: 4 }}>
@@ -721,8 +725,9 @@ function MemberAgendaPageInner() {
                                 borderRadius: 999,
                                 fontSize: 12,
                                 fontWeight: 800,
-                                background: "#dbeafe",
-                                color: "#1d4ed8",
+                                background: "#eef2f7",
+                                color: "#475569",
+                                border: "1px solid #cbd5e1",
                               }}
                             >
                               Upcoming
