@@ -14,6 +14,7 @@ import { supabase } from "@/lib/supabase";
 
 interface Participant {
   id: string;
+  attendee_id: string;
   person_role: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -28,7 +29,7 @@ interface AttendeeRow {
   entry_id?: string | null;
   email?: string | null;
   auth_user_id?: string | null;
-  event_id?: string | null;
+  event_id: string;
   participant_capacity?: number | null;
 }
 
@@ -37,6 +38,7 @@ function ParticipantsPageInner() {
   const [participantCount, setParticipantCount] = useState(0);
   const [capacity, setCapacity] = useState(0);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [currentAttendee, setCurrentAttendee] = useState<AttendeeRow | null>(null);
 
   const [emailInputs, setEmailInputs] = useState<Record<string, string>>({});
   const [savingParticipantId, setSavingParticipantId] = useState<string | null>(
@@ -47,76 +49,78 @@ function ParticipantsPageInner() {
   >(null);
   const [showEditor, setShowEditor] = useState(false);
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const currentEvent = getCurrentMemberEvent();
+  // Refactored participant loading logic for reuse
+  const loadParticipants = async () => {
+    try {
+      const currentEvent = getCurrentMemberEvent();
 
-        console.log("PARTICIPANTS CURRENT EVENT", currentEvent);
-        if (!currentEvent?.id) {
-          setParticipantCount(0);
-          setCapacity(0);
-          setParticipants([]);
-          return;
-        }
-
-        const attendeeId = getStoredMemberAttendeeId();
-        const entryId = getStoredMemberEntryId();
-
-        const authUserId = localStorage.getItem("fcoc-member-auth-user-id");
-
-        console.log("PARTICIPANTS AUTH USER ID", authUserId);
-
-        const { data: attendeeRows } = await supabase
-          .from("attendees")
-          .select(
-            "id,entry_id,email,participant_capacity,auth_user_id,event_id",
-          )
-          .eq("event_id", currentEvent.id);
-
-        const attendees = (attendeeRows || []) as AttendeeRow[];
-
-        let attendee = attendees.find(
-          (a) => authUserId && a.auth_user_id === authUserId,
-        );
-
-        if (!attendee) {
-          attendee = attendees.find((a) => attendeeId && a.id === attendeeId);
-        }
-
-        if (!attendee) {
-          attendee = attendees.find((a) => entryId && a.entry_id === entryId);
-        }
-
-        console.log("PARTICIPANTS MATCHED ATTENDEE", attendee);
-
-        if (!attendee) {
-          setParticipantCount(0);
-          setCapacity(0);
-          setParticipants([]);
-          return;
-        }
-
-        setCapacity(attendee.participant_capacity ?? 0);
-
-        const { data: memberRows } = await supabase
-          .from("attendee_household_members")
-          .select(
-            "id,person_role,first_name,last_name,display_name,email,participant_status,sort_order",
-          )
-          .eq("attendee_id", attendee.id)
-          .order("sort_order", { ascending: true });
-
-        const loadedParticipants = (memberRows || []) as Participant[];
-
-        setParticipants(loadedParticipants);
-        setParticipantCount(loadedParticipants.length);
-      } finally {
-        setLoading(false);
+      console.log("PARTICIPANTS CURRENT EVENT", currentEvent);
+      if (!currentEvent?.id) {
+        setParticipantCount(0);
+        setCapacity(0);
+        setParticipants([]);
+        return;
       }
-    };
 
-    loadData();
+      const attendeeId = getStoredMemberAttendeeId();
+      const entryId = getStoredMemberEntryId();
+
+      const authUserId = localStorage.getItem("fcoc-member-auth-user-id");
+
+      console.log("PARTICIPANTS AUTH USER ID", authUserId);
+
+      const { data: attendeeRows } = await supabase
+        .from("attendees")
+        .select(
+          "id,entry_id,email,participant_capacity,auth_user_id,event_id",
+        )
+        .eq("event_id", currentEvent.id);
+
+      const attendees = (attendeeRows || []) as AttendeeRow[];
+
+      let attendee = attendees.find(
+        (a) => authUserId && a.auth_user_id === authUserId,
+      );
+
+      if (!attendee) {
+        attendee = attendees.find((a) => attendeeId && a.id === attendeeId);
+      }
+
+      if (!attendee) {
+        attendee = attendees.find((a) => entryId && a.entry_id === entryId);
+      }
+
+      console.log("PARTICIPANTS MATCHED ATTENDEE", attendee);
+
+      if (!attendee) {
+        setParticipantCount(0);
+        setCapacity(0);
+        setParticipants([]);
+        return;
+      }
+      setCurrentAttendee(attendee);
+
+      setCapacity(attendee.participant_capacity ?? 0);
+
+      const { data: memberRows } = await supabase
+        .from("attendee_household_members")
+        .select(
+          "id,attendee_id,person_role,first_name,last_name,display_name,email,participant_status,sort_order",
+        )
+        .eq("attendee_id", attendee.id)
+        .order("sort_order", { ascending: true });
+
+      const loadedParticipants = (memberRows || []) as Participant[];
+
+      setParticipants(loadedParticipants);
+      setParticipantCount(loadedParticipants.length);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadParticipants();
   }, []);
 
   const registeredParticipants = participants.filter(
@@ -458,7 +462,11 @@ function ParticipantsPageInner() {
       <ParticipantIdentityEditor
         open={showEditor}
         onClose={() => setShowEditor(false)}
+        onSaved={loadParticipants}
         registrationId=""
+        attendeeId={currentAttendee?.id ?? ""}
+        eventId={currentAttendee?.event_id ?? ""}
+        sortOrder={participants.length + 1}
         slotRole="additional"
       />
     </div>

@@ -600,6 +600,7 @@ function AdminAgendaPageInner() {
       is_active: boolean;
     }[]
   >([]);
+
   // Load agenda categories from DB
   const loadAgendaCategories = useCallback(async () => {
     const { data, error } = await supabase
@@ -2444,6 +2445,25 @@ function AdminAgendaPageInner() {
               />
             </label>
 
+            {/* Recurring Event Placeholder UI */}
+            <label style={{ display: "grid", gap: 3 }}>
+              <span style={{ fontSize: 12, color: "#555" }}>Recurring</span>
+              <select
+                defaultValue="none"
+                style={{ padding: "7px 8px" }}
+                title="Recurring agenda items will be implemented after Amana."
+              >
+                <option value="none">Does Not Repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekdays">Weekdays</option>
+                <option value="weekly">Weekly</option>
+                <option value="custom">Custom…</option>
+              </select>
+              <span style={{ fontSize: 11, color: "#888" }}>
+                Recurring item generation will be enabled after Amana.
+              </span>
+            </label>
+
             <div
               style={{
                 display: "grid",
@@ -2755,9 +2775,36 @@ function AdminAgendaPageInner() {
                         padding: 10,
                         fontWeight: 900,
                         borderLeft: "1px solid #e5e7eb",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "flex-start",
+                        gap: 2,
                       }}
                     >
-                      {formatAgendaDate(day)}
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          color: "#64748b",
+                          letterSpacing: "0.02em",
+                          lineHeight: "1.2",
+                        }}
+                      >
+                        {new Date(`${day}T00:00:00`).toLocaleDateString([], {
+                          weekday: "long",
+                        })}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 800,
+                          color: "#111827",
+                          lineHeight: "1.25",
+                        }}
+                      >
+                        {formatAgendaDate(day)}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -2800,7 +2847,7 @@ function AdminAgendaPageInner() {
                     ))}
                   </div>
 
-                  {calendarDays.map((day) => {
+                  {calendarDays.map((day, dayIdx) => {
                     const dayItems = filteredItems.filter(
                       (item) => item.agenda_date === day,
                     );
@@ -2809,6 +2856,9 @@ function AdminAgendaPageInner() {
                       dayItems,
                       calendarRange.start,
                     );
+
+                    // Alternate background color by column index
+                    const columnBg = dayIdx % 2 === 0 ? "#ffffff" : "#f8fafc";
 
                     return (
                       <div
@@ -2821,9 +2871,7 @@ function AdminAgendaPageInner() {
                           position: "relative",
                           height: calendarGridHeight,
                           borderLeft: "1px solid #e5e7eb",
-                          background: calendarDraggingId
-                            ? "#f8fafc"
-                            : "#ffffff",
+                          background: columnBg,
                         }}
                       >
                         {calendarTimeSlots.slice(0, -1).map((slot) => (
@@ -2836,8 +2884,7 @@ function AdminAgendaPageInner() {
                                   ? "1px solid #dbe4ef"
                                   : "1px solid transparent",
                               borderBottom: "1px solid #f1f5f9",
-                              background:
-                                slot % 60 === 0 ? "#ffffff" : "#fcfdff",
+                              background: "transparent",
                             }}
                           />
                         ))}

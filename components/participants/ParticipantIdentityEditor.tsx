@@ -1,11 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  createParticipantIdentity,
+  saveParticipantIdentity,
+} from "@/lib/participants/participantIdentity";
 
 export type ParticipantIdentityEditorProps = {
   open: boolean;
   onClose: () => void;
   registrationId: string;
+  attendeeId: string;
+  eventId: string;
+  sortOrder: number;
   participantId?: string;
   slotRole: "pilot" | "copilot" | "additional";
   participant?: ParticipantIdentity;
@@ -24,7 +31,13 @@ export type ParticipantIdentity = {
 export default function ParticipantIdentityEditor({
   open,
   onClose,
+  registrationId,
+  attendeeId,
+  eventId,
+  sortOrder,
+  slotRole,
   participant,
+  onSaved,
 }: ParticipantIdentityEditorProps) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -41,6 +54,42 @@ export default function ParticipantIdentityEditor({
     setEmail(participant.email ?? "");
     setCellPhone(participant.cellPhone ?? "");
   }, [participant]);
+
+  async function handleSave() {
+    try {
+      if (participant) {
+        await saveParticipantIdentity({
+          id: participant.id,
+          firstName,
+          lastName,
+          nickname,
+          email,
+          cellPhone,
+        });
+      } else {
+        await createParticipantIdentity({
+          attendeeId,
+          eventId,
+          personRole: slotRole,
+          sortOrder,
+          firstName,
+          lastName,
+          nickname,
+          email,
+          cellPhone,
+        });
+      }
+      onSaved?.();
+      onClose();
+    } catch (error) {
+      console.error("Participant save failed:", error);
+      if (error && typeof error === "object" && "message" in error) {
+        alert((error as any).message);
+      } else {
+        alert("Participant save failed. See browser console for details.");
+      }
+    }
+  }
 
   if (!open) return null;
 
@@ -91,7 +140,13 @@ export default function ParticipantIdentityEditor({
 
         <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end", gap: 10 }}>
           <button type="button" onClick={onClose}>Cancel</button>
-          <button type="button">Save</button>
+          <button
+            type="button"
+            className="app-button app-button-primary"
+            onClick={handleSave}
+          >
+            Save
+          </button>
         </div>
       </div>
     </div>

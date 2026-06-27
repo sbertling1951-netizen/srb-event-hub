@@ -30,6 +30,9 @@ type AttendeeRow = {
   copilot_last: string | null;
   has_arrived: boolean | null;
   auth_user_id: string | null;
+  participant_id?: string | null;
+  participant_name?: string | null;
+  participant_role?: string | null;
 };
 
 function formatDateRange(startDate: string | null, endDate: string | null) {
@@ -197,40 +200,7 @@ export default function MemberLoginPage() {
       console.log("MEMBER LOGIN ATTENDEE", attendee);
 
       if (!attendee?.id) {
-        const { data: participants, error: participantError } = await supabase
-          .from("attendee_household_members")
-          .select("attendee_id,id,first_name,last_name,email")
-          .eq("email", normalizedEmail);
-
-        console.log("MEMBER LOGIN PARTICIPANTS", participants);
-        console.log("MEMBER LOGIN PARTICIPANT ERROR", participantError);
-
-        if (participants?.length) {
-          for (const participant of participants) {
-            const { data: attendeeData } = await supabase
-              .from("attendees")
-              .select(
-                "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,has_arrived,auth_user_id,event_id",
-              )
-              .eq("id", participant.attendee_id)
-              .eq("event_id", event.id)
-              .maybeSingle();
-
-            if (attendeeData?.id) {
-              attendee = attendeeData as AttendeeRow;
-
-              console.log("MEMBER LOGIN ATTENDEE FROM PARTICIPANT", attendee);
-
-              break;
-            }
-          }
-        }
-      }
-
-      if (!attendee?.id) {
-        setError(
-          "No attendee registration was found for that email in this event.",
-        );
+        setError("No attendee registration was found for that email in this event.");
         setStatus("");
         return;
       }
@@ -251,8 +221,20 @@ export default function MemberLoginPage() {
         localStorage.setItem("fcoc-member-has-arrived", String(arrived));
         localStorage.setItem("fcoc-user-mode", "member");
         localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
+        if (attendee.participant_id) {
+          localStorage.setItem("member-participant-id", attendee.participant_id);
+        }
+        if (attendee.participant_name) {
+          localStorage.setItem("member-participant-name", attendee.participant_name);
+        }
+        if (attendee.participant_role) {
+          localStorage.setItem("member-participant-role", attendee.participant_role);
+        }
       }
 
+      // TODO: Expand saveMemberSession() to include participant identity.
+      // Member dashboards should be participant-centric while retaining the
+      // registration (attendee) context.
       saveMemberSession({
         event_id: event.id,
         event_name: event.name || null,
@@ -400,3 +382,4 @@ export default function MemberLoginPage() {
     </div>
   );
 }
+
