@@ -11,7 +11,8 @@ export type ReportType =
   | "staff_hosts_helpers"
   | "parking_assignments"
   | "unassigned_parking_needed"
-  | "activity_summary";
+  | "activity_summary"
+  | "activity_roster";
 
 export type SortType = "name_asc" | "name_desc" | "site_asc" | "site_desc";
 
@@ -128,6 +129,7 @@ export default function ReportControlsPanel(props: {
             Needs Parking / Unassigned
           </option>
           <option value="activity_summary">Activity Summary</option>
+          <option value="activity_roster">Activity Roster</option>
         </select>
       </div>
 

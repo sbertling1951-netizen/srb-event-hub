@@ -142,7 +142,7 @@ export default function AgendaCategoriesPage() {
             setShowDialog(true);
           }}
           style={{
-            backgroundColor: "#2563eb",
+            backgroundColor: "#64748b",
             color: "white",
             border: "none",
             borderRadius: 6,
@@ -232,7 +232,7 @@ export default function AgendaCategoriesPage() {
                   <button
                     onClick={() => openEditDialog(category)}
                     style={{
-                      backgroundColor: "#2563eb",
+                      backgroundColor: "#64748b",
                       color: "white",
                       border: "none",
                       borderRadius: 6,
@@ -270,11 +270,12 @@ export default function AgendaCategoriesPage() {
               backgroundColor: "white",
               padding: 24,
               borderRadius: 8,
+              border: "1px solid #dbe4ef",
               width: 400,
               boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
             }}
           >
-            <h2>{editingCategoryId ? "Edit Category" : "New Category"}</h2>
+            <h2 style={{ marginTop: 0, color: "#334155" }}>{editingCategoryId ? "Edit Category" : "New Category"}</h2>
             <div style={{ marginBottom: 12 }}>
               <label>
                 Category Name<br />
@@ -322,12 +323,33 @@ export default function AgendaCategoriesPage() {
               </label>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button onClick={() => setShowDialog(false)} disabled={saving}>
+              <button
+                onClick={() => setShowDialog(false)}
+                disabled={saving}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "1px solid #cbd5e1",
+                  backgroundColor: "#f8fafc",
+                  color: "#334155",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
                 Cancel
               </button>
               <button
                 onClick={saveCategory}
                 disabled={saving || formName.trim() === ""}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "1px solid #64748b",
+                  backgroundColor: "#64748b",
+                  color: "white",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
               >
                 {saving ? "Saving…" : "Save"}
               </button>
@@ -338,4 +360,3 @@ export default function AgendaCategoriesPage() {
     </div>
   );
 }
-

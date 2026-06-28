@@ -106,7 +106,8 @@ type ReportType =
   | "staff_hosts_helpers"
   | "parking_assignments"
   | "unassigned_parking_needed"
-  | "activity_summary";
+  | "activity_summary"
+  | "activity_roster";
 
 type SortType = "name_asc" | "name_desc" | "site_asc" | "site_desc";
 type ParticipantTypeFilter =
@@ -355,6 +356,7 @@ function AdminReportsPageInner() {
   const [activities, setActivities] = useState<ActivityRow[]>([]);
   const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
   const [reportType, setReportType] = useState<ReportType>("all_attendees");
+  const [selectedActivity, setSelectedActivity] = useState("");
   const [sortType, setSortType] = useState<SortType>("name_asc");
   const [participantTypeFilter, setParticipantTypeFilter] =
     useState<ParticipantTypeFilter>("all");
@@ -821,6 +823,31 @@ function AdminReportsPageInner() {
           )
           .map(attendeeToRosterRow);
 
+      // --- Inserted case for activity_roster ---
+      case "activity_roster":
+        if (!selectedActivity) {
+          return [];
+        }
+
+        return activities
+          .filter((activity) => activity.activity_name === selectedActivity)
+          .map((activity) =>
+            attendees.find(
+              (attendee) => attendee.entry_id === activity.entry_id,
+            ),
+          )
+          .filter(
+            (attendee): attendee is AttendeeRow =>
+              attendee !== undefined &&
+              attendeeMatchesFilters(
+                attendee,
+                participantTypeFilter,
+                dataStatusFilter,
+              ),
+          )
+          .map(attendeeToRosterRow);
+      // --- End inserted case ---
+
       default:
         return [];
     }
@@ -831,6 +858,8 @@ function AdminReportsPageInner() {
     attendeeById,
     participantTypeFilter,
     dataStatusFilter,
+    activities,
+    selectedActivity,
   ]);
 
   const sortedRosterRows = useMemo(() => {
@@ -935,6 +964,8 @@ function AdminReportsPageInner() {
         return "Needs Parking / Unassigned";
       case "activity_summary":
         return "Activity Summary";
+      case "activity_roster":
+        return "Activity Roster";
       default:
         return "Report";
     }
@@ -1271,6 +1302,12 @@ function AdminReportsPageInner() {
                 >
                   Activity Summary
                 </button>
+                <button
+                  className="btn"
+                  onClick={() => setReportType("activity_roster")}
+                >
+                  Activity Roster
+                </button>
               </div>
 
               <div style={{ marginBottom: 12 }}>
@@ -1283,26 +1320,52 @@ function AdminReportsPageInner() {
               </div>
 
               {showControls ? (
-                <ReportControlsPanel
-                  reportType={reportType}
-                  setReportType={setReportType}
-                  sortType={sortType}
-                  setSortType={setSortType}
-                  participantTypeFilter={participantTypeFilter}
-                  setParticipantTypeFilter={setParticipantTypeFilter}
-                  dataStatusFilter={dataStatusFilter}
-                  setDataStatusFilter={setDataStatusFilter}
-                  loading={loading}
-                  canExport={canExport}
-                  onExportCsv={handleExportCsv}
-                  onExportXlsx={handleExportXlsx}
-                  presetName={presetName}
-                  setPresetName={setPresetName}
-                  onSavePreset={handleSavePreset}
-                  reportPackType={reportPackType}
-                  setReportPackType={setReportPackType}
-                  onPrintPack={handlePrintPack}
-                />
+                <>
+                  {reportType === "activity_roster" ? (
+                    <div style={{ marginBottom: 16 }}>
+                      <label
+                        style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
+                      >
+                        Activity
+                      </label>
+                      <select
+                        className="input"
+                        value={selectedActivity}
+                        onChange={(e) => setSelectedActivity(e.target.value)}
+                      >
+                        <option value="">Select an activity...</option>
+                        {activitySummaryRows.map((activity) => (
+                          <option
+                            key={activity.activityName}
+                            value={activity.activityName}
+                          >
+                            {activity.activityName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                  <ReportControlsPanel
+                    reportType={reportType}
+                    setReportType={setReportType}
+                    sortType={sortType}
+                    setSortType={setSortType}
+                    participantTypeFilter={participantTypeFilter}
+                    setParticipantTypeFilter={setParticipantTypeFilter}
+                    dataStatusFilter={dataStatusFilter}
+                    setDataStatusFilter={setDataStatusFilter}
+                    loading={loading}
+                    canExport={canExport}
+                    onExportCsv={handleExportCsv}
+                    onExportXlsx={handleExportXlsx}
+                    presetName={presetName}
+                    setPresetName={setPresetName}
+                    onSavePreset={handleSavePreset}
+                    reportPackType={reportPackType}
+                    setReportPackType={setReportPackType}
+                    onPrintPack={handlePrintPack}
+                  />
+                </>
               ) : null}
 
               <div style={{ marginTop: 12 }}>
