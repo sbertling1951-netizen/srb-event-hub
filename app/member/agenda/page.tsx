@@ -586,173 +586,74 @@ function MemberAgendaPageInner() {
         </div>
       ) : (
         <div style={{ display: "grid", gap: 18 }}>
-          {groupedAgenda.map((group) => (
-            <section key={group.key} style={{ display: "grid", gap: 10 }}>
-              <div
-                style={{
-                  fontWeight: 800,
-                  fontSize: 18,
-                  color: "#111827",
-                }}
-              >
-                {group.label}
-              </div>
+          {groupedAgenda.map((group) => {
+            // Partition items into Morton, Pioneer, Other
+            const mortonItems = group.items.filter(
+              (item) =>
+                (item.location || "")
+                  .toLowerCase()
+                  .includes("morton")
+            );
+            const pioneerOnly = group.items.filter(
+              (item) =>
+                (item.location || "")
+                  .toLowerCase()
+                  .includes("pioneer") &&
+                !(item.location || "")
+                  .toLowerCase()
+                  .includes("morton")
+            );
+            const otherItems = group.items.filter(
+              (item) =>
+                !(item.location || "")
+                  .toLowerCase()
+                  .includes("morton") &&
+                !(item.location || "")
+                  .toLowerCase()
+                  .includes("pioneer")
+            );
+            const pioneerItems = [...pioneerOnly, ...otherItems];
 
-              <div style={{ display: "grid", gap: 10 }}>
-                {group.items.map((item) => {
-                  const itemStatus = getItemStatus(item, now);
-                  const resolvedAgendaColor = getAgendaColor(
-                    item.category,
-                    item.color,
-                  );
-                  const cardStyle = agendaCardStyle(
-                    item,
-                    itemStatus,
-                    resolvedAgendaColor,
-                  );
-                  const isPast = itemStatus === "past";
-                  const isExpanded = !isPast || !!expandedPastItems[item.id];
+            // Helper to render agenda cards
+            function renderAgendaCards(items: AgendaItem[]) {
+              if (items.length === 0) {
+                return (
+                  <div
+                    style={{
+                      color: "#888",
+                      fontSize: 13,
+                      padding: "8px 0",
+                      textAlign: "center",
+                    }}
+                  >
+                    No scheduled items.
+                  </div>
+                );
+              }
+              return items.map((item) => {
+                const itemStatus = getItemStatus(item, now);
+                const resolvedAgendaColor = getAgendaColor(
+                  item.category,
+                  item.color,
+                );
+                const cardStyle = agendaCardStyle(
+                  item,
+                  itemStatus,
+                  resolvedAgendaColor,
+                );
+                const isPast = itemStatus === "past";
+                const isExpanded = !isPast || !!expandedPastItems[item.id];
 
-                  if (!isPast) {
-                    return (
-                      <div
-                        key={item.id}
-                        style={{
-                          ...cardStyle,
-                          borderRadius: 10,
-                          padding: 14,
-                          cursor: "default",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 12,
-                            alignItems: "start",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div
-                              style={{
-                                fontWeight: 800,
-                                fontSize: 17,
-                                color:
-                                  itemStatus === "now" ? "#064e3b" : "#111827",
-                              }}
-                            >
-                              {item.title || "Untitled item"}
-                            </div>
-
-                            {item.location ? (
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  color: "#475569",
-                                  marginTop: 2,
-                                  fontWeight: 500,
-                                  letterSpacing: 0.2,
-                                }}
-                              >
-                                📍 {item.location}
-                              </div>
-                            ) : null}
-
-                            {item.description ? (
-                              <div
-                                style={{
-                                  marginTop: 8,
-                                  color: "#374151",
-                                  lineHeight: 1.45,
-                                  whiteSpace: "pre-wrap",
-                                }}
-                              >
-                                {item.description}
-                              </div>
-                            ) : null}
-                          </div>
-
-                          <div
-                            style={{
-                              textAlign: "right",
-                              minWidth: 110,
-                              color:
-                                itemStatus === "now" ? "#064e3b" : "#111827",
-                              fontWeight: 700,
-                            }}
-                          >
-                            {formatItemTime(item)}
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 10,
-                            display: "flex",
-                            gap: 8,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                          }}
-                        >
-                          {item.category ? (
-                            <span style={categoryStyle(resolvedAgendaColor)}>
-                              {item.category}
-                            </span>
-                          ) : null}
-
-                          {itemStatus === "now" ? (
-                            <span
-                              style={{
-                                display: "inline-block",
-                                padding: "3px 8px",
-                                borderRadius: 999,
-                                fontSize: 12,
-                                fontWeight: 800,
-                                background: "#dcfce7",
-                                color: "#166534",
-                              }}
-                            >
-                              Happening now
-                            </span>
-                          ) : null}
-
-                          {itemStatus === "upcoming" ? (
-                            <span
-                              style={{
-                                display: "inline-block",
-                                padding: "3px 8px",
-                                borderRadius: 999,
-                                fontSize: 12,
-                                fontWeight: 800,
-                                background: "#eef2f7",
-                                color: "#475569",
-                                border: "1px solid #cbd5e1",
-                              }}
-                            >
-                              Upcoming
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  }
-
+                if (!isPast) {
                   return (
-                    <button
+                    <div
                       key={item.id}
-                      type="button"
-                      aria-expanded={isExpanded}
-                      onClick={() => togglePastItem(item.id)}
                       style={{
                         ...cardStyle,
-                        width: "100%",
                         borderRadius: 10,
-                        padding: isExpanded ? 14 : "10px 14px",
-                        cursor: "pointer",
-                        opacity: !isExpanded ? 0.88 : 1,
-                        textAlign: "left",
-                        font: "inherit",
+                        padding: 14,
+                        cursor: "default",
+                        marginBottom: 10,
                       }}
                     >
                       <div
@@ -769,91 +670,293 @@ function MemberAgendaPageInner() {
                             style={{
                               fontWeight: 800,
                               fontSize: 17,
-                              color: "#111827",
+                              color:
+                                itemStatus === "now" ? "#064e3b" : "#111827",
                             }}
                           >
                             {item.title || "Untitled item"}
                           </div>
-
-                          {isExpanded && item.location ? (
-                            <div
-                              style={{
-                                fontSize: 12,
-                                color: "#475569",
-                                marginTop: 2,
-                                fontWeight: 500,
-                                letterSpacing: 0.2,
-                              }}
-                            >
-                              📍 {item.location}
-                            </div>
-                          ) : null}
-
-                          {isExpanded && item.description ? (
-                            <div
-                              style={{
-                                marginTop: 8,
-                                color: "#374151",
-                                lineHeight: 1.45,
-                                whiteSpace: "pre-wrap",
-                              }}
-                            >
-                              {item.description}
-                            </div>
-                          ) : null}
                         </div>
-
                         <div
                           style={{
                             textAlign: "right",
                             minWidth: 110,
-                            color: "#111827",
+                            color:
+                              itemStatus === "now" ? "#064e3b" : "#111827",
                             fontWeight: 700,
                           }}
                         >
                           {formatItemTime(item)}
                         </div>
                       </div>
-
-                      {isExpanded ? (
+                      {item.location ? (
                         <div
                           style={{
-                            marginTop: 10,
-                            display: "flex",
-                            gap: 8,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                          }}
-                        >
-                          {item.category ? (
-                            <span style={categoryStyle(resolvedAgendaColor)}>
-                              {item.category}
-                            </span>
-                          ) : null}
-
-                          {isPast ? (
-                            <span style={{ fontSize: 12, color: "#6b7280" }}>
-                              Collapse
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <div
-                          style={{
-                            marginTop: 4,
                             fontSize: 12,
-                            color: "#6b7280",
+                            color: "#475569",
+                            marginTop: 2,
+                            fontWeight: 500,
+                            letterSpacing: 0.2,
                           }}
                         >
-                          Past item · expand
+                          📍 {item.location}
                         </div>
-                      )}
-                    </button>
+                      ) : null}
+                      {item.description ? (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            color: "#374151",
+                            lineHeight: 1.45,
+                            overflow: "hidden",
+                            display: "-webkit-box",
+                            WebkitBoxOrient: "vertical",
+                            WebkitLineClamp: 3,
+                            textAlign: "justify",
+                            hyphens: "auto",
+                          }}
+                        >
+                          {item.description}
+                        </div>
+                      ) : null}
+                      <div
+                        style={{
+                          marginTop: 10,
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                        }}
+                      >
+                        {item.category ? (
+                          <span style={categoryStyle(resolvedAgendaColor)}>
+                            {item.category}
+                          </span>
+                        ) : null}
+
+                        {itemStatus === "now" ? (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "3px 8px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              background: "#dcfce7",
+                              color: "#166534",
+                            }}
+                          >
+                            Happening now
+                          </span>
+                        ) : null}
+
+                        {itemStatus === "upcoming" ? (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "3px 8px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              background: "#eef2f7",
+                              color: "#475569",
+                              border: "1px solid #cbd5e1",
+                            }}
+                          >
+                            Upcoming
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
                   );
-                })}
-              </div>
-            </section>
-          ))}
+                }
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-expanded={isExpanded}
+                    onClick={() => togglePastItem(item.id)}
+                    style={{
+                      ...cardStyle,
+                      width: "100%",
+                      borderRadius: 10,
+                      padding: isExpanded ? 14 : "10px 14px",
+                      cursor: "pointer",
+                      opacity: !isExpanded ? 0.88 : 1,
+                      textAlign: "left",
+                      font: "inherit",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        alignItems: "start",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            fontWeight: 800,
+                            fontSize: 17,
+                            color: "#111827",
+                          }}
+                        >
+                          {item.title || "Untitled item"}
+                        </div>
+
+                        {isExpanded && item.location ? (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "#475569",
+                              marginTop: 2,
+                              fontWeight: 500,
+                              letterSpacing: 0.2,
+                            }}
+                          >
+                            📍 {item.location}
+                          </div>
+                        ) : null}
+
+{isExpanded && item.description ? (
+  <div
+    style={{
+      marginTop: 8,
+      color: "#374151",
+      lineHeight: 1.45,
+      whiteSpace: "pre-wrap",
+      textAlign: "justify",
+      hyphens: "auto",
+    }}
+  >
+                            {item.description}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div
+                        style={{
+                          textAlign: "right",
+                          minWidth: 110,
+                          color: "#111827",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {formatItemTime(item)}
+                      </div>
+                    </div>
+
+                    {isExpanded ? (
+                      <div
+                        style={{
+                          marginTop: 10,
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                        }}
+                      >
+                        {item.category ? (
+                          <span style={categoryStyle(resolvedAgendaColor)}>
+                            {item.category}
+                          </span>
+                        ) : null}
+
+                        {isPast ? (
+                          <span style={{ fontSize: 12, color: "#6b7280" }}>
+                            Collapse
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 12,
+                          color: "#6b7280",
+                        }}
+                      >
+                        Past item · expand
+                      </div>
+                    )}
+                  </button>
+                );
+              });
+            }
+
+            return (
+              <section key={group.key} style={{ display: "grid", gap: 10 }}>
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: 18,
+                    color: "#111827",
+                    paddingBottom: 16,
+                    borderBottom: "2px solid #e5e7eb",
+                    marginBottom: 10,
+                  }}
+                >
+                  {group.label}
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                    gap: 16,
+                    alignItems: "start",
+                  }}
+                >
+                  {/* Morton Building column */}
+                  <div>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 16,
+                        borderBottom: "1px solid #e5e7eb",
+                        marginBottom: 12,
+                        paddingBottom: 6,
+                        color: "#22223b",
+                        letterSpacing: 0.2,
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 5,
+                        background: "white",
+                      }}
+                    >
+                      Morton Building
+                    </div>
+                    {renderAgendaCards(mortonItems)}
+                  </div>
+                  {/* Pioneer Building column */}
+                  <div>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 16,
+                        borderBottom: "1px solid #e5e7eb",
+                        marginBottom: 12,
+                        paddingBottom: 6,
+                        color: "#22223b",
+                        letterSpacing: 0.2,
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 5,
+                        background: "white",
+                      }}
+                    >
+                      Pioneer Building
+                    </div>
+                    {renderAgendaCards(pioneerItems)}
+                  </div>
+                </div>
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
