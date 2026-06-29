@@ -64,6 +64,10 @@ type AttendeeRow = {
   is_active: boolean;
   data_status?: string | null;
   created_at?: string | null;
+  registration_status?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancellation_reason?: string | null;
 };
 
 type ReviewFieldIssue = {
@@ -141,7 +145,7 @@ type ParticipantTypeFilter =
   | "speaker"
   | "volunteer"
   | "event_host";
-type ViewMode = "all" | "review";
+type ViewMode = "active" | "review" | "cancelled" | "all";
 type AttendeeSortMode = "last_name" | "site";
 
 type SummaryCardItem = {
@@ -744,11 +748,12 @@ function FilterBar(props: {
             onChange={(e) => setViewMode(e.target.value as ViewMode)}
             style={inputStyle}
           >
-            <option value="all">All Attendees</option>
-            <option value="review">Flagged Only</option>
+            <option value="active">Active Registrations</option>
+            <option value="review">Flagged Active</option>
+            <option value="cancelled">Cancelled Registrations</option>
+            <option value="all">All Registrations</option>
           </select>
         </div>
-
         <div>
           <label style={labelStyle}>Rows to Show</label>
           <select
@@ -876,7 +881,7 @@ function QuickActionBar(props: {
           onClick={onSetReviewMode}
           style={secondaryButtonStyle}
         >
-          Flagged Only
+          Flagged Active
         </button>
 
         <button
@@ -884,7 +889,7 @@ function QuickActionBar(props: {
           onClick={onSetAllMode}
           style={secondaryButtonStyle}
         >
-          Full List
+          All Registrations
         </button>
 
         <button type="button" onClick={onRefresh} style={secondaryButtonStyle}>
@@ -907,6 +912,7 @@ function ReviewQueue(props: {
   onSaveMembership: (item: ReviewItem) => Promise<void>;
   onOpenEdit: (attendee: AttendeeRow) => void;
   onUpdateDataStatus: (attendeeId: string, nextStatus: string) => Promise<void>;
+  onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
 }) {
   const {
     loading,
@@ -920,6 +926,7 @@ function ReviewQueue(props: {
     onSaveMembership,
     onOpenEdit,
     onUpdateDataStatus,
+    onCancelRegistration,
   } = props;
 
   return (
@@ -1131,6 +1138,13 @@ function ReviewQueue(props: {
                   </button>
                   <button
                     type="button"
+                    onClick={() => void onCancelRegistration(attendee)}
+                    style={secondaryButtonStyle}
+                  >
+                    Cancel Registration
+                  </button>
+                  <button
+                    type="button"
                     onClick={() =>
                       void onUpdateDataStatus(attendee.id, "locked")
                     }
@@ -1175,6 +1189,7 @@ function AttendeeList(props: {
   onInlineEditChange: (key: keyof InlineEditState, value: string) => void;
   onSaveInlineEdit: () => Promise<void>;
   onUpdateDataStatus: (attendeeId: string, nextStatus: string) => Promise<void>;
+  onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
 }) {
   const {
     loading,
@@ -1194,6 +1209,7 @@ function AttendeeList(props: {
     onInlineEditChange,
     onSaveInlineEdit,
     onUpdateDataStatus,
+    onCancelRegistration,
   } = props;
 
   const expandedCardRef = useRef<HTMLDivElement | null>(null);
@@ -1569,6 +1585,13 @@ function AttendeeList(props: {
                           style={secondaryButtonStyle}
                         >
                           Mark Reviewed
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onCancelRegistration(attendee)}
+                          style={secondaryButtonStyle}
+                        >
+                          Cancel Registration
                         </button>
                         <button
                           type="button"
@@ -2298,7 +2321,7 @@ function AdminAttendeesPageInner() {
   const [participantTypeFilter, setParticipantTypeFilter] =
     useState<ParticipantTypeFilter>(storedPrefs.participantTypeFilter || "all");
   const [viewMode, setViewMode] = useState<ViewMode>(
-    storedPrefs.viewMode || "all",
+    storedPrefs.viewMode || "active",
   );
 
   const [showResolvedInfo, setShowResolvedInfo] = useState(
@@ -2377,10 +2400,14 @@ copilot_cell_phone,
   participant_type,
   notes,
   source_type,
-  is_active,
-  data_status,
-  created_at
-`,
+is_active,
+data_status,
+registration_status,
+cancelled_at,
+cancelled_by,
+cancellation_reason,
+created_at
+            `,
           )
           .eq("event_id", eventId)
           .order("pilot_last", { ascending: true })
@@ -2631,20 +2658,43 @@ copilot_cell_phone,
     return sortReviewItems(
       reviewItems.filter((item) => {
         const matchesSearch = attendeeMatchesSearch(item.attendee, term);
+
         const statusValue = dataStatusLabel(item.attendee.data_status);
         const matchesStatus =
           dataStatusFilter === "all" ? true : statusValue === dataStatusFilter;
+
         const participantType = (item.attendee.participant_type ||
           "attendee") as ParticipantTypeFilter;
+
         const matchesParticipantType =
           participantTypeFilter === "all"
             ? true
             : participantType === participantTypeFilter;
 
-        return matchesSearch && matchesStatus && matchesParticipantType;
+        // NEW
+        const registrationStatus =
+          item.attendee.registration_status ?? "active";
+
+        const matchesView =
+          viewMode === "all"
+            ? true
+            : viewMode === "active"
+              ? registrationStatus !== "cancelled"
+              : viewMode === "cancelled"
+                ? registrationStatus === "cancelled"
+                : viewMode === "review"
+                  ? registrationStatus !== "cancelled"
+                  : true;
+
+        return (
+          matchesSearch &&
+          matchesStatus &&
+          matchesParticipantType &&
+          matchesView
+        );
       }),
     );
-  }, [reviewItems, search, dataStatusFilter, participantTypeFilter]);
+  }, [reviewItems, search, dataStatusFilter, participantTypeFilter, viewMode]);
 
   const visibleReviewItems = useMemo(() => {
     if (pageSize === "all") {
@@ -2658,17 +2708,37 @@ copilot_cell_phone,
 
     const rows = attendees.filter((row) => {
       const matchesSearch = attendeeMatchesSearch(row, term);
+
       const statusValue = dataStatusLabel(row.data_status);
       const matchesStatus =
         dataStatusFilter === "all" ? true : statusValue === dataStatusFilter;
+
       const participantType = (row.participant_type ||
         "attendee") as ParticipantTypeFilter;
+
       const matchesParticipantType =
         participantTypeFilter === "all"
           ? true
           : participantType === participantTypeFilter;
 
-      return matchesSearch && matchesStatus && matchesParticipantType;
+      // Registration View filter
+      const registrationStatus = row.registration_status ?? "active";
+
+      const matchesView =
+        viewMode === "all"
+          ? true
+          : viewMode === "active"
+            ? registrationStatus !== "cancelled"
+            : viewMode === "cancelled"
+              ? registrationStatus === "cancelled"
+              : viewMode === "review"
+                ? registrationStatus !== "cancelled" &&
+                  reviewItems.some((item) => item.attendee.id === row.id)
+                : true;
+
+      return (
+        matchesSearch && matchesStatus && matchesParticipantType && matchesView
+      );
     });
 
     return [...rows].sort((a, b) => {
@@ -2726,6 +2796,8 @@ copilot_cell_phone,
     dataStatusFilter,
     participantTypeFilter,
     attendeeSortMode,
+    viewMode,
+    reviewItems,
   ]);
 
   const visibleAttendees = useMemo(() => {
@@ -2778,34 +2850,35 @@ copilot_cell_phone,
 
   const summaryItems = useMemo<SummaryCardItem[]>(() => {
     return [
-      { label: "Total Attendees", value: attendees.length },
+      { label: "Total Attendees", value: filteredAttendees.length },
       {
         label: "Active",
-        value: attendees.filter((row) => row.is_active).length,
+        value: filteredAttendees.filter((row) => row.is_active).length,
       },
       {
         label: "Arrived",
-        value: attendees.filter((row) => !!row.has_arrived).length,
+        value: filteredAttendees.filter((row) => !!row.has_arrived).length,
       },
       {
         label: "Vendors",
-        value: attendees.filter(
+        value: filteredAttendees.filter(
           (row) => (row.participant_type || "attendee") === "vendor",
         ).length,
       },
       {
         label: "First Timers",
-        value: attendees.filter((row) => !!row.is_first_timer).length,
+        value: filteredAttendees.filter((row) => !!row.is_first_timer).length,
       },
       {
         label: "Volunteers",
-        value: attendees.filter((row) => !!row.wants_to_volunteer).length,
+        value: filteredAttendees.filter((row) => !!row.wants_to_volunteer)
+          .length,
       },
-      { label: "Flagged", value: reviewItems.length },
+      { label: "Flagged", value: filteredReviewItems.length },
       { label: "Membership Corrected", value: correctedCount },
       { label: "Fully Valid", value: fullyValidCount },
     ];
-  }, [attendees, correctedCount, fullyValidCount, reviewItems.length]);
+  }, [filteredAttendees, filteredReviewItems, correctedCount, fullyValidCount]);
 
   async function saveMembershipNumber(item: ReviewItem) {
     const draftValue = normalizeMemberNumber(
@@ -2906,6 +2979,58 @@ copilot_cell_phone,
       console.error("updateDataStatus error:", err);
       setError(err?.message || "Could not update attendee status.");
       setStatus("Status update failed.");
+    }
+  }
+  async function onCancelRegistration(attendee: AttendeeRow) {
+    const confirmed = window.confirm(
+      `Cancel the registration for ${displayPilotName(attendee)}?\n\nThis will mark the registration as cancelled but will not delete any history.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    console.log("========== CANCEL REGISTRATION ==========");
+    console.log("Attendee ID:", attendee.id);
+    console.log("Pilot:", displayPilotName(attendee));
+    console.log("Event:", currentEvent?.id);
+
+    try {
+      console.log("Admin object:", admin);
+      console.log("Admin user:", admin?.adminUser);
+
+      setError(null);
+      setStatus("Cancelling registration...");
+
+      console.log("About to update attendees table...");
+
+      const { error } = await supabase
+        .from("attendees")
+        .update({
+          registration_status: "cancelled",
+          cancelled_at: new Date().toISOString(),
+          cancelled_by: admin?.adminUser?.id ?? null,
+          cancellation_reason: "Cancelled by Admin",
+        })
+        .eq("id", attendee.id);
+
+      console.log("Supabase returned error:", error);
+
+      if (error) {
+        throw error;
+      }
+
+      showFlash("Registration cancelled.");
+
+      if (currentEvent?.id) {
+        await loadQueue(currentEvent.id);
+      }
+    } catch (err: any) {
+      console.log("Cancel Error:", err);
+      console.log("JSON:", JSON.stringify(err, null, 2));
+      console.dir(err);
+      setError(err.message ?? "Could not cancel registration.");
+      setStatus("Cancellation failed.");
     }
   }
 
@@ -3701,6 +3826,7 @@ copilot_cell_phone,
             onSaveMembership={saveMembershipNumber}
             onOpenEdit={openEditAttendeeEditor}
             onUpdateDataStatus={updateDataStatus}
+            onCancelRegistration={onCancelRegistration}
           />
         ) : null}
 
@@ -3722,6 +3848,7 @@ copilot_cell_phone,
           onInlineEditChange={updateInlineEditField}
           onSaveInlineEdit={handleSaveInlineEdit}
           onUpdateDataStatus={updateDataStatus}
+          onCancelRegistration={onCancelRegistration}
         />
       </>
 

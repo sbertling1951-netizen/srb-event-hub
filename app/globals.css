@@ -133,7 +133,7 @@ button:disabled {
 button.app-button,
 a.app-button {
   min-height: 42px;
-  padding: 9px 14px;
+  padding: 10px 18px;
   border-radius: 10px;
   border: 1px solid #cbd5e1;
   background: #ffffff;
@@ -143,8 +143,8 @@ a.app-button {
   -webkit-text-fill-color: #111827 !important;
   text-decoration: none;
   font-family: inherit;
-  font-size: 14px;
-  font-weight: 800;
+  font-size: 15px;
+  font-weight: 700;
   line-height: 1.2;
   cursor: pointer;
   display: inline-flex;
