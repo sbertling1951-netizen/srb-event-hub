@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { saveMemberSession } from "@/lib/memberSession";
+import { logEngagement } from "@/lib/engagement";
 import { supabase } from "@/lib/supabase";
 
 type EventRow = {
@@ -247,6 +248,12 @@ export default function MemberLoginPage() {
         lng: event.lng || null,
         login_at: new Date().toISOString(),
         expires_at: event.end_date ? `${event.end_date}T23:59:59` : null,
+      });
+
+      await logEngagement({
+        eventId: event.id,
+        attendeeId: attendee.id,
+        activityType: "login",
       });
 
       setStatus(
