@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { logEngagement } from "@/lib/engagement";
 import { supabase } from "@/lib/supabase";
 
 type MemberEvent = {
@@ -215,6 +216,23 @@ function MemberAnnouncementsPageInner() {
       );
     };
   }, [loadPage]);
+
+  useEffect(() => {
+    if (!event?.id) {
+      return;
+    }
+
+    const attendeeId = sessionStorage.getItem("fcoc-member-attendee-id");
+    if (!attendeeId) {
+      return;
+    }
+
+    void logEngagement({
+      eventId: event.id,
+      attendeeId,
+      activityType: "announcement_view",
+    });
+  }, [event?.id]);
 
   const sortedAnnouncements = useMemo(() => {
     return [...announcements].sort((a, b) => {

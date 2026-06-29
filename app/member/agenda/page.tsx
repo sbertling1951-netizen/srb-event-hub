@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { logEngagement } from "@/lib/engagement";
 import { supabase } from "@/lib/supabase";
 
 type MemberEvent = {
@@ -364,6 +365,23 @@ function MemberAgendaPageInner() {
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
   }, [loadAgenda]);
+
+  useEffect(() => {
+    if (!event?.id) {
+      return;
+    }
+
+    const attendeeId = sessionStorage.getItem("fcoc-member-attendee-id");
+    if (!attendeeId) {
+      return;
+    }
+
+    void logEngagement({
+      eventId: event.id,
+      attendeeId,
+      activityType: "agenda_view",
+    });
+  }, [event?.id]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

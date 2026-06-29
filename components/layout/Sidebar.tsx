@@ -57,6 +57,7 @@ const ICON_MAP: Record<string, string> = {
   "/admin/permissions": "⚙️",
   "/admin/checklist": "📋",
   "/admin/event-staff": "👥",
+  "/admin/engagement": "📈",
 };
 
 type EventContext = {
@@ -520,6 +521,15 @@ export default function Sidebar() {
         },
       ].filter(Boolean) as NavItem[];
 
+      // --- INSERT INTELLIGENCE SECTION DEFINITION HERE ---
+      const intelligenceSection: NavItem[] = [
+        adminAccess?.privilege_group === "super_admin" && {
+          label: "Engagement",
+          href: "/admin/engagement",
+        },
+      ].filter(Boolean) as NavItem[];
+      // --- END INTELLIGENCE SECTION DEFINITION ---
+
       const staffSection: NavItem[] = [
         (hasPermission(adminAccess, "can_manage_event_staff") ||
           hasPermission(adminAccess, "can_manage_admins")) && {
@@ -542,6 +552,11 @@ export default function Sidebar() {
         ...(contentSection.length
           ? [{ title: "Content", items: contentSection }]
           : []),
+        // --- INSERT INTELLIGENCE SECTION INTO RETURNED ARRAY ---
+        ...(intelligenceSection.length
+          ? [{ title: "Intelligence", items: intelligenceSection }]
+          : []),
+        // --- END INTELLIGENCE SECTION IN RETURNED ARRAY ---
         ...(staffSection.length
           ? [{ title: "Staff & Setup", items: staffSection }]
           : []),
@@ -836,9 +851,11 @@ export default function Sidebar() {
                       ? "🧭"
                       : section.title === "Content"
                         ? "📰"
-                        : section.title === "Staff & Setup"
-                          ? "👥"
-                          : ""}
+                        : section.title === "Intelligence"
+                          ? "📈"
+                          : section.title === "Staff & Setup"
+                            ? "👥"
+                            : ""}
                 </span>
                 <span>{section.title}</span>
               </div>
@@ -996,6 +1013,8 @@ function getSectionColor(title: string) {
       return "#60a5fa"; // blue
     case "Content":
       return "#34d399"; // green
+    case "Intelligence":
+      return "#a855f7"; // purple
     case "Staff & Setup":
       return "#fbbf24"; // amber
     default:

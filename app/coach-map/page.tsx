@@ -3,10 +3,28 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { logEngagement } from "@/lib/engagement";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 
 function CoachMapPageInner() {
   const router = useRouter();
+
+  useEffect(() => {
+    const context = getCurrentMemberEvent();
+    const attendeeId = sessionStorage.getItem("fcoc-member-attendee-id");
+
+    if (!context?.id || !attendeeId) {
+      return;
+    }
+
+    void logEngagement({
+      eventId: context.id,
+      attendeeId,
+      activityType: "coach_map_view",
+    });
+  }, []);
 
   useEffect(() => {
     router.replace("/coach-map/public");

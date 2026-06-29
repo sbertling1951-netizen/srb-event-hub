@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { calculateDistanceMiles } from "@/lib/calculateDistanceMiles";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { logEngagement } from "@/lib/engagement";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
 import { supabase } from "@/lib/supabase";
 
@@ -263,6 +264,23 @@ function NearbyPageInner() {
       );
     };
   }, [loadNearby]);
+
+  useEffect(() => {
+    if (!event?.id) {
+      return;
+    }
+
+    const attendeeId = sessionStorage.getItem("fcoc-member-attendee-id");
+    if (!attendeeId) {
+      return;
+    }
+
+    void logEngagement({
+      eventId: event.id,
+      attendeeId,
+      activityType: "nearby_view",
+    });
+  }, [event?.id]);
 
   useEffect(() => {
     try {
