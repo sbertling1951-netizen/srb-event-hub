@@ -964,10 +964,19 @@ function ReviewQueue(props: {
               <div
                 key={attendee.id}
                 style={{
-                  border: "1px solid #fca5a5",
-                  background: "#fef2f2",
-                  borderRadius: 10,
-                  padding: "10px 12px",
+                  border:
+                    attendee.registration_status === "cancelled"
+                      ? "1px solid #d1d5db"
+                      : "1px solid #ddd",
+                  borderRadius: 12,
+                  padding: 14,
+                  background:
+                    attendee.registration_status === "cancelled"
+                      ? "#f5f5f5"
+                      : "white",
+                  opacity:
+                    attendee.registration_status === "cancelled" ? 0.65 : 1,
+                  transition: "background 0.2s ease, border-color 0.2s ease",
                 }}
               >
                 <div
@@ -1295,11 +1304,19 @@ function AttendeeList(props: {
                     border:
                       attendee.id === recentlySavedId
                         ? "1px solid #86efac"
-                        : "1px solid #ddd",
+                        : attendee.registration_status === "cancelled"
+                          ? "1px solid #d1d5db"
+                          : "1px solid #ddd",
                     borderRadius: 12,
                     padding: 14,
                     background:
-                      attendee.id === recentlySavedId ? "#f0fdf4" : "white",
+                      attendee.id === recentlySavedId
+                        ? "#f0fdf4"
+                        : attendee.registration_status === "cancelled"
+                          ? "#fef2f2"
+                          : "white",
+                    opacity:
+                      attendee.registration_status === "cancelled" ? 0.82 : 1,
                     transition: "background 0.2s ease, border-color 0.2s ease",
                   }}
                 >
@@ -1494,6 +1511,21 @@ function AttendeeList(props: {
                     </div>
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {attendee.registration_status === "cancelled" && (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "3px 8px",
+                            borderRadius: 999,
+                            background: "#fee2e2",
+                            color: "#991b1b",
+                            fontSize: 12,
+                            fontWeight: 700,
+                          }}
+                        >
+                          Cancelled
+                        </span>
+                      )}
                       <span style={secondaryBadgeStyle}>
                         {isInlineEditing
                           ? dataStatusLabel(inlineEditState.data_status)
