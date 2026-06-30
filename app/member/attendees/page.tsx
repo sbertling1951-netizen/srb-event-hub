@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { logEngagement } from "@/lib/engagement";
+
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { fullName, preferredDisplayLine } from "@/lib/displayNames";
 import {
@@ -151,6 +153,14 @@ function AttendeesPageInner() {
     }
 
     setCanViewLocator(true);
+    // Log engagement for Attendee Locator view
+    if (currentEventId && storedAttendeeId) {
+      void logEngagement({
+        eventId: currentEventId,
+        attendeeId: storedAttendeeId,
+        activityType: "view_attendee_locator",
+      });
+    }
     const sharedAttendeeRows = attendeeRows.filter(
       (row) => !!row.share_with_attendees,
     );

@@ -1,10 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-
-import { logEngagement } from "@/lib/engagement";
+import { useRouter } from "next/navigation";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { logEngagement } from "@/lib/engagement";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 
@@ -15,15 +14,13 @@ function CoachMapPageInner() {
     const context = getCurrentMemberEvent();
     const attendeeId = sessionStorage.getItem("fcoc-member-attendee-id");
 
-    if (!context?.id || !attendeeId) {
-      return;
+    if (context?.id && attendeeId) {
+      void logEngagement({
+        eventId: context.id,
+        attendeeId,
+        activityType: "coach_map_view",
+      });
     }
-
-    void logEngagement({
-      eventId: context.id,
-      attendeeId,
-      activityType: "coach_map_view",
-    });
   }, []);
 
   useEffect(() => {
