@@ -41,6 +41,13 @@ type EventVendorRow = {
   vendors: EventVendorDetails | EventVendorDetails[] | null;
 };
 
+type HouseholdMember = {
+  id: string;
+  display_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+};
+
 function getDashboardVendorDetails(
   value: EventVendorRow["vendors"],
 ): EventVendorDetails | null {
@@ -59,6 +66,9 @@ export default function MemberDashboardPage() {
   const [vendors, setVendors] = useState<DashboardVendor[]>([]);
   const [vendorError, setVendorError] = useState<string | null>(null);
   const [currentVendorIndex, setCurrentVendorIndex] = useState(0);
+
+  const [participantCapacity, setParticipantCapacity] = useState(0);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
 
   const router = useRouter();
 
@@ -93,6 +103,34 @@ export default function MemberDashboardPage() {
       }
 
       setCurrentEvent(memberEvent);
+
+      // Load participant capacity and household members
+      (async () => {
+        try {
+          if (!attendeeId) {
+            return;
+          }
+          // Get participant_capacity
+          const { data: attendeeData, error: attendeeError } = await supabase
+            .from("attendees")
+            .select("participant_capacity")
+            .eq("id", attendeeId)
+            .single();
+          if (attendeeError) throw attendeeError;
+          setParticipantCapacity(attendeeData?.participant_capacity ?? 0);
+
+          // Get household members
+          const { data: membersData, error: membersError } = await supabase
+            .from("attendee_household_members")
+            .select("id, display_name, first_name, last_name")
+            .eq("attendee_id", attendeeId)
+            .order("created_at", { ascending: true });
+          if (membersError) throw membersError;
+          setHouseholdMembers(membersData ?? []);
+        } catch (err) {
+          console.error("Participant summary load failed:", err);
+        }
+      })();
     } catch (err) {
       console.error("Member dashboard load error:", err);
       router.replace("/member/login");
@@ -216,7 +254,7 @@ export default function MemberDashboardPage() {
         </div>
       </div>
 
-      {/* Digital Identities */}
+      {/* Participants */}
       <div
         className="card"
         style={{
@@ -234,7 +272,7 @@ export default function MemberDashboardPage() {
             marginBottom: 12,
           }}
         >
-          <h2 style={{ margin: 0 }}>Digital Identities</h2>
+          <h2 style={{ margin: 0 }}>Participants</h2>
           <div
             style={{
               padding: "4px 10px",
@@ -244,7 +282,7 @@ export default function MemberDashboardPage() {
               fontWeight: 700,
             }}
           >
-            1 of 2
+            {householdMembers.length} of {participantCapacity}
           </div>
         </div>
 
@@ -255,31 +293,55 @@ export default function MemberDashboardPage() {
             marginBottom: 12,
           }}
         >
-          Enter participant information to create name badges, enable individual
-          logins, and improve check-in.
+          Manage the participants included with your registration. Add participants until all purchased participant slots are filled.
         </div>
 
-        <button
-          type="button"
-          onClick={() => goTo("/member/participants")}
-          style={{
-            ...memberGridButtonStyle,
-            marginBottom: 10,
-          }}
-        >
-          Steve Bertling
-        </button>
+        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+          {householdMembers.map((member) => {
+            const name =
+              member.display_name ||
+              [member.first_name, member.last_name].filter(Boolean).join(" ") ||
+              "Unnamed Participant";
 
-        <button
-          type="button"
-          onClick={() => goTo("/member/participants")}
-          style={{
-            ...memberGridButtonStyle,
-            textAlign: "center",
-          }}
-        >
-          + Add Participant
-        </button>
+            return (
+              <div
+                key={member.id}
+                style={{ padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 8 }}
+              >
+                {name}
+              </div>
+            );
+          })}
+
+          {Array.from({ length: Math.max(participantCapacity - householdMembers.length, 0) }).map((_, index) => (
+            <div
+              key={`empty-${index}`}
+              style={{
+                padding: "10px 12px",
+                border: "1px dashed #cbd5e1",
+                borderRadius: 8,
+                color: "#6b7280",
+                fontStyle: "italic",
+              }}
+            >
+              Available Participant Slot
+            </div>
+          ))}
+        </div>
+
+        {householdMembers.length < participantCapacity && (
+          <button
+            type="button"
+            onClick={() => goTo("/member/participants")}
+            style={{
+              ...memberGridButtonStyle,
+              textAlign: "center",
+              marginTop: 12,
+            }}
+          >
+            + Add Participant
+          </button>
+        )}
       </div>
 
       <div

@@ -25,6 +25,15 @@ type Attendee = {
   is_first_timer: boolean | null;
   wants_to_volunteer: boolean | null;
   handicap_parking: boolean | null;
+  participant_capacity?: number | null;
+};
+
+type HouseholdMember = {
+  id: string;
+  role: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
 };
 
 function fullName(first: string | null, last: string | null) {
@@ -40,6 +49,7 @@ export default function AttendeeProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [status, setStatus] = useState("Loading attendee...");
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
 
   useEffect(() => {
     async function loadAttendee() {
@@ -91,7 +101,8 @@ export default function AttendeeProfilePage() {
           assigned_site,
           is_first_timer,
           wants_to_volunteer,
-          handicap_parking
+          handicap_parking,
+          participant_capacity
         `,
         )
         .eq("id", attendeeId)
@@ -115,6 +126,15 @@ export default function AttendeeProfilePage() {
       }
 
       setAttendee(typedAttendee);
+
+      const { data: householdData } = await supabase
+        .from("attendee_household_members")
+        .select("id, role, first_name, last_name, display_name")
+        .eq("attendee_id", attendeeId)
+        .order("created_at", { ascending: true });
+
+      setHouseholdMembers((householdData as HouseholdMember[]) ?? []);
+
       setStatus("Loaded");
     }
 
@@ -143,6 +163,9 @@ export default function AttendeeProfilePage() {
   const pilotName = fullName(attendee.pilot_first, attendee.pilot_last);
   const copilotName = fullName(attendee.copilot_first, attendee.copilot_last);
   const displayedSite = attendee.assigned_site || "Not provided";
+
+  const participantCapacity = attendee.participant_capacity ?? householdMembers.length;
+  const emptySlots = Math.max(participantCapacity - householdMembers.length, 0);
 
   return (
     <div style={{ padding: 24, maxWidth: 760 }}>
@@ -246,6 +269,64 @@ export default function AttendeeProfilePage() {
             </span>
           ) : null}
         </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid var(--fcoc-border)",
+          borderRadius: 10,
+          padding: 18,
+          background: "white",
+          marginTop: 20,
+        }}
+      >
+        <h2 style={{ marginTop: 0 }}>
+          Participants ({householdMembers.length} of {participantCapacity})
+        </h2>
+
+        {householdMembers.length === 0 ? (
+          <p style={{ color: "#666" }}>No participant records found.</p>
+        ) : (
+          householdMembers.map((member) => {
+            const name =
+              member.display_name ||
+              fullName(member.first_name, member.last_name) ||
+              "Unnamed Participant";
+
+            return (
+              <div
+                key={member.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "8px 0",
+                  borderTop: "1px solid #eee",
+                }}
+              >
+                <strong>{name}</strong>
+                <span style={{ color: "#666", textTransform: "capitalize" }}>
+                  {member.role ?? "participant"}
+                </span>
+              </div>
+            );
+          })
+        )}
+        {Array.from({ length: emptySlots }).map((_, index) => (
+          <div
+            key={`empty-${index}`}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "8px 0",
+              borderTop: "1px solid #eee",
+              color: "#777",
+              fontStyle: "italic",
+            }}
+          >
+            <span>Empty Participant Slot</span>
+            <span>Available</span>
+          </div>
+        ))}
       </div>
     </div>
   );
