@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-import ParticipantIdentityEditor from "@/components/participants/ParticipantIdentityEditor";
-
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import ParticipantIdentityEditor from "@/components/participants/ParticipantIdentityEditor";
 import {
   getCurrentMemberEvent,
   getStoredMemberAttendeeId,
@@ -38,7 +37,9 @@ function ParticipantsPageInner() {
   const [participantCount, setParticipantCount] = useState(0);
   const [capacity, setCapacity] = useState(0);
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [currentAttendee, setCurrentAttendee] = useState<AttendeeRow | null>(null);
+  const [currentAttendee, setCurrentAttendee] = useState<AttendeeRow | null>(
+    null,
+  );
 
   const [emailInputs, setEmailInputs] = useState<Record<string, string>>({});
   const [savingParticipantId, setSavingParticipantId] = useState<string | null>(
@@ -62,6 +63,12 @@ function ParticipantsPageInner() {
         return;
       }
 
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      console.log("AUTH USER", user);
+      console.log("AUTH EMAIL", user?.email);
+      const authEmail = user?.email?.toLowerCase() ?? null;
       const attendeeId = getStoredMemberAttendeeId();
       const entryId = getStoredMemberEntryId();
 
@@ -71,9 +78,7 @@ function ParticipantsPageInner() {
 
       const { data: attendeeRows } = await supabase
         .from("attendees")
-        .select(
-          "id,entry_id,email,participant_capacity,auth_user_id,event_id",
-        )
+        .select("id,entry_id,email,participant_capacity,auth_user_id,event_id")
         .eq("event_id", currentEvent.id);
 
       const attendees = (attendeeRows || []) as AttendeeRow[];
@@ -81,6 +86,10 @@ function ParticipantsPageInner() {
       let attendee = attendees.find(
         (a) => authUserId && a.auth_user_id === authUserId,
       );
+
+      if (!attendee && authEmail) {
+        attendee = attendees.find((a) => a.email?.toLowerCase() === authEmail);
+      }
 
       if (!attendee) {
         attendee = attendees.find((a) => attendeeId && a.id === attendeeId);
@@ -91,6 +100,9 @@ function ParticipantsPageInner() {
       }
 
       console.log("PARTICIPANTS MATCHED ATTENDEE", attendee);
+      console.log("STORED ATTENDEE ID", attendeeId);
+      console.log("STORED ENTRY ID", entryId);
+      console.log("LOCAL AUTH USER ID", authUserId);
 
       if (!attendee) {
         setParticipantCount(0);
@@ -213,13 +225,10 @@ function ParticipantsPageInner() {
             className=""
             style={{
               width: `${
-                capacity > 0
-                  ? (registeredParticipants / capacity) * 100
-                  : 0
+                capacity > 0 ? (registeredParticipants / capacity) * 100 : 0
               }%`,
               background:
-                registeredParticipants === capacity &&
-                capacity > 0
+                registeredParticipants === capacity && capacity > 0
                   ? "#22c55e"
                   : "#f59e0b",
               height: "100%",
@@ -228,8 +237,7 @@ function ParticipantsPageInner() {
         </div>
 
         <div className="app-card-section" style={{ textAlign: "center" }}>
-          {capacity > 0 &&
-          registeredParticipants === capacity ? (
+          {capacity > 0 && registeredParticipants === capacity ? (
             <div className="font-medium text-green-700">
               ✓ All participant accounts registered
             </div>

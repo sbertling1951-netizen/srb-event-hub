@@ -3,12 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { fullName, preferredDisplayLine } from "@/lib/displayNames";
+import { fullName, preferredDisplayLine } from "@/lib/formatters";
 import { getAdminEvent } from "@/lib/getAdminEvent";
-import {
-  canAccessEvent,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 

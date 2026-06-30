@@ -7,14 +7,29 @@ export type SimpleHouseholdMember = {
   age_text?: string | null;
 };
 
+
 export function fullName(first?: string | null, last?: string | null) {
-  return [first, last].filter(Boolean).join(" ").trim();
+  return [normalizeName(first), normalizeName(last)]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
+export function normalizeName(value?: string | null) {
+  if (!value) return "";
+
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function preferredDisplayName(member: SimpleHouseholdMember) {
-  if (member.display_name?.trim()) {return member.display_name.trim();}
+  if (member.display_name?.trim()) {
+    return normalizeName(member.display_name);
+  }
 
-  const nicknameLead = [member.nickname, member.last_name]
+  const nicknameLead = [normalizeName(member.nickname), normalizeName(member.last_name)]
     .filter(Boolean)
     .join(" ")
     .trim();
@@ -23,7 +38,9 @@ export function preferredDisplayName(member: SimpleHouseholdMember) {
   const legalName = fullName(member.first_name, member.last_name);
   if (legalName) {return legalName;}
 
-  if (member.raw_text?.trim()) {return member.raw_text.trim();}
+  if (member.raw_text?.trim()) {
+    return normalizeName(member.raw_text);
+  }
 
   return "Unnamed";
 }

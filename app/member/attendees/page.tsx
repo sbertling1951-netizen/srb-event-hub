@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { logEngagement } from "@/lib/engagement";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
-import { fullName, preferredDisplayLine } from "@/lib/displayNames";
+import { fullName, preferredDisplayLine } from "@/lib/formatters";
 import {
   type CurrentMemberEvent,
   getCurrentMemberEvent,
@@ -283,11 +283,15 @@ function AttendeesPageInner() {
     <div style={{ padding: 24 }}>
       <h1>Attendee Locator</h1>
       <p>
-        <strong>Welcome! The excitement is already building.</strong> Members who have chosen to share their information appear here as they begin using the Event Hub.
+        <strong>Welcome! The excitement is already building.</strong> Members
+        who have chosen to share their information appear here as they begin
+        using the Event Hub.
       </p>
 
       <p>
-        As attendees arrive and complete check-in, additional information—including campsite assignments and coach locations (for those who choose to share them)—will automatically become available.
+        As attendees arrive and complete check-in, additional
+        information—including campsite assignments and coach locations (for
+        those who choose to share them)—will automatically become available.
       </p>
 
       <div

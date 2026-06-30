@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
-import { fullName, preferredDisplayLine } from "@/lib/displayNames";
+import { fullName, preferredDisplayLine } from "@/lib/formatters";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
 

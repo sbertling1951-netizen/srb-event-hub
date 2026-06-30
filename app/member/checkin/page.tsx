@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
-import { preferredDisplayLine } from "@/lib/displayNames";
+import { preferredDisplayLine } from "@/lib/formatters";
 import {
   type CurrentMemberEvent,
   getCurrentMemberEvent,

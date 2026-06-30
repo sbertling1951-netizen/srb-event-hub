@@ -209,6 +209,10 @@ export default function MemberLoginPage() {
       const arrived = !!attendee.has_arrived;
 
       if (typeof window !== "undefined") {
+        // Clear any stale member session values from a previous login.
+        localStorage.removeItem("member-participant-id");
+        localStorage.removeItem("member-participant-name");
+        localStorage.removeItem("member-participant-role");
         localStorage.setItem("fcoc-member-attendee-id", attendee.id);
         localStorage.setItem("fcoc-member-email", normalizedEmail);
         if (attendee.auth_user_id) {
@@ -216,6 +220,8 @@ export default function MemberLoginPage() {
             "fcoc-member-auth-user-id",
             attendee.auth_user_id,
           );
+        } else {
+          localStorage.removeItem("fcoc-member-auth-user-id");
         }
         console.log("MEMBER AUTH USER ID", attendee.auth_user_id);
         localStorage.setItem("fcoc-member-entry-id", attendee.entry_id || "");

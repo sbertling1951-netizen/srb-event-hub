@@ -2889,15 +2889,13 @@ created_at
       {
         label: "Active",
         value: attendees.filter(
-          (row) =>
-            row.registration_status !== "cancelled" && row.is_active,
+          (row) => row.registration_status !== "cancelled" && row.is_active,
         ).length,
       },
       {
         label: "Arrived",
         value: attendees.filter(
-          (row) =>
-            row.registration_status !== "cancelled" && !!row.has_arrived,
+          (row) => row.registration_status !== "cancelled" && !!row.has_arrived,
         ).length,
       },
       {
@@ -2919,7 +2917,13 @@ created_at
       { label: "Membership Corrected", value: correctedCount },
       { label: "Fully Valid", value: fullyValidCount },
     ];
-  }, [attendees, filteredAttendees, filteredReviewItems, correctedCount, fullyValidCount]);
+  }, [
+    attendees,
+    filteredAttendees,
+    filteredReviewItems,
+    correctedCount,
+    fullyValidCount,
+  ]);
 
   async function saveMembershipNumber(item: ReviewItem) {
     const draftValue = normalizeMemberNumber(
@@ -3163,6 +3167,9 @@ created_at
           .eq("id", copilotRow.id);
       }
 
+      console.log("EDITOR STATE", editorState);
+      console.log("ROGER EMAIL:", editorState.additional_email);
+
       // Additional participant sync logic
       const hasAdditional =
         !!editorState.additional_first_name ||
@@ -3172,6 +3179,12 @@ created_at
         !!editorState.additional_cell_phone;
 
       console.log("HAS ADDITIONAL", hasAdditional);
+      console.log("Additional editor state:", {
+        first: editorState.additional_first_name,
+        last: editorState.additional_last_name,
+        email: editorState.additional_email,
+        phone: editorState.additional_cell_phone,
+      });
 
       if (hasAdditional) {
         const additionalDisplayName = editorState.additional_nickname
@@ -3196,14 +3209,20 @@ created_at
           attendee_id: attendeeId,
         };
 
-        await supabase
+        console.log("UPSERT PAYLOAD", additionalUpsert);
+
+        const { data, error } = await supabase
           .from("attendee_household_members")
           .upsert(
             additionalRow
               ? { ...additionalUpsert, id: additionalRow.id }
               : additionalUpsert,
             { onConflict: "attendee_id,person_role" },
-          );
+          )
+          .select();
+
+        console.log("UPSERT RESULT", data);
+        console.log("UPSERT ERROR", error);
       } else if (additionalRow) {
         await supabase
           .from("attendee_household_members")
@@ -3318,6 +3337,24 @@ created_at
       return;
     }
 
+    // --- Compute participant capacity ---
+    // hasCopilot if any copilot name or email fields are populated
+    const hasCopilot =
+      !!editorState.copilot_first.trim() ||
+      !!editorState.copilot_last.trim() ||
+      !!editorState.copilot_email.trim() ||
+      !!editorState.copilot_nickname.trim() ||
+      !!editorState.copilot_cell_phone.trim();
+    // hasAdditional if any additional_* fields are populated
+    const hasAdditional =
+      !!editorState.additional_first_name?.trim() ||
+      !!editorState.additional_last_name?.trim() ||
+      !!editorState.additional_nickname?.trim() ||
+      !!editorState.additional_email?.trim() ||
+      !!editorState.additional_cell_phone?.trim();
+    // requiredCapacity = 1 + (hasCopilot ? 1 : 0) + (hasAdditional ? 1 : 0)
+    const requiredCapacity = 1 + (hasCopilot ? 1 : 0) + (hasAdditional ? 1 : 0);
+
     try {
       setEditorSaving(true);
       setError(null);
@@ -3360,6 +3397,8 @@ created_at
         needs_parking: editorState.needs_parking,
         data_status: editorState.data_status || "pending",
         notes: editorState.notes.trim() || null,
+        // Overwrite participant_capacity on every save
+        participant_capacity: requiredCapacity,
       };
 
       if (editorMode === "create") {
@@ -3381,6 +3420,12 @@ created_at
             currentEvent.id,
             editorState,
           );
+          const { data } = await supabase
+            .from("attendee_household_members")
+            .select("*")
+            .eq("attendee_id", newAttendee.id);
+
+          console.log("HOUSEHOLD AFTER SAVE", data);
         }
         showFlash("Attendee record created.");
       } else {
@@ -3487,19 +3532,13 @@ created_at
         const nextReviewItem = remainingReviewItems[0];
 
         if (nextReviewItem) {
-          setEditorState(attendeeToEditorState(nextReviewItem.attendee));
-          setEditorMode("edit");
-          setEditorOpen(true);
+          await openEditAttendeeEditor(nextReviewItem.attendee);
           showFlash("Saved. Next review record loaded.");
         } else {
           closeAttendeeEditor();
           showFlash("Saved. Review queue is clear.");
         }
-
-        await loadQueue(currentEvent.id);
-        return;
       }
-
       // Close immediately on successful save
       closeAttendeeEditor();
 
