@@ -2882,14 +2882,23 @@ created_at
 
   const summaryItems = useMemo<SummaryCardItem[]>(() => {
     return [
-      { label: "Total Attendees", value: filteredAttendees.length },
+      {
+        label: "Total Registrations",
+        value: attendees.length,
+      },
       {
         label: "Active",
-        value: filteredAttendees.filter((row) => row.is_active).length,
+        value: attendees.filter(
+          (row) =>
+            row.registration_status !== "cancelled" && row.is_active,
+        ).length,
       },
       {
         label: "Arrived",
-        value: filteredAttendees.filter((row) => !!row.has_arrived).length,
+        value: attendees.filter(
+          (row) =>
+            row.registration_status !== "cancelled" && !!row.has_arrived,
+        ).length,
       },
       {
         label: "Vendors",
@@ -2910,7 +2919,7 @@ created_at
       { label: "Membership Corrected", value: correctedCount },
       { label: "Fully Valid", value: fullyValidCount },
     ];
-  }, [filteredAttendees, filteredReviewItems, correctedCount, fullyValidCount]);
+  }, [attendees, filteredAttendees, filteredReviewItems, correctedCount, fullyValidCount]);
 
   async function saveMembershipNumber(item: ReviewItem) {
     const draftValue = normalizeMemberNumber(

@@ -26,6 +26,8 @@ type Attendee = {
   id: string;
   arrival_status: string | null;
   assigned_site: string | null;
+  registration_status: string | null;
+  is_active: boolean | null;
 };
 
 type SystemStatus = {
@@ -436,7 +438,7 @@ function AdminDashboardPageInner() {
     const [attendeeResult, householdResult] = await Promise.all([
       supabase
         .from("attendees")
-        .select("id,arrival_status,assigned_site")
+        .select("id,arrival_status,assigned_site,registration_status,is_active")
         .eq("event_id", selected.id),
       supabase
         .from("attendee_household_members")
@@ -462,8 +464,11 @@ function AdminDashboardPageInner() {
 
     setAttendees((attendeeResult.data || []) as Attendee[]);
     setHouseholdMembers((householdResult.data || []) as HouseholdMember[]);
+    const activeCoachCount = ((attendeeResult.data || []) as Attendee[]).filter(
+      (a) => a.registration_status !== "cancelled" && a.is_active,
+    ).length;
     setStatus(
-      `Loaded ${(attendeeResult.data || []).length} coaches and ${(householdResult.data || []).length} people.`,
+      `Loaded ${activeCoachCount} coaches and ${(householdResult.data || []).length} people.`,
     );
   }
 
@@ -604,10 +609,13 @@ function AdminDashboardPageInner() {
   }
 
   const metrics = useMemo(() => {
-    const registeredCoaches = attendees.length;
+    const activeAttendees = attendees.filter(
+      (a) => a.registration_status !== "cancelled" && a.is_active,
+    );
+    const registeredCoaches = activeAttendees.length;
 
     const arrivedAttendeeIds = new Set(
-      attendees
+      activeAttendees
         .filter(
           (a) =>
             a.arrival_status === "arrived" || a.arrival_status === "parked",
@@ -621,15 +629,15 @@ function AdminDashboardPageInner() {
       arrivedAttendeeIds.has(m.attendee_id),
     ).length;
 
-    const parkedCount = attendees.filter(
+    const parkedCount = activeAttendees.filter(
       (a) => a.arrival_status === "parked",
     ).length;
 
-    const queueSize = attendees.filter(
+    const queueSize = activeAttendees.filter(
       (a) => a.arrival_status !== "parked",
     ).length;
 
-    const assignedCount = attendees.filter((a) => !!a.assigned_site).length;
+    const assignedCount = activeAttendees.filter((a) => !!a.assigned_site).length;
 
     return {
       registeredCoaches,
