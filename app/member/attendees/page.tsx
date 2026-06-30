@@ -115,6 +115,7 @@ function AttendeesPageInner() {
         "id,entry_id,pilot_first,pilot_last,copilot_first,copilot_last,email,primary_phone,cell_phone,coach_make:coach_manufacturer,coach_model,coach_length,first_time:is_first_timer,volunteer:wants_to_volunteer,handicap_parking,assigned_site,share_with_attendees,has_arrived",
       )
       .eq("event_id", currentEventId)
+      .in("registration_status", ["active", "registered"])
       .order("pilot_last", { ascending: true, nullsFirst: false })
       .order("pilot_first", { ascending: true, nullsFirst: false });
 
@@ -282,8 +283,11 @@ function AttendeesPageInner() {
     <div style={{ padding: 24 }}>
       <h1>Attendee Locator</h1>
       <p>
-        Search the current event attendee list by name, nickname, coach, email,
-        phone, site, or household member.
+        <strong>Welcome! The excitement is already building.</strong> Members who have chosen to share their information appear here as they begin using the Event Hub.
+      </p>
+
+      <p>
+        As attendees arrive and complete check-in, additional information—including campsite assignments and coach locations (for those who choose to share them)—will automatically become available.
       </p>
 
       <div
@@ -459,7 +463,11 @@ function AttendeesPageInner() {
 
                     <div>
                       <div style={{ fontWeight: 700 }}>Site</div>
-                      <div>{a.assigned_site || "—"}</div>
+                      <div>
+                        {a.has_arrived
+                          ? a.assigned_site || "—"
+                          : "Available after check-in"}
+                      </div>
                     </div>
                   </div>
 
@@ -473,7 +481,9 @@ function AttendeesPageInner() {
                       color: "#555",
                     }}
                   >
-                    <div>Arrived: {yesNo(a.has_arrived)}</div>
+                    <div>
+                      Status: {a.has_arrived ? "🟢 Arrived" : "🟡 Registered"}
+                    </div>
                     <div>1st Time: {yesNo(a.first_time)}</div>
                     <div>Volunteer: {yesNo(a.volunteer)}</div>
                     <div>Handicap: {yesNo(a.handicap_parking)}</div>
