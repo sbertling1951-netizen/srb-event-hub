@@ -47,6 +47,7 @@ type AttendeeRow = {
   city: string | null;
   state: string | null;
   assigned_site: string | null;
+  participant_capacity?: number | null;
   has_arrived: boolean | null;
   is_first_timer: boolean | null;
   wants_to_volunteer: boolean | null;
@@ -116,6 +117,7 @@ type AttendeeEditorState = {
   state: string;
   assigned_site: string;
   participant_type: string;
+  registration_capacity: number; // Add registration_capacity after participant_type
   primary_phone: string;
   cell_phone: string;
   wants_to_volunteer: boolean;
@@ -326,6 +328,7 @@ function emptyAttendeeEditorState(): AttendeeEditorState {
     state: "",
     assigned_site: "",
     participant_type: "attendee",
+    registration_capacity: 1, // initialize to 1
     primary_phone: "",
     cell_phone: "",
     coach_manufacturer: "",
@@ -368,6 +371,7 @@ function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
     state: attendee.state || "",
     assigned_site: attendee.assigned_site || "",
     participant_type: attendee.participant_type || "attendee",
+    registration_capacity: attendee.participant_capacity ?? 1,
     primary_phone: attendee.primary_phone || "",
     cell_phone: attendee.cell_phone || "",
     coach_manufacturer: attendee.coach_manufacturer || "",
@@ -2162,16 +2166,68 @@ function AttendeeEditorModal(props: {
               rows={4}
             />
           </div>
-          {/* Assigned Site, Participant Type, Data Status row (moved near bottom) */}
+          {/* Registration Capacity, Assigned Site, Participant Type, Data Status row (moved near bottom) */}
           <div
             style={{
               marginTop: 14,
               display: "grid",
               gap: 14,
-              gridTemplateColumns: "2fr 1fr 1fr",
+              gridTemplateColumns: "1fr 2fr 1fr 1fr",
               alignItems: "end",
             }}
           >
+            <div>
+              <label style={labelStyle}>Registration Capacity</label>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  style={secondaryButtonStyle}
+                  onClick={() =>
+                    onChange(
+                      "registration_capacity",
+                      Math.max(1, state.registration_capacity - 1) as any,
+                    )
+                  }
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={state.registration_capacity}
+                  onChange={(e) =>
+                    onChange(
+                      "registration_capacity",
+                      Math.max(1, Number(e.target.value) || 1) as any,
+                    )
+                  }
+                  style={{
+                    ...inputStyle,
+                    width: 70,
+                    textAlign: "center",
+                  }}
+                />
+                <button
+                  type="button"
+                  style={secondaryButtonStyle}
+                  onClick={() =>
+                    onChange(
+                      "registration_capacity",
+                      (state.registration_capacity + 1) as any,
+                    )
+                  }
+                >
+                  +
+                </button>
+              </div>
+            </div>
             <div>
               <label style={labelStyle}>Assigned Site</label>
               <input
@@ -2180,7 +2236,6 @@ function AttendeeEditorModal(props: {
                 style={inputStyle}
               />
             </div>
-
             <div>
               <label style={labelStyle}>Participant Type</label>
               <select
@@ -2197,7 +2252,6 @@ function AttendeeEditorModal(props: {
                 ))}
               </select>
             </div>
-
             <div>
               <label style={labelStyle}>Data Status</label>
               <select
@@ -2418,7 +2472,8 @@ copilot_cell_phone,
   city,
   state,
   assigned_site,
-  has_arrived,
+participant_capacity,
+has_arrived,
   is_first_timer,
   wants_to_volunteer,
   coach_manufacturer,
@@ -3352,8 +3407,9 @@ created_at
       !!editorState.additional_nickname?.trim() ||
       !!editorState.additional_email?.trim() ||
       !!editorState.additional_cell_phone?.trim();
-    // requiredCapacity = 1 + (hasCopilot ? 1 : 0) + (hasAdditional ? 1 : 0)
-    const requiredCapacity = 1 + (hasCopilot ? 1 : 0) + (hasAdditional ? 1 : 0);
+    // Registration capacity is the authoritative purchased capacity.
+    // Household identity fields must never reduce purchased capacity.
+    const requiredCapacity = editorState.registration_capacity;
 
     try {
       setEditorSaving(true);
