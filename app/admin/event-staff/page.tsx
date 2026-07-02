@@ -3,7 +3,11 @@
 import { type CSSProperties, useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminEvent,
+  setCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import {
   canAccessEvent,
   hasPermission,
@@ -187,7 +191,7 @@ function EventStaffPageInner() {
     }
 
     async function loadForCurrentEvent() {
-      const adminEvent = getAdminEvent() as AdminEventContext | null;
+      const adminEvent = getCurrentAdminEvent();
 
       if (!adminEvent?.id) {
         setEvent(null); setEvents([]); setSelectedEventId(""); setRows([]); setAvailableAdmins([]);
@@ -207,29 +211,11 @@ function EventStaffPageInner() {
     }
 
     void loadForCurrentEvent();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void loadForCurrentEvent();
-      }
-    }
-
-    function handleAdminEventUpdated() {
+    const unsubscribe = subscribeToAdminWorkspace(() => {
       void loadForCurrentEvent();
-    }
+    });
 
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener("fcoc-admin-event-updated", handleAdminEventUpdated);
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener("fcoc-admin-event-updated", handleAdminEventUpdated);
-    };
+    return unsubscribe;
   }, [admin]);
 
   async function loadPage(eventId: string) {
@@ -317,9 +303,14 @@ function EventStaffPageInner() {
     setSelectedEventId(nextEventId);
     if (!nextEventId) { setEvent(null); setRows([]); setAvailableAdmins([]); setStatus("No event selected."); return; }
     const selected = events.find((item) => item.id === nextEventId);
-    localStorage.setItem("fcoc-admin-event-context", JSON.stringify({ id: nextEventId, name: selected?.name || null }));
-    localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-    window.dispatchEvent(new Event("fcoc-admin-event-updated"));
+    setCurrentAdminEvent({
+      id: nextEventId,
+      name: selected?.name || "Selected Event",
+      eventName: selected?.name || "Selected Event",
+      location: selected?.location || null,
+      start_date: selected?.start_date || null,
+      end_date: selected?.end_date || null,
+    });
     await loadPage(nextEventId);
   }
 

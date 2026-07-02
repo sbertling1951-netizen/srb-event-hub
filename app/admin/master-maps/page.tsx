@@ -5,7 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { useAdmin } from "@/lib/adminContext";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -152,7 +155,7 @@ function MasterMapsPageInner() {
   );
 
   const loadSelectedEventSettings = useCallback(async () => {
-    const currentEvent = getAdminEvent();
+    const currentEvent = getCurrentAdminEvent();
 
     if (!currentEvent?.id) {
       setSelectedEventId("");
@@ -647,34 +650,11 @@ function MasterMapsPageInner() {
     }
     void load();
 
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void loadSelectedEventSettings();
-      }
-    }
-
-    function handleAdminEventUpdated() {
+    const unsubscribe = subscribeToAdminWorkspace(() => {
       void loadSelectedEventSettings();
-    }
+    });
 
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated as EventListener,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated as EventListener,
-      );
-    };
+    return unsubscribe;
   }, [admin, loadMasterMaps, loadSelectedEventSettings]);
 
   useEffect(() => {

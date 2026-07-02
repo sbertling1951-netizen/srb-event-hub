@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { getAdminEvent } from "@/lib/getAdminEvent";
-import { supabase } from "@/lib/supabase";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";import { supabase } from "@/lib/supabase";
 
 type RequestRow = {
   id: string;
@@ -193,8 +195,7 @@ function VendorRequestsInner() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   async function loadRequests() {
-    const event = getAdminEvent();
-
+    const event = getCurrentAdminEvent();
     if (!event?.id) {
       setStatus("No admin event selected.");
       setRequests([]);
@@ -243,6 +244,12 @@ function VendorRequestsInner() {
 
   useEffect(() => {
     void loadRequests();
+
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadRequests();
+    });
+
+    return unsubscribe;
   }, []);
 
   const filtered = useMemo(() => {

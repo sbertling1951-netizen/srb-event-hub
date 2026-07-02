@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -62,11 +66,31 @@ export default function AdminEvaluationsPage() {
   const [mostValuableCounts, setMostValuableCounts] = useState<Record<string, number>>({});
   const [futureInterestCounts, setFutureInterestCounts] = useState<Record<string, number>>({});
 
+  const loadStats = useCallback(async () => {
   useEffect(() => {
-    loadStats();
-  }, []);
+    void loadStats();
 
-  async function loadStats() {
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadStats();
+    });
+
+    return unsubscribe;
+  }, [loadStats]);
+    const currentEvent = getCurrentAdminEvent();
+    if (!currentEvent?.id) {
+      setStarted(0);
+      setCompleted(0);
+      setLastSubmission("--");
+      setFavoriteMemories([]);
+      setImprovements([]);
+      setAdditionalComments([]);
+      setOverallRatings({});
+      setAttendAgainRatings({});
+      setMostValuableCounts({});
+      setFutureInterestCounts({});
+      setLoading(false);
+      return;
+    }
     try {
       const { data, error } = await supabase
         .from("event_evaluations")
@@ -179,7 +203,7 @@ export default function AdminEvaluationsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   const completionRate =
     started > 0 ? Math.round((completed / started) * 100) : 0;
@@ -340,3 +364,4 @@ export default function AdminEvaluationsPage() {
     </div>
   );
 }
+

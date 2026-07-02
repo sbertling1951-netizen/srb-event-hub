@@ -1,6 +1,10 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
@@ -169,7 +173,6 @@ const emptyVendorForm: VendorFormState = {
   notes: "",
 };
 
-const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
 
 type SavedAttendeeManagementView = {
   showFullImportTable: boolean;
@@ -219,21 +222,6 @@ function saveAttendeeManagementView(
   }
 }
 
-function getStoredAdminEvent(): EventContext | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
 function fullName(first?: string | null, last?: string | null) {
   return [first, last].filter(Boolean).join(" ").trim();
 }
@@ -670,7 +658,6 @@ function AdminAttendeeImportsPageInner() {
     useState<VendorFormState>(emptyVendorForm);
 
   useEffect(() => {
-    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
     async function loadEvents() {
       setLoadingEvent(true);
       setError(null);
@@ -695,7 +682,7 @@ function AdminAttendeeImportsPageInner() {
           return;
         }
 
-        const stored = getStoredAdminEvent();
+        const stored = getCurrentAdminEvent();
         setCurrentEvent(stored);
 
         const { data, error } = await supabase
@@ -744,48 +731,11 @@ function AdminAttendeeImportsPageInner() {
 
     void loadEvents();
 
-    function scheduleReload() {
-      if (reloadTimer) {
-        clearTimeout(reloadTimer);
-      }
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadEvents();
+    });
 
-      reloadTimer = setTimeout(() => {
-        reloadTimer = null;
-        void loadEvents();
-      }, 500);
-    }
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        scheduleReload();
-      }
-    }
-
-    function handleAdminEventUpdated() {
-      scheduleReload();
-    }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated,
-      );
-      if (reloadTimer) {
-        clearTimeout(reloadTimer);
-      }
-    };
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -862,7 +812,7 @@ function AdminAttendeeImportsPageInner() {
 
   useEffect(() => {
     function refreshFromStorageAndReload() {
-      const stored = getStoredAdminEvent();
+      const stored = getCurrentAdminEvent();
 
       if (stored) {
         setCurrentEvent(stored);

@@ -14,10 +14,6 @@ import {
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
-type AdminEventContext = {
-  id: string | null;
-  name: string | null;
-};
 
 type ActiveEvent = {
   id: string;
@@ -148,7 +144,7 @@ function ParkingAdminPageInner() {
     setLoading(true);
     showStatus("Loading...");
 
-    const adminEvent = getCurrentAdminEvent() as AdminEventContext | null;
+    const adminEvent = getCurrentAdminEvent();
 
     if (!adminEvent?.id) {
       setEvent(null);

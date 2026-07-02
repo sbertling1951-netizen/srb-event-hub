@@ -2,6 +2,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
+
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { supabase } from "@/lib/supabase";
 
@@ -83,9 +85,6 @@ function NameTagsPrintPageInner() {
       try {
         const raw = sessionStorage.getItem("fcoc-name-tags");
         const rawEvent = sessionStorage.getItem("fcoc-name-tags-event");
-        const rawEventContext = localStorage.getItem(
-          "fcoc-admin-event-context",
-        );
 
         if (raw) {
           setTags(JSON.parse(raw));
@@ -94,20 +93,18 @@ function NameTagsPrintPageInner() {
           setEventName(rawEvent);
         }
 
-        if (rawEventContext) {
-          const parsed = JSON.parse(rawEventContext);
-          const eventId = parsed?.id;
+        const currentEvent = getCurrentAdminEvent();
+        const eventId = currentEvent?.id;
 
-          if (eventId) {
-            const { data, error } = await supabase
-              .from("event_print_settings")
-              .select("name_tag_bg_url")
-              .eq("event_id", eventId)
-              .maybeSingle();
+        if (eventId) {
+          const { data, error } = await supabase
+            .from("event_print_settings")
+            .select("name_tag_bg_url")
+            .eq("event_id", eventId)
+            .maybeSingle();
 
-            if (!error) {
-              setBgUrl(data?.name_tag_bg_url || null);
-            }
+          if (!error) {
+            setBgUrl(data?.name_tag_bg_url || null);
           }
         }
       } catch (err) {

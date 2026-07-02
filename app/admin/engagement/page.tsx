@@ -1,5 +1,11 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
-import { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 
 import { supabase } from "@/lib/supabase";
 
@@ -24,62 +30,12 @@ export default function EngagementPage() {
     participants: 0,
   });
 
-  useEffect(() => {
-    async function loadStats() {
-      const { count: registered, error: registeredError } = await supabase
-        .from("attendees")
-        .select("*", { count: "exact", head: true })
-        .in("registration_status", ["active", "registered"]);
-
-      console.log({
-        registered,
-        registeredError,
-      });
-
-      const { data: loginRows } = await supabase
-        .from("engagement_activity")
-        .select("attendee_id")
-        .eq("activity_type", "login");
-
-      const loggedIn = new Set((loginRows ?? []).map((row) => row.attendee_id))
-        .size;
-
-      const { data: startedRows } = await supabase
-        .from("engagement_activity")
-        .select("attendee_id")
-        .eq("activity_type", "evaluation_started");
-
-      const started = new Set(
-        (startedRows ?? []).map((row) => row.attendee_id)
-      ).size;
-
-      const { data: submittedRows } = await supabase
-        .from("engagement_activity")
-        .select("attendee_id")
-        .eq("activity_type", "evaluation_submitted");
-
-      const submitted = new Set(
-        (submittedRows ?? []).map((row) => row.attendee_id)
-      ).size;
-
-      const { data: recentActivity } = await supabase
-        .from("engagement_activity")
-        .select(`
-          activity_time,
-          activity_type,
-          attendees:attendee_id (
-            pilot_first,
-            pilot_last
-          )
-        `)
-        .order("activity_time", { ascending: false })
-        .limit(10);
-
-      const { data: featureRows } = await supabase
-        .from("engagement_activity")
-        .select("activity_type");
-
-      const featureCounts = {
+  const loadStats = useCallback(async () => {
+    const currentEvent = getCurrentAdminEvent();
+    if (!currentEvent?.id) {
+      setStats({ registered: 0, loggedIn: 0, started: 0, submitted: 0 });
+      setRecentActivity([]);
+      setFeatureStats({
         attendeeLocator: 0,
         agenda: 0,
         announcements: 0,
@@ -88,50 +44,129 @@ export default function EngagementPage() {
         coachMap: 0,
         checkIn: 0,
         participants: 0,
-      };
-
-      (featureRows ?? []).forEach(({ activity_type }) => {
-        switch (activity_type) {
-          case "view_attendee_locator":
-            featureCounts.attendeeLocator++;
-            break;
-          case "view_agenda":
-            featureCounts.agenda++;
-            break;
-          case "view_announcements":
-            featureCounts.announcements++;
-            break;
-          case "view_nearby":
-            featureCounts.nearby++;
-            break;
-          case "view_photos":
-            featureCounts.photos++;
-            break;
-          case "view_coach_map":
-            featureCounts.coachMap++;
-            break;
-          case "checkin":
-            featureCounts.checkIn++;
-            break;
-          case "view_participants":
-            featureCounts.participants++;
-            break;
-        }
       });
-
-      setStats({
-        registered: registered ?? 0,
-        loggedIn,
-        started,
-        submitted,
-      });
-
-      setRecentActivity(recentActivity ?? []);
-      setFeatureStats(featureCounts);
+      return;
     }
 
-    loadStats();
+    const { count: registered, error: registeredError } = await supabase
+      .from("attendees")
+      .select("*", { count: "exact", head: true })
+      .in("registration_status", ["active", "registered"])
+      .eq("event_id", currentEvent.id);
+
+    console.log({
+      registered,
+      registeredError,
+    });
+
+    const { data: loginRows } = await supabase
+      .from("engagement_activity")
+      .select("attendee_id")
+      .eq("activity_type", "login")
+      .eq("event_id", currentEvent.id);
+
+    const loggedIn = new Set((loginRows ?? []).map((row) => row.attendee_id))
+      .size;
+
+    const { data: startedRows } = await supabase
+      .from("engagement_activity")
+      .select("attendee_id")
+      .eq("activity_type", "evaluation_started")
+      .eq("event_id", currentEvent.id);
+
+    const started = new Set(
+      (startedRows ?? []).map((row) => row.attendee_id)
+    ).size;
+
+    const { data: submittedRows } = await supabase
+      .from("engagement_activity")
+      .select("attendee_id")
+      .eq("activity_type", "evaluation_submitted")
+      .eq("event_id", currentEvent.id);
+
+    const submitted = new Set(
+      (submittedRows ?? []).map((row) => row.attendee_id)
+    ).size;
+
+    const { data: recentActivity } = await supabase
+      .from("engagement_activity")
+      .select(`
+        activity_time,
+        activity_type,
+        attendees:attendee_id (
+          pilot_first,
+          pilot_last
+        )
+      `)
+      .eq("event_id", currentEvent.id)
+      .order("activity_time", { ascending: false })
+      .limit(10);
+
+    const { data: featureRows } = await supabase
+      .from("engagement_activity")
+      .select("activity_type")
+      .eq("event_id", currentEvent.id);
+
+    const featureCounts = {
+      attendeeLocator: 0,
+      agenda: 0,
+      announcements: 0,
+      nearby: 0,
+      photos: 0,
+      coachMap: 0,
+      checkIn: 0,
+      participants: 0,
+    };
+
+    (featureRows ?? []).forEach(({ activity_type }) => {
+      switch (activity_type) {
+        case "view_attendee_locator":
+          featureCounts.attendeeLocator++;
+          break;
+        case "view_agenda":
+          featureCounts.agenda++;
+          break;
+        case "view_announcements":
+          featureCounts.announcements++;
+          break;
+        case "view_nearby":
+          featureCounts.nearby++;
+          break;
+        case "view_photos":
+          featureCounts.photos++;
+          break;
+        case "view_coach_map":
+          featureCounts.coachMap++;
+          break;
+        case "checkin":
+          featureCounts.checkIn++;
+          break;
+        case "view_participants":
+          featureCounts.participants++;
+          break;
+      }
+    });
+
+    setStats({
+      registered: registered ?? 0,
+      loggedIn,
+      started,
+      submitted,
+    });
+
+    setRecentActivity(recentActivity ?? []);
+    setFeatureStats(featureCounts);
   }, []);
+
+  useEffect(() => {
+    void loadStats();
+
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadStats();
+    });
+
+    return unsubscribe;
+  }, [loadStats]);
 
   const cards = [
     { title: "Attendees", value: stats.registered },

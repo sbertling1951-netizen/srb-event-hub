@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { supabase } from "@/lib/supabase";
+import { clearCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState("");
@@ -74,6 +75,8 @@ export default function AdminLoginPage() {
       localStorage.setItem("fcoc-user-mode", "admin");
       localStorage.setItem("fcoc-admin-email", normalizedEmail);
       localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
+
+      clearCurrentAdminEvent();
 
       // clear old member session
       localStorage.removeItem("fcoc-member-attendee-id");

@@ -5,12 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { useAdmin } from "@/lib/adminContext";
 import {
-  ADMIN_EVENT_CHANGED_KEY,
-  ADMIN_EVENT_KEY,
-  ADMIN_EVENT_UPDATED,
   getCurrentAdminEvent,
   setCurrentAdminEvent,
 } from "@/lib/adminEventContext";
+import { subscribeToAdminWorkspace } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -337,24 +335,10 @@ function EventAdminPageInner() {
     }
 
     void loadPage();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === ADMIN_EVENT_KEY ||
-        e.key === ADMIN_EVENT_CHANGED_KEY ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void loadPage();
-      }
-    }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(ADMIN_EVENT_UPDATED, loadPage);
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(ADMIN_EVENT_UPDATED, loadPage);
-    };
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadPage();
+    });
+    return unsubscribe;
   }, [admin, loadPage]);
 
   useEffect(() => {

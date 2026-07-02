@@ -12,6 +12,10 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { useAdmin } from "@/lib/adminContext";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -58,23 +62,6 @@ type RuleFormState = {
   priority: string;
   applies_to_event_id: string;
 };
-
-const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
-
-function getStoredAdminEvent(): EventContext | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  try {
-    const raw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
 
 function isEmbeddedMode() {
   if (typeof window === "undefined") {
@@ -204,46 +191,17 @@ function AdminValidationRulesPageInner() {
       return;
     }
 
-    const event = getStoredAdminEvent();
+    const event = getCurrentAdminEvent();
     setCurrentEvent(event);
 
     void loadPage(admin!);
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        const nextEvent = getStoredAdminEvent();
-        setCurrentEvent(nextEvent);
-        void loadPage(admin!);
-      }
-    }
-
-    function handleAdminEventUpdated() {
-      const nextEvent = getStoredAdminEvent();
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      const nextEvent = getCurrentAdminEvent();
       setCurrentEvent(nextEvent);
       void loadPage(admin!);
-    }
+    });
 
-    if (!isEmbeddedMode()) {
-      window.addEventListener("storage", handleStorage);
-      window.addEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated,
-      );
-    }
-
-    return () => {
-      if (!isEmbeddedMode()) {
-        window.removeEventListener("storage", handleStorage);
-        window.removeEventListener(
-          "fcoc-admin-event-updated",
-          handleAdminEventUpdated,
-        );
-      }
-    };
+    return unsubscribe;
   }, [admin]);
 
   async function loadPage(resolvedAdmin: NonNullable<typeof admin>) {

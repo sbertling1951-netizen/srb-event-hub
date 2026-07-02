@@ -6,12 +6,6 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
 
-type MemberEventContext = {
-  id?: string | null;
-  name?: string | null;
-  eventName?: string | null;
-};
-
 type Announcement = {
   id: string;
   event_id: string;
@@ -40,23 +34,10 @@ function AnnouncementsPageInner() {
   const [status, setStatus] = useState("Loading announcements...");
   const [filter, setFilter] = useState<"all" | "urgent" | "general">("all");
 
-  useEffect(() => {
-    void loadAnnouncements();
-
-    function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-member-event-changed") {
-        void loadAnnouncements();
-      }
-    }
-
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
   async function loadAnnouncements() {
     setStatus("Loading announcements...");
 
-    const memberEvent = getCurrentMemberEvent() as MemberEventContext | null;
+    const memberEvent = getCurrentMemberEvent();
 
     if (!memberEvent?.id) {
       setAnnouncements([]);
@@ -87,7 +68,9 @@ function AnnouncementsPageInner() {
     }
 
     const active = ((data || []) as Announcement[]).filter((item) => {
-      if (!item.expire_at) {return true;}
+      if (!item.expire_at) {
+        return true;
+      }
       return item.expire_at > now;
     });
 
@@ -98,6 +81,22 @@ function AnnouncementsPageInner() {
         : `Loaded ${active.length} announcements.`,
     );
   }
+
+  useEffect(() => {
+    void loadAnnouncements();
+
+    function handleStorage(e: StorageEvent) {
+      if (e.key === "fcoc-member-event-changed") {
+        void loadAnnouncements();
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
 
   const visibleAnnouncements = useMemo(() => {
     if (filter === "urgent") {
@@ -116,9 +115,15 @@ function AnnouncementsPageInner() {
   }, [announcements, filter]);
 
   function priorityColor(priority: string) {
-    if (priority === "urgent") {return "#b91c1c";}
-    if (priority === "high") {return "#c2410c";}
-    if (priority === "low") {return "#4b5563";}
+    if (priority === "urgent") {
+      return "#b91c1c";
+    }
+    if (priority === "high") {
+      return "#c2410c";
+    }
+    if (priority === "low") {
+      return "#4b5563";
+    }
     return "#2563eb";
   }
 

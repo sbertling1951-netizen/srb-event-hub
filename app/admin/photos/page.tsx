@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { supabase } from "@/lib/supabase";
+
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 
 export default function AdminPhotosPage() {
   const [pendingCount, setPendingCount] = useState(0);
@@ -147,9 +152,6 @@ export default function AdminPhotosPage() {
     await updatePhotoStatus(photoId, "rejected");
   }
 
-  useEffect(() => {
-    void loadPendingPhotos();
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -159,21 +161,34 @@ export default function AdminPhotosPage() {
     };
   }, []);
 
-  async function loadPendingPhotos() {
+  const loadPendingPhotos = useCallback(async () => {
+    const currentEvent = getCurrentAdminEvent();
+    if (!currentEvent?.id) {
+      setPhotos([]);
+      setPendingCount(0);
+      setTotalSubmitted(0);
+      setApprovedCount(0);
+      setRejectedCount(0);
+      return;
+    }
+
     const { count: totalCount } = await supabase
       .from("event_photos")
-      .select("id", { count: "exact", head: true });
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", currentEvent.id);
 
     setTotalSubmitted(totalCount || 0);
 
     const { count: approvedTotal } = await supabase
       .from("event_photos")
       .select("id", { count: "exact", head: true })
+      .eq("event_id", currentEvent.id)
       .eq("photo_status", "approved");
 
     const { count: rejectedTotal } = await supabase
       .from("event_photos")
       .select("id", { count: "exact", head: true })
+      .eq("event_id", currentEvent.id)
       .eq("photo_status", "rejected");
 
     setApprovedCount(approvedTotal || 0);
@@ -184,6 +199,7 @@ export default function AdminPhotosPage() {
       .select(
         "id, storage_path, photo_status, uploaded_at, member_caption, admin_caption, show_caption, featured_level",
       )
+      .eq("event_id", currentEvent.id)
       .eq("photo_status", "pending");
 
     if (error) {
@@ -222,7 +238,17 @@ export default function AdminPhotosPage() {
 
     setPhotos(photosWithUrls);
     setPendingCount(photosWithUrls.length);
-  }
+  }, []);
+
+  useEffect(() => {
+    void loadPendingPhotos();
+
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadPendingPhotos();
+    });
+
+    return unsubscribe;
+  }, [loadPendingPhotos]);
   return (
     <AdminRouteGuard>
       <div style={{ padding: 16 }}>

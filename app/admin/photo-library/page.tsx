@@ -1,5 +1,9 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 
 import { supabase } from "@/lib/supabase";
 
@@ -51,49 +55,63 @@ export default function PhotoLibraryPage() {
   const [saving, setSaving] = useState(false);
   const [modalEdits, setModalEdits] = useState<Partial<Photo>>({});
 
-  // Load photos from Supabase
+  // Load photos from Supabase, scoped to current admin workspace event
+  const fetchPhotos = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const currentEvent = getCurrentAdminEvent();
+    if (!currentEvent?.id) {
+      setPhotos([]);
+      setLoading(false);
+      return;
+    }
+    // TODO: Adjust table name if needed; assumed 'photo'
+    const { data, error } = await supabase
+      .from("event_photos")
+      .select(
+        "id,storage_path,photo_status,member_caption,admin_caption,show_caption,is_featured,uploaded_at",
+      )
+      .eq("event_id", currentEvent.id)
+      .order("uploaded_at", { ascending: false });
+    if (error) {
+      setError("Failed to load photos.");
+      setPhotos([]);
+    } else {
+      const photosWithUrls = await Promise.all(
+        (data || []).map(async (photo: any) => {
+          const { data: signed } = await supabase.storage
+            .from("event-photos")
+            .createSignedUrl(photo.storage_path, 3600);
+
+          return {
+            ...photo,
+            thumbnailUrl: signed?.signedUrl ?? "",
+            fullUrl: signed?.signedUrl ?? "",
+          };
+        }),
+      );
+
+      setPhotos(photosWithUrls as Photo[]);
+    }
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
-    async function fetchPhotos() {
-      setLoading(true);
-      setError(null);
-      // TODO: Adjust table name if needed; assumed 'photo'
-      const { data, error } = await supabase
-        .from("event_photos")
-        .select(
-          "id,storage_path,photo_status,member_caption,admin_caption,show_caption,is_featured,uploaded_at",
-        )
-        .order("uploaded_at", { ascending: false });
-      if (!isMounted) {
-        return;
-      }
-      if (error) {
-        setError("Failed to load photos.");
-        setPhotos([]);
-      } else {
-        const photosWithUrls = await Promise.all(
-          (data || []).map(async (photo: any) => {
-            const { data: signed } = await supabase.storage
-              .from("event-photos")
-              .createSignedUrl(photo.storage_path, 3600);
 
-            return {
-              ...photo,
-              thumbnailUrl: signed?.signedUrl ?? "",
-              fullUrl: signed?.signedUrl ?? "",
-            };
-          }),
-        );
+    void fetchPhotos();
 
-        setPhotos(photosWithUrls as Photo[]);
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      if (isMounted) {
+        void fetchPhotos();
       }
-      setLoading(false);
-    }
-    fetchPhotos();
+    });
+
     return () => {
       isMounted = false;
+      unsubscribe();
     };
-  }, []);
+  }, [fetchPhotos]);
 
   // Filtered & searched photos
   const filteredPhotos = useMemo(() => {

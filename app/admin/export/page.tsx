@@ -1,7 +1,7 @@
 "use client";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 import { supabase } from "@/lib/supabase";
 
 export default function ExportPage() {
@@ -15,7 +15,7 @@ export default function ExportPage() {
 function ExportPageInner() {
   async function exportAttendees() {
     console.log("Starting attendee export...");
-    const adminEvent = getAdminEvent();
+    const adminEvent = getCurrentAdminEvent();
 
     if (!adminEvent?.id) {
       alert(

@@ -24,6 +24,10 @@ import SavedPresetsCard from "@/components/admin/reports/SavedPresetsCard";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { useAdmin } from "@/lib/adminContext";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -148,28 +152,7 @@ type RosterRow = {
   copilotLast: string;
 };
 
-const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
-const ADMIN_EVENT_CHANGED_KEY = "fcoc-admin-event-changed";
-const USER_MODE_KEY = "fcoc-user-mode";
-const USER_MODE_CHANGED_KEY = "fcoc-user-mode-changed";
-const ADMIN_EVENT_UPDATED_EVENT = "fcoc-admin-event-updated";
 const REPORT_PRESETS_STORAGE_KEY = "fcoc-admin-report-presets";
-
-function getStoredAdminEvent(): EventContext | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
 
 function fullName(first?: string | null, last?: string | null) {
   return [first, last].filter(Boolean).join(" ").trim();
@@ -561,8 +544,7 @@ function AdminReportsPageInner() {
         hasPermission(admin, "can_edit_attendees"),
     );
 
-    const event = getStoredAdminEvent();
-
+    const event = getCurrentAdminEvent();
     if (!event?.id) {
       resetPageState();
       setStatus("No admin event selected.");
@@ -581,37 +563,8 @@ function AdminReportsPageInner() {
     setCurrentEvent(event);
     void loadData(event.id);
 
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === ADMIN_EVENT_CHANGED_KEY ||
-        e.key === ADMIN_EVENT_STORAGE_KEY ||
-        e.key === USER_MODE_KEY ||
-        e.key === USER_MODE_CHANGED_KEY
-      ) {
-        const nextEvent = getStoredAdminEvent();
-
-        if (!nextEvent?.id) {
-          resetPageState();
-          setStatus("No admin event selected.");
-          setLoading(false);
-          return;
-        }
-
-        if (!canAccessEvent(admin, nextEvent.id)) {
-          resetPageState();
-          setError("You do not have access to this event.");
-          setStatus("Access denied.");
-          setLoading(false);
-          return;
-        }
-
-        setCurrentEvent(nextEvent);
-        void loadData(nextEvent.id);
-      }
-    }
-
-    function handleAdminEventUpdated() {
-      const nextEvent = getStoredAdminEvent();
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      const nextEvent = getCurrentAdminEvent();
 
       if (!nextEvent?.id) {
         resetPageState();
@@ -630,22 +583,18 @@ function AdminReportsPageInner() {
 
       setCurrentEvent(nextEvent);
       void loadData(nextEvent.id);
-    }
+    });
 
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      ADMIN_EVENT_UPDATED_EVENT,
-      handleAdminEventUpdated as EventListener,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        ADMIN_EVENT_UPDATED_EVENT,
-        handleAdminEventUpdated as EventListener,
-      );
-    };
+    return unsubscribe;
   }, [admin, loadData]);
+
+  useEffect(() => {
+    if (reportType === "parking_assignments") {
+      setSortType("site_asc");
+    } else if (reportType === "unassigned_parking_needed") {
+      setSortType("name_asc");
+    }
+  }, [reportType]);
 
   useEffect(() => {
     if (reportType === "parking_assignments") {
@@ -1324,7 +1273,11 @@ function AdminReportsPageInner() {
                   {reportType === "activity_roster" ? (
                     <div style={{ marginBottom: 16 }}>
                       <label
-                        style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
+                        style={{
+                          display: "block",
+                          fontWeight: 600,
+                          marginBottom: 6,
+                        }}
                       >
                         Activity
                       </label>

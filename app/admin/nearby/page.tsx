@@ -20,15 +20,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { useAdmin } from "@/lib/adminContext";
 import { geocodeLocation } from "@/lib/geocodeLocation";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
-type AdminEventContext = {
-  id?: string | null;
-  name?: string | null;
-  location?: string | null;
-};
 
 type StoredArea = {
   id: string;
@@ -420,7 +418,7 @@ export default function AdminNearbyPage() {
 
 function AdminNearbyPageInner() {
   const { admin } = useAdmin();
-  const [adminEvent, setAdminEvent] = useState<AdminEventContext | null>(null);
+  const [adminEvent, setAdminEvent] = useState<ReturnType<typeof getCurrentAdminEvent>>(null);
   const [status, setStatus] = useState("Loading nearby admin...");
 
   const sensors = useSensors(
@@ -580,7 +578,7 @@ function AdminNearbyPageInner() {
       return;
     }
 
-    const evt = getAdminEvent() as AdminEventContext | null;
+    const evt = getCurrentAdminEvent();
 
     if (evt?.id && !canAccessEvent(admin, evt.id)) {
       resetAllState();
@@ -599,7 +597,7 @@ function AdminNearbyPageInner() {
     }
 
     async function refreshAdminEvent() {
-      const evt = getAdminEvent() as AdminEventContext | null;
+      const evt = getCurrentAdminEvent();
 
       if (evt?.id && !canAccessEvent(admin, evt.id)) {
         resetAllState();
@@ -611,34 +609,13 @@ function AdminNearbyPageInner() {
       setAdminEvent(evt ?? null);
     }
 
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void refreshAdminEvent();
-      }
-    }
+    void refreshAdminEvent();
 
-    function handleAdminEventUpdated() {
+    const unsubscribe = subscribeToAdminWorkspace(() => {
       void refreshAdminEvent();
-    }
+    });
 
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated as EventListener,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated as EventListener,
-      );
-    };
+    return unsubscribe;
   }, [admin]);
 
   const selectedArea =

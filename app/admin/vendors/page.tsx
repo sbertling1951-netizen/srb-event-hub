@@ -3,8 +3,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { getAdminEvent } from "@/lib/getAdminEvent";
-import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
@@ -84,8 +86,7 @@ function AdminVendorsPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const adminEvent = getAdminEvent();
-  const { admin } = useAdmin();
+  const adminEvent = getCurrentAdminEvent();  const { admin } = useAdmin();
 
   async function loadPage() {
     try {
@@ -142,7 +143,14 @@ function AdminVendorsPageInner() {
 
   useEffect(() => {
     if (!admin) return;
+
     void loadPage();
+
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadPage();
+    });
+
+    return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
 

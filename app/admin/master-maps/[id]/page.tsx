@@ -12,7 +12,7 @@ import type {
   Selection,
 } from "@/components/map/canvas/types";
 import { useAdmin } from "@/lib/adminContext";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -39,10 +39,6 @@ type MasterMapSiteRow = {
   map_y: number | null;
 };
 
-type AdminEventContext = {
-  id?: string | null;
-  name?: string | null;
-};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -249,7 +245,7 @@ function MasterMapEditorPageInner() {
         return;
       }
 
-      const adminEvent = getAdminEvent() as AdminEventContext | null;
+      const adminEvent = getCurrentAdminEvent();
       if (adminEvent?.id && !canAccessEvent(admin, adminEvent.id)) {
         setMasterMap(null);
         setSites([]);
@@ -842,7 +838,7 @@ function MasterMapEditorPageInner() {
       setStatus("No master map loaded.");
       return;
     }
-    const currentEvent = getAdminEvent() as AdminEventContext | null;
+    const currentEvent = getCurrentAdminEvent();
     if (!currentEvent?.id) {
       setStatus("No admin working event selected.");
       return;
@@ -902,7 +898,7 @@ function MasterMapEditorPageInner() {
       setStatus("No master map loaded.");
       return;
     }
-    const currentEvent = getAdminEvent() as AdminEventContext | null;
+    const currentEvent = getCurrentAdminEvent();
     if (!currentEvent?.id) {
       setStatus("No admin working event selected.");
       return;

@@ -3,15 +3,14 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
-type AdminEventContext = {
-  id?: string | null;
-  name?: string | null;
-};
 
 type EventRow = {
   id: string;
@@ -99,7 +98,7 @@ function AdminPrintSettingsPageInner() {
         return;
       }
 
-      const adminEvent = getAdminEvent() as AdminEventContext | null;
+      const adminEvent = getCurrentAdminEvent();
 
       if (!adminEvent?.id) {
         setEvent(null);
@@ -121,34 +120,11 @@ function AdminPrintSettingsPageInner() {
 
     loadForCurrentEvent();
 
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        loadForCurrentEvent();
-      }
-    }
-
-    function handleAdminEventUpdated() {
+    const unsubscribe = subscribeToAdminWorkspace(() => {
       loadForCurrentEvent();
-    }
+    });
 
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated,
-      );
-    };
+    return unsubscribe;
   }, [admin]);
 
   async function loadPage(eventId: string) {

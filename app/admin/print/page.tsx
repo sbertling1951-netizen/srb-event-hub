@@ -4,14 +4,13 @@ import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { useAdmin } from "@/lib/adminContext";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
-type AdminEventContext = {
-  id?: string | null;
-  name?: string | null;
-};
 
 type EventRow = {
   id: string;
@@ -415,7 +414,7 @@ function AdminPrintPageInner() {
         return;
       }
 
-      const adminEvent = getAdminEvent() as AdminEventContext | null;
+      const adminEvent = getCurrentAdminEvent();
       const superAdminCanSelectEvents = hasPermission(
         admin,
         "can_manage_admins",
@@ -478,33 +477,10 @@ function AdminPrintPageInner() {
     }
 
     void init();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void init();
-      }
-    }
-    function handleAdminEventUpdated() {
+    const unsubscribe = subscribeToAdminWorkspace(() => {
       void init();
-    }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated,
-    );
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated,
-      );
-    };
+    });
+    return unsubscribe;
   }, [admin, selectedEventId]);
 
   async function handleSelectedPrintEventChange(eventId: string) {
