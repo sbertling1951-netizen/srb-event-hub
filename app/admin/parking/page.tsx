@@ -7,7 +7,10 @@ import PageNavigation from "@/components/layout/PageNavigation";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { useAdmin } from "@/lib/adminContext";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -145,7 +148,7 @@ function ParkingAdminPageInner() {
     setLoading(true);
     showStatus("Loading...");
 
-    const adminEvent = getAdminEvent() as AdminEventContext | null;
+    const adminEvent = getCurrentAdminEvent() as AdminEventContext | null;
 
     if (!adminEvent?.id) {
       setEvent(null);
@@ -371,7 +374,7 @@ function ParkingAdminPageInner() {
       return;
     }
 
-    const adminEvent = getAdminEvent();
+    const adminEvent = getCurrentAdminEvent();
 
     if (!adminEvent?.id) {
       setEvent(null);
@@ -396,35 +399,10 @@ function ParkingAdminPageInner() {
     }
 
     void loadPage();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void loadPage();
-      }
-    }
-
-    function handleAdminEventUpdated() {
+    const unsubscribe = subscribeToAdminWorkspace(() => {
       void loadPage();
-    }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated as EventListener,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated as EventListener,
-      );
-    };
+    });
+    return unsubscribe;
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);

@@ -5,7 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { useAdmin } from "@/lib/adminContext";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminEvent,
+  setCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
+
 import {
   type AdminAccessResult,
   canAccessEvent,
@@ -107,7 +112,7 @@ function getInitialAdminEvent(): EventRow | null {
   }
 
   try {
-    const stored = getAdminEvent() as {
+    const stored = getCurrentAdminEvent() as {
       id?: string;
       name?: string | null;
       location?: string | null;
@@ -370,33 +375,7 @@ function AdminDashboardPageInner() {
 
   const didInitialLoad = useRef(false);
 
-  function setAdminWorkingEventContext(evt: EventRow | null) {
-    try {
-      if (!evt?.id) {
-        return;
-      }
 
-      const payload = {
-        id: evt.id,
-        name: evt.name || "Selected Event",
-        eventName: evt.name || "Selected Event",
-        location: evt.location || null,
-        start_date: evt.start_date || null,
-        end_date: evt.end_date || null,
-      };
-
-      const nextValue = JSON.stringify(payload);
-      const currentValue = localStorage.getItem("fcoc-admin-event-context");
-
-      if (currentValue !== nextValue) {
-        localStorage.setItem("fcoc-admin-event-context", nextValue);
-        localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-        window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
-      }
-    } catch (err) {
-      console.error("Could not persist admin event context:", err);
-    }
-  }
 
   async function loadEvents(admin: AdminAccessResult | null) {
     const { data, error } = await supabase
@@ -501,8 +480,7 @@ function AdminDashboardPageInner() {
         return;
       }
 
-      const stored = getAdminEvent();
-      const activeEvents = loadedEvents.filter((e) =>
+      const stored = getCurrentAdminEvent();      const activeEvents = loadedEvents.filter((e) =>
         isActiveEventStatus(e.status),
       );
       const storedEvent = loadedEvents.find((e) => e.id === stored?.id) || null;
@@ -529,8 +507,14 @@ function AdminDashboardPageInner() {
 
       setSelectedEventId(preferred.id);
       setActiveEvent(preferred);
-      setAdminWorkingEventContext(preferred);
-      await loadDashboardForEvent(preferred);
+      setCurrentAdminEvent({
+        id: preferred.id,
+        name: preferred.name || "Selected Event",
+        eventName: preferred.name || "Selected Event",
+        location: preferred.location || null,
+        start_date: preferred.start_date || null,
+        end_date: preferred.end_date || null,
+      });      await loadDashboardForEvent(preferred);
     } catch (err: any) {
       console.error("loadDashboard error:", err);
       setStatus(err?.message || "Failed to load dashboard.");
@@ -570,14 +554,11 @@ function AdminDashboardPageInner() {
 
     void loadPage();
 
-    function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-admin-event-changed") {
-        void loadPage();
-      }
-    }
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadPage();
+    });
 
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    return unsubscribe;
   }, [loadPage]);
 
   async function handleSwitchEvent(nextEventId: string) {
@@ -595,8 +576,14 @@ function AdminDashboardPageInner() {
       setSelectedEventId(nextEventId);
       setActiveEvent(nextEvent);
       setStatus("Switching event...");
-      setAdminWorkingEventContext(nextEvent);
-      await loadDashboardForEvent(nextEvent);
+      setCurrentAdminEvent({
+        id: nextEvent.id,
+        name: nextEvent.name || "Selected Event",
+        eventName: nextEvent.name || "Selected Event",
+        location: nextEvent.location || null,
+        start_date: nextEvent.start_date || null,
+        end_date: nextEvent.end_date || null,
+      });      await loadDashboardForEvent(nextEvent);
       setStatus(
         `Admin working event changed to ${nextEvent.name || "Selected Event"}.`,
       );
@@ -673,8 +660,14 @@ function AdminDashboardPageInner() {
       getInitialAdminEvent();
 
     if (eventForNavigation?.id) {
-      setAdminWorkingEventContext(eventForNavigation);
-    }
+      setCurrentAdminEvent({
+        id: eventForNavigation.id,
+        name: eventForNavigation.name || "Selected Event",
+        eventName: eventForNavigation.name || "Selected Event",
+        location: eventForNavigation.location || null,
+        start_date: eventForNavigation.start_date || null,
+        end_date: eventForNavigation.end_date || null,
+      });    }
 
     router.push(href);
   }

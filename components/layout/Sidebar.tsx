@@ -14,6 +14,10 @@ import {
   getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
 import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  getCurrentAdminEvent,
+  ADMIN_EVENT_UPDATED,
+} from "@/lib/adminEventContext";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 
@@ -169,14 +173,21 @@ export default function Sidebar() {
   function loadContextsFromStorage() {
     try {
       const memberEventContext = getCurrentMemberEvent();
-      const rawAdminEvent = localStorage.getItem(
-        STORAGE_KEYS.adminEventContext,
-      );
+      const adminEventContext = getCurrentAdminEvent();
       const hasArrived = getStoredMemberHasArrived();
       const storedUserMode = getStoredUserMode();
 
+      // Diagnostic logging for context loading
+      console.groupCollapsed('[Sidebar] Context Load');
+      console.log('pathname:', window.location.pathname);
+      console.log('storedUserMode:', storedUserMode);
+      console.log('adminEventContext:', adminEventContext);
+      console.log('memberEventContext:', memberEventContext);
+      console.log('hasArrived:', hasArrived);
+      console.groupEnd();
+
       setMemberEvent(memberEventContext);
-      setAdminEvent(rawAdminEvent ? JSON.parse(rawAdminEvent) : null);
+      setAdminEvent(adminEventContext);
       setIsCheckedIn(hasArrived === "true");
       setUserMode(
         storedUserMode === "member" || storedUserMode === "admin"
@@ -260,10 +271,10 @@ export default function Sidebar() {
     function handleStorage(e: StorageEvent) {
       if (
         e.key === STORAGE_KEYS.memberEventContext ||
-        e.key === STORAGE_KEYS.adminEventContext ||
+        e.key === "fcoc-admin-event-context" ||
         e.key === STORAGE_KEYS.memberHasArrived ||
         e.key === STORAGE_KEYS.memberEventChanged ||
-        e.key === STORAGE_KEYS.adminEventChanged ||
+        e.key === "fcoc-admin-event-changed" ||
         e.key === STORAGE_KEYS.userMode ||
         e.key === STORAGE_KEYS.userModeChanged
       ) {
@@ -272,6 +283,7 @@ export default function Sidebar() {
     }
 
     function handleAdminEventUpdated() {
+      console.debug('[Sidebar] adminEventUpdated event received');
       loadContextsFromStorage();
     }
 
@@ -298,7 +310,7 @@ export default function Sidebar() {
 
     window.addEventListener("storage", handleStorage);
     window.addEventListener(
-      APP_EVENT_NAMES.adminEventUpdated,
+      ADMIN_EVENT_UPDATED,
       handleAdminEventUpdated,
     );
     window.addEventListener("popstate", loadContextsFromStorage);
@@ -307,7 +319,7 @@ export default function Sidebar() {
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(
-        APP_EVENT_NAMES.adminEventUpdated,
+        ADMIN_EVENT_UPDATED,
         handleAdminEventUpdated,
       );
       window.removeEventListener("popstate", loadContextsFromStorage);
@@ -319,6 +331,7 @@ export default function Sidebar() {
     if (!mounted) {
       return;
     }
+    console.debug('[Sidebar] pathname changed', pathname);
     loadContextsFromStorage();
   }, [mounted, pathname]);
 

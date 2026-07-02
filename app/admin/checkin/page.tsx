@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { fullName, preferredDisplayLine } from "@/lib/formatters";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
@@ -174,7 +177,7 @@ function AdminCheckinPageInner() {
       return;
     }
 
-    const adminEvent = getAdminEvent();
+    const adminEvent = getCurrentAdminEvent();
 
     if (!adminEvent?.id) {
       setEvent(null);
@@ -197,35 +200,10 @@ function AdminCheckinPageInner() {
     }
 
     void loadPage();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void loadPage();
-      }
-    }
-
-    function handleAdminEventUpdated() {
+    const unsubscribe = subscribeToAdminWorkspace(() => {
       void loadPage();
-    }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated,
-      );
-    };
+    });
+    return unsubscribe;
     // loadPage is intentionally omitted from deps to avoid changing the established admin event reload flow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
@@ -280,7 +258,7 @@ function AdminCheckinPageInner() {
       setLoading(true);
       showStatus("Loading check-in...");
 
-      const adminEvent = getAdminEvent();
+      const adminEvent = getCurrentAdminEvent();
       if (!adminEvent?.id) {
         setEvent(null);
         setAttendees([]);

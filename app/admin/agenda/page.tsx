@@ -11,7 +11,10 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useAdmin } from "@/lib/adminContext";
 import { getAgendaColor } from "@/lib/agendaColors";
-import { getAdminEvent } from "@/lib/getAdminEvent";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -665,7 +668,7 @@ function AdminAgendaPageInner() {
     setLoading(true);
     showStatus("Loading...");
 
-    const adminEvent = getAdminEvent();
+    const adminEvent = getCurrentAdminEvent();
 
     if (!adminEvent?.id) {
       setActiveEvent(null);
@@ -761,7 +764,7 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    const adminEvent = getAdminEvent();
+    const adminEvent = getCurrentAdminEvent();
 
     if (!adminEvent?.id) {
       setActiveEvent(null);
@@ -783,35 +786,16 @@ function AdminAgendaPageInner() {
     void loadTemplates();
     void loadAgendaCategories();
 
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed"
-      ) {
-        void loadPage();
-        void loadTemplates();
-        void loadAgendaCategories();
-      }
-    }
-
+    // Listener logic copied from events admin:
     function handleAdminEventUpdated() {
       void loadPage();
       void loadTemplates();
       void loadAgendaCategories();
     }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-admin-event-updated",
-      handleAdminEventUpdated,
-    );
+    const unsubscribe = subscribeToAdminWorkspace(handleAdminEventUpdated);
 
     return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-admin-event-updated",
-        handleAdminEventUpdated,
-      );
+      unsubscribe();
     };
   }, [admin, loadPage, loadTemplates, loadAgendaCategories]);
 

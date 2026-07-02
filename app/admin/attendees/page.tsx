@@ -13,6 +13,11 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { useAdmin } from "@/lib/adminContext";
+import {
+  getCurrentAdminEvent,
+  setCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -134,6 +139,7 @@ type AttendeeEditorState = {
   is_active: boolean;
   data_status: string;
   entry_id: string;
+  source_type?: string | null;
   notes: string;
 };
 
@@ -176,7 +182,6 @@ type AttendeeCommandCenterPrefs = {
   showResolvedInfo?: boolean;
 };
 
-const ADMIN_EVENT_STORAGE_KEY = "fcoc-admin-event-context";
 const ATTENDEE_COMMAND_CENTER_PREFS_KEY = "fcoc-attendee-command-center-prefs";
 
 const REVIEW_FIELDS: Array<keyof AttendeeRow> = [
@@ -418,22 +423,6 @@ function emptyInlineEditState(): InlineEditState {
   };
 }
 
-function getStoredAdminEvent(): EventContext | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    return JSON.parse(raw) as EventContext;
-  } catch {
-    return null;
-  }
-}
-
 // Normalized event-status helpers
 function normalizeEventStatus(status?: string | null) {
   return String(status || "")
@@ -665,13 +654,22 @@ function SummaryCards({ items }: { items: SummaryCardItem[] }) {
   return (
     <div
       style={{
-        display: "grid",
+        display: "flex",
+        flexWrap: "wrap",
         gap: 12,
-        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        alignItems: "flex-start",
       }}
     >
       {items.map((item) => (
-        <div key={item.label} className="card" style={summaryCardStyle}>
+        <div
+          key={item.label}
+          className="card"
+          style={{
+            ...summaryCardStyle,
+            minWidth: 180,
+            flex: "0 0 220px",
+          }}
+        >
           <strong>{item.label}</strong>
           <div style={summaryValueStyle}>{item.value}</div>
         </div>
@@ -2541,7 +2539,7 @@ created_at
     setError(null);
     setStatus("Loading attendee records...");
 
-    const storedEvent = getStoredAdminEvent();
+    const storedEvent = getCurrentAdminEvent();
 
     const { data: eventsData, error: eventsError } = await supabase
       .from("events")
@@ -2597,14 +2595,6 @@ created_at
         start_date: fallback.start_date || null,
         end_date: fallback.end_date || null,
       };
-
-      const existingRaw = localStorage.getItem(ADMIN_EVENT_STORAGE_KEY);
-      const nextRaw = JSON.stringify(eventToUse);
-
-      if (existingRaw !== nextRaw) {
-        localStorage.setItem(ADMIN_EVENT_STORAGE_KEY, nextRaw);
-        localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-      }
     }
 
     if (!eventToUse) {
@@ -2614,6 +2604,19 @@ created_at
       setStatus("No active event available.");
       setLoading(false);
       return;
+    }
+
+    if (eventToUse?.id) {
+      setCurrentAdminEvent({
+        id: eventToUse.id,
+        name: eventToUse.name || "Selected Event",
+        eventName:
+          eventToUse.eventName || eventToUse.name || "Selected Event",
+        venue_name: eventToUse.venue_name || null,
+        location: eventToUse.location || null,
+        start_date: eventToUse.start_date || null,
+        end_date: eventToUse.end_date || null,
+      });
     }
 
     if (!canAccessEvent(adminRef.current!, eventToUse.id!)) {
@@ -2661,7 +2664,12 @@ created_at
     }
 
     void loadEventAndData();
-  }, [admin?.adminUser?.id]);
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadEventAndData();
+    });
+
+    return unsubscribe;
+  }, [admin?.adminUser?.id, loadEventAndData]);
   useEffect(() => {
     saveAttendeeCommandCenterPrefs({
       search,
@@ -3422,6 +3430,10 @@ created_at
 
       const payload = {
         event_id: currentEvent.id,
+        source_type:
+          editorMode === "create"
+            ? "manual"
+            : (editorState.source_type ?? "manual"),
         entry_id: editorState.entry_id.trim() || null,
         pilot_first: pilotFirst || null,
         pilot_last: pilotLast || null,
@@ -4094,6 +4106,11 @@ const infoBoxStyle: CSSProperties = {
 
 const summaryCardStyle: CSSProperties = {
   padding: 16,
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "flex-start",
+  alignSelf: "start",
+  height: "auto",
 };
 
 const summaryValueStyle: CSSProperties = {

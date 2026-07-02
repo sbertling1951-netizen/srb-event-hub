@@ -3,9 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { getAdminEvent } from "@/lib/getAdminEvent";
-import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { useAdmin } from "@/lib/adminContext";
+import {
+  ADMIN_EVENT_CHANGED_KEY,
+  ADMIN_EVENT_KEY,
+  ADMIN_EVENT_UPDATED,
+  getCurrentAdminEvent,
+  setCurrentAdminEvent,
+} from "@/lib/adminEventContext";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type EventRow = {
@@ -153,53 +159,56 @@ function EventAdminPageInner() {
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
 
-  const loadAssignmentsForEvent = useCallback(async (eventId: string) => {
-    try {
-      if (!admin || !canAccessEvent(admin, eventId)) {
+  const loadAssignmentsForEvent = useCallback(
+    async (eventId: string) => {
+      try {
+        if (!admin || !canAccessEvent(admin, eventId)) {
+          setSelectedMasterMapId("");
+          setSelectedNearbyListId("");
+          return;
+        }
+
+        const [mapSettingsResult, nearbyAssignmentResult] = await Promise.all([
+          supabase
+            .from("event_map_settings")
+            .select("event_id,selected_master_map_id")
+            .eq("event_id", eventId)
+            .limit(1),
+
+          supabase
+            .from("events")
+            .select("selected_nearby_area_id")
+            .eq("id", eventId)
+            .limit(1),
+        ]);
+
+        if (mapSettingsResult.error) {
+          throw mapSettingsResult.error;
+        }
+        if (nearbyAssignmentResult.error) {
+          throw nearbyAssignmentResult.error;
+        }
+
+        const mapSettings =
+          ((mapSettingsResult.data || [])[0] as
+            | EventMapSettingsRow
+            | undefined) || null;
+
+        const nearbyRow = (nearbyAssignmentResult.data || [])[0] as
+          | { selected_nearby_area_id?: string | null }
+          | undefined;
+
+        setSelectedMasterMapId(mapSettings?.selected_master_map_id || "");
+        setSelectedNearbyListId(nearbyRow?.selected_nearby_area_id || "");
+      } catch (err: any) {
+        console.error("loadAssignmentsForEvent error:", err);
         setSelectedMasterMapId("");
         setSelectedNearbyListId("");
-        return;
+        setStatus(err?.message || "Failed to load event assignments.");
       }
-
-      const [mapSettingsResult, nearbyAssignmentResult] = await Promise.all([
-        supabase
-          .from("event_map_settings")
-          .select("event_id,selected_master_map_id")
-          .eq("event_id", eventId)
-          .limit(1),
-
-        supabase
-          .from("events")
-          .select("selected_nearby_area_id")
-          .eq("id", eventId)
-          .limit(1),
-      ]);
-
-      if (mapSettingsResult.error) {
-        throw mapSettingsResult.error;
-      }
-      if (nearbyAssignmentResult.error) {
-        throw nearbyAssignmentResult.error;
-      }
-
-      const mapSettings =
-        ((mapSettingsResult.data || [])[0] as
-          | EventMapSettingsRow
-          | undefined) || null;
-
-      const nearbyRow = (nearbyAssignmentResult.data || [])[0] as
-        | { selected_nearby_area_id?: string | null }
-        | undefined;
-
-      setSelectedMasterMapId(mapSettings?.selected_master_map_id || "");
-      setSelectedNearbyListId(nearbyRow?.selected_nearby_area_id || "");
-    } catch (err: any) {
-      console.error("loadAssignmentsForEvent error:", err);
-      setSelectedMasterMapId("");
-      setSelectedNearbyListId("");
-      setStatus(err?.message || "Failed to load event assignments.");
-    }
-  }, [admin]);
+    },
+    [admin],
+  );
 
   const loadPage = useCallback(async () => {
     try {
@@ -287,12 +296,12 @@ function EventAdminPageInner() {
         setForm(emptyForm);
         setSelectedMasterMapId("");
         setSelectedNearbyListId("");
-        setWorkingAdminEvent(null);
+        setWorkspaceEvent(null);
         setStatus("No events match this filter.");
         return;
       }
 
-      const adminEvent = getAdminEvent();
+      const adminEvent = getCurrentAdminEvent();
       const storedAccessibleEvent = adminEvent?.id
         ? loadedEvents.find((e) => e.id === adminEvent.id) || null
         : null;
@@ -307,11 +316,11 @@ function EventAdminPageInner() {
 
       if (preferredEvent) {
         if (!storedAccessibleEvent) {
-          setWorkingAdminEvent(preferredEvent);
+          setWorkspaceEvent(preferredEvent);
         }
         setStatus("Event admin ready.");
       } else {
-        setWorkingAdminEvent(null);
+        setWorkspaceEvent(null);
         setStatus("No accessible events available.");
       }
     } catch (err: any) {
@@ -323,14 +332,16 @@ function EventAdminPageInner() {
   }, [admin, eventStatusFilter]);
 
   useEffect(() => {
-    if (!admin) return;
+    if (!admin) {
+      return;
+    }
 
     void loadPage();
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
+        e.key === ADMIN_EVENT_KEY ||
+        e.key === ADMIN_EVENT_CHANGED_KEY ||
         e.key === "fcoc-user-mode" ||
         e.key === "fcoc-user-mode-changed"
       ) {
@@ -339,7 +350,11 @@ function EventAdminPageInner() {
     }
 
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener(ADMIN_EVENT_UPDATED, loadPage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(ADMIN_EVENT_UPDATED, loadPage);
+    };
   }, [admin, loadPage]);
 
   useEffect(() => {
@@ -436,29 +451,21 @@ function EventAdminPageInner() {
     localStorage.setItem("fcoc-event-draft", JSON.stringify(form));
   }, [form]);
 
-  function setWorkingAdminEvent(event: EventRow | null) {
+  function setWorkspaceEvent(event: EventRow | null) {
     if (!event) {
-      localStorage.removeItem("fcoc-admin-event-context");
-      localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-      window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
+      setCurrentAdminEvent(null);
       return;
     }
 
-    localStorage.setItem(
-      "fcoc-admin-event-context",
-      JSON.stringify({
-        id: event.id,
-        name: event.name || null,
-        eventName: event.name || null,
-        location: event.location || null,
-        venue_name: null,
-        start_date: event.start_date || null,
-        end_date: event.end_date || null,
-      }),
-    );
-
-    localStorage.setItem("fcoc-admin-event-changed", String(Date.now()));
-    window.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
+    setCurrentAdminEvent({
+      id: event.id,
+      name: event.name || null,
+      eventName: event.name || null,
+      location: event.location || null,
+      venue_name: null,
+      start_date: event.start_date || null,
+      end_date: event.end_date || null,
+    });
   }
 
   async function saveEvent() {
@@ -545,9 +552,9 @@ function EventAdminPageInner() {
         setEvents([updatedEvent]);
 
         if (isActiveEventStatus(updatedEvent.status)) {
-          setWorkingAdminEvent(updatedEvent);
+          setWorkspaceEvent(updatedEvent);
         } else {
-          setWorkingAdminEvent(null);
+          setWorkspaceEvent(null);
         }
 
         setStatus(
@@ -572,9 +579,9 @@ function EventAdminPageInner() {
         localStorage.removeItem("fcoc-event-draft");
         setEvents([createdEvent]);
         if (isActiveEventStatus(createdEvent.status)) {
-          setWorkingAdminEvent(createdEvent);
+          setWorkspaceEvent(createdEvent);
         } else {
-          setWorkingAdminEvent(null);
+          setWorkspaceEvent(null);
         }
         setStatus(`Created event "${payload.name}".`);
       }
@@ -734,7 +741,7 @@ function EventAdminPageInner() {
               setForm(emptyForm);
               setSelectedMasterMapId("");
               setSelectedNearbyListId("");
-              setWorkingAdminEvent(null);
+              setWorkspaceEvent(null);
               setStatus("Loading filtered events...");
             }}
             style={{
@@ -769,7 +776,7 @@ function EventAdminPageInner() {
             setError(null);
 
             const evt = events.find((row) => row.id === newId) || null;
-            setWorkingAdminEvent(evt);
+            setWorkspaceEvent(evt);
             setStatus(
               evt
                 ? `Working event changed to ${evt.name || "Untitled event"}.`
@@ -805,7 +812,7 @@ function EventAdminPageInner() {
             setSelectedMasterMapId("");
             setSelectedNearbyListId("");
             setError(null);
-            setWorkingAdminEvent(null);
+            setWorkspaceEvent(null);
             setStatus("Creating a new event. No working event selected.");
           }}
           style={{ width: "fit-content" }}
@@ -887,7 +894,7 @@ function EventAdminPageInner() {
               setEvents((prev) => [clonedEvent, ...prev]);
               setSelectedEventId(clonedEvent.id);
 
-              setWorkingAdminEvent(clonedEvent);
+              setWorkspaceEvent(clonedEvent);
 
               setStatus(`Cloned event "${newName}".`);
             } catch (err: any) {
