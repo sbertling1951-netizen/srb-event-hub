@@ -8,7 +8,7 @@ import AnnouncementBanner from "@/components/AnnouncementBanner";
 import {
   type CurrentMemberEvent,
   getCurrentMemberEvent,
-  getStoredMemberAttendeeId,
+  getCurrentMemberAttendeeId,
   getStoredMemberEmail,
   getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
@@ -88,7 +88,8 @@ export default function MemberDashboardPage() {
   useEffect(() => {
     try {
       const memberEvent = getCurrentMemberEvent();
-      const attendeeId = getStoredMemberAttendeeId();
+      // Prefer the canonical MemberSession identity via the compatibility helper.
+      const attendeeId = getCurrentMemberAttendeeId();
       const entryId = getStoredMemberEntryId();
       const email = getStoredMemberEmail();
 

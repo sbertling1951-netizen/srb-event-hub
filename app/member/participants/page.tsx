@@ -9,6 +9,7 @@ import {
   getStoredMemberAttendeeId,
   getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
+import { getCurrentAttendeeId } from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
 
 interface Participant {
@@ -69,7 +70,10 @@ function ParticipantsPageInner() {
       console.log("AUTH USER", user);
       console.log("AUTH EMAIL", user?.email);
       const authEmail = user?.email?.toLowerCase() ?? null;
-      const attendeeId = getStoredMemberAttendeeId();
+      // Prefer the canonical MemberSession identity. Fall back to the legacy
+      // storage helper while the member-session migration is in progress.
+      const attendeeId =
+        getCurrentAttendeeId() || getStoredMemberAttendeeId();
       const entryId = getStoredMemberEntryId();
 
       const authUserId = localStorage.getItem("fcoc-member-auth-user-id");

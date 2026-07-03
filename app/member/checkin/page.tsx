@@ -13,6 +13,7 @@ import {
   getStoredMemberEmail,
   getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
+import { getCurrentAttendeeId } from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
 
 type AttendeeRow = {
@@ -90,7 +91,10 @@ function MemberCheckinPageInner() {
 
       setEvent(currentEvent);
 
-      const storedAttendeeId = getStoredMemberAttendeeId();
+      // Prefer the canonical MemberSession identity. Fall back to legacy
+      // localStorage helpers during the member-session migration.
+      const storedAttendeeId =
+        getCurrentAttendeeId() || getStoredMemberAttendeeId();
       const storedEntryId = getStoredMemberEntryId();
       const storedEmail = getStoredMemberEmail()?.toLowerCase() || null;
 
@@ -394,6 +398,9 @@ function MemberCheckinPageInner() {
   }
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
+  const participantCapacity = event?.participant_capacity ?? 0;
+  const participantCount = household.length;
+  const availableSlots = Math.max(0, participantCapacity - participantCount);
 
   return (
     <div style={{ padding: 24, display: "grid", gap: 16, maxWidth: 760 }}>
@@ -500,23 +507,25 @@ function MemberCheckinPageInner() {
             )}
           </div>
 
-          <div>
-            <Link
-              href="/member/participants"
-              style={{
-                display: "inline-block",
-                padding: "10px 14px",
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                background: "#fff",
-                textDecoration: "none",
-                fontWeight: 600,
-                color: "inherit",
-              }}
-            >
-              ➕👤 Add Participant
-            </Link>
-          </div>
+          {availableSlots > 0 ? (
+            <div>
+              <Link
+                href="/member/participants"
+                style={{
+                  display: "inline-block",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  background: "#fff",
+                  textDecoration: "none",
+                  fontWeight: 600,
+                  color: "inherit",
+                }}
+              >
+                ➕👤 Add Participant
+              </Link>
+            </div>
+          ) : null}
 
           <div style={{ display: "grid", gap: 10, maxWidth: 360 }}>
             <label>

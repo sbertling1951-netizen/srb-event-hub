@@ -14,6 +14,7 @@ type EventRow = {
   start_date: string | null;
   end_date: string | null;
   event_code: string | null;
+  participant_capacity: number | null;
   lat: number | null;
   lng: number | null;
   visible_to_members?: boolean | null;
@@ -44,7 +45,7 @@ export default function MemberEventsPage() {
       const { data, error } = await supabase
         .from("events")
         .select(
-          "id,name,venue_name,location,start_date,end_date,event_code,lat,lng,visible_to_members,registration_open",
+          "id,name,venue_name,location,start_date,end_date,event_code,participant_capacity,lat,lng,visible_to_members,registration_open",
         )
         .eq("visible_to_members", true)
         .order("start_date", { ascending: true, nullsFirst: false });

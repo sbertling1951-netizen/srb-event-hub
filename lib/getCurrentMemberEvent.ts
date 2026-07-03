@@ -1,4 +1,5 @@
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { getMemberSession, getCurrentAttendeeId } from "@/lib/memberSession";
 
 export type CurrentMemberEvent = {
   id: string;
@@ -9,6 +10,7 @@ export type CurrentMemberEvent = {
   start_date: string | null;
   end_date: string | null;
   event_code: string | null;
+  participant_capacity?: number | null;
   lat: number | null;
   lng: number | null;
 };
@@ -58,6 +60,7 @@ export type SetCurrentMemberEventInput = {
   start_date: string | null;
   end_date: string | null;
   event_code: string | null;
+  participant_capacity?: number | null;
   lat: number | null;
   lng: number | null;
 };
@@ -78,6 +81,7 @@ export function setCurrentMemberEvent(event: SetCurrentMemberEventInput) {
       start_date: event.start_date || null,
       end_date: event.end_date || null,
       event_code: event.event_code || null,
+      participant_capacity: event.participant_capacity ?? null,
       lat: event.lat || null,
       lng: event.lng || null,
     }),
@@ -89,6 +93,25 @@ export function setCurrentMemberEvent(event: SetCurrentMemberEventInput) {
 export function getCurrentMemberEvent(): CurrentMemberEvent | null {
   if (typeof window === "undefined") {
     return null;
+  }
+
+  // Prefer the canonical MemberSession event context when available.
+  // Fall back to the legacy event-context storage during the migration.
+  const session = getMemberSession();
+  if (session?.event_id) {
+    return {
+      id: session.event_id,
+      name: session.event_name ?? null,
+      eventName: session.event_name ?? null,
+      venue_name: session.venue_name ?? null,
+      location: session.location ?? null,
+      start_date: session.start_date ?? null,
+      end_date: session.end_date ?? null,
+      event_code: session.event_code ?? null,
+      participant_capacity: session.participant_capacity ?? null,
+      lat: session.lat ?? null,
+      lng: session.lng ?? null,
+    };
   }
 
   try {
@@ -115,6 +138,7 @@ export function getCurrentMemberEvent(): CurrentMemberEvent | null {
       start_date: parsed.start_date ?? null,
       end_date: parsed.end_date ?? null,
       event_code: parsed.event_code ?? null,
+      participant_capacity: parsed.participant_capacity ?? null,
       lat: parsed.lat ?? null,
       lng: parsed.lng ?? null,
     };
@@ -122,4 +146,10 @@ export function getCurrentMemberEvent(): CurrentMemberEvent | null {
     console.error("Could not read current member event:", err);
     return null;
   }
+}
+
+// Prefer the canonical MemberSession identity. Fall back to the legacy
+// storage helper during the member-session migration.
+export function getCurrentMemberAttendeeId(): string | null {
+  return getCurrentAttendeeId() || getStoredMemberAttendeeId();
 }

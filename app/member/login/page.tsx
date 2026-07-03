@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { saveMemberSession } from "@/lib/memberSession";
 import { logEngagement } from "@/lib/engagement";
+import { saveMemberSession } from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
 
 type EventRow = {
@@ -99,7 +99,7 @@ export default function MemberLoginPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [enteredCode, setEnteredCode] = useState("");
-  const [enteredEmail, setEnteredEmail] = useState("");
+  const [enteredIdentifier, setEnteredIdentifier] = useState("");
   const [status, setStatus] = useState("Loading events...");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -135,7 +135,7 @@ export default function MemberLoginPage() {
 
       setStatus(
         memberEvents.length > 0
-          ? "Select an event, enter code, and use your registration email."
+          ? "Select an event, enter the event code, and use your registration email or mobile phone."
           : "No active member events are available right now.",
       );
     } catch (err) {
@@ -164,7 +164,7 @@ export default function MemberLoginPage() {
     }
 
     const entered = enteredCode.trim().toLowerCase();
-    const normalizedEmail = enteredEmail.trim().toLowerCase();
+    const normalizedIdentifier = enteredIdentifier.trim().toLowerCase();
 
     if (!entered) {
       setError("Enter the event code.");
@@ -172,8 +172,10 @@ export default function MemberLoginPage() {
       return;
     }
 
-    if (!normalizedEmail) {
-      setError("Enter the email used for registration.");
+    if (!normalizedIdentifier) {
+      setError(
+        "Enter the email address or mobile phone used for registration.",
+      );
       setStatus("");
       return;
     }
@@ -186,14 +188,14 @@ export default function MemberLoginPage() {
       const { data, error } = await supabase.rpc("verify_member_event_login", {
         p_event_id: event.id,
         p_event_code: entered,
-        p_email: normalizedEmail,
+        p_identifier: normalizedIdentifier,
       });
 
       if (error) {
         throw error;
       }
 
-      let attendee =
+      const attendee =
         Array.isArray(data) && data.length > 0
           ? (data[0] as AttendeeRow)
           : null;
@@ -201,7 +203,9 @@ export default function MemberLoginPage() {
       console.log("MEMBER LOGIN ATTENDEE", attendee);
 
       if (!attendee?.id) {
-        setError("No attendee registration was found for that email in this event.");
+        setError(
+          "No registration was found for that email address or mobile phone in this event.",
+        );
         setStatus("");
         return;
       }
@@ -209,12 +213,15 @@ export default function MemberLoginPage() {
       const arrived = !!attendee.has_arrived;
 
       if (typeof window !== "undefined") {
+        // TODO (post-Amana): These legacy localStorage keys should be retired.
+        // MemberSession is becoming the authoritative session source. Keep these
+        // only for compatibility until all member pages read from MemberSession.
         // Clear any stale member session values from a previous login.
         localStorage.removeItem("member-participant-id");
         localStorage.removeItem("member-participant-name");
         localStorage.removeItem("member-participant-role");
         localStorage.setItem("fcoc-member-attendee-id", attendee.id);
-        localStorage.setItem("fcoc-member-email", normalizedEmail);
+        localStorage.setItem("fcoc-member-email", attendee.email || "");
         if (attendee.auth_user_id) {
           localStorage.setItem(
             "fcoc-member-auth-user-id",
@@ -229,13 +236,22 @@ export default function MemberLoginPage() {
         localStorage.setItem("fcoc-user-mode", "member");
         localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
         if (attendee.participant_id) {
-          localStorage.setItem("member-participant-id", attendee.participant_id);
+          localStorage.setItem(
+            "member-participant-id",
+            attendee.participant_id,
+          );
         }
         if (attendee.participant_name) {
-          localStorage.setItem("member-participant-name", attendee.participant_name);
+          localStorage.setItem(
+            "member-participant-name",
+            attendee.participant_name,
+          );
         }
         if (attendee.participant_role) {
-          localStorage.setItem("member-participant-role", attendee.participant_role);
+          localStorage.setItem(
+            "member-participant-role",
+            attendee.participant_role,
+          );
         }
       }
 
@@ -252,6 +268,13 @@ export default function MemberLoginPage() {
         end_date: event.end_date || null,
         lat: event.lat || null,
         lng: event.lng || null,
+        attendee_id: attendee.id,
+        attendee_email: attendee.email || null,
+        attendee_phone: normalizedIdentifier.includes("@")
+          ? null
+          : enteredIdentifier.trim(),
+        participant_id: attendee.participant_id || null,
+        participant_name: attendee.participant_name || null,
         login_at: new Date().toISOString(),
         expires_at: event.end_date ? `${event.end_date}T23:59:59` : null,
       });
@@ -331,15 +354,15 @@ export default function MemberLoginPage() {
 
         <label>
           <div style={{ fontWeight: 700, marginBottom: 6 }}>
-            Registration Email
+            Registration Email or Mobile Phone
           </div>
           <input
-            type="email"
-            value={enteredEmail}
-            onChange={(e) => setEnteredEmail(e.target.value)}
-            placeholder="Email used for registration"
-            inputMode="email"
-            autoComplete="email"
+            type="text"
+            value={enteredIdentifier}
+            onChange={(e) => setEnteredIdentifier(e.target.value)}
+            placeholder="Email or mobile phone used for registration"
+            inputMode="text"
+            autoComplete="username"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
@@ -395,4 +418,3 @@ export default function MemberLoginPage() {
     </div>
   );
 }
-
