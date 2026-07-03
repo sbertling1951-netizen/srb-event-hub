@@ -57,8 +57,28 @@ export default function RootLayout({
             <main className="app-main">
               <div className="app-inner">
                 <div className="app-header-card">
-                  <div className="app-brand">{appTitle}</div>
-                  <div className="app-subtle">{appTagline}</div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <img
+                      src="/fcoc-logo.png"
+                      alt="FCOC"
+                      style={{
+                        height: 48,
+                        width: "auto",
+                        flexShrink: 0,
+                      }}
+                    />
+
+                    <div>
+                      <div className="app-brand">{appTitle}</div>
+                      <div className="app-subtle">{appTagline}</div>
+                    </div>
+                  </div>
                 </div>
 
                 {children}

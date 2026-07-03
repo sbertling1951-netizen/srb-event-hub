@@ -90,4 +90,3 @@ export async function loadTenantLabels() {
 export function getTenantLabel(key: TenantLabelKey) {
   return activeLabels[key];
 }
-  
