@@ -14,10 +14,7 @@ import {
   getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
 import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
-import {
-  getCurrentAdminEvent,
-  ADMIN_EVENT_UPDATED,
-} from "@/lib/adminEventContext";
+import { useAdminWorkspace } from "@/lib/AdminWorkspaceProvider";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 
@@ -170,10 +167,11 @@ export default function Sidebar() {
     string | null
   >(null);
 
+  const { currentEvent: workspaceAdminEvent } = useAdminWorkspace();
+
   function loadContextsFromStorage() {
     try {
       const memberEventContext = getCurrentMemberEvent();
-      const adminEventContext = getCurrentAdminEvent();
       const hasArrived = getStoredMemberHasArrived();
       const storedUserMode = getStoredUserMode();
 
@@ -181,13 +179,13 @@ export default function Sidebar() {
       console.groupCollapsed('[Sidebar] Context Load');
       console.log('pathname:', window.location.pathname);
       console.log('storedUserMode:', storedUserMode);
-      console.log('adminEventContext:', adminEventContext);
+      // console.log('adminEventContext:', adminEventContext);
       console.log('memberEventContext:', memberEventContext);
       console.log('hasArrived:', hasArrived);
       console.groupEnd();
 
       setMemberEvent(memberEventContext);
-      setAdminEvent(adminEventContext);
+      // setAdminEvent(adminEventContext);
       setIsCheckedIn(hasArrived === "true");
       setUserMode(
         storedUserMode === "member" || storedUserMode === "admin"
@@ -282,10 +280,6 @@ export default function Sidebar() {
       }
     }
 
-    function handleAdminEventUpdated() {
-      console.debug('[Sidebar] adminEventUpdated event received');
-      loadContextsFromStorage();
-    }
 
     function clearVisibleSidebarStateIfLoggedOut() {
       const mode = getStoredUserMode();
@@ -309,19 +303,11 @@ export default function Sidebar() {
     }
 
     window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      ADMIN_EVENT_UPDATED,
-      handleAdminEventUpdated,
-    );
     window.addEventListener("popstate", loadContextsFromStorage);
     window.addEventListener("pageshow", handlePageShow);
 
     return () => {
       window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        ADMIN_EVENT_UPDATED,
-        handleAdminEventUpdated,
-      );
       window.removeEventListener("popstate", loadContextsFromStorage);
       window.removeEventListener("pageshow", handlePageShow);
     };
@@ -334,6 +320,10 @@ export default function Sidebar() {
     console.debug('[Sidebar] pathname changed', pathname);
     loadContextsFromStorage();
   }, [mounted, pathname]);
+
+  useEffect(() => {
+    setAdminEvent(workspaceAdminEvent);
+  }, [workspaceAdminEvent]);
 
   useEffect(() => {
     if (!mounted) {

@@ -59,3 +59,22 @@ export function setCurrentAdminEvent(event: AdminWorkspaceContext | null): void 
 export function clearCurrentAdminEvent(): void {
   setCurrentAdminEvent(null);
 }
+
+
+export function subscribeToAdminEvent(
+  callback: () => void,
+): () => void {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  const handler = () => callback();
+
+  window.addEventListener(ADMIN_EVENT_UPDATED, handler as EventListener);
+  window.addEventListener("storage", handler);
+
+  return () => {
+    window.removeEventListener(ADMIN_EVENT_UPDATED, handler as EventListener);
+    window.removeEventListener("storage", handler);
+  };
+}

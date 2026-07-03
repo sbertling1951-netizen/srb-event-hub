@@ -2607,16 +2607,27 @@ created_at
     }
 
     if (eventToUse?.id) {
-      setCurrentAdminEvent({
-        id: eventToUse.id,
-        name: eventToUse.name || "Selected Event",
-        eventName:
-          eventToUse.eventName || eventToUse.name || "Selected Event",
-        venue_name: eventToUse.venue_name || null,
-        location: eventToUse.location || null,
-        start_date: eventToUse.start_date || null,
-        end_date: eventToUse.end_date || null,
-      });
+      const existing = getCurrentAdminEvent();
+
+      const changed =
+        existing?.id !== eventToUse.id ||
+        existing?.name !== (eventToUse.name || "Selected Event") ||
+        existing?.start_date !== (eventToUse.start_date || null) ||
+        existing?.end_date !== (eventToUse.end_date || null) ||
+        existing?.location !== (eventToUse.location || null);
+
+      if (changed) {
+        setCurrentAdminEvent({
+          id: eventToUse.id,
+          name: eventToUse.name || "Selected Event",
+          eventName:
+            eventToUse.eventName || eventToUse.name || "Selected Event",
+          venue_name: eventToUse.venue_name || null,
+          location: eventToUse.location || null,
+          start_date: eventToUse.start_date || null,
+          end_date: eventToUse.end_date || null,
+        });
+      }
     }
 
     if (!canAccessEvent(adminRef.current!, eventToUse.id!)) {

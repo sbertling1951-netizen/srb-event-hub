@@ -654,21 +654,6 @@ function AdminDashboardPageInner() {
   }, [adminAccess]);
 
   function goTo(href: string) {
-    const eventForNavigation =
-      activeEvent ||
-      events.find((evt) => evt.id === selectedEventId) ||
-      getInitialAdminEvent();
-
-    if (eventForNavigation?.id) {
-      setCurrentAdminEvent({
-        id: eventForNavigation.id,
-        name: eventForNavigation.name || "Selected Event",
-        eventName: eventForNavigation.name || "Selected Event",
-        location: eventForNavigation.location || null,
-        start_date: eventForNavigation.start_date || null,
-        end_date: eventForNavigation.end_date || null,
-      });    }
-
     router.push(href);
   }
 
