@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
-
+import { getCurrentTenant, type TenantContext } from "@/lib/tenantContext";
 type EventRow = {
   id: string;
   name: string;
@@ -25,6 +25,7 @@ function formatDateRange(startDate: string | null, endDate: string | null) {
 
 export default function EventBanner() {
   const [event, setEvent] = useState<EventRow | null>(null);
+  const [tenant, setTenant] = useState<TenantContext | null>(null);
 
   const loadActiveEvent = useCallback(async (canUpdate: () => boolean) => {
     const { data, error } = await supabase
@@ -74,7 +75,6 @@ export default function EventBanner() {
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("storage", handleStorage);
-
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
@@ -84,6 +84,21 @@ export default function EventBanner() {
     };
   }, [loadActiveEvent]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    void getCurrentTenant().then((result) => {
+      if (mounted) {
+        setTenant(result);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  alert(JSON.stringify(tenant, null, 2));
   if (!event) {
     return null;
   }
@@ -98,15 +113,38 @@ export default function EventBanner() {
         background: "#fafafa",
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 18 }}>{event.name}</div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        {tenant?.logoUrl && (
+          <img
+            src={tenant.logoUrl}
+            alt={tenant.organizationName}
+            style={{
+              width: 40,
+              height: 40,
+              objectFit: "contain",
+              flexShrink: 0,
+            }}
+          />
+        )}
 
-      {event.location && (
-        <div style={{ fontSize: 14, color: "#666" }}>{event.location}</div>
-      )}
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 18 }}>{event.name}</div>
 
-      {dateRange && (
-        <div style={{ fontSize: 13, color: "#888" }}>{dateRange}</div>
-      )}
+          {event.location && (
+            <div style={{ fontSize: 14, color: "#666" }}>{event.location}</div>
+          )}
+
+          {dateRange && (
+            <div style={{ fontSize: 13, color: "#888" }}>{dateRange}</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

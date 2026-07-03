@@ -1,3 +1,5 @@
+import { getCurrentTenant } from "@/lib/tenantContext";
+
 export type TenantLabelKey =
   | "app_title"
   | "app_description"
@@ -59,6 +61,33 @@ export const DEFAULT_TENANT_LABELS: Record<TenantLabelKey, string> = {
   map_nav_label: "Map",
 };
 
-export function getTenantLabel(key: TenantLabelKey) {
-  return DEFAULT_TENANT_LABELS[key];
+let activeLabels: Record<TenantLabelKey, string> = {
+  ...DEFAULT_TENANT_LABELS,
+};
+
+let labelsLoaded = false;
+
+export async function loadTenantLabels() {
+  if (labelsLoaded) {
+    return;
+  }
+
+  const tenant = await getCurrentTenant();
+
+  if (tenant) {
+    activeLabels.app_title = tenant.appTitle || DEFAULT_TENANT_LABELS.app_title;
+
+    activeLabels.app_tagline =
+      tenant.appTagline || DEFAULT_TENANT_LABELS.app_tagline;
+
+    // Additional tenant-specific labels will be mapped here as we
+    // expand the white-label platform.
+  }
+
+  labelsLoaded = true;
 }
+
+export function getTenantLabel(key: TenantLabelKey) {
+  return activeLabels[key];
+}
+  
