@@ -1827,6 +1827,17 @@ function AttendeeEditorModal(props: {
     state.additional_email,
     state.additional_cell_phone,
   ]);
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
   if (!open) {
     return null;
   }
@@ -1875,11 +1886,16 @@ function AttendeeEditorModal(props: {
         className="card"
         style={{
           width: "min(1120px, 100%)",
-          maxHeight: "96vh",
+          height: "100dvh",
+          maxHeight: "100dvh",
           overflowY: "auto",
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
           padding: 0,
           background: "white",
           borderRadius: 14,
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         <div
@@ -1915,7 +1931,13 @@ function AttendeeEditorModal(props: {
           </button>
         </div>
 
-        <div style={{ padding: 18 }}>
+        <div
+          style={{
+            padding: 18,
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
           <div
             style={{
               display: "grid",

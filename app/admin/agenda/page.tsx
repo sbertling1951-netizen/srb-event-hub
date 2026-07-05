@@ -10,11 +10,11 @@ import AgendaTemplatePanel from "@/components/admin/agenda/AgendaTemplatePanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useAdmin } from "@/lib/adminContext";
-import { getAgendaColor } from "@/lib/agendaColors";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { getAgendaColor } from "@/lib/agendaColors";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -556,6 +556,7 @@ function AdminAgendaPageInner() {
   const [saving, setSaving] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [filterCategory, setFilterCategory] = useState("All");
+  const [printDayFilter, setPrintDayFilter] = useState("all");
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [calendarDraggingId, setCalendarDraggingId] = useState<string | null>(
     null,
@@ -1035,6 +1036,14 @@ function AdminAgendaPageInner() {
 
     return dates.sort((a, b) => a.localeCompare(b));
   }, [filteredItems]);
+
+  const printableAgendaItems = useMemo(() => {
+    if (printDayFilter === "all") {
+      return filteredItems;
+    }
+
+    return filteredItems.filter((item) => item.agenda_date === printDayFilter);
+  }, [filteredItems, printDayFilter]);
 
   const calendarRange = useMemo(() => {
     const starts = filteredItems
@@ -2651,7 +2660,21 @@ function AdminAgendaPageInner() {
               >
                 {forceDesktopDrag ? "Desktop Drag On" : "Desktop Drag Off"}
               </button>
+              <select
+                value={printDayFilter}
+                onChange={(e) => setPrintDayFilter(e.target.value)}
+              >
+                <option value="all">All Days</option>
 
+                {calendarDays.map((day) => (
+                  <option key={day} value={day}>
+                    {formatAgendaDate(day)}
+                  </option>
+                ))}
+              </select>
+              <button type="button" onClick={() => window.print()}>
+                Print
+              </button>
               <button
                 type="button"
                 onClick={() => void saveOrder()}
@@ -3139,7 +3162,7 @@ function AdminAgendaPageInner() {
                 Agenda Items ({filteredItems.length})
               </div>
 
-              {filteredItems.map((item) => {
+              {printableAgendaItems.map((item) => {
                 const isSelected = form.id === item.id;
                 return (
                   <div
@@ -3190,12 +3213,12 @@ function AdminAgendaPageInner() {
                           <button
                             type="button"
                             onClick={() => moveItemUp(item.id)}
-                            disabled={filteredItems[0]?.id === item.id}
+                            disabled={printableAgendaItems[0]?.id === item.id}
                             style={{
                               padding: "6px 8px",
                               minWidth: 40,
                               cursor:
-                                filteredItems[0]?.id === item.id
+                                printableAgendaItems[0]?.id === item.id
                                   ? "default"
                                   : "pointer",
                             }}
@@ -3208,14 +3231,14 @@ function AdminAgendaPageInner() {
                             type="button"
                             onClick={() => moveItemDown(item.id)}
                             disabled={
-                              filteredItems[filteredItems.length - 1]?.id ===
+                              printableAgendaItems[printableAgendaItems.length - 1]?.id ===
                               item.id
                             }
                             style={{
                               padding: "6px 8px",
                               minWidth: 40,
                               cursor:
-                                filteredItems[filteredItems.length - 1]?.id ===
+                                printableAgendaItems[printableAgendaItems.length - 1]?.id ===
                                 item.id
                                   ? "default"
                                   : "pointer",
