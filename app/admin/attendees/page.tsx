@@ -1876,19 +1876,21 @@ function AttendeeEditorModal(props: {
         inset: 0,
         background: "rgba(0,0,0,0.35)",
         display: "flex",
-        alignItems: "center",
+        alignItems: "stretch",
         justifyContent: "center",
-        padding: 12,
+        padding: 0,
         zIndex: 2000,
+        overflow: "hidden",
+        touchAction: "none",
       }}
     >
       <div
         className="card"
         style={{
           width: "min(1120px, 100%)",
-          height: "100dvh",
-          maxHeight: "100dvh",
-          overflowY: "auto",
+          height: "100%",
+          maxHeight: "100%",
+          overflow: "hidden",
           overscrollBehavior: "contain",
           WebkitOverflowScrolling: "touch",
           padding: 0,
@@ -1936,6 +1938,9 @@ function AttendeeEditorModal(props: {
             padding: 18,
             flex: 1,
             minHeight: 0,
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+            overscrollBehavior: "contain",
           }}
         >
           <div
@@ -4201,3 +4206,4 @@ export default function AdminAttendeesPage() {
     </AdminRouteGuard>
   );
 }
+
