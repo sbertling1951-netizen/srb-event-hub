@@ -27,10 +27,13 @@ export default function HomePage() {
     async function run() {
       try {
         // 🔥 REAL AUTH CHECK (fixes ghost admin issue)
+        console.log("A: before getUser");
         const {
           data: { user },
         } = await supabase.auth.getUser();
+        console.log("B: after getUser", user);
 
+        console.log("C: before getStoredUserMode");
         const mode = getStoredUserMode();
 
         // 🚨 If no real session, kill fake admin mode
@@ -44,6 +47,7 @@ export default function HomePage() {
           return;
         }
 
+        console.log("D: before member session reads");
         const attendeeId = getStoredMemberAttendeeId();
         const memberEvent = getCurrentMemberEvent();
         const hasArrived = getStoredMemberHasArrived();
@@ -67,6 +71,7 @@ export default function HomePage() {
         console.error("Home redirect error:", err);
         setHasSession(false);
       } finally {
+        console.log("E: finally reached");
         setChecked(true);
       }
     }

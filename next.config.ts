@@ -1,7 +1,12 @@
-import type { NextConfig } from 'next'
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  allowedDevOrigins: [
+    "localhost",
+    "192.168.1.97",
+    "192.168.1.99",
+    "192.168.1.179",
+    "192.168.1.214",
+  ],
+};
 
-const nextConfig: NextConfig = {
-  typedRoutes: true,
-}
-
-export default nextConfig
+export default nextConfig;
