@@ -676,36 +676,23 @@ function MemberAgendaPageInner() {
                     >
                       <div
                         style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          alignItems: "start",
-                          flexWrap: "wrap",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: itemStatus === "now" ? "#166534" : "#475569",
+                          marginBottom: 6,
+                          letterSpacing: 0.2,
                         }}
                       >
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div
-                            style={{
-                              fontWeight: 800,
-                              fontSize: 17,
-                              color:
-                                itemStatus === "now" ? "#064e3b" : "#111827",
-                            }}
-                          >
-                            {item.title || "Untitled item"}
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            textAlign: "right",
-                            minWidth: 110,
-                            color:
-                              itemStatus === "now" ? "#064e3b" : "#111827",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {formatItemTime(item)}
-                        </div>
+                        {formatItemTime(item)}
+                      </div>
+                      <div
+                        style={{
+                          fontWeight: 800,
+                          fontSize: 17,
+                          color: itemStatus === "now" ? "#064e3b" : "#111827",
+                        }}
+                      >
+                        {item.title || "Untitled item"}
                       </div>
                       {item.location ? (
                         <div
@@ -809,65 +796,51 @@ function MemberAgendaPageInner() {
                   >
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        alignItems: "start",
-                        flexWrap: "wrap",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#475569",
+                        marginBottom: 6,
+                        letterSpacing: 0.2,
                       }}
                     >
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div
-                          style={{
-                            fontWeight: 800,
-                            fontSize: 17,
-                            color: "#111827",
-                          }}
-                        >
-                          {item.title || "Untitled item"}
-                        </div>
-
-                        {isExpanded && item.location ? (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: "#475569",
-                              marginTop: 2,
-                              fontWeight: 500,
-                              letterSpacing: 0.2,
-                            }}
-                          >
-                            📍 {item.location}
-                          </div>
-                        ) : null}
-
-{isExpanded && item.description ? (
-  <div
-    style={{
-      marginTop: 8,
-      color: "#374151",
-      lineHeight: 1.45,
-      whiteSpace: "pre-wrap",
-      textAlign: "justify",
-      hyphens: "auto",
-    }}
-  >
-                            {item.description}
-                          </div>
-                        ) : null}
-                      </div>
-
+                      {formatItemTime(item)}
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        fontSize: 17,
+                        color: "#111827",
+                      }}
+                    >
+                      {item.title || "Untitled item"}
+                    </div>
+                    {isExpanded && item.location ? (
                       <div
                         style={{
-                          textAlign: "right",
-                          minWidth: 110,
-                          color: "#111827",
-                          fontWeight: 700,
+                          fontSize: 12,
+                          color: "#475569",
+                          marginTop: 2,
+                          fontWeight: 500,
+                          letterSpacing: 0.2,
                         }}
                       >
-                        {formatItemTime(item)}
+                        📍 {item.location}
                       </div>
-                    </div>
+                    ) : null}
+                    {isExpanded && item.description ? (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          color: "#374151",
+                          lineHeight: 1.45,
+                          whiteSpace: "pre-wrap",
+                          textAlign: "justify",
+                          hyphens: "auto",
+                        }}
+                      >
+                        {item.description}
+                      </div>
+                    ) : null}
 
                     {isExpanded ? (
                       <div
@@ -924,13 +897,13 @@ function MemberAgendaPageInner() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-                    gap: 16,
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 10,
                     alignItems: "start",
                   }}
                 >
                   {/* Morton Building column */}
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div
                       style={{
                         fontWeight: 700,
@@ -951,7 +924,7 @@ function MemberAgendaPageInner() {
                     {renderAgendaCards(mortonItems)}
                   </div>
                   {/* Pioneer Building column */}
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div
                       style={{
                         fontWeight: 700,
