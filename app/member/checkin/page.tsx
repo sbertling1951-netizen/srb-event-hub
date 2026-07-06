@@ -573,7 +573,7 @@ function MemberCheckinPageInner() {
                 fontWeight: 600,
               }}
             >
-              {saving ? "Saving..." : "Save Check-In"}
+              {saving ? "Saving..." : "Save"}
             </button>
           </div>
         </div>
