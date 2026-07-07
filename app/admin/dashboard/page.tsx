@@ -1,4 +1,6 @@
+
 "use client";
+const MOBILE_STATS_PREF_KEY = "admin-dashboard-show-mobile-stats";
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -371,6 +373,7 @@ function AdminDashboardPageInner() {
   const [isWide, setIsWide] = useState(false);
   const [isNarrow, setIsNarrow] = useState(false);
   const [showMobileStats, setShowMobileStats] = useState(true);
+  const [showStats, setShowStats] = useState(true);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
 
   const didInitialLoad = useRef(false);
@@ -526,7 +529,14 @@ function AdminDashboardPageInner() {
   useEffect(() => {
     function handleResize() {
       setIsWide(window.innerWidth > 1200);
-      setIsNarrow(window.innerWidth < 760);
+      const mobile = window.innerWidth <= 900;
+      setIsNarrow(mobile);
+      const saved = localStorage.getItem(MOBILE_STATS_PREF_KEY);
+      if (saved === null) {
+        setShowMobileStats(!mobile);
+      } else {
+        setShowMobileStats(saved === "true");
+      }
     }
 
     handleResize();
@@ -667,7 +677,13 @@ function AdminDashboardPageInner() {
       {isNarrow ? (
         <button
           type="button"
-          onClick={() => setShowMobileStats((v) => !v)}
+          onClick={() => {
+            setShowMobileStats((v) => {
+              const next = !v;
+              localStorage.setItem(MOBILE_STATS_PREF_KEY, String(next));
+              return next;
+            });
+          }}
           style={{
             position: "fixed",
             left: "calc(env(safe-area-inset-left, 0px) + 82px)",
@@ -880,84 +896,105 @@ function AdminDashboardPageInner() {
         </div>
       ) : (
         <>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isWide
-                ? "repeat(4, minmax(0, 1fr))"
-                : "repeat(3, minmax(0, 1fr))",
-              gap: 16,
-            }}
-          >
-            <MetricCard
-              label="Registered Coaches"
-              value={
-                loading && attendees.length === 0
-                  ? "…"
-                  : metrics.registeredCoaches
-              }
-            />
-            <MetricCard
-              label="Coaches Arrived"
-              value={
-                loading && attendees.length === 0 ? "…" : metrics.coachesArrived
-              }
-              footer={`${metrics.coachArrivedPercent}%`}
-            />
-            <MetricCard
-              label="People Registered"
-              value={
-                loading && householdMembers.length === 0
-                  ? "…"
-                  : metrics.peopleRegistered
-              }
-            />
-            <MetricCard
-              label="People Arrived"
-              value={
-                loading && householdMembers.length === 0
-                  ? "…"
-                  : metrics.peopleArrived
-              }
-              footer={`${metrics.peopleArrivedPercent}%`}
-            />
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => setShowStats((v) => !v)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 999,
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+                fontWeight: 700,
+                color: "#0b5cff",
+                cursor: "pointer",
+              }}
+            >
+              📊 {showStats ? "Hide Stats" : "Show Stats"}
+            </button>
           </div>
+          {showStats && (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isWide
+                    ? "repeat(4, minmax(0, 1fr))"
+                    : "repeat(3, minmax(0, 1fr))",
+                  gap: 16,
+                }}
+              >
+                <MetricCard
+                  label="Registered Coaches"
+                  value={
+                    loading && attendees.length === 0
+                      ? "…"
+                      : metrics.registeredCoaches
+                  }
+                />
+                <MetricCard
+                  label="Coaches Arrived"
+                  value={
+                    loading && attendees.length === 0 ? "…" : metrics.coachesArrived
+                  }
+                  footer={`${metrics.coachArrivedPercent}%`}
+                />
+                <MetricCard
+                  label="People Registered"
+                  value={
+                    loading && householdMembers.length === 0
+                      ? "…"
+                      : metrics.peopleRegistered
+                  }
+                />
+                <MetricCard
+                  label="People Arrived"
+                  value={
+                    loading && householdMembers.length === 0
+                      ? "…"
+                      : metrics.peopleArrived
+                  }
+                  footer={`${metrics.peopleArrivedPercent}%`}
+                />
+              </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isWide
-                ? "repeat(3, minmax(0, 1fr))"
-                : "repeat(3, minmax(0, 1fr))",
-              gap: 16,
-            }}
-          >
-            <MetricCard
-              label="Parked"
-              value={
-                loading && attendees.length === 0
-                  ? "…"
-                  : `${metrics.parkedPercent}%`
-              }
-              footer={`${metrics.parkedCount} of ${metrics.registeredCoaches}`}
-            />
-            <MetricCard
-              label="Queue Size"
-              value={
-                loading && attendees.length === 0 ? "…" : metrics.queueSize
-              }
-              footer="still needing final parking"
-            />
-            <MetricCard
-              label="Assigned Sites"
-              value={
-                loading && attendees.length === 0
-                  ? "…"
-                  : `${metrics.assignedPercent}%`
-              }
-              footer={`${metrics.assignedCount} of ${metrics.registeredCoaches}`}
-            />
-          </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isWide
+                    ? "repeat(3, minmax(0, 1fr))"
+                    : "repeat(3, minmax(0, 1fr))",
+                  gap: 16,
+                }}
+              >
+                <MetricCard
+                  label="Parked"
+                  value={
+                    loading && attendees.length === 0
+                      ? "…"
+                      : `${metrics.parkedPercent}%`
+                  }
+                  footer={`${metrics.parkedCount} of ${metrics.registeredCoaches}`}
+                />
+                <MetricCard
+                  label="Queue Size"
+                  value={
+                    loading && attendees.length === 0 ? "…" : metrics.queueSize
+                  }
+                  footer="still needing final parking"
+                />
+                <MetricCard
+                  label="Assigned Sites"
+                  value={
+                    loading && attendees.length === 0
+                      ? "…"
+                      : `${metrics.assignedPercent}%`
+                  }
+                  footer={`${metrics.assignedCount} of ${metrics.registeredCoaches}`}
+                />
+              </div>
+            </>
+          )}
 
           {adminAccess?.isSuperAdmin ? (
             <div className="card" style={sectionCardStyle}>
