@@ -248,6 +248,7 @@ function AdminVendorsPageInner() {
       setStatus("Saving vendor...");
 
       const payload = {
+        name: form.business_name.trim(),
         business_name: form.business_name.trim(),
         contact_name: form.contact_name.trim() || null,
         email: form.email.trim() || null,
