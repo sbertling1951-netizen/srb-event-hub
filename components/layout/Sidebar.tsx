@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useAdmin } from "@/lib/adminContext";
+import { useAdminWorkspace } from "@/lib/AdminWorkspaceProvider";
 import { hasPermission } from "@/lib/getCurrentAdminAccess";
 import {
   getCurrentMemberEvent,
@@ -14,7 +15,6 @@ import {
   getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
 import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
-import { useAdminWorkspace } from "@/lib/AdminWorkspaceProvider";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 
@@ -176,12 +176,12 @@ export default function Sidebar() {
       const storedUserMode = getStoredUserMode();
 
       // Diagnostic logging for context loading
-      console.groupCollapsed('[Sidebar] Context Load');
-      console.log('pathname:', window.location.pathname);
-      console.log('storedUserMode:', storedUserMode);
+      console.groupCollapsed("[Sidebar] Context Load");
+      console.log("pathname:", window.location.pathname);
+      console.log("storedUserMode:", storedUserMode);
       // console.log('adminEventContext:', adminEventContext);
-      console.log('memberEventContext:', memberEventContext);
-      console.log('hasArrived:', hasArrived);
+      console.log("memberEventContext:", memberEventContext);
+      console.log("hasArrived:", hasArrived);
       console.groupEnd();
 
       setMemberEvent(memberEventContext);
@@ -280,7 +280,6 @@ export default function Sidebar() {
       }
     }
 
-
     function clearVisibleSidebarStateIfLoggedOut() {
       const mode = getStoredUserMode();
       if (mode === "admin" || mode === "member") {
@@ -317,7 +316,7 @@ export default function Sidebar() {
     if (!mounted) {
       return;
     }
-    console.debug('[Sidebar] pathname changed', pathname);
+    console.debug("[Sidebar] pathname changed", pathname);
     loadContextsFromStorage();
   }, [mounted, pathname]);
 

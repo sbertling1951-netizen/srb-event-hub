@@ -11,7 +11,6 @@ import {
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
-
 type EventRow = {
   id: string;
   name: string | null;
@@ -49,6 +48,7 @@ type AttendeeRow = {
   coach_model: string | null;
   coach_length: string | null;
   is_active: boolean;
+  registration_status: string | null;
 };
 
 type PrintMode = "name_tags" | "coach_plates";
@@ -150,11 +150,26 @@ function cityState(row: AttendeeRow) {
 }
 
 function displayPilotName(row: AttendeeRow) {
-  const nickname = toTitleCase(row.nickname);
-  if (nickname) {
-    return nickname;
+  const displayFirst = toTitleCase(row.nickname || row.pilot_first);
+  const pilotLast = toTitleCase(row.pilot_last);
+  const copilotLast = toTitleCase(row.copilot_last);
+
+  if (!displayFirst) {
+    return pilotLast;
   }
-  return fullName(toTitleCase(row.pilot_first), toTitleCase(row.pilot_last));
+
+  if (!pilotLast) {
+    return displayFirst;
+  }
+
+  if (
+    !copilotLast ||
+    pilotLast.toLowerCase() !== copilotLast.toLowerCase()
+  ) {
+    return `${displayFirst} ${pilotLast}`;
+  }
+
+  return displayFirst;
 }
 
 function displayCopilotName(row: AttendeeRow) {
@@ -534,7 +549,8 @@ function AdminPrintPageInner() {
             coach_manufacturer,
             coach_model,
             coach_length,
-            is_active
+            is_active,
+            registration_status
           `,
           )
           .eq("event_id", eventId)
@@ -579,7 +595,7 @@ function AdminPrintPageInner() {
     let rows = [...attendees, ...manualAttendees];
 
     if (!includeInactive) {
-      rows = rows.filter((row) => row.is_active);
+      rows = rows.filter((row) => row.registration_status !== "cancelled");
     }
 
     switch (printFilter) {
@@ -992,7 +1008,7 @@ function AdminPrintPageInner() {
               onChange={(e) => setPrintFilter(e.target.value as PrintFilter)}
               style={inputStyle}
             >
-              <option value="all">All Attendees</option>
+              <option value="all">All Active Attendees</option>
               <option value="arrived">Arrived Only</option>
               <option value="first_timers">First Timers Only</option>
             </select>

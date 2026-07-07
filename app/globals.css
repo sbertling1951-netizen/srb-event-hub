@@ -1425,10 +1425,10 @@ button[style*="background-color: #fafafa"] * {
   }
 
   .app-main {
-    padding-top: 82px !important;
-    padding-left: 14px !important;
-    padding-right: 14px !important;
-    padding-bottom: 20px !important;
+    padding-top: calc(82px + env(safe-area-inset-top)) !important;
+    padding-left: calc(14px + env(safe-area-inset-left)) !important;
+    padding-right: calc(14px + env(safe-area-inset-right)) !important;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
   }
 }
 
