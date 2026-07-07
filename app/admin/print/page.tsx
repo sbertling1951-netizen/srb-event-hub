@@ -107,6 +107,7 @@ function createEmptyManualAttendee(kind: ManualPrintEntryKind): AttendeeRow {
     coach_manufacturer: null,
     coach_model: null,
     coach_length: null,
+    registration_status: "registered",
     is_active: true,
   };
 }
@@ -162,10 +163,7 @@ function displayPilotName(row: AttendeeRow) {
     return displayFirst;
   }
 
-  if (
-    !copilotLast ||
-    pilotLast.toLowerCase() !== copilotLast.toLowerCase()
-  ) {
+  if (!copilotLast || pilotLast.toLowerCase() !== copilotLast.toLowerCase()) {
     return `${displayFirst} ${pilotLast}`;
   }
 
