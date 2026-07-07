@@ -245,7 +245,7 @@ function AdminVendorsPageInner() {
     try {
       setSaving(true);
       setError(null);
-      setStatus("Saving vendor...");
+      setStatus("Saving vendor... payload includes legacy name field");
 
       const payload = {
         name: form.business_name.trim(),
