@@ -259,6 +259,7 @@ function AdminVendorsPageInner() {
         preferred_contact_method: form.preferred_contact_method,
         is_active: form.is_active,
       };
+      console.log("Vendor payload", payload);
 
       if (form.id) {
         const { error } = await supabase
