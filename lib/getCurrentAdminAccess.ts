@@ -286,6 +286,7 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
           "can_manage_events",
           "can_manage_attendees",
           "can_manage_checkin",
+          "can_mark_arrived",
           "can_manage_parking",
           "can_manage_agenda",
           "can_manage_announcements",
@@ -302,6 +303,7 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
           "can_manage_events",
           "can_manage_attendees",
           "can_manage_checkin",
+          "can_mark_arrived",
           "can_manage_parking",
           "can_manage_agenda",
           "can_manage_announcements",
@@ -315,6 +317,7 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         checkin: [
           "can_view_admin_dashboard",
           "can_manage_checkin",
+          "can_mark_arrived",
           "can_manage_attendees",
         ],
         parking: ["can_view_admin_dashboard", "can_manage_parking"],
