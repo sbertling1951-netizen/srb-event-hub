@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { calculateDistanceMiles } from "@/lib/calculateDistanceMiles";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { logEngagement } from "@/lib/engagement";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
 import { supabase } from "@/lib/supabase";
 
@@ -128,6 +128,17 @@ function nearbyCategoryIcon(category: string) {
   return "🧭";
 }
 
+function formatPhoneNumber(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return phone;
+}
+
 function NearbyPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
@@ -137,6 +148,11 @@ function NearbyPageInner() {
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState<"default" | "distance">("default");
+  const [showMapChooser, setShowMapChooser] = useState(false);
+
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+
+  const [rememberMapChoice, setRememberMapChoice] = useState(true);
 
   const loadNearby = useCallback(async () => {
     try {
@@ -455,6 +471,43 @@ function NearbyPageInner() {
     });
   }
 
+  function handleDirections(place: Place) {
+    if (place.lat === null || place.lng === null) {
+      return;
+    }
+
+    const preferred = localStorage.getItem("nearby-navigation-preference");
+
+    if (preferred === "apple") {
+      window.open(
+        `https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      return;
+    }
+
+    if (preferred === "google") {
+      window.open(
+        `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      return;
+    }
+
+    // No preference saved yet.
+    setSelectedPlace(place);
+    setRememberMapChoice(true);
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+    setTimeout(() => {
+      setShowMapChooser(true);
+    }, 250);
+  }
+
   return (
     <div className="nearby-page-grid">
       {" "}
@@ -487,7 +540,7 @@ function NearbyPageInner() {
             {dateRange}
           </div>
         ) : null}
-        <div className="nearby-search-row">
+        <div className="nearby-search-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input
             type="text"
             value={search}
@@ -495,7 +548,6 @@ function NearbyPageInner() {
             placeholder="Search nearby places..."
             className="nearby-search-input"
           />
-
           <button
             type="button"
             onClick={() =>
@@ -506,6 +558,27 @@ function NearbyPageInner() {
             className={`nearby-sort-button ${sortMode === "distance" ? "active" : ""}`}
           >
             {sortMode === "distance" ? "📍 Nearest" : "↕ Default"}
+          </button>
+          {/* Preferred Map button */}
+          <button
+            type="button"
+            style={{
+              background: "none",
+              border: "none",
+              color: "#2563eb",
+              padding: "0 8px",
+              fontSize: 13,
+              textDecoration: "underline",
+              cursor: "pointer",
+              marginLeft: 8,
+            }}
+            onClick={() => {
+              setSelectedPlace(null);
+              setRememberMapChoice(!!localStorage.getItem("nearby-navigation-preference"));
+              setShowMapChooser(true);
+            }}
+          >
+            Preferred Map...
           </button>
         </div>
         {/* Category chips */}
@@ -565,6 +638,79 @@ function NearbyPageInner() {
           </div>
         ) : null}
       </div>
+      {/* Map Chooser dialog (moved up) */}
+      {showMapChooser && (
+        <div className="modal-overlay">
+          <div className="card" style={{ maxWidth: 360, margin: "24px auto" }}>
+            <h2>Preferred Map</h2>
+            <p>Which map would you like to use for directions?</p>
+            <div style={{ display: "grid", gap: 8, margin: "16px 0" }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (rememberMapChoice) {
+                    localStorage.setItem(
+                      "nearby-navigation-preference",
+                      "apple",
+                    );
+                  }
+                  if (selectedPlace) {
+                    window.open(
+                      `https://maps.apple.com/?daddr=${selectedPlace.lat},${selectedPlace.lng}&dirflg=d`,
+                      "_blank",
+                      "noopener,noreferrer",
+                    );
+                  }
+                  setShowMapChooser(false);
+                }}
+              >
+                🍎 Apple Maps
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (rememberMapChoice) {
+                    localStorage.setItem(
+                      "nearby-navigation-preference",
+                      "google",
+                    );
+                  }
+                  if (selectedPlace) {
+                    window.open(
+                      `https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.lat},${selectedPlace.lng}`,
+                      "_blank",
+                      "noopener,noreferrer",
+                    );
+                  }
+                  setShowMapChooser(false);
+                }}
+              >
+                📍 Google Maps
+              </button>
+            </div>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={rememberMapChoice}
+                onChange={(e) => setRememberMapChoice(e.target.checked)}
+              />
+              Remember my choice
+            </label>
+            <div style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => setShowMapChooser(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Emergency Nearby */}
       {emergencyPlaces.length > 0 ? (
         <div className="nearby-emergency-section">
@@ -617,14 +763,13 @@ function NearbyPageInner() {
 
                   <div className="nearby-action-row">
                     {place.lat !== null && place.lng !== null ? (
-                      <a
-                        href={`https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d`}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => handleDirections(place)}
                         className="nearby-action-button nearby-action-button-danger"
                       >
                         Directions
-                      </a>
+                      </button>
                     ) : null}
 
                     {place.phone ? (
@@ -675,59 +820,99 @@ function NearbyPageInner() {
                   {favoriteIds.includes(place.id) ? "⭐" : "☆"}
                 </button>
               </div>
-              {/* Category */}
-              {place.category && (
-                <div className="nearby-place-category">{place.category}</div>
-              )}
-
-              {/* Address */}
-              {place.address && (
-                <div className="nearby-place-address">{place.address}</div>
-              )}
-
-              {/* Phone as link */}
-              {place.phone && (
-                <div className="nearby-contact-row">
-                  <span className="nearby-contact-icon">📞</span>
-
-                  <a
-                    href={`tel:${place.phone}`}
-                    className="nearby-contact-link"
+              {/* Compact Information Block */}
+              <div
+                className="nearby-place-info-compact"
+                style={{
+                  lineHeight: 1.25,
+                  fontSize: 13,
+                  color: "#444",
+                  marginTop: 0,
+                  marginBottom: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
+              >
+                {/* Category • X mi */}
+                {(place.category || place.distance_miles !== null) && (
+                  <div style={{ color: "#666" }}>
+                    {place.category && (
+                      <span className="nearby-place-category">
+                        {place.category}
+                      </span>
+                    )}
+                    {place.category && place.distance_miles !== null && (
+                      <span aria-hidden="true" style={{ margin: "0 4px" }}>
+                        •
+                      </span>
+                    )}
+                    {place.distance_miles !== null && (
+                      <span className="nearby-distance-badge">
+                        {place.distance_miles} mi
+                      </span>
+                    )}
+                  </div>
+                )}
+                {/* Address split into two lines */}
+                {place.address &&
+                  (() => {
+                    const [first, ...rest] = place.address.split(",");
+                    const second = rest.join(",").trim();
+                    return (
+                      <>
+                        <div className="nearby-place-address-line1">
+                          {first}
+                        </div>
+                        {second && (
+                          <div className="nearby-place-address-line2">
+                            {second}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                {/* Phone row */}
+                {place.phone && (
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 4 }}
                   >
-                    {place.phone}
-                  </a>
-                </div>
-              )}
-
-
-
+                    <span
+                      className="nearby-contact-icon"
+                      style={{ fontSize: 14 }}
+                    >
+                      📞
+                    </span>
+                    <a
+                      href={`tel:${place.phone}`}
+                      className="nearby-contact-link"
+                      style={{ color: "#2563eb", textDecoration: "none" }}
+                    >
+                      {formatPhoneNumber(place.phone)}
+                    </a>
+                  </div>
+                )}
+              </div>
               {/* Notes */}
               {place.notes && (
-                <div className="nearby-place-notes">{place.notes}</div>
+                <div className="nearby-place-notes" style={{ marginTop: 6, marginBottom: 0 }}>
+                  {place.notes}
+                </div>
               )}
               {/* Action buttons */}
               {(place.lat !== null || place.phone || place.website) && (
-                <div className="nearby-action-row">
-                  {" "}
+                <div
+                  className="nearby-action-row"
+                  style={{ marginTop: 6 }}
+                >
                   {place.lat !== null && place.lng !== null && (
-                    <>
-                      <a
-                        href={`https://maps.apple.com/?ll=${place.lat},${place.lng}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="nearby-action-button"
-                      >
-                        Apple Maps
-                      </a>
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="nearby-action-button"
-                      >
-                        Google Maps
-                      </a>
-                    </>
+                    <button
+                      type="button"
+                      onClick={() => handleDirections(place)}
+                      className="nearby-action-button"
+                    >
+                      Directions
+                    </button>
                   )}
                   {place.phone && (
                     <a
@@ -751,39 +936,39 @@ function NearbyPageInner() {
               )}
             </div>
 
-            {/* Footer bar */}
+            {/* Footer bar (now in <details>) */}
             {(place.location_code ||
               (place.lat !== null && place.lng !== null)) && (
-              <div className="nearby-footer-bar">
-                {place.location_code && (
-                  <div className="nearby-footer-item">
-                    <span className="nearby-footer-icon">🧭</span>
-
-                    <span>{place.location_code}</span>
-                  </div>
-                )}
-
-                {place.location_code && place.lat !== null && (
-                  <span className="nearby-footer-divider">|</span>
-                )}
-
-                {place.lat !== null && place.lng !== null && (
-                  <div className="nearby-footer-item">
-                    <span className="nearby-footer-emoji">🌐</span>
-
-                    <span>
-                      {Number(place.lat).toFixed(5)},{" "}
-                      {Number(place.lng).toFixed(5)}
-                    </span>
-                  </div>
-                )}
-
-                {place.distance_miles !== null && (
-                  <span className="nearby-distance-badge">
-                    {place.distance_miles} mi
-                  </span>
-                )}
-              </div>
+              <details className="nearby-footer-bar" style={{ marginTop: 8 }}>
+                <summary>More</summary>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginTop: 6,
+                  }}
+                >
+                  {place.location_code && (
+                    <div className="nearby-footer-item">
+                      <span className="nearby-footer-icon">🧭</span>
+                      <span>{place.location_code}</span>
+                    </div>
+                  )}
+                  {place.location_code && place.lat !== null && (
+                    <span className="nearby-footer-divider">|</span>
+                  )}
+                  {place.lat !== null && place.lng !== null && (
+                    <div className="nearby-footer-item">
+                      <span className="nearby-footer-emoji">🌐</span>
+                      <span>
+                        {Number(place.lat).toFixed(5)},{" "}
+                        {Number(place.lng).toFixed(5)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </details>
             )}
           </div>
         ))}
@@ -791,6 +976,7 @@ function NearbyPageInner() {
           <div className="card">No nearby places found.</div>
         ) : null}
       </div>
+      {/* Map chooser dialog moved above */}
     </div>
   );
 }
