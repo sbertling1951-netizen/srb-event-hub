@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { getAgendaColor } from "@/lib/agendaColors";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { logEngagement } from "@/lib/engagement";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
 
 type MemberEvent = {
@@ -291,6 +291,9 @@ function MemberAgendaPageInner() {
   const [expandedPastItems, setExpandedPastItems] = useState<
     Record<string, boolean>
   >({});
+  const [expandedDescriptions, setExpandedDescriptions] = useState<
+    Record<string, boolean>
+  >({});
 
   const loadAgenda = useCallback(async () => {
     try {
@@ -393,6 +396,12 @@ function MemberAgendaPageInner() {
 
   function togglePastItem(itemId: string) {
     setExpandedPastItems((prev) => ({
+      ...prev,
+      [itemId]: !prev[itemId],
+    }));
+  }
+  function toggleDescription(itemId: string) {
+    setExpandedDescriptions((prev) => ({
       ...prev,
       [itemId]: !prev[itemId],
     }));
@@ -606,29 +615,18 @@ function MemberAgendaPageInner() {
         <div style={{ display: "grid", gap: 18 }}>
           {groupedAgenda.map((group) => {
             // Partition items into Morton, Pioneer, Other
-            const mortonItems = group.items.filter(
-              (item) =>
-                (item.location || "")
-                  .toLowerCase()
-                  .includes("morton")
+            const mortonItems = group.items.filter((item) =>
+              (item.location || "").toLowerCase().includes("morton"),
             );
             const pioneerOnly = group.items.filter(
               (item) =>
-                (item.location || "")
-                  .toLowerCase()
-                  .includes("pioneer") &&
-                !(item.location || "")
-                  .toLowerCase()
-                  .includes("morton")
+                (item.location || "").toLowerCase().includes("pioneer") &&
+                !(item.location || "").toLowerCase().includes("morton"),
             );
             const otherItems = group.items.filter(
               (item) =>
-                !(item.location || "")
-                  .toLowerCase()
-                  .includes("morton") &&
-                !(item.location || "")
-                  .toLowerCase()
-                  .includes("pioneer")
+                !(item.location || "").toLowerCase().includes("morton") &&
+                !(item.location || "").toLowerCase().includes("pioneer"),
             );
             const pioneerItems = [...pioneerOnly, ...otherItems];
 
@@ -659,6 +657,9 @@ function MemberAgendaPageInner() {
                   itemStatus,
                   resolvedAgendaColor,
                 );
+                const descriptionExpanded = !!expandedDescriptions[item.id];
+                const hasLongDescription =
+                  (item.description?.length || 0) > 220;
                 const isPast = itemStatus === "past";
                 const isExpanded = !isPast || !!expandedPastItems[item.id];
 
@@ -708,21 +709,53 @@ function MemberAgendaPageInner() {
                         </div>
                       ) : null}
                       {item.description ? (
-                        <div
-                          style={{
-                            marginTop: 8,
-                            color: "#374151",
-                            lineHeight: 1.45,
-                            overflow: "hidden",
-                            display: "-webkit-box",
-                            WebkitBoxOrient: "vertical",
-                            WebkitLineClamp: 3,
-                            textAlign: "justify",
-                            hyphens: "auto",
-                          }}
-                        >
-                          {item.description}
-                        </div>
+                        <>
+                          <div
+                            style={{
+                              marginTop: 8,
+                              color: "#374151",
+                              lineHeight: 1.45,
+                              overflow: "hidden",
+                              display: descriptionExpanded
+                                ? "block"
+                                : "-webkit-box",
+                              WebkitBoxOrient: "vertical",
+                              WebkitLineClamp: descriptionExpanded
+                                ? undefined
+                                : 3,
+                              textAlign: "justify",
+                              hyphens: "auto",
+                              whiteSpace: descriptionExpanded
+                                ? "pre-wrap"
+                                : "normal",
+                            }}
+                          >
+                            {item.description}
+                          </div>
+
+                          {hasLongDescription ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleDescription(item.id);
+                              }}
+                              style={{
+                                marginTop: 8,
+                                padding: 0,
+                                border: "none",
+                                background: "none",
+                                color: "#2563eb",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                              }}
+                            >
+                              {descriptionExpanded
+                                ? "Read Less ▲"
+                                : "Read More ▼"}
+                            </button>
+                          ) : null}
+                        </>
                       ) : null}
                       <div
                         style={{
