@@ -285,13 +285,20 @@ export default function MemberLoginPage() {
         activityType: "login",
       });
 
+      const today = new Date().toISOString().slice(0, 10);
+      const checkinOpen = !!event.start_date && today >= event.start_date;
+
+      const destination =
+        arrived || !checkinOpen ? "/member" : "/member/checkin";
+
       setStatus(
-        arrived
+        destination === "/member"
           ? "Login successful. Opening dashboard..."
           : "Login successful. Opening check-in...",
       );
 
-      router.replace(arrived ? "/member" : "/member/checkin");
+      router.replace(destination);
+
       return;
     } catch (err) {
       console.error(err);
