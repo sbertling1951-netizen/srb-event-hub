@@ -56,6 +56,13 @@ function formatDateRange(
 }
 
 function householdLine(member: HouseholdMember) {
+  const first = member.first_name?.trim() || "";
+  const last = member.last_name?.trim() || "";
+
+  if (first || last) {
+    return `${first} ${last}`.trim();
+  }
+
   return preferredDisplayLine(member);
 }
 

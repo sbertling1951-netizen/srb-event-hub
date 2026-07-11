@@ -7,8 +7,8 @@ import { useCallback, useEffect, useState } from "react";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import {
   type CurrentMemberEvent,
-  getCurrentMemberEvent,
   getCurrentMemberAttendeeId,
+  getCurrentMemberEvent,
   getStoredMemberEmail,
   getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
@@ -68,7 +68,9 @@ export default function MemberDashboardPage() {
   const [currentVendorIndex, setCurrentVendorIndex] = useState(0);
 
   const [participantCapacity, setParticipantCapacity] = useState(0);
-  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
+    [],
+  );
 
   const router = useRouter();
 
@@ -117,7 +119,9 @@ export default function MemberDashboardPage() {
             .select("participant_capacity")
             .eq("id", attendeeId)
             .single();
-          if (attendeeError) throw attendeeError;
+          if (attendeeError) {
+            throw attendeeError;
+          }
           setParticipantCapacity(attendeeData?.participant_capacity ?? 0);
 
           // Get household members
@@ -126,7 +130,9 @@ export default function MemberDashboardPage() {
             .select("id, display_name, first_name, last_name")
             .eq("attendee_id", attendeeId)
             .order("created_at", { ascending: true });
-          if (membersError) throw membersError;
+          if (membersError) {
+            throw membersError;
+          }
           setHouseholdMembers(membersData ?? []);
         } catch (err) {
           console.error("Participant summary load failed:", err);
@@ -294,27 +300,37 @@ export default function MemberDashboardPage() {
             marginBottom: 12,
           }}
         >
-          Manage the participants included with your registration. Add participants until all purchased participant slots are filled.
+          Manage the participants included with your registration. Add
+          participants until all purchased participant slots are filled.
         </div>
 
         <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
           {householdMembers.map((member) => {
+            const fullName = [member.first_name, member.last_name]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+
             const name =
-              member.display_name ||
-              [member.first_name, member.last_name].filter(Boolean).join(" ") ||
-              "Unnamed Participant";
+              fullName || member.display_name || "Unnamed Participant";
 
             return (
               <div
                 key={member.id}
-                style={{ padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 8 }}
+                style={{
+                  padding: "10px 12px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                }}
               >
                 {name}
               </div>
             );
           })}
 
-          {Array.from({ length: Math.max(participantCapacity - householdMembers.length, 0) }).map((_, index) => (
+          {Array.from({
+            length: Math.max(participantCapacity - householdMembers.length, 0),
+          }).map((_, index) => (
             <div
               key={`empty-${index}`}
               style={{
