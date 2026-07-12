@@ -818,6 +818,8 @@ function AdminAgendaPageInner() {
     showStatus('Order changed. Click "Save Order" to keep it.');
   }
 
+  
+
   function moveItemDown(id: string) {
     setItems((prev) => {
       const index = prev.findIndex((item) => item.id === id);
@@ -1044,6 +1046,128 @@ function AdminAgendaPageInner() {
 
     return filteredItems.filter((item) => item.agenda_date === printDayFilter);
   }, [filteredItems, printDayFilter]);
+
+  function handlePrintAgenda() {
+    const grouped = printableAgendaItems.reduce(
+      (acc, item) => {
+        const day = item.agenda_date || "No Date";
+        if (!acc[day]) {
+          acc[day] = [];
+        }
+        acc[day].push(item);
+        return acc;
+      },
+      {} as Record<string, typeof printableAgendaItems>,
+    );
+
+    const html = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+  <title>Agenda</title>
+  <style>
+  body{
+    font-family:Arial,Helvetica,sans-serif;
+    margin:30px;
+    color:#000;
+  }
+  h1{
+    margin-bottom:4px;
+  }
+  h2{
+    margin-top:28px;
+    border-bottom:2px solid #000;
+    padding-bottom:4px;
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
+  }
+  th,td{
+    border:1px solid #bbb;
+    padding:6px 8px;
+    vertical-align:top;
+  }
+  th{
+    background:#eee;
+  }
+  .description{
+    font-size:12px;
+    color:#444;
+  }
+  @media print{
+    h2{
+      page-break-before:auto;
+    }
+  }
+  </style>
+  </head>
+  <body>
+
+  <h1>${activeEvent?.name ?? "Agenda"}</h1>
+
+  ${Object.entries(grouped)
+    .map(
+      ([day, items]) => `
+  <h2>${formatAgendaDate(day)}</h2>
+
+  <table>
+  <thead>
+  <tr>
+  <th style="width:120px;">Time</th>
+  <th>Activity</th>
+  <th style="width:180px;">Location</th>
+  </tr>
+  </thead>
+
+  <tbody>
+
+  ${items
+    .map(
+      (item) => `
+  <tr>
+  <td>${formatAgendaTime(item.start_time, item.end_time)}</td>
+
+  <td>
+  <strong>${item.title}</strong>
+  ${item.speaker ? `<div><strong>Speaker:</strong> ${item.speaker}</div>` : ""}
+  ${
+    item.description ? `<div class="description">${item.description}</div>` : ""
+  }
+  </td>
+
+  <td>${item.location ?? ""}</td>
+  </tr>
+  `,
+    )
+    .join("")}
+
+  </tbody>
+  </table>
+  `,
+    )
+    .join("")}
+
+  </body>
+  </html>
+  `;
+
+    const win = window.open("", "_blank");
+
+    if (!win) {
+      return;
+    }
+
+    win.document.write(html);
+    win.document.close();
+
+    win.focus();
+
+    setTimeout(() => {
+      win.print();
+    }, 300);
+  }
 
   const calendarRange = useMemo(() => {
     const starts = filteredItems
@@ -2672,7 +2796,7 @@ function AdminAgendaPageInner() {
                   </option>
                 ))}
               </select>
-              <button type="button" onClick={() => window.print()}>
+              <button type="button" onClick={handlePrintAgenda}>
                 Print
               </button>
               <button
@@ -3231,15 +3355,17 @@ function AdminAgendaPageInner() {
                             type="button"
                             onClick={() => moveItemDown(item.id)}
                             disabled={
-                              printableAgendaItems[printableAgendaItems.length - 1]?.id ===
-                              item.id
+                              printableAgendaItems[
+                                printableAgendaItems.length - 1
+                              ]?.id === item.id
                             }
                             style={{
                               padding: "6px 8px",
                               minWidth: 40,
                               cursor:
-                                printableAgendaItems[printableAgendaItems.length - 1]?.id ===
-                                item.id
+                                printableAgendaItems[
+                                  printableAgendaItems.length - 1
+                                ]?.id === item.id
                                   ? "default"
                                   : "pointer",
                             }}
