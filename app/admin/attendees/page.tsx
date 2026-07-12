@@ -728,8 +728,7 @@ function FilterBar(props: {
         style={{
           display: "grid",
           gap: 14,
-          gridTemplateColumns:
-            "minmax(260px, 1.5fr) minmax(160px, 160px) minmax(160px, 160px) minmax(220px, 220px) minmax(220px, 220px) auto",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
           alignItems: "end",
         }}
       >
@@ -1829,7 +1828,9 @@ function AttendeeEditorModal(props: {
   ]);
   // Prevent body scroll when modal is open
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -4206,4 +4207,3 @@ export default function AdminAttendeesPage() {
     </AdminRouteGuard>
   );
 }
-
