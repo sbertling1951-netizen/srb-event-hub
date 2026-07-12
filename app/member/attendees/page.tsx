@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { logEngagement } from "@/lib/engagement";
-
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { logEngagement } from "@/lib/engagement";
 import { fullName, preferredDisplayLine } from "@/lib/formatters";
 import {
   type CurrentMemberEvent,
@@ -71,7 +70,18 @@ function formatDateRange(
 }
 
 function memberLine(member: HouseholdMember) {
-  return preferredDisplayLine(member);
+  const full = fullName(member.first_name, member.last_name);
+
+  if (full) {
+    return full;
+  }
+
+  return (
+    member.display_name ||
+    preferredDisplayLine(member) ||
+    member.raw_text ||
+    "—"
+  );
 }
 
 function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
@@ -192,6 +202,10 @@ function AttendeesPageInner() {
     }
 
     setHouseholdMembers((memberData || []) as HouseholdMember[]);
+    console.log(
+      "BERTLING MEMBERS",
+      (memberData || []).filter((m) => m.last_name === "Bertling"),
+    );
     setStatus(`Loaded ${sharedAttendeeRows.length} shared attendees.`);
   }, []);
 
@@ -396,6 +410,12 @@ function AttendeesPageInner() {
           <div style={{ display: "grid", gap: 12 }}>
             {filtered.map((a) => {
               const members = householdByAttendee.get(a.id) || [];
+
+              console.log({
+                attendeeId: a.id,
+                pilot: a.pilot_last,
+                members,
+              });
               const pilotMember = getRoleMember(members, "pilot");
               const copilotMember = getRoleMember(members, "copilot");
               const phone = displayPhone(a);
