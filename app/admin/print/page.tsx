@@ -692,6 +692,16 @@ function AdminPrintPageInner() {
     return Math.ceil(printableNameTags.length / 6);
   }, [printableNameTags.length]);
 
+  const printableNameTagSheets = useMemo(() => {
+    const sheets: NameTagRow[][] = [];
+
+    for (let index = 0; index < printableNameTags.length; index += 6) {
+      sheets.push(printableNameTags.slice(index, index + 6));
+    }
+
+    return sheets;
+  }, [printableNameTags]);
+
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
   const editRow = useMemo(() => {
@@ -869,74 +879,114 @@ function AdminPrintPageInner() {
       visibility: visible;
     }
 
-    .print-area {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      background: white;
-    }
+    html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.print-area {
+  position: absolute !important;
+left: 0 !important;
+top: 0 !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: white;
+}
+
+.name-tag-sheets {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
 
     .no-print {
       display: none !important;
     }
 
     @page {
-      size: ${printMode === "coach_plates" ? "letter landscape" : "letter portrait"};
+      size: ${printMode === "coach_plates" ? "landscape" : "portrait"};
       margin: ${printMode === "coach_plates" ? "0" : "0.2in"};
     }
 
     .name-tag-sheet {
       display: grid !important;
-      grid-template-columns: repeat(2, 4in) !important;
-      grid-auto-rows: 3in !important;
-      justify-content: center !important;
-      gap: 0.1in !important;
+      grid-template-columns: 4in 4in !important;
+      grid-template-rows: 3in 3in 3in !important;
+      width: 8in !important;
+      height: 9in !important;
+      margin: 0 auto !important;
+      padding: 0 !important;
+      gap: 0 !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid-page !important;
+    }
+
+    .name-tag-sheet:last-child {
+      page-break-after: auto !important;
+      break-after: auto !important;
     }
 
     .name-tag-card {
       width: 4in !important;
       height: 3in !important;
+
+      margin: 0 !important;
+      padding: 0 !important;
+
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+
       page-break-inside: avoid !important;
       break-inside: avoid !important;
     }
 
-    .name-tag-card:nth-child(6n) {
-      page-break-after: always;
-    }
-
     .coach-plate-sheet {
       display: block !important;
-      page-break-before: auto !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
 
     .coach-plate-card {
+      display: block !important;
       width: 11in !important;
       height: 8.5in !important;
+      min-height: 8.5in !important;
+      max-height: 8.5in !important;
+
       margin: 0 !important;
+      padding: 0 !important;
+
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+
       border: none !important;
       border-radius: 0 !important;
-      break-after: page !important;
+
+      page-break-before: always !important;
       page-break-after: always !important;
       page-break-inside: avoid !important;
-      break-inside: avoid-page !important;
+
+      break-before: page !important;
+      break-after: page !important;
+      break-inside: avoid !important;
+
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
 
-    .coach-plate-card:last-child {
-      break-after: auto !important;
-      page-break-after: auto !important;
-    }
   }
 `}</style>
       <div className="card no-print" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Print Center</h1>
-
+        {" "}
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           {event?.name || "No event selected"}
           {event?.location ? ` • ${event.location}` : ""}
           {dateRange ? ` • ${dateRange}` : ""}
         </div>
-
         {canSelectPrintEvent ? (
           <div style={{ marginTop: 14, maxWidth: 520 }}>
             <label style={labelStyle}>Print Event</label>
@@ -968,12 +1018,10 @@ function AdminPrintPageInner() {
             </div>
           </div>
         ) : null}
-
         <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
         {flashMessage ? (
           <div style={flashMessageStyle}>{flashMessage}</div>
         ) : null}
-
         {error ? <div style={errorBoxStyle}>{error}</div> : null}
       </div>
       <div className="card no-print" style={{ padding: 18 }}>
@@ -1569,165 +1617,191 @@ function AdminPrintPageInner() {
       <div
         className="print-area"
         style={{
-          overflowX: "auto",
-          overflowY: "hidden",
           width: "100%",
-          paddingBottom: 12,
+          overflow: "visible",
+          padding: 0,
+          margin: 0,
         }}
       >
         {" "}
         {printMode === "name_tags" ? (
           <div
-            className="name-tag-sheet"
+            className="name-tag-sheets"
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, 4in)",
-              gridAutoRows: "3in",
-              justifyContent: "center",
-              gap: "0.1in",
-              width: "fit-content",
-              margin: "0 auto",
-              paddingLeft: 12,
-              paddingRight: 12,
+              display: "block",
+              margin: 0,
+              padding: 0,
             }}
           >
-            {printableNameTags.map((tag) => {
-              return (
-                <div
-                  key={tag.key}
-                  className="name-tag-card"
-                  style={{
-                    position: "relative",
-                    width: "4in",
-                    height: "3in",
-                    border: "1px solid #ddd",
-                    borderRadius: 12,
-                    overflow: "hidden",
-                    background: "#fff",
-                    pageBreakInside: "avoid",
-                    breakInside: "avoid",
-                  }}
-                >
-                  {backgroundUrl ? (
-                    <img
-                      src={backgroundUrl}
-                      alt=""
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                    />
-                  ) : null}
-
+            {" "}
+            {printableNameTagSheets.map((sheet, sheetIndex) => (
+              <div
+                key={`name-tag-sheet-${sheetIndex}`}
+                className="name-tag-sheet"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 4in)",
+                  gridTemplateRows: "repeat(3, 3in)",
+                  justifyContent: "center",
+                  gap: 0,
+                  width: "8in",
+                  height: "9in",
+                  margin: "0 auto",
+                  pageBreakInside: "avoid",
+                  breakInside: "avoid-page",
+                  padding: 0,
+                  overflow: "hidden",
+                  boxSizing: "border-box",
+                }}
+              >
+                {sheet.map((tag) => (
                   <div
+                    key={tag.key}
+                    className="name-tag-card"
                     style={{
                       position: "relative",
-                      zIndex: 1,
-                      height: "100%",
-                      padding: 14,
-                      display: "grid",
-                      gridTemplateRows: "auto auto auto 1fr auto auto auto",
-                      alignItems: "center",
-                      textAlign: "center",
-                      color: nameTagTextColor,
+                      width: "4in",
+                      minWidth: "4in",
+                      maxWidth: "4in",
+                      height: "3in",
+                      minHeight: "3in",
+                      maxHeight: "3in",
+                      boxSizing: "border-box",
+                      overflow: "hidden",
+                      border: "1px solid #ddd",
+                      borderRadius: 12,
+                      background: "#fff",
+                      pageBreakInside: "avoid",
+                      breakInside: "avoid",
+                      flexShrink: 0,
                     }}
                   >
-                    <div
-                      style={{
-                        fontSize: 22,
-                        fontWeight: 800,
-                        lineHeight: 1.05,
-                        color: nameTagTextColor,
-                      }}
-                    >
-                      {tag.eventName}
-                    </div>
-
-                    <div style={{ height: 6 }} />
-
-                    <div style={{ display: "flex", justifyContent: "center" }}>
+                    {backgroundUrl ? (
                       <img
-                        src={clubLogoUrl}
-                        alt="FCOC logo"
+                        src={backgroundUrl}
+                        alt=""
                         style={{
-                          width: 150,
-                          maxHeight: 80,
-                          objectFit: "contain",
-                        }}
-                        onError={(e) => {
-                          e.currentTarget.style.display = "none";
+                          position: "absolute",
+                          inset: 0,
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
                         }}
                       />
-                    </div>
-
-                    <div />
+                    ) : null}
 
                     <div
                       style={{
-                        fontSize: 18,
-                        lineHeight: 1,
-                        fontWeight: 500,
+                        position: "relative",
+                        zIndex: 1,
+                        height: "3in",
+                        boxSizing: "border-box",
+                        overflow: "hidden",
+                        padding: "0.12in",
+                        display: "grid",
+                        gridTemplateRows:
+                          "auto auto auto 1fr auto auto auto auto",
+                        alignItems: "center",
+                        textAlign: "center",
                         color: nameTagTextColor,
                       }}
                     >
-                      {tag.memberNumber || " "}
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: 48,
-                        fontWeight: 800,
-                        lineHeight: 0.95,
-                        marginTop: 2,
-                        color: nameTagTextColor,
-                      }}
-                    >
-                      {tag.firstName}
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: 18,
-                        fontWeight: 500,
-                        lineHeight: 1.1,
-                        marginTop: 4,
-                        color: nameTagTextColor,
-                      }}
-                    >
-                      {tag.lastName || " "}
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: 16,
-                        lineHeight: 1.15,
-                        marginTop: 4,
-                        color: nameTagTextColor,
-                      }}
-                    >
-                      {tag.cityState || " "}
-                    </div>
-
-                    {showFirstTimerOnNameTags && tag.isFirstTimer ? (
                       <div
                         style={{
-                          fontSize: 14,
+                          fontSize: 22,
                           fontWeight: 800,
+                          lineHeight: 1.05,
+                          color: nameTagTextColor,
+                        }}
+                      >
+                        {tag.eventName}
+                      </div>
+
+                      <div style={{ height: 6 }} />
+
+                      <div
+                        style={{ display: "flex", justifyContent: "center" }}
+                      >
+                        <img
+                          src={clubLogoUrl}
+                          alt="FCOC logo"
+                          style={{
+                            width: 150,
+                            maxHeight: 80,
+                            objectFit: "contain",
+                          }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      </div>
+
+                      <div />
+
+                      <div
+                        style={{
+                          fontSize: 18,
+                          lineHeight: 1,
+                          fontWeight: 500,
+                          color: nameTagTextColor,
+                        }}
+                      >
+                        {tag.memberNumber || " "}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 48,
+                          fontWeight: 800,
+                          lineHeight: 0.95,
+                          marginTop: 2,
+                          color: nameTagTextColor,
+                        }}
+                      >
+                        {tag.firstName}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 18,
+                          fontWeight: 500,
                           lineHeight: 1.1,
                           marginTop: 4,
                           color: nameTagTextColor,
                         }}
                       >
-                        FIRST TIMER
+                        {tag.lastName || " "}
                       </div>
-                    ) : null}
+
+                      <div
+                        style={{
+                          fontSize: 16,
+                          lineHeight: 1.15,
+                          marginTop: 4,
+                          color: nameTagTextColor,
+                        }}
+                      >
+                        {tag.cityState || " "}
+                      </div>
+
+                      {showFirstTimerOnNameTags && tag.isFirstTimer ? (
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 800,
+                            lineHeight: 1.1,
+                            marginTop: 4,
+                            color: nameTagTextColor,
+                          }}
+                        >
+                          FIRST TIMER
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            ))}
           </div>
         ) : (
           <div
