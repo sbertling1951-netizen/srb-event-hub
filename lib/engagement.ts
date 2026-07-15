@@ -14,17 +14,31 @@ export async function logEngagement({
   details,
 }: LogEngagementParams) {
   try {
-    await supabase.from("engagement_activity").insert({
-      event_id: eventId,
-      attendee_id: attendeeId,
-      activity_type: activityType,
-      details: details ?? null,
-    });
+    const { error: engagementError } = await supabase.rpc(
+      "log_engagement_activity",
+      {
+        p_event_id: eventId,
+        p_attendee_id: attendeeId,
+        p_activity_type: activityType,
+        p_details: details ?? null,
+      },
+    );
+
+    if (engagementError) {
+      throw engagementError;
+    }
 
     if (activityType === "login") {
-      await supabase.rpc("increment_attendee_login", {
-        p_attendee_id: attendeeId,
-      });
+      const { error: loginError } = await supabase.rpc(
+        "increment_attendee_login",
+        {
+          p_attendee_id: attendeeId,
+        },
+      );
+
+      if (loginError) {
+        throw loginError;
+      }
     }
   } catch (err) {
     console.error("Engagement logging failed:", err);
