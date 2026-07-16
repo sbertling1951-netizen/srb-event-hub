@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
@@ -8,6 +9,10 @@ import { logEngagement } from "@/lib/engagement";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
 import { supabase } from "@/lib/supabase";
+const NearbyPlacesMap = dynamic(
+  () => import("@/components/map/NearbyPlacesMap"),
+  { ssr: false },
+);
 
 type Place = {
   id: string;
@@ -149,6 +154,7 @@ function NearbyPageInner() {
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState<"default" | "distance">("default");
   const [showMapChooser, setShowMapChooser] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "map">("list");
 
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
 
@@ -480,7 +486,7 @@ function NearbyPageInner() {
 
     if (preferred === "apple") {
       window.open(
-        `https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d`,
+        `https://maps.apple.com/?saddr=Current+Location&daddr=${place.lat},${place.lng}&dirflg=d`,
         "_blank",
         "noopener,noreferrer",
       );
@@ -540,7 +546,10 @@ function NearbyPageInner() {
             {dateRange}
           </div>
         ) : null}
-        <div className="nearby-search-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div
+          className="nearby-search-row"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
           <input
             type="text"
             value={search}
@@ -574,7 +583,9 @@ function NearbyPageInner() {
             }}
             onClick={() => {
               setSelectedPlace(null);
-              setRememberMapChoice(!!localStorage.getItem("nearby-navigation-preference"));
+              setRememberMapChoice(
+                !!localStorage.getItem("nearby-navigation-preference"),
+              );
               setShowMapChooser(true);
             }}
           >
@@ -637,6 +648,23 @@ function NearbyPageInner() {
             {error}
           </div>
         ) : null}
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button
+            type="button"
+            className={viewMode === "list" ? "btn" : "btn secondary"}
+            onClick={() => setViewMode("list")}
+          >
+            List
+          </button>
+
+          <button
+            type="button"
+            className={viewMode === "map" ? "btn" : "btn secondary"}
+            onClick={() => setViewMode("map")}
+          >
+            Map
+          </button>
+        </div>
       </div>
       {/* Map Chooser dialog (moved up) */}
       {showMapChooser && (
@@ -657,7 +685,7 @@ function NearbyPageInner() {
                   }
                   if (selectedPlace) {
                     window.open(
-                      `https://maps.apple.com/?daddr=${selectedPlace.lat},${selectedPlace.lng}&dirflg=d`,
+                      `https://maps.apple.com/?saddr=Current+Location&daddr=${selectedPlace.lat},${selectedPlace.lng}&dirflg=d`,
                       "_blank",
                       "noopener,noreferrer",
                     );
@@ -710,272 +738,289 @@ function NearbyPageInner() {
           </div>
         </div>
       )}
+      {viewMode === "map" ? (
+        <NearbyPlacesMap
+          places={filteredPlaces}
+          eventLat={event?.lat ?? null}
+          eventLng={event?.lng ?? null}
+        />
+      ) : null}
+      {viewMode === "list" && (
+        <>
+          {/* Emergency Nearby */}{" "}
+          {emergencyPlaces.length > 0 ? (
+            <div className="nearby-emergency-section">
+              <div className="nearby-emergency-header">
+                <div>
+                  <div className="nearby-emergency-title">
+                    Emergency & Travel Essentials
+                  </div>
 
-      {/* Emergency Nearby */}
-      {emergencyPlaces.length > 0 ? (
-        <div className="nearby-emergency-section">
-          <div className="nearby-emergency-header">
-            <div>
-              <div className="nearby-emergency-title">
-                Emergency & Travel Essentials
+                  <div className="nearby-emergency-subtitle">
+                    Quick access to important nearby services.
+                  </div>
+                </div>
+
+                <div className="nearby-emergency-badge">Priority Access</div>
               </div>
 
-              <div className="nearby-emergency-subtitle">
-                Quick access to important nearby services.
+              <div className="nearby-emergency-scroll">
+                {emergencyPlaces.map((place) => (
+                  <div
+                    key={`emergency-${place.id}`}
+                    className="nearby-emergency-card"
+                  >
+                    <div className="nearby-emergency-card-top" />
+
+                    <div className="nearby-place-content">
+                      <div>
+                        <div className="nearby-emergency-place-title">
+                          {place.name}
+                        </div>
+
+                        {place.category ? (
+                          <div className="nearby-emergency-place-category">
+                            {place.category}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {place.address ? (
+                        <div className="nearby-emergency-place-address">
+                          {place.address}
+                        </div>
+                      ) : null}
+
+                      {place.distance_miles !== null ? (
+                        <div className="nearby-emergency-distance">
+                          {place.distance_miles} mi away
+                        </div>
+                      ) : null}
+
+                      <div className="nearby-action-row">
+                        {place.lat !== null && place.lng !== null ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDirections(place)}
+                            className="nearby-action-button nearby-action-button-danger"
+                          >
+                            Directions
+                          </button>
+                        ) : null}
+
+                        {place.phone ? (
+                          <a
+                            href={`tel:${place.phone}`}
+                            className="nearby-action-button nearby-action-button-dark"
+                          >
+                            Call
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-
-            <div className="nearby-emergency-badge">Priority Access</div>
-          </div>
-
-          <div className="nearby-emergency-scroll">
-            {emergencyPlaces.map((place) => (
+          ) : null}
+          {/* Places list */}
+          <div className="nearby-places-grid">
+            {" "}
+            {filteredPlaces.map((place) => (
               <div
-                key={`emergency-${place.id}`}
-                className="nearby-emergency-card"
+                key={place.id}
+                data-category={place.category || "Other"}
+                className="nearby-place-card"
               >
-                <div className="nearby-emergency-card-top" />
+                <div
+                  className="nearby-place-topbar"
+                  style={
+                    {
+                      "--nearby-topbar": sanitizeCardColor(
+                        getNearbyCardColor(place.category),
+                      ),
+                    } as React.CSSProperties
+                  }
+                />
 
                 <div className="nearby-place-content">
-                  <div>
-                    <div className="nearby-emergency-place-title">
-                      {place.name}
-                    </div>
+                  <div className="nearby-place-title-row">
+                    <div className="nearby-card-title">{place.name}</div>
 
-                    {place.category ? (
-                      <div className="nearby-emergency-place-category">
-                        {place.category}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {place.address ? (
-                    <div className="nearby-emergency-place-address">
-                      {place.address}
-                    </div>
-                  ) : null}
-
-                  {place.distance_miles !== null ? (
-                    <div className="nearby-emergency-distance">
-                      {place.distance_miles} mi away
-                    </div>
-                  ) : null}
-
-                  <div className="nearby-action-row">
-                    {place.lat !== null && place.lng !== null ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDirections(place)}
-                        className="nearby-action-button nearby-action-button-danger"
-                      >
-                        Directions
-                      </button>
-                    ) : null}
-
-                    {place.phone ? (
-                      <a
-                        href={`tel:${place.phone}`}
-                        className="nearby-action-button nearby-action-button-dark"
-                      >
-                        Call
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      {/* Places list */}
-      <div className="nearby-places-grid">
-        {" "}
-        {filteredPlaces.map((place) => (
-          <div
-            key={place.id}
-            data-category={place.category || "Other"}
-            className="nearby-place-card"
-          >
-            <div
-              className="nearby-place-topbar"
-              style={
-                {
-                  "--nearby-topbar": sanitizeCardColor(
-                    getNearbyCardColor(place.category),
-                  ),
-                } as React.CSSProperties
-              }
-            />
-
-            <div className="nearby-place-content">
-              <div className="nearby-place-title-row">
-                <div className="nearby-card-title">{place.name}</div>
-
-                <button
-                  type="button"
-                  onClick={() => toggleFavorite(place.id)}
-                  className="nearby-favorite-button"
-                  aria-label="Toggle favorite"
-                >
-                  {favoriteIds.includes(place.id) ? "⭐" : "☆"}
-                </button>
-              </div>
-              {/* Compact Information Block */}
-              <div
-                className="nearby-place-info-compact"
-                style={{
-                  lineHeight: 1.25,
-                  fontSize: 13,
-                  color: "#444",
-                  marginTop: 0,
-                  marginBottom: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                }}
-              >
-                {/* Category • X mi */}
-                {(place.category || place.distance_miles !== null) && (
-                  <div style={{ color: "#666" }}>
-                    {place.category && (
-                      <span className="nearby-place-category">
-                        {place.category}
-                      </span>
-                    )}
-                    {place.category && place.distance_miles !== null && (
-                      <span aria-hidden="true" style={{ margin: "0 4px" }}>
-                        •
-                      </span>
-                    )}
-                    {place.distance_miles !== null && (
-                      <span className="nearby-distance-badge">
-                        {place.distance_miles} mi
-                      </span>
-                    )}
-                  </div>
-                )}
-                {/* Address split into two lines */}
-                {place.address &&
-                  (() => {
-                    const [first, ...rest] = place.address.split(",");
-                    const second = rest.join(",").trim();
-                    return (
-                      <>
-                        <div className="nearby-place-address-line1">
-                          {first}
-                        </div>
-                        {second && (
-                          <div className="nearby-place-address-line2">
-                            {second}
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                {/* Phone row */}
-                {place.phone && (
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 4 }}
-                  >
-                    <span
-                      className="nearby-contact-icon"
-                      style={{ fontSize: 14 }}
-                    >
-                      📞
-                    </span>
-                    <a
-                      href={`tel:${place.phone}`}
-                      className="nearby-contact-link"
-                      style={{ color: "#2563eb", textDecoration: "none" }}
-                    >
-                      {formatPhoneNumber(place.phone)}
-                    </a>
-                  </div>
-                )}
-              </div>
-              {/* Notes */}
-              {place.notes && (
-                <div className="nearby-place-notes" style={{ marginTop: 6, marginBottom: 0 }}>
-                  {place.notes}
-                </div>
-              )}
-              {/* Action buttons */}
-              {(place.lat !== null || place.phone || place.website) && (
-                <div
-                  className="nearby-action-row"
-                  style={{ marginTop: 6 }}
-                >
-                  {place.lat !== null && place.lng !== null && (
                     <button
                       type="button"
-                      onClick={() => handleDirections(place)}
-                      className="nearby-action-button"
+                      onClick={() => toggleFavorite(place.id)}
+                      className="nearby-favorite-button"
+                      aria-label="Toggle favorite"
                     >
-                      Directions
+                      {favoriteIds.includes(place.id) ? "⭐" : "☆"}
                     </button>
-                  )}
-                  {place.phone && (
-                    <a
-                      href={`tel:${place.phone}`}
-                      className="nearby-action-button"
+                  </div>
+                  {/* Compact Information Block */}
+                  <div
+                    className="nearby-place-info-compact"
+                    style={{
+                      lineHeight: 1.25,
+                      fontSize: 13,
+                      color: "#444",
+                      marginTop: 0,
+                      marginBottom: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                    }}
+                  >
+                    {/* Category • X mi */}
+                    {(place.category || place.distance_miles !== null) && (
+                      <div style={{ color: "#666" }}>
+                        {place.category && (
+                          <span className="nearby-place-category">
+                            {place.category}
+                          </span>
+                        )}
+                        {place.category && place.distance_miles !== null && (
+                          <span aria-hidden="true" style={{ margin: "0 4px" }}>
+                            •
+                          </span>
+                        )}
+                        {place.distance_miles !== null && (
+                          <span className="nearby-distance-badge">
+                            {place.distance_miles} mi
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {/* Address split into two lines */}
+                    {place.address &&
+                      (() => {
+                        const [first, ...rest] = place.address.split(",");
+                        const second = rest.join(",").trim();
+                        return (
+                          <>
+                            <div className="nearby-place-address-line1">
+                              {first}
+                            </div>
+                            {second && (
+                              <div className="nearby-place-address-line2">
+                                {second}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    {/* Phone row */}
+                    {place.phone && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <span
+                          className="nearby-contact-icon"
+                          style={{ fontSize: 14 }}
+                        >
+                          📞
+                        </span>
+                        <a
+                          href={`tel:${place.phone}`}
+                          className="nearby-contact-link"
+                          style={{ color: "#2563eb", textDecoration: "none" }}
+                        >
+                          {formatPhoneNumber(place.phone)}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                  {/* Notes */}
+                  {place.notes && (
+                    <div
+                      className="nearby-place-notes"
+                      style={{ marginTop: 6, marginBottom: 0 }}
                     >
-                      Call
-                    </a>
+                      {place.notes}
+                    </div>
                   )}
-                  {place.website && (
-                    <a
-                      href={place.website}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="nearby-action-button"
-                    >
-                      Website
-                    </a>
+                  {/* Action buttons */}
+                  {(place.lat !== null || place.phone || place.website) && (
+                    <div className="nearby-action-row" style={{ marginTop: 6 }}>
+                      {place.lat !== null && place.lng !== null && (
+                        <button
+                          type="button"
+                          onClick={() => handleDirections(place)}
+                          className="nearby-action-button"
+                        >
+                          Directions
+                        </button>
+                      )}
+                      {place.phone && (
+                        <a
+                          href={`tel:${place.phone}`}
+                          className="nearby-action-button"
+                        >
+                          Call
+                        </a>
+                      )}
+                      {place.website && (
+                        <a
+                          href={place.website}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="nearby-action-button"
+                        >
+                          Website
+                        </a>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* Footer bar (now in <details>) */}
-            {(place.location_code ||
-              (place.lat !== null && place.lng !== null)) && (
-              <details className="nearby-footer-bar" style={{ marginTop: 8 }}>
-                <summary>More</summary>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginTop: 6,
-                  }}
-                >
-                  {place.location_code && (
-                    <div className="nearby-footer-item">
-                      <span className="nearby-footer-icon">🧭</span>
-                      <span>{place.location_code}</span>
+                {/* Footer bar (now in <details>) */}
+                {(place.location_code ||
+                  (place.lat !== null && place.lng !== null)) && (
+                  <details
+                    className="nearby-footer-bar"
+                    style={{ marginTop: 8 }}
+                  >
+                    <summary>More</summary>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginTop: 6,
+                      }}
+                    >
+                      {place.location_code && (
+                        <div className="nearby-footer-item">
+                          <span className="nearby-footer-icon">🧭</span>
+                          <span>{place.location_code}</span>
+                        </div>
+                      )}
+                      {place.location_code && place.lat !== null && (
+                        <span className="nearby-footer-divider">|</span>
+                      )}
+                      {place.lat !== null && place.lng !== null && (
+                        <div className="nearby-footer-item">
+                          <span className="nearby-footer-emoji">🌐</span>
+                          <span>
+                            {Number(place.lat).toFixed(5)},{" "}
+                            {Number(place.lng).toFixed(5)}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {place.location_code && place.lat !== null && (
-                    <span className="nearby-footer-divider">|</span>
-                  )}
-                  {place.lat !== null && place.lng !== null && (
-                    <div className="nearby-footer-item">
-                      <span className="nearby-footer-emoji">🌐</span>
-                      <span>
-                        {Number(place.lat).toFixed(5)},{" "}
-                        {Number(place.lng).toFixed(5)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </details>
-            )}
+                  </details>
+                )}
+              </div>
+            ))}
+            {filteredPlaces.length === 0 ? (
+              <div className="card">No nearby places found.</div>
+            ) : null}
           </div>
-        ))}
-        {filteredPlaces.length === 0 ? (
-          <div className="card">No nearby places found.</div>
-        ) : null}
-      </div>
+        </>
+      )}
       {/* Map chooser dialog moved above */}
     </div>
   );
