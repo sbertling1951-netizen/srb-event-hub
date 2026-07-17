@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
-import { supabase } from "@/lib/supabase";
-
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { supabase } from "@/lib/supabase";
 
 export default function AdminPhotosPage() {
   const [pendingCount, setPendingCount] = useState(0);
@@ -22,8 +21,8 @@ export default function AdminPhotosPage() {
     storage_path: string;
     photo_status: string;
     uploaded_at: string;
+    attendee_id?: string;
     member_name?: string;
-    site_number?: string;
     member_caption?: string;
     admin_caption?: string;
     show_caption?: boolean;
@@ -152,7 +151,6 @@ export default function AdminPhotosPage() {
     await updatePhotoStatus(photoId, "rejected");
   }
 
-
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) {
@@ -197,7 +195,7 @@ export default function AdminPhotosPage() {
     const { data, error } = await supabase
       .from("event_photos")
       .select(
-        "id, storage_path, photo_status, uploaded_at, member_caption, admin_caption, show_caption, featured_level",
+        "id, attendee_id, storage_path, photo_status, uploaded_at, member_caption, admin_caption, show_caption, featured_level",
       )
       .eq("event_id", currentEvent.id)
       .eq("photo_status", "pending");
@@ -205,6 +203,38 @@ export default function AdminPhotosPage() {
     if (error) {
       console.error("load pending count error:", error);
       return;
+    }
+
+    const attendeeIds = Array.from(
+      new Set(
+        ((data || []) as PendingPhoto[])
+          .map((photo) => photo.attendee_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+
+    const memberNamesByAttendeeId = new Map<string, string>();
+
+    if (attendeeIds.length > 0) {
+      const { data: attendeeRows, error: attendeeError } = await supabase
+        .from("attendees")
+        .select("id, nickname, pilot_first, pilot_last")
+        .in("id", attendeeIds);
+
+      if (attendeeError) {
+        console.error("load photo member names error:", attendeeError);
+      } else {
+        for (const attendee of attendeeRows || []) {
+          const preferredFirst =
+            attendee.nickname?.trim() || attendee.pilot_first?.trim() || "";
+          const lastName = attendee.pilot_last?.trim() || "";
+          const fullName = [preferredFirst, lastName].filter(Boolean).join(" ");
+
+          if (fullName) {
+            memberNamesByAttendeeId.set(attendee.id, fullName);
+          }
+        }
+      }
     }
 
     const photosWithUrls = await Promise.all(
@@ -230,6 +260,9 @@ export default function AdminPhotosPage() {
 
         return {
           ...photo,
+          member_name: photo.attendee_id
+            ? memberNamesByAttendeeId.get(photo.attendee_id)
+            : undefined,
           imageUrl: thumbnail?.signedUrl,
           reviewImageUrl: review?.signedUrl,
         };
@@ -268,10 +301,26 @@ export default function AdminPhotosPage() {
             marginBottom: 12,
           }}
         >
-          <div><strong>Submitted</strong><br />{totalSubmitted}</div>
-          <div><strong>Approved</strong><br />{approvedCount}</div>
-          <div><strong>Rejected</strong><br />{rejectedCount}</div>
-          <div><strong>Pending</strong><br />{pendingCount}</div>
+          <div>
+            <strong>Submitted</strong>
+            <br />
+            {totalSubmitted}
+          </div>
+          <div>
+            <strong>Approved</strong>
+            <br />
+            {approvedCount}
+          </div>
+          <div>
+            <strong>Rejected</strong>
+            <br />
+            {rejectedCount}
+          </div>
+          <div>
+            <strong>Pending</strong>
+            <br />
+            {pendingCount}
+          </div>
         </div>
         <p style={{ opacity: 0.8 }}>
           Click any photo to review, approve, or reject. Reviewed photos are
@@ -428,7 +477,8 @@ export default function AdminPhotosPage() {
                   Member Caption
                 </div>
                 <div style={{ color: "#334155" }}>
-                  {selectedPhoto.member_caption?.trim() || "(No member caption provided)"}
+                  {selectedPhoto.member_caption?.trim() ||
+                    "(No member caption provided)"}
                 </div>
               </div>
 
@@ -450,8 +500,9 @@ export default function AdminPhotosPage() {
                   color: "#64748b",
                 }}
               >
-                Member captions require admin review before being shown in the slideshow.
-                Admin caption may be used to replace or improve the submitted caption.
+                Member captions require admin review before being shown in the
+                slideshow. Admin caption may be used to replace or improve the
+                submitted caption.
               </div>
 
               <label style={{ display: "block", marginTop: 6 }}>
@@ -490,7 +541,8 @@ export default function AdminPhotosPage() {
                   color: "#64748b",
                 }}
               >
-                Level 0 = normal slideshow rotation. Levels 1-3 increase display frequency.
+                Level 0 = normal slideshow rotation. Levels 1-3 increase display
+                frequency.
               </div>
 
               <div style={{ marginTop: 8 }}>
