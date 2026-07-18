@@ -9,6 +9,11 @@ import {
 
 import { supabase } from "@/lib/supabase";
 
+const ACTIVITY_LIMIT_STORAGE_KEY = "engagementActivityLimit";
+const ACTIVITY_LIMIT_OPTIONS = ["10", "25", "50", "100", "250", "500", "all"] as const;
+
+type ActivityLimitOption = (typeof ACTIVITY_LIMIT_OPTIONS)[number];
+
 export default function EngagementPage() {
   const [stats, setStats] = useState({
     registered: 0,
@@ -18,6 +23,7 @@ export default function EngagementPage() {
   });
 
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [activityLimit, setActivityLimit] = useState<ActivityLimitOption>("100");
 
   const [featureStats, setFeatureStats] = useState({
     attendeeLocator: 0,
@@ -88,7 +94,7 @@ export default function EngagementPage() {
       (submittedRows ?? []).map((row) => row.attendee_id)
     ).size;
 
-    const { data: recentActivity } = await supabase
+    let recentActivityQuery = supabase
       .from("engagement_activity")
       .select(`
         activity_time,
@@ -99,8 +105,13 @@ export default function EngagementPage() {
         )
       `)
       .eq("event_id", currentEvent.id)
-      .order("activity_time", { ascending: false })
-      .limit(10);
+      .order("activity_time", { ascending: false });
+
+    if (activityLimit !== "all") {
+      recentActivityQuery = recentActivityQuery.limit(Number(activityLimit));
+    }
+
+    const { data: recentActivity } = await recentActivityQuery;
 
     const { data: featureRows } = await supabase
       .from("engagement_activity")
@@ -156,6 +167,20 @@ export default function EngagementPage() {
 
     setRecentActivity(recentActivity ?? []);
     setFeatureStats(featureCounts);
+  }, [activityLimit]);
+
+  useEffect(() => {
+    try {
+      const savedLimit = localStorage.getItem(ACTIVITY_LIMIT_STORAGE_KEY);
+      if (
+        savedLimit &&
+        ACTIVITY_LIMIT_OPTIONS.includes(savedLimit as ActivityLimitOption)
+      ) {
+        setActivityLimit(savedLimit as ActivityLimitOption);
+      }
+    } catch {
+      // Ignore localStorage failures so the page still loads.
+    }
   }, []);
 
   useEffect(() => {
@@ -167,6 +192,19 @@ export default function EngagementPage() {
 
     return unsubscribe;
   }, [loadStats]);
+
+  function handleActivityLimitChange(
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) {
+    const nextLimit = event.target.value as ActivityLimitOption;
+    setActivityLimit(nextLimit);
+
+    try {
+      localStorage.setItem(ACTIVITY_LIMIT_STORAGE_KEY, nextLimit);
+    } catch {
+      // Ignore localStorage failures so the selector still works.
+    }
+  }
 
   const cards = [
     { title: "Attendees", value: stats.registered },
@@ -251,7 +289,48 @@ export default function EngagementPage() {
         <section
           style={{ border: "1px solid #ddd", borderRadius: 10, padding: 16 }}
         >
-          <h2>Recent Activity</h2>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            <h2 style={{ margin: 0 }}>Recent Activity</h2>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 14,
+                color: "#666",
+              }}
+            >
+              <span>Show:</span>
+              <select
+                value={activityLimit}
+                onChange={handleActivityLimitChange}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: 8,
+                  padding: "6px 10px",
+                  background: "#fff",
+                  color: "#111",
+                  fontSize: 14,
+                }}
+              >
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+                <option value="500">500</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+          </div>
           {recentActivity.length === 0 ? (
             <p>No recent activity yet.</p>
           ) : (
