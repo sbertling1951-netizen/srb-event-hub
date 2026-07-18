@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
+import { logEngagement } from "@/lib/engagement";
 import { fullName, preferredDisplayLine } from "@/lib/formatters";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
@@ -422,6 +423,18 @@ function CoachMapPublicPageInner() {
       document.documentElement.classList.remove("coach-map-lock");
     };
   }, []);
+
+  useEffect(() => {
+    if (!event?.id || !viewerAttendeeId) {
+      return;
+    }
+
+    void logEngagement({
+      eventId: event.id,
+      attendeeId: viewerAttendeeId,
+      activityType: "coach_map_view",
+    });
+  }, [event?.id, viewerAttendeeId]);
 
   useEffect(() => {
     if (!pulseKey) {

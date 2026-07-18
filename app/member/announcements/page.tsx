@@ -222,7 +222,7 @@ function MemberAnnouncementsPageInner() {
       return;
     }
 
-    const attendeeId = sessionStorage.getItem("fcoc-member-attendee-id");
+    const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
     if (!attendeeId) {
       return;
     }
