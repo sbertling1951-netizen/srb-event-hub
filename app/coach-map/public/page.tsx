@@ -143,7 +143,8 @@ function formatDateRange(
 function normalizeSiteKey(value: string | null | undefined) {
   return String(value || "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
 }
 
 function householdLine(member: HouseholdMember) {
