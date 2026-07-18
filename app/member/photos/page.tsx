@@ -8,6 +8,7 @@ import {
   getStoredMemberAttendeeId,
   getStoredMemberEmail,
 } from "@/lib/getCurrentMemberEvent";
+import { logEngagement } from "@/lib/engagement";
 import { supabase } from "@/lib/supabase";
 
 export default function MemberPhotosPage() {
@@ -73,6 +74,23 @@ export default function MemberPhotosPage() {
 
     void supabase;
   }, []);
+
+  useEffect(() => {
+    if (!event?.id) {
+      return;
+    }
+
+    const storedAttendeeId = localStorage.getItem("fcoc-member-attendee-id");
+    if (!storedAttendeeId) {
+      return;
+    }
+
+    void logEngagement({
+      eventId: event.id,
+      attendeeId: storedAttendeeId,
+      activityType: "photos_view",
+    });
+  }, [event?.id]);
 
   async function loadUploads(attendeeId: string) {
     const { data, error } = await supabase

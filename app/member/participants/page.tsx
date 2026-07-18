@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import ParticipantIdentityEditor from "@/components/participants/ParticipantIdentityEditor";
+import { logEngagement } from "@/lib/engagement";
 import {
   getCurrentMemberEvent,
   getStoredMemberAttendeeId,
@@ -138,6 +139,23 @@ function ParticipantsPageInner() {
   useEffect(() => {
     loadParticipants();
   }, []);
+
+  useEffect(() => {
+    if (!currentAttendee?.event_id) {
+      return;
+    }
+
+    const storedAttendeeId = localStorage.getItem("fcoc-member-attendee-id");
+    if (!storedAttendeeId) {
+      return;
+    }
+
+    void logEngagement({
+      eventId: currentAttendee.event_id,
+      attendeeId: storedAttendeeId,
+      activityType: "participants_view",
+    });
+  }, [currentAttendee?.event_id]);
 
   const registeredParticipants = participants.filter(
     (p) => p.email && p.email.trim() !== "",

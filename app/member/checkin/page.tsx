@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { logEngagement } from "@/lib/engagement";
 import { preferredDisplayLine } from "@/lib/formatters";
 import {
   type CurrentMemberEvent,
@@ -217,6 +218,23 @@ function MemberCheckinPageInner() {
       window.removeEventListener("storage", handleStorage);
     };
   }, [loadPage]);
+
+  useEffect(() => {
+    if (!event?.id) {
+      return;
+    }
+
+    const storedAttendeeId = localStorage.getItem("fcoc-member-attendee-id");
+    if (!storedAttendeeId) {
+      return;
+    }
+
+    void logEngagement({
+      eventId: event.id,
+      attendeeId: storedAttendeeId,
+      activityType: "checkin_view",
+    });
+  }, [event?.id]);
 
   async function syncParkingSite(
     attendeeId: string,
