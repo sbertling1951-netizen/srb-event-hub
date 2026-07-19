@@ -1951,15 +1951,11 @@ function AttendeeEditorModal(props: {
               gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
             }}
           >
-            {/* Render all fields except membership_number */}
+            {/* Render attendee text fields */}
             {(() => {
               const rows = [];
               for (let i = 0; i < textFields.length; ++i) {
                 const field = textFields[i];
-                if (field.key === "membership_number") {
-                  // Skip rendering here; handled by future participant section
-                  continue;
-                }
                 rows.push(
                   <div key={String(field.key)}>
                     <label style={labelStyle}>{field.label}</label>
