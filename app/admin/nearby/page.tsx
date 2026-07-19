@@ -1642,9 +1642,26 @@ function AdminNearbyPageInner() {
 
       await loadEventPlaces(adminEvent.id);
       setEventForm(emptyEventPlaceForm);
-    } catch (err: any) {
-      console.error("saveEventPlace error:", err);
-      showError(err?.message || "Failed to save event place.");
+     } catch (err: any) {
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : typeof err?.message === "string" && err.message.trim()
+            ? err.message
+            : typeof err === "string" && err.trim()
+              ? err
+              : "Failed to save nearby place.";
+
+      console.error("saveEventPlace error:", {
+        message: errorMessage,
+        code: err?.code ?? null,
+        details: err?.details ?? null,
+        hint: err?.hint ?? null,
+        status: err?.status ?? null,
+        raw: err,
+      });
+
+      showError(errorMessage);
     } finally {
       setSavingEventPlace(false);
     }

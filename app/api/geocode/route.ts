@@ -5,9 +5,40 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const address = body?.address ?? null;
     const location_code = body?.location_code ?? null;
+    const latInput = body?.lat ?? null;
+    const lngInput = body?.lng ?? null;
+    const previousAddress = body?.previousAddress ?? null;
+    const previousLocationCode = body?.previousLocationCode ?? null;
 
     const code = (location_code || "").trim();
     const addr = (address || "").trim();
+    const previousCode = String(previousLocationCode || "").trim();
+    const previousAddr = String(previousAddress || "").trim();
+
+    function toCoordinate(value: unknown) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+
+      if (typeof value === "string" && value.trim()) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+
+      return null;
+    }
+
+    const existingLat = toCoordinate(latInput);
+    const existingLng = toCoordinate(lngInput);
+    const hasExistingCoordinates = existingLat !== null && existingLng !== null;
+    const addressChanged =
+      previousAddress !== null && previousAddress !== undefined
+        ? previousAddr !== addr
+        : false;
+    const codeChanged =
+      previousLocationCode !== null && previousLocationCode !== undefined
+        ? previousCode !== code
+        : false;
 
     if (!code && !addr) {
       return NextResponse.json(
@@ -16,9 +47,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    async function tryGeocode(q: string) {
+    async function tryGeocode(q: string, options?: { appendUsa?: boolean }) {
       const url = new URL("https://nominatim.openstreetmap.org/search");
-      url.searchParams.set("q", q + ", USA");
+      const query =
+        options?.appendUsa === false ? q : `${q}, USA`;
+      url.searchParams.set("q", query);
       url.searchParams.set("format", "jsonv2");
       url.searchParams.set("limit", "1");
 
@@ -49,6 +82,14 @@ export async function POST(req: NextRequest) {
       };
     }
 
+    // Lookup flow:
+    // Existing Coordinates
+    //     ↓
+    // Street Address
+    //     ↓
+    // Plus Code
+    //     ↓
+    // Failure
     let result: {
       lat: number | null;
       lng: number | null;
@@ -60,18 +101,27 @@ export async function POST(req: NextRequest) {
     };
     let queryUsed: string | null = null;
 
-    if (code) {
-      result = await tryGeocode(code);
-      if (result.lat !== null && result.lng !== null) {
-        queryUsed = code;
-      }
+    if (hasExistingCoordinates && !addressChanged && !codeChanged) {
+      result = {
+        lat: existingLat,
+        lng: existingLng,
+        display_name: null,
+      };
     }
 
     if ((result.lat === null || result.lng === null) && addr) {
-      const fallback = await tryGeocode(addr);
-      if (fallback.lat !== null && fallback.lng !== null) {
-        result = fallback;
+      const addressResult = await tryGeocode(addr, { appendUsa: true });
+      if (addressResult.lat !== null && addressResult.lng !== null) {
+        result = addressResult;
         queryUsed = addr;
+      }
+    }
+
+    if ((result.lat === null || result.lng === null) && code) {
+      const plusCodeResult = await tryGeocode(code, { appendUsa: false });
+      if (plusCodeResult.lat !== null && plusCodeResult.lng !== null) {
+        result = plusCodeResult;
+        queryUsed = code;
       }
     }
 

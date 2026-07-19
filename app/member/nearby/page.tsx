@@ -478,7 +478,19 @@ function NearbyPageInner() {
   }
 
   function handleDirections(place: Place) {
-    if (place.lat === null || place.lng === null) {
+    const encodedAddress = place.address
+      ? encodeURIComponent(place.address)
+      : null;
+    const appleDestination =
+      place.lat !== null && place.lng !== null
+        ? `${place.lat},${place.lng}`
+        : encodedAddress;
+    const googleDestination =
+      place.lat !== null && place.lng !== null
+        ? `${place.lat},${place.lng}`
+        : encodedAddress;
+
+    if (!appleDestination || !googleDestination) {
       return;
     }
 
@@ -486,7 +498,7 @@ function NearbyPageInner() {
 
     if (preferred === "apple") {
       window.open(
-        `https://maps.apple.com/?saddr=Current+Location&daddr=${place.lat},${place.lng}&dirflg=d`,
+        `https://maps.apple.com/?saddr=Current+Location&daddr=${appleDestination}&dirflg=d`,
         "_blank",
         "noopener,noreferrer",
       );
@@ -495,7 +507,7 @@ function NearbyPageInner() {
 
     if (preferred === "google") {
       window.open(
-        `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`,
+        `https://www.google.com/maps/dir/?api=1&destination=${googleDestination}`,
         "_blank",
         "noopener,noreferrer",
       );
@@ -684,8 +696,17 @@ function NearbyPageInner() {
                     );
                   }
                   if (selectedPlace) {
+                    const appleDestination =
+                      selectedPlace.lat !== null && selectedPlace.lng !== null
+                        ? `${selectedPlace.lat},${selectedPlace.lng}`
+                        : selectedPlace.address
+                          ? encodeURIComponent(selectedPlace.address)
+                          : null;
+                    if (!appleDestination) {
+                      return;
+                    }
                     window.open(
-                      `https://maps.apple.com/?saddr=Current+Location&daddr=${selectedPlace.lat},${selectedPlace.lng}&dirflg=d`,
+                      `https://maps.apple.com/?saddr=Current+Location&daddr=${appleDestination}&dirflg=d`,
                       "_blank",
                       "noopener,noreferrer",
                     );
@@ -706,8 +727,17 @@ function NearbyPageInner() {
                     );
                   }
                   if (selectedPlace) {
+                    const googleDestination =
+                      selectedPlace.lat !== null && selectedPlace.lng !== null
+                        ? `${selectedPlace.lat},${selectedPlace.lng}`
+                        : selectedPlace.address
+                          ? encodeURIComponent(selectedPlace.address)
+                          : null;
+                    if (!googleDestination) {
+                      return;
+                    }
                     window.open(
-                      `https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.lat},${selectedPlace.lng}`,
+                      `https://www.google.com/maps/dir/?api=1&destination=${googleDestination}`,
                       "_blank",
                       "noopener,noreferrer",
                     );
@@ -798,7 +828,7 @@ function NearbyPageInner() {
                       ) : null}
 
                       <div className="nearby-action-row">
-                        {place.lat !== null && place.lng !== null ? (
+                        {place.address || (place.lat !== null && place.lng !== null) ? (
                           <button
                             type="button"
                             onClick={() => handleDirections(place)}
@@ -943,9 +973,13 @@ function NearbyPageInner() {
                     </div>
                   )}
                   {/* Action buttons */}
-                  {(place.lat !== null || place.phone || place.website) && (
+                  {(place.address ||
+                    place.lat !== null ||
+                    place.phone ||
+                    place.website) && (
                     <div className="nearby-action-row" style={{ marginTop: 6 }}>
-                      {place.lat !== null && place.lng !== null && (
+                      {(place.address ||
+                        (place.lat !== null && place.lng !== null)) && (
                         <button
                           type="button"
                           onClick={() => handleDirections(place)}
