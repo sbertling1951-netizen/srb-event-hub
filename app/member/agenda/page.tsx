@@ -374,7 +374,7 @@ function MemberAgendaPageInner() {
       return;
     }
 
-    const attendeeId = sessionStorage.getItem("fcoc-member-attendee-id");
+    const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
     if (!attendeeId) {
       return;
     }
@@ -629,6 +629,17 @@ function MemberAgendaPageInner() {
                 !(item.location || "").toLowerCase().includes("pioneer"),
             );
             const pioneerItems = [...pioneerOnly, ...otherItems];
+            const timeSlotKeys = Array.from(
+              new Set(
+                [...mortonItems, ...pioneerItems].map(
+                  (item) => item.start_time || "unscheduled",
+                ),
+              ),
+            ).sort((a, b) => {
+              if (a === "unscheduled") return 1;
+              if (b === "unscheduled") return -1;
+              return a.localeCompare(b);
+            });
 
             // Helper to render agenda cards
             function renderAgendaCards(items: AgendaItem[]) {
@@ -927,65 +938,92 @@ function MemberAgendaPageInner() {
                 >
                   {group.label}
                 </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: 10,
-                    alignItems: "start",
-                  }}
-                >
-                  {/* Morton Building column */}
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 16,
-                        borderBottom: "1px solid #e5e7eb",
-                        marginBottom: 12,
-                        paddingBottom: 6,
-                        color: "#22223b",
-                        letterSpacing: 0.2,
-                        position: "sticky",
-                        top: 0,
-                        zIndex: 5,
-                        background: "white",
-                      }}
-                    >
-                      Morton Building
-                    </div>
-                    {renderAgendaCards(mortonItems)}
-                  </div>
-                  {/* Pioneer Building column */}
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 16,
-                        borderBottom: "1px solid #e5e7eb",
-                        marginBottom: 12,
-                        paddingBottom: 6,
-                        color: "#22223b",
-                        letterSpacing: 0.2,
-                        position: "sticky",
-                        top: 0,
-                        zIndex: 5,
-                        background: "white",
-                      }}
-                    >
-                      Pioneer Building
-                    </div>
-                    {renderAgendaCards(pioneerItems)}
-                  </div>
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      )}
+                <div style={{ display: "grid", gap: 0 }}>
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+      gap: 10,
+      position: "sticky",
+      top: 0,
+      zIndex: 5,
+      background: "white",
+    }}
+  >
+    <div
+      style={{
+        fontWeight: 700,
+        fontSize: 16,
+        borderBottom: "1px solid #e5e7eb",
+        marginBottom: 12,
+        paddingBottom: 6,
+        color: "#22223b",
+        letterSpacing: 0.2,
+        minWidth: 0,
+      }}
+    >
+      Morton Building
     </div>
-  );
+
+    <div
+      style={{
+        fontWeight: 700,
+        fontSize: 16,
+        borderBottom: "1px solid #e5e7eb",
+        marginBottom: 12,
+        paddingBottom: 6,
+        color: "#22223b",
+        letterSpacing: 0.2,
+        minWidth: 0,
+      }}
+    >
+      Pioneer Building
+    </div>
+  </div>
+
+  {timeSlotKeys.map((timeSlot) => {
+    const mortonSlotItems = mortonItems.filter(
+      (item) => (item.start_time || "unscheduled") === timeSlot,
+    );
+
+    const pioneerSlotItems = pioneerItems.filter(
+      (item) => (item.start_time || "unscheduled") === timeSlot,
+    );
+
+    return (
+      <div
+        key={timeSlot}
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 10,
+          alignItems: "start",
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          {mortonSlotItems.length > 0
+            ? renderAgendaCards(mortonSlotItems)
+            : null}
+        </div>
+
+        <div style={{ minWidth: 0 }}>
+          {pioneerSlotItems.length > 0
+            ? renderAgendaCards(pioneerSlotItems)
+            : null}
+        </div>
+      </div>
+    );
+  })}
+  </div>
+</section>
+);
+})}
+</div>
+)}
+</div>
+);
 }
+
 
 export default function MemberAgendaPage() {
   return (
