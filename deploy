@@ -1,5 +1,198 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-git add .
-git commit -m "$1"
-git push origin main
+set -Eeuo pipefail
+
+on_error() {
+  local exit_code=$?
+  echo
+  echo "Deployment failed (exit ${exit_code}) at line ${BASH_LINENO[0]} while running: ${BASH_COMMAND}" >&2
+  exit "${exit_code}"
+}
+trap on_error ERR
+
+SSH_TARGET="root@167.71.97.103"
+REMOTE_PROJECT_DIR="~/srb-event-hub"
+PM2_PROCESS_NAME="srb-event-hub"
+PRODUCTION_URL="https://app.eventsyncapp.com"
+DRY_RUN="${DEPLOY_DRY_RUN:-0}"
+
+section() {
+  echo
+  echo "== $1 =="
+}
+
+fail_with_status() {
+  echo "$1" >&2
+  git status --short >&2 || true
+  exit 1
+}
+
+section "Preflight"
+
+if [[ ! -f package.json || ! -d app || ! -d .git ]]; then
+  echo "Run ./deploy from the Event Hub repository root." >&2
+  exit 1
+fi
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ "${repo_root}" != "$(pwd)" ]]; then
+  echo "Run ./deploy from the Event Hub repository root: ${repo_root:-unknown}." >&2
+  exit 1
+fi
+
+branch="$(git branch --show-current)"
+if [[ "${branch}" != "main" ]]; then
+  echo "Refusing to deploy from branch '${branch}'. Deployments must run from main." >&2
+  exit 1
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+  fail_with_status "Refusing to deploy with a dirty local working tree:"
+fi
+
+git fetch origin
+
+local_sha="$(git rev-parse HEAD)"
+remote_sha="$(git rev-parse origin/main)"
+
+if ! git merge-base --is-ancestor "${remote_sha}" "${local_sha}"; then
+  fail_with_status "Local main is behind or has diverged from origin/main. Update it before deploying:"
+fi
+
+if [[ "${local_sha}" != "${remote_sha}" ]]; then
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "Dry run: local main is ahead of origin/main and would be pushed."
+  else
+    echo "Local main is ahead of origin/main; pushing ${local_sha:0:12} to origin/main."
+    git push origin main
+    git fetch origin
+    remote_sha="$(git rev-parse origin/main)"
+    if [[ "${remote_sha}" != "${local_sha}" ]]; then
+      echo "origin/main does not match local HEAD after push." >&2
+      exit 1
+    fi
+  fi
+fi
+
+commit_subject="$(git log -1 --format=%s "${local_sha}")"
+deployment_started="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+echo "Commit: ${local_sha:0:12} ${commit_subject}"
+echo "Deployment start: ${deployment_started}"
+
+section "Local Build"
+npm run build
+
+if [[ "${DRY_RUN}" == "1" ]]; then
+  section "Dry Run Complete"
+  echo "Local validation and build passed. Stopping before SSH, remote changes, and health checks."
+  exit 0
+fi
+
+section "Remote Deploy"
+ssh "${SSH_TARGET}" "bash -s" -- "${REMOTE_PROJECT_DIR}" "${local_sha}" "${PM2_PROCESS_NAME}" "${PRODUCTION_URL}" <<'REMOTE_SCRIPT'
+set -Eeuo pipefail
+
+on_error() {
+  local exit_code=$?
+  echo
+  echo "Remote deployment failed (exit ${exit_code}) at line ${BASH_LINENO[0]} while running: ${BASH_COMMAND}" >&2
+  exit "${exit_code}"
+}
+trap on_error ERR
+
+remote_project_dir="$1"
+expected_sha="$2"
+pm2_process_name="$3"
+production_url="$4"
+
+if [[ "${remote_project_dir}" == "~/"* ]]; then
+  remote_project_dir="${HOME}/${remote_project_dir:2}"
+fi
+
+cd "${remote_project_dir}"
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "Production directory is not a Git repository: ${remote_project_dir}" >&2
+  exit 1
+fi
+
+remote_branch="$(git branch --show-current)"
+if [[ "${remote_branch}" != "main" ]]; then
+  echo "Production repository is on '${remote_branch}', not main." >&2
+  exit 1
+fi
+
+if [[ -n "$(git status --short)" ]]; then
+  echo "Production working tree is dirty; refusing to update it:" >&2
+  git status --short >&2
+  exit 1
+fi
+
+previous_sha="$(git rev-parse HEAD)"
+echo "Current production commit: ${previous_sha:0:12}"
+git fetch origin
+incoming_sha="$(git rev-parse origin/main)"
+
+if [[ "${incoming_sha}" != "${expected_sha}" ]]; then
+  echo "Production origin/main (${incoming_sha}) does not match the validated local commit (${expected_sha})." >&2
+  exit 1
+fi
+
+if ! git merge-base --is-ancestor "${previous_sha}" "${incoming_sha}"; then
+  echo "Production main is not a fast-forward ancestor of origin/main; refusing to overwrite its history." >&2
+  exit 1
+fi
+
+if git cat-file -e "${previous_sha}^{commit}" 2>/dev/null && \
+  git cat-file -e "${incoming_sha}^{commit}" 2>/dev/null; then
+  if git diff --quiet "${previous_sha}" "${incoming_sha}" -- package.json package-lock.json; then
+    echo "Dependencies unchanged; skipping npm ci."
+  else
+    echo "Dependency manifest changed; running npm ci."
+    run_npm_ci=1
+  fi
+else
+  echo "Cannot safely compare dependency manifests; running npm ci."
+  run_npm_ci=1
+fi
+
+git merge --ff-only "${incoming_sha}"
+
+if [[ "${run_npm_ci:-0}" == "1" ]]; then
+  npm ci
+fi
+
+echo "Building production application..."
+npm run build
+
+echo "Restarting PM2 process: ${pm2_process_name}"
+pm2 restart "${pm2_process_name}"
+
+pm2 jlist | node -e '
+const processName = process.argv[1];
+const processes = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const processInfo = processes.find((item) => item.name === processName);
+if (!processInfo || processInfo.pm2_env?.status !== "online") process.exit(1);
+' "${pm2_process_name}"
+echo "PM2 process is online."
+
+echo "== Health Check =="
+echo "Checking production URL..."
+curl --fail --location --silent --show-error \
+  --connect-timeout 10 --max-time 30 --retry 3 --retry-delay 2 \
+  --output /dev/null "${production_url}"
+
+deployed_sha="$(git rev-parse HEAD)"
+if [[ "${deployed_sha}" != "${expected_sha}" ]]; then
+  echo "Production HEAD (${deployed_sha}) does not match expected commit (${expected_sha})." >&2
+  exit 1
+fi
+REMOTE_SCRIPT
+
+section "Deployment Complete"
+echo "Deployed commit: ${local_sha:0:12}"
+echo "Commit subject: ${commit_subject}"
+echo "PM2 process: ${PM2_PROCESS_NAME}"
+echo "Production URL: ${PRODUCTION_URL}"
+echo "Completion time: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
