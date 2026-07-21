@@ -5,6 +5,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 export default function SlideshowViewPage() {
+  type FullscreenCapableElement = HTMLDivElement & {
+    webkitRequestFullscreen?: () => Promise<void> | void;
+  };
+
+  type FullscreenCapableDocument = Document & {
+    webkitExitFullscreen?: () => Promise<void> | void;
+    webkitFullscreenElement?: Element | null;
+  };
+
   const [eventName, setEventName] = useState("No Event Selected");
   const [eventId, setEventId] = useState<string | null>(null);
   const [status, setStatus] = useState("Ready to load approved photos");
@@ -106,8 +115,10 @@ export default function SlideshowViewPage() {
   const featuredCooldownRef = useRef(-9999);
   const featuredShownCountRef = useRef<Record<number, number>>({});
   const [showCursor, setShowCursor] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const cursorTimerRef = useRef<number | null>(null);
   const wakeLockRef = useRef<any>(null);
+  const slideshowRootRef = useRef<FullscreenCapableElement | null>(null);
 
   const lastCommandAtRef = useRef<number>(0);
   const pausedRef = useRef(false);
@@ -151,6 +162,35 @@ export default function SlideshowViewPage() {
       if (cursorTimerRef.current) {
         window.clearTimeout(cursorTimerRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    const fullscreenDocument = document as FullscreenCapableDocument;
+
+    const syncFullscreenState = () => {
+      const fullscreenElement =
+        document.fullscreenElement ??
+        fullscreenDocument.webkitFullscreenElement ??
+        null;
+
+      setIsFullscreen(fullscreenElement === slideshowRootRef.current);
+    };
+
+    syncFullscreenState();
+
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    document.addEventListener(
+      "webkitfullscreenchange",
+      syncFullscreenState as EventListener,
+    );
+
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreenState);
+      document.removeEventListener(
+        "webkitfullscreenchange",
+        syncFullscreenState as EventListener,
+      );
     };
   }, []);
 
@@ -619,17 +659,82 @@ export default function SlideshowViewPage() {
   const photographerName =
     currentPhoto?.photographer_name_snapshot?.trim() || "";
 
+  const toggleFullscreen = async () => {
+    const slideshowRoot = slideshowRootRef.current;
+    const fullscreenDocument = document as FullscreenCapableDocument;
+
+    if (!slideshowRoot) {
+      return;
+    }
+
+    try {
+      if (
+        document.fullscreenElement === slideshowRoot ||
+        fullscreenDocument.webkitFullscreenElement === slideshowRoot
+      ) {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+          return;
+        }
+
+        if (fullscreenDocument.webkitFullscreenElement) {
+          await fullscreenDocument.webkitExitFullscreen?.();
+        }
+
+        return;
+      }
+
+      if (slideshowRoot.requestFullscreen) {
+        await slideshowRoot.requestFullscreen();
+        return;
+      }
+
+      await slideshowRoot.webkitRequestFullscreen?.();
+    } catch (error) {
+      console.error("Fullscreen toggle failed", error);
+    }
+  };
+
   return (
     <div
+      ref={slideshowRootRef}
       style={{
         minHeight: "100vh",
+        width: "100%",
         background: "black",
         color: "white",
         display: "flex",
         flexDirection: "column",
+        position: "relative",
         cursor: showCursor ? "default" : "none",
       }}
     >
+      <button
+        type="button"
+        onClick={() => {
+          void toggleFullscreen();
+        }}
+        aria-pressed={isFullscreen}
+        style={{
+          position: "fixed",
+          top: "calc(16px + env(safe-area-inset-top, 0px))",
+          right: "calc(16px + env(safe-area-inset-right, 0px))",
+          zIndex: 10,
+          padding: "10px 14px",
+          borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.35)",
+          background: "rgba(0,0,0,0.65)",
+          color: "white",
+          fontSize: 14,
+          fontWeight: 600,
+          lineHeight: 1.2,
+          opacity: showCursor ? 1 : 0,
+          pointerEvents: showCursor ? "auto" : "none",
+          transition: "opacity 180ms ease",
+        }}
+      >
+        {isFullscreen ? "Exit Full Screen" : "Enter Full Screen"}
+      </button>
       <main
         style={{
           flex: 1,
