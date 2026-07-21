@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import {
   type CurrentMemberEvent,
   getCurrentMemberEvent,
+  getCurrentMemberAttendeeId,
   getStoredMemberAttendeeId,
   getStoredMemberEmail,
 } from "@/lib/getCurrentMemberEvent";
@@ -31,9 +32,27 @@ export default function MemberPhotosPage() {
     imageUrl?: string;
     pendingLocal?: boolean;
   };
+  type ApprovedPhoto = {
+    id: string;
+    storage_path: string;
+    member_caption: string | null;
+    admin_caption: string | null;
+    photographer_name_snapshot: string | null;
+    show_caption: boolean | null;
+    imageUrl: string;
+  };
   const [uploads, setUploads] = useState<UploadedPhoto[]>([]);
+  const [approvedPhotos, setApprovedPhotos] = useState<ApprovedPhoto[]>([]);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(
+    null,
+  );
+  const [viewerMessage, setViewerMessage] = useState("");
+  const [downloadingPhotoId, setDownloadingPhotoId] = useState<string | null>(
+    null,
+  );
   const [uploadTotal, setUploadTotal] = useState(0);
   const [uploadCompleted, setUploadCompleted] = useState(0);
+  const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
     const currentEvent = getCurrentMemberEvent();
@@ -47,6 +66,10 @@ export default function MemberPhotosPage() {
 
     if (storedAttendeeId) {
       void loadUploads(storedAttendeeId);
+    }
+
+    if (currentEvent?.id) {
+      void loadApprovedPhotos(currentEvent.id);
     }
 
     if (storedAttendeeId) {
@@ -80,7 +103,7 @@ export default function MemberPhotosPage() {
       return;
     }
 
-    const storedAttendeeId = localStorage.getItem("fcoc-member-attendee-id");
+    const storedAttendeeId = getCurrentMemberAttendeeId();
     if (!storedAttendeeId) {
       return;
     }
@@ -120,6 +143,46 @@ export default function MemberPhotosPage() {
     setUploads(photos);
   }
 
+  async function loadApprovedPhotos(eventId: string) {
+    const { data, error: approvedPhotosError } = await supabase
+      .from("event_photos")
+      .select(
+        "id, storage_path, member_caption, admin_caption, photographer_name_snapshot, show_caption",
+      )
+      .eq("event_id", eventId)
+      .eq("photo_status", "approved")
+      .order("uploaded_at", { ascending: true })
+      .range(0, 999);
+
+    if (approvedPhotosError) {
+      console.error("load approved photos error:", approvedPhotosError);
+      setError("Unable to load the event photo gallery.");
+      return;
+    }
+
+    const photos = await Promise.all(
+      (data || []).map(async (photo) => {
+        const { data: signed, error: signedError } = await supabase.storage
+          .from("event-photos")
+          .createSignedUrl(photo.storage_path, 60 * 60);
+
+        if (signedError || !signed?.signedUrl) {
+          console.error("approved photo URL error:", signedError);
+          return null;
+        }
+
+        return {
+          ...photo,
+          imageUrl: signed.signedUrl,
+        } as ApprovedPhoto;
+      }),
+    );
+
+    setApprovedPhotos(
+      photos.filter((photo): photo is ApprovedPhoto => photo !== null),
+    );
+  }
+
   async function refreshUploads() {
     if (!attendeeId) {
       return;
@@ -128,7 +191,10 @@ export default function MemberPhotosPage() {
     try {
       setRefreshing(true);
       setError(null);
-      await loadUploads(attendeeId);
+      await Promise.all([
+        loadUploads(attendeeId),
+        event?.id ? loadApprovedPhotos(event.id) : Promise.resolve(),
+      ]);
     } catch (err) {
       setError("Unable to refresh. Check connection.");
     } finally {
@@ -247,6 +313,126 @@ export default function MemberPhotosPage() {
       setError(err instanceof Error ? err.message : "Could not delete photo.");
     }
   }
+
+  function closeViewer() {
+    setSelectedPhotoIndex(null);
+    setViewerMessage("");
+  }
+
+  function showPreviousPhoto() {
+    setSelectedPhotoIndex((index) => {
+      if (index === null || approvedPhotos.length === 0) {
+        return null;
+      }
+
+      return (index - 1 + approvedPhotos.length) % approvedPhotos.length;
+    });
+    setViewerMessage("");
+  }
+
+  function showNextPhoto() {
+    setSelectedPhotoIndex((index) => {
+      if (index === null || approvedPhotos.length === 0) {
+        return null;
+      }
+
+      return (index + 1) % approvedPhotos.length;
+    });
+    setViewerMessage("");
+  }
+
+  function photoFileName(photo: ApprovedPhoto) {
+    const extension = photo.storage_path.split(".").pop()?.toLowerCase() || "jpg";
+    const safeExtension = /^[a-z0-9]+$/.test(extension) ? extension : "jpg";
+
+    return `event-photo-${photo.id}.${safeExtension}`;
+  }
+
+  async function downloadPhoto(photo: ApprovedPhoto) {
+    if (downloadingPhotoId) {
+      return;
+    }
+
+    try {
+      setDownloadingPhotoId(photo.id);
+      setViewerMessage("");
+
+      const response = await fetch(photo.imageUrl);
+
+      if (!response.ok) {
+        throw new Error("Photo download failed.");
+      }
+
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = photoFileName(photo);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      setViewerMessage(
+        "Download started. If the photo opens instead, use Share, then Save Image.",
+      );
+    } catch (downloadError) {
+      console.error("photo download error:", downloadError);
+      setViewerMessage("The original photo could not be downloaded.");
+    } finally {
+      setDownloadingPhotoId(null);
+    }
+  }
+
+  async function sharePhoto(photo: ApprovedPhoto) {
+    if (typeof navigator.share !== "function") {
+      return;
+    }
+
+    const shareUrl = photo.imageUrl;
+    const shareTitle = "Event photo";
+
+    try {
+      const canShareFiles =
+        typeof navigator.canShare === "function" && typeof File !== "undefined";
+
+      if (canShareFiles) {
+        try {
+          const response = await fetch(photo.imageUrl);
+
+          if (!response.ok) {
+            throw new Error("Photo download failed.");
+          }
+
+          const file = new File([await response.blob()], photoFileName(photo), {
+            type: response.headers.get("content-type") || "image/jpeg",
+          });
+
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: shareTitle });
+            return;
+          }
+        } catch (shareError) {
+          console.error("photo file share error:", shareError);
+        }
+      }
+
+      await navigator.share({ title: shareTitle, url: shareUrl });
+    } catch (shareError) {
+      if ((shareError as Error).name !== "AbortError") {
+        console.error("photo share error:", shareError);
+        setViewerMessage("The photo could not be shared.");
+      }
+    }
+  }
+
+  const selectedPhoto =
+    selectedPhotoIndex === null ? null : approvedPhotos[selectedPhotoIndex] || null;
+  const selectedCaption = selectedPhoto
+    ? selectedPhoto.admin_caption?.trim() || selectedPhoto.member_caption?.trim() || ""
+    : "";
+  const selectedPhotographer =
+    selectedPhoto?.photographer_name_snapshot?.trim() || "";
+  const canSharePhoto =
+    typeof navigator !== "undefined" && typeof navigator.share === "function";
   return (
     <div className="card" style={{ padding: 16 }}>
       <h1>EpicentraX Photos</h1>
@@ -528,6 +714,192 @@ export default function MemberPhotosPage() {
             </div>
           )}
         </div>
+
+        <div style={{ marginTop: 24 }}>
+          <h3 style={{ margin: 0 }}>Event Gallery</h3>
+          <p style={{ marginTop: 6, color: "#475569" }}>
+            Browse approved photos from this event.
+          </p>
+
+          {approvedPhotos.length === 0 ? (
+            <p>No approved event photos are available yet.</p>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {approvedPhotos.map((photo, index) => (
+                <button
+                  key={photo.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPhotoIndex(index);
+                    setViewerMessage("");
+                  }}
+                  aria-label="View event photo"
+                  style={{
+                    border: "1px solid #cbd5e1",
+                    borderRadius: 8,
+                    padding: 0,
+                    overflow: "hidden",
+                    background: "#f8fafc",
+                    cursor: "pointer",
+                  }}
+                >
+                  <img
+                    src={photo.imageUrl}
+                    alt="Event photo"
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      aspectRatio: "1 / 1",
+                      objectFit: "cover",
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {selectedPhoto && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Event photo viewer"
+            onClick={closeViewer}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 1000,
+              display: "grid",
+              placeItems: "center",
+              padding: 16,
+              background: "rgba(15, 23, 42, 0.8)",
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              onTouchStart={(event) => {
+                touchStartX.current = event.touches[0]?.clientX ?? null;
+              }}
+              onTouchEnd={(event) => {
+                const startX = touchStartX.current;
+                const endX = event.changedTouches[0]?.clientX;
+                touchStartX.current = null;
+
+                if (startX === null || endX === undefined) {
+                  return;
+                }
+
+                if (endX - startX > 40) {
+                  showPreviousPhoto();
+                } else if (startX - endX > 40) {
+                  showNextPhoto();
+                }
+              }}
+              style={{
+                width: "min(960px, 100%)",
+                maxHeight: "100%",
+                overflowY: "auto",
+                borderRadius: 12,
+                padding: 16,
+                background: "white",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  marginBottom: 12,
+                }}
+              >
+                <strong>
+                  Photo {(selectedPhotoIndex || 0) + 1} of {approvedPhotos.length}
+                </strong>
+                <button type="button" onClick={closeViewer}>
+                  Close
+                </button>
+              </div>
+
+              <img
+                src={selectedPhoto.imageUrl}
+                alt={selectedCaption || "Event photo"}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  maxHeight: "70vh",
+                  objectFit: "contain",
+                  background: "#0f172a",
+                  borderRadius: 8,
+                }}
+              />
+
+              {selectedPhoto.show_caption && selectedCaption ? (
+                <div style={{ marginTop: 12 }}>
+                  <div>{selectedCaption}</div>
+                  {selectedPhotographer ? (
+                    <div style={{ marginTop: 6, color: "#475569" }}>
+                      Photo by {selectedPhotographer}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {viewerMessage ? (
+                <div style={{ marginTop: 12, color: "#475569" }}>
+                  {viewerMessage}
+                </div>
+              ) : null}
+
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginTop: 16,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={showPreviousPhoto}
+                  disabled={approvedPhotos.length < 2}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={showNextPhoto}
+                  disabled={approvedPhotos.length < 2}
+                >
+                  Next
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void downloadPhoto(selectedPhoto)}
+                  disabled={downloadingPhotoId !== null}
+                >
+                  {downloadingPhotoId === selectedPhoto.id
+                    ? "Downloading..."
+                    : "Download Photo"}
+                </button>
+                {canSharePhoto ? (
+                  <button
+                    type="button"
+                    onClick={() => void sharePhoto(selectedPhoto)}
+                  >
+                    Share Photo
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

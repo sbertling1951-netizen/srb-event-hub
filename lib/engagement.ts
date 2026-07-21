@@ -7,6 +7,30 @@ type LogEngagementParams = {
   details?: Record<string, unknown>;
 };
 
+function logEngagementError(context: string, error: unknown) {
+  const supabaseError = error as {
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+    code?: unknown;
+  };
+
+  console.warn(context, {
+    message:
+      typeof supabaseError?.message === "string"
+        ? supabaseError.message
+        : "Unknown engagement logging error.",
+    details:
+      typeof supabaseError?.details === "string"
+        ? supabaseError.details
+        : undefined,
+    hint:
+      typeof supabaseError?.hint === "string" ? supabaseError.hint : undefined,
+    code:
+      typeof supabaseError?.code === "string" ? supabaseError.code : undefined,
+  });
+}
+
 export async function logEngagement({
   eventId,
   attendeeId,
@@ -25,7 +49,8 @@ export async function logEngagement({
     );
 
     if (engagementError) {
-      throw engagementError;
+      logEngagementError("Engagement logging failed:", engagementError);
+      return;
     }
 
     if (activityType === "login") {
@@ -37,10 +62,10 @@ export async function logEngagement({
       );
 
       if (loginError) {
-        throw loginError;
+        logEngagementError("Login engagement update failed:", loginError);
       }
     }
   } catch (err) {
-    console.error("Engagement logging failed:", err);
+    logEngagementError("Engagement logging failed:", err);
   }
 }
