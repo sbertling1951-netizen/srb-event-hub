@@ -52,7 +52,7 @@ function normalizeEventStatus(status?: string | null) {
     .toLowerCase();
 }
 
-function isMemberVisibleEvent(event: EventRow, today: string) {
+function isMemberVisibleEvent(event: EventRow) {
   if (event.visible_to_members === false) {
     return false;
   }
@@ -70,10 +70,6 @@ function isMemberVisibleEvent(event: EventRow, today: string) {
     normalizedStatus === "closed" ||
     normalizedStatus === "draft"
   ) {
-    return false;
-  }
-
-  if (event.end_date && event.end_date < today) {
     return false;
   }
 
@@ -108,7 +104,6 @@ export default function MemberLoginPage() {
     try {
       setStatus("Loading events...");
       setError(null);
-      const today = new Date().toISOString().slice(0, 10);
 
       const { data, error } = await supabase
         .from("events")
@@ -124,7 +119,7 @@ export default function MemberLoginPage() {
       }
 
       const memberEvents = ((data || []) as EventRow[]).filter((event) =>
-        isMemberVisibleEvent(event, today),
+        isMemberVisibleEvent(event),
       );
 
       setEvents(memberEvents);
@@ -276,7 +271,7 @@ export default function MemberLoginPage() {
         participant_id: attendee.participant_id || null,
         participant_name: attendee.participant_name || null,
         login_at: new Date().toISOString(),
-        expires_at: event.end_date ? `${event.end_date}T23:59:59` : null,
+        expires_at: null,
       });
 
       await logEngagement({
