@@ -178,10 +178,36 @@ if (!processInfo || processInfo.pm2_env?.status !== "online") process.exit(1);
 echo "PM2 process is online."
 
 echo "== Health Check =="
-echo "Checking production URL..."
-curl --fail --location --silent --show-error \
-  --connect-timeout 10 --max-time 30 --retry 3 --retry-delay 2 \
-  --output /dev/null "${production_url}"
+echo "Waiting for application startup..."
+sleep 4
+
+health_deadline=$((SECONDS + 60))
+health_attempt=1
+health_check_succeeded=0
+
+while (( SECONDS < health_deadline )); do
+  echo "Attempt ${health_attempt}..."
+
+  if curl --fail --location --silent --show-error \
+    --connect-timeout 5 --max-time 10 \
+    --output /dev/null "${production_url}"; then
+    health_check_succeeded=1
+    echo "Application is responding."
+    break
+  fi
+
+  if (( SECONDS + 2 >= health_deadline )); then
+    break
+  fi
+
+  sleep 2
+  health_attempt=$((health_attempt + 1))
+done
+
+if [[ "${health_check_succeeded}" != "1" ]]; then
+  echo "Health check failed: application did not respond within 60 seconds." >&2
+  exit 1
+fi
 
 deployed_sha="$(git rev-parse HEAD)"
 if [[ "${deployed_sha}" != "${expected_sha}" ]]; then
