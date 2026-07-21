@@ -6,7 +6,8 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
-} from "@/lib/adminWorkspaceContext";import { supabase } from "@/lib/supabase";
+} from "@/lib/adminWorkspaceContext";
+import { supabase } from "@/lib/supabase";
 
 type RequestRow = {
   id: string;
@@ -67,42 +68,6 @@ function phoneHref(value: string | null) {
 function emailHref(value: string | null) {
   const email = (value || "").trim();
   return email ? `mailto:${email}` : "";
-}
-
-function vendorEmailHref(request: RequestRow) {
-  const vendor = Array.isArray(request.vendors)
-    ? request.vendors[0]
-    : request.vendors;
-  const vendorEmail = vendor?.email?.trim();
-
-  if (!vendorEmail) {
-    return "";
-  }
-
-  const vendorName = vendor?.business_name || "Vendor";
-  const site = currentSiteForRequest(request) || "Not provided";
-  const subject = `Vendor Service Request - ${request.requester_name || "FCOC Member"}`;
-
-  const body = [
-    `Hello ${vendorName},`,
-    "",
-    "A vendor service request was submitted through the FCOC Event Hub.",
-    "",
-    `Name: ${request.requester_name || ""}`,
-    `Site: ${site}`,
-    `Phone: ${request.requester_phone || ""}`,
-    `Email: ${request.requester_email || ""}`,
-    `Service: ${request.requested_service || ""}`,
-    `Party Count: ${request.guest_count || 0}`,
-    `Preferred response: ${request.preferred_response_method || ""}`,
-    "",
-    "Notes:",
-    request.request_notes || "",
-    "",
-    "Please contact the member directly to follow up.",
-  ].join("\n");
-
-  return `mailto:${vendorEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 function vendorForRequest(request: RequestRow) {
@@ -193,6 +158,7 @@ function VendorRequestsInner() {
   const [filter, setFilter] = useState("all");
   const [status, setStatus] = useState("Loading...");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
 
   async function loadRequests() {
     const event = getCurrentAdminEvent();
@@ -302,6 +268,63 @@ function VendorRequestsInner() {
       a.localeCompare(b, undefined, { sensitivity: "base" }),
     );
   }, [filtered]);
+
+  async function sendVendorEmail(request: RequestRow) {
+    const vendor = vendorForRequest(request);
+    const vendorEmail = vendor?.email?.trim() || "";
+    const vendorName = vendor?.business_name || "Vendor";
+
+    if (!vendorEmail) {
+      setStatus("This vendor does not have an email address.");
+      return;
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setStatus("Email failed: You must be signed in as an admin.");
+      return;
+    }
+
+    setSendingEmailId(request.id);
+    setStatus(`Sending email to ${vendorName}...`);
+
+    try {
+      const response = await fetch("/api/email/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          requestId: request.id,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+      };
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Unable to send vendor email.");
+      }
+
+      setStatus(`Email sent to ${vendorName} at ${vendorEmail}.`);
+    } catch (error) {
+      console.error("sendVendorEmail error:", error);
+
+      setStatus(
+        error instanceof Error
+          ? `Email failed: ${error.message}`
+          : "Email failed.",
+      );
+    } finally {
+      setSendingEmailId(null);
+    }
+  }
 
   async function updateStatus(id: string, nextStatus: string) {
     setUpdatingId(id);
@@ -720,13 +743,15 @@ function VendorRequestsInner() {
               </a>
             ) : null}
 
-            {vendorEmailHref(r) ? (
-              <a
-                href={vendorEmailHref(r)}
+            {vendorForRequest(r)?.email?.trim() ? (
+              <button
+                type="button"
+                onClick={() => void sendVendorEmail(r)}
+                disabled={sendingEmailId === r.id}
                 className="app-button app-button-primary"
               >
-                Email Vendor
-              </a>
+                {sendingEmailId === r.id ? "Sending..." : "Email Vendor"}
+              </button>
             ) : null}
 
             <button
