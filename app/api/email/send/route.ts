@@ -22,9 +22,6 @@ type VendorRequest = {
     | null;
 };
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -81,7 +78,8 @@ export async function POST(req: NextRequest) {
       !body ||
       typeof body !== "object" ||
       Array.isArray(body) ||
-      Object.keys(body).some((key) => key !== "requestId")
+      Object.keys(body).length !== 1 ||
+      !Object.prototype.hasOwnProperty.call(body, "requestId")
     ) {
       return NextResponse.json(
         { success: false, error: "Invalid request body." },
@@ -91,9 +89,11 @@ export async function POST(req: NextRequest) {
 
     const requestBody = body as { requestId?: unknown };
     const requestId =
-      typeof requestBody.requestId === "string" ? requestBody.requestId : "";
+      typeof requestBody.requestId === "string"
+        ? requestBody.requestId.trim()
+        : "";
 
-    if (!UUID_PATTERN.test(requestId)) {
+    if (!requestId) {
       return NextResponse.json(
         {
           success: false,
@@ -103,7 +103,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const accessToken = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+    const accessToken = req.headers
+      .get("authorization")
+      ?.match(/^Bearer\s+(.+)$/i)?.[1];
     const supabaseAuth = getSupabaseAuthClient();
 
     if (!accessToken || !supabaseAuth) {
@@ -195,13 +197,12 @@ export async function POST(req: NextRequest) {
     const request = vendorRequest as VendorRequest;
 
     if (adminUser.privilege_group !== "super_admin") {
-      const { data: eventAccess, error: eventAccessError } =
-        await supabaseAdmin
-          .from("admin_event_access")
-          .select("id")
-          .eq("admin_user_id", adminUser.id)
-          .eq("event_id", request.event_id)
-          .maybeSingle();
+      const { data: eventAccess, error: eventAccessError } = await supabaseAdmin
+        .from("admin_event_access")
+        .select("id")
+        .eq("admin_user_id", adminUser.id)
+        .eq("event_id", request.event_id)
+        .maybeSingle();
 
       if (eventAccessError) {
         throw eventAccessError;
@@ -228,7 +229,10 @@ export async function POST(req: NextRequest) {
 
     if (!vendorEmail) {
       return NextResponse.json(
-        { success: false, error: "This vendor does not have an email address." },
+        {
+          success: false,
+          error: "This vendor does not have an email address.",
+        },
         { status: 422 },
       );
     }
@@ -241,8 +245,18 @@ export async function POST(req: NextRequest) {
     }
 
     const attendee = firstRelation(request.attendees);
-    const site = attendee?.assigned_site || request.site_number || "Not provided";
+    const site =
+      attendee?.assigned_site || request.site_number || "Not provided";
     const vendorName = vendor.business_name || "Vendor";
+    const fromEmail = process.env.RESEND_FROM_EMAIL?.trim();
+
+    if (!fromEmail) {
+      return NextResponse.json(
+        { success: false, error: "Email service is not configured." },
+        { status: 500 },
+      );
+    }
+
     const subject = `Vendor Service Request - ${request.requester_name || "FCOC Member"}`;
     const text = [
       `Hello ${vendorName},`,
@@ -264,7 +278,7 @@ export async function POST(req: NextRequest) {
     ].join("\n");
 
     const result = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL!,
+      from: fromEmail,
       to: [vendorEmail],
       subject,
       text,
