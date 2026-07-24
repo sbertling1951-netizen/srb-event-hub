@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { logEngagement } from "@/lib/engagement";
 import { supabase } from "@/lib/supabase";
+import { useMemberWorkspace } from "@/lib/memberWorkspace";
 
 type MemberEvent = {
   id: string;
@@ -110,6 +110,7 @@ export default function Page() {
 }
 
 function MemberAnnouncementsPageInner() {
+  const { event: workspaceEvent, attendeeId, isReady } = useMemberWorkspace();
   const [event, setEvent] = useState<MemberEvent | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,7 +123,7 @@ function MemberAnnouncementsPageInner() {
     setStatus("Loading announcements...");
 
     try {
-      const currentEvent = getCurrentMemberEvent();
+      const currentEvent = workspaceEvent;
 
       if (!currentEvent?.id) {
         setEvent(null);
@@ -182,48 +183,18 @@ function MemberAnnouncementsPageInner() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isReady, workspaceEvent]);
 
   useEffect(() => {
-    void loadPage();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-member-event-context" ||
-        e.key === "fcoc-member-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void loadPage();
-      }
-    }
-
-    function handleMemberEventUpdated() {
-      void loadPage();
-    }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-member-event-updated",
-      handleMemberEventUpdated,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-member-event-updated",
-        handleMemberEventUpdated,
-      );
-    };
-  }, [loadPage]);
-
-  useEffect(() => {
-    if (!event?.id) {
+    if (!isReady) {
       return;
     }
 
-    const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
-    if (!attendeeId) {
+    void loadPage();
+  }, [isReady, loadPage]);
+
+  useEffect(() => {
+    if (!event?.id || !attendeeId) {
       return;
     }
 
@@ -232,7 +203,7 @@ function MemberAnnouncementsPageInner() {
       attendeeId,
       activityType: "announcement_view",
     });
-  }, [event?.id]);
+  }, [attendeeId, event?.id]);
 
   const sortedAnnouncements = useMemo(() => {
     return [...announcements].sort((a, b) => {
