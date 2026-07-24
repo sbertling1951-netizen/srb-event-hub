@@ -2,20 +2,12 @@
 
 import React, { useEffect, useRef, useState } from "react";
 
-import {
-  type CurrentMemberEvent,
-  getCurrentMemberEvent,
-  getCurrentMemberAttendeeId,
-  getStoredMemberAttendeeId,
-  getStoredMemberEmail,
-} from "@/lib/getCurrentMemberEvent";
 import { logEngagement } from "@/lib/engagement";
+import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 export default function MemberPhotosPage() {
-  const [event, setEvent] = useState<CurrentMemberEvent | null>(null);
-  const [attendeeId, setAttendeeId] = useState("");
-  const [memberEmail, setMemberEmail] = useState("");
+  const { event: workspaceEvent, attendeeId, isReady } = useMemberWorkspace();
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -29,7 +21,8 @@ export default function MemberPhotosPage() {
     photo_status: string;
     uploaded_at: string;
     member_caption?: string | null;
-    imageUrl?: string;
+    previewUrl?: string | null;
+    fullImageUrl?: string | null;
     pendingLocal?: boolean;
   };
   type ApprovedPhoto = {
@@ -39,7 +32,8 @@ export default function MemberPhotosPage() {
     admin_caption: string | null;
     photographer_name_snapshot: string | null;
     show_caption: boolean | null;
-    imageUrl: string;
+    previewUrl?: string | null;
+    fullImageUrl?: string | null;
   };
   const [uploads, setUploads] = useState<UploadedPhoto[]>([]);
   const [approvedPhotos, setApprovedPhotos] = useState<ApprovedPhoto[]>([]);
@@ -55,36 +49,23 @@ export default function MemberPhotosPage() {
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
-    const currentEvent = getCurrentMemberEvent();
-
-    setEvent(currentEvent);
-
-    const storedAttendeeId = getStoredMemberAttendeeId() || "";
-
-    setAttendeeId(storedAttendeeId);
-    setMemberEmail(getStoredMemberEmail() || "");
-
-    if (storedAttendeeId) {
-      void loadUploads(storedAttendeeId);
+    if (!isReady) {
+      return;
     }
 
-    if (currentEvent?.id) {
-      void loadApprovedPhotos(currentEvent.id);
-    }
+    if (attendeeId) {
+      void loadUploads(attendeeId);
 
-    if (storedAttendeeId) {
       void (async () => {
         const { data } = await supabase
           .from("attendees")
-          .select("nickname, badge_first_name, pilot_first, pilot_last")
-          .eq("id", storedAttendeeId)
+          .select("nickname, pilot_first, pilot_last")
+          .eq("id", attendeeId)
           .maybeSingle();
 
         if (data) {
           const photographerName =
             data.nickname?.trim() ||
-            data.badge_first_name?.trim() ||
-            data.pilot_first?.trim() ||
             [data.pilot_first, data.pilot_last]
               .filter(Boolean)
               .join(" ")
@@ -93,27 +74,105 @@ export default function MemberPhotosPage() {
           setMemberName(photographerName || "");
         }
       })();
+    } else {
+      setUploads([]);
+      setMemberName("");
     }
 
-    void supabase;
-  }, []);
+    if (workspaceEvent?.id) {
+      void loadApprovedPhotos(workspaceEvent.id);
+    } else {
+      setApprovedPhotos([]);
+    }
+  }, [attendeeId, isReady, workspaceEvent?.id]);
 
   useEffect(() => {
-    if (!event?.id) {
-      return;
-    }
-
-    const storedAttendeeId = getCurrentMemberAttendeeId();
-    if (!storedAttendeeId) {
+    if (!isReady || !workspaceEvent?.id || !attendeeId) {
       return;
     }
 
     void logEngagement({
-      eventId: event.id,
-      attendeeId: storedAttendeeId,
+      eventId: workspaceEvent.id,
+      attendeeId,
       activityType: "photos_view",
     });
-  }, [event?.id]);
+  }, [attendeeId, isReady, workspaceEvent?.id]);
+
+  async function createPreviewUrlBatch<T extends { storage_path: string }>(
+    photos: T[],
+  ) {
+    const results: Array<{ photo: T; signedUrl: string | null }> = [];
+    const concurrency = 4;
+    const queue = [...photos];
+
+    while (queue.length > 0) {
+      const batch = queue.splice(0, concurrency);
+      const batchResults = await Promise.all(
+        batch.map(async (photo) => {
+          try {
+            const { data, error } = await supabase.storage
+              .from("event-photos")
+              .createSignedUrl(photo.storage_path, 60 * 60, {
+                transform: {
+                  width: 240,
+                  height: 240,
+                  resize: "cover",
+                },
+              });
+
+            if (error || !data?.signedUrl) {
+              console.error("preview photo URL error:", error);
+              return { photo, signedUrl: null };
+            }
+
+            return { photo, signedUrl: data.signedUrl };
+          } catch (err) {
+            console.error("preview photo URL error:", err);
+            return { photo, signedUrl: null };
+          }
+        }),
+      );
+
+      results.push(...batchResults);
+    }
+
+    return results;
+  }
+
+  async function ensureFullPhotoUrl(photo: UploadedPhoto | ApprovedPhoto) {
+    if (photo.fullImageUrl) {
+      return photo.fullImageUrl;
+    }
+
+    try {
+      const { data, error } = await supabase.storage
+        .from("event-photos")
+        .createSignedUrl(photo.storage_path, 60 * 60);
+
+      if (error || !data?.signedUrl) {
+        throw error || new Error("Unable to load the original photo.");
+      }
+
+      if ("photo_status" in photo) {
+        setUploads((prev) =>
+          prev.map((item) =>
+            item.id === photo.id ? { ...item, fullImageUrl: data.signedUrl } : item,
+          ),
+        );
+      } else {
+        setApprovedPhotos((prev) =>
+          prev.map((item) =>
+            item.id === photo.id ? { ...item, fullImageUrl: data.signedUrl } : item,
+          ),
+        );
+      }
+
+      return data.signedUrl;
+    } catch (err) {
+      console.error("full photo URL error:", err);
+      return null;
+    }
+  }
 
   async function loadUploads(attendeeId: string) {
     const { data, error } = await supabase
@@ -127,20 +186,15 @@ export default function MemberPhotosPage() {
       return;
     }
 
-    const photos = await Promise.all(
-      ((data || []) as UploadedPhoto[]).map(async (photo) => {
-        const { data: signed, error: signedError } = await supabase.storage
-          .from("event-photos")
-          .createSignedUrl(photo.storage_path, 60 * 60);
+    const photos = (data || []) as UploadedPhoto[];
+    const previewResults = await createPreviewUrlBatch(photos);
 
-        return {
-          ...photo,
-          imageUrl: signed?.signedUrl,
-        };
-      }),
+    setUploads(
+      previewResults.map(({ photo, signedUrl }) => ({
+        ...photo,
+        previewUrl: signedUrl,
+      })),
     );
-
-    setUploads(photos);
   }
 
   async function loadApprovedPhotos(eventId: string) {
@@ -160,26 +214,16 @@ export default function MemberPhotosPage() {
       return;
     }
 
-    const photos = await Promise.all(
-      (data || []).map(async (photo) => {
-        const { data: signed, error: signedError } = await supabase.storage
-          .from("event-photos")
-          .createSignedUrl(photo.storage_path, 60 * 60);
-
-        if (signedError || !signed?.signedUrl) {
-          console.error("approved photo URL error:", signedError);
-          return null;
-        }
-
-        return {
-          ...photo,
-          imageUrl: signed.signedUrl,
-        } as ApprovedPhoto;
-      }),
-    );
+    const photos = (data || []) as ApprovedPhoto[];
+    const previewResults = await createPreviewUrlBatch(photos);
 
     setApprovedPhotos(
-      photos.filter((photo): photo is ApprovedPhoto => photo !== null),
+      previewResults
+        .filter((result) => Boolean(result.signedUrl))
+        .map(({ photo, signedUrl }) => ({
+          ...photo,
+          previewUrl: signedUrl,
+        })),
     );
   }
 
@@ -193,7 +237,9 @@ export default function MemberPhotosPage() {
       setError(null);
       await Promise.all([
         loadUploads(attendeeId),
-        event?.id ? loadApprovedPhotos(event.id) : Promise.resolve(),
+        workspaceEvent?.id
+          ? loadApprovedPhotos(workspaceEvent.id)
+          : Promise.resolve(),
       ]);
     } catch (err) {
       setError("Unable to refresh. Check connection.");
@@ -209,7 +255,7 @@ export default function MemberPhotosPage() {
       );
       return;
     }
-    if (!event?.id) {
+    if (!workspaceEvent?.id) {
       setError("No current event selected.");
       return;
     }
@@ -228,7 +274,7 @@ export default function MemberPhotosPage() {
 
       const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-      const fileName = `${event.id}/${attendeeId}/${uniqueId}.${extension}`;
+      const fileName = `${workspaceEvent.id}/${attendeeId}/${uniqueId}.${extension}`;
 
       const { error: uploadError } = await supabase.storage
         .from("event-photos")
@@ -241,7 +287,7 @@ export default function MemberPhotosPage() {
       const { error: insertError } = await supabase
         .from("event_photos")
         .insert({
-          event_id: event.id,
+          event_id: workspaceEvent.id,
           attendee_id: attendeeId,
           photographer_name_snapshot: memberName || null,
           storage_path: fileName,
@@ -257,10 +303,7 @@ export default function MemberPhotosPage() {
       setUploadCompleted((prev) => prev + 1);
       await loadUploads(attendeeId);
     } catch (err) {
-      console.error(
-        "photo upload error:",
-        JSON.stringify(err, null, 2),
-      );
+      console.error("photo upload error:", JSON.stringify(err, null, 2));
 
       setError(
         typeof err === "object" && err !== null
@@ -275,6 +318,11 @@ export default function MemberPhotosPage() {
     const confirmed = window.confirm("Delete this photo?");
 
     if (!confirmed) {
+      return;
+    }
+
+    if (!attendeeId) {
+      setError("No attendee found.");
       return;
     }
 
@@ -342,7 +390,8 @@ export default function MemberPhotosPage() {
   }
 
   function photoFileName(photo: ApprovedPhoto) {
-    const extension = photo.storage_path.split(".").pop()?.toLowerCase() || "jpg";
+    const extension =
+      photo.storage_path.split(".").pop()?.toLowerCase() || "jpg";
     const safeExtension = /^[a-z0-9]+$/.test(extension) ? extension : "jpg";
 
     return `event-photo-${photo.id}.${safeExtension}`;
@@ -357,7 +406,12 @@ export default function MemberPhotosPage() {
       setDownloadingPhotoId(photo.id);
       setViewerMessage("");
 
-      const response = await fetch(photo.imageUrl);
+      const fullUrl = await ensureFullPhotoUrl(photo);
+      if (!fullUrl) {
+        throw new Error("Photo download failed.");
+      }
+
+      const response = await fetch(fullUrl);
 
       if (!response.ok) {
         throw new Error("Photo download failed.");
@@ -387,16 +441,17 @@ export default function MemberPhotosPage() {
       return;
     }
 
-    const shareUrl = photo.imageUrl;
+    const shareUrl = (await ensureFullPhotoUrl(photo)) || photo.previewUrl || "";
     const shareTitle = "Event photo";
 
     try {
       const canShareFiles =
         typeof navigator.canShare === "function" && typeof File !== "undefined";
+      const fullUrl = (await ensureFullPhotoUrl(photo)) || photo.previewUrl || "";
 
       if (canShareFiles) {
         try {
-          const response = await fetch(photo.imageUrl);
+          const response = await fetch(fullUrl);
 
           if (!response.ok) {
             throw new Error("Photo download failed.");
@@ -425,9 +480,13 @@ export default function MemberPhotosPage() {
   }
 
   const selectedPhoto =
-    selectedPhotoIndex === null ? null : approvedPhotos[selectedPhotoIndex] || null;
+    selectedPhotoIndex === null
+      ? null
+      : approvedPhotos[selectedPhotoIndex] || null;
   const selectedCaption = selectedPhoto
-    ? selectedPhoto.admin_caption?.trim() || selectedPhoto.member_caption?.trim() || ""
+    ? selectedPhoto.admin_caption?.trim() ||
+      selectedPhoto.member_caption?.trim() ||
+      ""
     : "";
   const selectedPhotographer =
     selectedPhoto?.photographer_name_snapshot?.trim() || "";
@@ -475,7 +534,8 @@ export default function MemberPhotosPage() {
               color: "#64748b",
             }}
           >
-            Useful when uploading multiple photos from the same activity, meal, tour, or event.
+            Useful when uploading multiple photos from the same activity, meal,
+            tour, or event.
           </div>
         </div>
         <input
@@ -533,9 +593,7 @@ export default function MemberPhotosPage() {
             <div style={{ marginTop: 6 }}>
               Uploaded: {uploadCompleted} of {uploadTotal}
             </div>
-            <div>
-              Remaining: {Math.max(uploadTotal - uploadCompleted, 0)}
-            </div>
+            <div>Remaining: {Math.max(uploadTotal - uploadCompleted, 0)}</div>
             <div
               style={{
                 marginTop: 10,
@@ -566,18 +624,17 @@ export default function MemberPhotosPage() {
             >
               {uploadTotal > 0
                 ? Math.round((uploadCompleted / uploadTotal) * 100)
-                : 0}% Complete
+                : 0}
+              % Complete
             </div>
           </div>
         )}
 
         {error && <div style={{ marginTop: 8, color: "red" }}>{error}</div>}
         <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>
-          Event: {event?.name || "No Event"}
+          Event: {workspaceEvent?.name || "No Event"}
           <br />
           Attendee: {attendeeId || "Unknown"}
-          <br />
-          Email: {memberEmail || "Unknown"}
         </div>
 
         <div style={{ marginTop: 20 }}>
@@ -601,9 +658,8 @@ export default function MemberPhotosPage() {
                 }}
               >
                 {
-                  uploads.filter(
-                    (photo) => photo.photo_status !== "pending",
-                  ).length
+                  uploads.filter((photo) => photo.photo_status !== "pending")
+                    .length
                 }{" "}
                 of {uploads.length} Reviewed
               </div>
@@ -646,7 +702,6 @@ export default function MemberPhotosPage() {
                     {new Date(photo.uploaded_at).toLocaleString()}
                   </div>
 
-
                   <>
                     <div
                       style={{
@@ -658,9 +713,12 @@ export default function MemberPhotosPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (photo.imageUrl) {
-                            window.open(photo.imageUrl, "_blank");
-                          }
+                          void (async () => {
+                            const fullUrl = await ensureFullPhotoUrl(photo);
+                            if (fullUrl) {
+                              window.open(fullUrl, "_blank");
+                            }
+                          })();
                         }}
                       >
                         View
@@ -676,10 +734,10 @@ export default function MemberPhotosPage() {
                         </button>
                       )}
                     </div>
-                    {photo.imageUrl && (
+                    {(photo.previewUrl || photo.fullImageUrl) && (
                       <>
                         <img
-                          src={photo.imageUrl}
+                          src={photo.previewUrl || photo.fullImageUrl || ""}
                           alt="Uploaded photo"
                           style={{
                             width: 120,
@@ -703,7 +761,8 @@ export default function MemberPhotosPage() {
                               color: "#334155",
                             }}
                           >
-                            {photo.member_caption?.trim() || "No caption added."}
+                            {photo.member_caption?.trim() ||
+                              "No caption added."}
                           </div>
                         </div>
                       </>
@@ -738,6 +797,7 @@ export default function MemberPhotosPage() {
                   onClick={() => {
                     setSelectedPhotoIndex(index);
                     setViewerMessage("");
+                    void ensureFullPhotoUrl(photo);
                   }}
                   aria-label="View event photo"
                   style={{
@@ -750,7 +810,7 @@ export default function MemberPhotosPage() {
                   }}
                 >
                   <img
-                    src={photo.imageUrl}
+                    src={photo.previewUrl || photo.fullImageUrl || ""}
                     alt="Event photo"
                     style={{
                       display: "block",
@@ -820,7 +880,8 @@ export default function MemberPhotosPage() {
                 }}
               >
                 <strong>
-                  Photo {(selectedPhotoIndex || 0) + 1} of {approvedPhotos.length}
+                  Photo {(selectedPhotoIndex || 0) + 1} of{" "}
+                  {approvedPhotos.length}
                 </strong>
                 <button type="button" onClick={closeViewer}>
                   Close
@@ -828,7 +889,7 @@ export default function MemberPhotosPage() {
               </div>
 
               <img
-                src={selectedPhoto.imageUrl}
+                src={selectedPhoto.fullImageUrl || selectedPhoto.previewUrl || ""}
                 alt={selectedCaption || "Event photo"}
                 style={{
                   display: "block",

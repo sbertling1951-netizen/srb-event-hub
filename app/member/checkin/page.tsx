@@ -7,14 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { logEngagement } from "@/lib/engagement";
 import { preferredDisplayLine } from "@/lib/formatters";
-import {
-  type CurrentMemberEvent,
-  getCurrentMemberEvent,
-  getStoredMemberAttendeeId,
-  getStoredMemberEmail,
-  getStoredMemberEntryId,
-} from "@/lib/getCurrentMemberEvent";
-import { getCurrentAttendeeId } from "@/lib/memberSession";
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 type AttendeeRow = {
@@ -73,7 +66,7 @@ function normalizeSite(value: string) {
 
 function MemberCheckinPageInner() {
   const router = useRouter();
-  const [event, setEvent] = useState<CurrentMemberEvent | null>(null);
+  const { event, attendeeId, isReady } = useMemberWorkspace();
   const [attendee, setAttendee] = useState<AttendeeRow | null>(null);
   const [household, setHousehold] = useState<HouseholdMember[]>([]);
   const [shareWithAttendees, setShareWithAttendees] = useState(false);
@@ -88,64 +81,30 @@ function MemberCheckinPageInner() {
       setStatus("Loading check-in...");
       setError(null);
 
-      const currentEvent = getCurrentMemberEvent();
-      if (!currentEvent?.id) {
-        setEvent(null);
-        setAttendee(null);
-        setHousehold([]);
-        setStatus("No current event selected.");
+      if (!isReady) {
+        setStatus("Loading check-in...");
         return;
       }
 
-      setEvent(currentEvent);
-
-      // Prefer the canonical MemberSession identity. Fall back to legacy
-      // localStorage helpers during the member-session migration.
-      const storedAttendeeId =
-        getCurrentAttendeeId() || getStoredMemberAttendeeId();
-      const storedEntryId = getStoredMemberEntryId();
-      const storedEmail = getStoredMemberEmail()?.toLowerCase() || null;
-
-      const possibleIds = [storedAttendeeId].filter(Boolean);
-      const possibleEntryIds = [storedEntryId].filter(Boolean);
-      const possibleEmails = [storedEmail].filter(Boolean);
-
-      if (
-        possibleIds.length === 0 &&
-        possibleEntryIds.length === 0 &&
-        possibleEmails.length === 0
-      ) {
+      if (!event?.id || !attendeeId) {
         setAttendee(null);
         setHousehold([]);
-        setStatus("No member identity found for self check-in.");
+        setStatus("Loading check-in...");
         return;
       }
 
-      const { data: attendeeRows, error: attendeeError } = await supabase
+      const { data: attendeeRow, error: attendeeError } = await supabase
         .from("attendees")
         .select(
           "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,assigned_site,share_with_attendees,has_arrived",
         )
-        .eq("event_id", currentEvent.id);
+        .eq("id", attendeeId)
+        .eq("event_id", event.id)
+        .maybeSingle<AttendeeRow>();
 
       if (attendeeError) {
         throw attendeeError;
       }
-
-      const allAttendees = (attendeeRows || []) as AttendeeRow[];
-
-      const attendeeRow: AttendeeRow | null =
-        allAttendees.find(
-          (row) => storedAttendeeId && row.id === storedAttendeeId,
-        ) ||
-        allAttendees.find(
-          (row) => storedEntryId && row.entry_id === storedEntryId,
-        ) ||
-        allAttendees.find(
-          (row) =>
-            storedEmail && (row.email || "").toLowerCase() === storedEmail,
-        ) ||
-        null;
 
       if (!attendeeRow) {
         setAttendee(null);
@@ -196,28 +155,19 @@ function MemberCheckinPageInner() {
       );
       setStatus("");
     }
-  }, []);
+  }, [attendeeId, event?.id, isReady]);
 
   useEffect(() => {
-    void loadPage();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-member-attendee-id" ||
-        e.key === "fcoc-member-entry-id" ||
-        e.key === "fcoc-member-email" ||
-        e.key === "fcoc-member-event-changed"
-      ) {
-        void loadPage();
-      }
+    if (!isReady) {
+      return;
     }
 
-    window.addEventListener("storage", handleStorage);
+    if (!event?.id || !attendeeId) {
+      return;
+    }
 
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, [loadPage]);
+    void loadPage();
+  }, [attendeeId, event?.id, isReady, loadPage]);
 
   useEffect(() => {
     if (!event?.id) {

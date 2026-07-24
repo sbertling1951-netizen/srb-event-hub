@@ -7,7 +7,7 @@ import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { logEngagement } from "@/lib/engagement";
 import { fullName, preferredDisplayLine } from "@/lib/formatters";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 type MemberEventRow = {
@@ -160,6 +160,7 @@ function getStoredViewerAttendeeId() {
 }
 
 function CoachMapPublicPageInner() {
+  const { event: workspaceEvent, attendeeId, isReady } = useMemberWorkspace();
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
@@ -189,16 +190,12 @@ function CoachMapPublicPageInner() {
 
   const loadMap = useCallback(async () => {
     try {
-      const memberEvent = getCurrentMemberEvent();
-      if (!memberEvent?.id) {
-        setEvent(null);
-        setSites([]);
-        setLocations([]);
-        setAttendees([]);
-        setHouseholdMembers([]);
-        setStatus("No current event selected.");
+      if (!isReady || !workspaceEvent?.id || !attendeeId) {
+        setStatus("Loading map...");
         return;
       }
+
+      const memberEvent = workspaceEvent;
 
       const { data: eventRow, error: eventError } = await supabase
         .from("events")
@@ -385,12 +382,18 @@ function CoachMapPublicPageInner() {
       setHouseholdMembers([]);
       setStatus(err?.message || "Failed to load coach map.");
     }
-  }, []);
+  }, [attendeeId, isReady, workspaceEvent]);
 
   // ─── Effects ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    setViewerAttendeeId(getStoredViewerAttendeeId());
+    if (!isReady || !workspaceEvent?.id || !attendeeId) {
+      setViewerAttendeeId(attendeeId ?? getStoredViewerAttendeeId());
+      setStatus("Loading map...");
+      return;
+    }
+
+    setViewerAttendeeId(attendeeId ?? getStoredViewerAttendeeId());
     setIsNarrow(window.innerWidth < 800);
     void loadMap();
 
@@ -399,7 +402,7 @@ function CoachMapPublicPageInner() {
         e.key === "fcoc-member-event-changed" ||
         e.key === "fcoc-member-attendee-id"
       ) {
-        setViewerAttendeeId(getStoredViewerAttendeeId());
+        setViewerAttendeeId(attendeeId ?? getStoredViewerAttendeeId());
         void loadMap();
       }
     }
@@ -413,7 +416,7 @@ function CoachMapPublicPageInner() {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("resize", handleResize);
     };
-  }, [loadMap]);
+  }, [attendeeId, isReady, loadMap, workspaceEvent?.id]);
 
   useEffect(() => {
     document.body.classList.add("coach-map-lock");

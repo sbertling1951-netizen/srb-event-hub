@@ -5,13 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { logEngagement } from "@/lib/engagement";
 import { fullName, preferredDisplayLine } from "@/lib/formatters";
-import {
-  type CurrentMemberEvent,
-  getCurrentMemberEvent,
-  getStoredMemberAttendeeId,
-  getStoredMemberEmail,
-  getStoredMemberEntryId,
-} from "@/lib/getCurrentMemberEvent";
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 type Attendee = {
@@ -89,7 +83,7 @@ function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
 }
 
 function AttendeesPageInner() {
-  const [event, setEvent] = useState<CurrentMemberEvent | null>(null);
+  const { event, attendeeId, isReady } = useMemberWorkspace();
   const [eventId, setEventId] = useState<string | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
@@ -101,142 +95,130 @@ function AttendeesPageInner() {
   const [canViewLocator, setCanViewLocator] = useState(true);
 
   const loadCurrentEventData = useCallback(async () => {
-    const currentEvent = getCurrentMemberEvent();
     setError(null);
-    if (!currentEvent?.id) {
-      setEvent(null);
+    if (!isReady) {
       setEventId(null);
       setAttendees([]);
       setHouseholdMembers([]);
       setCanViewLocator(true);
-      setStatus("No current event selected.");
       return;
     }
 
-    setEvent(currentEvent);
-    setEventId(currentEvent.id);
-  }, []);
-
-  const loadAttendees = useCallback(async (currentEventId: string) => {
-    setError(null);
-    const { data, error } = await supabase
-      .from("attendees")
-      .select(
-        "id,entry_id,pilot_first,pilot_last,copilot_first,copilot_last,email,primary_phone,cell_phone,coach_make:coach_manufacturer,coach_model,coach_length,first_time:is_first_timer,volunteer:wants_to_volunteer,handicap_parking,assigned_site,share_with_attendees,has_arrived",
-      )
-      .eq("event_id", currentEventId)
-      .in("registration_status", ["active", "registered"])
-      .order("pilot_last", { ascending: true, nullsFirst: false })
-      .order("pilot_first", { ascending: true, nullsFirst: false });
-
-    if (error) {
-      setError(error.message);
-      setStatus("");
-      return;
-    }
-
-    const attendeeRows = (data || []) as Attendee[];
-
-    const storedAttendeeId = getStoredMemberAttendeeId();
-    const storedEntryId = getStoredMemberEntryId();
-    const storedEmail = getStoredMemberEmail()?.toLowerCase() || null;
-
-    const viewer =
-      attendeeRows.find(
-        (row) => storedAttendeeId && row.id === storedAttendeeId,
-      ) ||
-      attendeeRows.find(
-        (row) => storedEntryId && row.entry_id === storedEntryId,
-      ) ||
-      attendeeRows.find(
-        (row) => storedEmail && (row.email || "").toLowerCase() === storedEmail,
-      ) ||
-      null;
-
-    if (!viewer?.share_with_attendees) {
-      setCanViewLocator(false);
+    if (!event?.id || !attendeeId) {
+      setEventId(null);
       setAttendees([]);
       setHouseholdMembers([]);
-      setStatus(
-        "Attendee Locator is available after you choose to share your information with other attendees.",
+      setCanViewLocator(true);
+      return;
+    }
+
+    setEventId(event.id);
+  }, [attendeeId, event?.id, isReady]);
+
+  const loadAttendees = useCallback(
+    async (currentEventId: string) => {
+      setError(null);
+      const { data, error } = await supabase
+        .from("attendees")
+        .select(
+          "id,entry_id,pilot_first,pilot_last,copilot_first,copilot_last,email,primary_phone,cell_phone,coach_make:coach_manufacturer,coach_model,coach_length,first_time:is_first_timer,volunteer:wants_to_volunteer,handicap_parking,assigned_site,share_with_attendees,has_arrived",
+        )
+        .eq("event_id", currentEventId)
+        .in("registration_status", ["active", "registered"])
+        .order("pilot_last", { ascending: true, nullsFirst: false })
+        .order("pilot_first", { ascending: true, nullsFirst: false });
+
+      if (error) {
+        setError(error.message);
+        setStatus("");
+        return;
+      }
+
+      const attendeeRows = (data || []) as Attendee[];
+
+      const viewer =
+        attendeeRows.find((row) => attendeeId && row.id === attendeeId) || null;
+
+      if (!viewer?.share_with_attendees) {
+        setCanViewLocator(false);
+        setAttendees([]);
+        setHouseholdMembers([]);
+        setStatus(
+          "Attendee Locator is available after you choose to share your information with other attendees.",
+        );
+        return;
+      }
+
+      setCanViewLocator(true);
+      // Log engagement for Attendee Locator view
+      if (currentEventId && attendeeId) {
+        void logEngagement({
+          eventId: currentEventId,
+          attendeeId,
+          activityType: "view_attendee_locator",
+        });
+      }
+      const sharedAttendeeRows = attendeeRows.filter(
+        (row) => !!row.share_with_attendees,
       );
-      return;
-    }
+      setAttendees(sharedAttendeeRows);
 
-    setCanViewLocator(true);
-    // Log engagement for Attendee Locator view
-    if (currentEventId && storedAttendeeId) {
-      void logEngagement({
-        eventId: currentEventId,
-        attendeeId: storedAttendeeId,
-        activityType: "view_attendee_locator",
-      });
-    }
-    const sharedAttendeeRows = attendeeRows.filter(
-      (row) => !!row.share_with_attendees,
-    );
-    setAttendees(sharedAttendeeRows);
+      const attendeeIds = sharedAttendeeRows.map((a) => a.id);
+      if (attendeeIds.length === 0) {
+        setHouseholdMembers([]);
+        setStatus("Loaded 0 shared attendees.");
+        return;
+      }
 
-    const attendeeIds = sharedAttendeeRows.map((a) => a.id);
-    if (attendeeIds.length === 0) {
-      setHouseholdMembers([]);
-      setStatus("Loaded 0 shared attendees.");
-      return;
-    }
+      const { data: memberData, error: memberError } = await supabase
+        .from("attendee_household_members")
+        .select(
+          "id,attendee_id,person_role,first_name,last_name,nickname,display_name,age_text,sort_order,raw_text",
+        )
+        .in("attendee_id", attendeeIds)
+        .order("sort_order", { ascending: true, nullsFirst: false });
 
-    const { data: memberData, error: memberError } = await supabase
-      .from("attendee_household_members")
-      .select(
-        "id,attendee_id,person_role,first_name,last_name,nickname,display_name,age_text,sort_order,raw_text",
-      )
-      .in("attendee_id", attendeeIds)
-      .order("sort_order", { ascending: true, nullsFirst: false });
+      if (memberError) {
+        setError(
+          `Loaded attendees, but household members failed: ${memberError.message}`,
+        );
+        setStatus("");
+        setHouseholdMembers([]);
+        return;
+      }
 
-    if (memberError) {
-      setError(
-        `Loaded attendees, but household members failed: ${memberError.message}`,
+      setHouseholdMembers((memberData || []) as HouseholdMember[]);
+      console.log(
+        "BERTLING MEMBERS",
+        (memberData || []).filter((m) => m.last_name === "Bertling"),
       );
-      setStatus("");
-      setHouseholdMembers([]);
-      return;
-    }
-
-    setHouseholdMembers((memberData || []) as HouseholdMember[]);
-    console.log(
-      "BERTLING MEMBERS",
-      (memberData || []).filter((m) => m.last_name === "Bertling"),
-    );
-    setStatus(`Loaded ${sharedAttendeeRows.length} shared attendees.`);
-  }, []);
+      setStatus(`Loaded ${sharedAttendeeRows.length} shared attendees.`);
+    },
+    [attendeeId],
+  );
 
   useEffect(() => {
+    if (!isReady || !event?.id || !attendeeId) {
+      setStatus("Loading attendees...");
+      return;
+    }
+
+    let cancelled = false;
+
     async function init() {
       setStatus("Loading current event...");
       await loadCurrentEventData();
+      if (!cancelled && event?.id && attendeeId) {
+        await loadAttendees(event.id);
+      }
     }
 
     void init();
 
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-member-event-changed" ||
-        e.key === "fcoc-member-attendee-id" ||
-        e.key === "fcoc-member-entry-id" ||
-        e.key === "fcoc-member-email"
-      ) {
-        void loadCurrentEventData();
-      }
-    }
-
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, [loadCurrentEventData]);
-
-  useEffect(() => {
-    if (eventId) {
-      void loadAttendees(eventId);
-    }
-  }, [eventId, loadAttendees]);
+    return () => {
+      cancelled = true;
+    };
+  }, [attendeeId, event?.id, isReady, loadAttendees, loadCurrentEventData]);
 
   const householdByAttendee = useMemo(() => {
     const map = new Map<string, HouseholdMember[]>();

@@ -10,10 +10,10 @@ import { useAdmin } from "@/lib/adminContext";
 import { useAdminWorkspace } from "@/lib/AdminWorkspaceProvider";
 import { hasPermission } from "@/lib/getCurrentAdminAccess";
 import {
-  getCurrentMemberEvent,
   getStoredMemberHasArrived,
   getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
+import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
@@ -154,6 +154,7 @@ export default function Sidebar() {
   const [mounted, setMounted] = useState(false);
   const [isMobile, setIsMobile] = useState(true);
   const [open, setOpen] = useState(false);
+  const { event: workspaceEvent } = useMemberWorkspace();
   const [memberEvent, setMemberEvent] = useState<EventContext | null>(null);
   const [adminEvent, setAdminEvent] = useState<EventContext | null>(null);
   const [_isCheckedIn, setIsCheckedIn] = useState(false);
@@ -171,21 +172,9 @@ export default function Sidebar() {
 
   function loadContextsFromStorage() {
     try {
-      const memberEventContext = getCurrentMemberEvent();
       const hasArrived = getStoredMemberHasArrived();
       const storedUserMode = getStoredUserMode();
 
-      // Diagnostic logging for context loading
-      console.groupCollapsed("[Sidebar] Context Load");
-      console.log("pathname:", window.location.pathname);
-      console.log("storedUserMode:", storedUserMode);
-      // console.log('adminEventContext:', adminEventContext);
-      console.log("memberEventContext:", memberEventContext);
-      console.log("hasArrived:", hasArrived);
-      console.groupEnd();
-
-      setMemberEvent(memberEventContext);
-      // setAdminEvent(adminEventContext);
       setIsCheckedIn(hasArrived === "true");
       setUserMode(
         storedUserMode === "member" || storedUserMode === "admin"
@@ -316,9 +305,24 @@ export default function Sidebar() {
     if (!mounted) {
       return;
     }
-    console.debug("[Sidebar] pathname changed", pathname);
     loadContextsFromStorage();
   }, [mounted, pathname]);
+
+  useEffect(() => {
+    setMemberEvent(
+      workspaceEvent
+        ? {
+            id: workspaceEvent.id,
+            name: workspaceEvent.name ?? workspaceEvent.eventName ?? null,
+            eventName: workspaceEvent.eventName ?? workspaceEvent.name ?? null,
+            location: workspaceEvent.location ?? null,
+            venue_name: workspaceEvent.venue_name ?? null,
+            start_date: workspaceEvent.start_date ?? null,
+            end_date: workspaceEvent.end_date ?? null,
+          }
+        : null,
+    );
+  }, [workspaceEvent]);
 
   useEffect(() => {
     setAdminEvent(workspaceAdminEvent);

@@ -5,6 +5,7 @@ import type { Metadata, Viewport } from "next";
 import Sidebar from "@/components/layout/Sidebar";
 import { AdminProvider } from "@/lib/adminContext";
 import { AdminWorkspaceProvider } from "@/lib/AdminWorkspaceProvider";
+import { MemberWorkspaceProvider } from "@/lib/memberWorkspace";
 import { getTenantLabel } from "@/lib/tenantLabels";
 
 const appTitle = getTenantLabel("app_title");
@@ -52,38 +53,40 @@ export default function RootLayout({
               }}
             />
 
-            <Sidebar />
+            <MemberWorkspaceProvider>
+              <Sidebar />
 
-            <main className="app-main">
-              <div className="app-inner">
-                <div className="app-header-card">
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                    }}
-                  >
-                    <img
-                      src="/fcoc-logo.png"
-                      alt="FCOC"
+              <main className="app-main">
+                <div className="app-inner">
+                  <div className="app-header-card">
+                    <div
                       style={{
-                        height: 48,
-                        width: "auto",
-                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
                       }}
-                    />
+                    >
+                      <img
+                        src="/fcoc-logo.png"
+                        alt="FCOC"
+                        style={{
+                          height: 48,
+                          width: "auto",
+                          flexShrink: 0,
+                        }}
+                      />
 
-                    <div>
-                      <div className="app-brand">{appTitle}</div>
-                      <div className="app-subtle">{appTagline}</div>
+                      <div>
+                        <div className="app-brand">{appTitle}</div>
+                        <div className="app-subtle">{appTagline}</div>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {children}
-              </div>
-            </main>
+                  {children}
+                </div>
+              </main>
+            </MemberWorkspaceProvider>
           </AdminWorkspaceProvider>
         </AdminProvider>
       </body>

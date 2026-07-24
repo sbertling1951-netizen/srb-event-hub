@@ -5,12 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import {
-  type CurrentMemberEvent,
-  getCurrentMemberEvent,
-  getStoredMemberAttendeeId,
-  getStoredMemberEmail,
-} from "@/lib/getCurrentMemberEvent";
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 type VendorRow = {
@@ -146,8 +141,7 @@ function statusBadge(status: string) {
 function MemberVendorSignupInner() {
   const searchParams = useSearchParams();
   const vendorIdFromUrl = searchParams.get("vendorId") || "";
-
-  const [event, setEvent] = useState<CurrentMemberEvent | null>(null);
+  const { event, attendeeId, isReady } = useMemberWorkspace();
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [attendee, setAttendee] = useState<AttendeeRow | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState(vendorIdFromUrl);
@@ -193,16 +187,12 @@ function MemberVendorSignupInner() {
       setError(null);
       setStatus("Loading vendor request form...");
 
-      const currentEvent = getCurrentMemberEvent();
-      if (!currentEvent?.id) {
-        setEvent(null);
+      if (!isReady || !event?.id || !attendeeId) {
         setVendors([]);
         setAttendee(null);
-        setStatus("No current event selected.");
+        setStatus("Loading vendor request form...");
         return;
       }
-
-      setEvent(currentEvent);
 
       const { data: vendorData, error: vendorError } = await supabase
         .from("vendors")
@@ -226,7 +216,7 @@ function MemberVendorSignupInner() {
         `,
         )
         .eq("is_active", true)
-        .eq("event_vendors.event_id", currentEvent.id)
+        .eq("event_vendors.event_id", event.id)
         .neq("event_vendors.is_visible_to_members", false);
 
       if (vendorError) {
@@ -250,30 +240,18 @@ function MemberVendorSignupInner() {
         setSelectedVendorId(visibleVendors[0].id);
       }
 
-      const storedAttendeeId = getStoredMemberAttendeeId();
-      const storedEmail = getStoredMemberEmail()?.toLowerCase() || null;
-
-      const { data: attendeeRows, error: attendeeError } = await supabase
+      const { data: attendeeRow, error: attendeeError } = await supabase
         .from("attendees")
         .select(
           "id,email,pilot_first,pilot_last,assigned_site,primary_phone,cell_phone,coach_manufacturer,coach_model,coach_length",
         )
-        .eq("event_id", currentEvent.id);
+        .eq("id", attendeeId)
+        .eq("event_id", event.id)
+        .maybeSingle<AttendeeRow>();
 
       if (attendeeError) {
         throw attendeeError;
       }
-
-      const allAttendees = (attendeeRows || []) as AttendeeRow[];
-      const attendeeRow =
-        allAttendees.find(
-          (row) => storedAttendeeId && row.id === storedAttendeeId,
-        ) ||
-        allAttendees.find(
-          (row) =>
-            storedEmail && (row.email || "").toLowerCase() === storedEmail,
-        ) ||
-        null;
 
       const { data: requestRows, error: requestError } = await supabase
         .from("vendor_service_requests")
@@ -298,14 +276,14 @@ function MemberVendorSignupInner() {
           )
         `,
         )
-        .eq("event_id", currentEvent.id)
+        .eq("event_id", event.id)
         .order("created_at", { ascending: false });
 
       if (requestError) {
         throw requestError;
       }
 
-      const normalizedStoredEmail = (storedEmail || "").toLowerCase();
+      const normalizedStoredEmail = (attendeeRow?.email || "").toLowerCase();
       const visibleRequests = (
         (requestRows || []) as MemberRequestRow[]
       ).filter((request) => {
@@ -344,11 +322,15 @@ function MemberVendorSignupInner() {
       );
       setStatus("");
     }
-  }, [vendorIdFromUrl]);
+  }, [attendeeId, event?.id, isReady, vendorIdFromUrl]);
 
   useEffect(() => {
+    if (!isReady || !event?.id || !attendeeId) {
+      return;
+    }
+
     void loadPage();
-  }, [loadPage]);
+  }, [attendeeId, event?.id, isReady, loadPage]);
 
   async function submitRequest() {
     if (!event?.id) {

@@ -5,12 +5,7 @@ import { useEffect, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import ParticipantIdentityEditor from "@/components/participants/ParticipantIdentityEditor";
 import { logEngagement } from "@/lib/engagement";
-import {
-  getCurrentMemberEvent,
-  getStoredMemberAttendeeId,
-  getStoredMemberEntryId,
-} from "@/lib/getCurrentMemberEvent";
-import { getCurrentAttendeeId } from "@/lib/memberSession";
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 interface Participant {
@@ -35,6 +30,7 @@ interface AttendeeRow {
 }
 
 function ParticipantsPageInner() {
+  const { event, attendeeId, isReady } = useMemberWorkspace();
   const [loading, setLoading] = useState(true);
   const [participantCount, setParticipantCount] = useState(0);
   const [capacity, setCapacity] = useState(0);
@@ -55,10 +51,8 @@ function ParticipantsPageInner() {
   // Refactored participant loading logic for reuse
   const loadParticipants = async () => {
     try {
-      const currentEvent = getCurrentMemberEvent();
-
-      console.log("PARTICIPANTS CURRENT EVENT", currentEvent);
-      if (!currentEvent?.id) {
+      console.log("PARTICIPANTS CURRENT EVENT", event);
+      if (!isReady || !event?.id || !attendeeId) {
         setParticipantCount(0);
         setCapacity(0);
         setParticipants([]);
@@ -71,42 +65,55 @@ function ParticipantsPageInner() {
       console.log("AUTH USER", user);
       console.log("AUTH EMAIL", user?.email);
       const authEmail = user?.email?.toLowerCase() ?? null;
-      // Prefer the canonical MemberSession identity. Fall back to the legacy
-      // storage helper while the member-session migration is in progress.
-      const attendeeId =
-        getCurrentAttendeeId() || getStoredMemberAttendeeId();
-      const entryId = getStoredMemberEntryId();
-
       const authUserId = localStorage.getItem("fcoc-member-auth-user-id");
 
       console.log("PARTICIPANTS AUTH USER ID", authUserId);
 
-      const { data: attendeeRows } = await supabase
-        .from("attendees")
-        .select("id,entry_id,email,participant_capacity,auth_user_id,event_id")
-        .eq("event_id", currentEvent.id);
+      let attendee: AttendeeRow | null = null;
 
-      const attendees = (attendeeRows || []) as AttendeeRow[];
+      if (attendeeId) {
+        const { data: matchingAttendee, error: attendeeError } = await supabase
+          .from("attendees")
+          .select(
+            "id,entry_id,email,participant_capacity,auth_user_id,event_id",
+          )
+          .eq("id", attendeeId)
+          .eq("event_id", event.id)
+          .maybeSingle<AttendeeRow>();
 
-      let attendee = attendees.find(
-        (a) => authUserId && a.auth_user_id === authUserId,
-      );
+        if (!attendeeError) {
+          attendee = matchingAttendee;
+        }
+      }
+
+      if (!attendee && authUserId) {
+        const { data: matchingAttendee } = await supabase
+          .from("attendees")
+          .select(
+            "id,entry_id,email,participant_capacity,auth_user_id,event_id",
+          )
+          .eq("auth_user_id", authUserId)
+          .eq("event_id", event.id)
+          .maybeSingle<AttendeeRow>();
+
+        attendee = matchingAttendee;
+      }
 
       if (!attendee && authEmail) {
-        attendee = attendees.find((a) => a.email?.toLowerCase() === authEmail);
-      }
+        const { data: matchingAttendee } = await supabase
+          .from("attendees")
+          .select(
+            "id,entry_id,email,participant_capacity,auth_user_id,event_id",
+          )
+          .eq("email", authEmail)
+          .eq("event_id", event.id)
+          .maybeSingle<AttendeeRow>();
 
-      if (!attendee) {
-        attendee = attendees.find((a) => attendeeId && a.id === attendeeId);
-      }
-
-      if (!attendee) {
-        attendee = attendees.find((a) => entryId && a.entry_id === entryId);
+        attendee = matchingAttendee;
       }
 
       console.log("PARTICIPANTS MATCHED ATTENDEE", attendee);
       console.log("STORED ATTENDEE ID", attendeeId);
-      console.log("STORED ENTRY ID", entryId);
       console.log("LOCAL AUTH USER ID", authUserId);
 
       if (!attendee) {
@@ -137,8 +144,12 @@ function ParticipantsPageInner() {
   };
 
   useEffect(() => {
+    if (!isReady || !event?.id || !attendeeId) {
+      return;
+    }
+
     loadParticipants();
-  }, []);
+  }, [attendeeId, event?.id, isReady]);
 
   useEffect(() => {
     if (!currentAttendee?.event_id) {

@@ -1,5 +1,5 @@
-import type { MemberSession } from "@/lib/memberSession";
 import type { CurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import type { MemberSession } from "@/lib/memberSession";
 
 export type MemberWorkspaceContextValue = {
   session: MemberSession | null;
@@ -8,5 +8,8 @@ export type MemberWorkspaceContextValue = {
   event: CurrentMemberEvent | null;
   isAuthenticated: boolean;
   isReady: boolean;
+  isInitializing: boolean;
+  hasEvent: boolean;
+  hasAttendee: boolean;
   refresh: () => void;
 };

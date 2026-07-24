@@ -14,6 +14,32 @@ const ACTIVITY_LIMIT_OPTIONS = ["10", "25", "50", "100", "250", "500", "all"] as
 
 type ActivityLimitOption = (typeof ACTIVITY_LIMIT_OPTIONS)[number];
 
+const ACTIVITY_LABELS: Record<string, string> = {
+  login: "Login",
+  view_attendee_locator: "Attendee Locator",
+  agenda_view: "Agenda",
+  announcement_view: "Announcements",
+  nearby_view: "Nearby",
+  photos_view: "Photos",
+  coach_map_view: "Coach Map",
+  checkin_view: "Check-In",
+  participants_view: "Participants",
+  evaluation_started: "Evaluation Started",
+  evaluation_submitted: "Evaluation Submitted",
+};
+
+function formatActivityLabel(activityType: string): string {
+  if (ACTIVITY_LABELS[activityType]) {
+    return ACTIVITY_LABELS[activityType];
+  }
+
+  return activityType
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 export default function EngagementPage() {
   const [stats, setStats] = useState({
     registered: 0,
@@ -134,25 +160,25 @@ export default function EngagementPage() {
         case "view_attendee_locator":
           featureCounts.attendeeLocator++;
           break;
-        case "view_agenda":
+        case "agenda_view":
           featureCounts.agenda++;
           break;
-        case "view_announcements":
+        case "announcement_view":
           featureCounts.announcements++;
           break;
-        case "view_nearby":
+        case "nearby_view":
           featureCounts.nearby++;
           break;
-        case "view_photos":
+        case "photos_view":
           featureCounts.photos++;
           break;
-        case "view_coach_map":
+        case "coach_map_view":
           featureCounts.coachMap++;
           break;
-        case "checkin":
+        case "checkin_view":
           featureCounts.checkIn++;
           break;
-        case "view_participants":
+        case "participants_view":
           featureCounts.participants++;
           break;
       }
@@ -357,7 +383,7 @@ export default function EngagementPage() {
                           : "Unknown Attendee"}
                       </strong>
                       <div style={{ fontSize: 13, color: "#666" }}>
-                        {item.activity_type}
+                        {formatActivityLabel(item.activity_type)}
                       </div>
                     </div>
                     <div style={{ fontSize: 13, color: "#666" }}>

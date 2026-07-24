@@ -2,11 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import {
-  getCurrentMemberEvent,
-  getStoredMemberAttendeeId,
-} from "@/lib/getCurrentMemberEvent";
-
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 const QUESTION_IDS = {
@@ -28,6 +24,7 @@ const QUESTION_KEYS = Object.entries(QUESTION_IDS).reduce(
 );
 
 export default function MemberEvaluationPage() {
+  const { event, attendeeId, isReady, isInitializing } = useMemberWorkspace();
   const [currentQuestion, setCurrentQuestion] = useState(1);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [evaluationId, setEvaluationId] = useState<string | null>(null);
@@ -36,29 +33,30 @@ export default function MemberEvaluationPage() {
   const progressPercent = Math.round((currentQuestion / totalQuestions) * 100);
 
   useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+
     loadEvaluation();
-  }, []);
+  }, [event?.id, attendeeId, isReady]);
 
   const loadEvaluation = async () => {
     try {
-      const currentEvent = getCurrentMemberEvent();
-      const attendeeId = getStoredMemberAttendeeId();
-
-      if (!currentEvent?.id || !attendeeId) {
+      if (!event?.id || !attendeeId) {
         return;
       }
 
       let { data: evaluation, error: lookupError } = await supabase
         .from("event_evaluations")
         .select("id,is_complete")
-        .eq("event_id", currentEvent.id)
+        .eq("event_id", event.id)
         .eq("attendee_id", attendeeId)
         .maybeSingle();
 
       console.log("Evaluation lookup", {
         evaluation,
         lookupError,
-        currentEvent,
+        eventId: event.id,
         attendeeId,
       });
 
@@ -66,7 +64,7 @@ export default function MemberEvaluationPage() {
         const { data: created, error: createError } = await supabase
           .from("event_evaluations")
           .insert({
-            event_id: currentEvent.id,
+            event_id: event.id,
             attendee_id: attendeeId,
           })
           .select("id,is_complete")
@@ -75,7 +73,7 @@ export default function MemberEvaluationPage() {
         console.log("Evaluation create result", {
           created,
           createError,
-          currentEvent,
+          eventId: event.id,
           attendeeId,
         });
 
@@ -100,8 +98,7 @@ export default function MemberEvaluationPage() {
         const multiSelectQuestions = ["q2", "q3", "q4"];
 
         savedAnswers.forEach((row: any) => {
-          const questionKey =
-            QUESTION_KEYS[row.question_id] ?? row.question_id;
+          const questionKey = QUESTION_KEYS[row.question_id] ?? row.question_id;
 
           if (multiSelectQuestions.includes(questionKey)) {
             try {
@@ -264,9 +261,7 @@ export default function MemberEvaluationPage() {
             <div className="text-sm font-medium mb-2">
               Question {currentQuestion} of {totalQuestions}
             </div>
-            <div className="text-sm mb-2">
-              Progress = {progressPercent}%
-            </div>
+            <div className="text-sm mb-2">Progress = {progressPercent}%</div>
 
             <div
               style={{
@@ -299,13 +294,24 @@ export default function MemberEvaluationPage() {
               <h2 className="font-semibold mb-4">
                 What was your overall impression of this event?
               </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "12px",
+                  marginBottom: "24px",
+                }}
+              >
                 {["Excellent", "Very Good", "Good", "Fair", "Poor"].map(
                   (choice) => (
                     <label
                       key={choice}
                       className={optionCardClass(answers.q1 === choice)}
-                      style={{ ...optionCardStyle(answers.q1 === choice), minHeight: "48px", padding: "10px 12px" }}
+                      style={{
+                        ...optionCardStyle(answers.q1 === choice),
+                        minHeight: "48px",
+                        padding: "10px 12px",
+                      }}
                     >
                       <input
                         type="radio"
@@ -336,7 +342,14 @@ export default function MemberEvaluationPage() {
               <h2 className="font-semibold mb-4">
                 What parts of the event provided the most value?
               </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "12px",
+                  marginBottom: "24px",
+                }}
+              >
                 {[
                   "Technical Seminars",
                   "Social Activities",
@@ -350,8 +363,14 @@ export default function MemberEvaluationPage() {
                 ].map((choice) => (
                   <label
                     key={choice}
-                    className={optionCardClass((answers.q2 ?? []).includes(choice))}
-                    style={{ ...optionCardStyle((answers.q2 ?? []).includes(choice)), minHeight: "48px", padding: "10px 12px" }}
+                    className={optionCardClass(
+                      (answers.q2 ?? []).includes(choice),
+                    )}
+                    style={{
+                      ...optionCardStyle((answers.q2 ?? []).includes(choice)),
+                      minHeight: "48px",
+                      padding: "10px 12px",
+                    }}
                   >
                     <input
                       type="checkbox"
@@ -380,7 +399,14 @@ export default function MemberEvaluationPage() {
               <h2 className="font-semibold mb-4">
                 Where did we miss the mark?
               </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "12px",
+                  marginBottom: "24px",
+                }}
+              >
                 {[
                   "Registration",
                   "Check-In",
@@ -395,8 +421,14 @@ export default function MemberEvaluationPage() {
                 ].map((choice) => (
                   <label
                     key={choice}
-                    className={optionCardClass((answers.q3 ?? []).includes(choice))}
-                    style={{ ...optionCardStyle((answers.q3 ?? []).includes(choice)), minHeight: "48px", padding: "10px 12px" }}
+                    className={optionCardClass(
+                      (answers.q3 ?? []).includes(choice),
+                    )}
+                    style={{
+                      ...optionCardStyle((answers.q3 ?? []).includes(choice)),
+                      minHeight: "48px",
+                      padding: "10px 12px",
+                    }}
                   >
                     <input
                       type="checkbox"
@@ -426,12 +458,23 @@ export default function MemberEvaluationPage() {
                 What would you like to see at future events?
               </h2>
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "12px",
+                    marginBottom: "16px",
+                  }}
+                >
                   {q4TopChoices.map((choice) => (
                     <label
                       key={choice}
-                      className={optionCardClass((answers.q4 ?? []).includes(choice))}
-                      style={optionCardStyle((answers.q4 ?? []).includes(choice))}
+                      className={optionCardClass(
+                        (answers.q4 ?? []).includes(choice),
+                      )}
+                      style={optionCardStyle(
+                        (answers.q4 ?? []).includes(choice),
+                      )}
                     >
                       <input
                         type="checkbox"
@@ -454,8 +497,12 @@ export default function MemberEvaluationPage() {
                   {q4BottomChoices.slice(0, 2).map((choice) => (
                     <label
                       key={choice}
-                      className={optionCardClass((answers.q4 ?? []).includes(choice))}
-                      style={optionCardStyle((answers.q4 ?? []).includes(choice))}
+                      className={optionCardClass(
+                        (answers.q4 ?? []).includes(choice),
+                      )}
+                      style={optionCardStyle(
+                        (answers.q4 ?? []).includes(choice),
+                      )}
                     >
                       <input
                         type="checkbox"
@@ -468,7 +515,9 @@ export default function MemberEvaluationPage() {
                   ))}
                 </div>
                 <label
-                  className={optionCardClass((answers.q4 ?? []).includes("Other"))}
+                  className={optionCardClass(
+                    (answers.q4 ?? []).includes("Other"),
+                  )}
                   style={{
                     ...optionCardStyle((answers.q4 ?? []).includes("Other")),
                     width: "100%",
@@ -531,13 +580,24 @@ export default function MemberEvaluationPage() {
               <h2 className="font-semibold mb-4">
                 How likely are you to attend another event?
               </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "12px",
+                  marginBottom: "24px",
+                }}
+              >
                 {["Definitely", "Likely", "Maybe", "Unlikely", "No"].map(
                   (choice) => (
                     <label
                       key={choice}
                       className={optionCardClass(answers.q7 === choice)}
-                      style={{ ...optionCardStyle(answers.q7 === choice), minHeight: "48px", padding: "10px 12px" }}
+                      style={{
+                        ...optionCardStyle(answers.q7 === choice),
+                        minHeight: "48px",
+                        padding: "10px 12px",
+                      }}
                     >
                       <input
                         type="radio"
