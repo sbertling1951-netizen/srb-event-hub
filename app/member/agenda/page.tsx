@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { logEngagement } from "@/lib/engagement";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 type MemberEvent = {
@@ -282,6 +282,11 @@ function agendaCardStyle(
 }
 
 function MemberAgendaPageInner() {
+  const {
+    event: workspaceEvent,
+    attendeeId,
+    isReady,
+  } = useMemberWorkspace();
   const [event, setEvent] = useState<MemberEvent | null>(null);
   const [items, setItems] = useState<AgendaItem[]>([]);
   const [status, setStatus] = useState("Loading agenda...");
@@ -300,10 +305,9 @@ function MemberAgendaPageInner() {
       setError(null);
       setStatus("Loading agenda...");
 
-      const memberEvent = getCurrentMemberEvent();
       setItems([]);
 
-      if (!memberEvent?.id) {
+      if (!workspaceEvent?.id) {
         setEvent(null);
         setItems([]);
         setError(null);
@@ -312,12 +316,12 @@ function MemberAgendaPageInner() {
       }
 
       setEvent({
-        id: memberEvent.id,
-        name: memberEvent.name ?? null,
-        venue_name: memberEvent.venue_name ?? null,
-        location: memberEvent.location ?? null,
-        start_date: memberEvent.start_date ?? null,
-        end_date: memberEvent.end_date ?? null,
+        id: workspaceEvent.id,
+        name: workspaceEvent.name ?? null,
+        venue_name: workspaceEvent.venue_name ?? null,
+        location: workspaceEvent.location ?? null,
+        start_date: workspaceEvent.start_date ?? null,
+        end_date: workspaceEvent.end_date ?? null,
       });
 
       const { data, error } = await supabase
@@ -325,7 +329,7 @@ function MemberAgendaPageInner() {
         .select(
           "id,event_id,title,description,location,agenda_date,start_time,end_time,category,color,is_published,sort_order",
         )
-        .eq("event_id", memberEvent.id)
+        .eq("event_id", workspaceEvent.id)
         .eq("is_published", true)
         .order("agenda_date", { ascending: true, nullsFirst: false });
 
@@ -349,33 +353,18 @@ function MemberAgendaPageInner() {
       setError(err instanceof Error ? err.message : "Failed to load agenda.");
       setStatus("");
     }
-  }, []);
+  }, [workspaceEvent]);
 
   useEffect(() => {
-    void loadAgenda();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-member-event-context" ||
-        e.key === "fcoc-member-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void loadAgenda();
-      }
-    }
-
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, [loadAgenda]);
-
-  useEffect(() => {
-    if (!event?.id) {
+    if (!isReady) {
       return;
     }
 
-    const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
-    if (!attendeeId) {
+    void loadAgenda();
+  }, [isReady, loadAgenda]);
+
+  useEffect(() => {
+    if (!event?.id || !attendeeId) {
       return;
     }
 
@@ -384,7 +373,7 @@ function MemberAgendaPageInner() {
       attendeeId,
       activityType: "agenda_view",
     });
-  }, [event?.id]);
+  }, [attendeeId, event?.id]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
