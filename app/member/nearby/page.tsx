@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { calculateDistanceMiles } from "@/lib/calculateDistanceMiles";
 import { logEngagement } from "@/lib/engagement";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
 import { supabase } from "@/lib/supabase";
 const NearbyPlacesMap = dynamic(
@@ -145,6 +145,7 @@ function formatPhoneNumber(phone: string) {
 }
 
 function NearbyPageInner() {
+  const { event: workspaceEvent, attendeeId, isReady } = useMemberWorkspace();
   const [event, setEvent] = useState<EventRow | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [status, setStatus] = useState("Loading nearby places...");
@@ -166,16 +167,14 @@ function NearbyPageInner() {
       setError(null);
       setSelectedCategory("All");
 
-      const memberEvent = getCurrentMemberEvent();
-
-      if (!memberEvent?.id) {
+      if (!workspaceEvent?.id) {
         setEvent(null);
         setPlaces([]);
         setStatus("No current event selected.");
         return;
       }
 
-      const eventId = memberEvent.id;
+      const eventId = workspaceEvent.id;
 
       const { data: eventRow, error: eventError } = await supabase
         .from("events")
@@ -190,14 +189,14 @@ function NearbyPageInner() {
       const eventInfo: EventRow = eventRow
         ? (eventRow as EventRow)
         : {
-            id: memberEvent.id || "",
-            name: memberEvent.name || null,
-            venue_name: memberEvent.venue_name || null,
-            location: memberEvent.location || null,
-            start_date: memberEvent.start_date || null,
-            end_date: memberEvent.end_date || null,
-            lat: memberEvent.lat || null,
-            lng: memberEvent.lng || null,
+            id: workspaceEvent.id || "",
+            name: workspaceEvent.name || null,
+            venue_name: workspaceEvent.venue_name || null,
+            location: workspaceEvent.location || null,
+            start_date: workspaceEvent.start_date || null,
+            end_date: workspaceEvent.end_date || null,
+            lat: workspaceEvent.lat || null,
+            lng: workspaceEvent.lng || null,
           };
 
       setEvent(eventInfo);
@@ -252,48 +251,18 @@ function NearbyPageInner() {
       );
       setStatus("");
     }
-  }, []);
+  }, [workspaceEvent]);
 
   useEffect(() => {
-    void loadNearby();
-
-    function handleStorage(e: StorageEvent) {
-      if (
-        e.key === "fcoc-member-event-context" ||
-        e.key === "fcoc-member-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
-      ) {
-        void loadNearby();
-      }
-    }
-
-    function handleMemberEventUpdated() {
-      void loadNearby();
-    }
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(
-      "fcoc-member-event-updated",
-      handleMemberEventUpdated,
-    );
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        "fcoc-member-event-updated",
-        handleMemberEventUpdated,
-      );
-    };
-  }, [loadNearby]);
-
-  useEffect(() => {
-    if (!event?.id) {
+    if (!isReady) {
       return;
     }
 
-    const attendeeId = localStorage.getItem("fcoc-member-attendee-id");
-    if (!attendeeId) {
+    void loadNearby();
+  }, [isReady, loadNearby]);
+
+  useEffect(() => {
+    if (!event?.id || !attendeeId) {
       return;
     }
 
@@ -302,7 +271,7 @@ function NearbyPageInner() {
       attendeeId,
       activityType: "nearby_view",
     });
-  }, [event?.id]);
+  }, [attendeeId, event?.id]);
 
   useEffect(() => {
     try {
@@ -828,7 +797,8 @@ function NearbyPageInner() {
                       ) : null}
 
                       <div className="nearby-action-row">
-                        {place.address || (place.lat !== null && place.lng !== null) ? (
+                        {place.address ||
+                        (place.lat !== null && place.lng !== null) ? (
                           <button
                             type="button"
                             onClick={() => handleDirections(place)}
