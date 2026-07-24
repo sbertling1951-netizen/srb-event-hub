@@ -102,6 +102,11 @@ export function isMemberSessionExpired(session: MemberSession | null): boolean {
   return Date.now() >= expiresAt;
 }
 
+export function isMemberAuthenticated(): boolean {
+  const session = getMemberSession();
+  return !!session && !isMemberSessionExpired(session);
+}
+
 export function clearMemberSession() {
   if (typeof window === "undefined") {
     return;
