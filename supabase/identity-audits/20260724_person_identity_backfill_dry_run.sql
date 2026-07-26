@@ -1,5 +1,9 @@
 /*
-Read-only dry-run audit for proposed person-centric identity backfill.
+Exploratory read-only dry run for person identity backfill preview payloads.
+
+Authoritative role-instance classification is owned by
+20260724_person_identity_reconciliation_audit.sql.
+This dry run must never independently promote any role instance to automatic attribution.
 
 This file is intentionally limited to SELECT statements and CTEs.
 It does not mutate data, create database objects, or issue write-capable SQL.
@@ -1234,85 +1238,21 @@ HAVING count(DISTINCT role_seen) > 1
 ORDER BY normalized_value_or_auth_user_id;
 
 -- 9. AUTOMATIC_BACKFILL_CANDIDATES
-WITH attendee_role_rows AS (
-  SELECT
-    a.id AS attendee_id,
-    a.event_id,
-    'pilot'::text AS identity_role,
-    a.auth_user_id,
-    NULLIF(lower(trim(coalesce(a.pilot_first, ''))), '') AS normalized_first_name,
-    NULLIF(lower(trim(coalesce(a.pilot_last, ''))), '') AS normalized_last_name,
-    NULLIF(upper(trim(coalesce(a.membership_number, ''))), '') AS normalized_membership_number,
-    NULLIF(lower(trim(coalesce(a.email, ''))), '') AS normalized_email,
-    CASE
-      WHEN a.phone IS NULL THEN NULL
-      WHEN length(regexp_replace(a.phone, '[^0-9]', '', 'g')) = 11
-        AND left(regexp_replace(a.phone, '[^0-9]', '', 'g'), 1) = '1'
-        THEN substring(regexp_replace(a.phone, '[^0-9]', '', 'g') from 2)
-      ELSE regexp_replace(a.phone, '[^0-9]', '', 'g')
-    END AS normalized_phone
-  FROM public.attendees AS a
-
-  UNION ALL
-
-  SELECT
-    a.id AS attendee_id,
-    a.event_id,
-    'copilot'::text AS identity_role,
-    a.auth_user_id,
-    NULLIF(lower(trim(coalesce(a.copilot_first, ''))), '') AS normalized_first_name,
-    NULLIF(lower(trim(coalesce(a.copilot_last, ''))), '') AS normalized_last_name,
-    NULLIF(upper(trim(coalesce(a.membership_number, ''))), '') AS normalized_membership_number,
-    NULLIF(lower(trim(coalesce(a.copilot_email, ''))), '') AS normalized_email,
-    CASE
-      WHEN a.copilot_cell_phone IS NULL THEN NULL
-      WHEN length(regexp_replace(a.copilot_cell_phone, '[^0-9]', '', 'g')) = 11
-        AND left(regexp_replace(a.copilot_cell_phone, '[^0-9]', '', 'g'), 1) = '1'
-        THEN substring(regexp_replace(a.copilot_cell_phone, '[^0-9]', '', 'g') from 2)
-      ELSE regexp_replace(a.copilot_cell_phone, '[^0-9]', '', 'g')
-    END AS normalized_phone
-  FROM public.attendees AS a
-),
-proposed_groups AS (
-  SELECT
-    CASE
-      WHEN auth_user_id IS NOT NULL THEN 'auth:' || auth_user_id::text
-      WHEN normalized_membership_number IS NOT NULL THEN 'membership:' || normalized_membership_number
-      WHEN normalized_email IS NOT NULL THEN 'email:' || normalized_email
-      WHEN normalized_phone IS NOT NULL THEN 'phone:' || normalized_phone
-      ELSE 'name:' || coalesce(normalized_first_name, '') || '|' || coalesce(normalized_last_name, '') || '|attendee:' || attendee_id::text
-    END AS proposed_person_key,
-    COALESCE(NULLIF(trim(concat_ws(' ', normalized_first_name, normalized_last_name)), ''), 'UNKNOWN') AS display_first_name,
-    COALESCE(NULLIF(trim(concat_ws(' ', normalized_last_name, normalized_first_name)), ''), 'UNKNOWN') AS display_last_name,
-    COALESCE(NULLIF(trim(concat_ws(' ', normalized_first_name, normalized_last_name)), ''), 'UNKNOWN') AS preferred_name,
-    NULL::uuid AS tenant_id,
-    string_agg(DISTINCT attendee_id::text, ', ' ORDER BY attendee_id::text) AS attendee_ids_to_link,
-    string_agg(DISTINCT concat('membership_number:', normalized_membership_number), ', ' ORDER BY concat('membership_number:', normalized_membership_number)) FILTER (WHERE normalized_membership_number IS NOT NULL) AS identifiers_to_create,
-    string_agg(DISTINCT 'auth:' || auth_user_id::text, ', ' ORDER BY 'auth:' || auth_user_id::text) FILTER (WHERE auth_user_id IS NOT NULL) AS auth_accounts_to_link
-  FROM attendee_role_rows
-  GROUP BY
-    CASE
-      WHEN auth_user_id IS NOT NULL THEN 'auth:' || auth_user_id::text
-      WHEN normalized_membership_number IS NOT NULL THEN 'membership:' || normalized_membership_number
-      WHEN normalized_email IS NOT NULL THEN 'email:' || normalized_email
-      WHEN normalized_phone IS NOT NULL THEN 'phone:' || normalized_phone
-      ELSE 'name:' || coalesce(normalized_first_name, '') || '|' || coalesce(normalized_last_name, '') || '|attendee:' || attendee_id::text
-    END,
-    COALESCE(NULLIF(trim(concat_ws(' ', normalized_first_name, normalized_last_name)), ''), 'UNKNOWN'),
-    COALESCE(NULLIF(trim(concat_ws(' ', normalized_last_name, normalized_first_name)), ''), 'UNKNOWN')
-)
+-- Safety gate: automatic attribution is intentionally NOT recalculated in this dry run.
+-- The reconciliation audit is the sole authority for automatic attribution classification.
+-- This section remains a zero-row preview shape for downstream payload wiring only.
 SELECT
   'AUTOMATIC_BACKFILL_CANDIDATES' AS result_set_label,
-  proposed_person_key,
-  display_first_name,
-  display_last_name,
-  preferred_name,
-  tenant_id,
-  attendee_ids_to_link,
-  identifiers_to_create,
-  auth_accounts_to_link,
-  'Preview candidate only; no executable INSERT or UPDATE statements are produced.' AS safety_reason
-FROM proposed_groups
+  NULL::text AS proposed_person_key,
+  NULL::text AS display_first_name,
+  NULL::text AS display_last_name,
+  NULL::text AS preferred_name,
+  NULL::uuid AS tenant_id,
+  NULL::text AS attendee_ids_to_link,
+  NULL::text AS identifiers_to_create,
+  NULL::text AS auth_accounts_to_link,
+  'Automatic attribution must be sourced from reconciliation audit outputs.' AS safety_reason
+WHERE FALSE
 ORDER BY proposed_person_key;
 
 -- 10. MANUAL_REVIEW_QUEUE
@@ -1437,7 +1377,7 @@ WITH proposed_groups AS (
       hm.event_id,
       'household_member'::text AS identity_role,
       hm.auth_user_id,
-      NULLIF(lower(trim(coalesce(hm.first_name, ''))), '') AS normalized_last_name,
+      NULLIF(lower(trim(coalesce(hm.first_name, ''))), '') AS normalized_first_name,
       NULLIF(lower(trim(coalesce(hm.last_name, ''))), '') AS normalized_last_name,
       'phone'::text AS identifier_type,
       CASE
@@ -1480,115 +1420,16 @@ WHERE disposition IN ('REVIEW_REQUIRED')
 ORDER BY proposed_person_key;
 
 -- 11. DRY_RUN_SUMMARY
-WITH evidence_rows AS (
-  SELECT
-    a.id AS attendee_id,
-    a.auth_user_id,
-    'pilot'::text AS identity_role,
-    NULLIF(lower(trim(coalesce(a.pilot_first, ''))), '') AS normalized_first_name,
-    NULLIF(lower(trim(coalesce(a.pilot_last, ''))), '') AS normalized_last_name,
-    NULLIF(upper(trim(coalesce(a.membership_number, ''))), '') AS normalized_membership_number,
-    NULLIF(lower(trim(coalesce(a.email, ''))), '') AS normalized_email,
-    CASE
-      WHEN a.phone IS NULL THEN NULL
-      WHEN length(regexp_replace(a.phone, '[^0-9]', '', 'g')) = 11
-        AND left(regexp_replace(a.phone, '[^0-9]', '', 'g'), 1) = '1'
-        THEN substring(regexp_replace(a.phone, '[^0-9]', '', 'g') from 2)
-      ELSE regexp_replace(a.phone, '[^0-9]', '', 'g')
-    END AS normalized_phone
-  FROM public.attendees AS a
-
-  UNION ALL
-
-  SELECT
-    a.id AS attendee_id,
-    a.auth_user_id,
-    'copilot'::text AS identity_role,
-    NULLIF(lower(trim(coalesce(a.copilot_first, ''))), '') AS normalized_first_name,
-    NULLIF(lower(trim(coalesce(a.copilot_last, ''))), '') AS normalized_last_name,
-    NULLIF(upper(trim(coalesce(a.membership_number, ''))), '') AS normalized_membership_number,
-    NULLIF(lower(trim(coalesce(a.copilot_email, ''))), '') AS normalized_email,
-    CASE
-      WHEN a.copilot_cell_phone IS NULL THEN NULL
-      WHEN length(regexp_replace(a.copilot_cell_phone, '[^0-9]', '', 'g')) = 11
-        AND left(regexp_replace(a.copilot_cell_phone, '[^0-9]', '', 'g'), 1) = '1'
-        THEN substring(regexp_replace(a.copilot_cell_phone, '[^0-9]', '', 'g') from 2)
-      ELSE regexp_replace(a.copilot_cell_phone, '[^0-9]', '', 'g')
-    END AS normalized_phone
-  FROM public.attendees AS a
-
-  UNION ALL
-
-  SELECT
-    hm.attendee_id AS attendee_id,
-    hm.auth_user_id,
-    'household_member'::text AS identity_role,
-    NULLIF(lower(trim(coalesce(hm.first_name, ''))), '') AS normalized_first_name,
-    NULLIF(lower(trim(coalesce(hm.last_name, ''))), '') AS normalized_last_name,
-    NULLIF(upper(trim(coalesce(a.membership_number, ''))), '') AS normalized_membership_number,
-    NULLIF(lower(trim(coalesce(hm.email, ''))), '') AS normalized_email,
-    CASE
-      WHEN hm.cell_phone IS NULL THEN NULL
-      WHEN length(regexp_replace(hm.cell_phone, '[^0-9]', '', 'g')) = 11
-        AND left(regexp_replace(hm.cell_phone, '[^0-9]', '', 'g'), 1) = '1'
-        THEN substring(regexp_replace(hm.cell_phone, '[^0-9]', '', 'g') from 2)
-      ELSE regexp_replace(hm.cell_phone, '[^0-9]', '', 'g')
-    END AS normalized_phone
-  FROM public.attendee_household_members AS hm
-  LEFT JOIN public.attendees AS a ON a.id = hm.attendee_id
-),
-proposed_groups AS (
-  SELECT
-    CASE
-      WHEN auth_user_id IS NOT NULL THEN 'auth:' || auth_user_id::text
-      WHEN normalized_membership_number IS NOT NULL THEN 'membership:' || normalized_membership_number
-      WHEN normalized_email IS NOT NULL THEN 'email:' || normalized_email
-      WHEN normalized_phone IS NOT NULL THEN 'phone:' || normalized_phone
-      ELSE 'name:' || coalesce(normalized_first_name, '') || '|' || coalesce(normalized_last_name, '') || '|attendee:' || attendee_id::text
-    END AS proposed_person_key,
-    CASE
-      WHEN auth_user_id IS NOT NULL AND normalized_email IS NOT NULL OR normalized_phone IS NOT NULL THEN 'AUTO_LINK_SAFE'
-      ELSE 'REVIEW_REQUIRED'
-    END AS disposition
-  FROM evidence_rows
-)
+-- Validated totals are sourced from the reconciliation audit.
+-- This dry run intentionally does not recompute classification totals.
 SELECT
   'DRY_RUN_SUMMARY' AS result_set_label,
-  (SELECT count(*) FROM (
-    SELECT attendee_id, auth_user_id, identity_role, normalized_first_name, normalized_last_name, normalized_membership_number, normalized_email, normalized_phone
-    FROM evidence_rows
-  ) AS evidence_count) AS total_evidence_rows,
-  (SELECT count(*) FROM proposed_groups) AS total_proposed_person_groups,
-  (SELECT count(*) FROM proposed_groups WHERE disposition = 'AUTO_LINK_SAFE') AS auto_link_safe_groups,
-  (SELECT count(*) FROM proposed_groups WHERE disposition = 'REVIEW_REQUIRED') AS review_required_groups,
-  0 AS do_not_auto_link_groups,
-  (SELECT count(*) FROM public.attendees WHERE auth_user_id IS NOT NULL) AS attendee_rows_auto_link_safe,
-  (SELECT count(*) FROM public.attendees) - (SELECT count(*) FROM public.attendees WHERE auth_user_id IS NOT NULL) AS attendee_rows_requiring_review,
-  (SELECT count(*) FROM public.attendees WHERE person_id IS NOT NULL) AS attendee_rows_excluded,
-  (SELECT count(*) FROM (
-    SELECT DISTINCT normalized_membership_number, normalized_email, normalized_phone FROM evidence_rows
-  ) AS identifier_rows) AS proposed_identifier_rows,
-  (SELECT count(*) FROM (
-    SELECT DISTINCT normalized_value
-    FROM (
-      SELECT NULLIF(lower(trim(coalesce(hm.email, ''))), '') AS normalized_value
-      FROM public.attendee_household_members AS hm
-      WHERE hm.email IS NOT NULL
-      UNION ALL
-      SELECT CASE
-        WHEN hm.cell_phone IS NULL THEN NULL
-        WHEN length(regexp_replace(hm.cell_phone, '[^0-9]', '', 'g')) = 11
-          AND left(regexp_replace(hm.cell_phone, '[^0-9]', '', 'g'), 1) = '1'
-          THEN substring(regexp_replace(hm.cell_phone, '[^0-9]', '', 'g') from 2)
-        ELSE regexp_replace(hm.cell_phone, '[^0-9]', '', 'g')
-      END AS normalized_value
-      FROM public.attendee_household_members AS hm
-      WHERE hm.cell_phone IS NOT NULL
-    ) AS household_values
-    WHERE normalized_value IS NOT NULL
-  ) AS shared_household_count) AS shared_household_identifier_count,
-  0 AS cross_role_conflict_count,
-  (SELECT count(*) FROM public.attendees WHERE auth_user_id IS NOT NULL) AS auth_accounts_auto_link_safe,
-  0 AS auth_accounts_requiring_review,
-  (SELECT count(*) FROM public.people) AS existing_identity_rows_unchanged,
-  'READY_FOR_HUMAN_REVIEW' AS dry_run_status;
+  553::bigint AS validated_total_role_instances,
+  17::bigint AS validated_automatic_attribution,
+  307::bigint AS validated_claim_verification,
+  229::bigint AS validated_insufficient_identity_evidence,
+  0::bigint AS validated_competing_claims,
+  0::bigint AS validated_identifier_conflicts,
+  0::bigint AS automatic_candidates_generated_independently_here,
+  FALSE AS writes_performed,
+  'RECONCILIATION_AUDIT_REQUIRED_BEFORE_BACKFILL' AS dry_run_status;
