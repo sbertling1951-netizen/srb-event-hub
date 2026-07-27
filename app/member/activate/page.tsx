@@ -85,6 +85,19 @@ export default function MemberActivatePage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<IdentityClaimPublicResult | null>(null);
+  const [attemptToken, setAttemptToken] = useState<string | null>(null);
+  const [verificationChannel, setVerificationChannel] =
+    useState<"email" | "sms">("email");
+  const [verificationContact, setVerificationContact] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationBusy, setVerificationBusy] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState<string | null>(
+    null,
+  );
+  const [verificationError, setVerificationError] = useState<string | null>(
+    null,
+  );
+  const [activationComplete, setActivationComplete] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,6 +212,7 @@ export default function MemberActivatePage() {
       const payload = (await response.json()) as {
         result?: IdentityClaimPublicResult;
         message?: string;
+        attemptToken?: string | null;
       };
 
       const safeResult =
@@ -210,6 +224,14 @@ export default function MemberActivatePage() {
           : "UNABLE_TO_VERIFY";
 
       setResult(safeResult);
+      setAttemptToken(
+        typeof payload.attemptToken === "string" && payload.attemptToken
+          ? payload.attemptToken
+          : null,
+      );
+      setVerificationStatus(null);
+      setVerificationError(null);
+      setActivationComplete(false);
       setStatus(payload.message || getIdentityClaimPublicMessage(safeResult));
     } catch {
       setResult("UNABLE_TO_VERIFY");
@@ -217,6 +239,116 @@ export default function MemberActivatePage() {
       setError(null);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function requestVerificationCode() {
+    if (!attemptToken) {
+      setVerificationError("Please run identity check again first.");
+      return;
+    }
+
+    if (!verificationContact.trim()) {
+      setVerificationError("Enter the email or phone to verify.");
+      return;
+    }
+
+    try {
+      setVerificationBusy(true);
+      setVerificationError(null);
+      setVerificationStatus("Requesting verification code...");
+
+      const response = await fetch(
+        "/api/member/identity-claim/verification/initiate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            attemptToken,
+            channel: verificationChannel,
+            contact: verificationContact,
+          }),
+        },
+      );
+
+      const payload = (await response.json()) as {
+        message?: string;
+        maskedDestination?: string | null;
+      };
+
+      setVerificationStatus(
+        payload.maskedDestination
+          ? `Verification code requested for ${payload.maskedDestination}. ${payload.message || ""}`
+          : payload.message ||
+              "If verification is possible, a code will be sent.",
+      );
+    } catch {
+      setVerificationStatus("If verification is possible, a code will be sent.");
+    } finally {
+      setVerificationBusy(false);
+    }
+  }
+
+  async function completeVerification() {
+    if (!attemptToken) {
+      setVerificationError("Please run identity check again first.");
+      return;
+    }
+
+    if (!verificationContact.trim() || !verificationCode.trim()) {
+      setVerificationError("Enter your contact and verification code.");
+      return;
+    }
+
+    try {
+      setVerificationBusy(true);
+      setVerificationError(null);
+      setVerificationStatus("Verifying code and activating identity...");
+
+      const response = await fetch(
+        "/api/member/identity-claim/verification/complete",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            attemptToken,
+            channel: verificationChannel,
+            contact: verificationContact,
+            code: verificationCode,
+          }),
+        },
+      );
+
+      const payload = (await response.json()) as {
+        result?: string;
+        message?: string;
+        activationComplete?: boolean;
+      };
+
+      if (payload.activationComplete) {
+        setActivationComplete(true);
+        setVerificationStatus(
+          payload.message ||
+            "Verification complete. Your identity activation has been processed.",
+        );
+      } else {
+        setActivationComplete(false);
+        setVerificationStatus(
+          payload.message ||
+            "We could not complete verification safely. Request a new code.",
+        );
+      }
+    } catch {
+      setActivationComplete(false);
+      setVerificationStatus(
+        "We could not complete verification safely. Request a new code.",
+      );
+    } finally {
+      setVerificationBusy(false);
     }
   }
 
@@ -478,6 +610,155 @@ export default function MemberActivatePage() {
           </div>
         ) : null}
       </form>
+
+      {result === "CONTINUE_VERIFICATION" && attemptToken ? (
+        <div
+          style={{
+            marginTop: 16,
+            border: "1px solid #ddd",
+            borderRadius: 12,
+            background: "white",
+            padding: 18,
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 20 }}>Verify Possession</h2>
+          <p style={{ margin: 0, color: "#475569", lineHeight: 1.5 }}>
+            Verify a contact value used in your historical records. This step is
+            required before identity activation can complete.
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
+            <label>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Channel</div>
+              <select
+                value={verificationChannel}
+                onChange={(e) =>
+                  setVerificationChannel(
+                    e.target.value === "sms" ? "sms" : "email",
+                  )
+                }
+                style={inputStyle}
+              >
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+              </select>
+            </label>
+
+            <label>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                {verificationChannel === "email"
+                  ? "Email Address"
+                  : "Mobile Phone"}
+              </div>
+              <input
+                type={verificationChannel === "email" ? "email" : "tel"}
+                value={verificationContact}
+                onChange={(e) => setVerificationContact(e.target.value)}
+                style={inputStyle}
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void requestVerificationCode()}
+            disabled={verificationBusy}
+            style={{
+              width: "100%",
+              minHeight: 44,
+              padding: "10px 12px",
+              borderRadius: 8,
+              border: "1px solid #cbd5e1",
+              background: "#0b5cff",
+              color: "#ffffff",
+              cursor: verificationBusy ? "not-allowed" : "pointer",
+              fontWeight: 700,
+              opacity: verificationBusy ? 0.7 : 1,
+            }}
+          >
+            {verificationBusy ? "Please wait..." : "Send Verification Code"}
+          </button>
+
+          <label>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>
+              Verification Code
+            </div>
+            <input
+              type="text"
+              value={verificationCode}
+              onChange={(e) => setVerificationCode(e.target.value)}
+              style={inputStyle}
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={() => void completeVerification()}
+            disabled={verificationBusy}
+            style={{
+              width: "100%",
+              minHeight: 44,
+              padding: "10px 12px",
+              borderRadius: 8,
+              border: "1px solid #cbd5e1",
+              background: "#0f766e",
+              color: "#ffffff",
+              cursor: verificationBusy ? "not-allowed" : "pointer",
+              fontWeight: 700,
+              opacity: verificationBusy ? 0.7 : 1,
+            }}
+          >
+            {verificationBusy ? "Processing..." : "Verify and Activate"}
+          </button>
+
+          {verificationStatus ? (
+            <div style={{ fontSize: 13, color: "#0f172a" }}>
+              {verificationStatus}
+            </div>
+          ) : null}
+
+          {verificationError ? (
+            <div
+              role="alert"
+              style={{
+                border: "1px solid #fecaca",
+                borderRadius: 8,
+                background: "#fef2f2",
+                color: "#991b1b",
+                padding: 12,
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              {verificationError}
+            </div>
+          ) : null}
+
+          {activationComplete ? (
+            <div
+              style={{
+                border: "1px solid #bbf7d0",
+                borderRadius: 8,
+                background: "#f0fdf4",
+                color: "#166534",
+                padding: 12,
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              Identity activation complete. You can proceed to member login.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
