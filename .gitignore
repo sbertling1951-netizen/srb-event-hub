@@ -17,3 +17,7 @@ npm-debug.log*
 
 # Build
 out/
+
+# Supabase CLI local runtime state
+supabase/.branches/
+supabase/.temp/
