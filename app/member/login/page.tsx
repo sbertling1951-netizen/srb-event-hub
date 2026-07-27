@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -306,6 +307,16 @@ export default function MemberLoginPage() {
   return (
     <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Member Login</h1>
+      <p style={{ marginTop: 0, marginBottom: 16, color: "#475569" }}>
+        Need to activate or create an account without logging in yet?{" "}
+        <Link
+          href="/member/activate"
+          style={{ color: "#0b5cff", fontWeight: 700 }}
+        >
+          Start account activation
+        </Link>
+        .
+      </p>
 
       <form
         onSubmit={handleSubmit}
