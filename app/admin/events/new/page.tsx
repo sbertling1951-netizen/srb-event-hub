@@ -105,23 +105,27 @@ function NewEventPageInner() {
 
   return (
     <div className="card">
-      <div className="spread">
+      <div className="app-row-between-wrap">
         <div>
           <h2>Create Event</h2>
 
-          <p className="muted">
+          <p className="app-muted-text">
             Set event details, map anchor, and cutoff dates.
           </p>
         </div>
 
-        {saved ? <span className="badge ok">Draft saved</span> : null}
+        {saved ? (
+          <span className="app-status-pill app-status-pill-success">
+            Draft saved
+          </span>
+        ) : null}
       </div>
 
-      <form className="grid grid-2" onSubmit={handleSubmit}>
+      <form className="app-form-grid-2" onSubmit={handleSubmit}>
         <label>
           Event name
           <input
-            className="input"
+            className="app-form-input"
             value={form.name}
             onChange={(e) => updateField("name", e.target.value)}
           />
@@ -130,7 +134,7 @@ function NewEventPageInner() {
         <label>
           Event code
           <input
-            className="input"
+            className="app-form-input"
             value={form.code}
             onChange={(e) => updateField("code", e.target.value)}
           />
@@ -139,7 +143,7 @@ function NewEventPageInner() {
         <label>
           Location name
           <input
-            className="input"
+            className="app-form-input"
             value={form.venue_name}
             onChange={(e) => updateField("venue_name", e.target.value)}
           />
@@ -148,7 +152,7 @@ function NewEventPageInner() {
         <label>
           Address
           <input
-            className="input"
+            className="app-form-input"
             value={form.address}
             onChange={(e) => updateField("address", e.target.value)}
           />
@@ -157,7 +161,7 @@ function NewEventPageInner() {
         <label>
           Start date
           <input
-            className="input"
+            className="app-form-input"
             type="date"
             value={form.start_date}
             onChange={(e) => updateField("start_date", e.target.value)}
@@ -167,7 +171,7 @@ function NewEventPageInner() {
         <label>
           End date
           <input
-            className="input"
+            className="app-form-input"
             type="date"
             value={form.end_date}
             onChange={(e) => updateField("end_date", e.target.value)}
@@ -177,7 +181,7 @@ function NewEventPageInner() {
         <label>
           Registration closes
           <input
-            className="input"
+            className="app-form-input"
             type="datetime-local"
             value={form.registration_close}
             onChange={(e) => updateField("registration_close", e.target.value)}
@@ -187,7 +191,7 @@ function NewEventPageInner() {
         <label>
           Self-edit closes
           <input
-            className="input"
+            className="app-form-input"
             type="datetime-local"
             value={form.self_edit_close}
             onChange={(e) => updateField("self_edit_close", e.target.value)}
@@ -197,7 +201,7 @@ function NewEventPageInner() {
         <label>
           Cancellation deadline
           <input
-            className="input"
+            className="app-form-input"
             type="datetime-local"
             value={form.cancellation_deadline}
             onChange={(e) =>
@@ -209,7 +213,7 @@ function NewEventPageInner() {
         <label>
           Refund deadline
           <input
-            className="input"
+            className="app-form-input"
             type="datetime-local"
             value={form.refund_deadline}
             onChange={(e) => updateField("refund_deadline", e.target.value)}
@@ -224,17 +228,17 @@ function NewEventPageInner() {
             border: "1px solid #dbeafe",
           }}
         >
-          <div className="spread">
+          <div className="app-row-between-wrap">
             <div>
               <div style={{ fontWeight: 800 }}>Event Map Coordinates</div>
 
-              <div className="muted" style={{ marginTop: 4 }}>
+              <div className="app-muted-text" style={{ marginTop: 4 }}>
                 Used for Nearby sorting, maps, routing, and future travel tools.
               </div>
             </div>
 
             <button
-              className="button-secondary"
+              className="app-button app-button-muted"
               type="button"
               onClick={() => void geocodeAddress()}
               disabled={loadingGeo}
@@ -243,11 +247,11 @@ function NewEventPageInner() {
             </button>
           </div>
 
-          <div className="grid grid-2" style={{ marginTop: 16 }}>
+          <div className="app-form-grid-2" style={{ marginTop: 16 }}>
             <label>
               Latitude
               <input
-                className="input"
+                className="app-form-input"
                 value={form.lat}
                 onChange={(e) => updateField("lat", e.target.value)}
               />
@@ -256,7 +260,7 @@ function NewEventPageInner() {
             <label>
               Longitude
               <input
-                className="input"
+                className="app-form-input"
                 value={form.lng}
                 onChange={(e) => updateField("lng", e.target.value)}
               />
@@ -277,7 +281,7 @@ function NewEventPageInner() {
           ) : null}
         </div>
 
-        <label className="grid" style={{ gridColumn: "1 / -1" }}>
+        <label className="app-stack-8" style={{ gridColumn: "1 / -1" }}>
           Event notes
           <textarea
             rows={5}
@@ -286,12 +290,12 @@ function NewEventPageInner() {
           />
         </label>
 
-        <div className="row" style={{ gridColumn: "1 / -1" }}>
-          <button className="button" type="submit">
+        <div className="app-button-row" style={{ gridColumn: "1 / -1" }}>
+          <button className="app-button app-button-primary" type="submit">
             Save Draft
           </button>
 
-          <button className="button-secondary" type="button">
+          <button className="app-button app-button-muted" type="button">
             Publish
           </button>
         </div>

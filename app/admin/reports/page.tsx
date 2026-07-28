@@ -1282,7 +1282,7 @@ function AdminReportsPageInner() {
                         Activity
                       </label>
                       <select
-                        className="input"
+                        className="app-form-input"
                         value={selectedActivity}
                         onChange={(e) => setSelectedActivity(e.target.value)}
                       >

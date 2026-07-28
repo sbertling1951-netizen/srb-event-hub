@@ -507,7 +507,61 @@ a.app-button-stop:hover {
   overflow: auto;
 }
 
+/* ===== SHARED LAYOUT + FORM UTILITIES ===== */
+.app-stack-8 {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.app-row-between-wrap {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.app-form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.app-form-input {
+  width: 100%;
+  padding: var(--space-4);
+  border-radius: var(--radius-medium);
+  border: var(--border-width-default) solid var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-body);
+}
+
+.app-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  border: var(--border-width-default) solid var(--color-border-strong);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-muted);
+}
+
+.app-status-pill-success {
+  border-color: #86efac;
+  color: var(--color-status-success);
+  background: var(--color-status-success-bg);
+}
+
 @media (max-width: 899px) {
+  .app-form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
   .app-body {
     width: 100% !important;
     overflow-x: hidden !important;

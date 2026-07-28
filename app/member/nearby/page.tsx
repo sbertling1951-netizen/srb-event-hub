@@ -503,7 +503,7 @@ function NearbyPageInner() {
         {" "}
         {listReady ? (
           <span
-            className="badge success"
+            className="app-status-pill app-status-pill-success"
             style={{ fontSize: 11, padding: "2px 6px" }}
           >
             Nearby List Ready

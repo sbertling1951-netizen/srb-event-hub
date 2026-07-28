@@ -61,11 +61,11 @@ export default function LocationCard(props: LocationCardProps) {
 
   return (
     <div className="card">
-      <div className="spread">
+      <div className="app-row-between-wrap">
         <div>
           <h3>{props.name}</h3>
           {props.category ? (
-            <div className="muted small">{props.category}</div>
+            <div className="app-muted-text small">{props.category}</div>
           ) : null}
         </div>
       </div>
@@ -85,7 +85,7 @@ export default function LocationCard(props: LocationCardProps) {
       <div className="location-actions">
         {appleMaps ? (
           <a
-            className="button-secondary"
+            className="app-button app-button-muted"
             href={appleMaps}
             target="_blank"
             rel="noreferrer"
@@ -96,7 +96,7 @@ export default function LocationCard(props: LocationCardProps) {
 
         {googleMaps ? (
           <a
-            className="button-secondary"
+            className="app-button app-button-muted"
             href={googleMaps}
             target="_blank"
             rel="noreferrer"
@@ -106,14 +106,14 @@ export default function LocationCard(props: LocationCardProps) {
         ) : null}
 
         {phoneHref ? (
-          <a className="button-secondary" href={`tel:${phoneHref}`}>
+          <a className="app-button app-button-muted" href={`tel:${phoneHref}`}>
             Call
           </a>
         ) : null}
 
         {websiteHref ? (
           <a
-            className="button-secondary"
+            className="app-button app-button-muted"
             href={websiteHref}
             target="_blank"
             rel="noreferrer"

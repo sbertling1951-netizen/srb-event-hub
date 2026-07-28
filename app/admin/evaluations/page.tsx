@@ -215,7 +215,7 @@ export default function AdminEvaluationsPage() {
         Review attendee feedback, trends, suggestions, and event satisfaction.
       </p>
 
-      <div className="grid gap-4 md:grid-cols-4 mb-6">
+      <div className="app-stack-8 gap-4 md:grid-cols-4 mb-6">
         <div className="border rounded-lg p-4">
           <div className="text-sm text-gray-500">Started</div>
           <div className="text-2xl font-semibold">
@@ -243,7 +243,7 @@ export default function AdminEvaluationsPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2 mb-6">
+      <div className="app-stack-8 gap-6 lg:grid-cols-2 mb-6">
         <div className="border rounded-lg p-4">
           <h2 className="text-lg font-semibold mb-3">Overall Impression</h2>
           {Object.keys(overallRatings).length === 0 ? (
@@ -275,7 +275,7 @@ export default function AdminEvaluationsPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2 mb-6">
+      <div className="app-stack-8 gap-6 lg:grid-cols-2 mb-6">
         <div className="border rounded-lg p-4">
           <h2 className="text-lg font-semibold mb-3">Most Valuable Parts of Event</h2>
           {Object.keys(mostValuableCounts).length === 0 ? (
