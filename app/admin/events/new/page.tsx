@@ -3,6 +3,9 @@
 import { FormEvent, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { Page } from "@/components/ui/Page";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSection } from "@/components/ui/PageSection";
 
 type EventFormState = {
   name: string;
@@ -104,22 +107,20 @@ function NewEventPageInner() {
   }
 
   return (
-    <div className="card">
-      <div className="app-row-between-wrap">
-        <div>
-          <h2>Create Event</h2>
-
-          <p className="app-muted-text">
-            Set event details, map anchor, and cutoff dates.
-          </p>
-        </div>
-
-        {saved ? (
-          <span className="app-status-pill app-status-pill-success">
-            Draft saved
-          </span>
-        ) : null}
-      </div>
+    <Page className="card">
+      <PageHeader
+        title="Create Event"
+        headingLevel="h2"
+        description="Set event details, map anchor, and cutoff dates."
+        descriptionClassName="app-muted-text"
+        actions={
+          saved ? (
+            <span className="app-status-pill app-status-pill-success">
+              Draft saved
+            </span>
+          ) : null
+        }
+      />
 
       <form className="app-form-grid-2" onSubmit={handleSubmit}>
         <label>
@@ -220,8 +221,8 @@ function NewEventPageInner() {
           />
         </label>
 
-        <div
-          className="card"
+        <PageSection
+          variant="card"
           style={{
             gridColumn: "1 / -1",
             background: "#f8fafc",
@@ -279,7 +280,7 @@ function NewEventPageInner() {
               📍 Coordinates ready for Nearby distance calculations
             </div>
           ) : null}
-        </div>
+        </PageSection>
 
         <label className="app-stack-8" style={{ gridColumn: "1 / -1" }}>
           Event notes
@@ -300,6 +301,6 @@ function NewEventPageInner() {
           </button>
         </div>
       </form>
-    </div>
+    </Page>
   );
 }

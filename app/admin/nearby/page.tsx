@@ -18,12 +18,15 @@ import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { Page } from "@/components/ui/Page";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSection } from "@/components/ui/PageSection";
 import { useAdmin } from "@/lib/adminContext";
-import { geocodeLocation } from "@/lib/geocodeLocation";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { geocodeLocation } from "@/lib/geocodeLocation";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -1902,7 +1905,7 @@ function AdminNearbyPageInner() {
   }
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 18 }}>
+    <Page style={{ padding: 24, display: "grid", gap: 18 }}>
       <div
         className="app-button-row"
         style={{
@@ -1955,7 +1958,11 @@ function AdminNearbyPageInner() {
       ) : null}
 
       <div className="app-card-section-muted">
-        <h1 className="app-section-title">Nearby Admin</h1>
+        <PageHeader
+          title="Nearby Admin"
+          headingLevel="h1"
+          titleClassName="app-section-title"
+        />
 
         <div style={{ fontWeight: 700 }}>Admin Working Event</div>
 
@@ -1978,9 +1985,7 @@ function AdminNearbyPageInner() {
           alignItems: "start",
         }}
       >
-        <div className="app-card-section">
-          <h2 style={{ margin: 0 }}>Stored Area Lists</h2>
-
+        <PageSection title="Stored Area Lists" titleStyle={{ margin: 0 }}>
           {loadingAreas ? (
             <div>Loading stored areas...</div>
           ) : (
@@ -2095,7 +2100,7 @@ function AdminNearbyPageInner() {
               </button>
             </>
           )}
-        </div>
+        </PageSection>
 
         <div className="app-card-section" style={{ display: "grid", gap: 12 }}>
           <h2 style={{ marginTop: 0 }}>Stored Area Places</h2>
@@ -2933,6 +2938,6 @@ function AdminNearbyPageInner() {
           </div>
         )}
       </div>
-    </div>
+    </Page>
   );
 }

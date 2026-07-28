@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { Page } from "@/components/ui/Page";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { calculateDistanceMiles } from "@/lib/calculateDistanceMiles";
 import { logEngagement } from "@/lib/engagement";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
@@ -496,7 +498,7 @@ function NearbyPageInner() {
   }
 
   return (
-    <div className="nearby-page-grid">
+    <Page className="nearby-page-grid">
       {" "}
       {/* Header card */}
       <div className="card nearby-header-card">
@@ -509,10 +511,14 @@ function NearbyPageInner() {
             Nearby List Ready
           </span>
         ) : null}
-        <h1 style={{ margin: "4px 0 4px", fontSize: 22 }}>Nearby</h1>
-        <p className="subtle" style={{ margin: "0 0 4px", fontSize: 13 }}>
-          Fuel, urgent care, pharmacy, groceries, and local stops.
-        </p>
+        <PageHeader
+          title="Nearby"
+          headingLevel="h1"
+          titleStyle={{ margin: "4px 0 4px", fontSize: 22 }}
+          description="Fuel, urgent care, pharmacy, groceries, and local stops."
+          descriptionClassName="subtle"
+          descriptionStyle={{ margin: "0 0 4px", fontSize: 13 }}
+        />
         <div style={{ marginTop: 4, fontWeight: 700, fontSize: 14 }}>
           Current event: {event?.name || "No current event"}
         </div>
@@ -1026,7 +1032,7 @@ function NearbyPageInner() {
         </>
       )}
       {/* Map chooser dialog moved above */}
-    </div>
+    </Page>
   );
 }
 

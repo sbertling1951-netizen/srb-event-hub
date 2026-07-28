@@ -23,6 +23,8 @@ import ReportsSummaryCards from "@/components/admin/reports/ReportsSummaryCards"
 import SavedPresetsCard from "@/components/admin/reports/SavedPresetsCard";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
+import { Page } from "@/components/ui/Page";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -1115,7 +1117,7 @@ function AdminReportsPageInner() {
   return (
     <>
       <ReportsPrintStyles />
-      <div style={{ display: "grid", gap: 18 }}>
+      <Page style={{ display: "grid", gap: 18 }}>
         {!isEmbedded ? (
           <PageNavigation
             homeHref="/admin/dashboard"
@@ -1126,11 +1128,11 @@ function AdminReportsPageInner() {
         ) : null}
 
         <div className="card" style={{ padding: 18 }}>
-          {isEmbedded ? (
-            <h2 style={{ marginTop: 0, marginBottom: 8 }}>Reports</h2>
-          ) : (
-            <h1 style={{ marginTop: 0, marginBottom: 8 }}>Reports</h1>
-          )}
+          <PageHeader
+            title="Reports"
+            headingLevel={isEmbedded ? "h2" : "h1"}
+            titleStyle={{ marginTop: 0, marginBottom: 8 }}
+          />
 
           <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
             {currentEvent?.name ||
@@ -1362,7 +1364,7 @@ function AdminReportsPageInner() {
           activitySummaryRows={activitySummaryRows}
           sortedRosterRows={sortedRosterRows}
         />
-      </div>
+      </Page>
     </>
   );
 }

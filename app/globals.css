@@ -214,6 +214,17 @@ body.coach-map-lock .app-shell {
   padding: var(--space-8);
 }
 
+/* ===== PAGE SHELL =====
+   Always present on <Page> (see components/ui/Page.tsx); any caller
+   className is appended alongside it, never in place of it. Kept to
+   properties that are safe to combine with any existing root class
+   (a bordered `card`, a page-specific grid class, etc.) -- it does not set
+   `display`/`gap`, since several migrated pages already own their layout
+   mode via that class or an inline `style` override. */
+.app-page {
+  width: 100%;
+}
+
 /* ===== GLOBAL INTERACTION RESET ===== */
 button,
 a,
