@@ -4,9 +4,9 @@ Stage 1 identity backfill migration.
 Scope:
 - Resolve before create from the frozen 20260726_v1 manifest.
 - Create people rows only when no safe existing person resolution exists.
-- Create person_auth_accounts links for all five auth groups.
+- Create person_auth_accounts links for auth groups whose auth.users parents exist.
 - Create person_identifiers rows from reliable manifest evidence.
-- Create person_role_instances links for all 17 manifest role instances.
+- Create person_role_instances links only for manifest rows with complete source evidence.
 
 Safety:
 - Uses immutable manifest membership values (exact 17 rows).
@@ -177,6 +177,141 @@ BEGIN
 END
 $$;
 
+CREATE TEMP TABLE stage1_manifest_source_status ON COMMIT DROP AS
+WITH source_eval AS (
+  SELECT
+    m.*,
+    (ev.id IS NOT NULL) AS event_exists,
+    (a.id IS NOT NULL) AS attendee_exists,
+    (a.id IS NOT NULL AND a.event_id = m.event_id) AS attendee_event_matches_manifest,
+    (m.identity_role = 'HOUSEHOLD_MEMBER') AS household_member_required,
+    (hm.id IS NOT NULL) AS household_member_exists,
+    (hm.id IS NOT NULL AND hm.attendee_id = m.attendee_id) AS household_member_attendee_matches_manifest,
+    (hm.id IS NOT NULL AND hm.event_id = m.event_id) AS household_member_event_matches_manifest,
+    (au.id IS NOT NULL) AS auth_user_exists,
+    true::boolean AS tenant_relationship_consistent,
+    CASE
+      WHEN m.competing_claim_count <> 0 OR m.identifier_conflict_count <> 0
+        THEN 'ambiguous_or_conflicting'::text
+      WHEN m.identity_role = 'PILOT' AND m.household_member_id IS NOT NULL
+        THEN 'source_inconsistent'::text
+      WHEN m.identity_role = 'HOUSEHOLD_MEMBER' AND m.household_member_id IS NULL
+        THEN 'source_inconsistent'::text
+      WHEN m.identity_role = 'PILOT' AND m.role_instance_key NOT LIKE 'attendee_pilot:%'
+        THEN 'source_inconsistent'::text
+      WHEN m.identity_role = 'HOUSEHOLD_MEMBER' AND m.role_instance_key NOT LIKE 'household_member:%'
+        THEN 'source_inconsistent'::text
+      WHEN ev.id IS NULL OR a.id IS NULL
+        THEN 'source_absent'::text
+      WHEN a.event_id IS DISTINCT FROM m.event_id
+        THEN 'source_inconsistent'::text
+      WHEN m.identity_role = 'HOUSEHOLD_MEMBER' AND hm.id IS NULL
+        THEN 'source_absent'::text
+      WHEN m.identity_role = 'HOUSEHOLD_MEMBER' AND hm.attendee_id IS DISTINCT FROM m.attendee_id
+        THEN 'source_inconsistent'::text
+      WHEN m.identity_role = 'HOUSEHOLD_MEMBER' AND hm.event_id IS DISTINCT FROM m.event_id
+        THEN 'source_inconsistent'::text
+      ELSE 'source_eligible'::text
+    END AS source_status,
+    CASE
+      WHEN m.competing_claim_count <> 0 OR m.identifier_conflict_count <> 0
+        THEN 'manifest_conflict_flags_present'
+      WHEN m.identity_role = 'PILOT' AND m.household_member_id IS NOT NULL
+        THEN 'pilot_row_has_household_member_id'
+      WHEN m.identity_role = 'HOUSEHOLD_MEMBER' AND m.household_member_id IS NULL
+        THEN 'household_row_missing_household_member_id'
+      WHEN m.identity_role = 'PILOT' AND m.role_instance_key NOT LIKE 'attendee_pilot:%'
+        THEN 'pilot_role_key_prefix_mismatch'
+      WHEN m.identity_role = 'HOUSEHOLD_MEMBER' AND m.role_instance_key NOT LIKE 'household_member:%'
+        THEN 'household_role_key_prefix_mismatch'
+      WHEN a.id IS NOT NULL AND a.event_id IS DISTINCT FROM m.event_id
+        THEN 'attendee_event_mismatch'
+      WHEN m.identity_role = 'HOUSEHOLD_MEMBER' AND hm.id IS NOT NULL AND hm.attendee_id IS DISTINCT FROM m.attendee_id
+        THEN 'household_attendee_mismatch'
+      WHEN m.identity_role = 'HOUSEHOLD_MEMBER' AND hm.id IS NOT NULL AND hm.event_id IS DISTINCT FROM m.event_id
+        THEN 'household_event_mismatch'
+      ELSE NULL
+    END AS source_inconsistency_reason
+  FROM stage1_manifest_rows m
+  LEFT JOIN public.events ev
+    ON ev.id = m.event_id
+  LEFT JOIN public.attendees a
+    ON a.id = m.attendee_id
+  LEFT JOIN public.attendee_household_members hm
+    ON hm.id = m.household_member_id
+  LEFT JOIN auth.users au
+    ON au.id = m.auth_user_id
+)
+SELECT
+  se.*,
+  CASE
+    WHEN se.source_status = 'source_inconsistent'
+      THEN 'source_inconsistent'::text
+    WHEN se.source_status = 'ambiguous_or_conflicting'
+      THEN 'ambiguous_or_conflicting'::text
+    WHEN se.source_status = 'source_absent' AND se.auth_user_exists = false
+      THEN 'source_and_auth_absent'::text
+    WHEN se.source_status = 'source_absent' AND se.auth_user_exists = true
+      THEN 'source_absent'::text
+    WHEN se.source_status = 'source_eligible' AND se.auth_user_exists = false
+      THEN 'auth_absent'::text
+    WHEN se.source_status = 'source_eligible' AND se.auth_user_exists = true
+      THEN 'eligible'::text
+    ELSE 'source_inconsistent'::text
+  END AS eligibility_class
+FROM source_eval se;
+
+CREATE TEMP TABLE stage1_eligible_manifest_rows ON COMMIT DROP AS
+SELECT *
+FROM stage1_manifest_source_status
+WHERE source_status = 'source_eligible';
+
+DO $$
+DECLARE
+  v_manifest_row_count bigint;
+  v_eligible_row_count bigint;
+  v_source_absent_row_count bigint;
+  v_source_inconsistent_row_count bigint;
+  v_ambiguous_or_conflicting_row_count bigint;
+  v_eligible_auth_user_present_count bigint;
+  v_eligible_auth_user_absent_count bigint;
+BEGIN
+  SELECT count(*) INTO v_manifest_row_count FROM stage1_manifest_rows;
+  SELECT count(*) INTO v_eligible_row_count FROM stage1_eligible_manifest_rows;
+  SELECT count(*) INTO v_source_absent_row_count
+  FROM stage1_manifest_source_status
+  WHERE eligibility_class IN ('source_absent', 'source_and_auth_absent');
+  SELECT count(*) INTO v_source_inconsistent_row_count
+  FROM stage1_manifest_source_status
+  WHERE eligibility_class = 'source_inconsistent';
+  SELECT count(*) INTO v_ambiguous_or_conflicting_row_count
+  FROM stage1_manifest_source_status
+  WHERE eligibility_class = 'ambiguous_or_conflicting';
+  SELECT count(*) INTO v_eligible_auth_user_present_count
+  FROM stage1_manifest_source_status
+  WHERE eligibility_class = 'eligible';
+  SELECT count(*) INTO v_eligible_auth_user_absent_count
+  FROM stage1_manifest_source_status
+  WHERE eligibility_class = 'auth_absent';
+
+  RAISE NOTICE 'STAGE1 manifest_row_count=%', v_manifest_row_count;
+  RAISE NOTICE 'STAGE1 eligible_row_count=%', v_eligible_row_count;
+  RAISE NOTICE 'STAGE1 source_absent_row_count=%', v_source_absent_row_count;
+  RAISE NOTICE 'STAGE1 source_inconsistent_row_count=%', v_source_inconsistent_row_count;
+  RAISE NOTICE 'STAGE1 ambiguous_or_conflicting_row_count=%', v_ambiguous_or_conflicting_row_count;
+  RAISE NOTICE 'STAGE1 eligible_auth_user_present_count=%', v_eligible_auth_user_present_count;
+  RAISE NOTICE 'STAGE1 eligible_auth_user_absent_count=%', v_eligible_auth_user_absent_count;
+
+  IF v_source_inconsistent_row_count <> 0 THEN
+    RAISE EXCEPTION 'Stage1 assertion failed: source-inconsistent rows detected (%). See stage1_manifest_source_status.', v_source_inconsistent_row_count;
+  END IF;
+
+  IF v_ambiguous_or_conflicting_row_count <> 0 THEN
+    RAISE EXCEPTION 'Stage1 assertion failed: ambiguous/conflicting rows detected (%). See stage1_manifest_source_status.', v_ambiguous_or_conflicting_row_count;
+  END IF;
+END
+$$;
+
 CREATE TEMP TABLE stage1_auth_groups ON COMMIT DROP AS
 SELECT
   m.auth_user_id,
@@ -185,8 +320,16 @@ SELECT
     FILTER (WHERE nullif(trim(m.display_first_name), '') IS NOT NULL))[1] AS canonical_first_name,
   (array_agg(nullif(trim(m.display_last_name), '') ORDER BY CASE WHEN m.identity_role = 'PILOT' THEN 0 ELSE 1 END, m.role_instance_key)
     FILTER (WHERE nullif(trim(m.display_last_name), '') IS NOT NULL))[1] AS canonical_last_name
-FROM stage1_manifest_rows m
+FROM stage1_eligible_manifest_rows m
 GROUP BY m.auth_user_id;
+
+CREATE TEMP TABLE stage1_auth_user_presence ON COMMIT DROP AS
+SELECT
+  g.auth_user_id,
+  (au.id IS NOT NULL) AS auth_user_exists
+FROM stage1_auth_groups g
+LEFT JOIN auth.users au
+  ON au.id = g.auth_user_id;
 
 CREATE TEMP TABLE stage1_direct_auth_links ON COMMIT DROP AS
 SELECT
@@ -201,7 +344,7 @@ CREATE TEMP TABLE stage1_pilot_attendee_people ON COMMIT DROP AS
 SELECT DISTINCT
   m.auth_user_id,
   a.person_id
-FROM stage1_manifest_rows m
+FROM stage1_eligible_manifest_rows m
 JOIN public.attendees a
   ON a.id = m.attendee_id
 WHERE m.identity_role = 'PILOT'
@@ -209,19 +352,19 @@ WHERE m.identity_role = 'PILOT'
 
 CREATE TEMP TABLE stage1_identifier_evidence ON COMMIT DROP AS
 SELECT auth_user_id, role_instance_key, 'email'::text AS identifier_type, normalized_email AS normalized_value
-FROM stage1_manifest_rows
+FROM stage1_eligible_manifest_rows
 WHERE normalized_email IS NOT NULL
 
 UNION ALL
 
 SELECT auth_user_id, role_instance_key, 'phone'::text AS identifier_type, normalized_phone AS normalized_value
-FROM stage1_manifest_rows
+FROM stage1_eligible_manifest_rows
 WHERE normalized_phone IS NOT NULL
 
 UNION ALL
 
 SELECT auth_user_id, role_instance_key, 'membership_number'::text AS identifier_type, normalized_membership_number AS normalized_value
-FROM stage1_manifest_rows
+FROM stage1_eligible_manifest_rows
 WHERE normalized_membership_number IS NOT NULL;
 
 CREATE TEMP TABLE stage1_identifier_matches ON COMMIT DROP AS
@@ -472,25 +615,34 @@ BEGIN
 END
 $$;
 
-INSERT INTO public.person_auth_accounts (
-  person_id,
-  auth_user_id,
-  status,
-  is_primary,
-  linked_at,
-  verified_at
+CREATE TEMP TABLE stage1_inserted_person_auth_accounts ON COMMIT DROP AS
+WITH inserted AS (
+  INSERT INTO public.person_auth_accounts (
+    person_id,
+    auth_user_id,
+    status,
+    is_primary,
+    linked_at,
+    verified_at
+  )
+  SELECT
+    r.resolved_person_id,
+    r.auth_user_id,
+    'active'::text,
+    true,
+    now(),
+    now()
+  FROM stage1_group_resolution r
+  JOIN stage1_auth_user_presence aup
+    ON aup.auth_user_id = r.auth_user_id
+   AND aup.auth_user_exists = true
+  LEFT JOIN public.person_auth_accounts paa
+    ON paa.auth_user_id = r.auth_user_id
+  WHERE paa.auth_user_id IS NULL
+  RETURNING id, person_id, auth_user_id
 )
-SELECT
-  r.resolved_person_id,
-  r.auth_user_id,
-  'active'::text,
-  true,
-  now(),
-  now()
-FROM stage1_group_resolution r
-LEFT JOIN public.person_auth_accounts paa
-  ON paa.auth_user_id = r.auth_user_id
-WHERE paa.auth_user_id IS NULL;
+SELECT *
+FROM inserted;
 
 CREATE TEMP TABLE stage1_identifier_candidates ON COMMIT DROP AS
 SELECT
@@ -508,7 +660,7 @@ SELECT
     WHEN m.identity_role = 'PILOT' THEN m.attendee_id
     ELSE m.household_member_id
   END AS source_record_id
-FROM stage1_manifest_rows m
+FROM stage1_eligible_manifest_rows m
 JOIN stage1_group_resolution r
   ON r.auth_user_id = m.auth_user_id
 WHERE m.normalized_email IS NOT NULL
@@ -530,7 +682,7 @@ SELECT
     WHEN m.identity_role = 'PILOT' THEN m.attendee_id
     ELSE m.household_member_id
   END AS source_record_id
-FROM stage1_manifest_rows m
+FROM stage1_eligible_manifest_rows m
 JOIN stage1_group_resolution r
   ON r.auth_user_id = m.auth_user_id
 WHERE m.normalized_phone IS NOT NULL
@@ -552,7 +704,7 @@ SELECT
     WHEN m.identity_role = 'PILOT' THEN m.attendee_id
     ELSE m.household_member_id
   END AS source_record_id
-FROM stage1_manifest_rows m
+FROM stage1_eligible_manifest_rows m
 JOIN stage1_group_resolution r
   ON r.auth_user_id = m.auth_user_id
 WHERE m.normalized_membership_number IS NOT NULL;
@@ -617,7 +769,7 @@ DECLARE
 BEGIN
   SELECT count(*)
   INTO v_role_key_conflict_count
-  FROM stage1_manifest_rows m
+  FROM stage1_eligible_manifest_rows m
   JOIN stage1_group_resolution r
     ON r.auth_user_id = m.auth_user_id
   JOIN public.person_role_instances pri
@@ -630,53 +782,67 @@ BEGIN
 END
 $$;
 
-INSERT INTO public.person_role_instances (
-  person_id,
-  event_id,
-  attendee_id,
-  identity_role,
-  household_member_id,
-  source_table,
-  source_record_id,
-  attribution_method,
-  evidence_source,
-  source_manifest_version,
-  source_role_instance_key,
-  attributed_at
+CREATE TEMP TABLE stage1_inserted_role_instances ON COMMIT DROP AS
+WITH inserted AS (
+  INSERT INTO public.person_role_instances (
+    person_id,
+    event_id,
+    attendee_id,
+    identity_role,
+    household_member_id,
+    source_table,
+    source_record_id,
+    attribution_method,
+    evidence_source,
+    source_manifest_version,
+    source_role_instance_key,
+    attributed_at
+  )
+  SELECT
+    r.resolved_person_id,
+    m.event_id,
+    m.attendee_id,
+    m.identity_role,
+    m.household_member_id,
+    CASE
+      WHEN m.identity_role = 'PILOT' THEN 'public.attendees'
+      ELSE 'public.attendee_household_members'
+    END AS source_table,
+    CASE
+      WHEN m.identity_role = 'PILOT' THEN m.attendee_id
+      ELSE m.household_member_id
+    END AS source_record_id,
+    'automatic_backfill'::text,
+    '20260726_person_identity_automatic_backfill_manifest.sql'::text,
+    m.manifest_version,
+    m.role_instance_key,
+    now()
+  FROM stage1_eligible_manifest_rows m
+  JOIN stage1_group_resolution r
+    ON r.auth_user_id = m.auth_user_id
+  ON CONFLICT (source_role_instance_key) DO NOTHING
+  RETURNING id, person_id, source_role_instance_key
 )
-SELECT
-  r.resolved_person_id,
-  m.event_id,
-  m.attendee_id,
-  m.identity_role,
-  m.household_member_id,
-  CASE
-    WHEN m.identity_role = 'PILOT' THEN 'public.attendees'
-    ELSE 'public.attendee_household_members'
-  END AS source_table,
-  CASE
-    WHEN m.identity_role = 'PILOT' THEN m.attendee_id
-    ELSE m.household_member_id
-  END AS source_record_id,
-  'automatic_backfill'::text,
-  '20260726_person_identity_automatic_backfill_manifest.sql'::text,
-  m.manifest_version,
-  m.role_instance_key,
-  now()
-FROM stage1_manifest_rows m
-JOIN stage1_group_resolution r
-  ON r.auth_user_id = m.auth_user_id
-ON CONFLICT (source_role_instance_key) DO NOTHING;
+SELECT *
+FROM inserted;
 
 DO $$
 DECLARE
   v_active_auth_link_count bigint;
+  v_manifest_auth_group_count bigint;
+  v_present_auth_user_count bigint;
+  v_missing_auth_user_count bigint;
+  v_expected_role_instance_count bigint;
+  v_expected_resolved_people_count bigint;
   v_linked_role_instance_count bigint;
   v_linked_role_distinct_people bigint;
   v_missing_role_links bigint;
   v_auth_groups_not_single_person bigint;
   v_role_instances_multi_people bigint;
   v_role_vs_auth_person_mismatch_count bigint;
+  v_role_event_mismatch_count bigint;
+  v_role_attendee_mismatch_count bigint;
+  v_role_household_mismatch_count bigint;
   v_created_person_name_mismatch_count bigint;
 BEGIN
   SELECT count(*)
@@ -687,21 +853,43 @@ BEGIN
   WHERE paa.status = 'active'
     AND paa.person_id = r.resolved_person_id;
 
+  SELECT count(DISTINCT auth_user_id)
+  INTO v_manifest_auth_group_count
+  FROM stage1_eligible_manifest_rows;
+
+  SELECT count(*)
+  INTO v_present_auth_user_count
+  FROM stage1_auth_user_presence
+  WHERE auth_user_exists = true;
+
+  SELECT count(*)
+  INTO v_missing_auth_user_count
+  FROM stage1_auth_user_presence
+  WHERE auth_user_exists = false;
+
+  SELECT count(*)
+  INTO v_expected_role_instance_count
+  FROM stage1_eligible_manifest_rows;
+
+  SELECT count(DISTINCT resolved_person_id)
+  INTO v_expected_resolved_people_count
+  FROM stage1_group_resolution;
+
   SELECT count(*)
   INTO v_linked_role_instance_count
-  FROM stage1_manifest_rows m
+  FROM stage1_eligible_manifest_rows m
   JOIN public.person_role_instances pri
     ON pri.source_role_instance_key = m.role_instance_key;
 
   SELECT count(DISTINCT pri.person_id)
   INTO v_linked_role_distinct_people
-  FROM stage1_manifest_rows m
+  FROM stage1_eligible_manifest_rows m
   JOIN public.person_role_instances pri
     ON pri.source_role_instance_key = m.role_instance_key;
 
   SELECT count(*)
   INTO v_missing_role_links
-  FROM stage1_manifest_rows m
+  FROM stage1_eligible_manifest_rows m
   LEFT JOIN public.person_role_instances pri
     ON pri.source_role_instance_key = m.role_instance_key
   WHERE pri.id IS NULL;
@@ -710,7 +898,7 @@ BEGIN
   INTO v_auth_groups_not_single_person
   FROM (
     SELECT m.auth_user_id
-    FROM stage1_manifest_rows m
+    FROM stage1_eligible_manifest_rows m
     JOIN public.person_role_instances pri
       ON pri.source_role_instance_key = m.role_instance_key
     GROUP BY m.auth_user_id
@@ -728,7 +916,7 @@ BEGIN
 
   SELECT count(*)
   INTO v_role_vs_auth_person_mismatch_count
-  FROM stage1_manifest_rows m
+  FROM stage1_eligible_manifest_rows m
   JOIN stage1_group_resolution r
     ON r.auth_user_id = m.auth_user_id
   JOIN public.person_role_instances pri
@@ -738,6 +926,27 @@ BEGIN
    AND paa.status = 'active'
   WHERE paa.person_id IS NULL
      OR pri.person_id <> paa.person_id;
+
+  SELECT count(*)
+  INTO v_role_event_mismatch_count
+  FROM stage1_eligible_manifest_rows m
+  JOIN public.person_role_instances pri
+    ON pri.source_role_instance_key = m.role_instance_key
+  WHERE pri.event_id IS DISTINCT FROM m.event_id;
+
+  SELECT count(*)
+  INTO v_role_attendee_mismatch_count
+  FROM stage1_eligible_manifest_rows m
+  JOIN public.person_role_instances pri
+    ON pri.source_role_instance_key = m.role_instance_key
+  WHERE pri.attendee_id IS DISTINCT FROM m.attendee_id;
+
+  SELECT count(*)
+  INTO v_role_household_mismatch_count
+  FROM stage1_eligible_manifest_rows m
+  JOIN public.person_role_instances pri
+    ON pri.source_role_instance_key = m.role_instance_key
+  WHERE pri.household_member_id IS DISTINCT FROM m.household_member_id;
 
   SELECT count(*)
   INTO v_created_person_name_mismatch_count
@@ -750,14 +959,19 @@ BEGIN
       OR coalesce(p.display_last_name, '') <> coalesce(r.canonical_last_name, '')
     );
 
-  IF v_active_auth_link_count <> 5 THEN
-    RAISE EXCEPTION 'Stage1 assertion failed: active auth links % != 5', v_active_auth_link_count;
+  IF (v_present_auth_user_count + v_missing_auth_user_count) <> v_manifest_auth_group_count THEN
+    RAISE EXCEPTION 'Stage1 assertion failed: present_auth_user_count % + missing_auth_user_count % != manifest_auth_group_count %',
+      v_present_auth_user_count, v_missing_auth_user_count, v_manifest_auth_group_count;
   END IF;
-  IF v_linked_role_instance_count <> 17 THEN
-    RAISE EXCEPTION 'Stage1 assertion failed: linked role instances % != 17', v_linked_role_instance_count;
+  IF v_active_auth_link_count <> v_present_auth_user_count THEN
+    RAISE EXCEPTION 'Stage1 assertion failed: active auth links % != present auth users %',
+      v_active_auth_link_count, v_present_auth_user_count;
   END IF;
-  IF v_linked_role_distinct_people <> 5 THEN
-    RAISE EXCEPTION 'Stage1 assertion failed: linked role distinct people % != 5', v_linked_role_distinct_people;
+  IF v_linked_role_instance_count <> v_expected_role_instance_count THEN
+    RAISE EXCEPTION 'Stage1 assertion failed: linked role instances % != expected eligible role instances %', v_linked_role_instance_count, v_expected_role_instance_count;
+  END IF;
+  IF v_linked_role_distinct_people <> v_expected_resolved_people_count THEN
+    RAISE EXCEPTION 'Stage1 assertion failed: linked role distinct people % != expected resolved people %', v_linked_role_distinct_people, v_expected_resolved_people_count;
   END IF;
   IF v_missing_role_links <> 0 THEN
     RAISE EXCEPTION 'Stage1 assertion failed: missing role links % != 0', v_missing_role_links;
@@ -770,6 +984,15 @@ BEGIN
   END IF;
   IF v_role_vs_auth_person_mismatch_count <> 0 THEN
     RAISE EXCEPTION 'Stage1 assertion failed: role-instance person_id vs active auth-link person_id mismatches % != 0', v_role_vs_auth_person_mismatch_count;
+  END IF;
+  IF v_role_event_mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'Stage1 assertion failed: role-instance event relationship mismatches % != 0', v_role_event_mismatch_count;
+  END IF;
+  IF v_role_attendee_mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'Stage1 assertion failed: role-instance attendee relationship mismatches % != 0', v_role_attendee_mismatch_count;
+  END IF;
+  IF v_role_household_mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'Stage1 assertion failed: role-instance household relationship mismatches % != 0', v_role_household_mismatch_count;
   END IF;
   IF v_created_person_name_mismatch_count <> 0 THEN
     RAISE EXCEPTION 'Stage1 assertion failed: created person name mismatches % != 0', v_created_person_name_mismatch_count;
@@ -788,12 +1011,96 @@ FROM stage1_group_resolution r
 ORDER BY r.auth_user_id;
 
 SELECT
+  m.manifest_version,
+  m.auth_user_id,
+  r.resolved_person_id,
+  m.role_instance_key,
+  m.event_id,
+  m.identity_role,
+  m.eligibility_class AS unresolved_reason
+FROM stage1_manifest_source_status m
+JOIN stage1_group_resolution r
+  ON r.auth_user_id = m.auth_user_id
+LEFT JOIN public.person_auth_accounts paa
+  ON paa.auth_user_id = m.auth_user_id
+ AND paa.person_id = r.resolved_person_id
+ AND paa.status = 'active'
+WHERE m.eligibility_class = 'auth_absent'
+  AND paa.id IS NULL
+ORDER BY m.auth_user_id, m.role_instance_key;
+
+DO $$
+DECLARE
+  v_manifest_row_count bigint;
+  v_eligible_row_count bigint;
+  v_source_absent_row_count bigint;
+  v_source_inconsistent_row_count bigint;
+  v_eligible_auth_user_present_count bigint;
+  v_eligible_auth_user_absent_count bigint;
+  v_people_resolved_or_created_count bigint;
+  v_role_instances_inserted_count bigint;
+  v_auth_accounts_inserted_count bigint;
+BEGIN
+  SELECT count(*) INTO v_manifest_row_count FROM stage1_manifest_rows;
+  SELECT count(*) INTO v_eligible_row_count FROM stage1_eligible_manifest_rows;
+  SELECT count(*) INTO v_source_absent_row_count
+  FROM stage1_manifest_source_status
+  WHERE eligibility_class IN ('source_absent', 'source_and_auth_absent');
+  SELECT count(*) INTO v_source_inconsistent_row_count
+  FROM stage1_manifest_source_status
+  WHERE eligibility_class = 'source_inconsistent';
+  SELECT count(*) INTO v_eligible_auth_user_present_count
+  FROM stage1_manifest_source_status
+  WHERE eligibility_class = 'eligible';
+  SELECT count(*) INTO v_eligible_auth_user_absent_count
+  FROM stage1_manifest_source_status
+  WHERE eligibility_class = 'auth_absent';
+  SELECT count(*) INTO v_people_resolved_or_created_count
+  FROM stage1_group_resolution;
+  SELECT count(*) INTO v_role_instances_inserted_count
+  FROM stage1_inserted_role_instances;
+  SELECT count(*) INTO v_auth_accounts_inserted_count
+  FROM stage1_inserted_person_auth_accounts;
+
+  RAISE NOTICE 'STAGE1 diagnostics manifest_row_count=%', v_manifest_row_count;
+  RAISE NOTICE 'STAGE1 diagnostics eligible_row_count=%', v_eligible_row_count;
+  RAISE NOTICE 'STAGE1 diagnostics source_absent_row_count=%', v_source_absent_row_count;
+  RAISE NOTICE 'STAGE1 diagnostics source_inconsistent_row_count=%', v_source_inconsistent_row_count;
+  RAISE NOTICE 'STAGE1 diagnostics eligible_auth_user_present_count=%', v_eligible_auth_user_present_count;
+  RAISE NOTICE 'STAGE1 diagnostics eligible_auth_user_absent_count=%', v_eligible_auth_user_absent_count;
+  RAISE NOTICE 'STAGE1 diagnostics people_resolved_or_created_count=%', v_people_resolved_or_created_count;
+  RAISE NOTICE 'STAGE1 diagnostics role_instances_inserted_count=%', v_role_instances_inserted_count;
+  RAISE NOTICE 'STAGE1 diagnostics auth_accounts_inserted_count=%', v_auth_accounts_inserted_count;
+END
+$$;
+
+SELECT
   (SELECT count(*) FROM stage1_manifest_rows) AS manifest_role_instance_rows,
-  (SELECT count(DISTINCT auth_user_id) FROM stage1_manifest_rows) AS manifest_auth_groups,
+  (SELECT count(*) FROM stage1_eligible_manifest_rows) AS eligible_source_role_rows,
+  (SELECT count(*) FROM stage1_manifest_source_status WHERE eligibility_class = 'source_absent') AS source_absent_rows,
+  (SELECT count(*) FROM stage1_manifest_source_status WHERE eligibility_class = 'source_and_auth_absent') AS source_and_auth_absent_rows,
+  (SELECT count(*) FROM stage1_manifest_source_status WHERE eligibility_class = 'source_inconsistent') AS source_inconsistent_rows,
+  (SELECT count(*) FROM stage1_manifest_source_status WHERE eligibility_class = 'ambiguous_or_conflicting') AS ambiguous_or_conflicting_rows,
+  (SELECT count(DISTINCT auth_user_id) FROM stage1_eligible_manifest_rows) AS eligible_auth_groups,
+  (SELECT count(*) FROM stage1_auth_user_presence WHERE auth_user_exists = true) AS present_auth_users,
+  (SELECT count(*) FROM stage1_auth_user_presence WHERE auth_user_exists = false) AS missing_auth_users,
+  (SELECT count(*) FROM stage1_manifest_source_status WHERE eligibility_class = 'eligible') AS eligible_auth_users_present,
+  (SELECT count(*) FROM stage1_manifest_source_status WHERE eligibility_class = 'auth_absent') AS eligible_auth_users_absent,
+  (SELECT count(*) FROM stage1_group_resolution r JOIN stage1_auth_user_presence aup ON aup.auth_user_id = r.auth_user_id WHERE aup.auth_user_exists = false) AS unresolved_auth_link_candidates,
   (SELECT count(*) FROM stage1_group_resolution WHERE created_person = true) AS new_people_created,
+  (SELECT count(*) FROM stage1_group_resolution) AS people_resolved_or_created,
   (SELECT count(*) FROM public.person_auth_accounts paa JOIN stage1_group_resolution r ON r.auth_user_id = paa.auth_user_id WHERE paa.status = 'active' AND paa.person_id = r.resolved_person_id) AS active_auth_links,
-  (SELECT count(*) FROM stage1_manifest_rows m JOIN public.person_role_instances pri ON pri.source_role_instance_key = m.role_instance_key) AS role_instance_links,
-  (SELECT count(DISTINCT pri.person_id) FROM stage1_manifest_rows m JOIN public.person_role_instances pri ON pri.source_role_instance_key = m.role_instance_key) AS resolved_people,
-  'STAGE_1_COMPLETE'::text AS validation_status;
+  (SELECT count(*) FROM stage1_inserted_person_auth_accounts) AS inserted_auth_accounts,
+  (SELECT count(*) FROM public.person_auth_accounts paa JOIN stage1_auth_user_presence aup ON aup.auth_user_id = paa.auth_user_id WHERE aup.auth_user_exists = false) AS invalid_links_to_missing_auth_users,
+  (SELECT count(*) FROM stage1_eligible_manifest_rows m JOIN public.person_role_instances pri ON pri.source_role_instance_key = m.role_instance_key) AS role_instance_links,
+  (SELECT count(*) FROM stage1_inserted_role_instances) AS inserted_role_instances,
+  (SELECT count(DISTINCT pri.person_id) FROM stage1_eligible_manifest_rows m JOIN public.person_role_instances pri ON pri.source_role_instance_key = m.role_instance_key) AS resolved_people,
+  CASE
+    WHEN (SELECT count(*) FROM stage1_manifest_source_status WHERE eligibility_class IN ('source_inconsistent', 'ambiguous_or_conflicting')) > 0
+      THEN 'STAGE_1_ABORT_REQUIRED_SOURCE_CONFLICT'::text
+    WHEN (SELECT count(*) FROM stage1_auth_user_presence WHERE auth_user_exists = false) > 0
+      THEN 'STAGE_1_COMPLETE_WITH_UNRESOLVED_AUTH_USERS'::text
+    ELSE 'STAGE_1_COMPLETE'::text
+  END AS validation_status;
 
 COMMIT;

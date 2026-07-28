@@ -421,6 +421,10 @@ function AdminVendorsPageInner() {
             Vendor Requests
           </a>
 
+          <a href="/admin/vendors/access" style={dashboardLinkStyle}>
+            Vendor User Access
+          </a>
+
           <a href="/admin/nearby" style={dashboardLinkStyle}>
             Nearby Services
           </a>
