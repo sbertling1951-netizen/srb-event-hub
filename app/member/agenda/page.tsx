@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { ObjectPanel } from "@/components/ObjectPanel";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { logEngagement } from "@/lib/engagement";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
@@ -293,12 +294,21 @@ function MemberAgendaPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const [expandedPastItems, setExpandedPastItems] = useState<
-    Record<string, boolean>
-  >({});
-  const [expandedDescriptions, setExpandedDescriptions] = useState<
-    Record<string, boolean>
-  >({});
+  // The "understand and act" view for a single agenda item, shared with
+  // Nearby via components/ObjectPanel.tsx. Replaces the old per-item
+  // inline expansion (Read More / whole-card expand-collapse) so every
+  // agenda item -- past, current, upcoming, unscheduled -- uses the same
+  // popup interaction model instead of two different inline ones.
+  const [selectedAgendaItem, setSelectedAgendaItem] =
+    useState<AgendaItem | null>(null);
+
+  const openAgendaPanel = useCallback((item: AgendaItem) => {
+    setSelectedAgendaItem(item);
+  }, []);
+
+  const closeAgendaPanel = useCallback(() => {
+    setSelectedAgendaItem(null);
+  }, []);
 
   const loadAgenda = useCallback(async () => {
     try {
@@ -383,19 +393,6 @@ function MemberAgendaPageInner() {
     return () => window.clearInterval(timer);
   }, []);
 
-  function togglePastItem(itemId: string) {
-    setExpandedPastItems((prev) => ({
-      ...prev,
-      [itemId]: !prev[itemId],
-    }));
-  }
-  function toggleDescription(itemId: string) {
-    setExpandedDescriptions((prev) => ({
-      ...prev,
-      [itemId]: !prev[itemId],
-    }));
-  }
-
   const categories = useMemo(() => {
     const values = Array.from(
       new Set(
@@ -434,6 +431,13 @@ function MemberAgendaPageInner() {
   }, [items, now]);
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
+
+  const selectedItemStatus = selectedAgendaItem
+    ? getItemStatus(selectedAgendaItem, now)
+    : null;
+  const selectedItemColor = selectedAgendaItem
+    ? getAgendaColor(selectedAgendaItem.category, selectedAgendaItem.color)
+    : null;
 
   return (
     <div style={{ padding: 24, display: "grid", gap: 16, maxWidth: 960 }}>
@@ -657,106 +661,86 @@ function MemberAgendaPageInner() {
                   itemStatus,
                   resolvedAgendaColor,
                 );
-                const descriptionExpanded = !!expandedDescriptions[item.id];
-                const hasLongDescription =
-                  (item.description?.length || 0) > 220;
                 const isPast = itemStatus === "past";
-                const isExpanded = !isPast || !!expandedPastItems[item.id];
 
-                if (!isPast) {
-                  return (
+                // One consistent trigger for every item -- past, current,
+                // upcoming, or unscheduled -- opens the shared ObjectPanel
+                // with full detail. Past items keep their existing
+                // compact steady-state appearance (time + title only,
+                // dimmed) since that's their current default look; the
+                // only thing removed is the old inline expand/collapse
+                // and Read More affordances, which the panel now
+                // supersedes.
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="agenda-item-open-button"
+                    onClick={() => openAgendaPanel(item)}
+                    aria-label={`View details for ${item.title || "agenda item"}`}
+                    style={{
+                      ...cardStyle,
+                      width: "100%",
+                      borderRadius: 10,
+                      padding: isPast ? "10px 14px" : 14,
+                      cursor: "pointer",
+                      opacity: isPast ? 0.88 : 1,
+                      textAlign: "left",
+                      font: "inherit",
+                      marginBottom: 10,
+                    }}
+                  >
                     <div
-                      key={item.id}
                       style={{
-                        ...cardStyle,
-                        borderRadius: 10,
-                        padding: 14,
-                        cursor: "default",
-                        marginBottom: 10,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: itemStatus === "now" ? "#166534" : "#475569",
+                        marginBottom: 6,
+                        letterSpacing: 0.2,
                       }}
                     >
+                      {formatItemTime(item)}
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        fontSize: 17,
+                        color: itemStatus === "now" ? "#064e3b" : "#111827",
+                      }}
+                    >
+                      {item.title || "Untitled item"}
+                    </div>
+                    {!isPast && item.location ? (
                       <div
                         style={{
                           fontSize: 12,
-                          fontWeight: 700,
-                          color: itemStatus === "now" ? "#166534" : "#475569",
-                          marginBottom: 6,
+                          color: "#475569",
+                          marginTop: 2,
+                          fontWeight: 500,
                           letterSpacing: 0.2,
                         }}
                       >
-                        {formatItemTime(item)}
+                        📍 {item.location}
                       </div>
+                    ) : null}
+                    {!isPast && item.description ? (
                       <div
                         style={{
-                          fontWeight: 800,
-                          fontSize: 17,
-                          color: itemStatus === "now" ? "#064e3b" : "#111827",
+                          marginTop: 8,
+                          color: "#374151",
+                          lineHeight: 1.45,
+                          overflow: "hidden",
+                          display: "-webkit-box",
+                          WebkitBoxOrient: "vertical",
+                          WebkitLineClamp: 3,
+                          textAlign: "justify",
+                          hyphens: "auto",
                         }}
                       >
-                        {item.title || "Untitled item"}
+                        {item.description}
                       </div>
-                      {item.location ? (
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: "#475569",
-                            marginTop: 2,
-                            fontWeight: 500,
-                            letterSpacing: 0.2,
-                          }}
-                        >
-                          📍 {item.location}
-                        </div>
-                      ) : null}
-                      {item.description ? (
-                        <>
-                          <div
-                            style={{
-                              marginTop: 8,
-                              color: "#374151",
-                              lineHeight: 1.45,
-                              overflow: "hidden",
-                              display: descriptionExpanded
-                                ? "block"
-                                : "-webkit-box",
-                              WebkitBoxOrient: "vertical",
-                              WebkitLineClamp: descriptionExpanded
-                                ? undefined
-                                : 3,
-                              textAlign: "justify",
-                              hyphens: "auto",
-                              whiteSpace: descriptionExpanded
-                                ? "pre-wrap"
-                                : "normal",
-                            }}
-                          >
-                            {item.description}
-                          </div>
-
-                          {hasLongDescription ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleDescription(item.id);
-                              }}
-                              style={{
-                                marginTop: 8,
-                                padding: 0,
-                                border: "none",
-                                background: "none",
-                                color: "#2563eb",
-                                fontWeight: 700,
-                                cursor: "pointer",
-                              }}
-                            >
-                              {descriptionExpanded
-                                ? "Read Less ▲"
-                                : "Read More ▼"}
-                            </button>
-                          ) : null}
-                        </>
-                      ) : null}
+                    ) : null}
+                    {!isPast ? (
                       <div
                         style={{
                           marginTop: 10,
@@ -805,109 +789,7 @@ function MemberAgendaPageInner() {
                           </span>
                         ) : null}
                       </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    aria-expanded={isExpanded}
-                    onClick={() => togglePastItem(item.id)}
-                    style={{
-                      ...cardStyle,
-                      width: "100%",
-                      borderRadius: 10,
-                      padding: isExpanded ? 14 : "10px 14px",
-                      cursor: "pointer",
-                      opacity: !isExpanded ? 0.88 : 1,
-                      textAlign: "left",
-                      font: "inherit",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "#475569",
-                        marginBottom: 6,
-                        letterSpacing: 0.2,
-                      }}
-                    >
-                      {formatItemTime(item)}
-                    </div>
-                    <div
-                      style={{
-                        fontWeight: 800,
-                        fontSize: 17,
-                        color: "#111827",
-                      }}
-                    >
-                      {item.title || "Untitled item"}
-                    </div>
-                    {isExpanded && item.location ? (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#475569",
-                          marginTop: 2,
-                          fontWeight: 500,
-                          letterSpacing: 0.2,
-                        }}
-                      >
-                        📍 {item.location}
-                      </div>
                     ) : null}
-                    {isExpanded && item.description ? (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          color: "#374151",
-                          lineHeight: 1.45,
-                          whiteSpace: "pre-wrap",
-                          textAlign: "justify",
-                          hyphens: "auto",
-                        }}
-                      >
-                        {item.description}
-                      </div>
-                    ) : null}
-
-                    {isExpanded ? (
-                      <div
-                        style={{
-                          marginTop: 10,
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          alignItems: "center",
-                        }}
-                      >
-                        {item.category ? (
-                          <span style={categoryStyle(resolvedAgendaColor)}>
-                            {item.category}
-                          </span>
-                        ) : null}
-
-                        {isPast ? (
-                          <span style={{ fontSize: 12, color: "#6b7280" }}>
-                            Collapse
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          marginTop: 4,
-                          fontSize: 12,
-                          color: "#6b7280",
-                        }}
-                      >
-                        Past item · expand
-                      </div>
-                    )}
                   </button>
                 );
               });
@@ -1009,6 +891,81 @@ function MemberAgendaPageInner() {
 })}
 </div>
 )}
+
+      <ObjectPanel
+        open={selectedAgendaItem !== null}
+        onClose={closeAgendaPanel}
+        title={selectedAgendaItem?.title || "Untitled item"}
+        subtitle={
+          selectedAgendaItem
+            ? [formatItemTime(selectedAgendaItem), selectedAgendaItem.location]
+                .filter(Boolean)
+                .join(" • ") || undefined
+            : undefined
+        }
+      >
+        {selectedAgendaItem ? (
+          <div className="app-stack-8">
+            {selectedAgendaItem.description ? (
+              <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                {selectedAgendaItem.description}
+              </p>
+            ) : null}
+
+            {selectedAgendaItem.category ||
+            selectedItemStatus === "now" ||
+            selectedItemStatus === "upcoming" ? (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                {selectedAgendaItem.category ? (
+                  <span style={categoryStyle(selectedItemColor)}>
+                    {selectedAgendaItem.category}
+                  </span>
+                ) : null}
+
+                {selectedItemStatus === "now" ? (
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      background: "#dcfce7",
+                      color: "#166534",
+                    }}
+                  >
+                    Happening now
+                  </span>
+                ) : null}
+
+                {selectedItemStatus === "upcoming" ? (
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      background: "#eef2f7",
+                      color: "#475569",
+                      border: "1px solid #cbd5e1",
+                    }}
+                  >
+                    Upcoming
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </ObjectPanel>
 </div>
 );
 }

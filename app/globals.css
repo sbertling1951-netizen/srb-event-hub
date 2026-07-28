@@ -1080,14 +1080,6 @@ button[style*="background-color: #fafafa"] * {
   padding: 22px 22px 18px;
 }
 
-.nearby-place-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
-}
-
 .nearby-favorite-button {
   border: none;
   background: transparent;
@@ -1402,13 +1394,7 @@ button[style*="background-color: #fafafa"] * {
   padding: 22px;
   display: grid;
   gap: 14px;
-}
-
-.nearby-place-title-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
+  position: relative;
 }
 
 .nearby-card-title {
@@ -1625,6 +1611,27 @@ button[style*="background-color: #fafafa"] * {
   transform: scale(0.97);
 }
 
+/* Desktop: the informational area of a card is an object you inspect
+   (it opens the ObjectPanel), not a command you execute -- unlike
+   Directions/Call/Website/Favorite/More above, which keep their own
+   press feedback at every size. Keep the click and cursor:pointer
+   (already set on .nearby-place-open-button), but replace the
+   whole-card press-down scale with a subtle border/shadow hover cue,
+   and drop the scale-down on press so the interaction doesn't read as
+   a button being pushed. Mobile/tablet keep the existing tap and press
+   feedback unchanged below this breakpoint. */
+@media (min-width: 900px) {
+  .nearby-place-card:active,
+  .nearby-emergency-card:active {
+    transform: none;
+  }
+
+  .nearby-place-open-button:hover {
+    box-shadow: inset 0 0 0 1px var(--color-border-strong);
+    border-radius: var(--radius-small);
+  }
+}
+
 /* ===== MEMBER PAGE SPACING ===== */
 
 @media (max-width: 899px) {
@@ -1673,4 +1680,389 @@ body.slideshow-view-mode .app-inner {
 
 body.slideshow-view-mode .app-header-card {
   display: none !important;
+}
+
+/* =====================================================================
+   OBJECT PANEL (components/ObjectPanel.tsx)
+   Reusable "understand and act on an object" panel. Presented as a
+   bottom sheet on narrow viewports and a side panel on wide viewports,
+   using the project's existing 899px breakpoint (kept as a literal value
+   in the media query for broad browser support, matching every other
+   breakpoint in this file). Presentation switches purely by viewport
+   size, not by user-agent, so rotation/resizing re-flows without the
+   component re-rendering or losing state.
+   ===================================================================== */
+
+.object-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: var(--color-overlay);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.object-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: min(88vh, 88dvh);
+  background: var(--color-bg-panel);
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-bottom: none;
+  border-radius: var(--radius-large) var(--radius-large) 0 0;
+  box-shadow: var(--shadow-large);
+  padding-bottom: env(safe-area-inset-bottom);
+  overflow: hidden;
+  animation: object-panel-enter-sheet 0.22s ease;
+}
+
+.object-panel:focus-visible {
+  outline: none;
+}
+
+.object-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-6) var(--space-4);
+  border-bottom: var(--border-width-default) solid var(--color-border-default);
+}
+
+.object-panel-header-text {
+  min-width: 0;
+}
+
+.object-panel-title {
+  margin: 0;
+  font-size: var(--font-size-section-title);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.object-panel-subtitle {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+}
+
+.object-panel-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  border-radius: var(--radius-pill);
+  border: var(--border-width-default) solid var(--color-border-default);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.object-panel-close:hover {
+  background: var(--color-action-secondary);
+}
+
+.object-panel-close:focus-visible,
+.object-panel-nav-button:focus-visible,
+.object-panel a:focus-visible,
+.object-panel button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.object-panel-primary-actions,
+.object-panel-secondary-actions {
+  padding: var(--space-4) var(--space-6) 0;
+}
+
+.object-panel-secondary-actions {
+  padding-top: var(--space-2);
+}
+
+.object-panel-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6) 0;
+}
+
+.object-panel-nav-button {
+  flex: 1;
+  min-height: var(--touch-target-min);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-medium);
+  border: var(--border-width-default) solid var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.object-panel-nav-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.object-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-6);
+}
+
+.object-panel-footer {
+  padding: var(--space-4) var(--space-6);
+  border-top: var(--border-width-default) solid var(--color-border-default);
+  font-size: var(--font-size-caption);
+  color: var(--color-text-muted);
+}
+
+@keyframes object-panel-enter-sheet {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Tablet and desktop: side panel that leaves the discovery surface
+   visible, rather than a full-width bottom sheet. */
+@media (min-width: 900px) {
+  .object-panel-backdrop {
+    align-items: stretch;
+    justify-content: flex-end;
+  }
+
+  .object-panel {
+    width: min(420px, 100%);
+    max-height: none;
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+    border-bottom: var(--border-width-default) solid var(--color-border-default);
+    border-left: var(--border-width-default) solid var(--color-border-default);
+    padding-bottom: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    animation: object-panel-enter-side 0.22s ease;
+  }
+
+  .object-panel-body {
+    padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+  }
+}
+
+@keyframes object-panel-enter-side {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .object-panel {
+    animation: none;
+  }
+}
+
+/* ===== NEARBY: OPEN-DETAILS TRIGGER =====
+   Real <button> wrapping a place's non-action informational content
+   (name, category, distance, address, notes) so tapping/clicking
+   anywhere across that information -- not just the name -- opens the
+   ObjectPanel via normal button semantics. True actions (favorite,
+   Directions, Call, Website, the location-code/coordinates disclosure)
+   are rendered as siblings outside this button, never nested inside it,
+   so their own clicks perform only their own action. */
+.nearby-place-open-button {
+  all: unset;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  /* These cards are object-selection controls, not a place to copy
+     detail text from -- the opened ObjectPanel is the selectable detail
+     surface. Disabling selection here also avoids the native
+     copy/cut/paste menu dismissing itself the moment the trailing click
+     of a long-press-to-select gesture opens the panel. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Same rationale as .nearby-place-open-button above, for the member
+   Agenda card's equivalent open-panel trigger. */
+.agenda-item-open-button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Ordinary cards additionally render a favorite star absolutely
+   positioned over the open button's top-right corner (see
+   .nearby-favorite-button-floating below); this reserves space so
+   wrapped title text doesn't run under it. */
+.nearby-place-open-button-has-favorite {
+  padding-right: 40px;
+}
+
+/* Positions the favorite toggle in the same top-right corner it has
+   always visually occupied, without nesting it inside the open button
+   (it is a sibling, layered above the button via z-index so it remains
+   independently clickable/focusable). */
+.nearby-favorite-button-floating {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+}
+
+.nearby-place-open-button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-small);
+}
+
+/* ===== PREFERRED MAP CHOOSER =====
+   Small, focused "pick one option" dialog (see components/PreferredMapChooser.tsx).
+   Unlike .object-panel-*, this always presents as a compact dialog centered
+   in the viewport -- phone and desktop alike -- since its content is a
+   short, fixed list of options rather than variable object detail. A
+   higher z-index than .object-panel-backdrop lets it render on top when
+   opened from a control inside an already-open ObjectPanel. */
+.preferred-map-chooser-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10010;
+  background: var(--color-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+}
+
+.preferred-map-chooser {
+  width: 100%;
+  max-width: 360px;
+  max-height: min(85vh, 85dvh);
+  overflow-y: auto;
+  background: var(--color-bg-panel);
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-large);
+  padding: var(--space-8);
+  padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
+  animation: preferred-map-chooser-enter 0.18s ease;
+}
+
+.preferred-map-chooser:focus-visible {
+  outline: none;
+}
+
+.preferred-map-chooser-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-section-title);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.preferred-map-chooser-description {
+  margin: 0 0 var(--space-6);
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+}
+
+.preferred-map-chooser-options {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.preferred-map-chooser-option {
+  min-height: var(--touch-target-min);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-medium);
+  border: var(--border-width-default) solid var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  cursor: pointer;
+}
+
+.preferred-map-chooser-option:hover {
+  background: var(--color-action-secondary);
+}
+
+.preferred-map-chooser-option-active {
+  border-color: var(--color-selected);
+  background: var(--color-selected-bg);
+}
+
+.preferred-map-chooser-option:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.preferred-map-chooser-remember {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+}
+
+.preferred-map-chooser-actions {
+  margin-top: var(--space-6);
+}
+
+.preferred-map-chooser-cancel {
+  min-height: var(--touch-target-min);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-medium);
+  border: var(--border-width-default) solid var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.preferred-map-chooser-cancel:hover {
+  background: var(--color-action-secondary);
+}
+
+.preferred-map-chooser-cancel:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+@keyframes preferred-map-chooser-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preferred-map-chooser {
+    animation: none;
+  }
 }

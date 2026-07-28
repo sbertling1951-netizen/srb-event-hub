@@ -4,9 +4,13 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { ObjectPanel } from "@/components/ObjectPanel";
+import { PreferredMapChooser } from "@/components/PreferredMapChooser";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { calculateDistanceMiles } from "@/lib/calculateDistanceMiles";
+import { copyTextToClipboard } from "@/lib/copyTextToClipboard";
 import { logEngagement } from "@/lib/engagement";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
@@ -31,6 +35,13 @@ type Place = {
   lng: number | null;
   sort_order?: number | null;
 };
+
+type MapPreference = "apple" | "google";
+
+const MAP_CHOICES: { value: MapPreference; label: string }[] = [
+  { value: "apple", label: "🍎 Apple Maps" },
+  { value: "google", label: "📍 Google Maps" },
+];
 
 type EventRow = {
   id: string;
@@ -162,6 +173,50 @@ function NearbyPageInner() {
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
 
   const [rememberMapChoice, setRememberMapChoice] = useState(true);
+  // Mirrors localStorage["nearby-navigation-preference"] in React state so
+  // it can be read during render (e.g. to highlight the active choice in
+  // PreferredMapChooser) without touching `localStorage` directly outside
+  // an effect or event handler, which would break server rendering.
+  const [savedMapPreference, setSavedMapPreference] =
+    useState<MapPreference | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("nearby-navigation-preference");
+    if (stored === "apple" || stored === "google") {
+      setSavedMapPreference(stored);
+    }
+  }, []);
+
+  // Object panel: the "understand and act" view for a single Nearby place.
+  // Kept separate from `selectedPlace` above, which is dedicated to the
+  // preferred-map chooser dialog and must keep working exactly as-is.
+  const [panelPlace, setPanelPlace] = useState<Place | null>(null);
+  const [addressCopied, setAddressCopied] = useState(false);
+  const [addressCopyFailed, setAddressCopyFailed] = useState(false);
+
+  const openPlacePanel = useCallback((place: Place) => {
+    setAddressCopied(false);
+    setAddressCopyFailed(false);
+    setPanelPlace(place);
+  }, []);
+
+  const closePlacePanel = useCallback(() => {
+    setPanelPlace(null);
+  }, []);
+
+  async function copyPlaceAddress(address: string) {
+    const result = await copyTextToClipboard(address);
+
+    if (result.success) {
+      setAddressCopyFailed(false);
+      setAddressCopied(true);
+      setTimeout(() => setAddressCopied(false), 1500);
+    } else {
+      setAddressCopied(false);
+      setAddressCopyFailed(true);
+      setTimeout(() => setAddressCopyFailed(false), 1500);
+    }
+  }
 
   const loadNearby = useCallback(async () => {
     try {
@@ -418,6 +473,16 @@ function NearbyPageInner() {
     return sorted;
   }, [places, selectedCategory, favoriteIds, sortMode, search]);
 
+  // Previous/next navigation for the object panel follows whatever order
+  // is currently visible in the list/map (the same filtered, sorted set),
+  // so it stays consistent whichever surface the panel was opened from.
+  const panelIndex = panelPlace
+    ? filteredPlaces.findIndex((p) => p.id === panelPlace.id)
+    : -1;
+  const panelHasPrevious = panelIndex > 0;
+  const panelHasNext =
+    panelIndex >= 0 && panelIndex < filteredPlaces.length - 1;
+
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
   const listReady =
     !error && !!event && !status.toLowerCase().startsWith("loading");
@@ -448,7 +513,13 @@ function NearbyPageInner() {
     });
   }
 
-  function handleDirections(place: Place) {
+  // `overridePreference`, when provided, is used instead of the persisted
+  // preference -- this is how PreferredMapChooser continues an
+  // interrupted Directions click using the app the user just picked, even
+  // when "Remember my choice" is unchecked and nothing was written to
+  // localStorage. This is the one canonical place map URLs are built;
+  // nothing else in this file (including the chooser) constructs them.
+  function handleDirections(place: Place, overridePreference?: MapPreference) {
     const encodedAddress = place.address
       ? encodeURIComponent(place.address)
       : null;
@@ -465,7 +536,8 @@ function NearbyPageInner() {
       return;
     }
 
-    const preferred = localStorage.getItem("nearby-navigation-preference");
+    const preferred =
+      overridePreference ?? localStorage.getItem("nearby-navigation-preference");
 
     if (preferred === "apple") {
       window.open(
@@ -485,16 +557,39 @@ function NearbyPageInner() {
       return;
     }
 
-    // No preference saved yet.
+    // No preference saved yet and no override given -- ask, in place. The
+    // chooser is a fixed-position overlay, so it's visible regardless of
+    // scroll position; no scroll-to-top is needed before showing it.
     setSelectedPlace(place);
     setRememberMapChoice(true);
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-    setTimeout(() => {
-      setShowMapChooser(true);
-    }, 250);
+    setShowMapChooser(true);
+  }
+
+  // Opens the chooser as a deliberate, standalone preference change (top
+  // "Preferred Map..." control or the Object Panel's "Change preferred
+  // map" action) -- not tied to any pending Directions click.
+  function openPreferredMapChooser() {
+    setSelectedPlace(null);
+    setRememberMapChoice(!!savedMapPreference);
+    setShowMapChooser(true);
+  }
+
+  function handlePreferredMapSelect(choice: string) {
+    const mapChoice = choice as MapPreference;
+
+    if (rememberMapChoice) {
+      localStorage.setItem("nearby-navigation-preference", mapChoice);
+      setSavedMapPreference(mapChoice);
+    }
+
+    setShowMapChooser(false);
+
+    const pendingDirectionsPlace = selectedPlace;
+    setSelectedPlace(null);
+
+    if (pendingDirectionsPlace) {
+      handleDirections(pendingDirectionsPlace, mapChoice);
+    }
   }
 
   return (
@@ -568,13 +663,7 @@ function NearbyPageInner() {
               cursor: "pointer",
               marginLeft: 8,
             }}
-            onClick={() => {
-              setSelectedPlace(null);
-              setRememberMapChoice(
-                !!localStorage.getItem("nearby-navigation-preference"),
-              );
-              setShowMapChooser(true);
-            }}
+            onClick={openPreferredMapChooser}
           >
             Preferred Map...
           </button>
@@ -653,101 +742,35 @@ function NearbyPageInner() {
           </button>
         </div>
       </div>
-      {/* Map Chooser dialog (moved up) */}
-      {showMapChooser && (
-        <div className="modal-overlay">
-          <div className="card" style={{ maxWidth: 360, margin: "24px auto" }}>
-            <h2>Preferred Map</h2>
-            <p>Which map would you like to use for directions?</p>
-            <div style={{ display: "grid", gap: 8, margin: "16px 0" }}>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  if (rememberMapChoice) {
-                    localStorage.setItem(
-                      "nearby-navigation-preference",
-                      "apple",
-                    );
-                  }
-                  if (selectedPlace) {
-                    const appleDestination =
-                      selectedPlace.lat !== null && selectedPlace.lng !== null
-                        ? `${selectedPlace.lat},${selectedPlace.lng}`
-                        : selectedPlace.address
-                          ? encodeURIComponent(selectedPlace.address)
-                          : null;
-                    if (!appleDestination) {
-                      return;
-                    }
-                    window.open(
-                      `https://maps.apple.com/?saddr=Current+Location&daddr=${appleDestination}&dirflg=d`,
-                      "_blank",
-                      "noopener,noreferrer",
-                    );
-                  }
-                  setShowMapChooser(false);
-                }}
-              >
-                🍎 Apple Maps
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  if (rememberMapChoice) {
-                    localStorage.setItem(
-                      "nearby-navigation-preference",
-                      "google",
-                    );
-                  }
-                  if (selectedPlace) {
-                    const googleDestination =
-                      selectedPlace.lat !== null && selectedPlace.lng !== null
-                        ? `${selectedPlace.lat},${selectedPlace.lng}`
-                        : selectedPlace.address
-                          ? encodeURIComponent(selectedPlace.address)
-                          : null;
-                    if (!googleDestination) {
-                      return;
-                    }
-                    window.open(
-                      `https://www.google.com/maps/dir/?api=1&destination=${googleDestination}`,
-                      "_blank",
-                      "noopener,noreferrer",
-                    );
-                  }
-                  setShowMapChooser(false);
-                }}
-              >
-                📍 Google Maps
-              </button>
-            </div>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={rememberMapChoice}
-                onChange={(e) => setRememberMapChoice(e.target.checked)}
-              />
-              Remember my choice
-            </label>
-            <div style={{ marginTop: 16 }}>
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={() => setShowMapChooser(false)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Preferred map chooser: reachable from the top "Preferred Map..."
+          control above and from the Object Panel's "Change preferred map"
+          action below. A single instance, positioned as a fixed overlay,
+          so opening it never requires scrolling and never disturbs list
+          scroll position, map center/zoom, filters, or (when opened from
+          the panel) the currently selected place. */}
+      <PreferredMapChooser
+        open={showMapChooser}
+        currentPreference={savedMapPreference}
+        choices={MAP_CHOICES}
+        rememberChoice={rememberMapChoice}
+        onRememberChoiceChange={setRememberMapChoice}
+        onSelect={handlePreferredMapSelect}
+        onClose={() => {
+          setShowMapChooser(false);
+          setSelectedPlace(null);
+        }}
+      />
       {viewMode === "map" ? (
         <NearbyPlacesMap
           places={filteredPlaces}
           eventLat={event?.lat ?? null}
           eventLng={event?.lng ?? null}
+          onSelectPlace={(place) => {
+            // NearbyPlacesMap's own Place type only declares the fields it
+            // needs for rendering; the object it hands back is always one
+            // of the full Place records we passed in via `places` above.
+            openPlacePanel(place as Place);
+          }}
         />
       ) : null}
       {viewMode === "list" && (
@@ -778,29 +801,46 @@ function NearbyPageInner() {
                     <div className="nearby-emergency-card-top" />
 
                     <div className="nearby-place-content">
-                      <div>
-                        <div className="nearby-emergency-place-title">
-                          {place.name}
+                      {/* One button wraps all non-action informational
+                          content (name, category, address, distance) so
+                          tapping/clicking anywhere across that
+                          information opens the panel -- not just the
+                          name. True actions (Directions, Call) stay
+                          outside this button as siblings, so nothing
+                          interactive is nested inside another button.
+                          Ordinary cards below use the identical
+                          pattern. */}
+                      <button
+                        type="button"
+                        className="nearby-place-open-button"
+                        onClick={() => openPlacePanel(place)}
+                        aria-label={`View details for ${place.name}`}
+                      >
+                        <div>
+                          <div className="nearby-emergency-place-title">
+                            {place.name}
+                            <span aria-hidden="true"> &rsaquo;</span>
+                          </div>
+
+                          {place.category ? (
+                            <div className="nearby-emergency-place-category">
+                              {place.category}
+                            </div>
+                          ) : null}
                         </div>
 
-                        {place.category ? (
-                          <div className="nearby-emergency-place-category">
-                            {place.category}
+                        {place.address ? (
+                          <div className="nearby-emergency-place-address">
+                            {place.address}
                           </div>
                         ) : null}
-                      </div>
 
-                      {place.address ? (
-                        <div className="nearby-emergency-place-address">
-                          {place.address}
-                        </div>
-                      ) : null}
-
-                      {place.distance_miles !== null ? (
-                        <div className="nearby-emergency-distance">
-                          {place.distance_miles} mi away
-                        </div>
-                      ) : null}
+                        {place.distance_miles !== null ? (
+                          <div className="nearby-emergency-distance">
+                            {place.distance_miles} mi away
+                          </div>
+                        ) : null}
+                      </button>
 
                       <div className="nearby-action-row">
                         {place.address ||
@@ -850,104 +890,132 @@ function NearbyPageInner() {
                 />
 
                 <div className="nearby-place-content">
-                  <div className="nearby-place-title-row">
-                    <div className="nearby-card-title">{place.name}</div>
-
-                    <button
-                      type="button"
-                      onClick={() => toggleFavorite(place.id)}
-                      className="nearby-favorite-button"
-                      aria-label="Toggle favorite"
-                    >
-                      {favoriteIds.includes(place.id) ? "⭐" : "☆"}
-                    </button>
-                  </div>
-                  {/* Compact Information Block */}
-                  <div
-                    className="nearby-place-info-compact"
-                    style={{
-                      lineHeight: 1.25,
-                      fontSize: 13,
-                      color: "#444",
-                      marginTop: 0,
-                      marginBottom: 0,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                    }}
+                  {/* Favorite is a sibling of the open button, layered
+                      over its top-right corner via CSS (see
+                      .nearby-favorite-button-floating) rather than
+                      nested inside it. */}
+                  <button
+                    type="button"
+                    onClick={() => toggleFavorite(place.id)}
+                    className="nearby-favorite-button nearby-favorite-button-floating"
+                    aria-label="Toggle favorite"
                   >
-                    {/* Category • X mi */}
-                    {(place.category || place.distance_miles !== null) && (
-                      <div style={{ color: "#666" }}>
-                        {place.category && (
-                          <span className="nearby-place-category">
-                            {place.category}
-                          </span>
-                        )}
-                        {place.category && place.distance_miles !== null && (
-                          <span aria-hidden="true" style={{ margin: "0 4px" }}>
-                            •
-                          </span>
-                        )}
-                        {place.distance_miles !== null && (
-                          <span className="nearby-distance-badge">
-                            {place.distance_miles} mi
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {/* Address split into two lines */}
-                    {place.address &&
-                      (() => {
-                        const [first, ...rest] = place.address.split(",");
-                        const second = rest.join(",").trim();
-                        return (
-                          <>
-                            <div className="nearby-place-address-line1">
-                              {first}
-                            </div>
-                            {second && (
-                              <div className="nearby-place-address-line2">
-                                {second}
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
-                    {/* Phone row */}
-                    {place.phone && (
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <span
-                          className="nearby-contact-icon"
-                          style={{ fontSize: 14 }}
-                        >
-                          📞
-                        </span>
-                        <a
-                          href={`tel:${place.phone}`}
-                          className="nearby-contact-link"
-                          style={{ color: "#2563eb", textDecoration: "none" }}
-                        >
-                          {formatPhoneNumber(place.phone)}
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                  {/* Notes */}
-                  {place.notes && (
+                    {favoriteIds.includes(place.id) ? "⭐" : "☆"}
+                  </button>
+
+                  {/* One button wraps all non-action informational
+                      content (name, category, distance, address,
+                      notes) so tapping/clicking anywhere across that
+                      information opens the panel -- not just the name.
+                      The phone link and every action stay outside this
+                      button as siblings, so nothing interactive is
+                      nested inside another button. */}
+                  <button
+                    type="button"
+                    className="nearby-place-open-button nearby-place-open-button-has-favorite"
+                    onClick={() => openPlacePanel(place)}
+                    aria-label={`View details for ${place.name}`}
+                  >
+                    <div className="nearby-card-title">
+                      {place.name}
+                      <span aria-hidden="true"> &rsaquo;</span>
+                    </div>
+
+                    {/* Compact Information Block */}
                     <div
-                      className="nearby-place-notes"
-                      style={{ marginTop: 6, marginBottom: 0 }}
+                      className="nearby-place-info-compact"
+                      style={{
+                        lineHeight: 1.25,
+                        fontSize: 13,
+                        color: "#444",
+                        marginTop: 6,
+                        marginBottom: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      }}
                     >
-                      {place.notes}
+                      {/* Category • X mi */}
+                      {(place.category || place.distance_miles !== null) && (
+                        <div style={{ color: "#666" }}>
+                          {place.category && (
+                            <span className="nearby-place-category">
+                              {place.category}
+                            </span>
+                          )}
+                          {place.category && place.distance_miles !== null && (
+                            <span
+                              aria-hidden="true"
+                              style={{ margin: "0 4px" }}
+                            >
+                              •
+                            </span>
+                          )}
+                          {place.distance_miles !== null && (
+                            <span className="nearby-distance-badge">
+                              {place.distance_miles} mi
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {/* Address split into two lines */}
+                      {place.address &&
+                        (() => {
+                          const [first, ...rest] = place.address.split(",");
+                          const second = rest.join(",").trim();
+                          return (
+                            <>
+                              <div className="nearby-place-address-line1">
+                                {first}
+                              </div>
+                              {second && (
+                                <div className="nearby-place-address-line2">
+                                  {second}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
+                    </div>
+
+                    {/* Notes */}
+                    {place.notes && (
+                      <div
+                        className="nearby-place-notes"
+                        style={{ marginTop: 6, marginBottom: 0 }}
+                      >
+                        {place.notes}
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Phone row -- a real tel: link, so it must stay
+                      outside the open button above. */}
+                  {place.phone && (
+                    <div
+                      className="nearby-place-phone-row"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <span
+                        className="nearby-contact-icon"
+                        style={{ fontSize: 14 }}
+                      >
+                        📞
+                      </span>
+                      <a
+                        href={`tel:${place.phone}`}
+                        className="nearby-contact-link"
+                        style={{ color: "#2563eb", textDecoration: "none" }}
+                      >
+                        {formatPhoneNumber(place.phone)}
+                      </a>
                     </div>
                   )}
+
                   {/* Action buttons */}
                   {(place.address ||
                     place.lat !== null ||
@@ -1032,6 +1100,131 @@ function NearbyPageInner() {
         </>
       )}
       {/* Map chooser dialog moved above */}
+      <ObjectPanel
+        open={panelPlace !== null}
+        onClose={closePlacePanel}
+        title={panelPlace?.name ?? ""}
+        subtitle={
+          panelPlace
+            ? [
+                panelPlace.category,
+                panelPlace.distance_miles !== null
+                  ? `${panelPlace.distance_miles} mi away`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" • ") || undefined
+            : undefined
+        }
+        onPrevious={
+          panelHasPrevious
+            ? () => openPlacePanel(filteredPlaces[panelIndex - 1])
+            : undefined
+        }
+        onNext={
+          panelHasNext
+            ? () => openPlacePanel(filteredPlaces[panelIndex + 1])
+            : undefined
+        }
+        previousLabel="Previous place"
+        nextLabel="Next place"
+        primaryActions={
+          panelPlace ? (
+            <>
+              {panelPlace.address ||
+              (panelPlace.lat !== null && panelPlace.lng !== null) ? (
+                <AppButton
+                  variant="primary"
+                  onClick={() => handleDirections(panelPlace)}
+                >
+                  Directions
+                </AppButton>
+              ) : null}
+
+              {panelPlace.phone ? (
+                <AppLinkButton href={`tel:${panelPlace.phone}`}>
+                  Call
+                </AppLinkButton>
+              ) : null}
+
+              {panelPlace.website ? (
+                <AppLinkButton
+                  href={panelPlace.website}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Website
+                </AppLinkButton>
+              ) : null}
+            </>
+          ) : null
+        }
+        secondaryActions={
+          panelPlace ? (
+            <>
+              {panelPlace.address ? (
+                <AppButton
+                  variant="muted"
+                  onClick={() => void copyPlaceAddress(panelPlace.address as string)}
+                >
+                  {addressCopied
+                    ? "Address copied"
+                    : addressCopyFailed
+                      ? "Copy failed"
+                      : "Copy address"}
+                </AppButton>
+              ) : null}
+
+              <AppButton
+                variant="muted"
+                onClick={() => toggleFavorite(panelPlace.id)}
+              >
+                {favoriteIds.includes(panelPlace.id)
+                  ? "★ Remove favorite"
+                  : "☆ Add favorite"}
+              </AppButton>
+
+              <AppButton variant="muted" onClick={openPreferredMapChooser}>
+                Change preferred map
+              </AppButton>
+            </>
+          ) : null
+        }
+        footer={
+          panelPlace &&
+          (panelPlace.location_code ||
+            (panelPlace.lat !== null && panelPlace.lng !== null)) ? (
+            <>
+              {panelPlace.location_code ? (
+                <div>🧭 {panelPlace.location_code}</div>
+              ) : null}
+
+              {panelPlace.lat !== null && panelPlace.lng !== null ? (
+                <div>
+                  🌐 {Number(panelPlace.lat).toFixed(5)},{" "}
+                  {Number(panelPlace.lng).toFixed(5)}
+                </div>
+              ) : null}
+            </>
+          ) : null
+        }
+      >
+        {panelPlace ? (
+          <div className="app-stack-8">
+            {panelPlace.address ? <p>{panelPlace.address}</p> : null}
+
+            {panelPlace.phone ? (
+              <p>
+                <a href={`tel:${panelPlace.phone}`}>
+                  {formatPhoneNumber(panelPlace.phone)}
+                </a>
+              </p>
+            ) : null}
+
+            {panelPlace.notes ? <p>{panelPlace.notes}</p> : null}
+          </div>
+        ) : null}
+      </ObjectPanel>
     </Page>
   );
 }

@@ -4,16 +4,9 @@ import "leaflet/dist/leaflet.css";
 
 import L from "leaflet";
 import { useEffect, useMemo } from "react";
-import {
-  MapContainer,
-  Marker,
-  Popup,
-  TileLayer,
-  Tooltip,
-  useMap,
-} from "react-leaflet";
+import { MapContainer, Marker, TileLayer, Tooltip, useMap } from "react-leaflet";
 
-type Place = {
+export type Place = {
   id: string;
   name: string;
   address: string | null;
@@ -24,75 +17,6 @@ type Place = {
   location_code?: string | null;
   lat?: number | null;
   lng?: number | null;
-};
-
-function cleanPhone(phone?: string | null) {
-  if (!phone) {
-    return "";
-  }
-  return phone.replace(/[^\d+]/g, "");
-}
-
-function normalizeWebsite(url?: string | null) {
-  if (!url) {
-    return "";
-  }
-  const trimmed = url.trim();
-  if (!trimmed) {
-    return "";
-  }
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed;
-  }
-  return `https://${trimmed}`;
-}
-
-function appleMapsUrl(place: Place) {
-  const safeLabel = encodeURIComponent(place.name || "Destination");
-
-  if (
-    typeof place.lat === "number" &&
-    Number.isFinite(place.lat) &&
-    typeof place.lng === "number" &&
-    Number.isFinite(place.lng)
-  ) {
-    return `https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d&q=${safeLabel}`;
-  }
-
-  const safeAddress = encodeURIComponent(
-    place.address || place.name || "Destination",
-  );
-  return `https://maps.apple.com/?daddr=${safeAddress}&dirflg=d`;
-}
-
-function googleMapsUrl(place: Place) {
-  if (
-    typeof place.lat === "number" &&
-    Number.isFinite(place.lat) &&
-    typeof place.lng === "number" &&
-    Number.isFinite(place.lng)
-  ) {
-    return `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`;
-  }
-
-  const safeAddress = encodeURIComponent(
-    place.address || place.name || "Destination",
-  );
-  return `https://www.google.com/maps/dir/?api=1&destination=${safeAddress}`;
-}
-
-const popupButtonStyle: React.CSSProperties = {
-  padding: "6px 10px",
-  borderRadius: 999,
-  border: "1px solid #d1d5db",
-  background: "#f8fafc",
-  color: "#111827",
-  textDecoration: "none",
-  fontSize: 12,
-  fontWeight: 600,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
 };
 
 const markerIcon = L.icon({
@@ -134,12 +58,18 @@ export default function NearbyPlacesMap({
   places = [],
   eventLat = null,
   eventLng = null,
-  notesLabel = "Note",
+  onSelectPlace,
 }: {
   places: Place[];
   eventLat?: number | null;
   eventLng?: number | null;
-  notesLabel?: string;
+  /** Called when a marker is activated (click, tap, or keyboard Enter/Space
+   * -- Leaflet fires its "click" event for all three). The consuming page
+   * is responsible for what happens next (e.g. opening an ObjectPanel);
+   * this component has no opinion about it. Selecting a marker never moves
+   * or zooms the map on its own -- the current center/zoom is left exactly
+   * as the user set it. */
+  onSelectPlace?: (place: Place) => void;
 }) {
   const validPlaces = useMemo(
     () =>
@@ -185,119 +115,73 @@ export default function NearbyPlacesMap({
 
         <MapResizer eventLat={eventLat} eventLng={eventLng} />
 
-        {validPlaces.map((place) => {
-          const phoneHref = cleanPhone(place.phone);
-          const websiteHref = normalizeWebsite(place.website);
+        {validPlaces.map((place) => (
+          <Marker
+            key={place.id}
+            position={[place.lat as number, place.lng as number]}
+            icon={markerIcon}
+            title={place.name}
+            eventHandlers={{
+              click: () => {
+                onSelectPlace?.(place);
+              },
+            }}
+            ref={(marker) => {
+              if (!marker) {
+                return;
+              }
 
-          return (
-            <Marker
-              key={place.id}
-              position={[place.lat as number, place.lng as number]}
-              icon={markerIcon}
-              eventHandlers={{
-                click: (e) => {
-                  e.target.openPopup();
-                },
-              }}
+              // Leaflet's default tooltip trigger is mouseover only; it
+              // does not open on keyboard focus even though markers are
+              // keyboard-focusable (`keyboard: true` by default). Wire
+              // native focus/blur on the marker's own element so a
+              // keyboard user sees the same lightweight tooltip a mouse
+              // user gets on hover. Click/tap is untouched -- it always
+              // goes straight to onSelectPlace above, never to the
+              // tooltip, so this never adds a step before opening the
+              // panel.
+              const el = marker.getElement();
+
+              if (!el) {
+                return;
+              }
+
+              function handleFocus() {
+                marker?.openTooltip();
+              }
+
+              function handleBlur() {
+                marker?.closeTooltip();
+              }
+
+              el.addEventListener("focus", handleFocus);
+              el.addEventListener("blur", handleBlur);
+
+              return () => {
+                el.removeEventListener("focus", handleFocus);
+                el.removeEventListener("blur", handleBlur);
+              };
+            }}
+          >
+            <Tooltip
+              direction="top"
+              offset={[0, -10]}
+              opacity={1}
+              interactive={false}
             >
-              <Tooltip direction="top" offset={[0, -10]} opacity={1}>
-                {place.name}
-              </Tooltip>
+              <span>{place.name}</span>
 
-              <Popup>
-                <div style={{ minWidth: 240 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                    {place.name}
-                  </div>
-                  {place.category ? (
-                    <div
-                      style={{ fontSize: 12, color: "#666", marginBottom: 4 }}
-                    >
-                      {place.category}
-                    </div>
-                  ) : null}
-                  {place.address ? (
-                    <div style={{ fontSize: 13, marginBottom: 4 }}>
-                      {place.address}
-                    </div>
-                  ) : null}
-                  {place.location_code ? (
-                    <div
-                      style={{ fontSize: 12, color: "#666", marginBottom: 4 }}
-                    >
-                      📍 {place.location_code}
-                    </div>
-                  ) : null}
-                  {place.notes ? (
-                    <div
-                      style={{ fontSize: 12, color: "#555", marginBottom: 8 }}
-                    >
-                      <strong>{notesLabel}:</strong> {place.notes}
-                    </div>
-                  ) : null}
-                  <div
-                    style={{
-                      marginTop: 12,
-                      display: "flex",
-                      gap: 6,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <a
-                      href={appleMapsUrl(place)}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={popupButtonStyle}
-                    >
-                      Apple Maps
-                    </a>
-
-                    <a
-                      href={googleMapsUrl(place)}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={popupButtonStyle}
-                    >
-                      Google Maps
-                    </a>
-
-                    {phoneHref ? (
-                      <a href={`tel:${phoneHref}`} style={popupButtonStyle}>
-                        Call
-                      </a>
-                    ) : null}
-
-                    {websiteHref ? (
-                      <a
-                        href={websiteHref}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={popupButtonStyle}
-                      >
-                        Website
-                      </a>
-                    ) : null}
-                  </div>
-                  {typeof place.lat === "number" &&
-                  Number.isFinite(place.lat) &&
-                  typeof place.lng === "number" &&
-                  Number.isFinite(place.lng) ? (
-                    <div
-                      style={{
-                        width: "100%",
-                        fontSize: 12,
-                        color: "#4b5563",
-                        marginTop: 8,
-                      }}
-                    >
-                      Coordinates: {place.lat}, {place.lng}
-                    </div>
-                  ) : null}
-                </div>
-              </Popup>
-            </Marker>
-          );
-        })}
+              {place.category ? (
+                <>
+                  <br />
+                  <span style={{ opacity: 0.7, fontSize: 11 }}>
+                    {place.category}
+                  </span>
+                </>
+              ) : null}
+            </Tooltip>
+          </Marker>
+        ))}
       </MapContainer>
     </div>
   );

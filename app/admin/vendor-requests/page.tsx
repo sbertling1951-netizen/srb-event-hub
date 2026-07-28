@@ -7,6 +7,7 @@ import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { copyTextToClipboard } from "@/lib/copyTextToClipboard";
 import { supabase } from "@/lib/supabase";
 
 type RequestRow = {
@@ -420,12 +421,11 @@ function VendorRequestsInner() {
     vendorRequests: RequestRow[],
   ) {
     const summary = vendorSummaryText(vendorName, vendorRequests);
+    const result = await copyTextToClipboard(summary);
 
-    try {
-      await navigator.clipboard.writeText(summary);
+    if (result.success) {
       setStatus(`Copied ${vendorName} request summary.`);
-    } catch (err) {
-      console.error("copyVendorSummary error:", err);
+    } else {
       setStatus(
         "Could not copy summary. Your browser may not allow clipboard access.",
       );
