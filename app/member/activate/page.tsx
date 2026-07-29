@@ -751,10 +751,23 @@ export default function MemberActivatePage() {
                 color: "#166534",
                 padding: 12,
                 fontSize: 14,
-                fontWeight: 700,
+                display: "grid",
+                gap: 8,
               }}
             >
-              Identity activation complete. You can proceed to member login.
+              <div style={{ fontWeight: 700 }}>
+                Identity activation complete. You can proceed to member login.
+              </div>
+              <Link
+                href="/member/login"
+                style={{
+                  display: "inline-block",
+                  color: "#0b5cff",
+                  fontWeight: 700,
+                }}
+              >
+                Continue to Account Login
+              </Link>
             </div>
           ) : null}
         </div>
