@@ -97,9 +97,15 @@ function MyRequestsInner() {
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [status, setStatus] = useState("Loading your requests...");
   const [error, setError] = useState<string | null>(null);
+  // Distinguishes "haven't heard back yet" from "heard back with zero
+  // requests" so the error banner and the "No requests yet." message
+  // are mutually exclusive instead of both being independently keyed
+  // off state that can coincide.
+  const [loading, setLoading] = useState(true);
 
   const loadRequests = useCallback(async () => {
     try {
+      setLoading(true);
       setError(null);
       if (typeof window === "undefined") {
         setRequests([]);
@@ -167,6 +173,8 @@ function MyRequestsInner() {
         err instanceof Error ? err.message : "Could not load your requests.",
       );
       setStatus("");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -252,7 +260,7 @@ function MyRequestsInner() {
           </div>
         ) : null}
 
-        {error ? (
+        {!loading && error ? (
           <div
             role="alert"
             style={{
@@ -275,7 +283,7 @@ function MyRequestsInner() {
         ) : null}
       </div>
 
-      {requests.map((request) => {
+      {!loading && !error && requests.map((request) => {
         const vendor = Array.isArray(request.vendors)
           ? request.vendors[0]
           : request.vendors;
@@ -389,7 +397,7 @@ function MyRequestsInner() {
         );
       })}
 
-      {requests.length === 0 ? (
+      {!loading && !error && requests.length === 0 ? (
         <div
           className="card"
           style={{
