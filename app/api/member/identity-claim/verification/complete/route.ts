@@ -26,8 +26,7 @@ function hashValue(value: string | null) {
     return null;
   }
 
-  return createHash("sha256").update(value).digest("hex");
-}
+  return createHash("md5").update(value).digest("hex");}
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
