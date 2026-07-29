@@ -127,7 +127,9 @@ export async function POST(req: NextRequest) {
 
     const payload = body as Record<string, unknown>;
     const attemptToken = String(payload.attemptToken || "").trim();
-    const rawChannel = String(payload.channel || "").trim().toLowerCase();
+    const rawChannel = String(payload.channel || "")
+      .trim()
+      .toLowerCase();
     const rawContact = String(payload.contact || "").trim();
     const channel: VerificationChannel | null =
       rawChannel === "email" || rawChannel === "sms"
@@ -139,7 +141,9 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedContact =
-      channel === "email" ? normalizeEmail(rawContact) : normalizePhone(rawContact);
+      channel === "email"
+        ? normalizeEmail(rawContact)
+        : normalizePhone(rawContact);
 
     if (!normalizedContact) {
       return NextResponse.json(genericResponse);
@@ -170,11 +174,22 @@ export async function POST(req: NextRequest) {
       },
     );
 
+    console.log("Verification RPC result", {
+      hasError: Boolean(error),
+      isArray: Array.isArray(data),
+      rowCount: Array.isArray(data) ? data.length : null,
+      firstRow: Array.isArray(data) ? data[0] : data,
+    });
+
     if (error) {
       return NextResponse.json(genericResponse);
     }
 
-    const row = Array.isArray(data) ? data[0] : null;
+    const row = Array.isArray(data)
+      ? (data[0] ?? null)
+      : data && typeof data === "object"
+        ? data
+        : null;
     const canSendCode = row?.can_send_code === true;
     let deliveryAttempted = false;
 
@@ -191,7 +206,10 @@ export async function POST(req: NextRequest) {
         });
       }
     } else if (canSendCode && channel === "sms") {
-      deliveryAttempted = await sendSmsCodeIfConfigured(normalizedContact, code);
+      deliveryAttempted = await sendSmsCodeIfConfigured(
+        normalizedContact,
+        code,
+      );
     }
 
     return NextResponse.json({
