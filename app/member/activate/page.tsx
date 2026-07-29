@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import {
   getIdentityClaimPublicMessage,
-  parseIdentityClaimInput,
   type IdentityClaimPublicResult,
+  parseIdentityClaimInput,
 } from "@/lib/identityClaim";
 import { supabase } from "@/lib/supabase";
 
@@ -73,6 +74,13 @@ function isMemberVisibleEvent(event: EventRow) {
 }
 
 export default function MemberActivatePage() {
+  const router = useRouter();
+
+  // An already authenticated account never needs to (re-)activate --
+  // send it straight to the account picker instead of showing the
+  // evidence form. Checked before anything else renders.
+  const [checkingSession, setCheckingSession] = useState(true);
+
   const [events, setEvents] = useState<EventRow[]>([]);
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [firstName, setFirstName] = useState("");
@@ -86,18 +94,40 @@ export default function MemberActivatePage() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<IdentityClaimPublicResult | null>(null);
   const [attemptToken, setAttemptToken] = useState<string | null>(null);
-  const [verificationChannel, setVerificationChannel] =
-    useState<"email" | "sms">("email");
-  const [verificationContact, setVerificationContact] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
-  const [verificationBusy, setVerificationBusy] = useState(false);
-  const [verificationStatus, setVerificationStatus] = useState<string | null>(
-    null,
-  );
-  const [verificationError, setVerificationError] = useState<string | null>(
-    null,
-  );
-  const [activationComplete, setActivationComplete] = useState(false);
+
+  // Activation now completes via a single Supabase magic link to the
+  // verified email, rather than a custom numeric code. This mirrors the
+  // channel field already collected above -- no second, competing
+  // "verification channel" concept is introduced.
+  const [activationEmail, setActivationEmail] = useState("");
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLinkBusy, setMagicLinkBusy] = useState(false);
+  const [magicLinkStatus, setMagicLinkStatus] = useState<string | null>(null);
+  const [magicLinkError, setMagicLinkError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkExistingSession() {
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) {
+        return;
+      }
+
+      if (data?.session) {
+        router.replace("/member/account");
+        return;
+      }
+
+      setCheckingSession(false);
+    }
+
+    void checkExistingSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,9 +259,10 @@ export default function MemberActivatePage() {
           ? payload.attemptToken
           : null,
       );
-      setVerificationStatus(null);
-      setVerificationError(null);
-      setActivationComplete(false);
+      setActivationEmail(email.trim());
+      setMagicLinkSent(false);
+      setMagicLinkStatus(null);
+      setMagicLinkError(null);
       setStatus(payload.message || getIdentityClaimPublicMessage(safeResult));
     } catch {
       setResult("UNABLE_TO_VERIFY");
@@ -242,113 +273,47 @@ export default function MemberActivatePage() {
     }
   }
 
-  async function requestVerificationCode() {
+  async function sendActivationMagicLink() {
     if (!attemptToken) {
-      setVerificationError("Please run identity check again first.");
+      setMagicLinkError("Please run the identity check again first.");
       return;
     }
 
-    if (!verificationContact.trim()) {
-      setVerificationError("Enter the email or phone to verify.");
+    if (!activationEmail.trim()) {
+      setMagicLinkError("Enter the email address to activate with.");
       return;
     }
 
     try {
-      setVerificationBusy(true);
-      setVerificationError(null);
-      setVerificationStatus("Requesting verification code...");
+      setMagicLinkBusy(true);
+      setMagicLinkError(null);
+      setMagicLinkStatus("Sending...");
 
-      const response = await fetch(
-        "/api/member/identity-claim/verification/initiate",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            attemptToken,
-            channel: verificationChannel,
-            contact: verificationContact,
-          }),
+      await fetch("/api/member/identity-claim/verification/initiate-magic-link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          attemptToken,
+          email: activationEmail,
+        }),
+      });
 
-      const payload = (await response.json()) as {
-        message?: string;
-        maskedDestination?: string | null;
-      };
-
-      setVerificationStatus(
-        payload.maskedDestination
-          ? `Verification code requested for ${payload.maskedDestination}. ${payload.message || ""}`
-          : payload.message ||
-              "If verification is possible, a code will be sent.",
+      // Deliberately generic and identical regardless of whether the
+      // attempt/email actually qualified, so this step cannot be used to
+      // enumerate accounts or activation eligibility.
+      setMagicLinkSent(true);
+      setMagicLinkStatus(
+        "Check your email to finish creating your EpicentraX account.",
       );
     } catch {
-      setVerificationStatus("If verification is possible, a code will be sent.");
-    } finally {
-      setVerificationBusy(false);
-    }
-  }
-
-  async function completeVerification() {
-    if (!attemptToken) {
-      setVerificationError("Please run identity check again first.");
-      return;
-    }
-
-    if (!verificationContact.trim() || !verificationCode.trim()) {
-      setVerificationError("Enter your contact and verification code.");
-      return;
-    }
-
-    try {
-      setVerificationBusy(true);
-      setVerificationError(null);
-      setVerificationStatus("Verifying code and activating identity...");
-
-      const response = await fetch(
-        "/api/member/identity-claim/verification/complete",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            attemptToken,
-            channel: verificationChannel,
-            contact: verificationContact,
-            code: verificationCode,
-          }),
-        },
-      );
-
-      const payload = (await response.json()) as {
-        result?: string;
-        message?: string;
-        activationComplete?: boolean;
-      };
-
-      if (payload.activationComplete) {
-        setActivationComplete(true);
-        setVerificationStatus(
-          payload.message ||
-            "Verification complete. Your identity activation has been processed.",
-        );
-      } else {
-        setActivationComplete(false);
-        setVerificationStatus(
-          payload.message ||
-            "We could not complete verification safely. Request a new code.",
-        );
-      }
-    } catch {
-      setActivationComplete(false);
-      setVerificationStatus(
-        "We could not complete verification safely. Request a new code.",
+      setMagicLinkSent(true);
+      setMagicLinkStatus(
+        "Check your email to finish creating your EpicentraX account.",
       );
     } finally {
-      setVerificationBusy(false);
+      setMagicLinkBusy(false);
     }
   }
 
@@ -358,6 +323,10 @@ export default function MemberActivatePage() {
         ? current.filter((value) => value !== eventId)
         : [...current, eventId],
     );
+  }
+
+  if (checkingSession) {
+    return <div style={{ padding: 24 }}>Checking your session...</div>;
   }
 
   return (
@@ -623,109 +592,93 @@ export default function MemberActivatePage() {
             gap: 12,
           }}
         >
-          <h2 style={{ margin: 0, fontSize: 20 }}>Verify Possession</h2>
-          <p style={{ margin: 0, color: "#475569", lineHeight: 1.5 }}>
-            Verify a contact value used in your historical records. This step is
-            required before identity activation can complete.
-          </p>
+          <h2 style={{ margin: 0, fontSize: 20 }}>Finish Activating</h2>
 
-          <div
-            style={{
-              display: "grid",
-              gap: 12,
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            }}
-          >
-            <label>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Channel</div>
-              <select
-                value={verificationChannel}
-                onChange={(e) =>
-                  setVerificationChannel(
-                    e.target.value === "sms" ? "sms" : "email",
-                  )
-                }
-                style={inputStyle}
+          {!magicLinkSent ? (
+            <>
+              <p style={{ margin: 0, color: "#475569", lineHeight: 1.5 }}>
+                We&apos;ll email a one-time secure link to finish creating your
+                EpicentraX account. No code to type in -- just open the link on
+                this device.
+              </p>
+
+              <label>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                  Email Address
+                </div>
+                <input
+                  type="email"
+                  value={activationEmail}
+                  onChange={(e) => setActivationEmail(e.target.value)}
+                  autoComplete="email"
+                  style={inputStyle}
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={() => void sendActivationMagicLink()}
+                disabled={magicLinkBusy}
+                style={{
+                  width: "100%",
+                  minHeight: 44,
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  background: "#0b5cff",
+                  color: "#ffffff",
+                  cursor: magicLinkBusy ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                  opacity: magicLinkBusy ? 0.7 : 1,
+                }}
               >
-                <option value="email">Email</option>
-                <option value="sms">SMS</option>
-              </select>
-            </label>
-
-            <label>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                {verificationChannel === "email"
-                  ? "Email Address"
-                  : "Mobile Phone"}
+                {magicLinkBusy ? "Please wait..." : "Email Me a Sign-In Link"}
+              </button>
+            </>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div
+                style={{
+                  border: "1px solid #bbf7d0",
+                  borderRadius: 8,
+                  background: "#f0fdf4",
+                  color: "#166534",
+                  padding: 12,
+                  fontSize: 14,
+                  fontWeight: 700,
+                }}
+              >
+                Check your email to finish creating your EpicentraX account.
               </div>
-              <input
-                type={verificationChannel === "email" ? "email" : "tel"}
-                value={verificationContact}
-                onChange={(e) => setVerificationContact(e.target.value)}
-                style={inputStyle}
-              />
-            </label>
-          </div>
 
-          <button
-            type="button"
-            onClick={() => void requestVerificationCode()}
-            disabled={verificationBusy}
-            style={{
-              width: "100%",
-              minHeight: 44,
-              padding: "10px 12px",
-              borderRadius: 8,
-              border: "1px solid #cbd5e1",
-              background: "#0b5cff",
-              color: "#ffffff",
-              cursor: verificationBusy ? "not-allowed" : "pointer",
-              fontWeight: 700,
-              opacity: verificationBusy ? 0.7 : 1,
-            }}
-          >
-            {verificationBusy ? "Please wait..." : "Send Verification Code"}
-          </button>
-
-          <label>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>
-              Verification Code
+              <button
+                type="button"
+                onClick={() => void sendActivationMagicLink()}
+                disabled={magicLinkBusy}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#0b5cff",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  textDecoration: "underline",
+                  cursor: magicLinkBusy ? "not-allowed" : "pointer",
+                  justifySelf: "start",
+                  padding: 0,
+                }}
+              >
+                {magicLinkBusy ? "Sending..." : "Didn't get it? Resend the link"}
+              </button>
             </div>
-            <input
-              type="text"
-              value={verificationCode}
-              onChange={(e) => setVerificationCode(e.target.value)}
-              style={inputStyle}
-            />
-          </label>
+          )}
 
-          <button
-            type="button"
-            onClick={() => void completeVerification()}
-            disabled={verificationBusy}
-            style={{
-              width: "100%",
-              minHeight: 44,
-              padding: "10px 12px",
-              borderRadius: 8,
-              border: "1px solid #cbd5e1",
-              background: "#0f766e",
-              color: "#ffffff",
-              cursor: verificationBusy ? "not-allowed" : "pointer",
-              fontWeight: 700,
-              opacity: verificationBusy ? 0.7 : 1,
-            }}
-          >
-            {verificationBusy ? "Processing..." : "Verify and Activate"}
-          </button>
-
-          {verificationStatus ? (
+          {magicLinkStatus && !magicLinkSent ? (
             <div style={{ fontSize: 13, color: "#0f172a" }}>
-              {verificationStatus}
+              {magicLinkStatus}
             </div>
           ) : null}
 
-          {verificationError ? (
+          {magicLinkError ? (
             <div
               role="alert"
               style={{
@@ -738,36 +691,7 @@ export default function MemberActivatePage() {
                 fontWeight: 700,
               }}
             >
-              {verificationError}
-            </div>
-          ) : null}
-
-          {activationComplete ? (
-            <div
-              style={{
-                border: "1px solid #bbf7d0",
-                borderRadius: 8,
-                background: "#f0fdf4",
-                color: "#166534",
-                padding: 12,
-                fontSize: 14,
-                display: "grid",
-                gap: 8,
-              }}
-            >
-              <div style={{ fontWeight: 700 }}>
-                Identity activation complete. You can proceed to member login.
-              </div>
-              <Link
-                href="/member/login"
-                style={{
-                  display: "inline-block",
-                  color: "#0b5cff",
-                  fontWeight: 700,
-                }}
-              >
-                Continue to Account Login
-              </Link>
+              {magicLinkError}
             </div>
           ) : null}
         </div>

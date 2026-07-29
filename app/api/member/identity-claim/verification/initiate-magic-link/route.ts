@@ -135,6 +135,10 @@ export async function POST(req: NextRequest) {
     );
 
     if (error) {
+      // External response stays generic (see genericResponse above) so
+      // this endpoint cannot be used to enumerate accounts or
+      // eligibility; the real reason is only ever visible server-side.
+      console.error("begin_member_identity_claim_magic_link RPC failed:", error);
       return NextResponse.json(genericResponse);
     }
 
@@ -157,12 +161,20 @@ export async function POST(req: NextRequest) {
       // verification/complete/route.ts. This only runs after the
       // identity-evidence evaluation and the eligibility re-check above
       // have already approved this attempt.
-      await supabaseAnon.auth.signInWithOtp({
+      const { error: otpError } = await supabaseAnon.auth.signInWithOtp({
         email: normalizedEmail,
         options: {
           emailRedirectTo: redirectTo.toString(),
         },
       });
+
+      if (otpError) {
+        // Same reasoning as above: the external response never reveals
+        // whether the send actually succeeded (e.g. an SMTP outage), so
+        // this cannot be used to enumerate accounts. Server-side logging
+        // is the only way to notice a real delivery failure.
+        console.error("signInWithOtp (activation magic link) failed:", otpError);
+      }
     }
 
     return NextResponse.json({
@@ -171,7 +183,8 @@ export async function POST(req: NextRequest) {
       channel: "email",
       expiresAt: typeof row?.expires_at === "string" ? row.expires_at : null,
     });
-  } catch {
+  } catch (err) {
+    console.error("initiate-magic-link route failed:", err);
     return NextResponse.json(genericResponse);
   }
 }

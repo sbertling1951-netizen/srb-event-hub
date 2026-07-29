@@ -56,11 +56,30 @@ export default function AuthCallbackPage() {
           throw new Error("unrecognized_purpose");
         }
 
+        // Tracks whether THIS pass actually established the session (a
+        // fresh, single-use code/token was just consumed) versus
+        // recovering an already-existing session from an earlier,
+        // already-successful pass (e.g. the page was reloaded, or the
+        // link was opened twice). Supabase's own codes/tokens are
+        // single-use, so a repeat delivery is expected to fail the
+        // exchange -- that is only treated as an idempotent no-op, not
+        // an error, when a valid session already exists. Finalizing
+        // activation is only ever attempted on a fresh exchange, never
+        // on a recovered one, so a reused/replayed link can never
+        // trigger a second privileged finalize call.
+        let isFreshExchange = true;
+
         if (code) {
           const { error: exchangeError } =
             await supabase.auth.exchangeCodeForSession(window.location.href);
+
           if (exchangeError) {
-            throw exchangeError;
+            const { data: existingSessionData } =
+              await supabase.auth.getSession();
+            if (!existingSessionData?.session) {
+              throw exchangeError;
+            }
+            isFreshExchange = false;
           }
         } else {
           const hashParams = new URLSearchParams(
@@ -69,16 +88,21 @@ export default function AuthCallbackPage() {
           const accessToken = hashParams.get("access_token");
           const refreshToken = hashParams.get("refresh_token");
 
-          if (!accessToken || !refreshToken) {
-            throw new Error("no_session_in_url");
-          }
-
-          const { error: setSessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          if (setSessionError) {
-            throw setSessionError;
+          if (accessToken && refreshToken) {
+            const { error: setSessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (setSessionError) {
+              throw setSessionError;
+            }
+          } else {
+            const { data: existingSessionData } =
+              await supabase.auth.getSession();
+            if (!existingSessionData?.session) {
+              throw new Error("no_session_in_url");
+            }
+            isFreshExchange = false;
           }
         }
 
@@ -89,7 +113,7 @@ export default function AuthCallbackPage() {
 
         setStatus("Your account is verified. Opening your EpicentraX account...");
 
-        if (purpose === "activation") {
+        if (purpose === "activation" && isFreshExchange) {
           if (!attemptToken) {
             throw new Error("missing_attempt_token");
           }
@@ -98,13 +122,22 @@ export default function AuthCallbackPage() {
           // session just established above -- the browser supplies only
           // the already-public attempt token for correlation, never a
           // person or auth user id.
-          const { error: finalizeError } = await supabase.rpc(
-            "finalize_member_identity_activation_via_magic_link",
-            { p_attempt_token: attemptToken },
-          );
+          const { data: finalizeRows, error: finalizeError } =
+            await supabase.rpc(
+              "finalize_member_identity_activation_via_magic_link",
+              { p_attempt_token: attemptToken },
+            );
 
           if (finalizeError) {
             throw finalizeError;
+          }
+
+          const finalizeRow = Array.isArray(finalizeRows)
+            ? finalizeRows[0]
+            : finalizeRows;
+
+          if (finalizeRow?.activation_status !== "ACTIVATED") {
+            throw new Error("activation_not_finalized");
           }
         }
 
