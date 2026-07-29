@@ -65,6 +65,10 @@ export default function MemberDashboardPage() {
   );
   const [vendors, setVendors] = useState<DashboardVendor[]>([]);
   const [vendorError, setVendorError] = useState<string | null>(null);
+  // Distinguishes "haven't heard back yet" from "heard back with zero
+  // vendors" so the empty-but-successful case can never be rendered
+  // (or momentarily flash) as though it were an error.
+  const [vendorsLoading, setVendorsLoading] = useState(true);
   const [currentVendorIndex, setCurrentVendorIndex] = useState(0);
 
   const [participantCapacity, setParticipantCapacity] = useState(0);
@@ -175,6 +179,7 @@ export default function MemberDashboardPage() {
 
   const loadVendors = useCallback(async () => {
     try {
+      setVendorsLoading(true);
       setVendorError(null);
       const event = getCurrentMemberEvent();
       if (!event?.id) {
@@ -235,6 +240,8 @@ export default function MemberDashboardPage() {
       setVendorError(
         err instanceof Error ? err.message : "Could not load event vendors.",
       );
+    } finally {
+      setVendorsLoading(false);
     }
   }, [vendorLabel]);
 
@@ -487,7 +494,7 @@ export default function MemberDashboardPage() {
         </button>
       </div>
 
-      {vendorError ? (
+      {vendorsLoading ? null : vendorError ? (
         <div
           role="alert"
           style={{
@@ -501,9 +508,7 @@ export default function MemberDashboardPage() {
         >
           {vendorError}
         </div>
-      ) : null}
-
-      {vendors.length > 0 ? (
+      ) : vendors.length > 0 ? (
         <div
           className="card"
           style={{
