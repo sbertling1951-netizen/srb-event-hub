@@ -66,6 +66,16 @@ export default function HomePage() {
           return;
         }
 
+        // No legacy selected-event session. An already authenticated
+        // Supabase account still goes straight to the account picker --
+        // never back through /member/login -- so it can choose (or
+        // re-enter) an event. Only a visitor with no authenticated
+        // account at all sees the sign-in links below.
+        if (user) {
+          router.replace("/member/account");
+          return;
+        }
+
         setHasSession(false);
       } catch (err) {
         console.error("Home redirect error:", err);

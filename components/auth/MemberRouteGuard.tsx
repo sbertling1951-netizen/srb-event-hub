@@ -12,6 +12,7 @@ import {
   getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { supabase } from "@/lib/supabase";
 
 export default function MemberRouteGuard({
   children,
@@ -45,17 +46,9 @@ export default function MemberRouteGuard({
   useEffect(() => {
     let mounted = true;
 
-    function verifyMember() {
+    async function verifyMember() {
       try {
         const mode = getStoredUserMode();
-        if (mode !== "member") {
-          if (mounted) {
-            setStatus("denied");
-          }
-          router.replace("/");
-          return;
-        }
-
         const attendeeId = getStoredMemberAttendeeId();
         const entryId = getStoredMemberEntryId();
         const email = getStoredMemberEmail();
@@ -63,18 +56,32 @@ export default function MemberRouteGuard({
 
         const hasIdentity = !!(attendeeId || entryId || email);
         const hasEvent = !!memberEvent;
+        const hasLegacySession = mode === "member" && hasIdentity && hasEvent;
 
-        if (hasIdentity && hasEvent) {
+        // Decision order:
+        // 1. A valid legacy selected-event session allows the workspace.
+        if (hasLegacySession) {
           if (mounted) {
             setStatus("allowed");
           }
           return;
         }
 
-        if (mounted) {
-          setStatus("denied");
+        // 2. No selected-event session, but a valid authenticated
+        // Supabase account -- send to the account picker to choose (or
+        // re-enter) an event, not back into an incomplete workspace and
+        // not into a loop through "/".
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!mounted) {
+          return;
         }
-        router.replace("/member/login");
+
+        setStatus("denied");
+
+        // 3. Neither a selected event nor an authenticated account.
+        router.replace(
+          sessionData?.session ? "/member/account" : "/member/login",
+        );
       } catch (err) {
         console.error("MemberRouteGuard error:", err);
         if (mounted) {
@@ -84,7 +91,7 @@ export default function MemberRouteGuard({
       }
     }
 
-    verifyMember();
+    void verifyMember();
 
     function handleStorage(e: StorageEvent) {
       if (
@@ -93,12 +100,12 @@ export default function MemberRouteGuard({
         e.key === STORAGE_KEYS.userMode ||
         e.key === STORAGE_KEYS.userModeChanged
       ) {
-        verifyMember();
+        void verifyMember();
       }
     }
 
     function handlePageShow() {
-      verifyMember();
+      void verifyMember();
     }
 
     window.addEventListener("storage", handleStorage);
@@ -116,7 +123,7 @@ export default function MemberRouteGuard({
   }
 
   if (status === "denied") {
-    return <div style={{ padding: 24 }}>Redirecting to member login...</div>;
+    return <div style={{ padding: 24 }}>Redirecting...</div>;
   }
 
   return <>{children}</>;

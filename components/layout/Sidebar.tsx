@@ -192,15 +192,27 @@ export default function Sidebar() {
 
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
 
+  // Pre-workspace/account routes: the person may be authenticated (or
+  // mid-activation/recovery) here, but has not necessarily selected an
+  // event yet. The full event sidebar must not appear just because the
+  // URL begins with "/member" -- only a real, selected-event legacy
+  // member session (reflected in `userMode` below) should trigger it.
+  const isPreWorkspaceMemberPage =
+    pathname === "/member/login" ||
+    pathname === "/member/activate" ||
+    (pathname?.startsWith("/member/account") ?? false) ||
+    pathname === "/auth/callback";
+
   const isPreAuthPage =
     pathname === "/" ||
-    pathname === "/member/login" ||
-    pathname === "/admin/login";
+    pathname === "/admin/login" ||
+    isPreWorkspaceMemberPage;
 
   const effectiveUserMode = mounted
     ? pathname?.startsWith("/admin")
       ? "admin"
-      : pathname?.startsWith("/member") || pathname?.startsWith("/coach-map")
+      : (pathname?.startsWith("/member") || pathname?.startsWith("/coach-map")) &&
+          !isPreWorkspaceMemberPage
         ? "member"
         : userMode
     : "none";

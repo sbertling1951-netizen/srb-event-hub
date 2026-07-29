@@ -88,63 +88,89 @@ export default function MemberDashboardPage() {
   }
 
   useEffect(() => {
-    try {
-      const memberEvent = getCurrentMemberEvent();
-      // Prefer the canonical MemberSession identity via the compatibility helper.
-      const attendeeId = getCurrentMemberAttendeeId();
-      const entryId = getStoredMemberEntryId();
-      const email = getStoredMemberEmail();
+    let cancelled = false;
 
-      if (!memberEvent) {
-        router.replace("/member/login");
-        return;
-      }
+    async function verifyAccess() {
+      try {
+        const memberEvent = getCurrentMemberEvent();
+        // Prefer the canonical MemberSession identity via the compatibility helper.
+        const attendeeId = getCurrentMemberAttendeeId();
+        const entryId = getStoredMemberEntryId();
+        const email = getStoredMemberEmail();
 
-      if (!attendeeId && !entryId && !email) {
-        router.replace("/member/login");
-        return;
-      }
+        const hasLegacyIdentity = !!(attendeeId || entryId || email);
 
-      setCurrentEvent(memberEvent);
-
-      // Load participant capacity and household members
-      (async () => {
-        try {
-          if (!attendeeId) {
+        if (!memberEvent || !hasLegacyIdentity) {
+          // No selected-event workspace session (the legacy identity
+          // this dashboard requires). Decision order: an authenticated
+          // Supabase account with no selected event goes to the account
+          // picker to choose one -- not back through login, and not into
+          // an incomplete workspace. Only a visitor with neither a
+          // selected event nor an authenticated account goes to
+          // /member/login.
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (cancelled) {
             return;
           }
-          // Get participant_capacity
-          const { data: attendeeData, error: attendeeError } = await supabase
-            .from("attendees")
-            .select("participant_capacity")
-            .eq("id", attendeeId)
-            .single();
-          if (attendeeError) {
-            throw attendeeError;
-          }
-          setParticipantCapacity(attendeeData?.participant_capacity ?? 0);
 
-          // Get household members
-          const { data: membersData, error: membersError } = await supabase
-            .from("attendee_household_members")
-            .select("id, display_name, first_name, last_name")
-            .eq("attendee_id", attendeeId)
-            .order("created_at", { ascending: true });
-          if (membersError) {
-            throw membersError;
-          }
-          setHouseholdMembers(membersData ?? []);
-        } catch (err) {
-          console.error("Participant summary load failed:", err);
+          router.replace(
+            sessionData?.session ? "/member/account" : "/member/login",
+          );
+          return;
         }
-      })();
-    } catch (err) {
-      console.error("Member dashboard load error:", err);
-      router.replace("/member/login");
-      return;
-    } finally {
-      setReady(true);
+
+        setCurrentEvent(memberEvent);
+
+        // Load participant capacity and household members
+        (async () => {
+          try {
+            if (!attendeeId) {
+              return;
+            }
+            // Get participant_capacity
+            const { data: attendeeData, error: attendeeError } =
+              await supabase
+                .from("attendees")
+                .select("participant_capacity")
+                .eq("id", attendeeId)
+                .single();
+            if (attendeeError) {
+              throw attendeeError;
+            }
+            setParticipantCapacity(attendeeData?.participant_capacity ?? 0);
+
+            // Get household members
+            const { data: membersData, error: membersError } = await supabase
+              .from("attendee_household_members")
+              .select("id, display_name, first_name, last_name")
+              .eq("attendee_id", attendeeId)
+              .order("created_at", { ascending: true });
+            if (membersError) {
+              throw membersError;
+            }
+            setHouseholdMembers(membersData ?? []);
+          } catch (err) {
+            console.error("Participant summary load failed:", err);
+          }
+        })();
+      } catch (err) {
+        console.error("Member dashboard load error:", err);
+        if (!cancelled) {
+          router.replace("/member/login");
+        }
+        return;
+      } finally {
+        if (!cancelled) {
+          setReady(true);
+        }
+      }
     }
+
+    void verifyAccess();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const loadVendors = useCallback(async () => {
@@ -253,11 +279,39 @@ export default function MemberDashboardPage() {
           background: "#fff",
         }}
       >
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>
-          {currentEvent.name || dashboardTitle}
-        </h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          {currentEvent.location || ""}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <div>
+            <h1 style={{ marginTop: 0, marginBottom: 8 }}>
+              {currentEvent.name || dashboardTitle}
+            </h1>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>
+              {currentEvent.location || ""}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => goTo("/member/account")}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #cbd5e1",
+              background: "#f8fafc",
+              color: "#0f172a",
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            My Events
+          </button>
         </div>
       </div>
 
