@@ -184,22 +184,15 @@ export default function MemberAccountPage() {
             ) : null}
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Link
-              href="/member/account/reset-password"
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                background: "#f8fafc",
-                color: "#0f172a",
-                fontWeight: 700,
-                fontSize: 13,
-                textDecoration: "none",
-              }}
-            >
-              Account Security
-            </Link>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              gap: 6,
+              flexWrap: "wrap",
+            }}
+          >
             <button
               type="button"
               onClick={() => void handleSignOut()}
@@ -217,6 +210,17 @@ export default function MemberAccountPage() {
             >
               Sign Out
             </button>
+            <Link
+              href="/member/account/reset-password"
+              style={{
+                color: "#64748b",
+                fontSize: 13,
+                fontWeight: 600,
+                textDecoration: "underline",
+              }}
+            >
+              Change password
+            </Link>
           </div>
         </div>
       </div>
@@ -295,22 +299,37 @@ export default function MemberAccountPage() {
         </div>
       ) : null}
 
-      <div style={{ marginTop: 28, textAlign: "center" }}>
+      <div
+        style={{
+          marginTop: 28,
+          display: "grid",
+          justifyItems: "center",
+          gap: 8,
+          textAlign: "center",
+        }}
+      >
         <button
           type="button"
           onClick={() => void handleSignOutForEventAccess()}
           disabled={signingOut}
           style={{
-            background: "none",
-            border: "none",
-            color: "#64748b",
-            fontSize: 13,
-            textDecoration: "underline",
+            padding: "10px 20px",
+            borderRadius: 8,
+            border: "1px solid #cbd5e1",
+            background: "#ffffff",
+            color: "#0f172a",
+            fontWeight: 700,
+            fontSize: 14,
             cursor: signingOut ? "not-allowed" : "pointer",
+            opacity: signingOut ? 0.7 : 1,
           }}
         >
-          Sign out and use Temporary Event Access instead
+          Single Event Access
         </button>
+        <div style={{ color: "#64748b", fontSize: 13, maxWidth: 360 }}>
+          Use an event access code instead of signing in with an EpicentraX
+          account.
+        </div>
       </div>
     </div>
   );
