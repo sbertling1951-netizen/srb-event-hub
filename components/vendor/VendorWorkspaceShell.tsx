@@ -31,7 +31,7 @@ export default function VendorWorkspaceShell({
   title,
   children,
 }: VendorWorkspaceShellProps) {
-  const { loading, error, context, selectVendor } = useVendorWorkspace();
+  const { loading, error, reason, context, selectVendor } = useVendorWorkspace();
   const [pendingVendorId, setPendingVendorId] = useState("");
   const [selectError, setSelectError] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
@@ -64,6 +64,15 @@ export default function VendorWorkspaceShell({
   }
 
   if (error || !context) {
+    // "no_vendor_access" means the account IS authenticated -- it simply
+    // has no active vendor row yet (e.g. an existing account that followed
+    // an invitation before it was activated, or a plain member/admin
+    // account). Telling an already-signed-in person to "log in" first is
+    // wrong and confusing, so this state gets its own copy and button
+    // order; every other failure (no session at all, or an expired one)
+    // keeps the original sign-in-first flow.
+    const noActiveAccess = reason === "no_vendor_access";
+
     return (
       <div style={{ padding: 24, display: "grid", gap: 12 }}>
         <div className="card" style={{ padding: 18 }}>
@@ -71,14 +80,32 @@ export default function VendorWorkspaceShell({
           <div style={{ color: "#991b1b", fontWeight: 700 }}>
             {error || "Vendor access is unavailable."}
           </div>
+          <div style={{ marginTop: 10, fontSize: 14, color: "#555" }}>
+            {noActiveAccess
+              ? "You're signed in, but this account doesn't have active vendor access yet. Complete registration below, or sign in with a different account if you were expecting an invitation."
+              : "Sign in with your vendor email, or register a new vendor organization."}
+          </div>
           <div style={{ marginTop: 10 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Link href="/vendor/login" className="app-button app-button-primary">
-                Vendor Login
-              </Link>
-              <Link href="/vendor/register" className="app-button">
-                Vendor Register
-              </Link>
+              {noActiveAccess ? (
+                <>
+                  <Link href="/vendor/register" className="app-button app-button-primary">
+                    Complete Vendor Registration
+                  </Link>
+                  <Link href="/vendor/login" className="app-button">
+                    Vendor Login
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link href="/vendor/login" className="app-button app-button-primary">
+                    Vendor Login
+                  </Link>
+                  <Link href="/vendor/register" className="app-button">
+                    Vendor Register
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -151,7 +178,7 @@ export default function VendorWorkspaceShell({
           Vendor Home
         </Link>
         <Link href="/vendor/workspace/profile" className="app-button app-button-muted">
-          Organization Profile
+          Edit Vendor Profile
         </Link>
         <Link href="/vendor/workspace/contacts" className="app-button app-button-muted">
           Contacts

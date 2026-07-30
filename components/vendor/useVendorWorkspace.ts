@@ -57,15 +57,22 @@ export type VendorWorkspaceContext = {
   requiresVendorSelection: boolean;
 };
 
+export type VendorWorkspaceAccessReason =
+  | "missing_vendor_session"
+  | "invalid_vendor_session"
+  | "no_vendor_access";
+
 export function useVendorWorkspace() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reason, setReason] = useState<VendorWorkspaceAccessReason | null>(null);
   const [context, setContext] = useState<VendorWorkspaceContext | null>(null);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
+      setReason(null);
 
       const response = await fetch("/api/vendor/access/context", {
         method: "GET",
@@ -76,12 +83,14 @@ export function useVendorWorkspace() {
         ok: boolean;
         message?: string;
         error?: string;
+        reason?: VendorWorkspaceAccessReason;
         context?: VendorWorkspaceContext;
       };
 
       if (!response.ok || !payload.ok || !payload.context) {
         setContext(null);
         setError(payload.error || payload.message || "Vendor access denied.");
+        setReason(payload.reason || null);
         return;
       }
 
@@ -123,6 +132,7 @@ export function useVendorWorkspace() {
   return {
     loading,
     error,
+    reason,
     context,
     reload: load,
     selectVendor,

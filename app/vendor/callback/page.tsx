@@ -16,16 +16,47 @@ export default function VendorCallbackPage() {
 
     async function completeSignIn() {
       try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
+        // The shared Supabase client (lib/supabase.ts) has
+        // detectSessionInUrl disabled for the rest of the app, so this
+        // page must explicitly exchange whatever this specific
+        // invitation/magic-link redirect carries. Without this, getSession()
+        // silently returns whatever session (or none) already happens to be
+        // in this browser's storage -- e.g. an admin's own logged-in
+        // session -- instead of the identity this link actually represents.
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const searchParams = new URLSearchParams(window.location.search);
 
-        if (error) {
-          throw error;
+        const errorDescription =
+          hashParams.get("error_description") || searchParams.get("error_description");
+        if (errorDescription) {
+          throw new Error(errorDescription);
         }
 
-        const accessToken = session?.access_token;
+        const code = searchParams.get("code");
+        const hashAccessToken = hashParams.get("access_token");
+        const hashRefreshToken = hashParams.get("refresh_token");
+
+        let accessToken: string | undefined;
+
+        if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            throw error;
+          }
+          accessToken = data.session?.access_token;
+        } else if (hashAccessToken && hashRefreshToken) {
+          const { data, error } = await supabase.auth.setSession({
+            access_token: hashAccessToken,
+            refresh_token: hashRefreshToken,
+          });
+          if (error) {
+            throw error;
+          }
+          accessToken = data.session?.access_token;
+        }
+
+        window.history.replaceState(null, "", window.location.pathname);
+
         if (!accessToken) {
           if (!cancelled) {
             setStatus(

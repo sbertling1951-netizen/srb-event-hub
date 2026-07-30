@@ -51,6 +51,51 @@ function isAlreadyRegisteredError(
   return /already.*(registered|exists)/i.test(error.message || "");
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Renders a real HTML call-to-action button so the raw Supabase verification
+// URL is never the only thing a recipient sees. The plain-text part still
+// contains the literal link -- that is the correct, expected fallback for
+// clients that don't render HTML, not a bug.
+function buildVendorAccessEmail(params: { vendorName: string; actionLink: string }) {
+  const safeVendorName = escapeHtml(params.vendorName);
+  const safeLink = escapeHtml(params.actionLink);
+
+  const text = [
+    `You have been granted vendor access to ${params.vendorName} on EpicentraX.`,
+    "",
+    "This email address already has an EpicentraX account. Use the link below to activate vendor access:",
+    params.actionLink,
+    "",
+    "If you did not expect this, you can ignore this email.",
+  ].join("\n");
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; color: #111;">
+      <p>You have been granted vendor access to <strong>${safeVendorName}</strong> on EpicentraX.</p>
+      <p>This email address already has an EpicentraX account. Activate vendor access below:</p>
+      <p style="text-align: center; margin: 28px 0;">
+        <a href="${safeLink}" style="background-color: #2563eb; color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 8px; display: inline-block;">
+          Activate Vendor Access
+        </a>
+      </p>
+      <p style="font-size: 13px; color: #555;">
+        If the button above does not work, copy and paste this link into your browser:<br />
+        <a href="${safeLink}" style="color: #2563eb;">${safeLink}</a>
+      </p>
+      <p style="font-size: 13px; color: #777;">If you did not expect this, you can ignore this email.</p>
+    </div>
+  `.trim();
+
+  return { text, html };
+}
+
 async function sendVendorAccessNotificationEmail(params: {
   to: string;
   vendorName: string;
@@ -65,20 +110,14 @@ async function sendVendorAccessNotificationEmail(params: {
     return false;
   }
 
-  const text = [
-    `You have been granted vendor access to ${params.vendorName} on EpicentraX.`,
-    "",
-    "This email address already has an EpicentraX account. Use the secure link below to activate vendor access:",
-    params.actionLink,
-    "",
-    "If you did not expect this, you can ignore this email.",
-  ].join("\n");
+  const { text, html } = buildVendorAccessEmail(params);
 
   const result = await resend.emails.send({
     from: fromEmail,
     to: [params.to],
     subject: `Vendor access granted: ${params.vendorName}`,
     text,
+    html,
   });
 
   return !result.error;

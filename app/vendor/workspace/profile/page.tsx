@@ -145,7 +145,12 @@ export default function VendorWorkspaceProfilePage() {
             />
           </label>
           <label>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Contact Name</div>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Public Contact Name</div>
+            <div style={{ fontSize: 12, color: "#777", marginBottom: 6 }}>
+              A free-text label shown on the organization profile only. It does
+              not change any person&apos;s identity or the named contacts
+              listed on the Contacts page.
+            </div>
             <input
               value={contactName}
               onChange={(e) => setContactName(e.target.value)}

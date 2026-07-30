@@ -97,6 +97,7 @@ export default function HomePage() {
     const links = [
       { href: "/member/login", label: memberLoginLabel },
       { href: "/admin/login", label: adminLoginLabel },
+      { href: "/vendor/login", label: "Vendor Login" },
     ];
 
     return (
