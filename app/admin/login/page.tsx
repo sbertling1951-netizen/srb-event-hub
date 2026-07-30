@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import LoginActionButton from "@/components/auth/LoginActionButton";
 import { clearCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 import { supabase } from "@/lib/supabase";
 
@@ -168,42 +168,25 @@ export default function AdminLoginPage() {
           />
         </label>
 
-        <button
+        <LoginActionButton
+          variant="primary"
           type="submit"
           disabled={status === "Signing in..."}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 8,
-            border: "1px solid #cbd5e1",
-            background: "#fff",
-            cursor: "pointer",
-            fontWeight: 600,
-          }}
         >
           Login
-        </button>
+        </LoginActionButton>
 
-        <button
-          type="button"
-          onClick={handleForgotPassword}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 8,
-            border: "1px solid #ddd",
-            background: "#f8f9fb",
-            cursor: "pointer",
-          }}
-        >
+        <LoginActionButton variant="recovery" onClick={handleForgotPassword}>
           Forgot Password
-        </button>
+        </LoginActionButton>
 
         <div style={{ fontSize: 13, color: "#666" }}>{status}</div>
       </form>
 
-      <div style={{ marginTop: 20, textAlign: "center" }}>
-        <Link href="/" style={{ color: "#0b5cff", fontWeight: 700, fontSize: 14 }}>
+      <div style={{ marginTop: 12 }}>
+        <LoginActionButton variant="back" href="/">
           Back to Login
-        </Link>
+        </LoginActionButton>
       </div>
     </div>
   );

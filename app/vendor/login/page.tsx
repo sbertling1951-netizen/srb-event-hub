@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import LoginActionButton from "@/components/auth/LoginActionButton";
 import { supabase } from "@/lib/supabase";
 
 export default function VendorLoginPage() {
@@ -174,33 +174,21 @@ export default function VendorLoginPage() {
           />
         </label>
 
-        <button
-          type="button"
+        <LoginActionButton
+          variant="primary"
           onClick={() => void signInWithPassword()}
           disabled={busy}
-          className="app-button app-button-primary"
         >
           {busy ? "Please wait..." : "Sign In"}
-        </button>
+        </LoginActionButton>
 
-        <div>
-          <button
-            type="button"
-            onClick={() => void sendPasswordReset()}
-            disabled={busy}
-            style={{
-              background: "none",
-              border: "none",
-              padding: 0,
-              color: "#2563eb",
-              fontWeight: 600,
-              cursor: busy ? "not-allowed" : "pointer",
-              fontSize: 14,
-            }}
-          >
-            Forgot Password?
-          </button>
-        </div>
+        <LoginActionButton
+          variant="recovery"
+          onClick={() => void sendPasswordReset()}
+          disabled={busy}
+        >
+          Forgot Password
+        </LoginActionButton>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
           <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
@@ -208,29 +196,35 @@ export default function VendorLoginPage() {
           <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
         </div>
 
-        <button
-          type="button"
-          onClick={() => void sendMagicLink()}
-          disabled={busy}
-          className="app-button app-button-muted"
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+            gap: 8,
+          }}
         >
-          Email Me a Sign-in Link
-        </button>
+          <LoginActionButton
+            variant="alternate"
+            onClick={() => void sendMagicLink()}
+            disabled={busy}
+          >
+            Email Me a Sign-in Link
+          </LoginActionButton>
+
+          <LoginActionButton variant="alternate" href="/vendor/register">
+            Request Vendor Access
+          </LoginActionButton>
+        </div>
 
         {status ? <div style={{ fontSize: 14, color: "#555" }}>{status}</div> : null}
         {error ? (
           <div style={{ fontSize: 14, color: "#991b1b", fontWeight: 700 }}>{error}</div>
         ) : null}
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-          <Link href="/" className="app-button app-button-muted">
-            Back to Login
-          </Link>
-          <Link href="/vendor/register" className="app-button">
-            Request Vendor Access
-          </Link>
-        </div>
       </div>
+
+      <LoginActionButton variant="back" href="/">
+        Back to Login
+      </LoginActionButton>
     </div>
   );
 }

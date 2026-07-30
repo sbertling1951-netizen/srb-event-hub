@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import LoginActionButton from "@/components/auth/LoginActionButton";
 import { logEngagement } from "@/lib/engagement";
 import {
   enterResolvedRegistration,
@@ -565,36 +566,21 @@ export default function MemberLoginPage() {
           </span>
         </label>
 
-        <button
-          type="button"
+        <LoginActionButton
+          variant="primary"
           onClick={() => void handleAccountSignIn()}
           disabled={signInBusy}
-          style={{
-            ...primaryButtonStyle,
-            cursor: signInBusy ? "not-allowed" : "pointer",
-            opacity: signInBusy ? 0.7 : 1,
-          }}
         >
           {signInBusy ? "Signing in..." : "Sign In"}
-        </button>
+        </LoginActionButton>
 
-        <div style={{ textAlign: "center" }}>
-          <button
-            type="button"
-            onClick={() => void sendRecoveryLink()}
-            disabled={recoveryBusy}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#0b5cff",
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: recoveryBusy ? "not-allowed" : "pointer",
-            }}
-          >
-            Email me a recovery link
-          </button>
-        </div>
+        <LoginActionButton
+          variant="recovery"
+          onClick={() => void sendRecoveryLink()}
+          disabled={recoveryBusy}
+        >
+          Email me a recovery link
+        </LoginActionButton>
 
         {signInStatus ? (
           <div style={{ fontSize: 13, color: "#666" }}>{signInStatus}</div>
@@ -622,23 +608,15 @@ export default function MemberLoginPage() {
         ) : null}
       </div>
 
-      <div style={{ marginTop: 20, textAlign: "center" }}>
-        <button
-          type="button"
+      <div style={{ marginTop: 20 }}>
+        <LoginActionButton
+          variant="alternate"
           onClick={() => setShowEventAccess((current) => !current)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "#64748b",
-            fontSize: 13,
-            textDecoration: "underline",
-            cursor: "pointer",
-          }}
         >
           {showEventAccess
             ? "Hide Temporary Event Access"
             : "Temporary Event Access"}
-        </button>
+        </LoginActionButton>
       </div>
 
       {showEventAccess ? (
@@ -748,13 +726,10 @@ export default function MemberLoginPage() {
         </form>
       ) : null}
 
-      <div style={{ marginTop: 24, textAlign: "center" }}>
-        <Link
-          href="/"
-          style={{ color: "#0b5cff", fontWeight: 700, fontSize: 14 }}
-        >
+      <div style={{ marginTop: 12 }}>
+        <LoginActionButton variant="back" href="/">
           Back to Login
-        </Link>
+        </LoginActionButton>
       </div>
     </div>
   );
