@@ -116,9 +116,33 @@ export async function GET() {
     participationCounts[key] = (participationCounts[key] || 0) + 1;
   }
 
+  // The event this vendor's invitation named, even before an administrator
+  // has published a formal event_vendors participation row for it -- this
+  // is what lets the workspace say "you're part of this event, no booth
+  // assignment yet" instead of implying no relationship exists at all.
+  let invitedEvent: { id: string; name: string | null } | null = null;
+
+  if (selectedVendor.invitedForEventId) {
+    const { data: invitedEventRow, error: invitedEventError } = await supabaseAdmin
+      .from("events")
+      .select("id,name")
+      .eq("id", selectedVendor.invitedForEventId)
+      .maybeSingle();
+
+    if (invitedEventError) {
+      return NextResponse.json(
+        { ok: false, error: invitedEventError.message },
+        { status: 500 },
+      );
+    }
+
+    invitedEvent = invitedEventRow || null;
+  }
+
   return NextResponse.json({
     ok: true,
     vendor: vendor || null,
+    invitedEvent,
     participationRows: participationWithNotice,
     participation: {
       total: participationRows.length,

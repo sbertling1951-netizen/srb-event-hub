@@ -35,6 +35,7 @@ type ParticipationRow = {
 type ParticipationPayload = {
   ok: boolean;
   error?: string;
+  invitedEvent?: { id: string; name: string | null } | null;
   participationRows?: ParticipationRow[];
 };
 
@@ -64,6 +65,9 @@ export default function VendorWorkspaceParticipationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<ParticipationRow[]>([]);
+  const [invitedEvent, setInvitedEvent] = useState<{ id: string; name: string | null } | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +92,7 @@ export default function VendorWorkspaceParticipationPage() {
 
         if (!cancelled) {
           setRows(payload.participationRows || []);
+          setInvitedEvent(payload.invitedEvent || null);
         }
       } catch (err) {
         if (!cancelled) {
@@ -119,7 +124,30 @@ export default function VendorWorkspaceParticipationPage() {
       ) : error ? (
         <div style={{ color: "#991b1b", fontWeight: 700 }}>{error}</div>
       ) : rows.length === 0 ? (
-        <div>No event participation records exist yet for this vendor.</div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {invitedEvent ? (
+            <>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#555" }}>
+                  Current Event
+                </div>
+                <div style={{ fontSize: 16 }}>{invitedEvent.name || "Event"}</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#555" }}>
+                  Participation Status
+                </div>
+                <div style={{ fontSize: 16 }}>Not yet assigned</div>
+              </div>
+              <div style={{ color: "#555", fontSize: 14 }}>
+                No booth assignment or participation information has been
+                published for this organization yet.
+              </div>
+            </>
+          ) : (
+            <div>No event participation records exist yet for this vendor.</div>
+          )}
+        </div>
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
           <div style={{ color: "#555", fontSize: 14 }}>

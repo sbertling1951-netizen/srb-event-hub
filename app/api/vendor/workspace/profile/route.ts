@@ -12,6 +12,7 @@ type ProfilePatchBody = {
   website?: string;
   business_description?: string;
   preferred_contact_method?: string;
+  logo_url?: string | null;
 };
 
 function normalizeOptional(value: unknown) {
@@ -53,7 +54,7 @@ export async function GET() {
   const { data: vendor, error } = await supabaseAdmin
     .from("vendors")
     .select(
-      "id,business_name,contact_name,email,phone,website,business_description,preferred_contact_method,is_active",
+      "id,business_name,contact_name,email,phone,website,logo_url,business_description,preferred_contact_method,is_active",
     )
     .eq("id", selectedVendor.vendorId)
     .maybeSingle();
@@ -134,6 +135,7 @@ export async function PATCH(req: Request) {
     email: normalizeOptional(body.email),
     phone: normalizeOptional(body.phone),
     website: normalizeOptional(body.website),
+    logo_url: normalizeOptional(body.logo_url),
     business_description: normalizeOptional(body.business_description),
     preferred_contact_method: preferredContactMethod,
   };
@@ -151,7 +153,7 @@ export async function PATCH(req: Request) {
     .update(updatePayload)
     .eq("id", selectedVendor.vendorId)
     .select(
-      "id,business_name,contact_name,email,phone,website,business_description,preferred_contact_method,is_active",
+      "id,business_name,contact_name,email,phone,website,logo_url,business_description,preferred_contact_method,is_active",
     )
     .single();
 
