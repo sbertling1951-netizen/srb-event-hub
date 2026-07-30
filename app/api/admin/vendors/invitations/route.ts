@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { emailEnabled, resend } from "@/lib/email";
 import {
   adminCanManageEvent,
   adminHasPermission,
@@ -32,6 +33,55 @@ function normalizeEmail(value: string) {
 
 function appUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || "";
+}
+
+// GoTrue returns this when inviteUserByEmail targets an email that already
+// has a confirmed account. That is not a failure for our purposes -- it is
+// exactly the "existing EpicentraX account" case the invitation flow must
+// support -- so it is detected and handled, not just surfaced as an error.
+function isAlreadyRegisteredError(
+  error: { code?: string; message?: string } | null | undefined,
+) {
+  if (!error) {
+    return false;
+  }
+  if (error.code === "email_exists" || error.code === "user_already_exists") {
+    return true;
+  }
+  return /already.*(registered|exists)/i.test(error.message || "");
+}
+
+async function sendVendorAccessNotificationEmail(params: {
+  to: string;
+  vendorName: string;
+  actionLink: string;
+}): Promise<boolean> {
+  if (!emailEnabled() || !resend) {
+    return false;
+  }
+
+  const fromEmail = process.env.RESEND_FROM_EMAIL?.trim();
+  if (!fromEmail) {
+    return false;
+  }
+
+  const text = [
+    `You have been granted vendor access to ${params.vendorName} on EpicentraX.`,
+    "",
+    "This email address already has an EpicentraX account. Use the secure link below to activate vendor access:",
+    params.actionLink,
+    "",
+    "If you did not expect this, you can ignore this email.",
+  ].join("\n");
+
+  const result = await resend.emails.send({
+    from: fromEmail,
+    to: [params.to],
+    subject: `Vendor access granted: ${params.vendorName}`,
+    text,
+  });
+
+  return !result.error;
 }
 
 export async function GET(req: Request) {
@@ -370,6 +420,7 @@ export async function POST(req: Request) {
 
   const now = new Date().toISOString();
   let accessId = existingAccess?.id || "";
+  const wasAlreadyActive = existingAccess?.status === "active";
 
   if (!accessId) {
     const { data: inserted, error: insertAccessError } = await supabaseAdmin
@@ -425,10 +476,33 @@ export async function POST(req: Request) {
     }
   }
 
+  // Access was already active (e.g. a stray "invite" resubmission, or a
+  // role/contact update on an already-activated vendor): the vendor_org_access
+  // row above is already updated with any changed fields, and this person is
+  // already an authenticated, active vendor -- no invite/auth call or email
+  // is needed or possible (their account is already confirmed).
+  if (wasAlreadyActive) {
+    return NextResponse.json({
+      ok: true,
+      action,
+      vendorId,
+      vendorName: vendorRow.business_name || "Vendor",
+      contactEmail,
+      vendorContactId,
+      accessId,
+      alreadyActive: true,
+      emailSent: false,
+    });
+  }
+
   const redirectToBase = appUrl();
   const redirectTo = redirectToBase
     ? `${redirectToBase}/vendor/callback`
     : undefined;
+
+  let boundAuthUserId: string | null = null;
+  let emailSent = false;
+  let existingAccountMatched = false;
 
   const {
     data: { user: invitedUser },
@@ -437,18 +511,56 @@ export async function POST(req: Request) {
     redirectTo,
   });
 
-  if (inviteError) {
+  if (!inviteError && invitedUser?.id) {
+    // Brand-new (or previously-invited-but-unconfirmed) account: Supabase
+    // creates/reuses the auth user and sends its own invite email.
+    boundAuthUserId = invitedUser.id;
+    emailSent = true;
+  } else if (inviteError && isAlreadyRegisteredError(inviteError)) {
+    // Existing, already-confirmed EpicentraX account (a member, or a vendor
+    // contact elsewhere). inviteUserByEmail cannot target a confirmed
+    // account, so the existing identity is resolved via generateLink
+    // instead -- this looks up (never creates a duplicate of) the auth user
+    // for this email and returns a fresh, secure activation link for them.
+    existingAccountMatched = true;
+
+    const { data: linkData, error: linkError } =
+      await supabaseAdmin.auth.admin.generateLink({
+        type: "magiclink",
+        email: contactEmail,
+        options: { redirectTo },
+      });
+
+    if (linkError || !linkData?.user?.id) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Could not resolve existing account for invite: ${
+            linkError?.message || "unknown error"
+          }`,
+        },
+        { status: 400 },
+      );
+    }
+
+    boundAuthUserId = linkData.user.id;
+    emailSent = await sendVendorAccessNotificationEmail({
+      to: contactEmail,
+      vendorName: vendorRow.business_name || "Vendor",
+      actionLink: linkData.properties.action_link,
+    });
+  } else if (inviteError) {
     return NextResponse.json(
       { ok: false, error: `Invite failed: ${inviteError.message}` },
       { status: 400 },
     );
   }
 
-  if (invitedUser?.id) {
+  if (boundAuthUserId) {
     const { error: bindUserError } = await supabaseAdmin
       .from("vendor_org_access")
       .update({
-        auth_user_id: invitedUser.id,
+        auth_user_id: boundAuthUserId,
       })
       .eq("id", accessId)
       .eq("status", "pending");
@@ -469,5 +581,7 @@ export async function POST(req: Request) {
     contactEmail,
     vendorContactId,
     accessId,
+    existingAccountMatched,
+    emailSent,
   });
 }

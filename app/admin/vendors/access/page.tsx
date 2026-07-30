@@ -164,13 +164,27 @@ function AdminVendorAccessInner() {
       const payload = (await response.json()) as {
         ok: boolean;
         error?: string;
+        alreadyActive?: boolean;
+        existingAccountMatched?: boolean;
+        emailSent?: boolean;
       };
 
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Could not send invitation.");
       }
 
-      setStatus(action === "invite" ? "Invitation sent." : "Invitation resent.");
+      if (payload.alreadyActive) {
+        setStatus("This contact already has active vendor access. No invitation was needed.");
+      } else if (payload.existingAccountMatched) {
+        setStatus(
+          payload.emailSent
+            ? "This email already has an EpicentraX account. A vendor-access notification was sent to it."
+            : "This email already has an EpicentraX account and vendor access is ready, but the notification email could not be sent — share the Vendor Login page with them directly.",
+        );
+      } else {
+        setStatus(action === "invite" ? "Invitation sent." : "Invitation resent.");
+      }
+
       await load();
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Could not process invitation.");

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { resolveOrCreatePersonForAuthUser } from "@/lib/server/personIdentity";
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 
 type RegisterBody = {
@@ -127,85 +128,21 @@ export async function POST(req: Request) {
     );
   }
 
-  let personId: string | null = null;
+  const nameParts = splitName(contactName);
+  const personResolution = await resolveOrCreatePersonForAuthUser(
+    supabaseAdmin,
+    user.id,
+    { firstName: nameParts.firstName, lastName: nameParts.lastName },
+  );
 
-  const { data: personAuth, error: personAuthError } = await supabaseAdmin
-    .from("person_auth_accounts")
-    .select("id,person_id,status")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
-
-  if (personAuthError) {
+  if ("error" in personResolution) {
     return NextResponse.json(
-      { ok: false, error: personAuthError.message },
+      { ok: false, error: personResolution.error },
       { status: 500 },
     );
   }
 
-  personId = personAuth?.person_id || null;
-
-  if (personAuth?.id && personAuth.status !== "active") {
-    const { error: reactivateError } = await supabaseAdmin
-      .from("person_auth_accounts")
-      .update({
-        status: "active",
-        retired_at: null,
-        verified_at: new Date().toISOString(),
-      })
-      .eq("id", personAuth.id);
-
-    if (reactivateError) {
-      return NextResponse.json(
-        { ok: false, error: reactivateError.message },
-        { status: 500 },
-      );
-    }
-  }
-
-  if (!personId) {
-    const nameParts = splitName(contactName);
-
-    const { data: createdPerson, error: personCreateError } = await supabaseAdmin
-      .from("people")
-      .insert({
-        display_first_name: nameParts.firstName,
-        display_last_name: nameParts.lastName,
-        status: "active",
-      })
-      .select("id")
-      .single();
-
-    if (personCreateError || !createdPerson?.id) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: personCreateError?.message || "Could not create person record.",
-        },
-        { status: 500 },
-      );
-    }
-
-    personId = createdPerson.id;
-
-    const { error: personAuthCreateError } = await supabaseAdmin
-      .from("person_auth_accounts")
-      .insert({
-        person_id: personId,
-        auth_user_id: user.id,
-        status: "active",
-        is_primary: true,
-        verified_at: new Date().toISOString(),
-      });
-
-    if (personAuthCreateError) {
-      await supabaseAdmin.from("people").delete().eq("id", personId);
-
-      return NextResponse.json(
-        { ok: false, error: personAuthCreateError.message },
-        { status: 500 },
-      );
-    }
-  }
+  const personId = personResolution.personId;
 
   const { data: createdVendor, error: vendorError } = await supabaseAdmin
     .from("vendors")
@@ -231,7 +168,6 @@ export async function POST(req: Request) {
   }
 
   const vendorId = createdVendor.id;
-  const nameParts = splitName(contactName);
 
   const { data: createdContact, error: contactError } = await supabaseAdmin
     .from("vendor_contacts")
