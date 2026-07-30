@@ -747,6 +747,15 @@ export default function MemberLoginPage() {
           ) : null}
         </form>
       ) : null}
+
+      <div style={{ marginTop: 24, textAlign: "center" }}>
+        <Link
+          href="/"
+          style={{ color: "#0b5cff", fontWeight: 700, fontSize: 14 }}
+        >
+          Back to Login
+        </Link>
+      </div>
     </div>
   );
 }

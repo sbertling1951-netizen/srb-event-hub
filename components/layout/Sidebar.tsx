@@ -601,33 +601,19 @@ export default function Sidebar() {
     return null;
   }
 
-  if (pathname === "/member/login" || pathname === "/admin/login") {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          clearAllAppState();
-          router.replace("/");
-        }}
-        style={{
-          position: "fixed",
-          top: "calc(env(safe-area-inset-top, 0px) + 12px)",
-          right: "calc(env(safe-area-inset-right, 0px) + 12px)",
-          zIndex: 9999,
-          padding: "10px 14px",
-          borderRadius: 999,
-          border: "1px solid #cbd5e1",
-          background: "white",
-          color: "#111827",
-          fontWeight: 700,
-          cursor: "pointer",
-          boxShadow: "0 3px 10px rgba(0,0,0,0.18)",
-          WebkitTapHighlightColor: "transparent",
-        }}
-      >
-        Change Login Type
-      </button>
-    );
+  // Login pages own their own bottom-of-page "Back to Login" navigation
+  // (see app/member/login, app/admin/login, app/vendor/login) instead of
+  // this fixed upper-right overlay, so the pattern is identical and
+  // bottom-placed across all three. This early return is still required:
+  // without it, effectiveUserMode below would resolve to "admin" purely
+  // from the "/admin" path prefix and render the full authenticated admin
+  // sidebar on top of the admin login form itself.
+  if (
+    pathname === "/member/login" ||
+    pathname === "/admin/login" ||
+    pathname === "/vendor/login"
+  ) {
+    return null;
   }
 
   if (effectiveUserMode === "none") {

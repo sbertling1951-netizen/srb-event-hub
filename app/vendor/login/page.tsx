@@ -224,10 +224,10 @@ export default function VendorLoginPage() {
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
           <Link href="/" className="app-button app-button-muted">
-            Back to Home
+            Back to Login
           </Link>
           <Link href="/vendor/register" className="app-button">
-            New Vendor Registration
+            Request Vendor Access
           </Link>
         </div>
       </div>

@@ -106,11 +106,15 @@ export default function HomePage() {
 
         <p>{welcomeMessage}</p>
 
+        <h2 style={{ fontSize: 16, color: "#555", marginTop: 24, marginBottom: 0 }}>
+          Choose Login Type
+        </h2>
+
         <div
           style={{
             display: "grid",
             gap: 14,
-            marginTop: 20,
+            marginTop: 12,
           }}
         >
           {links.map((link) => (

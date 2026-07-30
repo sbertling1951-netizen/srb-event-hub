@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { supabase } from "@/lib/supabase";
 import { clearCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
+import { supabase } from "@/lib/supabase";
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState("");
@@ -198,6 +199,12 @@ export default function AdminLoginPage() {
 
         <div style={{ fontSize: 13, color: "#666" }}>{status}</div>
       </form>
+
+      <div style={{ marginTop: 20, textAlign: "center" }}>
+        <Link href="/" style={{ color: "#0b5cff", fontWeight: 700, fontSize: 14 }}>
+          Back to Login
+        </Link>
+      </div>
     </div>
   );
 }
