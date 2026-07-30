@@ -197,3 +197,59 @@ Every agent completing a task should leave a compact handoff containing:
 - exact next safe step.
 
 The handoff is a report, not a second project memory system. Durable decisions belong in the authoritative architecture or project documents.
+
+<!-- EPICENTRAX_LIBRARIAN_START -->
+## Librarian-generated repository status
+> Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
+
+**Generated at:** `2026-07-30T09:57:28-04:00`
+**Branch:** `main`
+**Commit:** `f98ddc5 Add shared AI project context`
+**Commit date:** `2026-07-30T09:04:59-04:00`
+**Working tree (pre-update snapshot):** Pending changes
+**Tracked modified:** `3`
+**Staged:** `0`
+**Untracked:** `14`
+_Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
+
+### Architecture records
+- `ADR-000 EpicentraX Constitution.md`
+- `ADR-001 Operational Intelligence Engine.md`
+- `ADR-002 Admin Workspace Architecture.md`
+- `ADR-003 Participant Identity Model.md`
+- `ADR-004 Tenant Identity Framework.md`
+- `ADR-005 Identity Authentication Authorization.md`
+- `ADR-006 Event Context Architecture.md`
+- `ADR-007 Data Ownership and Isolation.md`
+- `ADR-008 Operational Permission Framework.md`
+- `ADR-009 Tenant Branding and White Label Architecture.md`
+- `ADR-010 AI Trust and Learning Architecture.md`
+- `epicentrax-user-flow-and-native-interaction.md`
+- `README.md`
+
+### Migration inventory
+- Total migration files: `17`
+- Latest migration: `20260730130000_fix_vendor_org_access_policy_recursion.sql`
+- Latest five:
+  - `20260727120200_stage8b_proof_of_possession_activation.sql`
+  - `20260727120300_vendor_person_specific_access_foundation.sql`
+  - `20260729120000_add_resolve_member_account_rpc.sql`
+  - `20260730120000_add_magic_link_activation_support.sql`
+  - `20260730130000_fix_vendor_org_access_policy_recursion.sql`
+
+### Identity-audit inventory
+- SQL files: `15`
+- Markdown files: `32`
+- Latest five:
+  - `baseline-diagnostics/tenant_identity_architecture_recommendation.md`
+  - `baseline-diagnostics/tenants_rls_reconciliation_plan.md`
+  - `briefings/20260727_vendor_workspace_reset_session_briefing.md`
+  - `briefings/auth_identity_attribution_audit_briefing.md`
+  - `briefings/stage8a_development_status_report.md`
+
+### Current milestone
+- `September 1, 2026`
+
+### Known-issue boundary
+Functional known issues are maintained manually in the authoritative project brief and are not inferred by the librarian.
+<!-- EPICENTRAX_LIBRARIAN_END -->
