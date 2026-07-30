@@ -65,6 +65,51 @@ export async function GET() {
   }
 
   const participationRows = eventVendors || [];
+
+  const eventIds = participationRows.map((row) => row.event_id).filter(Boolean);
+  let noticeByEventId: Record<string, unknown> = {};
+
+  if (eventIds.length > 0) {
+    const { data: noticeRows, error: noticeError } = await supabaseAdmin
+      .from("vendor_event_status")
+      .select("event_id,status_type,message,expires_at,is_active,updated_at")
+      .eq("vendor_id", selectedVendor.vendorId)
+      .in("event_id", eventIds);
+
+    if (noticeError) {
+      return NextResponse.json(
+        { ok: false, error: noticeError.message },
+        { status: 500 },
+      );
+    }
+
+    noticeByEventId = Object.fromEntries(
+      (noticeRows || []).map((row) => [row.event_id, row]),
+    );
+  }
+
+  const participationWithNotice = participationRows.map((row) => ({
+    ...row,
+    currentNotice: noticeByEventId[row.event_id] || null,
+  }));
+
+  const { data: serviceRequests, error: serviceRequestError } = await supabaseAdmin
+    .from("vendor_service_requests")
+    .select("request_status")
+    .eq("vendor_id", selectedVendor.vendorId);
+
+  if (serviceRequestError) {
+    return NextResponse.json(
+      { ok: false, error: serviceRequestError.message },
+      { status: 500 },
+    );
+  }
+
+  const openRequestStatuses = new Set(["new", "contacted", "confirmed"]);
+  const openRequestsCount = (serviceRequests || []).filter((row) =>
+    openRequestStatuses.has(String(row.request_status || "new")),
+  ).length;
+
   const participationCounts: Record<string, number> = {};
   for (const row of participationRows) {
     const key = String(row.status || "assigned");
@@ -74,7 +119,7 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     vendor: vendor || null,
-    participationRows,
+    participationRows: participationWithNotice,
     participation: {
       total: participationRows.length,
       byStatus: participationCounts,
@@ -85,5 +130,6 @@ export async function GET() {
         (row) => row.is_visible_to_members !== false,
       ).length,
     },
+    openRequestsCount,
   });
 }

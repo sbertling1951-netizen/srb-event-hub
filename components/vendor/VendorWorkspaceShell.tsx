@@ -156,6 +156,12 @@ export default function VendorWorkspaceShell({
         <Link href="/vendor/workspace/contacts" className="app-button app-button-muted">
           Contacts
         </Link>
+        <Link href="/vendor/workspace/notices" className="app-button app-button-muted">
+          Notices
+        </Link>
+        <Link href="/vendor/workspace/requests" className="app-button app-button-muted">
+          Requests
+        </Link>
         <Link href="/vendor/workspace/participation" className="app-button app-button-muted">
           Event Participation
         </Link>

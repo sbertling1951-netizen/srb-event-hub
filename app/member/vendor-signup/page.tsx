@@ -7,6 +7,7 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
+import { formatVendorNoticeDisplay, type VendorNotice } from "@/lib/vendorNotice";
 
 type VendorRow = {
   id: string;
@@ -26,6 +27,7 @@ type VendorRow = {
         action_type: "service_request" | "external_signup" | "info_only" | null;
       }[]
     | null;
+  currentNotice?: VendorNotice | null;
 };
 
 type AttendeeRow = {
@@ -223,16 +225,42 @@ function MemberVendorSignupInner() {
         throw vendorError;
       }
 
-      const visibleVendors = ((vendorData || []) as VendorRow[]).sort(
-        (a, b) => {
+      const vendorRows = (vendorData || []) as VendorRow[];
+      const vendorIds = vendorRows.map((vendor) => vendor.id).filter(Boolean);
+
+      let noticeByVendorId: Record<string, VendorNotice> = {};
+      if (vendorIds.length > 0) {
+        const { data: noticeRows, error: noticeError } = await supabase
+          .from("vendor_event_status")
+          .select("vendor_id,status_type,message,expires_at,is_active")
+          .eq("event_id", event.id)
+          .in("vendor_id", vendorIds);
+
+        if (noticeError) {
+          console.error("Vendor notice load error:", noticeError);
+        } else {
+          noticeByVendorId = Object.fromEntries(
+            (noticeRows || []).map((row) => [
+              row.vendor_id,
+              row as VendorNotice,
+            ]),
+          );
+        }
+      }
+
+      const visibleVendors = vendorRows
+        .map((vendor) => ({
+          ...vendor,
+          currentNotice: noticeByVendorId[vendor.id] || null,
+        }))
+        .sort((a, b) => {
           const aOrder = Number(a.event_vendors?.[0]?.display_order ?? 100);
           const bOrder = Number(b.event_vendors?.[0]?.display_order ?? 100);
           if (aOrder !== bOrder) {
             return aOrder - bOrder;
           }
           return a.business_name.localeCompare(b.business_name);
-        },
-      );
+        });
 
       setVendors(visibleVendors);
 
@@ -512,11 +540,17 @@ function MemberVendorSignupInner() {
             style={{ width: "100%", padding: 10 }}
           >
             <option value="">Select vendor</option>
-            {vendors.map((vendor) => (
-              <option key={vendor.id} value={vendor.id}>
-                {vendor.business_name}
-              </option>
-            ))}
+            {vendors.map((vendor) => {
+              const noticeText = formatVendorNoticeDisplay(
+                vendor.currentNotice || null,
+              );
+              return (
+                <option key={vendor.id} value={vendor.id}>
+                  {vendor.business_name}
+                  {noticeText ? ` — ${noticeText}` : ""}
+                </option>
+              );
+            })}
           </select>
         </label>
 
@@ -554,6 +588,11 @@ function MemberVendorSignupInner() {
                 {selectedVendor.event_vendors?.[0]?.event_note ? (
                   <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
                     {selectedVendor.event_vendors[0].event_note}
+                  </div>
+                ) : null}
+                {formatVendorNoticeDisplay(selectedVendor.currentNotice || null) ? (
+                  <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>
+                    {formatVendorNoticeDisplay(selectedVendor.currentNotice || null)}
                   </div>
                 ) : null}
               </div>

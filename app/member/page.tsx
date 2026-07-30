@@ -14,6 +14,7 @@ import {
 } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
+import { formatVendorNoticeDisplay, type VendorNotice } from "@/lib/vendorNotice";
 
 type DashboardVendor = {
   id: string;
@@ -23,6 +24,7 @@ type DashboardVendor = {
   signup_url: string | null;
   is_featured: boolean | null;
   action_type: string;
+  currentNotice: VendorNotice | null;
 };
 
 type EventVendorDetails = {
@@ -213,8 +215,32 @@ export default function MemberDashboardPage() {
 
       // Supabase does not infer this joined relationship shape here; the select above defines it.
       const rows = (data || []) as EventVendorRow[];
+      const vendorIds = rows
+        .map((row) => getDashboardVendorDetails(row.vendors)?.id)
+        .filter((id): id is string => !!id);
+
+      let noticeByVendorId: Record<string, VendorNotice> = {};
+      if (vendorIds.length > 0) {
+        const { data: noticeRows, error: noticeError } = await supabase
+          .from("vendor_event_status")
+          .select("vendor_id,status_type,message,expires_at,is_active")
+          .eq("event_id", event.id)
+          .in("vendor_id", vendorIds);
+
+        if (noticeError) {
+          console.error("Vendor notice load error:", noticeError);
+        } else {
+          noticeByVendorId = Object.fromEntries(
+            (noticeRows || []).map((row) => [
+              row.vendor_id,
+              row as VendorNotice,
+            ]),
+          );
+        }
+      }
+
       const cleaned = rows
-        .map((row) => {
+        .map((row): DashboardVendor | null => {
           const vendor = getDashboardVendorDetails(row.vendors);
 
           if (!vendor) {
@@ -229,9 +255,10 @@ export default function MemberDashboardPage() {
             signup_url: row.signup_url,
             is_featured: row.is_featured,
             action_type: row.action_type || "service_request",
+            currentNotice: noticeByVendorId[vendor.id] || null,
           };
         })
-        .filter((vendor): vendor is DashboardVendor => !!vendor);
+        .filter((vendor): vendor is DashboardVendor => vendor !== null);
 
       setVendors(cleaned);
       setCurrentVendorIndex(0);
@@ -544,6 +571,12 @@ export default function MemberDashboardPage() {
               {activeVendor.business_description ? (
                 <div style={{ fontSize: 14, color: "#555", lineHeight: 1.45 }}>
                   {activeVendor.business_description}
+                </div>
+              ) : null}
+
+              {formatVendorNoticeDisplay(activeVendor.currentNotice) ? (
+                <div style={{ fontSize: 14, fontWeight: 700 }}>
+                  {formatVendorNoticeDisplay(activeVendor.currentNotice)}
                 </div>
               ) : null}
 
