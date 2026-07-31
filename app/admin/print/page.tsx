@@ -10,6 +10,7 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
+import { getCurrentTenant, type TenantContext } from "@/lib/tenantContext";
 
 type EventRow = {
   id: string;
@@ -379,6 +380,21 @@ function AdminPrintPageInner() {
     Record<string, PrintEditOverride>
   >({});
   const [manualAttendees, setManualAttendees] = useState<AttendeeRow[]>([]);
+  const [tenant, setTenant] = useState<TenantContext | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    void getCurrentTenant().then((result) => {
+      if (mounted) {
+        setTenant(result);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [isMobile, setIsMobile] = useState(false);
 
@@ -624,7 +640,9 @@ function AdminPrintPageInner() {
   }, [sortedFilteredAttendees, selectedIds]);
 
   const printableNameTags = useMemo<NameTagRow[]>(() => {
-    const rawEventName = event?.name?.trim() || "FCOC Event";
+    const rawEventName =
+      event?.name?.trim() ||
+      (tenant?.displayName ? `${tenant.displayName} Event` : "Event");
     const eventYear = (event?.start_date || "").slice(0, 4).trim();
     const eventName = eventYear
       ? `${rawEventName.replace(new RegExp(`\\s*${eventYear}$`), "").trim()} ${eventYear}`.trim()
@@ -686,7 +704,7 @@ function AdminPrintPageInner() {
 
       return nextTags;
     });
-  }, [event?.name, event?.start_date, printableRows]);
+  }, [event?.name, event?.start_date, printableRows, tenant?.displayName]);
 
   const printableNameTagSheetCount = useMemo(() => {
     return Math.ceil(printableNameTags.length / 6);
@@ -857,6 +875,9 @@ function AdminPrintPageInner() {
       ? settings?.name_tag_bg_url || null
       : settings?.coach_plate_bg_url || null;
   const clubLogoUrl = "/fcoc-logo.svg";
+  const clubLogoAlt = tenant?.displayName
+    ? `${tenant.displayName} logo`
+    : "Event logo";
   const activeTextColor =
     printMode === "name_tags" ? nameTagTextColor : coachPlateTextColor;
 
@@ -1724,7 +1745,7 @@ top: 0 !important;
                       >
                         <img
                           src={clubLogoUrl}
-                          alt="FCOC logo"
+                          alt={clubLogoAlt}
                           style={{
                             width: 150,
                             maxHeight: 80,
@@ -1809,7 +1830,9 @@ top: 0 !important;
             style={{ display: "grid", gap: 20 }}
           >
             {printableRows.map((row) => {
-              const rawEventName = event?.name?.trim() || "FCOC Event";
+              const rawEventName =
+                event?.name?.trim() ||
+                (tenant?.displayName ? `${tenant.displayName} Event` : "Event");
               const eventYear = (event?.start_date || "").slice(0, 4).trim();
               const eventName = eventYear
                 ? `${rawEventName.replace(new RegExp(`\\s*${eventYear}$`), "").trim()} ${eventYear}`.trim()
@@ -1881,7 +1904,7 @@ top: 0 !important;
                     <div style={{ display: "flex", justifyContent: "center" }}>
                       <img
                         src={clubLogoUrl}
-                        alt="FCOC logo"
+                        alt={clubLogoAlt}
                         style={{
                           width: "7in",
                           maxHeight: "3.2in",

@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import { resend, emailEnabled } from "@/lib/email";
+
+import { emailEnabled, resend } from "@/lib/email";
+import { getCurrentTenant } from "@/lib/tenantContext";
 
 type VendorRequest = {
   event_id: string;
@@ -257,11 +259,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const subject = `Vendor Service Request - ${request.requester_name || "FCOC Member"}`;
+    const tenant = await getCurrentTenant();
+    const tenantDisplayName = tenant?.displayName || "Event";
+    const tenantAppTitle = tenant?.appTitle || "Event Hub";
+
+    const subject = `Vendor Service Request - ${request.requester_name || `${tenantDisplayName} Member`}`;
     const text = [
       `Hello ${vendorName},`,
       "",
-      "A vendor service request was submitted through the FCOC Event Hub.",
+      `A vendor service request was submitted through the ${tenantDisplayName} ${tenantAppTitle}.`,
       "",
       `Name: ${request.requester_name || ""}`,
       `Site: ${site}`,

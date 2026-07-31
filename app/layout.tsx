@@ -6,11 +6,11 @@ import Sidebar from "@/components/layout/Sidebar";
 import { AdminProvider } from "@/lib/adminContext";
 import { AdminWorkspaceProvider } from "@/lib/AdminWorkspaceProvider";
 import { MemberWorkspaceProvider } from "@/lib/memberWorkspace";
-import { getTenantLabel } from "@/lib/tenantLabels";
+import { getCurrentTenant } from "@/lib/tenantContext";
+import { DEFAULT_TENANT_LABELS, getTenantLabel } from "@/lib/tenantLabels";
 
 const appTitle = getTenantLabel("app_title");
 const appDescription = getTenantLabel("app_description");
-const appTagline = getTenantLabel("app_tagline");
 
 export const metadata: Metadata = {
   title: appTitle,
@@ -23,11 +23,18 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const tenant = await getCurrentTenant();
+
+  const brandTitle = tenant?.appTitle || DEFAULT_TENANT_LABELS.app_title;
+  const brandTagline = tenant?.appTagline || DEFAULT_TENANT_LABELS.app_tagline;
+  const brandLogoUrl = tenant?.logoUrl;
+  const brandLogoAlt = tenant?.displayName || "Event logo";
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="app-body" suppressHydrationWarning>
@@ -64,19 +71,21 @@ export default function RootLayout({
                         gap: 12,
                       }}
                     >
-                      <img
-                        src="/fcoc-logo.png"
-                        alt="FCOC"
-                        style={{
-                          height: 48,
-                          width: "auto",
-                          flexShrink: 0,
-                        }}
-                      />
+                      {brandLogoUrl ? (
+                        <img
+                          src={brandLogoUrl}
+                          alt={brandLogoAlt}
+                          style={{
+                            height: 48,
+                            width: "auto",
+                            flexShrink: 0,
+                          }}
+                        />
+                      ) : null}
 
                       <div>
-                        <div className="app-brand">{appTitle}</div>
-                        <div className="app-subtle">{appTagline}</div>
+                        <div className="app-brand">{brandTitle}</div>
+                        <div className="app-subtle">{brandTagline}</div>
                       </div>
                     </div>
                   </div>

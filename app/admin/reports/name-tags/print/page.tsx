@@ -282,7 +282,7 @@ function NameTagsPrintPageInner() {
             <div className="label-content">
               <div className="event">{eventName}</div>
 
-              <img src="/logo.png" className="logo" alt="FCOC logo" />
+              <img src="/logo.png" className="logo" alt="Event logo" />
 
               <div className="member">{tag.memberNumber}</div>
 

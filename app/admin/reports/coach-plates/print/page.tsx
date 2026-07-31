@@ -177,7 +177,7 @@ function CoachPlatesPrintPageInner() {
               <div className="plate-content">
                 <div className="event">{plate.eventName}</div>
 
-                <img src="/logo.png" className="logo" alt="FCOC logo" />
+                <img src="/logo.png" className="logo" alt="Event logo" />
 
                 <div className="member">{plate.memberNumber}</div>
 
