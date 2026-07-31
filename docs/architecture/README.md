@@ -52,6 +52,7 @@ Each layer builds upon the one above it.
 | ADR-008 | Operational Permission Framework           | Defines permissions, role assignments, and operational authority.                          | Planned        |
 | ADR-009 | Tenant Branding & White-Label Architecture | Defines branding, terminology, theming, and white-label capabilities.                      | Planned        |
 | ADR-010 | AI Trust & Learning Architecture           | Defines AI governance, tenant learning boundaries, trust, and evidence-based intelligence. | Planned        |
+| ADR-011 | Person-Centered Workspace Resolution       | Defines the unified Workspace Resolver governing all EpicentraX workspaces, activities, responsibilities, assignments, operational presence, and effective authority. | Proposed       |
 
 ---
 
