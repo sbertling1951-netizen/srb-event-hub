@@ -1,7 +1,7 @@
 {
-  "name": "FCOC Event Hub",
-  "short_name": "FCOC Hub",
-  "description": "Schedules, parking, people, places, and admin tools for FCOC events.",
+  "name": "Event Hub",
+  "short_name": "Event Hub",
+  "description": "Schedules, parking, people, places, and admin tools for your event.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
