@@ -302,11 +302,20 @@ function AdminVendorsPageInner() {
       return;
     }
 
+    const existing = eventVendorByVendorId.get(vendor.id);
+
+    if (existing) {
+      const confirmed = window.confirm(
+        `Remove ${vendor.business_name} from ${adminEvent.name || "this event"}? This only removes the assignment to this event -- the vendor record is not deleted and can be added back at any time.`,
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
     try {
       setSaving(true);
       setError(null);
-
-      const existing = eventVendorByVendorId.get(vendor.id);
 
       if (existing) {
         const { error } = await supabase
