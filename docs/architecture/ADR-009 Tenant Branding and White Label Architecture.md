@@ -8,7 +8,7 @@
 
 ## Scope note
 
-This ADR is filed under "Tenant Branding and White-Label Architecture" per the architecture library's existing index, but it necessarily also decides tenant *identification* and *resolution* — questions that would normally belong to ADR-004 (Tenant Identity Framework). ADR-004 is currently an empty placeholder. Branding cannot be decided honestly without first deciding how the active Tenant is known, so this document answers both. It does not redefine or duplicate the Person/Membership relationship model already worked out in `supabase/identity-audits/baseline-diagnostics/tenant_identity_architecture_recommendation.md` (Person is global; `PersonTenantRelationship` and `Membership` are the tenant-scoped layers below it) — that model is treated here as directionally correct and is assumed, not re-litigated. When ADR-004 is written, it should absorb and formalize that identity model; this ADR should be read as compatible with it, not a substitute for it.
+This ADR is filed under "Tenant Branding and White-Label Architecture" per the architecture library's existing index, but it necessarily also decides tenant *identification* and *resolution*. Branding cannot be decided honestly without first deciding how the active Tenant is known, so this document answers both. It does not redefine or duplicate the Person/Membership relationship model already worked out in `supabase/identity-audits/baseline-diagnostics/tenant_identity_architecture_recommendation.md` (Person is global; `PersonTenantRelationship` and `Membership` are the tenant-scoped layers below it) — that model is treated here as directionally correct and is assumed, not re-litigated. ADR-012 governs the Person–Tenant Relationship model; this ADR should be read as compatible with it, not a substitute for it.
 
 ---
 
@@ -285,7 +285,7 @@ No application code, migration, database record, or configuration was changed in
 
 ## 20. Open follow-up work
 
-- Write ADR-004 (Tenant Identity Framework), formalizing the Person/`PersonTenantRelationship`/Membership model from `tenant_identity_architecture_recommendation.md` as accepted architecture rather than a recommendation document.
+- ADR-012 governs the Person–Tenant Relationship model.
 - Design the hostname/domain-to-Tenant mapping mechanism (§5, §16).
 - Implement the Tenant-ownership mechanism for `public.events` decided in §16, including the RLS policies it requires; `attendees` derives through it and needs no separate implementation decision.
 - Replace `lib/tenantContext.ts`'s process-wide cache with request-scoped resolution (§13, §15).
@@ -294,11 +294,11 @@ No application code, migration, database record, or configuration was changed in
 - Retire `lib/providers/TenantProvider.tsx` (§11).
 - Build the Platform Administrator "act as Tenant" control and its audit tooling to the requirements already defined in §7, grounded in §14's security requirements.
 - Design the Tenant-creation workflow itself, using §16's dependency list as its starting requirements.
-- Define each Tenant's identity-evidence policy for tenant-issued identifiers, per the classification framework already recommended in `tenant_identity_architecture_recommendation.md`, once ADR-004 exists to house it.
+- Define each Tenant's identity-evidence policy for tenant-issued identifiers, per the classification framework already recommended in `tenant_identity_architecture_recommendation.md`, through a separately assigned, non-overlapping architecture decision.
 - Evaluate, as a separate ADR if ever pursued, an isolated per-Tenant build/deployment model (§12).
 
 ---
 
 ## Relationship to Other Architecture Documents
 
-This ADR interprets the Constitution's Article II (Context: "Each context shall have one authoritative source of truth. Business capabilities consume these contexts rather than establishing their own state") and Article VIII (Trust) for Tenant resolution and branding specifically. It assumes, without redefining, the Person/Membership identity model recommended in `supabase/identity-audits/baseline-diagnostics/tenant_identity_architecture_recommendation.md` and expects ADR-004 to formalize that model. It governs `lib/tenantContext.ts`, `lib/tenantBranding.ts`, `lib/tenantLabels.ts`, `lib/providers/TenantProvider.tsx`, and any future Tenant-resolution or Tenant-creation code; it does not govern authentication mechanics, permission grants, Person-authority/relationship caching (§13), or event-lifecycle rules, which remain the responsibility of ADR-005 and their own respective ADRs.
+This ADR interprets the Constitution's Article II (Context: "Each context shall have one authoritative source of truth. Business capabilities consume these contexts rather than establishing their own state") and Article VIII (Trust) for Tenant resolution and branding specifically. It assumes, without redefining, the Person/Membership identity model recommended in `supabase/identity-audits/baseline-diagnostics/tenant_identity_architecture_recommendation.md` and governed by ADR-012. It governs `lib/tenantContext.ts`, `lib/tenantBranding.ts`, `lib/tenantLabels.ts`, `lib/providers/TenantProvider.tsx`, and any future Tenant-resolution or Tenant-creation code; it does not govern authentication mechanics, permission grants, Person-authority/relationship caching (§13), or event-lifecycle rules, which remain the responsibility of ADR-005 and their own respective ADRs.
