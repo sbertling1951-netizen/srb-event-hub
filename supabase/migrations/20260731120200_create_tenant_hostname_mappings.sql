@@ -53,7 +53,7 @@ ALTER TABLE public.tenant_hostname_mappings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.tenant_hostname_mappings FROM PUBLIC;
 REVOKE ALL ON TABLE public.tenant_hostname_mappings FROM anon;
 REVOKE ALL ON TABLE public.tenant_hostname_mappings FROM authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.tenant_hostname_mappings TO service_role;
+GRANT SELECT ON TABLE public.tenant_hostname_mappings TO service_role;
 
 REVOKE ALL ON FUNCTION public.set_tenant_hostname_mappings_updated_at() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.set_tenant_hostname_mappings_updated_at() FROM anon;
