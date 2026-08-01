@@ -1,7 +1,7 @@
 # ADR-011 — Person-Centered Workspace Resolution
 
-**Status:** Proposed — pending final approval
-**Version:** 1.0
+**Status:** Accepted
+**Version:** 1.1
 **Date:** 2026-07-31
 
 ---
@@ -16,7 +16,7 @@ The design in this document was developed and iteratively reviewed — three rou
 
 ## 1. Status
 
-Proposed — pending final approval. Not yet binding; see Implementation Boundaries (§18) for what this document does and does not authorize.
+Accepted. This ADR is binding architecture for future workspace and authority work. Its implementation boundaries (§18) remain in force: acceptance does not authorize schema, RLS, migration, authentication, resolver, or application-code changes by itself.
 
 ---
 
@@ -40,9 +40,11 @@ ADR-002, ADR-004, ADR-005, ADR-006, and ADR-008 — the ADRs that would otherwis
 
 ## 3. Decision
 
-EpicentraX adopts a single, Person-centered **Workspace Resolver** as the sole mechanism for determining workspace, navigation, dashboard, visible modules, and available actions for any authenticated Person at any Event — replacing the three separate mechanisms described in §2.
+EpicentraX adopts a single, Person-centered **Workspace Resolver** as the sole mechanism for determining workspace, navigation, dashboard, visible modules, and available actions for any Person at any Event — replacing the three separate mechanisms described in §2. One Person has one canonical identity. A person may hold multiple authorized roles across Tenants, Events, and Activities without receiving separate accounts or separate identities.
 
-The resolver operates on nine concepts: **Person, Event, Authorized Activities, Selected Activity, Responsibilities, Assignments, Operational Presence, Historical Activity, and Effective Authority.** The Person never changes; every other concept is resolved fresh from authoritative sources at resolution time. Resolution happens once per request/navigation and is passed downward — no page, component, or feature independently re-derives any part of it (Constitution, Article II: "Business capabilities consume these contexts rather than establishing their own state").
+The resolver operates on nine concepts: **Person, Event, Authorized Activities, Selected Activity, Responsibilities, Assignments, Operational Presence, Historical Activity, and Effective Authority.** The Person never changes; every other concept is resolved fresh from authoritative sources at resolution time. Tenant, Event, Identity, Authority, and Activity context resolve server-side, fail closed when ambiguous, and are passed downward once per request/navigation. No page, component, or feature independently re-derives authorization or workspace context (Constitution, Article II: "Business capabilities consume these contexts rather than establishing their own state").
+
+Both authenticated-account entry and event-code entry must resolve into the same **Person × Tenant × Event** model. They are entry methods, not separate identity or workspace systems.
 
 This mirrors the resolution discipline already accepted in ADR-009: resolve at request time, fail closed on ambiguity, no process-wide cache shared across people, one authoritative source per concept.
 
@@ -65,7 +67,7 @@ Person                          -- stable, canonical, never changes
 | Concept | Definition | Stored? |
 |---|---|---|
 | Person | The stable, canonical identity | Existing (`people`) |
-| Event | The Experience container | Existing (`events`) |
+| Event | The Experience container, selected separately from Activity | Existing (`events`) |
 | Authorized Activities | What this Person may do at this Event | Computed at resolution time |
 | Selected Activity | What they currently have open | Explicit, lightweight state |
 | Responsibilities | Specific duties within an Activity | Small governed lookup, scoped to Activity |
@@ -92,7 +94,7 @@ This preserves Constitution Article II/VII (one authoritative source of truth pe
 
 ## 6. Workspace Resolver inputs and outputs
 
-**Inputs:** Person, Tenant, requested/candidate Event, requested/candidate (Selected) Activity.
+**Inputs:** Person, Tenant, requested/candidate Event, requested/candidate (Selected) Activity. Identity, Tenant, Event, Authority, and Activity inputs are resolved and verified server-side; ambiguous or unsupported combinations fail closed.
 
 **Outputs (illustrative shape, not implementation):**
 ```
@@ -124,7 +126,7 @@ Branson Rally ▼
 Help as Staff ▼
 ```
 
-**Event** selects the active Experience. **Activity** selects among that Person's computed Authorized Activities for that Event — never a free-form choice, always constrained to what §5 actually proves. Selected Activity is explicit, lightweight state (analogous to today's "current admin event" mechanism, but unified and Person-scoped rather than admin-only) — not a complex object, not itself a new source of truth. Changing either selector triggers a fresh resolution; nothing is inferred or carried over stale from a prior selection.
+**Event** selects the active Experience. **Activity** selects among that Person's computed Authorized Activities for that Event — never a free-form choice, always constrained to what §5 actually proves. Event selection and Activity/role selection are separate so a Person can change either without conflating the Experience with their authority there. Selected Activity is explicit, lightweight state (analogous to today's "current admin event" mechanism, but unified and Person-scoped rather than admin-only) — not a complex object, not itself a new source of truth. Changing either selector triggers a fresh server-side resolution; nothing is inferred or carried over stale from a prior selection. A Person must be able to change Event and Authorized Activity without signing in again.
 
 ---
 
@@ -153,7 +155,7 @@ This replaces today's fragmented, three-generation admin permission model (§2),
 
 ## 10. Operational Presence and Assignment Coverage
 
-**Purpose:** Operational Presence supports assignment coverage, not people tracking. It exists to answer practical operational questions — is this responsibility covered, is someone available, does another person need to be assigned, has meaningful work recently occurred here — and nothing else.
+**Purpose:** Operational Presence supports assignment coverage, not people tracking. It exists to answer practical operational questions — is this responsibility covered, is someone available, does another person need to be assigned, has meaningful work recently occurred here — and nothing else. It may expose coverage and a governed last meaningful Event-action label only for coordination; it must never become surveillance or productivity scoring.
 
 **Scope:** Operational Presence applies **only** to Staff and Volunteer Activities. Selecting Attend or Manage Event changes Selected Activity and drives navigation/dashboard/modules normally, but never starts a Presence session.
 
@@ -186,7 +188,7 @@ ended_at   (nullable)
 
 Separate from, and never conflated with, Operational Presence or Assignment. Append-only. Written only for meaningful lifecycle events: authentication, workspace entered, activity changed, event changed, a governed action completed, explicit sign-out. **Never** written for heartbeat updates, focus changes, presence expiration, or stale-session cleanup — those touch only Operational Presence, in place.
 
-Historical Activity is what Jointly Contextual History draws on going forward: one continuous, evidenced record of a Person's activity across Events, preserved permanently, rather than inferred from scattered fields that get overwritten. An Assignment ending, or Presence expiring, does not alter or remove any Historical Activity record that already exists.
+Historical Activity is what Jointly Contextual History draws on going forward: one continuous, evidenced record of a Person's activity across Tenant relationships and Events, preserved permanently, rather than inferred from scattered fields that get overwritten. It preserves one Person's continuous history without duplicating the Person or fragmenting their identity to achieve Tenant isolation. An Assignment ending, an Event closing, or Presence expiring does not alter or remove any Historical Activity record that already exists.
 
 ---
 
@@ -194,9 +196,9 @@ Historical Activity is what Jointly Contextual History draws on going forward: o
 
 **Schedules describe expectations; they do not automatically control operational authority.** A published shift or schedule entry tells a person when they're expected to work — it is informational, not a mechanical gate on Effective Authority.
 
-**Assignments and privileges normally remain useful through the Event's operational duration.** Rigid, time-based privilege expiration mid-event is avoided by default — authority should not silently lapse because a scheduled shift "ended" while the person is still legitimately doing the work.
+**Assignment authority remains available for the practical duration of the responsibility.** Rigid schedule-based expiration mid-event is avoided by default — authority should not silently lapse because a scheduled shift "ended" while the person is still legitimately doing the work. It ends when the responsibility is completed, the Assignment is explicitly revoked, or the Event closes.
 
-**The Event's end date/time is the hard operational boundary, unless explicitly governed otherwise.** This gives a simple, predictable default (operational authority runs through the Event) while leaving room for deliberate, explicit exceptions (e.g., a specific security reason) — never an implicit or accidental one.
+**The Event's close is the hard stop for active operational authority.** Historical records remain available afterward only under separately governed historical authority. This gives a simple, predictable default while leaving room for deliberate, explicit exceptions (e.g., a specific security reason) — never an implicit or accidental one.
 
 **Historical access may continue after the Event ends, under separately governed authority.** Reviewing what happened during an Event afterward is a different kind of authority than operating the Event while it was active, and this ADR keeps the two distinct rather than assuming the same Effective Authority that applied during the Event carries forward automatically once it ends.
 
@@ -206,7 +208,7 @@ This section is where Operational Resilience, one of this exercise's named gover
 
 ## 13. Security and RLS requirements
 
-The Workspace Resolver is an application-layer convenience for producing the right workspace quickly. It is never the security boundary. RLS on the underlying tables (`people`, Assignment, Operational Presence, Historical Activity) remains the actual enforcement backstop regardless of what resolution computes (Constitution, Article VIII — Trust; AGENTS.md — "Never weaken authentication, authorization, RLS, auditability, or tenant isolation to make a feature work").
+The Workspace Resolver is the authoritative server-side source of workspace context, but it is never the sole security boundary. RLS on the underlying tables (`people`, Assignment, Operational Presence, Historical Activity) remains the actual enforcement backstop regardless of what resolution computes (Constitution, Article VIII — Trust; AGENTS.md — "Never weaken authentication, authorization, RLS, auditability, or tenant isolation to make a feature work").
 
 - A resolution bug must not, by itself, be able to expose one Person's data to another.
 - Person-identity-adjacent tables keep deny-all RLS for `anon`/`authenticated`, matching existing precedent; the resolver reads through a `SECURITY DEFINER` RPC, not client-composed direct-table reads.

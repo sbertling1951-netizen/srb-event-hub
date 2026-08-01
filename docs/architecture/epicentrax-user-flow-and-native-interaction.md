@@ -91,7 +91,7 @@ Swipe-to-dismiss is the concrete example in this slice: it is a legitimate, well
 
 Presentation adapts to the device and viewport, not to assumptions baked in at build time:
 
-- Object panels present as a bottom sheet on narrow viewports and a side panel on wide ones, switching purely by available space (CSS media query), never by user-agent sniffing.
+- Object panels present as a bottom-style inspector on narrow and wide viewports. On wide viewports, the inspector is centered and content-sized rather than docked to a far-right edge; it remains close to the discovery surface and preserves the user’s visual and interaction context. Presentation switches purely by available space (CSS media query), never by user-agent sniffing.
 - Rotating a device or resizing a window changes presentation, not state — the same selected object, the same discovery-surface state, survives the transition.
 - Layout accounts for `env(safe-area-inset-*)` so panel content and controls are never obscured by device chrome (notches, home indicators) or by split-screen/Stage Manager boundaries.
 
@@ -114,7 +114,7 @@ Accessibility is not a separate checklist bolted onto native interaction — it 
 
 # Article VIII — Presentation May Change; Principles Do Not
 
-Future platform work is expected to change how these principles are expressed: new devices, new browser capabilities, new windowing models, new gesture conventions. Implementation details in this document — the specific breakpoint used for bottom-sheet-vs-side-panel, the exact history-integration mechanism, the specific set of primary/secondary actions offered — are expected to evolve.
+Future platform work is expected to change how these principles are expressed: new devices, new browser capabilities, new windowing models, new gesture conventions. Implementation details in this document — the specific breakpoint and dimensions used for the bottom-style inspector, the exact history-integration mechanism, the specific set of primary/secondary actions offered — are expected to evolve.
 
 The flow this document exists to protect — Browse → Select → Understand → Act → Close → Continue, discovery surfaces staying discovery surfaces, object panels staying free of business logic, and context surviving every detour — is not expected to change. When a future implementation must choose between matching a new device convention and preserving this flow, the flow wins; the presentation adapts to serve it.
 
