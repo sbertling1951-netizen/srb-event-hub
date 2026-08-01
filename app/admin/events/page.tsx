@@ -67,6 +67,9 @@ const emptyForm: EventFormState = {
   lng: "",
 };
 
+const NEW_EVENT_CREATION_UNAVAILABLE =
+  "New event creation is temporarily unavailable while secure tenant ownership is being completed. Existing events may still be edited.";
+
 function normalizeEventStatus(status?: string | null) {
   return String(status || "")
     .trim()
@@ -153,6 +156,12 @@ function EventAdminPageInner() {
     useState<EventStatusFilter>("active");
 
   const { admin } = useAdmin();
+
+  function blockNewEventCreation(): boolean {
+    setError(NEW_EVENT_CREATION_UNAVAILABLE);
+    setStatus(NEW_EVENT_CREATION_UNAVAILABLE);
+    return true;
+  }
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
@@ -453,6 +462,10 @@ function EventAdminPageInner() {
   }
 
   async function saveEvent() {
+    if (!form.id && blockNewEventCreation()) {
+      return;
+    }
+
     if (!form.name.trim()) {
       setStatus("Enter an event name.");
       return;
@@ -809,6 +822,10 @@ function EventAdminPageInner() {
           onClick={async () => {
             if (!selectedEvent) {
               setStatus("Select an event first.");
+              return;
+            }
+
+            if (blockNewEventCreation()) {
               return;
             }
 
