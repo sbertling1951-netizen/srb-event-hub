@@ -550,9 +550,21 @@ function AdminDashboardPageInner() {
       return;
     }
 
-    fetch("/api/admin/system-status")
-      .then((res) => res.json())
-      .then((data) => setSystemStatus(data as SystemStatus))
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => data.session?.access_token || null)
+      .then((accessToken) => {
+        if (!accessToken) {
+          setSystemStatus(null);
+          return null;
+        }
+
+        return fetch("/api/admin/system-status", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+      })
+      .then((res) => (res?.ok ? res.json() : null))
+      .then((data) => setSystemStatus(data as SystemStatus | null))
       .catch(() => setSystemStatus(null));
   }, [adminAccess?.isSuperAdmin]);
 

@@ -1,7 +1,27 @@
 import { execSync } from "child_process";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+import { resolveAdminActorFromBearer } from "@/lib/server/adminAuthz";
+
+export async function GET(req: Request) {
+  const adminResolved = await resolveAdminActorFromBearer(
+    req.headers.get("authorization"),
+  );
+
+  if (!adminResolved.admin) {
+    return NextResponse.json(
+      { error: "Administrative authentication is required." },
+      { status: adminResolved.status || 401 },
+    );
+  }
+
+  if (!adminResolved.admin.isSuperAdmin) {
+    return NextResponse.json(
+      { error: "Super administrator capability is required." },
+      { status: 403 },
+    );
+  }
+
   let commit: string | null = null;
   let dirty = false;
 

@@ -1,6 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+import {
+  adminHasPermission,
+  resolveAdminActorFromBearer,
+} from "@/lib/server/adminAuthz";
+
 const appUrl = process.env.NEXT_PUBLIC_APP_URL;
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -31,11 +36,29 @@ function normalizeEmail(value: string) {
 
 export async function POST(req: Request) {
   try {
+    const adminResolved = await resolveAdminActorFromBearer(
+      req.headers.get("authorization"),
+    );
+
+    if (!adminResolved.admin) {
+      return NextResponse.json(
+        { error: "Administrative authentication is required." },
+        { status: adminResolved.status || 401 },
+      );
+    }
+
+    if (!adminHasPermission(adminResolved.admin, "can_manage_admins")) {
+      return NextResponse.json(
+        { error: "Administrative management permission is required." },
+        { status: 403 },
+      );
+    }
+
     const supabaseAdmin = getSupabaseAdmin();
 
     if (!supabaseAdmin) {
       return NextResponse.json(
-        { error: "Missing Supabase environment variables." },
+        { error: "Administrative invitation service is unavailable." },
         { status: 500 },
       );
     }
@@ -44,7 +67,7 @@ export async function POST(req: Request) {
 
     const email = normalizeEmail(body.email || "");
     const displayName = (body.display_name || "").trim() || null;
-    const isSuperAdmin = !!body.is_super_admin;
+    const isSuperAdmin = body.is_super_admin === true;
     const eventIds = Array.isArray(body.event_ids)
       ? body.event_ids.filter(Boolean)
       : [];
@@ -53,6 +76,32 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Email is required." },
         { status: 400 },
+      );
+    }
+
+    const { data: existingAdmin, error: existingAdminError } =
+      await supabaseAdmin
+        .from("admin_users")
+        .select("is_super_admin,privilege_group")
+        .eq("email", email)
+        .maybeSingle();
+
+    if (existingAdminError) {
+      return NextResponse.json(
+        { error: "Administrative invitation could not be completed." },
+        { status: 500 },
+      );
+    }
+
+    const targetIsSuperAdmin =
+      isSuperAdmin ||
+      existingAdmin?.is_super_admin === true ||
+      existingAdmin?.privilege_group === "super_admin";
+
+    if (targetIsSuperAdmin && !adminResolved.admin.isSuperAdmin) {
+      return NextResponse.json(
+        { error: "Super administrator capability is required." },
+        { status: 403 },
       );
     }
 
@@ -65,8 +114,8 @@ export async function POST(req: Request) {
 
     if (inviteError) {
       return NextResponse.json(
-        { error: `Invite failed: ${inviteError.message}` },
-        { status: 400 },
+        { error: "Administrative invitation could not be completed." },
+        { status: 500 },
       );
     }
 
@@ -103,9 +152,9 @@ export async function POST(req: Request) {
     if (adminUpsertError || !adminRow) {
       return NextResponse.json(
         {
-          error: `Invite sent, but admin record failed: ${adminUpsertError?.message || "Unknown error"}`,
+          error: "Administrative invitation could not be completed.",
         },
-        { status: 400 },
+        { status: 500 },
       );
     }
 
@@ -127,9 +176,9 @@ export async function POST(req: Request) {
         if (accessInsertError) {
           return NextResponse.json(
             {
-              error: `Admin created, but could not assign event access: ${accessInsertError.message}`,
+              error: "Administrative invitation could not be completed.",
             },
-            { status: 400 },
+            { status: 500 },
           );
         }
       }
@@ -139,10 +188,10 @@ export async function POST(req: Request) {
       success: true,
       message: `Invite sent to ${email}.`,
     });
-  } catch (err) {
+  } catch {
     return NextResponse.json(
       {
-        error: err instanceof Error ? err.message : "Unexpected error.",
+        error: "Administrative invitation could not be completed.",
       },
       { status: 500 },
     );

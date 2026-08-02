@@ -1,13 +1,42 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import {
+  adminHasPermission,
+  resolveAdminActorFromBearer,
+} from "@/lib/server/adminAuthz";
+import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL;
 
 export async function POST(req: Request) {
   try {
+    const adminResolved = await resolveAdminActorFromBearer(
+      req.headers.get("authorization"),
+    );
+
+    if (!adminResolved.admin) {
+      return NextResponse.json(
+        { error: "Administrative authentication is required." },
+        { status: adminResolved.status || 401 },
+      );
+    }
+
+    if (!adminHasPermission(adminResolved.admin, "can_manage_admins")) {
+      return NextResponse.json(
+        { error: "Administrative management permission is required." },
+        { status: 403 },
+      );
+    }
+
+    const supabaseAdmin = getSupabaseAdminClient();
+
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { error: "Administrative user service is unavailable." },
+        { status: 500 },
+      );
+    }
+
     const { email } = await req.json();
 
     if (!email) {
@@ -27,28 +56,33 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: true,
         userId: existing.id,
+        invitationSent: false,
       });
     }
 
-    // Create user if missing
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      email: normalizedEmail,
-      password: "TempPassword123!",
-      email_confirm: true,
-    });
+    const redirectTo = appUrl ? `${appUrl}/admin/login` : undefined;
+
+    // A newly invited administrator establishes their own credential through
+    // Supabase's governed invitation flow; this route never creates a shared
+    // or server-generated password.
+    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+      normalizedEmail,
+      { redirectTo },
+    );
 
     if (error || !data?.user) {
       return NextResponse.json(
-        { error: error?.message || "Failed to create user" },
+        { error: "Administrative user could not be created." },
         { status: 500 },
       );
     }
 
     return NextResponse.json({
       ok: true,
-      userId: data.user.id,
+      userId: data.user?.id || null,
+      invitationSent: true,
     });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

@@ -265,18 +265,26 @@ function AdminUsersPageInner() {
     return null;
   }
 
-  async function ensureAuthUser(adminEmail: string): Promise<{ error: string | null; userId: string | null }> {
-    const res = await fetch("/api/admins/ensure-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: adminEmail.trim() }) });
-    if (!res.ok) { const result = await res.json().catch(() => null); return { error: result?.error || "Failed to ensure auth user exists.", userId: null }; }
+  async function ensureAuthUser(adminEmail: string): Promise<{ error: string | null; userId: string | null; invitationSent: boolean }> {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) { return { error: "Administrative authentication is required.", userId: null, invitationSent: false }; }
+
+    const res = await fetch("/api/admins/ensure-user", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email: adminEmail.trim() }) });
+    if (!res.ok) { const result = await res.json().catch(() => null); return { error: result?.error || "Failed to ensure auth user exists.", userId: null, invitationSent: false }; }
     const result = await res.json().catch(() => null);
-    return { error: null, userId: result?.userId || null };
+    return { error: null, userId: result?.userId || null, invitationSent: result?.invitationSent === true };
   }
 
   async function setPasswordIfProvided(userId: string | null, nextPassword: string): Promise<{ error: string | null; passwordWasSet: boolean }> {
     const trimmedPassword = nextPassword.trim();
     if (!trimmedPassword) { return { error: null, passwordWasSet: false }; }
     if (!userId) { return { error: "No linked auth user. Save again to sync user.", passwordWasSet: false }; }
-    const passwordResponse = await fetch("/api/admins/set-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, password: trimmedPassword }) });
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) { return { error: "Administrative authentication is required.", passwordWasSet: false }; }
+
+    const passwordResponse = await fetch("/api/admins/set-password", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ userId, password: trimmedPassword }) });
     if (!passwordResponse.ok) { const result = await passwordResponse.json().catch(() => null); return { error: `Admin saved, but password was not set: ${result?.error || "Unknown password error"}`, passwordWasSet: false }; }
     setPassword("");
     return { error: null, passwordWasSet: true };
@@ -290,15 +298,21 @@ function AdminUsersPageInner() {
       const eventAccessError = await syncEventAccess(adminUserId, privilegeGroup, assignedEventIds);
       if (eventAccessError) { setSaveStatus(eventAccessError); return; }
       let resolvedUserId = selectedRow?.user_id || null;
+      let invitationSent = false;
       if (password || !resolvedUserId) {
-        const { error: ensureError, userId } = await ensureAuthUser(email);
+        const ensuredUser = await ensureAuthUser(email);
+        const { error: ensureError, userId } = ensuredUser;
         if (ensureError) { setSaveStatus(`Saved admin user, but auth setup failed: ${ensureError}`); return; }
+        invitationSent = ensuredUser.invitationSent;
         if (userId) {
           resolvedUserId = userId;
-          await supabase.from("admin_users").update({ user_id: userId }).eq("id", adminUserId);
         }
+        if (invitationSent) { setPassword(""); }
       }
-      const { error: passwordError, passwordWasSet } = await setPasswordIfProvided(resolvedUserId, password);
+      const { error: passwordError, passwordWasSet } = await setPasswordIfProvided(
+        resolvedUserId,
+        invitationSent ? "" : password,
+      );
       if (passwordError) { setSaveStatus(passwordError); return; }
       setSaveStatus(passwordWasSet ? "Saved and password set." : "Saved.");
       await loadPageData();
