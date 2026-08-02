@@ -352,26 +352,6 @@ function AdminUsersPageInner() {
     }
   }
 
-  async function handleDeleteAdminUser() {
-    if (!selectedAdminId || !selectedRow) { return; }
-    const confirmed = window.confirm(`Delete admin user ${selectedRow.display_name || selectedRow.email}? This removes their app admin record and event access.`);
-    if (!confirmed) { return; }
-    try {
-      setSaveStatus("Deleting admin user...");
-      setError(null);
-      const { error: accessError } = await supabase.from("admin_event_access").delete().eq("admin_user_id", selectedAdminId);
-      if (accessError) { setSaveStatus(`Could not remove event access: ${accessError.message}`); return; }
-      const { error: adminError } = await supabase.from("admin_users").delete().eq("id", selectedAdminId);
-      if (adminError) { setSaveStatus(`Could not delete admin user: ${adminError.message}`); return; }
-      startNewAdmin();
-      setSaveStatus("Admin user deleted.");
-      await loadPageData();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not delete admin user.";
-      setSaveStatus(msg);
-    }
-  }
-
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
@@ -404,12 +384,11 @@ function AdminUsersPageInner() {
         </div>
 
         <div className="card" style={{ padding: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start", marginBottom: 14 }}>
+          <div style={{ marginBottom: 14 }}>
             <div>
               <h2 style={{ marginTop: 0, marginBottom: 6 }}>{selectedAdminId ? "Edit Admin User" : "New Admin User"}</h2>
               <div style={{ fontSize: 14, opacity: 0.75 }}>{selectedAdminId ? "Update this admin user, privilege group, and event access." : "Create a new admin user and assign event access."}</div>
             </div>
-            {selectedAdminId ? <button type="button" onClick={() => void handleDeleteAdminUser()} style={dangerButtonStyle}>Delete Admin User</button> : null}
           </div>
 
           <div style={{ display: "grid", gap: 14 }}>
@@ -504,7 +483,6 @@ const inputStyle: CSSProperties = { width: "100%", padding: "10px 12px", borderR
 const primaryButtonStyle: CSSProperties = { minWidth: 150, padding: "12px 18px", borderRadius: 12, border: "none", background: "#111827", color: "#ffffff", WebkitTextFillColor: "#ffffff", fontWeight: 800, cursor: "pointer", boxShadow: "0 8px 18px rgba(15, 23, 42, 0.18)" };
 const secondaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 10, border: "1px solid #ccc", background: "white", color: "#111827", WebkitTextFillColor: "#111827", fontWeight: 700, cursor: "pointer" };
 const resetEmailButtonStyle: CSSProperties = { ...secondaryButtonStyle, minHeight: 42, border: "1px solid #93c5fd", background: "#eff6ff", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", boxShadow: "0 8px 18px rgba(37, 99, 235, 0.12)", whiteSpace: "nowrap" };
-const dangerButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 10, border: "1px solid #fecaca", background: "#fff1f2", color: "#b91c1c", WebkitTextFillColor: "#b91c1c", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" };
 const errorBoxStyle: CSSProperties = { padding: "10px 12px", borderRadius: 10, border: "1px solid #e2b4b4", background: "#fff3f3", color: "#8a1f1f" };
 const listButtonStyle: CSSProperties = { textAlign: "left", width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", background: "white", cursor: "pointer" };
 const checkLabelStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", minHeight: 42 };

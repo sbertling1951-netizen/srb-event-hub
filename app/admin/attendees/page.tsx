@@ -161,17 +161,6 @@ type SummaryCardItem = {
   value: number;
 };
 
-type InlineEditState = {
-  id: string | null;
-  pilot_first: string;
-  pilot_last: string;
-  email: string;
-  membership_number: string;
-  assigned_site: string;
-  participant_type: string;
-  data_status: string;
-};
-
 type AttendeeCommandCenterPrefs = {
   search?: string;
   pageSize?: PageSize;
@@ -394,32 +383,6 @@ function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
     data_status: attendee.data_status || "pending",
     entry_id: attendee.entry_id || "",
     notes: attendee.notes || "",
-  };
-}
-
-function attendeeToInlineEditState(attendee: AttendeeRow): InlineEditState {
-  return {
-    id: attendee.id,
-    pilot_first: attendee.pilot_first || "",
-    pilot_last: attendee.pilot_last || "",
-    email: attendee.email || "",
-    membership_number: attendee.membership_number || "",
-    assigned_site: attendee.assigned_site || "",
-    participant_type: attendee.participant_type || "attendee",
-    data_status: attendee.data_status || "pending",
-  };
-}
-
-function emptyInlineEditState(): InlineEditState {
-  return {
-    id: null,
-    pilot_first: "",
-    pilot_last: "",
-    email: "",
-    membership_number: "",
-    assigned_site: "",
-    participant_type: "attendee",
-    data_status: "pending",
   };
 }
 
@@ -1186,18 +1149,10 @@ function AttendeeList(props: {
   filteredAttendees: AttendeeRow[];
   visibleAttendees: AttendeeRow[];
   reviewItems: ReviewItem[];
-  inlineEditId: string | null;
-  inlineEditState: InlineEditState;
-  inlineSaving: boolean;
-  recentlySavedId: string | null;
   attendeeSortMode: AttendeeSortMode;
   expandedAttendeeId: string | null;
   onToggleExpanded: (attendeeId: string) => void;
   onOpenEdit: (attendee: AttendeeRow) => void;
-  onStartInlineEdit: (attendee: AttendeeRow) => void;
-  onCancelInlineEdit: () => void;
-  onInlineEditChange: (key: keyof InlineEditState, value: string) => void;
-  onSaveInlineEdit: () => Promise<void>;
   onUpdateDataStatus: (attendeeId: string, nextStatus: string) => Promise<void>;
   onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
 }) {
@@ -1206,18 +1161,10 @@ function AttendeeList(props: {
     filteredAttendees,
     visibleAttendees,
     reviewItems,
-    inlineEditId,
-    inlineEditState,
-    inlineSaving,
-    recentlySavedId,
     attendeeSortMode,
     expandedAttendeeId,
     onToggleExpanded,
     onOpenEdit,
-    onStartInlineEdit,
-    onCancelInlineEdit,
-    onInlineEditChange,
-    onSaveInlineEdit,
     onUpdateDataStatus,
     onCancelRegistration,
   } = props;
@@ -1260,7 +1207,6 @@ function AttendeeList(props: {
             const attendeeIssues = reviewItems.find(
               (item) => item.attendee.id === attendee.id,
             );
-            const isInlineEditing = inlineEditId === attendee.id;
             const isExpanded = expandedAttendeeId === attendee.id;
             const currentSite =
               String(attendee.assigned_site || "Unassigned").trim() ||
@@ -1303,19 +1249,15 @@ function AttendeeList(props: {
                   ref={isExpanded ? expandedCardRef : undefined}
                   style={{
                     border:
-                      attendee.id === recentlySavedId
-                        ? "1px solid #86efac"
-                        : attendee.registration_status === "cancelled"
-                          ? "1px solid #d1d5db"
-                          : "1px solid #ddd",
+                      attendee.registration_status === "cancelled"
+                        ? "1px solid #d1d5db"
+                        : "1px solid #ddd",
                     borderRadius: 12,
                     padding: 14,
                     background:
-                      attendee.id === recentlySavedId
-                        ? "#f0fdf4"
-                        : attendee.registration_status === "cancelled"
-                          ? "#fef2f2"
-                          : "white",
+                      attendee.registration_status === "cancelled"
+                        ? "#fef2f2"
+                        : "white",
                     opacity:
                       attendee.registration_status === "cancelled" ? 0.82 : 1,
                     transition: "background 0.2s ease, border-color 0.2s ease",
@@ -1350,165 +1292,39 @@ function AttendeeList(props: {
                     }}
                   >
                     <div>
-                      {isInlineEditing ? (
-                        <div
-                          onClick={(event) => event.stopPropagation()}
-                          style={{
-                            display: "grid",
-                            gap: 10,
-                            gridTemplateColumns:
-                              "repeat(auto-fit, minmax(180px, 1fr))",
-                            marginBottom: 8,
-                          }}
-                        >
-                          <div>
-                            <label style={labelStyle}>Pilot First</label>
-                            <input
-                              value={inlineEditState.pilot_first}
-                              onChange={(e) =>
-                                onInlineEditChange(
-                                  "pilot_first",
-                                  e.target.value,
-                                )
-                              }
-                              style={inputStyle}
-                              disabled={inlineSaving}
-                            />
-                          </div>
-                          <div>
-                            <label style={labelStyle}>Pilot Last</label>
-                            <input
-                              value={inlineEditState.pilot_last}
-                              onChange={(e) =>
-                                onInlineEditChange("pilot_last", e.target.value)
-                              }
-                              style={inputStyle}
-                              disabled={inlineSaving}
-                            />
-                          </div>
-                          <div>
-                            <label style={labelStyle}>Email</label>
-                            <input
-                              value={inlineEditState.email}
-                              onChange={(e) =>
-                                onInlineEditChange("email", e.target.value)
-                              }
-                              style={inputStyle}
-                              disabled={inlineSaving}
-                            />
-                          </div>
-                          <div>
-                            <label style={labelStyle}>Membership Number</label>
-                            <input
-                              value={inlineEditState.membership_number}
-                              onChange={(e) =>
-                                onInlineEditChange(
-                                  "membership_number",
-                                  e.target.value.toUpperCase(),
-                                )
-                              }
-                              style={inputStyle}
-                              disabled={inlineSaving}
-                            />
-                          </div>
-                          <div>
-                            <label style={labelStyle}>Assigned Site</label>
-                            <input
-                              value={inlineEditState.assigned_site}
-                              onChange={(e) =>
-                                onInlineEditChange(
-                                  "assigned_site",
-                                  e.target.value,
-                                )
-                              }
-                              style={inputStyle}
-                              disabled={inlineSaving}
-                            />
-                          </div>
-                          <div>
-                            <label style={labelStyle}>Participant Type</label>
-                            <select
-                              value={inlineEditState.participant_type}
-                              onChange={(e) =>
-                                onInlineEditChange(
-                                  "participant_type",
-                                  e.target.value,
-                                )
-                              }
-                              style={inputStyle}
-                              disabled={inlineSaving}
-                            >
-                              {PARTICIPANT_TYPE_OPTIONS.filter(
-                                (option) => option !== "all",
-                              ).map((option) => (
-                                <option key={option} value={option}>
-                                  {participantTypeLabel(option)}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label style={labelStyle}>Data Status</label>
-                            <select
-                              value={inlineEditState.data_status}
-                              onChange={(e) =>
-                                onInlineEditChange(
-                                  "data_status",
-                                  e.target.value,
-                                )
-                              }
-                              style={inputStyle}
-                              disabled={inlineSaving}
-                            >
-                              {DATA_STATUS_OPTIONS.filter(
-                                (option) => option !== "all",
-                              ).map((option) => (
-                                <option key={option} value={option}>
-                                  {dataStatusOptionLabel(option)}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div style={{ fontWeight: 700, fontSize: 15 }}>
-                            {displayPilotName(attendee)}
-                            {displayCopilotName(attendee)
-                              ? ` / ${displayCopilotName(attendee)}`
-                              : ""}
-                          </div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>
+                        {displayPilotName(attendee)}
+                        {displayCopilotName(attendee)
+                          ? ` / ${displayCopilotName(attendee)}`
+                          : ""}
+                      </div>
 
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                              alignItems: "center",
-                              fontSize: 12,
-                              color: "#555",
-                              marginTop: 4,
-                            }}
-                          >
-                            <span
-                              style={participantTypeBadgeStyle(
-                                attendee.participant_type,
-                              )}
-                            >
-                              {participantTypeLabel(attendee.participant_type)}
-                            </span>
-                            {attendee.email ? (
-                              <span>{attendee.email}</span>
-                            ) : null}
-                            {attendee.assigned_site ? (
-                              <span>{`Site ${attendee.assigned_site}`}</span>
-                            ) : null}
-                            {cityState(attendee) ? (
-                              <span>{cityState(attendee)}</span>
-                            ) : null}
-                          </div>
-                        </>
-                      )}
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                          fontSize: 12,
+                          color: "#555",
+                          marginTop: 4,
+                        }}
+                      >
+                        <span
+                          style={participantTypeBadgeStyle(
+                            attendee.participant_type,
+                          )}
+                        >
+                          {participantTypeLabel(attendee.participant_type)}
+                        </span>
+                        {attendee.email ? <span>{attendee.email}</span> : null}
+                        {attendee.assigned_site ? (
+                          <span>{`Site ${attendee.assigned_site}`}</span>
+                        ) : null}
+                        {cityState(attendee) ? (
+                          <span>{cityState(attendee)}</span>
+                        ) : null}
+                      </div>
                     </div>
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1528,9 +1344,7 @@ function AttendeeList(props: {
                         </span>
                       )}
                       <span style={secondaryBadgeStyle}>
-                        {isInlineEditing
-                          ? dataStatusLabel(inlineEditState.data_status)
-                          : dataStatusLabel(attendee.data_status)}
+                        {dataStatusLabel(attendee.data_status)}
                       </span>
                       {attendeeIssues ? (
                         <span style={issueBadgeStyle}>
@@ -1538,15 +1352,7 @@ function AttendeeList(props: {
                           {attendeeIssues.issues.length === 1 ? "" : "s"}
                         </span>
                       ) : (
-                        <span
-                          style={
-                            attendee.id === recentlySavedId
-                              ? savedBadgeStyle
-                              : okBadgeStyle
-                          }
-                        >
-                          {attendee.id === recentlySavedId ? "Saved" : "OK"}
-                        </span>
+                        <span style={okBadgeStyle}>OK</span>
                       )}
                     </div>
                   </div>
@@ -1560,83 +1366,45 @@ function AttendeeList(props: {
                       flexWrap: "wrap",
                     }}
                   >
-                    {isInlineEditing ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => void onSaveInlineEdit()}
-                          style={primaryButtonStyle}
-                          disabled={inlineSaving}
-                        >
-                          {inlineSaving ? "Saving..." : "Save Quick Edit"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={onCancelInlineEdit}
-                          style={secondaryButtonStyle}
-                          disabled={inlineSaving}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onOpenEdit(attendee)}
-                          style={secondaryButtonStyle}
-                          disabled={inlineSaving}
-                        >
-                          Full Edit
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => onToggleExpanded(attendee.id)}
-                          style={secondaryButtonStyle}
-                        >
-                          {isExpanded ? "Hide Details" : "View Details"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onStartInlineEdit(attendee)}
-                          style={secondaryButtonStyle}
-                        >
-                          Quick Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onOpenEdit(attendee)}
-                          style={secondaryButtonStyle}
-                        >
-                          Edit Record
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void onUpdateDataStatus(attendee.id, "reviewed")
-                          }
-                          style={secondaryButtonStyle}
-                        >
-                          Mark Reviewed
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void onCancelRegistration(attendee)}
-                          style={secondaryButtonStyle}
-                        >
-                          Cancel Registration
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void onUpdateDataStatus(attendee.id, "locked")
-                          }
-                          style={secondaryButtonStyle}
-                        >
-                          Lock Record
-                        </button>
-                      </>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => onToggleExpanded(attendee.id)}
+                      style={secondaryButtonStyle}
+                    >
+                      {isExpanded ? "Hide Details" : "View Details"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenEdit(attendee)}
+                      style={secondaryButtonStyle}
+                    >
+                      Edit Record
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void onUpdateDataStatus(attendee.id, "reviewed")
+                      }
+                      style={secondaryButtonStyle}
+                    >
+                      Mark Reviewed
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onCancelRegistration(attendee)}
+                      style={secondaryButtonStyle}
+                    >
+                      Cancel Registration
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void onUpdateDataStatus(attendee.id, "locked")
+                      }
+                      style={secondaryButtonStyle}
+                    >
+                      Lock Record
+                    </button>
                   </div>
 
                   {isExpanded ? (
@@ -2445,12 +2213,6 @@ function AdminAttendeesPageInner() {
   );
   const [editorSaving, setEditorSaving] = useState(false);
 
-  const [inlineEditId, setInlineEditId] = useState<string | null>(null);
-  const [inlineEditState, setInlineEditState] = useState<InlineEditState>(
-    emptyInlineEditState(),
-  );
-  const [inlineSaving, setInlineSaving] = useState(false);
-  const [recentlySavedId, setRecentlySavedId] = useState<string | null>(null);
   const [expandedAttendeeId, setExpandedAttendeeId] = useState<string | null>(
     null,
   );
@@ -3340,7 +3102,6 @@ created_at
   }
 
   const openEditAttendeeEditor = useCallback(async (attendee: AttendeeRow) => {
-    cancelInlineEdit();
     setEditorMode("edit");
 
     const nextState = attendeeToEditorState(attendee);
@@ -3379,12 +3140,9 @@ created_at
     setEditorState(nextState);
     setEditorOpen(true);
 
-    // cancelInlineEdit is intentionally omitted to avoid declaration-order issues in this component.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function closeAttendeeEditor() {
-    cancelInlineEdit();
     setEditorOpen(false);
     setEditorMode("create");
     setEditorState(emptyAttendeeEditorState());
@@ -3395,23 +3153,6 @@ created_at
     value: AttendeeEditorState[K],
   ) {
     setEditorState((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-  }
-
-  function startInlineEdit(attendee: AttendeeRow) {
-    setInlineEditId(attendee.id);
-    setInlineEditState(attendeeToInlineEditState(attendee));
-  }
-
-  const cancelInlineEdit = useCallback(() => {
-    setInlineEditId(null);
-    setInlineEditState(emptyInlineEditState());
-  }, []);
-
-  function updateInlineEditField(key: keyof InlineEditState, value: string) {
-    setInlineEditState((prev) => ({
       ...prev,
       [key]: value,
     }));
@@ -3653,80 +3394,6 @@ created_at
       setStatus("Save failed.");
     } finally {
       setEditorSaving(false);
-    }
-  }
-
-  async function handleSaveInlineEdit() {
-    if (!currentEvent?.id || !inlineEditId) {
-      setError("No attendee selected for inline edit.");
-      setStatus("Quick edit blocked.");
-      return;
-    }
-
-    const pilotFirst = inlineEditState.pilot_first.trim();
-    const pilotLast = inlineEditState.pilot_last.trim();
-    const email = inlineEditState.email.trim().toLowerCase();
-    const membershipNumber = inlineEditState.membership_number
-      .trim()
-      .toUpperCase();
-
-    if (!pilotFirst && !pilotLast) {
-      setError("Pilot first or last name is required.");
-      setStatus("Quick edit blocked.");
-      return;
-    }
-
-    try {
-      setInlineSaving(true);
-      setError(null);
-      setStatus("Saving quick edit...");
-      const savedId = inlineEditId;
-
-      const payload = {
-        pilot_first: pilotFirst || null,
-        pilot_last: pilotLast || null,
-        email: email || null,
-        membership_number: membershipNumber || null,
-        assigned_site: inlineEditState.assigned_site.trim() || null,
-        participant_type: inlineEditState.participant_type.trim() || "attendee",
-        data_status: inlineEditState.data_status || "pending",
-      };
-
-      const { error: updateError } = await supabase
-        .from("attendees")
-        .update(payload)
-        .eq("id", inlineEditId)
-        .eq("event_id", currentEvent.id);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      setAttendees((prev) =>
-        prev.map((row) =>
-          row.id === inlineEditId
-            ? {
-                ...row,
-                ...payload,
-              }
-            : row,
-        ),
-      );
-
-      setStatus("Quick edit saved.");
-      showFlash("Attendee quick edit saved.");
-      setRecentlySavedId(savedId);
-      setExpandedAttendeeId(savedId);
-      window.setTimeout(() => {
-        setRecentlySavedId((current) => (current === savedId ? null : current));
-      }, 1500);
-      cancelInlineEdit();
-    } catch (err: any) {
-      console.error("handleSaveInlineEdit error:", err);
-      setError(err?.message || "Could not save quick edit.");
-      setStatus("Quick edit failed.");
-    } finally {
-      setInlineSaving(false);
     }
   }
 
@@ -4018,18 +3685,10 @@ created_at
           filteredAttendees={filteredAttendees}
           visibleAttendees={visibleAttendees}
           reviewItems={reviewItems}
-          inlineEditId={inlineEditId}
-          inlineEditState={inlineEditState}
-          inlineSaving={inlineSaving}
-          recentlySavedId={recentlySavedId}
           attendeeSortMode={attendeeSortMode}
           expandedAttendeeId={expandedAttendeeId}
           onToggleExpanded={toggleExpandedAttendee}
           onOpenEdit={openEditAttendeeEditor}
-          onStartInlineEdit={startInlineEdit}
-          onCancelInlineEdit={cancelInlineEdit}
-          onInlineEditChange={updateInlineEditField}
-          onSaveInlineEdit={handleSaveInlineEdit}
           onUpdateDataStatus={updateDataStatus}
           onCancelRegistration={onCancelRegistration}
         />
@@ -4183,17 +3842,6 @@ const okBadgeStyle: CSSProperties = {
   color: "#166534",
   fontSize: 12,
   fontWeight: 700,
-};
-
-const savedBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#dcfce7",
-  color: "#166534",
-  fontSize: 12,
-  fontWeight: 700,
-  border: "1px solid #86efac",
 };
 
 export default function AdminAttendeesPage() {
