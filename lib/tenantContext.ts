@@ -1,5 +1,3 @@
-import { supabase } from "@/lib/supabase";
-
 export interface TenantContext {
   id: string;
 
@@ -22,49 +20,63 @@ export interface TenantContext {
   isActive: boolean;
 }
 
-let cachedTenant: TenantContext | null = null;
+export interface TenantPresentation {
+  organizationName: string;
+  displayName: string;
+  appTitle: string;
+  appTagline: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  accentColor: string | null;
+}
 
-export async function getCurrentTenant(): Promise<TenantContext | null> {
-  if (cachedTenant) {
-    return cachedTenant;
-  }
+export type TenantResolutionReason =
+  | "missing_hostname"
+  | "invalid_hostname"
+  | "unknown_hostname"
+  | "inactive_mapping"
+  | "conflicting_mapping"
+  | "inactive_tenant"
+  | "internal_error";
 
-  const { data, error } = await supabase
-    .from("tenants")
-    .select("*")
-    .eq("organization_code", "FCOC")
-    .single();
+export type TenantResolution =
+  | {
+      state: "resolved";
+      source: "hostname_mapping";
+      hostname: string;
+      tenant: TenantContext;
+    }
+  | {
+      state: "unresolved";
+      hostname: string | null;
+      reason: TenantResolutionReason;
+    };
 
-  if (error || !data) {
-    console.error("Unable to load tenant.", error);
+export function unresolvedTenant(
+  reason: TenantResolutionReason,
+  hostname: string | null = null,
+): TenantResolution {
+  return { state: "unresolved", reason, hostname };
+}
+
+export function toTenantPresentation(
+  tenant: TenantContext | null,
+): TenantPresentation | null {
+  if (!tenant) {
     return null;
   }
 
-  cachedTenant = {
-    id: data.id,
-
-    organizationCode: data.organization_code,
-    slug: data.slug,
-
-    organizationName: data.organization_name,
-    displayName: data.display_name,
-
-    appTitle: data.app_title,
-    appTagline: data.app_tagline,
-
-    logoUrl: data.logo_url,
-    faviconUrl: data.favicon_url,
-
-    primaryColor: data.primary_color,
-    secondaryColor: data.secondary_color,
-    accentColor: data.accent_color,
-
-    isActive: data.is_active,
+  return {
+    organizationName: tenant.organizationName,
+    displayName: tenant.displayName,
+    appTitle: tenant.appTitle,
+    appTagline: tenant.appTagline,
+    logoUrl: tenant.logoUrl,
+    faviconUrl: tenant.faviconUrl,
+    primaryColor: tenant.primaryColor,
+    secondaryColor: tenant.secondaryColor,
+    accentColor: tenant.accentColor,
   };
-
-  return cachedTenant;
-}
-
-export function clearTenantCache() {
-  cachedTenant = null;
 }

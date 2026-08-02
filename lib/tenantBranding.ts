@@ -1,4 +1,4 @@
-import { getCurrentTenant } from "@/lib/tenantContext";
+import { type TenantContext } from "@/lib/tenantContext";
 
 export interface TenantBranding {
   organizationName: string;
@@ -14,9 +14,9 @@ export interface TenantBranding {
   accentColor: string | null;
 }
 
-export async function getCurrentTenantBranding(): Promise<TenantBranding | null> {
-  const tenant = await getCurrentTenant();
-
+export function getTenantBranding(
+  tenant: TenantContext | null,
+): TenantBranding | null {
   if (!tenant) {
     return null;
   }

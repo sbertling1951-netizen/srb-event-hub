@@ -6,16 +6,20 @@ import Sidebar from "@/components/layout/Sidebar";
 import { AdminProvider } from "@/lib/adminContext";
 import { AdminWorkspaceProvider } from "@/lib/AdminWorkspaceProvider";
 import { MemberWorkspaceProvider } from "@/lib/memberWorkspace";
-import { getCurrentTenant } from "@/lib/tenantContext";
-import { DEFAULT_TENANT_LABELS, getTenantLabel } from "@/lib/tenantLabels";
+import { TenantProvider } from "@/lib/providers/TenantProvider";
+import { resolveCurrentRequestTenant } from "@/lib/server/tenantResolver";
+import { toTenantPresentation } from "@/lib/tenantContext";
+import { DEFAULT_TENANT_LABELS } from "@/lib/tenantLabels";
 
-const appTitle = getTenantLabel("app_title");
-const appDescription = getTenantLabel("app_description");
+export async function generateMetadata(): Promise<Metadata> {
+  const resolution = await resolveCurrentRequestTenant();
+  const tenant = resolution.state === "resolved" ? resolution.tenant : null;
 
-export const metadata: Metadata = {
-  title: appTitle,
-  description: appDescription,
-};
+  return {
+    title: tenant?.appTitle || DEFAULT_TENANT_LABELS.app_title,
+    description: DEFAULT_TENANT_LABELS.app_description,
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -28,7 +32,9 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const tenant = await getCurrentTenant();
+  const resolution = await resolveCurrentRequestTenant();
+  const tenant = resolution.state === "resolved" ? resolution.tenant : null;
+  const tenantPresentation = toTenantPresentation(tenant);
 
   const brandTitle = tenant?.appTitle || DEFAULT_TENANT_LABELS.app_title;
   const brandTagline = tenant?.appTagline || DEFAULT_TENANT_LABELS.app_tagline;
@@ -38,11 +44,12 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="app-body" suppressHydrationWarning>
-        <AdminProvider>
-          <AdminWorkspaceProvider>
-            <script
-              dangerouslySetInnerHTML={{
-                __html: `
+        <TenantProvider tenant={tenantPresentation}>
+          <AdminProvider>
+            <AdminWorkspaceProvider>
+              <script
+                dangerouslySetInnerHTML={{
+                  __html: `
                   try {
                     if (window.location.search.includes("embedded=1")) {
                       document.documentElement.classList.add("admin-embedded-mode");
@@ -54,9 +61,9 @@ export default async function RootLayout({
                       document.body.classList.add("coach-map-lock");
                     }
                   } catch {}
-                `,
-              }}
-            />
+                  `,
+                }}
+              />
 
             <MemberWorkspaceProvider>
               <Sidebar />
@@ -94,8 +101,9 @@ export default async function RootLayout({
                 </div>
               </main>
             </MemberWorkspaceProvider>
-          </AdminWorkspaceProvider>
-        </AdminProvider>
+            </AdminWorkspaceProvider>
+          </AdminProvider>
+        </TenantProvider>
       </body>
     </html>
   );

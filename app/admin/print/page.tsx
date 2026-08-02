@@ -9,8 +9,8 @@ import {
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
+import { useTenant } from "@/lib/providers/TenantProvider";
 import { supabase } from "@/lib/supabase";
-import { getCurrentTenant, type TenantContext } from "@/lib/tenantContext";
 
 type EventRow = {
   id: string;
@@ -380,21 +380,7 @@ function AdminPrintPageInner() {
     Record<string, PrintEditOverride>
   >({});
   const [manualAttendees, setManualAttendees] = useState<AttendeeRow[]>([]);
-  const [tenant, setTenant] = useState<TenantContext | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-
-    void getCurrentTenant().then((result) => {
-      if (mounted) {
-        setTenant(result);
-      }
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const { tenant } = useTenant();
 
   const [isMobile, setIsMobile] = useState(false);
 

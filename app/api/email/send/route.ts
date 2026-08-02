@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
 import { emailEnabled, resend } from "@/lib/email";
-import { getCurrentTenant } from "@/lib/tenantContext";
+import { resolveTenantFromHeaders } from "@/lib/server/tenantResolver";
 
 type VendorRequest = {
   event_id: string;
@@ -259,7 +259,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const tenant = await getCurrentTenant();
+    const tenantResolution = await resolveTenantFromHeaders(req.headers);
+    const tenant =
+      tenantResolution.state === "resolved"
+        ? tenantResolution.tenant
+        : null;
     const tenantDisplayName = tenant?.displayName || "Event";
     const tenantAppTitle = tenant?.appTitle || "Event Hub";
 

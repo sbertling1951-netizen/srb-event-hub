@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { useTenant } from "@/lib/providers/TenantProvider";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
-import { getCurrentTenant, type TenantContext } from "@/lib/tenantContext";
 type EventRow = {
   id: string;
   name: string;
@@ -25,7 +25,7 @@ function formatDateRange(startDate: string | null, endDate: string | null) {
 
 export default function EventBanner() {
   const [event, setEvent] = useState<EventRow | null>(null);
-  const [tenant, setTenant] = useState<TenantContext | null>(null);
+  const { tenant } = useTenant();
 
   const loadActiveEvent = useCallback(async (canUpdate: () => boolean) => {
     const { data, error } = await supabase
@@ -83,20 +83,6 @@ export default function EventBanner() {
       window.removeEventListener("storage", handleStorage);
     };
   }, [loadActiveEvent]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    void getCurrentTenant().then((result) => {
-      if (mounted) {
-        setTenant(result);
-      }
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   alert(JSON.stringify(tenant, null, 2));
   if (!event) {
