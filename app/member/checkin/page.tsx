@@ -36,6 +36,13 @@ type HouseholdMember = {
   raw_text: string | null;
 };
 
+type CheckinResult = {
+  id: string;
+  assigned_site: string | null;
+  share_with_attendees: boolean;
+  has_arrived: boolean;
+};
+
 function formatDateRange(
   startDate: string | null | undefined,
   endDate: string | null | undefined,
@@ -60,10 +67,6 @@ function householdLine(member: HouseholdMember) {
   return preferredDisplayLine(member);
 }
 
-function normalizeSite(value: string) {
-  return value.trim().toUpperCase();
-}
-
 function MemberCheckinPageInner() {
   const router = useRouter();
   const { event, attendeeId, isReady } = useMemberWorkspace();
@@ -72,6 +75,11 @@ function MemberCheckinPageInner() {
   const [shareWithAttendees, setShareWithAttendees] = useState(false);
   const [hasArrived, setHasArrived] = useState(false);
   const [siteNumber, setSiteNumber] = useState("");
+  const [requiresTemporaryCredentials, setRequiresTemporaryCredentials] =
+    useState<boolean | null>(null);
+  const [temporaryEventCode, setTemporaryEventCode] = useState("");
+  const [temporaryRegistrationIdentifier, setTemporaryRegistrationIdentifier] =
+    useState("");
   const [status, setStatus] = useState("Loading check-in...");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -170,6 +178,20 @@ function MemberCheckinPageInner() {
   }, [attendeeId, event?.id, isReady, loadPage]);
 
   useEffect(() => {
+    let active = true;
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (active) {
+        setRequiresTemporaryCredentials(!data.session);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!event?.id) {
       return;
     }
@@ -186,109 +208,8 @@ function MemberCheckinPageInner() {
     });
   }, [event?.id]);
 
-  async function syncParkingSite(
-    attendeeId: string,
-    eventId: string,
-    newSiteNumber: string,
-  ) {
-    if (!attendeeId || !eventId) {
-      return;
-    }
-
-    try {
-      const cleanedNewSite = normalizeSite(newSiteNumber);
-
-      await supabase
-        .from("parking_sites")
-        .update({ assigned_attendee_id: null })
-        .eq("event_id", eventId)
-        .eq("assigned_attendee_id", attendeeId);
-
-      if (!cleanedNewSite) {
-        return;
-      }
-
-      const { data: mapSettingsRows, error: mapSettingsError } = await supabase
-        .from("event_map_settings")
-        .select("selected_master_map_id")
-        .eq("event_id", eventId)
-        .limit(1);
-
-      if (mapSettingsError) {
-        throw mapSettingsError;
-      }
-
-      const selectedMasterMapId = mapSettingsRows?.[0]?.selected_master_map_id;
-
-      if (!selectedMasterMapId) {
-        console.warn("No selected master map for parking sync.", eventId);
-        return;
-      }
-
-      const { data: masterSite, error: masterSiteError } = await supabase
-        .from("master_map_sites")
-        .select("id")
-        .eq("master_map_id", selectedMasterMapId)
-        .eq("site_number", cleanedNewSite)
-        .maybeSingle();
-
-      if (masterSiteError) {
-        throw masterSiteError;
-      }
-
-      if (!masterSite?.id) {
-        console.warn("No matching master map site for parking sync.", {
-          eventId,
-          selectedMasterMapId,
-          cleanedNewSite,
-        });
-        return;
-      }
-
-      const { data: existingParkingSite, error: existingParkingError } =
-        await supabase
-          .from("parking_sites")
-          .select("id")
-          .eq("event_id", eventId)
-          .eq("master_site_id", masterSite.id)
-          .maybeSingle();
-
-      if (existingParkingError) {
-        throw existingParkingError;
-      }
-
-      if (existingParkingSite?.id) {
-        const { error: updateParkingError } = await supabase
-          .from("parking_sites")
-          .update({ assigned_attendee_id: attendeeId })
-          .eq("id", existingParkingSite.id);
-
-        if (updateParkingError) {
-          throw updateParkingError;
-        }
-      } else {
-        const { error: insertParkingError } = await supabase
-          .from("parking_sites")
-          .insert({
-            event_id: eventId,
-            master_site_id: masterSite.id,
-            assigned_attendee_id: attendeeId,
-          });
-
-        if (insertParkingError) {
-          throw insertParkingError;
-        }
-      }
-    } catch (err) {
-      console.error("syncParkingSite error:", err);
-      setStatus(
-        "Your check-in was saved, but the parking map could not be synced automatically.",
-      );
-    }
-  }
-
   async function saveCheckin() {
-    if (!attendee?.id) {
+    if (!attendee?.id || !event?.id) {
       setStatus("No attendee record found.");
       return;
     }
@@ -297,44 +218,36 @@ function MemberCheckinPageInner() {
       setSaving(true);
       setError(null);
 
-      const cleanedSite = normalizeSite(siteNumber);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const temporaryAccess = !sessionData.session;
 
-      if (cleanedSite && event?.id) {
-        const { data: occupiedSite, error: occupiedError } = await supabase
-          .from("attendees")
-          .select("id,pilot_first,pilot_last,assigned_site")
-          .eq("event_id", event.id)
-          .neq("id", attendee.id)
-          .ilike("assigned_site", cleanedSite)
-          .limit(1)
-          .maybeSingle();
+      setRequiresTemporaryCredentials(temporaryAccess);
 
-        if (occupiedError) {
-          throw occupiedError;
-        }
-
-        if (occupiedSite?.id) {
-          const occupiedName =
-            `${occupiedSite.pilot_first || ""} ${occupiedSite.pilot_last || ""}`.trim() ||
-            "another attendee";
-
-          throw new Error(
-            `Site ${cleanedSite} is already assigned to ${occupiedName}.`,
-          );
-        }
+      if (
+        temporaryAccess &&
+        (!temporaryEventCode.trim() || !temporaryRegistrationIdentifier.trim())
+      ) {
+        throw new Error(
+          "Enter your event code and registration email or mobile number to save check-in.",
+        );
       }
 
-      const { data: updatedAttendee, error } = await supabase
-        .from("attendees")
-        .update({
-          has_arrived: hasArrived,
-          share_with_attendees: shareWithAttendees,
-          assigned_site: cleanedSite || null,
-          arrival_status: hasArrived ? "arrived" : "not_arrived",
-        })
-        .eq("id", attendee.id)
-        .select("id,assigned_site,share_with_attendees,has_arrived")
-        .maybeSingle();
+      const { data, error } = await supabase.rpc("submit_member_checkin", {
+        p_event_id: event.id,
+        p_expected_attendee_id: attendee.id,
+        p_has_arrived: hasArrived,
+        p_share_with_attendees: shareWithAttendees,
+        p_assigned_site: siteNumber,
+        p_event_code: temporaryAccess ? temporaryEventCode.trim() : null,
+        p_registration_identifier: temporaryAccess
+          ? temporaryRegistrationIdentifier.trim()
+          : null,
+      });
+
+      const updatedAttendee =
+        Array.isArray(data) && data.length > 0
+          ? (data[0] as CheckinResult)
+          : null;
 
       if (error) {
         throw error;
@@ -342,17 +255,20 @@ function MemberCheckinPageInner() {
 
       if (!updatedAttendee?.id) {
         throw new Error(
-          "No attendee record was updated. RLS is probably blocking member check-in edits.",
+          "Check-in verification failed. Re-enter your event code and registration email or mobile number.",
         );
       }
 
       setAttendee((prev) =>
-        prev ? { ...prev, assigned_site: updatedAttendee.assigned_site } : prev,
+        prev
+          ? {
+              ...prev,
+              assigned_site: updatedAttendee.assigned_site,
+              share_with_attendees: updatedAttendee.share_with_attendees,
+              has_arrived: updatedAttendee.has_arrived,
+            }
+          : prev,
       );
-      if (event?.id) {
-        await syncParkingSite(attendee.id, event.id, cleanedSite);
-      }
-
       // Update local state immediately before navigating.
       if (typeof window !== "undefined") {
         localStorage.setItem("fcoc-member-has-arrived", String(hasArrived));
@@ -532,6 +448,39 @@ function MemberCheckinPageInner() {
               />
               Share my site / household details with other attendees
             </label>
+
+            {requiresTemporaryCredentials ? (
+              <div
+                style={{
+                  borderTop: "1px solid #e2e8f0",
+                  paddingTop: 14,
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                <strong>Verify temporary event access</strong>
+                <div style={{ color: "#475569", fontSize: 14 }}>
+                  Re-enter your event code and the email address or mobile number
+                  used for registration to save check-in.
+                </div>
+                <input
+                  type="text"
+                  value={temporaryEventCode}
+                  onChange={(event) => setTemporaryEventCode(event.target.value)}
+                  placeholder="Event code"
+                  autoComplete="off"
+                />
+                <input
+                  type="text"
+                  value={temporaryRegistrationIdentifier}
+                  onChange={(event) =>
+                    setTemporaryRegistrationIdentifier(event.target.value)
+                  }
+                  placeholder="Registration email or mobile number"
+                  autoComplete="off"
+                />
+              </div>
+            ) : null}
           </div>
 
           <div>
