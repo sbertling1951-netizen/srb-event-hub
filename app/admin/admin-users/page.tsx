@@ -242,18 +242,51 @@ function AdminUsersPageInner() {
   }
 
   async function upsertAdminUser() {
-    if (!email.trim()) { return { adminUserId: null, errorMessage: "Email is required." }; }
-
-    if (selectedAdminId) {
-      const { error: updateError } = await supabase.from("admin_users").update({ email: email.trim(), display_name: displayName.trim() || null, is_active: isActive, privilege_group: privilegeGroup }).eq("id", selectedAdminId);
-      if (updateError) { return { adminUserId: null, errorMessage: `Could not update admin user: ${updateError.message}` }; }
-      return { adminUserId: selectedAdminId, errorMessage: null };
+    if (!email.trim()) {
+      return {
+        adminUserId: null,
+        authUserId: null,
+        invitationSent: false,
+        errorMessage: "Email is required.",
+      };
     }
 
-    const { data: inserted, error: insertError } = await supabase.from("admin_users").insert({ email: email.trim(), display_name: displayName.trim() || null, is_active: isActive, privilege_group: privilegeGroup, is_super_admin: false }).select("id").single();
-    if (insertError || !inserted?.id) { return { adminUserId: null, errorMessage: `Could not create admin user: ${insertError?.message || "Unknown error"}` }; }
-    setSelectedAdminId(inserted.id);
-    return { adminUserId: inserted.id as string, errorMessage: null };
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) { return { adminUserId: null, authUserId: null, invitationSent: false, errorMessage: "Administrative authentication is required." }; }
+
+    const response = await fetch("/api/admins/manage", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        adminUserId: selectedAdminId || undefined,
+        email: email.trim(),
+        displayName: displayName.trim() || null,
+        isActive,
+        privilegeGroup,
+      }),
+    });
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok || !result?.adminUserId) {
+      return {
+        adminUserId: null,
+        authUserId: null,
+        invitationSent: false,
+        errorMessage: result?.error || "Could not save administrative user.",
+      };
+    }
+
+    setSelectedAdminId(result.adminUserId);
+    return {
+      adminUserId: result.adminUserId as string,
+      authUserId: (result.authUserId as string | null | undefined) || null,
+      invitationSent: result.invitationSent === true,
+      errorMessage: null,
+    };
   }
 
   async function syncEventAccess(adminUserId: string, group: PrivilegeGroup, eventIds: string[]) {
@@ -263,17 +296,6 @@ function AdminUsersPageInner() {
     const { error: insertAccessError } = await supabase.from("admin_event_access").insert(eventIds.map((eventId) => ({ admin_user_id: adminUserId, event_id: eventId, role: getEventAccessRole(group) })));
     if (insertAccessError) { return `Saved admin user, but event access failed: ${insertAccessError.message}`; }
     return null;
-  }
-
-  async function ensureAuthUser(adminEmail: string): Promise<{ error: string | null; userId: string | null; invitationSent: boolean }> {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-    if (!accessToken) { return { error: "Administrative authentication is required.", userId: null, invitationSent: false }; }
-
-    const res = await fetch("/api/admins/ensure-user", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email: adminEmail.trim() }) });
-    if (!res.ok) { const result = await res.json().catch(() => null); return { error: result?.error || "Failed to ensure auth user exists.", userId: null, invitationSent: false }; }
-    const result = await res.json().catch(() => null);
-    return { error: null, userId: result?.userId || null, invitationSent: result?.invitationSent === true };
   }
 
   async function setPasswordIfProvided(userId: string | null, nextPassword: string): Promise<{ error: string | null; passwordWasSet: boolean }> {
@@ -293,28 +315,21 @@ function AdminUsersPageInner() {
   async function handleSave() {
     try {
       setSaveStatus("Saving...");
-      const { adminUserId, errorMessage } = await upsertAdminUser();
+      const { adminUserId, authUserId, invitationSent, errorMessage } = await upsertAdminUser();
       if (errorMessage || !adminUserId) { setSaveStatus(errorMessage || "Could not save admin user."); return; }
       const eventAccessError = await syncEventAccess(adminUserId, privilegeGroup, assignedEventIds);
       if (eventAccessError) { setSaveStatus(eventAccessError); return; }
-      let resolvedUserId = selectedRow?.user_id || null;
-      let invitationSent = false;
-      if (password || !resolvedUserId) {
-        const ensuredUser = await ensureAuthUser(email);
-        const { error: ensureError, userId } = ensuredUser;
-        if (ensureError) { setSaveStatus(`Saved admin user, but auth setup failed: ${ensureError}`); return; }
-        invitationSent = ensuredUser.invitationSent;
-        if (userId) {
-          resolvedUserId = userId;
-        }
-        if (invitationSent) { setPassword(""); }
-      }
+      if (invitationSent) { setPassword(""); }
       const { error: passwordError, passwordWasSet } = await setPasswordIfProvided(
-        resolvedUserId,
+        authUserId,
         invitationSent ? "" : password,
       );
       if (passwordError) { setSaveStatus(passwordError); return; }
-      setSaveStatus(passwordWasSet ? "Saved and password set." : "Saved.");
+      setSaveStatus(
+        invitationSent
+          ? "Saved and invitation sent."
+          : (passwordWasSet ? "Saved and password set." : "Saved."),
+      );
       await loadPageData();
       await loadAssignedEvents(adminUserId);
     } catch (err) {

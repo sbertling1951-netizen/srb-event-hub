@@ -231,14 +231,8 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
           adminUser = fallback;
 
           if (!adminUser.user_id) {
-            await withTimeout(
-              supabase
-                .from("admin_users")
-                .update({ user_id: user.id })
-                .eq("id", adminUser.id),
-              "Admin user id update",
-            );
-
+            // The server-side Admin authorization path owns persistent Auth
+            // linkage. This browser fallback is presentation-only.
             adminUser.user_id = user.id;
           }
         }

@@ -88,14 +88,6 @@ const EVENT_ROLE_OPTIONS: Array<{ value: EventAccessRole; label: string }> = [
   { value: "read_only", label: "Read Only" },
 ];
 
-const PRIVILEGE_GROUP_OPTIONS: Array<{ value: PrivilegeGroup; label: string }> = [
-  { value: "event_admin", label: "Event Admin" },
-  { value: "checkin", label: "Check-In" },
-  { value: "parking", label: "Parking" },
-  { value: "content_admin", label: "Content Admin" },
-  { value: "read_only", label: "Read Only" },
-];
-
 const PERMISSION_LABELS: Record<PermissionKey, string> = {
   can_view_admin_dashboard: "View Admin Dashboard",
   can_manage_events: "Manage Events",
@@ -168,12 +160,6 @@ function EventStaffPageInner() {
   const [newAdminUserId, setNewAdminUserId] = useState("");
   const [newRole, setNewRole] = useState<EventAccessRole>("read_only");
   const [adding, setAdding] = useState(false);
-
-  const [quickDisplayName, setQuickDisplayName] = useState("");
-  const [quickEmail, setQuickEmail] = useState("");
-  const [quickPrivilegeGroup, setQuickPrivilegeGroup] = useState<PrivilegeGroup>("read_only");
-  const [quickRole, setQuickRole] = useState<EventAccessRole>("read_only");
-  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (!admin) return;
@@ -343,45 +329,6 @@ function EventStaffPageInner() {
     }
   }
 
-  async function handleQuickCreateStaff() {
-    if (!event?.id) { setStatus("No working event selected."); return; }
-    const emailVal = quickEmail.trim().toLowerCase();
-    const displayNameVal = quickDisplayName.trim();
-    if (!emailVal) { setStatus("Email is required for new staff."); return; }
-    try {
-      setCreating(true);
-      setError(null);
-      setStatus("Creating new staff user...");
-      const { data: existingUser, error: existingError } = await supabase.from("admin_users").select("id,email,display_name,is_active,privilege_group").eq("email", emailVal).maybeSingle();
-      if (existingError) { throw existingError; }
-      let adminUserId: string;
-      if (existingUser?.id) {
-        adminUserId = existingUser.id;
-        const { error: updateError } = await supabase.from("admin_users").update({ display_name: displayNameVal || existingUser.display_name || null, is_active: true, privilege_group: quickPrivilegeGroup || existingUser.privilege_group || "read_only" }).eq("id", adminUserId);
-        if (updateError) { throw updateError; }
-      } else {
-        const { data: insertedUser, error: insertUserError } = await supabase.from("admin_users").insert({ email: emailVal, display_name: displayNameVal || null, is_active: true, privilege_group: quickPrivilegeGroup, is_super_admin: false, user_id: null }).select("id").single();
-        if (insertUserError || !insertedUser?.id) { throw insertUserError || new Error("Could not create admin user."); }
-        adminUserId = insertedUser.id;
-      }
-      const { data: existingAccess, error: existingAccessError } = await supabase.from("admin_event_access").select("id").eq("admin_user_id", adminUserId).eq("event_id", event.id).maybeSingle();
-      if (existingAccessError) { throw existingAccessError; }
-      if (existingAccess?.id) { setStatus("That staff user is already assigned to this event."); await loadPage(event.id); return; }
-      const { data: insertedAccess, error: accessError } = await supabase.from("admin_event_access").insert({ admin_user_id: adminUserId, event_id: event.id, role: quickRole }).select("id").single();
-      if (accessError || !insertedAccess?.id) { throw accessError || new Error("Could not create event staff access."); }
-      await createPermissionRows(insertedAccess.id, quickRole);
-      setQuickDisplayName(""); setQuickEmail(""); setQuickPrivilegeGroup("read_only"); setQuickRole("read_only");
-      await loadPage(event.id);
-      setStatus("New staff user created and assigned to this event.");
-    } catch (err: any) {
-      console.error("handleQuickCreateStaff error:", err);
-      setError(err?.message || "Could not create event staff.");
-      setStatus(err?.message || "Could not create event staff.");
-    } finally {
-      setCreating(false);
-    }
-  }
-
   function updateLocalRole(accessId: string, role: EventAccessRole) {
     setRows((prev) => prev.map((row) => row.accessId === accessId ? { ...row, role, permissions: buildPermissionMap(role) } : row));
   }
@@ -505,37 +452,6 @@ function EventStaffPageInner() {
           </div>
           <button type="button" onClick={() => void handleAddStaff()} disabled={adding || !newAdminUserId || !event?.id} style={primaryButtonStyle}>
             {adding ? "Adding..." : "Add Staff"}
-          </button>
-        </div>
-      </div>
-
-      <div style={cardStyle}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Quick Create Staff</h2>
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-          <div>
-            <label style={labelStyle}>Display Name</label>
-            <input value={quickDisplayName} onChange={(e) => setQuickDisplayName(e.target.value)} style={inputStyle} placeholder="Example: Jane Smith" disabled={creating} />
-          </div>
-          <div>
-            <label style={labelStyle}>Email</label>
-            <input type="email" value={quickEmail} onChange={(e) => setQuickEmail(e.target.value)} style={inputStyle} placeholder="name@example.com" disabled={creating} />
-          </div>
-          <div>
-            <label style={labelStyle}>Base Privilege Group</label>
-            <select value={quickPrivilegeGroup} onChange={(e) => setQuickPrivilegeGroup(e.target.value as PrivilegeGroup)} style={inputStyle} disabled={creating}>
-              {PRIVILEGE_GROUP_OPTIONS.map((group) => <option key={group.value} value={group.value}>{group.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>Event Role</label>
-            <select value={quickRole} onChange={(e) => setQuickRole(e.target.value as EventAccessRole)} style={inputStyle} disabled={creating}>
-              {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-            </select>
-          </div>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <button type="button" onClick={() => void handleQuickCreateStaff()} disabled={creating || !quickEmail.trim() || !event?.id} style={primaryButtonStyle}>
-            {creating ? "Creating..." : "Create and Add Staff"}
           </button>
         </div>
       </div>
