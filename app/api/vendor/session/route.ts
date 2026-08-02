@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { resolveOrCreatePersonForAuthUser } from "@/lib/server/personIdentity";
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import {
   VENDOR_AUTH_COOKIE,
@@ -13,6 +12,10 @@ type SessionBody = {
 
 function secureCookieEnabled() {
   return process.env.NODE_ENV === "production";
+}
+
+function authMetadataText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 export async function POST(req: Request) {
@@ -55,93 +58,89 @@ export async function POST(req: Request) {
     );
   }
 
-  // Match the authenticated user to any invitation(s) waiting for them.
-  // auth_user_id is the sole match key -- it is only ever set by this
-  // server (invite binding or self-registration), never supplied by the
-  // client, so an activation link cannot be redirected to activate a
-  // different vendor's invitation.
+  // activate_vendor_invitation() runs only when a pending access row exists;
+  // ordinary sign-in never has one and is handled below instead.
   const { data: pendingRows, error: pendingLookupError } = await supabaseAdmin
     .from("vendor_org_access")
-    .select("id,vendor_contact_id")
+    .select("id")
     .eq("auth_user_id", user.id)
-    .eq("status", "pending");
+    .eq("status", "pending")
+    .limit(1);
 
   if (pendingLookupError) {
     return NextResponse.json(
-      { ok: false, error: pendingLookupError.message },
+      { ok: false, error: "We could not complete Vendor access. Please try again." },
       { status: 500 },
     );
   }
 
   if (pendingRows && pendingRows.length > 0) {
-    let nameHint: { firstName?: string | null; lastName?: string | null } = {};
-    const firstContactId = pendingRows[0]?.vendor_contact_id;
-
-    if (firstContactId) {
-      const { data: contactRow } = await supabaseAdmin
-        .from("vendor_contacts")
-        .select("first_name,last_name")
-        .eq("id", firstContactId)
-        .maybeSingle();
-
-      if (contactRow) {
-        nameHint = { firstName: contactRow.first_name, lastName: contactRow.last_name };
-      }
-    }
-
-    // Reuses this auth user's existing person record when one already
-    // exists (e.g. an existing member who is also being granted vendor
-    // access) instead of creating a second, duplicate identity.
-    const personResolution = await resolveOrCreatePersonForAuthUser(
-      supabaseAdmin,
-      user.id,
-      nameHint,
+    const userMetadata = user.user_metadata as Record<string, unknown>;
+    const { data: activationRows, error: activationError } = await supabaseAdmin.rpc(
+      "activate_vendor_invitation",
+      {
+        p_auth_user_id: user.id,
+        p_verified_auth_email: user.email_confirmed_at ? user.email || null : null,
+        p_verified_auth_phone: user.phone_confirmed_at ? user.phone || null : null,
+        p_display_first_name: authMetadataText(userMetadata.first_name),
+        p_display_last_name: authMetadataText(userMetadata.last_name),
+      },
     );
 
-    if ("error" in personResolution) {
+    if (activationError || !Array.isArray(activationRows) || activationRows.length !== 1) {
       return NextResponse.json(
-        { ok: false, error: personResolution.error },
+        { ok: false, error: "We could not complete Vendor access. Please try again." },
         { status: 500 },
       );
     }
 
-    const personId = personResolution.personId;
-    const now = new Date().toISOString();
+    const activation = activationRows[0] as { outcome?: unknown };
+    if (
+      activation.outcome === "needs_confirmation" ||
+      activation.outcome === "ambiguous" ||
+      activation.outcome === "invalid_existing_link" ||
+      activation.outcome === "no_pending_invitation"
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "We could not complete Vendor access automatically. Please contact the event administrator.",
+        },
+        { status: 409 },
+      );
+    }
 
-    const { error: activatePendingError } = await supabaseAdmin
+    if (
+      activation.outcome !== "activated_existing_person" &&
+      activation.outcome !== "activated_new_person"
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "We could not complete Vendor access. Please try again." },
+        { status: 500 },
+      );
+    }
+  } else {
+    // With no pending invitation, require at least one existing active access.
+    // Vendor selection among multiple active organizations is handled downstream.
+    const { data: activeRows, error: activeLookupError } = await supabaseAdmin
       .from("vendor_org_access")
-      .update({
-        status: "active",
-        accepted_at: now,
-        person_id: personId,
-      })
+      .select("id")
       .eq("auth_user_id", user.id)
-      .eq("status", "pending");
+      .eq("status", "active")
+      .limit(1);
 
-    if (activatePendingError) {
+    if (activeLookupError) {
       return NextResponse.json(
-        { ok: false, error: activatePendingError.message },
+        { ok: false, error: "We could not complete Vendor access. Please try again." },
         { status: 500 },
       );
     }
 
-    const contactIds = Array.from(
-      new Set(pendingRows.map((row) => row.vendor_contact_id).filter(Boolean)),
-    );
-
-    if (contactIds.length > 0) {
-      const { error: linkContactError } = await supabaseAdmin
-        .from("vendor_contacts")
-        .update({ person_id: personId })
-        .in("id", contactIds)
-        .is("person_id", null);
-
-      if (linkContactError) {
-        return NextResponse.json(
-          { ok: false, error: linkContactError.message },
-          { status: 500 },
-        );
-      }
+    if (!activeRows || activeRows.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "No Vendor access was found for this account." },
+        { status: 409 },
+      );
     }
   }
 
