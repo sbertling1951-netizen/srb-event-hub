@@ -11,15 +11,49 @@ export type AuthenticatedAccount = {
   accountId: string;
 };
 
+const authenticatedRequestCredential: unique symbol = Symbol(
+  "authenticatedRequestCredential",
+);
+
+/**
+ * An opaque, server-only capability for the bearer credential that was
+ * validated for this request. The symbol-keyed value is intentionally not an
+ * account fact and is omitted from ordinary JSON serialization.
+ */
+export type AuthenticatedRequestCredential = {
+  readonly [authenticatedRequestCredential]: string;
+};
+
+/**
+ * The successful request-scoped authentication result. Consumers may use the
+ * account fact as context, while only narrow server-side infrastructure may
+ * consume the separate credential capability for an immediate user-context
+ * database call.
+ */
+export type AuthenticatedRequestContext = {
+  account: AuthenticatedAccount;
+  credential: AuthenticatedRequestCredential;
+};
+
 /**
  * A request-scoped authentication result for trusted server code. Invalid,
  * expired, missing, and malformed credentials deliberately share the
  * unauthenticated state so callers do not receive credential diagnostics.
  */
 export type ServerAuthenticationResolution =
-  | { state: "authenticated"; account: AuthenticatedAccount }
+  | ({ state: "authenticated" } & AuthenticatedRequestContext)
   | { state: "unauthenticated" }
   | { state: "internal_error" };
+
+/**
+ * Exposes the validated bearer only to server-only request infrastructure.
+ * It must never be returned from a route, persisted, cached, or logged.
+ */
+export function authenticatedRequestCredentialValue(
+  credential: AuthenticatedRequestCredential,
+): string {
+  return credential[authenticatedRequestCredential];
+}
 
 function requestBearerToken(requestHeaders: Headers): string | null {
   const authorization = requestHeaders.get("authorization");
@@ -63,6 +97,9 @@ export async function resolveAuthenticatedRequest(
     return {
       state: "authenticated",
       account: { accountId: user.id },
+      credential: {
+        [authenticatedRequestCredential]: accessToken,
+      },
     };
   } catch (error) {
     console.error("Unexpected request authentication failure.", error);
