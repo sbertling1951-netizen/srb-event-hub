@@ -280,6 +280,26 @@ Later ADRs will define governed reconnection workflows, continuity
 strengthening, correction and reversibility, long-term stewardship of
 evidence, and other lifecycle-specific architectural work.
 
+## Identity stewardship is continuous
+
+The purpose of the Progressive Person Lifecycle is not to move every independently represented Person toward identity coalescence. Its purpose is to ensure that EpicentraX maintains the most truthful governed understanding of each enduring Person that available evidence permits.
+
+EpicentraX does not alter or create the underlying identity of a Person. It stewards the platform's current understanding of that identity. That understanding may become more complete, may remain limited indefinitely, or may later require correction as new governed evidence appears. The Person has not changed when the platform's understanding changes.
+
+Independent representation is therefore a complete and truthful governed state, not an unfinished identity waiting to be repaired. Some Persons may remain independently represented for the life of the platform. Others may be reconnected years later. Still others may require a later correction to an earlier identity coalescence decision. None of these outcomes is inherently a success or failure; each must be judged by whether the platform preserved the most truthful understanding supported by governed evidence at that time.
+
+Identity coalescence is not the destination of the lifecycle. It is one governed act within continuous identity stewardship: the determination that separately preserved representations are now sufficiently understood to describe one enduring Person. Reconnection, coalescence, continued independent representation, and correction are all possible states or events within the same continuing stewardship duty.
+
+Identity coalescence must never be treated as a record migration from one Person to another. It does not move one Person's history into another Person's history. Rather, it records the governed conclusion that separately preserved histories were always part of one enduring Person's story, while preserving the original provenance, Tenant, Event, Relationship, Participation, Assignment, Authority, and evidentiary context of every underlying record.
+
+Identity stewardship continues for the life of the platform. Every future
+implementation, architectural review, and correction must preserve the
+distinction between the enduring Person and EpicentraX's current governed
+understanding of that Person. The platform's responsibility is not to create
+identity, but to steward its understanding of identity truthfully,
+transparently, and under governed evidence throughout the lifetime of every
+Person it serves.
+
 ## Scope boundary
 
 This document establishes architectural direction only. It does not prescribe
