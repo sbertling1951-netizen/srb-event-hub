@@ -69,7 +69,7 @@ function householdLine(member: HouseholdMember) {
 
 function MemberCheckinPageInner() {
   const router = useRouter();
-  const { event, attendeeId, isReady } = useMemberWorkspace();
+  const { event, attendeeId, isReady, session } = useMemberWorkspace();
   const [attendee, setAttendee] = useState<AttendeeRow | null>(null);
   const [household, setHousehold] = useState<HouseholdMember[]>([]);
   const [shareWithAttendees, setShareWithAttendees] = useState(false);
@@ -101,18 +101,21 @@ function MemberCheckinPageInner() {
         return;
       }
 
-      const { data: attendeeRow, error: attendeeError } = await supabase
-        .from("attendees")
-        .select(
-          "id,entry_id,email,pilot_first,pilot_last,copilot_first,copilot_last,assigned_site,share_with_attendees,has_arrived",
-        )
-        .eq("id", attendeeId)
-        .eq("event_id", event.id)
-        .maybeSingle<AttendeeRow>();
+      const { data: attendeeRecordData, error: attendeeError } =
+        await supabase.rpc("get_my_attendee_record", {
+          p_event_id: event.id,
+          p_event_code: session?.event_code || null,
+          p_registration_identifier:
+            session?.attendee_email || session?.attendee_phone || null,
+        });
 
       if (attendeeError) {
         throw attendeeError;
       }
+
+      const attendeeRow = (
+        Array.isArray(attendeeRecordData) ? attendeeRecordData[0] : null
+      ) as AttendeeRow | null;
 
       if (!attendeeRow) {
         setAttendee(null);
@@ -142,13 +145,15 @@ function MemberCheckinPageInner() {
 
       setSiteNumber(attendeeRow.assigned_site || "");
 
-      const { data: memberRows, error: memberError } = await supabase
-        .from("attendee_household_members")
-        .select(
-          "id,attendee_id,person_role,first_name,last_name,nickname,display_name,age_text,sort_order,raw_text",
-        )
-        .eq("attendee_id", attendeeRow.id)
-        .order("sort_order", { ascending: true, nullsFirst: false });
+      const { data: memberRows, error: memberError } = await supabase.rpc(
+        "get_my_household_members",
+        {
+          p_event_id: event.id,
+          p_event_code: session?.event_code || null,
+          p_registration_identifier:
+            session?.attendee_email || session?.attendee_phone || null,
+        },
+      );
 
       if (memberError) {
         throw memberError;

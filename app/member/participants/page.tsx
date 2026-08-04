@@ -8,6 +8,15 @@ import { logEngagement } from "@/lib/engagement";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
+type AttendeeRecordRpcRow = {
+  id: string;
+  entry_id: string | null;
+  email: string | null;
+  auth_user_id: string | null;
+  event_id: string;
+  participant_capacity: number | null;
+};
+
 interface Participant {
   id: string;
   attendee_id: string;
@@ -30,7 +39,7 @@ interface AttendeeRow {
 }
 
 function ParticipantsPageInner() {
-  const { event, attendeeId, isReady } = useMemberWorkspace();
+  const { event, attendeeId, isReady, session } = useMemberWorkspace();
   const [loading, setLoading] = useState(true);
   const [participantCount, setParticipantCount] = useState(0);
   const [capacity, setCapacity] = useState(0);
@@ -51,7 +60,6 @@ function ParticipantsPageInner() {
   // Refactored participant loading logic for reuse
   const loadParticipants = async () => {
     try {
-      console.log("PARTICIPANTS CURRENT EVENT", event);
       if (!isReady || !event?.id || !attendeeId) {
         setParticipantCount(0);
         setCapacity(0);
@@ -59,80 +67,46 @@ function ParticipantsPageInner() {
         return;
       }
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      console.log("AUTH USER", user);
-      console.log("AUTH EMAIL", user?.email);
-      const authEmail = user?.email?.toLowerCase() ?? null;
-      const authUserId = localStorage.getItem("fcoc-member-auth-user-id");
+      const rpcArgs = {
+        p_event_id: event.id,
+        p_event_code: session?.event_code || null,
+        p_registration_identifier:
+          session?.attendee_email || session?.attendee_phone || null,
+      };
 
-      console.log("PARTICIPANTS AUTH USER ID", authUserId);
+      const { data: recordData, error: recordError } = await supabase.rpc(
+        "get_my_attendee_record",
+        rpcArgs,
+      );
 
-      let attendee: AttendeeRow | null = null;
+      const record = (
+        Array.isArray(recordData) ? recordData[0] : null
+      ) as AttendeeRecordRpcRow | null;
 
-      if (attendeeId) {
-        const { data: matchingAttendee, error: attendeeError } = await supabase
-          .from("attendees")
-          .select(
-            "id,entry_id,email,participant_capacity,auth_user_id,event_id",
-          )
-          .eq("id", attendeeId)
-          .eq("event_id", event.id)
-          .maybeSingle<AttendeeRow>();
-
-        if (!attendeeError) {
-          attendee = matchingAttendee;
-        }
-      }
-
-      if (!attendee && authUserId) {
-        const { data: matchingAttendee } = await supabase
-          .from("attendees")
-          .select(
-            "id,entry_id,email,participant_capacity,auth_user_id,event_id",
-          )
-          .eq("auth_user_id", authUserId)
-          .eq("event_id", event.id)
-          .maybeSingle<AttendeeRow>();
-
-        attendee = matchingAttendee;
-      }
-
-      if (!attendee && authEmail) {
-        const { data: matchingAttendee } = await supabase
-          .from("attendees")
-          .select(
-            "id,entry_id,email,participant_capacity,auth_user_id,event_id",
-          )
-          .eq("email", authEmail)
-          .eq("event_id", event.id)
-          .maybeSingle<AttendeeRow>();
-
-        attendee = matchingAttendee;
-      }
-
-      console.log("PARTICIPANTS MATCHED ATTENDEE", attendee);
-      console.log("STORED ATTENDEE ID", attendeeId);
-      console.log("LOCAL AUTH USER ID", authUserId);
-
-      if (!attendee) {
+      if (recordError || !record) {
         setParticipantCount(0);
         setCapacity(0);
         setParticipants([]);
         return;
       }
+
+      const attendee: AttendeeRow = {
+        id: record.id,
+        entry_id: record.entry_id,
+        email: record.email,
+        auth_user_id: record.auth_user_id,
+        event_id: record.event_id,
+        participant_capacity: record.participant_capacity,
+      };
+
       setCurrentAttendee(attendee);
 
       setCapacity(attendee.participant_capacity ?? 0);
 
-      const { data: memberRows } = await supabase
-        .from("attendee_household_members")
-        .select(
-          "id,attendee_id,person_role,first_name,last_name,display_name,email,participant_status,sort_order",
-        )
-        .eq("attendee_id", attendee.id)
-        .order("sort_order", { ascending: true });
+      const { data: memberRows } = await supabase.rpc(
+        "get_my_household_members",
+        rpcArgs,
+      );
 
       const loadedParticipants = (memberRows || []) as Participant[];
 

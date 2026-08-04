@@ -82,11 +82,7 @@ export default function CoachMapPage() {
 
   const loadMapData = useCallback(async (activeEventId: string) => {
     const { data: attendeeData, error: attendeeError } = await supabase
-      .from("attendees")
-      .select(
-        "id,pilot_first,pilot_last,coach_make,coach_model,coach_length,share_with_attendees",
-      )
-      .eq("event_id", activeEventId)
+      .rpc("get_event_public_roster", { p_event_id: activeEventId })
       .order("pilot_last");
 
     if (attendeeError) {

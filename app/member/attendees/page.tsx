@@ -83,7 +83,7 @@ function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
 }
 
 function AttendeesPageInner() {
-  const { event, attendeeId, isReady } = useMemberWorkspace();
+  const { event, attendeeId, isReady, session } = useMemberWorkspace();
   const [eventId, setEventId] = useState<string | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
@@ -118,26 +118,27 @@ function AttendeesPageInner() {
   const loadAttendees = useCallback(
     async (currentEventId: string) => {
       setError(null);
-      const { data, error } = await supabase
-        .from("attendees")
-        .select(
-          "id,entry_id,pilot_first,pilot_last,copilot_first,copilot_last,email,primary_phone,cell_phone,coach_make:coach_manufacturer,coach_model,coach_length,first_time:is_first_timer,volunteer:wants_to_volunteer,handicap_parking,assigned_site,share_with_attendees,has_arrived",
-        )
-        .eq("event_id", currentEventId)
-        .in("registration_status", ["active", "registered"])
-        .order("pilot_last", { ascending: true, nullsFirst: false })
-        .order("pilot_first", { ascending: true, nullsFirst: false });
 
-      if (error) {
-        setError(error.message);
+      const identifier =
+        session?.attendee_email || session?.attendee_phone || null;
+      const rpcArgs = {
+        p_event_id: currentEventId,
+        p_event_code: session?.event_code || null,
+        p_registration_identifier: identifier,
+      };
+
+      const { data: ownRecord, error: ownRecordError } = await supabase.rpc(
+        "get_my_attendee_record",
+        rpcArgs,
+      );
+
+      if (ownRecordError) {
+        setError(ownRecordError.message);
         setStatus("");
         return;
       }
 
-      const attendeeRows = (data || []) as Attendee[];
-
-      const viewer =
-        attendeeRows.find((row) => attendeeId && row.id === attendeeId) || null;
+      const viewer = Array.isArray(ownRecord) ? ownRecord[0] : null;
 
       if (!viewer?.share_with_attendees) {
         setCanViewLocator(false);
@@ -158,25 +159,39 @@ function AttendeesPageInner() {
           activityType: "view_attendee_locator",
         });
       }
-      const sharedAttendeeRows = attendeeRows.filter(
-        (row) => !!row.share_with_attendees,
-      );
+
+      const { data, error } = await supabase
+        .rpc("get_event_attendee_locator", rpcArgs)
+        .order("pilot_last", { ascending: true, nullsFirst: false })
+        .order("pilot_first", { ascending: true, nullsFirst: false });
+
+      if (error) {
+        setError(error.message);
+        setStatus("");
+        return;
+      }
+
+      const sharedAttendeeRows = ((data || []) as Array<
+        Record<string, unknown>
+      >).map((row) => ({
+        ...row,
+        coach_make: (row.coach_manufacturer as string | null) ?? null,
+        first_time: row.is_first_timer as boolean | null,
+        volunteer: row.wants_to_volunteer as boolean | null,
+      })) as unknown as Attendee[];
+
       setAttendees(sharedAttendeeRows);
 
-      const attendeeIds = sharedAttendeeRows.map((a) => a.id);
-      if (attendeeIds.length === 0) {
+      if (sharedAttendeeRows.length === 0) {
         setHouseholdMembers([]);
         setStatus("Loaded 0 shared attendees.");
         return;
       }
 
-      const { data: memberData, error: memberError } = await supabase
-        .from("attendee_household_members")
-        .select(
-          "id,attendee_id,person_role,first_name,last_name,nickname,display_name,age_text,sort_order,raw_text",
-        )
-        .in("attendee_id", attendeeIds)
-        .order("sort_order", { ascending: true, nullsFirst: false });
+      const { data: memberData, error: memberError } = await supabase.rpc(
+        "get_event_locator_household_members",
+        rpcArgs,
+      );
 
       if (memberError) {
         setError(
@@ -188,13 +203,9 @@ function AttendeesPageInner() {
       }
 
       setHouseholdMembers((memberData || []) as HouseholdMember[]);
-      console.log(
-        "BERTLING MEMBERS",
-        (memberData || []).filter((m) => m.last_name === "Bertling"),
-      );
       setStatus(`Loaded ${sharedAttendeeRows.length} shared attendees.`);
     },
-    [attendeeId],
+    [attendeeId, session],
   );
 
   useEffect(() => {

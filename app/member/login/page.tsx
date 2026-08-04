@@ -427,7 +427,7 @@ export default function MemberLoginPage() {
       saveMemberSession({
         event_id: event.id,
         event_name: event.name || null,
-        event_code: null,
+        event_code: entered,
         venue_name: event.venue_name || null,
         location: event.location || null,
         start_date: event.start_date || null,

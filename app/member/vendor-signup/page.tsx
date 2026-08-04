@@ -143,7 +143,7 @@ function statusBadge(status: string) {
 function MemberVendorSignupInner() {
   const searchParams = useSearchParams();
   const vendorIdFromUrl = searchParams.get("vendorId") || "";
-  const { event, attendeeId, isReady } = useMemberWorkspace();
+  const { event, attendeeId, isReady, session } = useMemberWorkspace();
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [attendee, setAttendee] = useState<AttendeeRow | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState(vendorIdFromUrl);
@@ -268,18 +268,21 @@ function MemberVendorSignupInner() {
         setSelectedVendorId(visibleVendors[0].id);
       }
 
-      const { data: attendeeRow, error: attendeeError } = await supabase
-        .from("attendees")
-        .select(
-          "id,email,pilot_first,pilot_last,assigned_site,primary_phone,cell_phone,coach_manufacturer,coach_model,coach_length",
-        )
-        .eq("id", attendeeId)
-        .eq("event_id", event.id)
-        .maybeSingle<AttendeeRow>();
+      const { data: attendeeRecordData, error: attendeeError } =
+        await supabase.rpc("get_my_attendee_record", {
+          p_event_id: event.id,
+          p_event_code: session?.event_code || null,
+          p_registration_identifier:
+            session?.attendee_email || session?.attendee_phone || null,
+        });
 
       if (attendeeError) {
         throw attendeeError;
       }
+
+      const attendeeRow = (
+        Array.isArray(attendeeRecordData) ? attendeeRecordData[0] : null
+      ) as AttendeeRow | null;
 
       const { data: requestRows, error: requestError } = await supabase
         .from("vendor_service_requests")

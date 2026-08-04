@@ -160,7 +160,12 @@ function getStoredViewerAttendeeId() {
 }
 
 function CoachMapPublicPageInner() {
-  const { event: workspaceEvent, attendeeId, isReady } = useMemberWorkspace();
+  const {
+    event: workspaceEvent,
+    attendeeId,
+    isReady,
+    session,
+  } = useMemberWorkspace();
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
@@ -300,12 +305,9 @@ function CoachMapPublicPageInner() {
           .from("parking_sites")
           .select("id,event_id,master_site_id,assigned_attendee_id")
           .eq("event_id", memberEvent.id),
-        supabase
-          .from("attendees")
-          .select(
-            "id,pilot_first,pilot_last,copilot_first,copilot_last,share_with_attendees,assigned_site,coach_make,coach_model,coach_length,has_arrived,arrival_status",
-          )
-          .eq("event_id", memberEvent.id),
+        supabase.rpc("get_event_public_roster", {
+          p_event_id: memberEvent.id,
+        }),
       ]);
 
       if (masterSitesResult.error) {
@@ -355,15 +357,16 @@ function CoachMapPublicPageInner() {
       setLocations((masterLocationsResult.data || []) as MasterMapLocation[]);
       setAttendees(attendeeList);
 
-      const attendeeIds = attendeeList.map((a) => a.id);
-      if (attendeeIds.length > 0) {
-        const { data: memberRows, error: memberError } = await supabase
-          .from("attendee_household_members")
-          .select(
-            "id,attendee_id,person_role,first_name,last_name,nickname,display_name,age_text,sort_order,raw_text",
-          )
-          .in("attendee_id", attendeeIds)
-          .order("sort_order", { ascending: true, nullsFirst: false });
+      if (attendeeList.length > 0) {
+        const { data: memberRows, error: memberError } = await supabase.rpc(
+          "get_event_locator_household_members",
+          {
+            p_event_id: memberEvent.id,
+            p_event_code: session?.event_code || null,
+            p_registration_identifier:
+              session?.attendee_email || session?.attendee_phone || null,
+          },
+        );
         if (memberError) {
           throw memberError;
         }
@@ -382,7 +385,7 @@ function CoachMapPublicPageInner() {
       setHouseholdMembers([]);
       setStatus(err?.message || "Failed to load coach map.");
     }
-  }, [attendeeId, isReady, workspaceEvent]);
+  }, [attendeeId, isReady, workspaceEvent, session]);
 
   // ─── Effects ──────────────────────────────────────────────────────────────────
 

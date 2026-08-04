@@ -12,6 +12,7 @@ import {
   getStoredMemberEmail,
   getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
+import { getMemberSession } from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 import { formatVendorNoticeDisplay, type VendorNotice } from "@/lib/vendorNotice";
@@ -133,24 +134,26 @@ export default function MemberDashboardPage() {
             if (!attendeeId) {
               return;
             }
-            // Get participant_capacity
-            const { data: attendeeData, error: attendeeError } =
-              await supabase
-                .from("attendees")
-                .select("participant_capacity")
-                .eq("id", attendeeId)
-                .single();
-            if (attendeeError) {
-              throw attendeeError;
+
+            const session = getMemberSession();
+            const rpcArgs = {
+              p_event_id: memberEvent.id,
+              p_event_code: session?.event_code || null,
+              p_registration_identifier:
+                session?.attendee_email || session?.attendee_phone || null,
+            };
+
+            const { data: recordData, error: recordError } =
+              await supabase.rpc("get_my_attendee_record", rpcArgs);
+            if (recordError) {
+              throw recordError;
             }
-            setParticipantCapacity(attendeeData?.participant_capacity ?? 0);
+            const record = Array.isArray(recordData) ? recordData[0] : null;
+            setParticipantCapacity(record?.participant_capacity ?? 0);
 
             // Get household members
-            const { data: membersData, error: membersError } = await supabase
-              .from("attendee_household_members")
-              .select("id, display_name, first_name, last_name")
-              .eq("attendee_id", attendeeId)
-              .order("created_at", { ascending: true });
+            const { data: membersData, error: membersError } =
+              await supabase.rpc("get_my_household_members", rpcArgs);
             if (membersError) {
               throw membersError;
             }

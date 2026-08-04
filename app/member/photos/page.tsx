@@ -7,7 +7,12 @@ import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 export default function MemberPhotosPage() {
-  const { event: workspaceEvent, attendeeId, isReady } = useMemberWorkspace();
+  const {
+    event: workspaceEvent,
+    attendeeId,
+    isReady,
+    session,
+  } = useMemberWorkspace();
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -57,11 +62,21 @@ export default function MemberPhotosPage() {
       void loadUploads(attendeeId);
 
       void (async () => {
-        const { data } = await supabase
-          .from("attendees")
-          .select("nickname, pilot_first, pilot_last")
-          .eq("id", attendeeId)
-          .maybeSingle();
+        if (!workspaceEvent?.id) {
+          return;
+        }
+
+        const { data: recordData } = await supabase.rpc(
+          "get_my_attendee_record",
+          {
+            p_event_id: workspaceEvent.id,
+            p_event_code: session?.event_code || null,
+            p_registration_identifier:
+              session?.attendee_email || session?.attendee_phone || null,
+          },
+        );
+
+        const data = Array.isArray(recordData) ? recordData[0] : null;
 
         if (data) {
           const photographerName =
@@ -84,7 +99,7 @@ export default function MemberPhotosPage() {
     } else {
       setApprovedPhotos([]);
     }
-  }, [attendeeId, isReady, workspaceEvent?.id]);
+  }, [attendeeId, isReady, workspaceEvent?.id, session]);
 
   useEffect(() => {
     if (!isReady || !workspaceEvent?.id || !attendeeId) {
