@@ -1,6 +1,6 @@
 # ADR-012 — Person–Tenant Relationship Architecture
 
-**Status:** Proposed — pending approval
+**Status:** Accepted
 **Version:** 1.1
 **Date:** 2026-07-31
 
