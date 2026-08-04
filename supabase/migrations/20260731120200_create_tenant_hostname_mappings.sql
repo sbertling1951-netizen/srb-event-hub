@@ -74,10 +74,33 @@ COMMENT ON COLUMN public.tenant_hostname_mappings.is_active IS
 COMMENT ON CONSTRAINT tenant_hostname_mappings_tenant_id_fkey ON public.tenant_hostname_mappings IS
   'Prevents deletion of a Tenant while a governed hostname mapping still references it.';
 
+-- Governed migration-history exception: this DO block seeds two specific,
+-- historically confirmed production hostnames onto one specific, historically
+-- confirmed Tenant UUID. It is a one-time historical record, not a general
+-- "map any hostname to whichever Tenant is active" rule, and per this
+-- migration's own governing task it must never guess a substitute Tenant --
+-- not the sole active Tenant, not any other candidate -- when this exact
+-- UUID is absent or inactive. On a fresh replay, no migration in this
+-- repository creates the initial Tenant row (a known, separately tracked
+-- architectural gap; see ADR-009 section 16), so the confirmed Tenant this seed
+-- depends on does not exist yet. Rather than fail the entire migration --
+-- which would also block the Tenant-independent schema below from ever
+-- being created on a fresh replay -- the seed step alone is skipped when its
+-- specific historical Tenant cannot be confirmed. An empty mapping table is
+-- the correct, already-designed fail-closed outcome: resolveTenantFromHeaders
+-- (lib/server/tenantResolver.ts) returns an "unknown_hostname" unresolved
+-- result for these hostnames, which ADR-009 section 9 defines as the safe, neutral
+-- "Tenant unavailable" state -- not a gap this migration must paper over.
+-- Because this migration's version is already recorded as applied in the
+-- linked production database, this change affects only fresh-replay
+-- behavior; it does not and cannot cause the migration to run again there.
 DO $migration$
 DECLARE
   canonical_tenant_id CONSTANT uuid := '16c39847-ce1d-43c3-b9bc-75f33e16d711';
   canonical_tenant_count bigint;
+  target_hostname text;
+  existing_tenant_id uuid;
+  existing_is_active boolean;
   seed_hostname_count bigint;
 BEGIN
   SELECT count(*)
@@ -86,26 +109,39 @@ BEGIN
   WHERE id = canonical_tenant_id
     AND is_active = true;
 
-  IF canonical_tenant_count <> 1 THEN
-    RAISE EXCEPTION
-      'Tenant hostname mapping seed requires exactly one active confirmed Tenant %, found %',
-      canonical_tenant_id,
-      canonical_tenant_count;
+  IF canonical_tenant_count = 0 THEN
+    RAISE NOTICE
+      'Tenant hostname mapping seed: confirmed Tenant % not found active; skipping historical hostname seed.',
+      canonical_tenant_id;
+    RETURN;
   END IF;
 
-  IF EXISTS (
-    SELECT 1
+  -- Each hostname is evaluated on its own: an already-correct mapping is
+  -- preserved untouched, a missing mapping is inserted, and any mapping that
+  -- disagrees with the confirmed Tenant (a different Tenant, or an inactive
+  -- row) fails the migration closed rather than being silently remapped or
+  -- reactivated.
+  FOREACH target_hostname IN ARRAY ARRAY['app.eventsyncapp.com', 'epicentrax.com']
+  LOOP
+    SELECT tenant_id, is_active
+      INTO existing_tenant_id, existing_is_active
     FROM public.tenant_hostname_mappings
-    WHERE hostname IN ('app.eventsyncapp.com', 'epicentrax.com')
-  ) THEN
-    RAISE EXCEPTION
-      'Tenant hostname mapping seed requires app.eventsyncapp.com and epicentrax.com to be unmapped before insertion';
-  END IF;
+    WHERE hostname = target_hostname;
 
-  INSERT INTO public.tenant_hostname_mappings (hostname, tenant_id)
-  VALUES
-    ('app.eventsyncapp.com', canonical_tenant_id),
-    ('epicentrax.com', canonical_tenant_id);
+    IF NOT FOUND THEN
+      INSERT INTO public.tenant_hostname_mappings (hostname, tenant_id)
+      VALUES (target_hostname, canonical_tenant_id);
+    ELSIF existing_tenant_id = canonical_tenant_id AND existing_is_active THEN
+      NULL; -- already correct; preserve as-is.
+    ELSE
+      RAISE EXCEPTION
+        'Tenant hostname mapping seed found % already mapped to Tenant % (active=%), conflicting with confirmed Tenant %. Refusing to remap.',
+        target_hostname,
+        existing_tenant_id,
+        existing_is_active,
+        canonical_tenant_id;
+    END IF;
+  END LOOP;
 
   SELECT count(*)
     INTO seed_hostname_count
