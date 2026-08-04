@@ -237,26 +237,43 @@ function MemberCheckinPageInner() {
         );
       }
 
-      const { data, error } = await supabase.rpc("submit_member_checkin", {
-        p_event_id: event.id,
-        p_expected_attendee_id: attendee.id,
-        p_has_arrived: hasArrived,
-        p_share_with_attendees: shareWithAttendees,
-        p_assigned_site: siteNumber,
-        p_event_code: temporaryAccess ? temporaryEventCode.trim() : null,
-        p_registration_identifier: temporaryAccess
-          ? temporaryRegistrationIdentifier.trim()
-          : null,
+      const requestHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (sessionData.session?.access_token) {
+        requestHeaders.Authorization = `Bearer ${sessionData.session.access_token}`;
+      }
+
+      const response = await fetch("/api/member/checkin", {
+        method: "POST",
+        headers: requestHeaders,
+        body: JSON.stringify({
+          eventId: event.id,
+          expectedAttendeeId: attendee.id,
+          hasArrived,
+          shareWithAttendees,
+          assignedSite: siteNumber,
+          eventCode: temporaryAccess ? temporaryEventCode.trim() : null,
+          registrationIdentifier: temporaryAccess
+            ? temporaryRegistrationIdentifier.trim()
+            : null,
+        }),
       });
 
+      const responseBody = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          "Check-in verification failed. Re-enter your event code and registration email or mobile number.",
+        );
+      }
+
+      const data = responseBody?.data;
       const updatedAttendee =
         Array.isArray(data) && data.length > 0
           ? (data[0] as CheckinResult)
           : null;
-
-      if (error) {
-        throw error;
-      }
 
       if (!updatedAttendee?.id) {
         throw new Error(
