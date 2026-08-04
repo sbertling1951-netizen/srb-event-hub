@@ -29,6 +29,31 @@
 -- recorded as applied in the linked production database, amending this file
 -- changes only fresh-replay behavior; it does not and cannot cause the
 -- migration to run again there.
+--
+-- Second governed migration-history exception: this DO block was further
+-- narrowed after the first amendment (above) was found to still fail
+-- closed unnecessarily on a genuinely empty database -- one with zero
+-- Events and therefore no ownership to backfill or validate. Both the
+-- original and first-amended versions required exactly one active Tenant
+-- to exist before ever checking whether there was any ownership work to
+-- perform at all, so a fresh replay with zero Events and zero Tenants
+-- still failed, even though this migration never reads, selects, or
+-- depends on any Tenant row in that state. This amendment counts Events
+-- first: when the Events table is empty, the migration performs no Tenant
+-- resolution of any kind and succeeds as a no-op, regardless of whether
+-- zero, one, or many Tenants exist -- none of those states involve a
+-- legitimate ownership decision when there is no Event to own. It creates
+-- no Tenant, creates no Event, infers no Tenant, and seeds no
+-- organizational data. Every check for a non-empty Events table is
+-- unchanged and remains exactly as strict as before: one or more Events
+-- still requires resolving exactly one active Tenant, still fails closed
+-- on zero or multiple active Tenants, still fails closed on any Event
+-- already owned by a foreign Tenant, and still fails closed on any
+-- dangling Tenant reference. Because this migration's version is already
+-- recorded as applied in the linked production database -- which has
+-- never been in a zero-Event state -- this amendment changes only future
+-- fresh-replay and new-deployment behavior; it does not and cannot cause
+-- the migration to run again there.
 
 ALTER TABLE public.events
   ADD COLUMN tenant_id uuid;
@@ -50,73 +75,88 @@ DECLARE
   rows_backfilled bigint;
   unresolved_count bigint;
 BEGIN
-  -- Resolve the single active Tenant unambiguously. This migration performs
-  -- a one-time historical backfill onto unowned Events; it must never guess
-  -- among multiple Tenants and must not proceed without exactly one active
-  -- candidate.
-  SELECT count(*)
-    INTO active_tenant_count
-  FROM public.tenants
-  WHERE is_active = true;
-
-  IF active_tenant_count <> 1 THEN
-    RAISE EXCEPTION
-      'Event tenant ownership backfill requires exactly one active canonical Tenant, found %. Resolve the ambiguous or missing Tenant state before this migration can proceed.',
-      active_tenant_count;
-  END IF;
-
-  SELECT id
-    INTO canonical_tenant_id
-  FROM public.tenants
-  WHERE is_active = true;
-
-  -- All validation happens before any mutation below. Any Event that
-  -- already carries a non-NULL tenant_id must reference a real Tenant row.
-  -- This is a corrupted state, not an ambiguity this migration may resolve
-  -- by guessing; fail closed.
-  SELECT count(*)
-    INTO invalid_tenant_count
-  FROM public.events AS e
-  WHERE e.tenant_id IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM public.tenants AS t WHERE t.id = e.tenant_id
-    );
-
-  IF invalid_tenant_count <> 0 THEN
-    RAISE EXCEPTION
-      'Event tenant ownership backfill found % event(s) whose tenant_id does not reference an existing Tenant. Refusing to proceed.',
-      invalid_tenant_count;
-  END IF;
-
-  -- The resolved active Tenant is the only legitimate owner this migration
-  -- recognizes. An Event already owned by any other Tenant -- even a valid,
-  -- existing one -- fails the migration closed rather than being preserved
-  -- as if mixed ownership were acceptable. This also covers more than one
-  -- distinct non-canonical Tenant being represented across Events.
-  SELECT count(*), array_agg(DISTINCT e.tenant_id)
-    INTO foreign_tenant_count, foreign_tenant_ids
-  FROM public.events AS e
-  WHERE e.tenant_id IS NOT NULL
-    AND e.tenant_id <> canonical_tenant_id;
-
-  IF foreign_tenant_count <> 0 THEN
-    RAISE EXCEPTION
-      'Event tenant ownership backfill found % event(s) owned by Tenant(s) % other than the resolved canonical Tenant %. Refusing to proceed.',
-      foreign_tenant_count,
-      foreign_tenant_ids,
-      canonical_tenant_id;
-  END IF;
-
+  -- Count Events before requiring any Tenant to exist. This migration only
+  -- ever needs to resolve or consume Tenant ownership when there is
+  -- ownership work to perform -- backfilling an existing Event's NULL
+  -- tenant_id, or validating an existing Event's non-NULL tenant_id. A
+  -- genuinely empty Events table has no ownership to backfill and no
+  -- ownership to validate, regardless of how many Tenants exist (zero, one,
+  -- or many): this migration never reads, chooses, or depends on any
+  -- Tenant row in that state, so requiring one to exist first would fail
+  -- closed against a risk that cannot occur here.
   SELECT count(*)
     INTO event_count
   FROM public.events;
 
   IF event_count = 0 THEN
     -- A fresh or genuinely Event-less database. There is nothing to
-    -- backfill, and no Event may be invented to satisfy this migration.
+    -- backfill or validate, and no Event may be invented to satisfy this
+    -- migration. No Tenant is created, inferred, or consumed.
     RAISE NOTICE
-      'Event tenant ownership backfill: events table is empty; nothing to backfill.';
+      'Event tenant ownership backfill: events table is empty; nothing to backfill or validate. No Tenant resolution required.';
   ELSE
+    -- One or more Events exist, so there is a genuine ownership decision to
+    -- make. Every check below is unchanged from the first amendment and
+    -- remains exactly as strict.
+    --
+    -- Resolve the single active Tenant unambiguously. This migration
+    -- performs a one-time historical backfill onto unowned Events; it must
+    -- never guess among multiple Tenants and must not proceed without
+    -- exactly one active candidate.
+    SELECT count(*)
+      INTO active_tenant_count
+    FROM public.tenants
+    WHERE is_active = true;
+
+    IF active_tenant_count <> 1 THEN
+      RAISE EXCEPTION
+        'Event tenant ownership backfill requires exactly one active canonical Tenant, found %. Resolve the ambiguous or missing Tenant state before this migration can proceed.',
+        active_tenant_count;
+    END IF;
+
+    SELECT id
+      INTO canonical_tenant_id
+    FROM public.tenants
+    WHERE is_active = true;
+
+    -- All validation happens before any mutation below. Any Event that
+    -- already carries a non-NULL tenant_id must reference a real Tenant row.
+    -- This is a corrupted state, not an ambiguity this migration may resolve
+    -- by guessing; fail closed.
+    SELECT count(*)
+      INTO invalid_tenant_count
+    FROM public.events AS e
+    WHERE e.tenant_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM public.tenants AS t WHERE t.id = e.tenant_id
+      );
+
+    IF invalid_tenant_count <> 0 THEN
+      RAISE EXCEPTION
+        'Event tenant ownership backfill found % event(s) whose tenant_id does not reference an existing Tenant. Refusing to proceed.',
+        invalid_tenant_count;
+    END IF;
+
+    -- The resolved active Tenant is the only legitimate owner this
+    -- migration recognizes. An Event already owned by any other Tenant --
+    -- even a valid, existing one -- fails the migration closed rather than
+    -- being preserved as if mixed ownership were acceptable. This also
+    -- covers more than one distinct non-canonical Tenant being represented
+    -- across Events.
+    SELECT count(*), array_agg(DISTINCT e.tenant_id)
+      INTO foreign_tenant_count, foreign_tenant_ids
+    FROM public.events AS e
+    WHERE e.tenant_id IS NOT NULL
+      AND e.tenant_id <> canonical_tenant_id;
+
+    IF foreign_tenant_count <> 0 THEN
+      RAISE EXCEPTION
+        'Event tenant ownership backfill found % event(s) owned by Tenant(s) % other than the resolved canonical Tenant %. Refusing to proceed.',
+        foreign_tenant_count,
+        foreign_tenant_ids,
+        canonical_tenant_id;
+    END IF;
+
     SELECT count(*) FILTER (WHERE e.tenant_id IS NULL)
       INTO null_tenant_count
     FROM public.events AS e;
@@ -142,19 +182,19 @@ BEGIN
       'Event tenant ownership backfill: % previously-unowned event(s) backfilled onto Tenant %.',
       rows_backfilled,
       canonical_tenant_id;
-  END IF;
 
-  -- Final verification regardless of path taken above: every Event must now
-  -- reference exactly the resolved canonical Tenant, with no exceptions.
-  SELECT count(*)
-    INTO unresolved_count
-  FROM public.events AS e
-  WHERE e.tenant_id IS DISTINCT FROM canonical_tenant_id;
+    -- Final verification: every Event must now reference exactly the
+    -- resolved canonical Tenant, with no exceptions.
+    SELECT count(*)
+      INTO unresolved_count
+    FROM public.events AS e
+    WHERE e.tenant_id IS DISTINCT FROM canonical_tenant_id;
 
-  IF unresolved_count <> 0 THEN
-    RAISE EXCEPTION
-      'Event tenant ownership backfill left % event(s) without the resolved canonical Tenant''s ownership.',
-      unresolved_count;
+    IF unresolved_count <> 0 THEN
+      RAISE EXCEPTION
+        'Event tenant ownership backfill left % event(s) without the resolved canonical Tenant''s ownership.',
+        unresolved_count;
+    END IF;
   END IF;
 END;
 $migration$;
