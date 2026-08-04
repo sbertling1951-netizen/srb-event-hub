@@ -1,10 +1,10 @@
 # EpicentraX Domain Model
 
-**Status:** Living architectural standard
+**Status:** Accepted architectural standard
 
 **Version:** 2.0
 
-**Date:** August 2026
+**Accepted:** August 4, 2026
 
 ---
 
@@ -380,6 +380,12 @@ governed architectural rules.
 When governed identity architecture reconnects preserved representations, the
 reconnection is made to the enduring Person; it does not broaden access or
 rewrite history.
+
+Identity correction shall never itself grant, expand, or alter Authority.
+
+Authority remains derived fresh from whichever Relationship, Assignment, and
+other governed facts the corrected Person currently holds, exactly as it
+would for any other Person.
 
 When representations are determined not to belong together, the platform shall
 restore independent continuity while preserving the historical record of the
