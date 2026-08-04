@@ -3,14 +3,41 @@
 -- below. Authenticated table mutation privileges remain only because the
 -- existing active-admin RLS policies use them for the admin attendee editor;
 -- this does not establish Tenant- or Event-scoped admin authority.
+--
+-- Governed migration-history exception: these three named policies predate
+-- this repository's migration history -- no migration here ever creates
+-- them, so each was established directly in the linked production database
+-- before migration-based tracking began (the same pattern already repaired
+-- in 20260731120100_secure_events_rls.sql,
+-- 20260731120200_create_tenant_hostname_mappings.sql,
+-- 20260801120600_close_member_checkin_direct_write_bypasses.sql,
+-- 20260801120900_close_admin_users_direct_write_bypass.sql, and
+-- 20260803120000_close_unrestricted_anon_attendee_select.sql). Two of these
+-- ("member insert household members", "member delete household members")
+-- had no ownership restriction at all (WITH CHECK/USING (true)), letting
+-- any authenticated caller insert or delete any household member row for
+-- any attendee -- the exposure this migration exists to close. An
+-- unconditional DROP POLICY only succeeds where that pre-existing object
+-- happens to be present; on a fresh replay, where none of these policies
+-- exist, the same statements fail. The fix generalizes the same intent --
+-- "these named policies must not exist afterward" -- so it succeeds
+-- whether or not each was already present, while still guaranteeing the
+-- same end state either way: no unrestricted or self-service direct-table
+-- INSERT/UPDATE/DELETE policy remains on attendee_household_members, and
+-- the governed save_participant_identity RPC (SECURITY DEFINER, verifying
+-- ownership through resolve_auth_person_link and recording provenance)
+-- remains the sole member mutation pathway either way. Because this
+-- migration's version is already recorded as applied in the linked
+-- production database, this change affects only fresh-replay behavior; it
+-- does not and cannot cause the migration to run again there.
 
-DROP POLICY "member insert household members"
+DROP POLICY IF EXISTS "member insert household members"
 ON public.attendee_household_members;
 
-DROP POLICY "member update household members"
+DROP POLICY IF EXISTS "member update household members"
 ON public.attendee_household_members;
 
-DROP POLICY "member delete household members"
+DROP POLICY IF EXISTS "member delete household members"
 ON public.attendee_household_members;
 
 REVOKE INSERT, UPDATE, DELETE
