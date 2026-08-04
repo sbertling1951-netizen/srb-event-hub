@@ -19,6 +19,56 @@ const PASSKEY_AUTH_ENABLED =
 
 type LoadStatus = "checking" | "loading" | "ready" | "denied";
 
+type WorkspaceContextShadow = {
+  context: {
+    resolutionState: string;
+    eligibleEvents: { id: string }[];
+    selectedEvent: { id: string } | null;
+    reasons: string[];
+  };
+  shadowComparison: {
+    legacy: { eligibleEventIds: string[] };
+    resolver: {
+      resolutionState: string;
+      eligibleEventIds: string[];
+      selectedEventId: string | null;
+    };
+    comparison: {
+      result: "match" | "mismatch";
+      reasonCode: string;
+    };
+  };
+};
+
+async function loadWorkspaceContextShadow(
+  accessToken: string,
+  legacyRegistrations: ResolvedRegistration[],
+): Promise<WorkspaceContextShadow | null> {
+  try {
+    const response = await fetch("/api/member/workspace-context", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        legacyEligibleEventIds: legacyRegistrations.map(
+          (registration) => registration.event_id,
+        ),
+      }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as WorkspaceContextShadow;
+  } catch {
+    // Shadow diagnostics must never change the authoritative Member workflow.
+    return null;
+  }
+}
+
 function deriveDisplayName(
   email: string | null,
   registrations: ResolvedRegistration[],
@@ -54,6 +104,8 @@ export default function MemberAccountPage() {
     null,
   );
   const [signingOut, setSigningOut] = useState(false);
+  const [workspaceContextShadow, setWorkspaceContextShadow] =
+    useState<WorkspaceContextShadow | null>(null);
 
   // Access rules: require a valid Supabase Auth session and resolve the
   // person exclusively through auth.uid() -> person_auth_accounts ->
@@ -68,6 +120,7 @@ export default function MemberAccountPage() {
     const session = sessionData?.session;
 
     if (!session) {
+      setWorkspaceContextShadow(null);
       setLoadStatus("denied");
       router.replace("/member/login");
       return;
@@ -89,10 +142,19 @@ export default function MemberAccountPage() {
       return;
     }
 
-    setRegistrations(
-      Array.isArray(rows) ? (rows as ResolvedRegistration[]) : [],
-    );
+    const resolvedRegistrations = Array.isArray(rows)
+      ? (rows as ResolvedRegistration[])
+      : [];
+
+    setRegistrations(resolvedRegistrations);
     setLoadStatus("ready");
+
+    // Comparison only: the existing direct RPC result remains authoritative
+    // for this page until a later Workspace Resolver slice is approved.
+    void loadWorkspaceContextShadow(
+      session.access_token,
+      resolvedRegistrations,
+    ).then(setWorkspaceContextShadow);
   }, [router]);
 
   useEffect(() => {
@@ -297,6 +359,32 @@ export default function MemberAccountPage() {
           Passkey management is enabled but not yet implemented in this
           view.
         </div>
+      ) : null}
+
+      {process.env.NODE_ENV !== "production" && workspaceContextShadow ? (
+        <details
+          style={{
+            marginTop: 24,
+            border: "1px dashed #94a3b8",
+            borderRadius: 8,
+            padding: 12,
+            color: "#334155",
+            fontSize: 12,
+          }}
+        >
+          <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+            Workspace Context shadow comparison
+          </summary>
+          <pre
+            style={{
+              margin: "10px 0 0",
+              overflowX: "auto",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {JSON.stringify(workspaceContextShadow.shadowComparison, null, 2)}
+          </pre>
+        </details>
       ) : null}
 
       <div
