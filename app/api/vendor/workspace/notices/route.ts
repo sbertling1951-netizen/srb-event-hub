@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { resolveVendorAccessFromCookies } from "@/lib/server/vendorAccess";
+import { recordVendorNoticesAuthorityShadow } from "@/lib/server/vendorNoticesAuthorityShadow";
 import { isVendorNoticeType } from "@/lib/vendorNotice";
 
 const MESSAGE_MAX_LENGTH = 140;
@@ -119,6 +120,19 @@ export async function PATCH(req: Request) {
   }
 
   if (!participation) {
+    // WR-19 Stage 2A: diagnostic only -- computes and records whether the
+    // future Assignment-based policy would allow this action too, purely
+    // for later comparison. Its own return value is never inspected here,
+    // and the helper swallows every internal failure, so it can never
+    // change the response below.
+    await recordVendorNoticesAuthorityShadow({
+      cookies: await cookies(),
+      vendorId: selectedVendor.vendorId,
+      eventId,
+      operation: "update",
+      currentAuthorizationResult: "denied",
+    });
+
     return NextResponse.json(
       {
         ok: false,
@@ -151,6 +165,18 @@ export async function PATCH(req: Request) {
       { status: 500 },
     );
   }
+
+  // WR-19 Stage 2A: diagnostic only, see above -- recorded after the real
+  // mutation has already succeeded. Awaited only so the diagnostic write
+  // reliably completes before the serverless function exits; the helper
+  // swallows every failure internally and can never change this response.
+  await recordVendorNoticesAuthorityShadow({
+    cookies: await cookies(),
+    vendorId: selectedVendor.vendorId,
+    eventId,
+    operation: "update",
+    currentAuthorizationResult: "allowed",
+  });
 
   return NextResponse.json({ ok: true, notice });
 }
@@ -192,6 +218,18 @@ export async function DELETE(req: Request) {
       { status: 500 },
     );
   }
+
+  // WR-19 Stage 2A: diagnostic only, see PATCH above. DELETE has no
+  // event_vendors participation check of its own today (unchanged existing
+  // behavior), so unlike PATCH there is no reachable "denied" branch here
+  // to compare -- only the allowed outcome is recorded for this operation.
+  await recordVendorNoticesAuthorityShadow({
+    cookies: await cookies(),
+    vendorId: selectedVendor.vendorId,
+    eventId,
+    operation: "delete",
+    currentAuthorizationResult: "allowed",
+  });
 
   return NextResponse.json({ ok: true, eventId });
 }

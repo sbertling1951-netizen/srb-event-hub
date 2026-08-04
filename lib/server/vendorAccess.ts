@@ -1,9 +1,42 @@
+import { createClient } from "@supabase/supabase-js";
 import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 
 export const VENDOR_AUTH_COOKIE = "fcoc-vendor-access-token";
 export const VENDOR_SELECTED_COOKIE = "fcoc-vendor-selected-vendor-id";
+
+/**
+ * A non-persistent client bound to the vendor's own already-validated
+ * access token (never the service-role client). This is what lets a
+ * SECURITY DEFINER RPC see the caller's real identity through auth.uid() --
+ * the same low-level technique lib/server/authenticatedUserClient.ts uses
+ * for the member/admin Bearer-token surfaces, applied here to the vendor
+ * cookie's raw token directly. Diagnostic use only as of WR-19 Stage 2A;
+ * it does not participate in the live Vendor Notices authorization
+ * decision.
+ */
+export function createVendorTokenBoundClient(accessToken: string) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, anonKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
 
 export type VendorAccessRow = {
   id: string;
