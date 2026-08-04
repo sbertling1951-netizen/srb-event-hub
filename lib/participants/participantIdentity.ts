@@ -9,36 +9,13 @@ export type ParticipantIdentityRecord = {
   cellPhone: string;
 };
 
-export async function loadParticipantIdentity(participantId: string) {
-  const { data, error } = await supabase
-    .from("attendee_household_members")
-    .select("*")
-    .eq("id", participantId)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    return null;
-  }
-
-  return {
-    id: data.id,
-    firstName: data.first_name ?? "",
-    lastName: data.last_name ?? "",
-    nickname: data.nickname ?? "",
-    email: data.email ?? "",
-    cellPhone: data.cell_phone ?? "",
-  } as ParticipantIdentityRecord;
-}
-
 export async function saveParticipantIdentity(
   participant: ParticipantIdentityRecord,
+  eventId: string,
 ) {
   const { data, error } = await supabase.rpc("save_participant_identity", {
     p_participant_id: participant.id,
+    p_event_id: eventId,
     p_first_name: participant.firstName,
     p_last_name: participant.lastName,
     p_nickname: participant.nickname,
@@ -64,7 +41,7 @@ export async function createParticipantIdentity({
 }: {
   attendeeId: string;
   eventId: string;
-  personRole: string;
+  personRole: "pilot" | "copilot" | "additional";
   sortOrder: number;
   firstName: string;
   lastName: string;

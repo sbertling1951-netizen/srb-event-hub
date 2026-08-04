@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
 import {
   createParticipantIdentity,
   saveParticipantIdentity,
@@ -9,7 +10,6 @@ import {
 export type ParticipantIdentityEditorProps = {
   open: boolean;
   onClose: () => void;
-  registrationId: string;
   attendeeId: string;
   eventId: string;
   sortOrder: number;
@@ -31,7 +31,6 @@ export type ParticipantIdentity = {
 export default function ParticipantIdentityEditor({
   open,
   onClose,
-  registrationId,
   attendeeId,
   eventId,
   sortOrder,
@@ -46,7 +45,7 @@ export default function ParticipantIdentityEditor({
   const [cellPhone, setCellPhone] = useState("");
 
   useEffect(() => {
-    if (!participant) return;
+    if (!participant) {return;}
 
     setFirstName(participant.firstName ?? "");
     setLastName(participant.lastName ?? "");
@@ -58,14 +57,17 @@ export default function ParticipantIdentityEditor({
   async function handleSave() {
     try {
       if (participant) {
-        await saveParticipantIdentity({
-          id: participant.id,
-          firstName,
-          lastName,
-          nickname,
-          email,
-          cellPhone,
-        });
+        await saveParticipantIdentity(
+          {
+            id: participant.id,
+            firstName,
+            lastName,
+            nickname,
+            email,
+            cellPhone,
+          },
+          eventId,
+        );
       } else {
         await createParticipantIdentity({
           attendeeId,
@@ -81,17 +83,13 @@ export default function ParticipantIdentityEditor({
       }
       onSaved?.();
       onClose();
-    } catch (error) {
-      console.error("Participant save failed:", error);
-      if (error && typeof error === "object" && "message" in error) {
-        alert((error as any).message);
-      } else {
-        alert("Participant save failed. See browser console for details.");
-      }
+    } catch {
+      console.error("Participant identity save failed.");
+      alert("Participant identity changes could not be saved.");
     }
   }
 
-  if (!open) return null;
+  if (!open) {return null;}
 
   return (
     <div
