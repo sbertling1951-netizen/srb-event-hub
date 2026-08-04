@@ -26,10 +26,15 @@
 -- INSERT/UPDATE/DELETE policy remains on attendee_household_members, and
 -- the governed save_participant_identity RPC (SECURITY DEFINER, verifying
 -- ownership through resolve_auth_person_link and recording provenance)
--- remains the sole member mutation pathway either way. Because this
--- migration's version is already recorded as applied in the linked
--- production database, this change affects only fresh-replay behavior; it
--- does not and cannot cause the migration to run again there.
+-- remains the sole member mutation pathway either way. This migration is
+-- currently pending on the linked project -- it has not yet been recorded
+-- as applied there. When it is deliberately applied to production, it is
+-- expected to remove these three historical direct-write policies, revoke
+-- the associated anon INSERT/UPDATE/DELETE privileges, and establish the
+-- governed save_participant_identity RPC and audit pathway as production's
+-- real security state for the first time. No assumption should be made
+-- that this migration is inert against production; it is pending, not
+-- already applied.
 
 DROP POLICY IF EXISTS "member insert household members"
 ON public.attendee_household_members;
