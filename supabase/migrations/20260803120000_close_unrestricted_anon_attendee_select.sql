@@ -605,10 +605,34 @@ GRANT EXECUTE ON FUNCTION public.get_event_locator_household_members(uuid, text,
 -- Close the unrestricted reads. Legitimate reads now go through the
 -- governed RPCs above; no anon-role direct-table SELECT policy remains
 -- on either table.
-DROP POLICY "Allow all select attendees" ON public.attendees;
+--
+-- Governed migration-history exception: both named policies predate this
+-- repository's migration history -- no migration here ever creates them,
+-- so each was established directly in the linked production database
+-- before migration-based tracking began (the same pattern already repaired
+-- in 20260731120100_secure_events_rls.sql,
+-- 20260731120200_create_tenant_hostname_mappings.sql,
+-- 20260801120600_close_member_checkin_direct_write_bypasses.sql, and
+-- 20260801120900_close_admin_users_direct_write_bypass.sql). Both granted
+-- unrestricted `USING (true)` SELECT to anon (and, for the household-member
+-- policy, authenticated too) -- confirmed against the linked production
+-- schema snapshot. An unconditional DROP POLICY only succeeds where that
+-- pre-existing object happens to be present; on a fresh replay, where
+-- neither policy exists, the same statements fail. The fix generalizes the
+-- same intent -- "these named policies must not exist afterward" -- so it
+-- succeeds whether or not each was already present, while still
+-- guaranteeing the same end state either way: no unrestricted anon or
+-- authenticated direct-table SELECT policy remains on either table, and
+-- the six governed RPCs above (all SECURITY DEFINER, table-owner
+-- privilege) remain the only read pathway for member/public attendee and
+-- household-member data either way. Because this migration's version is
+-- already recorded as applied in the linked production database, this
+-- change affects only fresh-replay behavior; it does not and cannot cause
+-- the migration to run again there.
+DROP POLICY IF EXISTS "Allow all select attendees" ON public.attendees;
 REVOKE SELECT ON TABLE public.attendees FROM anon;
 
-DROP POLICY "public read attendee_household_members" ON public.attendee_household_members;
+DROP POLICY IF EXISTS "public read attendee_household_members" ON public.attendee_household_members;
 REVOKE SELECT ON TABLE public.attendee_household_members FROM anon;
 GRANT SELECT ON TABLE public.attendee_household_members TO authenticated;
 
