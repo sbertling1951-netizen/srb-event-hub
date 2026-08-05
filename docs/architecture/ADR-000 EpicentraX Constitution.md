@@ -74,6 +74,13 @@ Organizations own their experiences.
 
 Participants own their identities.
 
+## Preservation of Identity Evidence
+EpicentraX preserves identity evidence and its provenance.
+Observations are retained as historical facts unless governed evidence establishes that they were recorded in error.
+Operational outcomes may change the confidence, current usability, or interpretation of evidence, but they do not erase the historical observation.
+Identity resolution shall accumulate, weigh, and explain evidence rather than replace prior facts with current state.
+EpicentraX reaches conclusions about evidence, not judgments about People. Apparent discrepancies shall first be treated as opportunities to gather additional evidence, resolve ordinary error, or recognize normal changes in a Person's life. Intentional falsity or fraud shall be concluded only through governed, explainable, reviewable, and auditable evidence.
+
 Events own their operational records.
 
 EpicentraX owns the platform.

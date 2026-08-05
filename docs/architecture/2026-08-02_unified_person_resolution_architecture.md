@@ -162,6 +162,26 @@ to the trust context, while provenance preserves all applicable
 classifications and their distinct source categories for later governed
 reconnection and correction.
 
+## Preservation and Reassessment of Identity Evidence
+EpicentraX preserves every legitimate identity observation with its provenance, context, source, and time.
+An observation does not lose its historical value merely because the identifier is no longer current, operational, or preferred. A hard-bounced email address, disconnected telephone number, former mailing address, former surname, retired membership number, or other inactive identifier may remain valuable evidence of historical Person continuity.
+Current usability and historical identity value are separate concerns.
+Operational outcomes may strengthen, weaken, or change the interpretation of evidence. Examples include successful verification, successful delivery, hard bounce, permanent delivery failure, administrator confirmation, Person confirmation, repeated corroboration, conflicting observations, and later governed correction.
+New evidence does not silently overwrite earlier evidence. The resolver preserves the original observation and records the later operational or interpretive evidence separately.
+Repeated consistent observations may strengthen confidence. An isolated conflicting observation may reasonably be classified as a likely typo, outdated value, temporary value, or other ordinary discrepancy when the complete body of evidence supports that interpretation. The original observation remains preserved even when its evidentiary weight is reduced.
+Person-provided information received through a legitimate Experience or governed interaction is presumed to have been provided accurately and in good faith unless material governed evidence establishes a reason for doubt.
+Conflicting evidence invites investigation rather than immediate rejection. A discrepancy alone does not establish mistaken identity, intentional falsity, or fraud.
+The objective of the resolver is not to determine whether one isolated observation is true or false. Its objective is to determine which conclusions are best supported by the complete body of accumulated evidence.
+Accordingly, the resolver shall:
+- preserve observed identifiers and their provenance;
+- distinguish current usability from historical identity value;
+- accumulate corroborating and conflicting evidence across Experiences and Tenants;
+- allow evidentiary weight and confidence to evolve without rewriting history;
+- fail closed when certainty is required and the evidence remains insufficient or materially conflicting;
+- propose governed continuity when the accumulated evidence supports it;
+- preserve reversibility, explainability, reviewability, and auditability;
+- avoid conclusions about a Person's motives when the evidence supports only a conclusion about data quality or identity confidence.
+
 ## 6. Creation rules
 
 Whether an independently represented Person may or must be created follows
