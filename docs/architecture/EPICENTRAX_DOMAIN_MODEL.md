@@ -79,6 +79,25 @@ If an apparent conflict exists, contributors shall first determine whether the
 documents are addressing different concerns before concluding that a genuine
 architectural conflict exists.
 
+## Governing Precedence
+
+Where a genuine conflict remains, governing precedence follows this order:
+
+- The Constitution controls.
+- Accepted Architecture Decision Records govern the architectural decisions
+  within their stated scope.
+- An accepted specialized architecture document governs its stated subject
+  only when its accepted status and governing scope are explicit.
+- The Domain Model governs shared conceptual vocabulary and meaning where a
+  more specific accepted governing source has not deliberately established a
+  compatible specialized rule.
+- No specialized architecture document may silently redefine a Domain Model
+  concept.
+- Proposed, draft, or informational architecture guidance has no governing
+  precedence over an accepted source.
+- Directory location and document title do not establish authority; governing
+  precedence depends on accepted status and stated scope.
+
 Implementation convenience shall never redefine the meaning of a domain
 concept.
 
@@ -130,8 +149,14 @@ The platform therefore distinguishes carefully between:
 Architecture shall preserve these distinctions.
 
 When a required governed concept cannot be resolved with sufficient governed
-certainty, EpicentraX shall fail closed rather than fabricate Identity or
-Authority.
+certainty, EpicentraX shall fail closed rather than fabricate or over-assert
+Identity, Tenant context, Relationship, Assignment, Authority, or Workspace
+determination.
+
+Legitimate Participation may still be preserved under that same uncertainty
+where accepted architecture permits it, provided no governed conclusion is
+fabricated. Fail-closed protects governed conclusions; it does not by itself
+withhold Participation.
 
 ---
 
@@ -158,6 +183,15 @@ Supporting platform concepts include:
 
 - Account
 - Authentication
+
+This document also defines three specialized concepts that are not
+independent primary concepts in their own right:
+
+- Event is a governed subtype of Experience.
+- Organization is a descriptive supporting vocabulary concept, not an
+  independent source of governed state or Authority.
+- Platform Administrator is a specialized platform-Authority concept,
+  distinct from Tenant-scoped Authority.
 
 These concepts are intentionally independent.
 
@@ -380,6 +414,18 @@ governed architectural rules.
 When governed identity architecture reconnects preserved representations, the
 reconnection is made to the enduring Person; it does not broaden access or
 rewrite history.
+
+Cross-Person reconnection shall occur only through governed identity
+architecture. Tenant evidence alone shall not establish reconnection, and
+ordinary Tenant operational authority shall not authorize it. Governed
+platform identity stewardship may perform attributable, reviewable, and
+reversible correction where accepted identity architecture permits it.
+
+Reconnection of independently represented People is distinct from correction
+of an erroneous source record or attribution: reconnection joins
+representations previously understood as separate People into one enduring
+Person, while correction repairs a mistaken record or attribution without
+implying that separate People were ever involved.
 
 Identity correction shall never itself grant, expand, or alter Authority.
 
@@ -755,6 +801,11 @@ The concept intentionally remains broader than Events alone.
 Future platform capabilities may define additional Experience types while
 preserving the same architectural meaning.
 
+A future Experience type does not automatically inherit Event-specific
+scope, Authority, Assignment, or Workspace rules merely because it shares
+Experience's meaning. Those implications are established by the accepted
+architecture governing that Experience type.
+
 ## Stewardship
 
 Experiences are stewarded by the Tenant responsible for conducting them.
@@ -843,6 +894,10 @@ Responsibilities describe organizational need.
 
 They do not describe who currently performs that work.
 
+Responsibility provides reusable organizational meaning. Its application
+within a particular Experience or operational context is contextual and
+separately governed.
+
 ## Responsibility is not
 
 A Responsibility is not:
@@ -906,7 +961,8 @@ An Assignment is not:
 - Participation;
 - Relationship;
 - authentication;
-- Workspace.
+- Workspace;
+- a request, offer, or Invitation.
 
 An Assignment records who has been asked or approved to perform a
 Responsibility.
@@ -1867,6 +1923,9 @@ context.
 
 # Organization
 
+**Classification:** Descriptive supporting concept and vocabulary guardrail.
+Organization is not an independent source of governed state or Authority.
+
 ## Definition
 
 Organization is a general descriptive concept for a coordinated body of
@@ -2280,7 +2339,8 @@ security, policy, and applicable law.
 | Notification | Authorized originator | Communicates state; does not create it |
 | Account | Platform | Access mechanism, not a Person |
 | Authentication | Platform | Establishes control of an access method only |
-| Event | Tenant | Experience context, not an Authority source |
+| Event | Tenant | Governed subtype of Experience; not an Authority source |
+| Organization | Descriptive only; governed according to whatever context represents it (Tenant, or a narrower context) | Not an independent source of governed state or Authority |
 | Platform Administrator | Platform | Separate from all Tenant-derived Authority |
 
 ---
