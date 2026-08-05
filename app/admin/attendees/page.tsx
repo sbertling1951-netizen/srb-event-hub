@@ -123,6 +123,12 @@ type AttendeeEditorState = {
   assigned_site: string;
   participant_type: string;
   registration_capacity: number; // Add registration_capacity after participant_type
+  // True when the underlying stored participant_capacity was null when this
+  // editor session loaded (or this is a brand-new record) and the
+  // administrator has not yet deliberately changed the capacity control.
+  // While true, save must leave capacity unknown rather than persisting the
+  // stepper's display default.
+  registration_capacity_was_unset: boolean;
   primary_phone: string;
   cell_phone: string;
   wants_to_volunteer: boolean;
@@ -323,6 +329,7 @@ function emptyAttendeeEditorState(): AttendeeEditorState {
     assigned_site: "",
     participant_type: "attendee",
     registration_capacity: 1, // initialize to 1
+    registration_capacity_was_unset: false,
     primary_phone: "",
     cell_phone: "",
     coach_manufacturer: "",
@@ -366,6 +373,9 @@ function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
     assigned_site: attendee.assigned_site || "",
     participant_type: attendee.participant_type || "attendee",
     registration_capacity: attendee.participant_capacity ?? 1,
+    registration_capacity_was_unset:
+      attendee.participant_capacity === null ||
+      attendee.participant_capacity === undefined,
     primary_phone: attendee.primary_phone || "",
     cell_phone: attendee.cell_phone || "",
     coach_manufacturer: attendee.coach_manufacturer || "",
@@ -1978,12 +1988,13 @@ function AttendeeEditorModal(props: {
                 <button
                   type="button"
                   style={secondaryButtonStyle}
-                  onClick={() =>
+                  onClick={() => {
                     onChange(
                       "registration_capacity",
                       Math.max(1, state.registration_capacity - 1) as any,
-                    )
-                  }
+                    );
+                    onChange("registration_capacity_was_unset", false);
+                  }}
                 >
                   −
                 </button>
@@ -1992,12 +2003,13 @@ function AttendeeEditorModal(props: {
                   min={1}
                   step={1}
                   value={state.registration_capacity}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     onChange(
                       "registration_capacity",
                       Math.max(1, Number(e.target.value) || 1) as any,
-                    )
-                  }
+                    );
+                    onChange("registration_capacity_was_unset", false);
+                  }}
                   style={{
                     ...inputStyle,
                     width: 70,
@@ -2007,12 +2019,13 @@ function AttendeeEditorModal(props: {
                 <button
                   type="button"
                   style={secondaryButtonStyle}
-                  onClick={() =>
+                  onClick={() => {
                     onChange(
                       "registration_capacity",
                       (state.registration_capacity + 1) as any,
-                    )
-                  }
+                    );
+                    onChange("registration_capacity_was_unset", false);
+                  }}
                 >
                   +
                 </button>
@@ -3193,7 +3206,12 @@ created_at
       !!editorState.additional_cell_phone?.trim();
     // Registration capacity is the authoritative purchased capacity.
     // Household identity fields must never reduce purchased capacity.
-    const requiredCapacity = editorState.registration_capacity;
+    // When capacity was unset (null) at load and the administrator has not
+    // deliberately changed the control, capacity remains unknown rather than
+    // silently persisting the stepper's display default.
+    const requiredCapacity = editorState.registration_capacity_was_unset
+      ? null
+      : editorState.registration_capacity;
 
     try {
       setEditorSaving(true);

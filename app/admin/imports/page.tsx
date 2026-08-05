@@ -52,6 +52,7 @@ type ParsedRegistration = {
   nickname: string;
   copilot_nickname: string;
   additional_attendees: string;
+  participant_capacity: number;
   membership_number: string;
   primary_phone: string;
   cell_phone: string;
@@ -377,6 +378,14 @@ const FIELD_ALIASES = {
     "Additional Guests",
     "Additional Household Members",
   ],
+  participant_capacity: [
+    "Party Size",
+    "Number of Attendees",
+    "Number of Participants",
+    "Participant Capacity",
+    "Paid Participant Capacity",
+    "Capacity",
+  ],
   membership_number: [
     "FCOC Membership Number",
     "Membership Number",
@@ -494,6 +503,30 @@ function buildActivities(row: RawRow, groups: ActivityGroup[]) {
   return activities;
 }
 
+// Derives the minimum paid-slot count evidenced by one imported registration
+// row. A nonblank Pilot name is one paid slot; a legitimate Co-Pilot name in
+// the same paid registration row is one additional paid slot. Free-text
+// fields such as "Additional attendees" are not counted here because they do
+// not reliably evidence a specific number of paid slots -- only structured,
+// discrete name fields are used. An explicit party-size/capacity column, when
+// present and valid, is preserved as-is instead of being derived.
+//
+// A Co-Pilot is treated as legitimate only when a first name is present.
+// Production data contains no genuine Co-Pilot with a first name but no last
+// name, but does contain a last-name-only placeholder value ("FAMILY") used
+// as a household indicator rather than a named individual -- requiring a
+// first name excludes that placeholder pattern without guessing at a list of
+// placeholder words.
+function deriveMinimumImportParticipantCapacity(row: {
+  pilot_first: string;
+  pilot_last: string;
+  copilot_first: string;
+  copilot_last: string;
+}): number {
+  const hasCopilot = !!row.copilot_first;
+  return hasCopilot ? 2 : 1;
+}
+
 function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
   const entry_id = text(getValueByAliases(row, FIELD_ALIASES.entry_id));
   const email = text(getValueByAliases(row, FIELD_ALIASES.email)).toLowerCase();
@@ -510,6 +543,18 @@ function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
   const additional_attendees = text(
     getValueByAliases(row, FIELD_ALIASES.additional_attendees),
   );
+  const explicitParticipantCapacity = parseInteger(
+    getValueByAliases(row, FIELD_ALIASES.participant_capacity),
+  );
+  const participant_capacity =
+    explicitParticipantCapacity !== null && explicitParticipantCapacity > 0
+      ? explicitParticipantCapacity
+      : deriveMinimumImportParticipantCapacity({
+          pilot_first,
+          pilot_last,
+          copilot_first,
+          copilot_last,
+        });
   const membership_number = text(
     getValueByAliases(row, FIELD_ALIASES.membership_number),
   );
@@ -578,6 +623,7 @@ function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
     nickname,
     copilot_nickname,
     additional_attendees,
+    participant_capacity,
     membership_number,
     primary_phone,
     cell_phone,
@@ -1650,7 +1696,7 @@ function AdminAttendeeImportsPageInner() {
 
         const { data, error } = await supabase
           .from("attendees")
-          .select("id, event_id, entry_id, email")
+          .select("id, event_id, entry_id, email, participant_capacity")
           .eq("event_id", selectedImportEventId)
           .or(orFilter);
 
@@ -1702,6 +1748,16 @@ function AdminAttendeeImportsPageInner() {
           participant_type: "attendee",
           vendor_master_id: null,
           vendor_assigned_event_id: null,
+          // Applies to both brand-new and existing attendee rows. The
+          // evidenced minimum is derived only from the row currently being
+          // imported (never from the mutable household roster). An existing
+          // stored value is never reduced -- greatest() raises a lower or
+          // null stored value up to the evidenced minimum and otherwise
+          // preserves whatever administrator-confirmed value already exists.
+          participant_capacity: Math.max(
+            existingMatch?.participant_capacity ?? 0,
+            row.participant_capacity,
+          ),
         };
       });
 
