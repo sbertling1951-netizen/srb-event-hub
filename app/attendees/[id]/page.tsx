@@ -164,8 +164,18 @@ export default function AttendeeProfilePage() {
   const copilotName = fullName(attendee.copilot_first, attendee.copilot_last);
   const displayedSite = attendee.assigned_site || "Not provided";
 
-  const participantCapacity = attendee.participant_capacity ?? householdMembers.length;
-  const emptySlots = Math.max(participantCapacity - householdMembers.length, 0);
+  // attendee.participant_capacity is the stored paid-slot count. null means
+  // capacity was never established for this attendee and must not be
+  // displayed or treated as zero.
+  const hasKnownCapacity = typeof attendee.participant_capacity === "number";
+  const participantCapacity = hasKnownCapacity
+    ? (attendee.participant_capacity as number)
+    : null;
+  const isOverCapacity =
+    hasKnownCapacity && householdMembers.length > (participantCapacity as number);
+  const emptySlots = hasKnownCapacity
+    ? Math.max((participantCapacity as number) - householdMembers.length, 0)
+    : 0;
 
   return (
     <div style={{ padding: 24, maxWidth: 760 }}>
@@ -281,8 +291,27 @@ export default function AttendeeProfilePage() {
         }}
       >
         <h2 style={{ marginTop: 0 }}>
-          Participants ({householdMembers.length} of {participantCapacity})
+          Participants ({householdMembers.length} of{" "}
+          {participantCapacity ?? "—"})
         </h2>
+
+        {isOverCapacity && (
+          <p
+            style={{
+              color: "#b45309",
+              fontWeight: 600,
+              background: "#fffbeb",
+              border: "1px solid #fde68a",
+              borderRadius: 8,
+              padding: "8px 12px",
+            }}
+          >
+            ⚠ {householdMembers.length} participant
+            {householdMembers.length === 1 ? "" : "s"} · {participantCapacity}{" "}
+            paid slot{participantCapacity === 1 ? "" : "s"}. Additional
+            payment or capacity correction required.
+          </p>
+        )}
 
         {householdMembers.length === 0 ? (
           <p style={{ color: "#666" }}>No participant records found.</p>

@@ -74,7 +74,12 @@ export default function MemberDashboardPage() {
   const [vendorsLoading, setVendorsLoading] = useState(true);
   const [currentVendorIndex, setCurrentVendorIndex] = useState(0);
 
-  const [participantCapacity, setParticipantCapacity] = useState(0);
+  // participant_capacity is the stored paid-slot count (set by CSV import or
+  // an admin's onsite payment entry). null means capacity was never
+  // established for this attendee and must not be treated as zero.
+  const [participantCapacity, setParticipantCapacity] = useState<
+    number | null
+  >(null);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
     [],
   );
@@ -149,7 +154,7 @@ export default function MemberDashboardPage() {
               throw recordError;
             }
             const record = Array.isArray(recordData) ? recordData[0] : null;
-            setParticipantCapacity(record?.participant_capacity ?? 0);
+            setParticipantCapacity(record?.participant_capacity ?? null);
 
             // Get household members
             const { data: membersData, error: membersError } =
@@ -354,104 +359,136 @@ export default function MemberDashboardPage() {
       </div>
 
       {/* Participants */}
-      <div
-        className="card"
-        style={{
-          padding: 18,
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          background: "#fff",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <h2 style={{ margin: 0 }}>Participants</h2>
+      {(() => {
+        const hasKnownCapacity = typeof participantCapacity === "number";
+        const capacityValue = hasKnownCapacity
+          ? (participantCapacity as number)
+          : null;
+        const isOverCapacity =
+          hasKnownCapacity && householdMembers.length > (capacityValue as number);
+        const vacantSlots = hasKnownCapacity
+          ? Math.max((capacityValue as number) - householdMembers.length, 0)
+          : 0;
+
+        return (
           <div
+            className="card"
             style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              background: "#eff6ff",
-              color: "#1d4ed8",
-              fontWeight: 700,
+              padding: 18,
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              background: "#fff",
             }}
           >
-            {householdMembers.length} of {participantCapacity}
-          </div>
-        </div>
-
-        <div
-          style={{
-            fontSize: 14,
-            color: "#4b5563",
-            marginBottom: 12,
-          }}
-        >
-          Manage the participants included with your registration. Add
-          participants until all purchased participant slots are filled.
-        </div>
-
-        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-          {householdMembers.map((member) => {
-            const fullName = [member.first_name, member.last_name]
-              .filter(Boolean)
-              .join(" ")
-              .trim();
-
-            const name =
-              fullName || member.display_name || "Unnamed Participant";
-
-            return (
-              <div
-                key={member.id}
-                style={{
-                  padding: "10px 12px",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 8,
-                }}
-              >
-                {name}
-              </div>
-            );
-          })}
-
-          {Array.from({
-            length: Math.max(participantCapacity - householdMembers.length, 0),
-          }).map((_, index) => (
             <div
-              key={`empty-${index}`}
               style={{
-                padding: "10px 12px",
-                border: "1px dashed #cbd5e1",
-                borderRadius: 8,
-                color: "#6b7280",
-                fontStyle: "italic",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 12,
               }}
             >
-              Available Participant Slot
+              <h2 style={{ margin: 0 }}>Participants</h2>
+              <div
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  background: isOverCapacity ? "#fef3c7" : "#eff6ff",
+                  color: isOverCapacity ? "#b45309" : "#1d4ed8",
+                  fontWeight: 700,
+                }}
+              >
+                {householdMembers.length} of {capacityValue ?? "—"}
+              </div>
             </div>
-          ))}
-        </div>
 
-        {householdMembers.length < participantCapacity && (
-          <button
-            type="button"
-            onClick={() => goTo("/member/participants")}
-            style={{
-              ...memberGridButtonStyle,
-              textAlign: "center",
-              marginTop: 12,
-            }}
-          >
-            + Add Participant
-          </button>
-        )}
-      </div>
+            <div
+              style={{
+                fontSize: 14,
+                color: "#4b5563",
+                marginBottom: 12,
+              }}
+            >
+              Manage the participants included with your registration. Add
+              participants until all paid participant slots are filled.
+            </div>
+
+            {isOverCapacity && (
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "#b45309",
+                  background: "#fffbeb",
+                  border: "1px solid #fde68a",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  marginBottom: 12,
+                }}
+              >
+                ⚠ {householdMembers.length} participant
+                {householdMembers.length === 1 ? "" : "s"} · {capacityValue}{" "}
+                paid slot{capacityValue === 1 ? "" : "s"}. Additional payment
+                or capacity correction required.
+              </div>
+            )}
+
+            <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+              {householdMembers.map((member) => {
+                const fullName = [member.first_name, member.last_name]
+                  .filter(Boolean)
+                  .join(" ")
+                  .trim();
+
+                const name =
+                  fullName || member.display_name || "Unnamed Participant";
+
+                return (
+                  <div
+                    key={member.id}
+                    style={{
+                      padding: "10px 12px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 8,
+                    }}
+                  >
+                    {name}
+                  </div>
+                );
+              })}
+
+              {Array.from({ length: vacantSlots }).map((_, index) => (
+                <div
+                  key={`empty-${index}`}
+                  style={{
+                    padding: "10px 12px",
+                    border: "1px dashed #cbd5e1",
+                    borderRadius: 8,
+                    color: "#6b7280",
+                    fontStyle: "italic",
+                  }}
+                >
+                  Available Participant Slot
+                </div>
+              ))}
+            </div>
+
+            {vacantSlots > 0 && (
+              <button
+                type="button"
+                onClick={() => goTo("/member/participants")}
+                style={{
+                  ...memberGridButtonStyle,
+                  textAlign: "center",
+                  marginTop: 12,
+                }}
+              >
+                + Add Participant
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       <div
         style={{

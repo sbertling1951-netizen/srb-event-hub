@@ -42,7 +42,10 @@ function ParticipantsPageInner() {
   const { event, attendeeId, isReady, session } = useMemberWorkspace();
   const [loading, setLoading] = useState(true);
   const [participantCount, setParticipantCount] = useState(0);
-  const [capacity, setCapacity] = useState(0);
+  // capacity is the stored paid-slot count (set by CSV import or an admin's
+  // onsite payment entry). null means capacity was never established for
+  // this attendee and must not be treated as zero.
+  const [capacity, setCapacity] = useState<number | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [currentAttendee, setCurrentAttendee] = useState<AttendeeRow | null>(
     null,
@@ -55,7 +58,7 @@ function ParticipantsPageInner() {
     try {
       if (!isReady || !event?.id || !attendeeId) {
         setParticipantCount(0);
-        setCapacity(0);
+        setCapacity(null);
         setParticipants([]);
         return;
       }
@@ -78,7 +81,7 @@ function ParticipantsPageInner() {
 
       if (recordError || !record) {
         setParticipantCount(0);
-        setCapacity(0);
+        setCapacity(null);
         setParticipants([]);
         return;
       }
@@ -94,7 +97,7 @@ function ParticipantsPageInner() {
 
       setCurrentAttendee(attendee);
 
-      setCapacity(attendee.participant_capacity ?? 0);
+      setCapacity(attendee.participant_capacity ?? null);
 
       const { data: memberRows } = await supabase.rpc(
         "get_my_household_members",
@@ -155,11 +158,32 @@ function ParticipantsPageInner() {
     });
   }, [currentAttendee?.event_id]);
 
-  const registeredParticipants = participants.filter(
+  // registeredParticipantCount is the governed Participation fact: every
+  // household-member row already represents one identified roster slot
+  // (pilot, copilot, or additional) regardless of whether that person has
+  // supplied their own contact email -- Participation does not require
+  // complete identity resolution. accountLinkedCount is a distinct,
+  // narrower fact (how many of those roster slots have their own email on
+  // file) and must never be substituted for the roster count itself.
+  const registeredParticipantCount = participantCount;
+  const accountLinkedCount = participants.filter(
     (p) => p.email && p.email.trim() !== "",
   ).length;
 
-  const vacantSlots = Math.max(0, capacity - participantCount);
+  // capacity is the stored paid-slot count (set by CSV import or an admin
+  // recording an onsite payment). It is never widened by the roster count --
+  // an over-capacity roster is a real, flaggable condition, not a display
+  // artifact to be hidden by raising the denominator.
+  const hasKnownCapacity = typeof capacity === "number";
+  const isOverCapacity =
+    hasKnownCapacity && registeredParticipantCount > (capacity as number);
+  const vacantSlots = hasKnownCapacity
+    ? Math.max(0, (capacity as number) - registeredParticipantCount)
+    : 0;
+  const participantsNeedingAccount = Math.max(
+    0,
+    registeredParticipantCount - accountLinkedCount,
+  );
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-4">
@@ -173,11 +197,37 @@ function ParticipantsPageInner() {
 
         <div className="app-card-section" style={{ textAlign: "center" }}>
           <div style={{ fontSize: "2rem", fontWeight: 700 }}>
-            {registeredParticipants} of {capacity}
+            {registeredParticipantCount} of {capacity ?? "—"}
           </div>
 
-          <div className="app-muted-text">Registered</div>
+          {isOverCapacity ? (
+            <div className="font-medium" style={{ color: "#b45309" }}>
+              ⚠ Over paid capacity
+            </div>
+          ) : (
+            <div className="app-muted-text">Registered</div>
+          )}
         </div>
+
+        {isOverCapacity && (
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: "#b45309",
+              background: "#fffbeb",
+              border: "1px solid #fde68a",
+              borderRadius: 8,
+              padding: "8px 12px",
+              marginTop: "0.5rem",
+            }}
+          >
+            ⚠ {registeredParticipantCount} participant
+            {registeredParticipantCount === 1 ? "" : "s"} · {capacity} paid
+            slot{capacity === 1 ? "" : "s"}. Additional payment or capacity
+            correction required.
+          </div>
+        )}
 
         <div
           style={{
@@ -192,10 +242,19 @@ function ParticipantsPageInner() {
             className=""
             style={{
               width: `${
-                capacity > 0 ? (registeredParticipants / capacity) * 100 : 0
+                hasKnownCapacity && (capacity as number) > 0
+                  ? Math.min(
+                      100,
+                      (registeredParticipantCount / (capacity as number)) *
+                        100,
+                    )
+                  : 0
               }%`,
-              background:
-                registeredParticipants === capacity && capacity > 0
+              background: isOverCapacity
+                ? "#dc2626"
+                : hasKnownCapacity &&
+                    registeredParticipantCount === capacity &&
+                    (capacity as number) > 0
                   ? "#22c55e"
                   : "#f59e0b",
               height: "100%",
@@ -204,14 +263,14 @@ function ParticipantsPageInner() {
         </div>
 
         <div className="app-card-section" style={{ textAlign: "center" }}>
-          {capacity > 0 && registeredParticipants === capacity ? (
+          {participantsNeedingAccount === 0 ? (
             <div className="font-medium text-green-700">
               ✓ All participant accounts registered
             </div>
           ) : (
             <div className="font-medium text-amber-700">
-              {Math.max(0, capacity - registeredParticipants)} participant Still
-              needs an account.
+              {participantsNeedingAccount} participant Still needs an
+              account.
             </div>
           )}
         </div>
@@ -226,9 +285,9 @@ function ParticipantsPageInner() {
         >
           <div className="card" style={{ textAlign: "center" }}>
             <div className="text-xs uppercase tracking-wide text-gray-500">
-              Participants
+              Paid Slots
             </div>
-            <div className="text-2xl font-semibold">{capacity}</div>
+            <div className="text-2xl font-semibold">{capacity ?? "—"}</div>
           </div>
 
           <div className="card" style={{ textAlign: "center" }}>
@@ -236,7 +295,7 @@ function ParticipantsPageInner() {
               Registered
             </div>
             <div className="text-2xl font-semibold text-green-600">
-              {registeredParticipants}
+              {registeredParticipantCount}
             </div>
           </div>
 
