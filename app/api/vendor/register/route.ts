@@ -86,108 +86,123 @@ export async function POST(req: Request) {
     );
   }
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabaseAdmin.auth.getUser(accessToken);
+  try {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAdmin.auth.getUser(accessToken);
 
-  if (authError || !user?.id) {
-    return NextResponse.json(
-      { ok: false, error: "Authentication is required." },
-      { status: 401 },
-    );
-  }
+    if (authError || !user?.id) {
+      return NextResponse.json(
+        { ok: false, error: "Authentication is required." },
+        { status: 401 },
+      );
+    }
 
-  // Verified identity evidence comes only from the Auth user record itself,
-  // never from the submitted registration body. The submitted contact
-  // email/phone below are vendor-contact data only and are kept separate.
-  const verifiedAuthEmail =
-    user.email_confirmed_at && user.email ? user.email : null;
-  const verifiedAuthPhone =
-    user.phone_confirmed_at && user.phone ? user.phone : null;
+    // Verified identity evidence comes only from the Auth user record
+    // itself, never from the submitted registration body. The submitted
+    // contact email/phone below are vendor-contact data only and are kept
+    // separate.
+    const verifiedAuthEmail =
+      user.email_confirmed_at && user.email ? user.email : null;
+    const verifiedAuthPhone =
+      user.phone_confirmed_at && user.phone ? user.phone : null;
 
-  const contactEmail = normalizeEmail(body.email || user.email || "");
-  if (!contactEmail) {
-    return NextResponse.json(
-      { ok: false, error: "A valid email address is required." },
-      { status: 400 },
-    );
-  }
+    const contactEmail = normalizeEmail(body.email || user.email || "");
+    if (!contactEmail) {
+      return NextResponse.json(
+        { ok: false, error: "A valid email address is required." },
+        { status: 400 },
+      );
+    }
 
-  const nameParts = splitName(contactName);
+    const nameParts = splitName(contactName);
 
-  const { data, error } = await supabaseAdmin.rpc("register_vendor_self", {
-    p_auth_user_id: user.id,
-    p_business_name: businessName,
-    p_verified_auth_email: verifiedAuthEmail,
-    p_verified_auth_phone: verifiedAuthPhone,
-    p_display_first_name: nameParts.firstName,
-    p_display_last_name: nameParts.lastName,
-    p_contact_name: contactName || null,
-    p_contact_email: contactEmail,
-    p_contact_phone: phone || null,
-    p_website: website || null,
-    p_business_description: businessDescription || null,
-    p_preferred_contact_method: preferredContactMethod,
-  });
-
-  if (error) {
-    return NextResponse.json(
-      { ok: false, error: "Vendor registration could not complete." },
-      { status: 500 },
-    );
-  }
-
-  const row = (Array.isArray(data) ? data[0] : null) as
-    | RegisterVendorSelfRow
-    | null;
-
-  if (!row || typeof row.outcome !== "string") {
-    return NextResponse.json(
-      { ok: false, error: "Vendor registration could not complete." },
-      { status: 500 },
-    );
-  }
-
-  if (row.outcome === "registered") {
-    return NextResponse.json({
-      ok: true,
-      vendorId: row.vendor_id,
-      vendorName: row.vendor_name,
-      accessId: row.access_id,
+    const { data, error } = await supabaseAdmin.rpc("register_vendor_self", {
+      p_auth_user_id: user.id,
+      p_business_name: businessName,
+      p_verified_auth_email: verifiedAuthEmail,
+      p_verified_auth_phone: verifiedAuthPhone,
+      p_display_first_name: nameParts.firstName,
+      p_display_last_name: nameParts.lastName,
+      p_contact_name: contactName || null,
+      p_contact_email: contactEmail,
+      p_contact_phone: phone || null,
+      p_website: website || null,
+      p_business_description: businessDescription || null,
+      p_preferred_contact_method: preferredContactMethod,
     });
-  }
 
-  if (row.outcome === "already_registered") {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "This account already has active vendor access.",
-        reason: "vendor_access_exists",
+    if (error) {
+      return NextResponse.json(
+        { ok: false, error: "Vendor registration could not complete." },
+        { status: 500 },
+      );
+    }
+
+    const row = (Array.isArray(data) ? data[0] : null) as
+      | RegisterVendorSelfRow
+      | null;
+
+    if (!row || typeof row.outcome !== "string") {
+      return NextResponse.json(
+        { ok: false, error: "Vendor registration could not complete." },
+        { status: 500 },
+      );
+    }
+
+    if (row.outcome === "registered") {
+      return NextResponse.json({
+        ok: true,
         vendorId: row.vendor_id,
-      },
-      { status: 409 },
-    );
-  }
+        vendorName: row.vendor_name,
+        accessId: row.access_id,
+      });
+    }
 
-  if (
-    row.outcome === "needs_confirmation" ||
-    row.outcome === "ambiguous" ||
-    row.outcome === "invalid_existing_link"
-  ) {
+    if (row.outcome === "already_registered") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "This account already has active vendor access.",
+          reason: "vendor_access_exists",
+          vendorId: row.vendor_id,
+        },
+        { status: 409 },
+      );
+    }
+
+    if (
+      row.outcome === "needs_confirmation" ||
+      row.outcome === "ambiguous" ||
+      row.outcome === "invalid_existing_link"
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "We could not automatically complete your vendor registration. Please contact support.",
+          reason: row.outcome,
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "We could not automatically complete your vendor registration. Please contact support.",
-        reason: row.outcome,
-      },
-      { status: 409 },
+      { ok: false, error: "Vendor registration could not complete." },
+      { status: 500 },
+    );
+  } catch (err) {
+    // Safe diagnostic only: no access token, verified identity evidence,
+    // submitted contact details, Person ID, candidate detail, or audit ID.
+    console.error(
+      "Vendor self-registration failed unexpectedly:",
+      err instanceof Error ? err.message : "unknown error",
+    );
+
+    return NextResponse.json(
+      { ok: false, error: "Vendor registration could not complete." },
+      { status: 500 },
     );
   }
-
-  return NextResponse.json(
-    { ok: false, error: "Vendor registration could not complete." },
-    { status: 500 },
-  );
 }

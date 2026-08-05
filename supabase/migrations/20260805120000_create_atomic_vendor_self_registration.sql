@@ -73,6 +73,7 @@ DECLARE
   v_access_id uuid;
   v_normalized_business_name text;
   v_normalized_preferred_method text;
+  v_invitation_email text;
 BEGIN
   IF p_auth_user_id IS NULL THEN
     RETURN QUERY SELECT 'error'::text, NULL::uuid, NULL::text, NULL::uuid, NULL::uuid, NULL::uuid;
@@ -170,6 +171,22 @@ BEGIN
     ELSE 'email'
   END;
 
+  -- vendor_org_access.invitation_email must never be written as an empty
+  -- string. Prefer the verified Auth email; fall back to the submitted
+  -- vendor-contact email only as contact data, never as identity evidence
+  -- (identity evidence was already fully consumed by
+  -- resolve_vendor_person_identity above, before this point). Fail closed,
+  -- before any vendor registration write proceeds, if neither is available.
+  v_invitation_email := coalesce(
+    nullif(btrim(coalesce(p_verified_auth_email, '')), ''),
+    nullif(btrim(coalesce(p_contact_email, '')), '')
+  );
+
+  IF v_invitation_email IS NULL THEN
+    RAISE EXCEPTION
+      'Vendor self-registration requires a verified or submitted contact email before registration can proceed';
+  END IF;
+
   -- Vendor/contact/access writes use only the contact-info parameters below
   -- -- never p_verified_auth_email / p_verified_auth_phone, which were
   -- already consumed exclusively by resolve_vendor_person_identity above.
@@ -237,11 +254,7 @@ BEGIN
     v_contact_id,
     v_person_id,
     p_auth_user_id,
-    coalesce(
-      p_verified_auth_email,
-      nullif(btrim(coalesce(p_contact_email, '')), ''),
-      ''
-    ),
+    v_invitation_email,
     'vendor_admin',
     'active',
     now(),
