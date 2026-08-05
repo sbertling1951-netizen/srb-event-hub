@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { resolveOrCreatePersonForAuthUser } from "@/lib/server/personIdentity";
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 
 type RegisterBody = {
@@ -12,6 +11,13 @@ type RegisterBody = {
   website?: string;
   businessDescription?: string;
   preferredContactMethod?: "email" | "phone" | "text";
+};
+
+type RegisterVendorSelfRow = {
+  outcome?: unknown;
+  vendor_id?: unknown;
+  vendor_name?: unknown;
+  access_id?: unknown;
 };
 
 function normalizeEmail(value: string | null | undefined) {
@@ -92,140 +98,96 @@ export async function POST(req: Request) {
     );
   }
 
-  const registrationEmail = normalizeEmail(body.email || user.email || "");
-  if (!registrationEmail) {
+  // Verified identity evidence comes only from the Auth user record itself,
+  // never from the submitted registration body. The submitted contact
+  // email/phone below are vendor-contact data only and are kept separate.
+  const verifiedAuthEmail =
+    user.email_confirmed_at && user.email ? user.email : null;
+  const verifiedAuthPhone =
+    user.phone_confirmed_at && user.phone ? user.phone : null;
+
+  const contactEmail = normalizeEmail(body.email || user.email || "");
+  if (!contactEmail) {
     return NextResponse.json(
       { ok: false, error: "A valid email address is required." },
       { status: 400 },
     );
   }
 
-  const { data: existingAccess, error: existingAccessError } = await supabaseAdmin
-    .from("vendor_org_access")
-    .select("id,vendor_id")
-    .eq("auth_user_id", user.id)
-    .eq("status", "active")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const nameParts = splitName(contactName);
 
-  if (existingAccessError) {
+  const { data, error } = await supabaseAdmin.rpc("register_vendor_self", {
+    p_auth_user_id: user.id,
+    p_business_name: businessName,
+    p_verified_auth_email: verifiedAuthEmail,
+    p_verified_auth_phone: verifiedAuthPhone,
+    p_display_first_name: nameParts.firstName,
+    p_display_last_name: nameParts.lastName,
+    p_contact_name: contactName || null,
+    p_contact_email: contactEmail,
+    p_contact_phone: phone || null,
+    p_website: website || null,
+    p_business_description: businessDescription || null,
+    p_preferred_contact_method: preferredContactMethod,
+  });
+
+  if (error) {
     return NextResponse.json(
-      { ok: false, error: existingAccessError.message },
+      { ok: false, error: "Vendor registration could not complete." },
       { status: 500 },
     );
   }
 
-  if (existingAccess?.id) {
+  const row = (Array.isArray(data) ? data[0] : null) as
+    | RegisterVendorSelfRow
+    | null;
+
+  if (!row || typeof row.outcome !== "string") {
+    return NextResponse.json(
+      { ok: false, error: "Vendor registration could not complete." },
+      { status: 500 },
+    );
+  }
+
+  if (row.outcome === "registered") {
+    return NextResponse.json({
+      ok: true,
+      vendorId: row.vendor_id,
+      vendorName: row.vendor_name,
+      accessId: row.access_id,
+    });
+  }
+
+  if (row.outcome === "already_registered") {
     return NextResponse.json(
       {
         ok: false,
         error: "This account already has active vendor access.",
         reason: "vendor_access_exists",
-        vendorId: existingAccess.vendor_id,
+        vendorId: row.vendor_id,
       },
       { status: 409 },
     );
   }
 
-  const nameParts = splitName(contactName);
-  const personResolution = await resolveOrCreatePersonForAuthUser(
-    supabaseAdmin,
-    user.id,
-    { firstName: nameParts.firstName, lastName: nameParts.lastName },
+  if (
+    row.outcome === "needs_confirmation" ||
+    row.outcome === "ambiguous" ||
+    row.outcome === "invalid_existing_link"
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "We could not automatically complete your vendor registration. Please contact support.",
+        reason: row.outcome,
+      },
+      { status: 409 },
+    );
+  }
+
+  return NextResponse.json(
+    { ok: false, error: "Vendor registration could not complete." },
+    { status: 500 },
   );
-
-  if ("error" in personResolution) {
-    return NextResponse.json(
-      { ok: false, error: personResolution.error },
-      { status: 500 },
-    );
-  }
-
-  const personId = personResolution.personId;
-
-  const { data: createdVendor, error: vendorError } = await supabaseAdmin
-    .from("vendors")
-    .insert({
-      business_name: businessName,
-      name: businessName,
-      contact_name: contactName || null,
-      email: registrationEmail,
-      phone: phone || null,
-      website: website || null,
-      business_description: businessDescription || null,
-      preferred_contact_method: preferredContactMethod,
-      is_active: true,
-    })
-    .select("id,business_name")
-    .single();
-
-  if (vendorError || !createdVendor?.id) {
-    return NextResponse.json(
-      { ok: false, error: vendorError?.message || "Could not create vendor organization." },
-      { status: 500 },
-    );
-  }
-
-  const vendorId = createdVendor.id;
-
-  const { data: createdContact, error: contactError } = await supabaseAdmin
-    .from("vendor_contacts")
-    .insert({
-      vendor_id: vendorId,
-      person_id: personId,
-      first_name: nameParts.firstName,
-      last_name: nameParts.lastName,
-      email: registrationEmail,
-      mobile_phone: phone || null,
-      role_title: "Owner",
-      is_primary: true,
-      status: "active",
-    })
-    .select("id")
-    .single();
-
-  if (contactError || !createdContact?.id) {
-    await supabaseAdmin.from("vendors").delete().eq("id", vendorId);
-
-    return NextResponse.json(
-      { ok: false, error: contactError?.message || "Could not create vendor contact." },
-      { status: 500 },
-    );
-  }
-
-  const now = new Date().toISOString();
-
-  const { data: accessRow, error: accessError } = await supabaseAdmin
-    .from("vendor_org_access")
-    .insert({
-      vendor_id: vendorId,
-      vendor_contact_id: createdContact.id,
-      person_id: personId,
-      auth_user_id: user.id,
-      invitation_email: registrationEmail,
-      access_role: "vendor_admin",
-      status: "active",
-      invited_at: now,
-      accepted_at: now,
-    })
-    .select("id")
-    .single();
-
-  if (accessError || !accessRow?.id) {
-    await supabaseAdmin.from("vendor_contacts").delete().eq("id", createdContact.id);
-    await supabaseAdmin.from("vendors").delete().eq("id", vendorId);
-
-    return NextResponse.json(
-      { ok: false, error: accessError?.message || "Could not grant vendor access." },
-      { status: 500 },
-    );
-  }
-
-  return NextResponse.json({
-    ok: true,
-    vendorId,
-    vendorName: createdVendor.business_name || businessName,
-    accessId: accessRow.id,
-  });
 }
