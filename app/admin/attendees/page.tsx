@@ -129,6 +129,24 @@ type AttendeeEditorState = {
   // While true, save must leave capacity unknown rather than persisting the
   // stepper's display default.
   registration_capacity_was_unset: boolean;
+  // The stored participant_capacity value as loaded (null if unset, or null
+  // for a brand-new record). Used only to detect whether the admin is
+  // raising capacity above what is currently stored -- never written back
+  // directly.
+  registration_capacity_original: number | null;
+  // Relevant only when an edit-mode save is about to raise capacity above
+  // registration_capacity_original. The administrator picks one explicit
+  // mode: "slot_only" raises capacity alone; "slot_and_participant" also
+  // creates/updates exactly one named household row for
+  // capacity_increase_participant_role. Never inferred from which fields
+  // happen to be populated. capacity_increase_confirmed is an explicit
+  // confirmation that the increase was authorized by the Tenant.
+  // EpicentraX does not ask how, or record payment information. All
+  // cleared whenever a record is loaded.
+  capacity_increase_mode: "slot_only" | "slot_and_participant";
+  capacity_increase_participant_role: "copilot" | "additional" | "";
+  capacity_increase_confirmed: boolean;
+  capacity_increase_note: string;
   primary_phone: string;
   cell_phone: string;
   wants_to_volunteer: boolean;
@@ -330,6 +348,11 @@ function emptyAttendeeEditorState(): AttendeeEditorState {
     participant_type: "attendee",
     registration_capacity: 1, // initialize to 1
     registration_capacity_was_unset: false,
+    registration_capacity_original: null,
+    capacity_increase_mode: "slot_only",
+    capacity_increase_participant_role: "",
+    capacity_increase_confirmed: false,
+    capacity_increase_note: "",
     primary_phone: "",
     cell_phone: "",
     coach_manufacturer: "",
@@ -376,6 +399,11 @@ function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
     registration_capacity_was_unset:
       attendee.participant_capacity === null ||
       attendee.participant_capacity === undefined,
+    registration_capacity_original: attendee.participant_capacity ?? null,
+    capacity_increase_mode: "slot_only",
+    capacity_increase_participant_role: "",
+    capacity_increase_confirmed: false,
+    capacity_increase_note: "",
     primary_phone: attendee.primary_phone || "",
     cell_phone: attendee.cell_phone || "",
     coach_manufacturer: attendee.coach_manufacturer || "",
@@ -1586,6 +1614,26 @@ function AttendeeEditorModal(props: {
   const { open, mode, state, saving, onClose, onChange, onSave } = props;
   const [showAdditionalParticipant, setShowAdditionalParticipant] =
     useState(false);
+  // A capacity increase requires explicit Tenant-authorization confirmation
+  // only in edit mode, and only when the administrator has deliberately
+  // raised the control above the stored value that was loaded (never for
+  // the untouched/unset default).
+  const isCapacityIncrease =
+    mode === "edit" &&
+    !state.registration_capacity_was_unset &&
+    state.registration_capacity > (state.registration_capacity_original ?? 0);
+  // In "slot and participant" mode, a role must be picked and that role's
+  // existing name field(s) elsewhere in this form must be populated -- the
+  // confirmation panel does not duplicate those inputs.
+  const capacityParticipantModeComplete =
+    state.capacity_increase_mode === "slot_only" ||
+    (state.capacity_increase_participant_role === "copilot" &&
+      (state.copilot_first.trim() !== "" || state.copilot_last.trim() !== "")) ||
+    (state.capacity_increase_participant_role === "additional" &&
+      ((state.additional_first_name ?? "").trim() !== "" ||
+        (state.additional_last_name ?? "").trim() !== ""));
+  const capacityConfirmationComplete =
+    state.capacity_increase_confirmed && capacityParticipantModeComplete;
   // Automatically show additional participant if any of its fields are populated
   useEffect(() => {
     if (
@@ -2072,6 +2120,141 @@ function AttendeeEditorModal(props: {
               </select>
             </div>
           </div>
+
+          {isCapacityIncrease && (
+            <div
+              style={{
+                marginTop: 14,
+                padding: 14,
+                border: "1px solid #fde68a",
+                background: "#fffbeb",
+                borderRadius: 8,
+              }}
+            >
+              <div style={{ fontWeight: 600, color: "#92400e", marginBottom: 8 }}>
+                Confirm this capacity increase
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#78350f",
+                  marginBottom: 10,
+                }}
+              >
+                Registration Capacity is being raised from{" "}
+                {state.registration_capacity_original ?? "unset"} to{" "}
+                {state.registration_capacity}.
+              </div>
+
+              <div style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+                <label
+                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}
+                >
+                  <input
+                    type="radio"
+                    name="capacity_increase_mode"
+                    checked={state.capacity_increase_mode === "slot_only"}
+                    onChange={() => {
+                      onChange("capacity_increase_mode", "slot_only");
+                      onChange("capacity_increase_participant_role", "");
+                    }}
+                  />
+                  <span>
+                    Add paid slot only -- the attendee can use + Add
+                    Participant later to fill it.
+                  </span>
+                </label>
+                <label
+                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}
+                >
+                  <input
+                    type="radio"
+                    name="capacity_increase_mode"
+                    checked={
+                      state.capacity_increase_mode === "slot_and_participant"
+                    }
+                    onChange={() =>
+                      onChange(
+                        "capacity_increase_mode",
+                        "slot_and_participant",
+                      )
+                    }
+                  />
+                  <span>Add paid slot and participant now.</span>
+                </label>
+              </div>
+
+              {state.capacity_increase_mode === "slot_and_participant" && (
+                <div style={{ marginBottom: 10 }}>
+                  <label style={labelStyle}>Participant</label>
+                  <select
+                    value={state.capacity_increase_participant_role}
+                    onChange={(e) =>
+                      onChange(
+                        "capacity_increase_participant_role",
+                        e.target.value as "copilot" | "additional" | "",
+                      )
+                    }
+                    style={inputStyle}
+                  >
+                    <option value="">Select...</option>
+                    <option value="copilot">
+                      Co-Pilot (use the Co-Pilot fields above)
+                    </option>
+                    <option value="additional">
+                      Additional Participant (use the Additional Participant
+                      fields above)
+                    </option>
+                  </select>
+                  {state.capacity_increase_participant_role &&
+                    !capacityParticipantModeComplete && (
+                      <div
+                        style={{ fontSize: 12, color: "#b45309", marginTop: 4 }}
+                      >
+                        Enter the{" "}
+                        {state.capacity_increase_participant_role === "copilot"
+                          ? "Co-Pilot's"
+                          : "Additional Participant's"}{" "}
+                        name in the fields above before saving.
+                      </div>
+                    )}
+                </div>
+              )}
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  fontSize: 14,
+                  marginBottom: 10,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={state.capacity_increase_confirmed}
+                  onChange={(e) =>
+                    onChange("capacity_increase_confirmed", e.target.checked)
+                  }
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  I confirm this participant-capacity increase has been
+                  authorized by the Tenant.
+                </span>
+              </label>
+              <div>
+                <label style={labelStyle}>Note (optional)</label>
+                <input
+                  value={state.capacity_increase_note}
+                  onChange={(e) =>
+                    onChange("capacity_increase_note", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div
@@ -2085,14 +2268,24 @@ function AttendeeEditorModal(props: {
             display: "flex",
             gap: 10,
             flexWrap: "wrap",
+            alignItems: "center",
             justifyContent: "flex-end",
           }}
         >
+          {isCapacityIncrease && !capacityConfirmationComplete && (
+            <div style={{ fontSize: 13, color: "#b45309" }}>
+              {!capacityParticipantModeComplete
+                ? 'Select a participant mode and, if adding a participant, enter their name to save.'
+                : "Confirm the capacity increase was authorized by the Tenant to save."}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => void onSave()}
             style={primaryButtonStyle}
-            disabled={saving}
+            disabled={
+              saving || (isCapacityIncrease && !capacityConfirmationComplete)
+            }
           >
             {saving
               ? "Saving..."
@@ -2958,6 +3151,13 @@ created_at
     payload: any,
     eventId: string,
     editorState: AttendeeEditorState,
+    // When set to "copilot" or "additional", this save is a governed
+    // "slot and participant" capacity increase and
+    // record_participant_capacity_increase(...) owns that one household
+    // role atomically with the capacity/audit change. This call skips only
+    // that one role, so it is never split across a non-atomic call and the
+    // atomic RPC. The other role (if any) still syncs normally here.
+    rpcOwnedParticipantRole: "copilot" | "additional" | null = null,
   ) {
     try {
       // 1. Query attendee_household_members for this attendee
@@ -3007,43 +3207,44 @@ created_at
           onConflict: "attendee_id,person_role",
         });
 
-      // 6. Handle copilot logic
+      // 6. Handle copilot logic. Skipped only when the capacity-increase RPC
+      //    owns the Co-Pilot row for this save.
       const hasCopilot =
         !!payload.copilot_first ||
         !!payload.copilot_last ||
         !!payload.copilot_email;
-      if (hasCopilot) {
-        const copilotUpsert = {
-          person_role: "copilot",
-          first_name: payload.copilot_first || null,
-          last_name: payload.copilot_last || null,
-          nickname: payload.copilot_nickname || null,
-          display_name: copilotDisplayName || null,
-          email: payload.copilot_email || null,
-          participant_status: "identified",
-          event_id: eventId,
-          attendee_id: attendeeId,
-        };
-        await supabase
-          .from("attendee_household_members")
-          .upsert(
-            copilotRow
-              ? { ...copilotUpsert, id: copilotRow.id }
-              : copilotUpsert,
-            { onConflict: "attendee_id,person_role" },
-          );
-      } else if (copilotRow) {
-        // 7. If no copilot info but copilot row exists, delete only the copilot row
-        await supabase
-          .from("attendee_household_members")
-          .delete()
-          .eq("id", copilotRow.id);
+      if (rpcOwnedParticipantRole !== "copilot") {
+        if (hasCopilot) {
+          const copilotUpsert = {
+            person_role: "copilot",
+            first_name: payload.copilot_first || null,
+            last_name: payload.copilot_last || null,
+            nickname: payload.copilot_nickname || null,
+            display_name: copilotDisplayName || null,
+            email: payload.copilot_email || null,
+            participant_status: "identified",
+            event_id: eventId,
+            attendee_id: attendeeId,
+          };
+          await supabase
+            .from("attendee_household_members")
+            .upsert(
+              copilotRow
+                ? { ...copilotUpsert, id: copilotRow.id }
+                : copilotUpsert,
+              { onConflict: "attendee_id,person_role" },
+            );
+        } else if (copilotRow) {
+          // 7. If no copilot info but copilot row exists, delete only the copilot row
+          await supabase
+            .from("attendee_household_members")
+            .delete()
+            .eq("id", copilotRow.id);
+        }
       }
 
-      console.log("EDITOR STATE", editorState);
-      console.log("ROGER EMAIL:", editorState.additional_email);
-
-      // Additional participant sync logic
+      // Additional participant sync logic. Skipped only when the
+      // capacity-increase RPC owns the Additional row for this save.
       const hasAdditional =
         !!editorState.additional_first_name ||
         !!editorState.additional_last_name ||
@@ -3051,56 +3252,45 @@ created_at
         !!editorState.additional_nickname ||
         !!editorState.additional_cell_phone;
 
-      console.log("HAS ADDITIONAL", hasAdditional);
-      console.log("Additional editor state:", {
-        first: editorState.additional_first_name,
-        last: editorState.additional_last_name,
-        email: editorState.additional_email,
-        phone: editorState.additional_cell_phone,
-      });
+      if (rpcOwnedParticipantRole !== "additional") {
+        if (hasAdditional) {
+          const additionalDisplayName = editorState.additional_nickname
+            ? editorState.additional_nickname
+            : [
+                editorState.additional_first_name,
+                editorState.additional_last_name,
+              ]
+                .filter(Boolean)
+                .join(" ");
 
-      if (hasAdditional) {
-        const additionalDisplayName = editorState.additional_nickname
-          ? editorState.additional_nickname
-          : [
-              editorState.additional_first_name,
-              editorState.additional_last_name,
-            ]
-              .filter(Boolean)
-              .join(" ");
+          const additionalUpsert = {
+            person_role: "additional",
+            first_name: editorState.additional_first_name || null,
+            last_name: editorState.additional_last_name || null,
+            nickname: editorState.additional_nickname || null,
+            display_name: additionalDisplayName || null,
+            email: editorState.additional_email || null,
+            cell_phone: editorState.additional_cell_phone || null,
+            participant_status: "identified",
+            event_id: eventId,
+            attendee_id: attendeeId,
+          };
 
-        const additionalUpsert = {
-          person_role: "additional",
-          first_name: editorState.additional_first_name || null,
-          last_name: editorState.additional_last_name || null,
-          nickname: editorState.additional_nickname || null,
-          display_name: additionalDisplayName || null,
-          email: editorState.additional_email || null,
-          cell_phone: editorState.additional_cell_phone || null,
-          participant_status: "identified",
-          event_id: eventId,
-          attendee_id: attendeeId,
-        };
-
-        console.log("UPSERT PAYLOAD", additionalUpsert);
-
-        const { data, error } = await supabase
-          .from("attendee_household_members")
-          .upsert(
-            additionalRow
-              ? { ...additionalUpsert, id: additionalRow.id }
-              : additionalUpsert,
-            { onConflict: "attendee_id,person_role" },
-          )
-          .select();
-
-        console.log("UPSERT RESULT", data);
-        console.log("UPSERT ERROR", error);
-      } else if (additionalRow) {
-        await supabase
-          .from("attendee_household_members")
-          .delete()
-          .eq("id", additionalRow.id);
+          await supabase
+            .from("attendee_household_members")
+            .upsert(
+              additionalRow
+                ? { ...additionalUpsert, id: additionalRow.id }
+                : additionalUpsert,
+              { onConflict: "attendee_id,person_role" },
+            )
+            .select();
+        } else if (additionalRow) {
+          await supabase
+            .from("attendee_household_members")
+            .delete()
+            .eq("id", additionalRow.id);
+        }
       }
       // 8. Do not touch any other person_role rows
     } catch (err) {
@@ -3213,6 +3403,49 @@ created_at
       ? null
       : editorState.registration_capacity;
 
+    // A capacity increase requires explicit confirmation that the Tenant
+    // authorized it -- see the matching check in AttendeeEditorModal, which
+    // disables the Save button for the same condition. This is re-checked
+    // here so the requirement is enforced even if that UI gate is ever
+    // bypassed.
+    const isCapacityIncrease =
+      editorMode === "edit" &&
+      !editorState.registration_capacity_was_unset &&
+      editorState.registration_capacity >
+        (editorState.registration_capacity_original ?? 0);
+
+    if (isCapacityIncrease) {
+      if (
+        editorState.capacity_increase_mode === "slot_and_participant"
+      ) {
+        const role = editorState.capacity_increase_participant_role;
+        const roleNamePresent =
+          role === "copilot"
+            ? editorState.copilot_first.trim() !== "" ||
+              editorState.copilot_last.trim() !== ""
+            : role === "additional"
+              ? (editorState.additional_first_name ?? "").trim() !== "" ||
+                (editorState.additional_last_name ?? "").trim() !== ""
+              : false;
+
+        if (!role || !roleNamePresent) {
+          setError(
+            "Select a participant and enter their name before saving this capacity increase.",
+          );
+          setStatus("Save blocked.");
+          return;
+        }
+      }
+
+      if (!editorState.capacity_increase_confirmed) {
+        setError(
+          "Confirm this capacity increase was authorized by the Tenant before saving.",
+        );
+        setStatus("Save blocked.");
+        return;
+      }
+    }
+
     try {
       setEditorSaving(true);
       setError(null);
@@ -3259,8 +3492,14 @@ created_at
         needs_parking: editorState.needs_parking,
         data_status: editorState.data_status || "pending",
         notes: editorState.notes.trim() || null,
-        // Overwrite participant_capacity on every save
-        participant_capacity: requiredCapacity,
+        // Overwrite participant_capacity on every save, except when this
+        // save is a governed increase -- that case is applied atomically
+        // with its accounting record via record_participant_capacity_increase
+        // after this generic write succeeds, so the original stored value
+        // is left untouched here rather than written twice.
+        participant_capacity: isCapacityIncrease
+          ? editorState.registration_capacity_original
+          : requiredCapacity,
       };
 
       if (editorMode === "create") {
@@ -3302,13 +3541,90 @@ created_at
           throw new Error("Missing attendee id for edit");
         }
 
+        // Explicit mode: only the participant role selected for this
+        // capacity increase (if any) is withheld from the generic sync --
+        // the RPC below owns exactly that one role atomically. The other
+        // role, and slot-only increases, sync here exactly as before.
+        const rpcOwnedParticipantRole: "copilot" | "additional" | null =
+          isCapacityIncrease &&
+          editorState.capacity_increase_mode === "slot_and_participant" &&
+          editorState.capacity_increase_participant_role
+            ? editorState.capacity_increase_participant_role
+            : null;
+
         await syncHouseholdMembers(
           editorState.id,
           payload,
           currentEvent.id,
           editorState,
+          rpcOwnedParticipantRole,
         );
+
+        if (isCapacityIncrease) {
+          // Atomic: capacity increase, the operational audit record, and --
+          // only in "slot and participant" mode -- the one named household
+          // row that justifies it, all commit or roll back together inside
+          // this one RPC call. See record_participant_capacity_increase in
+          // 20260805150000_create_participant_capacity_adjustments.sql.
+          //
+          // No Person resolution occurs for the participant named here
+          // (governed decision, not an oversight): it is preserved as
+          // unresolved Participation evidence, exactly like
+          // save_participant_identity, until a future, separately accepted
+          // general participant-resolution architecture exists.
+          const { error: capacityError } = await supabase.rpc(
+            "record_participant_capacity_increase",
+            {
+              p_attendee_id: editorState.id,
+              p_new_capacity: editorState.registration_capacity,
+              p_confirmed: editorState.capacity_increase_confirmed,
+              p_note: editorState.capacity_increase_note.trim() || null,
+              p_participant_role: rpcOwnedParticipantRole,
+              p_copilot_first:
+                rpcOwnedParticipantRole === "copilot"
+                  ? editorState.copilot_first.trim() || null
+                  : null,
+              p_copilot_last:
+                rpcOwnedParticipantRole === "copilot"
+                  ? editorState.copilot_last.trim() || null
+                  : null,
+              p_copilot_nickname:
+                rpcOwnedParticipantRole === "copilot"
+                  ? editorState.copilot_nickname.trim() || null
+                  : null,
+              p_copilot_email:
+                rpcOwnedParticipantRole === "copilot"
+                  ? editorState.copilot_email.trim().toLowerCase() || null
+                  : null,
+              p_additional_first_name:
+                rpcOwnedParticipantRole === "additional"
+                  ? editorState.additional_first_name?.trim() || null
+                  : null,
+              p_additional_last_name:
+                rpcOwnedParticipantRole === "additional"
+                  ? editorState.additional_last_name?.trim() || null
+                  : null,
+              p_additional_nickname:
+                rpcOwnedParticipantRole === "additional"
+                  ? editorState.additional_nickname?.trim() || null
+                  : null,
+              p_additional_email:
+                rpcOwnedParticipantRole === "additional"
+                  ? editorState.additional_email?.trim() || null
+                  : null,
+              p_additional_cell_phone:
+                rpcOwnedParticipantRole === "additional"
+                  ? editorState.additional_cell_phone?.trim() || null
+                  : null,
+            },
+          );
+
+          if (capacityError) {
+            throw capacityError;
+          }
+        }
       }
+
       if (editorMode === "edit" && viewMode === "review") {
         const savedAttendeeId = editorState.id;
         const updatedAttendees = attendees.map((row) =>
