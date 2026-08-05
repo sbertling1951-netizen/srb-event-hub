@@ -178,17 +178,36 @@ function MyRequestsInner() {
     }
   }, []);
 
+  async function patchRequestStatus(id: string, nextStatus: "cancelled" | "new") {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+
+    if (!accessToken) {
+      throw new Error("Your session has expired. Please sign in again.");
+    }
+
+    const response = await fetch("/api/member/vendor-requests", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ requestId: id, nextStatus }),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        nextStatus === "cancelled"
+          ? "Could not cancel your request."
+          : "Could not restore your request.",
+      );
+    }
+  }
+
   async function cancelRequest(id: string) {
     try {
       setError(null);
-      const { error } = await supabase
-        .from("vendor_service_requests")
-        .update({ request_status: "cancelled" })
-        .eq("id", id);
-
-      if (error) {
-        throw error;
-      }
+      await patchRequestStatus(id, "cancelled");
 
       setRequests((prev) =>
         prev.map((r) =>
@@ -206,14 +225,7 @@ function MyRequestsInner() {
   async function undoCancelRequest(id: string) {
     try {
       setError(null);
-      const { error } = await supabase
-        .from("vendor_service_requests")
-        .update({ request_status: "new" })
-        .eq("id", id);
-
-      if (error) {
-        throw error;
-      }
+      await patchRequestStatus(id, "new");
 
       setRequests((prev) =>
         prev.map((r) => (r.id === id ? { ...r, request_status: "new" } : r)),

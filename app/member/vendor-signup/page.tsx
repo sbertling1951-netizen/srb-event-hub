@@ -85,20 +85,6 @@ function emailHref(value: string | null | undefined, vendorName: string) {
   return `mailto:${email}?subject=${encodeURIComponent(`Service request for ${vendorName}`)}`;
 }
 
-function coachInfo(attendee: AttendeeRow | null) {
-  if (!attendee) {
-    return "";
-  }
-
-  return [
-    attendee.coach_manufacturer,
-    attendee.coach_model,
-    attendee.coach_length ? `${attendee.coach_length} ft` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
 function requestVendorName(request: MemberRequestRow) {
   const vendor = Array.isArray(request.vendors)
     ? request.vendors[0]
@@ -382,27 +368,43 @@ function MemberVendorSignupInner() {
       setError(null);
       setStatus("Submitting vendor request...");
 
-      const { error: insertError } = await supabase
-        .from("vendor_service_requests")
-        .insert({
-          event_id: event.id,
-          vendor_id: selectedVendorId,
-          attendee_id: attendee?.id || null,
-          requester_name: requesterName.trim(),
-          requester_email: requesterEmail.trim() || attendee?.email || null,
-          requester_phone: requesterPhone.trim() || null,
-          site_number: siteNumber.trim() || attendee?.assigned_site || null,
-          coach_info: coachInfo(attendee) || null,
-          requested_service:
-            requestedService.trim() || selectedVendor?.business_name || null,
-          guest_count: Number(guestCount) || 1,
-          request_notes: notes.trim() || null,
-          preferred_response_method: preferredResponseMethod || "email",
-          request_status: "new",
-        });
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
 
-      if (insertError) {
-        throw insertError;
+      if (!accessToken) {
+        throw new Error("Your session has expired. Please sign in again.");
+      }
+
+      const response = await fetch("/api/member/vendor-requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          eventId: event.id,
+          vendorId: selectedVendorId,
+          requestedService:
+            requestedService.trim() || selectedVendor?.business_name || null,
+          requestNotes: notes.trim() || null,
+          guestCount: Number(guestCount) || 1,
+          siteNumber: siteNumber.trim() || attendee?.assigned_site || null,
+          preferredResponseMethod: preferredResponseMethod || "email",
+          requesterName: requesterName.trim(),
+          requesterEmail: requesterEmail.trim() || attendee?.email || null,
+          requesterPhone: requesterPhone.trim() || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(
+          payload?.error === "vendor_request_submission_failed"
+            ? "Could not submit vendor request. This vendor may not be available for this event."
+            : "Could not submit vendor request.",
+        );
       }
 
       setSubmitted(true);
@@ -443,13 +445,27 @@ function MemberVendorSignupInner() {
       setError(null);
       setStatus("Cancelling vendor request...");
 
-      const { error: updateError } = await supabase
-        .from("vendor_service_requests")
-        .update({ request_status: "cancelled" })
-        .eq("id", request.id);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
 
-      if (updateError) {
-        throw updateError;
+      if (!accessToken) {
+        throw new Error("Your session has expired. Please sign in again.");
+      }
+
+      const response = await fetch("/api/member/vendor-requests", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          requestId: request.id,
+          nextStatus: "cancelled",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Could not cancel vendor request.");
       }
 
       setMemberRequests((prev) =>
