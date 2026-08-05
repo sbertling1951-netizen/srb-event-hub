@@ -200,7 +200,7 @@ export default function MemberDashboardPage() {
           display_order,
           signup_url,
           action_type,
-          vendors (
+          vendors!inner (
             id,
             business_name,
             business_description,
@@ -210,6 +210,7 @@ export default function MemberDashboardPage() {
         )
         .eq("event_id", event.id)
         .eq("is_visible_to_members", true)
+        .eq("vendors.is_active", true)
         .order("display_order", { ascending: true });
 
       if (error) {
