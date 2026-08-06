@@ -292,6 +292,16 @@ Maps." It may mean that the Person needed the location of the upcoming
 agenda item. The system should seek to infer the underlying objective
 cautiously rather than simply reward repeated clicks.
 
+Learning inputs may improve recommendation relevance only. They must never
+be used to derive, create, modify, validate, or substitute for Identity,
+Relationship, Participation, Assignment, Authority, Workspace, or any
+other governed Domain Model concept.
+
+Behavioral learning exists solely to improve the relevance of
+recommendations. It must never be repurposed for profiling, engagement
+optimization, productivity evaluation, behavioral scoring, or
+surveillance.
+
 ## Recommendation Versus Governed Fact
 
 *(Principle 11.)* EpicentraX does not read minds. It forms a governed,
