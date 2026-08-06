@@ -164,9 +164,9 @@ export default function AttendeeProfilePage() {
   const copilotName = fullName(attendee.copilot_first, attendee.copilot_last);
   const displayedSite = attendee.assigned_site || "Not provided";
 
-  // attendee.participant_capacity is the stored paid-slot count. null means
-  // capacity was never established for this attendee and must not be
-  // displayed or treated as zero.
+  // attendee.participant_capacity is the stored authorized participant
+  // capacity. null means capacity was never established for this attendee
+  // and must not be displayed or treated as zero.
   const hasKnownCapacity = typeof attendee.participant_capacity === "number";
   const participantCapacity = hasKnownCapacity
     ? (attendee.participant_capacity as number)
@@ -306,10 +306,8 @@ export default function AttendeeProfilePage() {
               padding: "8px 12px",
             }}
           >
-            ⚠ {householdMembers.length} participant
-            {householdMembers.length === 1 ? "" : "s"} · {participantCapacity}{" "}
-            paid slot{participantCapacity === 1 ? "" : "s"}. Additional
-            payment or capacity correction required.
+            ⚠ Participant roster exceeds authorized capacity. Administrator
+            review required.
           </p>
         )}
 

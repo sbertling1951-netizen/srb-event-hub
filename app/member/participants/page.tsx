@@ -42,9 +42,10 @@ function ParticipantsPageInner() {
   const { event, attendeeId, isReady, session } = useMemberWorkspace();
   const [loading, setLoading] = useState(true);
   const [participantCount, setParticipantCount] = useState(0);
-  // capacity is the stored paid-slot count (set by CSV import or an admin's
-  // onsite payment entry). null means capacity was never established for
-  // this attendee and must not be treated as zero.
+  // capacity is the stored authorized participant capacity (set by CSV
+  // import or an Event Administrator adding a participant or an open
+  // slot). null means capacity was never established for this attendee and
+  // must not be treated as zero.
   const [capacity, setCapacity] = useState<number | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [currentAttendee, setCurrentAttendee] = useState<AttendeeRow | null>(
@@ -170,10 +171,10 @@ function ParticipantsPageInner() {
     (p) => p.email && p.email.trim() !== "",
   ).length;
 
-  // capacity is the stored paid-slot count (set by CSV import or an admin
-  // recording an onsite payment). It is never widened by the roster count --
-  // an over-capacity roster is a real, flaggable condition, not a display
-  // artifact to be hidden by raising the denominator.
+  // capacity is the stored authorized participant capacity (set by CSV
+  // import or an Event Administrator). It is never widened by the roster
+  // count -- an over-capacity roster is a real, flaggable condition, not a
+  // display artifact to be hidden by raising the denominator.
   const hasKnownCapacity = typeof capacity === "number";
   const isOverCapacity =
     hasKnownCapacity && registeredParticipantCount > (capacity as number);
@@ -202,7 +203,7 @@ function ParticipantsPageInner() {
 
           {isOverCapacity ? (
             <div className="font-medium" style={{ color: "#b45309" }}>
-              ⚠ Over paid capacity
+              ⚠ Over authorized capacity
             </div>
           ) : (
             <div className="app-muted-text">Registered</div>
@@ -222,10 +223,8 @@ function ParticipantsPageInner() {
               marginTop: "0.5rem",
             }}
           >
-            ⚠ {registeredParticipantCount} participant
-            {registeredParticipantCount === 1 ? "" : "s"} · {capacity} paid
-            slot{capacity === 1 ? "" : "s"}. Additional payment or capacity
-            correction required.
+            ⚠ Participant roster exceeds authorized capacity. Administrator
+            review required.
           </div>
         )}
 
@@ -285,7 +284,7 @@ function ParticipantsPageInner() {
         >
           <div className="card" style={{ textAlign: "center" }}>
             <div className="text-xs uppercase tracking-wide text-gray-500">
-              Paid Slots
+              Participant Capacity
             </div>
             <div className="text-2xl font-semibold">{capacity ?? "—"}</div>
           </div>

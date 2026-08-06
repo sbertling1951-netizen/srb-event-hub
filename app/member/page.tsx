@@ -74,9 +74,10 @@ export default function MemberDashboardPage() {
   const [vendorsLoading, setVendorsLoading] = useState(true);
   const [currentVendorIndex, setCurrentVendorIndex] = useState(0);
 
-  // participant_capacity is the stored paid-slot count (set by CSV import or
-  // an admin's onsite payment entry). null means capacity was never
-  // established for this attendee and must not be treated as zero.
+  // participant_capacity is the stored authorized participant capacity (set
+  // by CSV import or an Event Administrator adding a participant or an
+  // open slot). null means capacity was never established for this
+  // attendee and must not be treated as zero.
   const [participantCapacity, setParticipantCapacity] = useState<
     number | null
   >(null);
@@ -410,7 +411,8 @@ export default function MemberDashboardPage() {
               }}
             >
               Manage the participants included with your registration. Add
-              participants until all paid participant slots are filled.
+              participants until all authorized participant slots are
+              filled.
             </div>
 
             {isOverCapacity && (
@@ -426,10 +428,8 @@ export default function MemberDashboardPage() {
                   marginBottom: 12,
                 }}
               >
-                ⚠ {householdMembers.length} participant
-                {householdMembers.length === 1 ? "" : "s"} · {capacityValue}{" "}
-                paid slot{capacityValue === 1 ? "" : "s"}. Additional payment
-                or capacity correction required.
+                ⚠ Participant roster exceeds authorized capacity.
+                Administrator review required.
               </div>
             )}
 

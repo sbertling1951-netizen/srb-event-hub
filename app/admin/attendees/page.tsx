@@ -134,18 +134,19 @@ type AttendeeEditorState = {
   // raising capacity above what is currently stored -- never written back
   // directly.
   registration_capacity_original: number | null;
-  // Relevant only when an edit-mode save is about to raise capacity above
-  // registration_capacity_original. The administrator picks one explicit
-  // mode: "slot_only" raises capacity alone; "slot_and_participant" also
-  // creates/updates exactly one named household row for
-  // capacity_increase_participant_role. Never inferred from which fields
-  // happen to be populated. capacity_increase_confirmed is an explicit
-  // confirmation that the increase was authorized by the Tenant.
-  // EpicentraX does not ask how, or record payment information. All
-  // cleared whenever a record is loaded.
-  capacity_increase_mode: "slot_only" | "slot_and_participant";
-  capacity_increase_participant_role: "copilot" | "additional" | "";
-  capacity_increase_confirmed: boolean;
+  // Whether a Co-Pilot / Additional Participant household row already
+  // existed when this editor session loaded. Used only to distinguish the
+  // administrator newly adding that participant this save (which
+  // automatically authorizes the resulting capacity, per governed product
+  // rule) from an unrelated edit to an already-existing row (which must
+  // never silently "fix" a pre-existing roster/capacity mismatch). Not
+  // applicable to create mode (always false there).
+  had_copilot_at_load: boolean;
+  had_additional_at_load: boolean;
+  // Optional operational note attached to a capacity adjustment, if any
+  // occurs this save. EpicentraX does not ask how a slot was authorized or
+  // record payment information -- this is purely an optional free-text
+  // note. Cleared whenever a record is loaded.
   capacity_increase_note: string;
   primary_phone: string;
   cell_phone: string;
@@ -349,9 +350,8 @@ function emptyAttendeeEditorState(): AttendeeEditorState {
     registration_capacity: 1, // initialize to 1
     registration_capacity_was_unset: false,
     registration_capacity_original: null,
-    capacity_increase_mode: "slot_only",
-    capacity_increase_participant_role: "",
-    capacity_increase_confirmed: false,
+    had_copilot_at_load: false,
+    had_additional_at_load: false,
     capacity_increase_note: "",
     primary_phone: "",
     cell_phone: "",
@@ -400,9 +400,10 @@ function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
       attendee.participant_capacity === null ||
       attendee.participant_capacity === undefined,
     registration_capacity_original: attendee.participant_capacity ?? null,
-    capacity_increase_mode: "slot_only",
-    capacity_increase_participant_role: "",
-    capacity_increase_confirmed: false,
+    // Overwritten immediately after this call in openEditAttendeeEditor,
+    // once the actual attendee_household_members rows are known.
+    had_copilot_at_load: false,
+    had_additional_at_load: false,
     capacity_increase_note: "",
     primary_phone: attendee.primary_phone || "",
     cell_phone: attendee.cell_phone || "",
@@ -1614,26 +1615,46 @@ function AttendeeEditorModal(props: {
   const { open, mode, state, saving, onClose, onChange, onSave } = props;
   const [showAdditionalParticipant, setShowAdditionalParticipant] =
     useState(false);
-  // A capacity increase requires explicit Tenant-authorization confirmation
-  // only in edit mode, and only when the administrator has deliberately
-  // raised the control above the stored value that was loaded (never for
-  // the untouched/unset default).
-  const isCapacityIncrease =
+
+  // Governed product rule: an administrator's own authorized action of
+  // adding a participant, or explicitly adding an open slot, itself
+  // authorizes the resulting participant_capacity -- no separate
+  // confirmation, accounting status, or payment attestation is asked for.
+  // These values are informational only; they never block Save.
+  const hasCopilotNow =
+    state.copilot_first.trim() !== "" ||
+    state.copilot_last.trim() !== "" ||
+    state.copilot_email.trim() !== "";
+  const hasAdditionalNow =
+    (state.additional_first_name ?? "").trim() !== "" ||
+    (state.additional_last_name ?? "").trim() !== "" ||
+    (state.additional_email ?? "").trim() !== "" ||
+    (state.additional_nickname ?? "").trim() !== "" ||
+    (state.additional_cell_phone ?? "").trim() !== "";
+  // "New" means this participant did not exist when the editor loaded --
+  // distinguishes the admin adding someone (which authorizes capacity)
+  // from an unrelated edit to an already-existing row (which must never
+  // silently paper over a pre-existing roster/capacity mismatch).
+  const isNewCopilot = mode === "edit" && hasCopilotNow && !state.had_copilot_at_load;
+  const isNewAdditional =
+    mode === "edit" && hasAdditionalNow && !state.had_additional_at_load;
+  const isAddingNewParticipant = isNewCopilot || isNewAdditional;
+  const resultingRosterCount =
+    1 + (hasCopilotNow ? 1 : 0) + (hasAdditionalNow ? 1 : 0);
+  const currentStoredCapacity = state.registration_capacity_was_unset
+    ? 0
+    : (state.registration_capacity_original ?? 0);
+  const stepperWasManuallyRaised =
     mode === "edit" &&
     !state.registration_capacity_was_unset &&
     state.registration_capacity > (state.registration_capacity_original ?? 0);
-  // In "slot and participant" mode, a role must be picked and that role's
-  // existing name field(s) elsewhere in this form must be populated -- the
-  // confirmation panel does not duplicate those inputs.
-  const capacityParticipantModeComplete =
-    state.capacity_increase_mode === "slot_only" ||
-    (state.capacity_increase_participant_role === "copilot" &&
-      (state.copilot_first.trim() !== "" || state.copilot_last.trim() !== "")) ||
-    (state.capacity_increase_participant_role === "additional" &&
-      ((state.additional_first_name ?? "").trim() !== "" ||
-        (state.additional_last_name ?? "").trim() !== ""));
-  const capacityConfirmationComplete =
-    state.capacity_increase_confirmed && capacityParticipantModeComplete;
+  const targetCapacity = Math.max(
+    state.registration_capacity_was_unset ? 0 : state.registration_capacity,
+    resultingRosterCount,
+  );
+  const isCapacityIncrease =
+    (isAddingNewParticipant || stepperWasManuallyRaised) &&
+    targetCapacity > currentStoredCapacity;
   // Automatically show additional participant if any of its fields are populated
   useEffect(() => {
     if (
@@ -2126,124 +2147,19 @@ function AttendeeEditorModal(props: {
               style={{
                 marginTop: 14,
                 padding: 14,
-                border: "1px solid #fde68a",
-                background: "#fffbeb",
+                border: "1px solid #bfdbfe",
+                background: "#eff6ff",
                 borderRadius: 8,
               }}
             >
-              <div style={{ fontWeight: 600, color: "#92400e", marginBottom: 8 }}>
-                Confirm this capacity increase
+              <div style={{ fontSize: 14, color: "#1e3a8a" }}>
+                {isAddingNewParticipant
+                  ? "Adding this participant will also authorize one additional participant slot."
+                  : `This will authorize ${targetCapacity} total participant ${targetCapacity === 1 ? "slot" : "slots"}.`}{" "}
+                Participant Capacity will be set to {targetCapacity} (from{" "}
+                {state.registration_capacity_original ?? "unset"}).
               </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "#78350f",
-                  marginBottom: 10,
-                }}
-              >
-                Registration Capacity is being raised from{" "}
-                {state.registration_capacity_original ?? "unset"} to{" "}
-                {state.registration_capacity}.
-              </div>
-
-              <div style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-                <label
-                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}
-                >
-                  <input
-                    type="radio"
-                    name="capacity_increase_mode"
-                    checked={state.capacity_increase_mode === "slot_only"}
-                    onChange={() => {
-                      onChange("capacity_increase_mode", "slot_only");
-                      onChange("capacity_increase_participant_role", "");
-                    }}
-                  />
-                  <span>
-                    Add paid slot only -- the attendee can use + Add
-                    Participant later to fill it.
-                  </span>
-                </label>
-                <label
-                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}
-                >
-                  <input
-                    type="radio"
-                    name="capacity_increase_mode"
-                    checked={
-                      state.capacity_increase_mode === "slot_and_participant"
-                    }
-                    onChange={() =>
-                      onChange(
-                        "capacity_increase_mode",
-                        "slot_and_participant",
-                      )
-                    }
-                  />
-                  <span>Add paid slot and participant now.</span>
-                </label>
-              </div>
-
-              {state.capacity_increase_mode === "slot_and_participant" && (
-                <div style={{ marginBottom: 10 }}>
-                  <label style={labelStyle}>Participant</label>
-                  <select
-                    value={state.capacity_increase_participant_role}
-                    onChange={(e) =>
-                      onChange(
-                        "capacity_increase_participant_role",
-                        e.target.value as "copilot" | "additional" | "",
-                      )
-                    }
-                    style={inputStyle}
-                  >
-                    <option value="">Select...</option>
-                    <option value="copilot">
-                      Co-Pilot (use the Co-Pilot fields above)
-                    </option>
-                    <option value="additional">
-                      Additional Participant (use the Additional Participant
-                      fields above)
-                    </option>
-                  </select>
-                  {state.capacity_increase_participant_role &&
-                    !capacityParticipantModeComplete && (
-                      <div
-                        style={{ fontSize: 12, color: "#b45309", marginTop: 4 }}
-                      >
-                        Enter the{" "}
-                        {state.capacity_increase_participant_role === "copilot"
-                          ? "Co-Pilot's"
-                          : "Additional Participant's"}{" "}
-                        name in the fields above before saving.
-                      </div>
-                    )}
-                </div>
-              )}
-
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 8,
-                  fontSize: 14,
-                  marginBottom: 10,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={state.capacity_increase_confirmed}
-                  onChange={(e) =>
-                    onChange("capacity_increase_confirmed", e.target.checked)
-                  }
-                  style={{ marginTop: 3 }}
-                />
-                <span>
-                  I confirm this participant-capacity increase has been
-                  authorized by the Tenant.
-                </span>
-              </label>
-              <div>
+              <div style={{ marginTop: 10 }}>
                 <label style={labelStyle}>Note (optional)</label>
                 <input
                   value={state.capacity_increase_note}
@@ -2272,20 +2188,11 @@ function AttendeeEditorModal(props: {
             justifyContent: "flex-end",
           }}
         >
-          {isCapacityIncrease && !capacityConfirmationComplete && (
-            <div style={{ fontSize: 13, color: "#b45309" }}>
-              {!capacityParticipantModeComplete
-                ? 'Select a participant mode and, if adding a participant, enter their name to save.'
-                : "Confirm the capacity increase was authorized by the Tenant to save."}
-            </div>
-          )}
           <button
             type="button"
             onClick={() => void onSave()}
             style={primaryButtonStyle}
-            disabled={
-              saving || (isCapacityIncrease && !capacityConfirmationComplete)
-            }
+            disabled={saving}
           >
             {saving
               ? "Saving..."
@@ -3340,6 +3247,9 @@ created_at
       nextState.additional_cell_phone = additional.cell_phone || "";
     }
 
+    nextState.had_copilot_at_load = !!copilot;
+    nextState.had_additional_at_load = !!additional;
+
     setEditorState(nextState);
     setEditorOpen(true);
 
@@ -3380,71 +3290,87 @@ created_at
     }
 
     // --- Compute participant capacity ---
-    // hasCopilot if any copilot name or email fields are populated
+    // hasCopilot / hasAdditional use the same three-field definition the
+    // governed RPC itself uses (first name, last name, email) so "does a
+    // participant exist" is judged consistently everywhere.
     const hasCopilot =
       !!editorState.copilot_first.trim() ||
       !!editorState.copilot_last.trim() ||
-      !!editorState.copilot_email.trim() ||
-      !!editorState.copilot_nickname.trim() ||
-      !!editorState.copilot_cell_phone.trim();
-    // hasAdditional if any additional_* fields are populated
+      !!editorState.copilot_email.trim();
     const hasAdditional =
       !!editorState.additional_first_name?.trim() ||
       !!editorState.additional_last_name?.trim() ||
-      !!editorState.additional_nickname?.trim() ||
-      !!editorState.additional_email?.trim() ||
-      !!editorState.additional_cell_phone?.trim();
-    // Registration capacity is the authoritative purchased capacity.
-    // Household identity fields must never reduce purchased capacity.
-    // When capacity was unset (null) at load and the administrator has not
-    // deliberately changed the control, capacity remains unknown rather than
-    // silently persisting the stepper's display default.
-    const requiredCapacity = editorState.registration_capacity_was_unset
-      ? null
-      : editorState.registration_capacity;
+      !!editorState.additional_email?.trim();
 
-    // A capacity increase requires explicit confirmation that the Tenant
-    // authorized it -- see the matching check in AttendeeEditorModal, which
-    // disables the Save button for the same condition. This is re-checked
-    // here so the requirement is enforced even if that UI gate is ever
-    // bypassed.
-    const isCapacityIncrease =
+    // Governed product rule: an administrator's own authorized action of
+    // adding a participant, or explicitly raising Registration Capacity,
+    // itself authorizes the resulting participant_capacity -- no separate
+    // confirmation, accounting status, or payment attestation is required.
+    // "New" means this participant did not exist when the editor loaded --
+    // an unrelated edit to an already-existing row must never silently
+    // paper over a pre-existing roster/capacity mismatch (that remains a
+    // visible warning instead).
+    const isNewCopilot =
+      editorMode === "edit" && hasCopilot && !editorState.had_copilot_at_load;
+    const isNewAdditional =
+      editorMode === "edit" &&
+      hasAdditional &&
+      !editorState.had_additional_at_load;
+    const isAddingNewParticipant = isNewCopilot || isNewAdditional;
+    const resultingRosterCount =
+      1 + (hasCopilot ? 1 : 0) + (hasAdditional ? 1 : 0);
+    const currentStoredCapacity = editorState.registration_capacity_was_unset
+      ? 0
+      : (editorState.registration_capacity_original ?? 0);
+    const stepperWasManuallyRaised =
       editorMode === "edit" &&
       !editorState.registration_capacity_was_unset &&
       editorState.registration_capacity >
         (editorState.registration_capacity_original ?? 0);
+    // Never below what the resulting roster requires, but honors a higher
+    // value the administrator explicitly entered in the stepper.
+    const targetCapacity = Math.max(
+      editorState.registration_capacity_was_unset
+        ? 0
+        : editorState.registration_capacity,
+      resultingRosterCount,
+    );
+    const isCapacityIncrease =
+      (isAddingNewParticipant || stepperWasManuallyRaised) &&
+      targetCapacity > currentStoredCapacity;
 
-    if (isCapacityIncrease) {
-      if (
-        editorState.capacity_increase_mode === "slot_and_participant"
-      ) {
-        const role = editorState.capacity_increase_participant_role;
-        const roleNamePresent =
-          role === "copilot"
-            ? editorState.copilot_first.trim() !== "" ||
-              editorState.copilot_last.trim() !== ""
-            : role === "additional"
-              ? (editorState.additional_first_name ?? "").trim() !== "" ||
-                (editorState.additional_last_name ?? "").trim() !== ""
-              : false;
+    // Which household role (if any) the governed RPC atomically writes
+    // alongside the capacity increase. Prefers Co-Pilot when both are newly
+    // added in the same save; the other role still syncs via the existing
+    // generic path below, and the RPC's own roster-count validation still
+    // covers the combined resulting total.
+    const rpcParticipantRole: "copilot" | "additional" | null =
+      !isCapacityIncrease
+        ? null
+        : isNewCopilot
+          ? "copilot"
+          : isNewAdditional
+            ? "additional"
+            : null;
 
-        if (!role || !roleNamePresent) {
-          setError(
-            "Select a participant and enter their name before saving this capacity increase.",
-          );
-          setStatus("Save blocked.");
-          return;
-        }
-      }
+    // Registration capacity is the authoritative participant-capacity
+    // value. When capacity was unset (null) at load, the administrator has
+    // not deliberately changed the control, and no increase is occurring
+    // this save, capacity remains unknown rather than silently persisting
+    // the stepper's display default.
+    const requiredCapacity = editorState.registration_capacity_was_unset
+      ? null
+      : editorState.registration_capacity;
 
-      if (!editorState.capacity_increase_confirmed) {
-        setError(
-          "Confirm this capacity increase was authorized by the Tenant before saving.",
-        );
-        setStatus("Save blocked.");
-        return;
-      }
-    }
+    // Create mode has no prior capacity to protect and no atomicity concern
+    // (one INSERT immediately followed by one household sync), so it needs
+    // no RPC -- but the same governing rule still applies: a brand-new
+    // record's initial capacity must cover whatever roster is being created
+    // alongside it in this same save.
+    const initialCapacityForCreate = Math.max(
+      requiredCapacity ?? 0,
+      resultingRosterCount,
+    );
 
     try {
       setEditorSaving(true);
@@ -3494,12 +3420,15 @@ created_at
         notes: editorState.notes.trim() || null,
         // Overwrite participant_capacity on every save, except when this
         // save is a governed increase -- that case is applied atomically
-        // with its accounting record via record_participant_capacity_increase
+        // with its audit record via record_participant_capacity_increase
         // after this generic write succeeds, so the original stored value
         // is left untouched here rather than written twice.
-        participant_capacity: isCapacityIncrease
-          ? editorState.registration_capacity_original
-          : requiredCapacity,
+        participant_capacity:
+          editorMode === "create"
+            ? initialCapacityForCreate
+            : isCapacityIncrease
+              ? editorState.registration_capacity_original
+              : requiredCapacity,
       };
 
       if (editorMode === "create") {
@@ -3541,30 +3470,29 @@ created_at
           throw new Error("Missing attendee id for edit");
         }
 
-        // Explicit mode: only the participant role selected for this
-        // capacity increase (if any) is withheld from the generic sync --
-        // the RPC below owns exactly that one role atomically. The other
-        // role, and slot-only increases, sync here exactly as before.
-        const rpcOwnedParticipantRole: "copilot" | "additional" | null =
-          isCapacityIncrease &&
-          editorState.capacity_increase_mode === "slot_and_participant" &&
-          editorState.capacity_increase_participant_role
-            ? editorState.capacity_increase_participant_role
-            : null;
-
+        // Automatic mode: only the participant role this save is newly
+        // adding (if any) is withheld from the generic sync -- the RPC
+        // below owns exactly that one role atomically. The other role, and
+        // a pure slot-only increase, sync here exactly as before.
         await syncHouseholdMembers(
           editorState.id,
           payload,
           currentEvent.id,
           editorState,
-          rpcOwnedParticipantRole,
+          rpcParticipantRole,
         );
 
         if (isCapacityIncrease) {
           // Atomic: capacity increase, the operational audit record, and --
-          // only in "slot and participant" mode -- the one named household
-          // row that justifies it, all commit or roll back together inside
-          // this one RPC call. See record_participant_capacity_increase in
+          // only when a participant is newly being added -- the one named
+          // household row that justifies it, all commit or roll back
+          // together inside this one RPC call. Calling this RPC requires
+          // only valid Event-scoped admin authority: the administrator's
+          // own authorized action of adding a participant, or explicitly
+          // raising Registration Capacity, itself authorizes the resulting
+          // capacity -- no separate confirmation, accounting status, or
+          // payment attestation is requested or recorded. See
+          // record_participant_capacity_increase in
           // 20260805150000_create_participant_capacity_adjustments.sql.
           //
           // No Person resolution occurs for the participant named here
@@ -3576,44 +3504,43 @@ created_at
             "record_participant_capacity_increase",
             {
               p_attendee_id: editorState.id,
-              p_new_capacity: editorState.registration_capacity,
-              p_confirmed: editorState.capacity_increase_confirmed,
+              p_new_capacity: targetCapacity,
               p_note: editorState.capacity_increase_note.trim() || null,
-              p_participant_role: rpcOwnedParticipantRole,
+              p_participant_role: rpcParticipantRole,
               p_copilot_first:
-                rpcOwnedParticipantRole === "copilot"
+                rpcParticipantRole === "copilot"
                   ? editorState.copilot_first.trim() || null
                   : null,
               p_copilot_last:
-                rpcOwnedParticipantRole === "copilot"
+                rpcParticipantRole === "copilot"
                   ? editorState.copilot_last.trim() || null
                   : null,
               p_copilot_nickname:
-                rpcOwnedParticipantRole === "copilot"
+                rpcParticipantRole === "copilot"
                   ? editorState.copilot_nickname.trim() || null
                   : null,
               p_copilot_email:
-                rpcOwnedParticipantRole === "copilot"
+                rpcParticipantRole === "copilot"
                   ? editorState.copilot_email.trim().toLowerCase() || null
                   : null,
               p_additional_first_name:
-                rpcOwnedParticipantRole === "additional"
+                rpcParticipantRole === "additional"
                   ? editorState.additional_first_name?.trim() || null
                   : null,
               p_additional_last_name:
-                rpcOwnedParticipantRole === "additional"
+                rpcParticipantRole === "additional"
                   ? editorState.additional_last_name?.trim() || null
                   : null,
               p_additional_nickname:
-                rpcOwnedParticipantRole === "additional"
+                rpcParticipantRole === "additional"
                   ? editorState.additional_nickname?.trim() || null
                   : null,
               p_additional_email:
-                rpcOwnedParticipantRole === "additional"
+                rpcParticipantRole === "additional"
                   ? editorState.additional_email?.trim() || null
                   : null,
               p_additional_cell_phone:
-                rpcOwnedParticipantRole === "additional"
+                rpcParticipantRole === "additional"
                   ? editorState.additional_cell_phone?.trim() || null
                   : null,
             },
