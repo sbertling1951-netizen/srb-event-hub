@@ -43,26 +43,18 @@ type AttendeeRow = {
   coach_length: string | null;
 };
 
-type RequestVendorRow = {
-  business_name: string | null;
-};
-
+// Matches exactly what public.get_my_vendor_service_requests(...) returns
+// (supabase/migrations/20260807120000_create_governed_member_vendor_request_read.sql)
+// -- the governed read path used in place of a direct table select.
 type MemberRequestRow = {
   id: string;
-  event_id: string;
-  vendor_id: string | null;
-  attendee_id: string | null;
-  requester_name: string | null;
-  requester_email: string | null;
-  requester_phone: string | null;
-  site_number: string | null;
+  vendor_business_name: string | null;
   requested_service: string | null;
   guest_count: number | null;
   request_notes: string | null;
-  preferred_response_method: string | null;
   request_status: string | null;
   created_at: string | null;
-  vendors?: RequestVendorRow | RequestVendorRow[] | null;
+  site_number: string | null;
 };
 
 function fullName(
@@ -86,11 +78,30 @@ function emailHref(value: string | null | undefined, vendorName: string) {
 }
 
 function requestVendorName(request: MemberRequestRow) {
-  const vendor = Array.isArray(request.vendors)
-    ? request.vendors[0]
-    : request.vendors;
+  return request.vendor_business_name || "Vendor";
+}
 
-  return vendor?.business_name || "Vendor";
+// A PostgrestError's message is inherited via Error's constructor and is
+// non-enumerable; logging the raw object can render as "{}" in some
+// consoles. This returns a plain, always-enumerable summary instead.
+function describeError(err: unknown): unknown {
+  if (err instanceof Error) {
+    return { name: err.name, message: err.message };
+  }
+
+  if (err && typeof err === "object") {
+    const { code, message, details, hint } = err as {
+      code?: unknown;
+      message?: unknown;
+      details?: unknown;
+      hint?: unknown;
+    };
+    if (code !== undefined || message !== undefined) {
+      return { code, message, details, hint };
+    }
+  }
+
+  return err;
 }
 
 function formatRequestDate(value: string | null) {
@@ -245,7 +256,7 @@ function MemberVendorSignupInner() {
           if (aOrder !== bOrder) {
             return aOrder - bOrder;
           }
-          return a.business_name.localeCompare(b.business_name);
+          return (a.business_name || "").localeCompare(b.business_name || "");
         });
 
       setVendors(visibleVendors);
@@ -270,48 +281,41 @@ function MemberVendorSignupInner() {
         Array.isArray(attendeeRecordData) ? attendeeRecordData[0] : null
       ) as AttendeeRow | null;
 
-      const { data: requestRows, error: requestError } = await supabase
-        .from("vendor_service_requests")
-        .select(
-          `
-          id,
-          event_id,
-          vendor_id,
-          attendee_id,
-          requester_name,
-          requester_email,
-          requester_phone,
-          site_number,
-          requested_service,
-          guest_count,
-          request_notes,
-          preferred_response_method,
-          request_status,
-          created_at,
-          vendors (
-            business_name
-          )
-        `,
-        )
-        .eq("event_id", event.id)
-        .order("created_at", { ascending: false });
+      // Governed read: the member's own vendor requests, resolved entirely
+      // server-side through the same event-code/registration-identifier
+      // (or, when present, authenticated) evidence get_my_attendee_record
+      // already uses -- never a direct table select, which would run as
+      // anon for the supported event-code entry path and is denied at the
+      // grant level (see 20260807120000_create_governed_member_vendor_request_read.sql).
+      const { data: authSessionData } = await supabase.auth.getSession();
+      const accessToken = authSessionData.session?.access_token;
 
-      if (requestError) {
-        throw requestError;
+      const requestsParams = new URLSearchParams({ eventId: event.id });
+      if (session?.event_code) {
+        requestsParams.set("eventCode", session.event_code);
+      }
+      const registrationIdentifier =
+        session?.attendee_email || session?.attendee_phone || "";
+      if (registrationIdentifier) {
+        requestsParams.set("registrationIdentifier", registrationIdentifier);
       }
 
-      const normalizedStoredEmail = (attendeeRow?.email || "").toLowerCase();
-      const visibleRequests = (
-        (requestRows || []) as MemberRequestRow[]
-      ).filter((request) => {
-        const requestEmail = (request.requester_email || "").toLowerCase();
-        return (
-          (!!attendeeRow?.id && request.attendee_id === attendeeRow.id) ||
-          (!!normalizedStoredEmail && requestEmail === normalizedStoredEmail)
-        );
-      });
+      const requestsResponse = await fetch(
+        `/api/member/vendor-requests?${requestsParams.toString()}`,
+        accessToken
+          ? { headers: { Authorization: `Bearer ${accessToken}` } }
+          : undefined,
+      );
 
-      setMemberRequests(visibleRequests);
+      if (!requestsResponse.ok) {
+        throw new Error("Could not load your vendor requests.");
+      }
+
+      const requestsPayload = (await requestsResponse.json()) as {
+        data?: MemberRequestRow[];
+      };
+
+      setMemberRequests(requestsPayload.data ?? []);
       setAttendee(attendeeRow);
 
       if (attendeeRow) {
@@ -331,7 +335,7 @@ function MemberVendorSignupInner() {
           : "No vendors are available for this event yet.",
       );
     } catch (err) {
-      console.error("load vendor signup error:", err);
+      console.error("load vendor signup error:", describeError(err));
       setError(
         err instanceof Error
           ? err.message
@@ -368,18 +372,18 @@ function MemberVendorSignupInner() {
       setError(null);
       setStatus("Submitting vendor request...");
 
+      // A Supabase Auth session is preferred, when present, but never
+      // required: the supported event-code member path never establishes
+      // one. event_code/registration_identifier are the same evidence
+      // get_my_attendee_record and the governed read already send.
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
-
-      if (!accessToken) {
-        throw new Error("Your session has expired. Please sign in again.");
-      }
 
       const response = await fetch("/api/member/vendor-requests", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
         body: JSON.stringify({
           eventId: event.id,
@@ -393,6 +397,9 @@ function MemberVendorSignupInner() {
           requesterName: requesterName.trim(),
           requesterEmail: requesterEmail.trim() || attendee?.email || null,
           requesterPhone: requesterPhone.trim() || null,
+          eventCode: session?.event_code || null,
+          registrationIdentifier:
+            session?.attendee_email || session?.attendee_phone || null,
         }),
       });
 
@@ -413,7 +420,7 @@ function MemberVendorSignupInner() {
       setNotes("");
       await loadPage();
     } catch (err) {
-      console.error("submit vendor request error:", err);
+      console.error("submit vendor request error:", describeError(err));
       setError(
         err instanceof Error ? err.message : "Could not submit vendor request.",
       );
@@ -445,22 +452,25 @@ function MemberVendorSignupInner() {
       setError(null);
       setStatus("Cancelling vendor request...");
 
+      // See submitRequest() above: a Supabase Auth session is preferred
+      // when present, but never required for the supported event-code
+      // member path.
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
-
-      if (!accessToken) {
-        throw new Error("Your session has expired. Please sign in again.");
-      }
 
       const response = await fetch("/api/member/vendor-requests", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
         body: JSON.stringify({
           requestId: request.id,
           nextStatus: "cancelled",
+          eventId: event?.id || null,
+          eventCode: session?.event_code || null,
+          registrationIdentifier:
+            session?.attendee_email || session?.attendee_phone || null,
         }),
       });
 
@@ -480,7 +490,7 @@ function MemberVendorSignupInner() {
       );
       setStatus("Vendor request cancelled.");
     } catch (err) {
-      console.error("cancel vendor request error:", err);
+      console.error("cancel vendor request error:", describeError(err));
       setError(
         err instanceof Error ? err.message : "Could not cancel vendor request.",
       );
