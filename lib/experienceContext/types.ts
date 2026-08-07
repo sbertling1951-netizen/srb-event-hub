@@ -84,7 +84,18 @@ export type SharedExperienceContext = {
     observedAt: string | null;
   };
   vendorRequests: {
+    // null means unavailable -- a genuine collection failure. Never
+    // conflated with a governed-confirmed zero (see
+    // vendorRequestsProvider.ts for why this boundary cannot separately
+    // distinguish an unresolved identity from a real zero, unlike
+    // assignments).
     openCount: number | null;
+    evidenceQuality: SliceEvidenceQuality;
+    // See docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
+    // ("Freshness"). null means nothing was actually observed this pass
+    // -- never a fabricated observation time. Deliberately independent
+    // of evidenceQuality; no staleness threshold is computed from it.
+    observedAt: string | null;
   };
 };
 

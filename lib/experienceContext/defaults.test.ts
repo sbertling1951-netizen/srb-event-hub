@@ -4,15 +4,18 @@ import { test } from "node:test";
 import { buildCanonicalBaseSharedExperienceContext } from "@/lib/experienceContext/defaults";
 import type { CurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 
-// Covers "unavailable source" for the agenda, announcements, and
-// assignments slices: this is the exact object
+// Covers "unavailable source" for the agenda, announcements,
+// assignments, and vendorRequests slices: this is the exact object
 // collectSharedExperienceContext's per-provider failure isolation leaves
 // in the Pool when a Provider throws (network or database error -- see
 // agendaProvider.test.ts, announcementsProvider.test.ts,
-// assignmentsProvider.test.ts). This is distinct from assignments'
-// `identity_unavailable` case, which is a governed, successful API
-// outcome and therefore does carry a real observedAt -- see
-// assignmentsProvider.test.ts. Run with:
+// assignmentsProvider.test.ts, vendorRequestsProvider.test.ts). This is
+// distinct from assignments' `identity_unavailable` case, which is a
+// governed, successful API outcome and therefore does carry a real
+// observedAt -- see assignmentsProvider.test.ts. Unlike assignments,
+// vendorRequests' governed boundary has no analogous distinct outcome (see
+// vendorRequestsProvider.ts) -- its only "unavailable" case is this
+// generic Provider-failure default. Run with:
 //   npx tsx --test lib/experienceContext/defaults.test.ts
 
 const EVENT: CurrentMemberEvent = {
@@ -84,4 +87,21 @@ test("assignments default represents an unavailable source, never a fabricated z
   assert.equal(context.assignments.activeCount, null);
   assert.equal(context.assignments.evidenceQuality, "unavailable");
   assert.equal(context.assignments.observedAt, null);
+});
+
+test("vendorRequests default represents an unavailable source, never a fabricated zero", () => {
+  const context = buildCanonicalBaseSharedExperienceContext({
+    event: EVENT,
+    now: new Date("2026-08-07T12:00:00.000Z"),
+    attendeeId: null,
+    participantCapacity: null,
+    participantCount: 0,
+    checkedIn: null,
+    eventCode: null,
+    registrationIdentifier: null,
+  });
+
+  assert.equal(context.vendorRequests.openCount, null);
+  assert.equal(context.vendorRequests.evidenceQuality, "unavailable");
+  assert.equal(context.vendorRequests.observedAt, null);
 });

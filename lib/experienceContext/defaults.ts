@@ -95,6 +95,14 @@ export function buildCanonicalBaseSharedExperienceContext(
       evidenceQuality: "unavailable",
       observedAt: null,
     },
-    vendorRequests: { openCount: null },
+    // The canonical unavailable default. A successful
+    // vendorRequestsExperienceContextProvider contribution overwrites this
+    // whole slice, including evidenceQuality and observedAt, with a real
+    // observation.
+    vendorRequests: {
+      openCount: null,
+      evidenceQuality: "unavailable",
+      observedAt: null,
+    },
   };
 }

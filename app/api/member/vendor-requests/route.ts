@@ -1,6 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+import {
+  interpretVendorRequestRpcRows,
+  type VendorRequestRpcRow,
+} from "@/app/api/member/vendor-requests/interpretVendorRequestRpcRows";
 import { createAuthenticatedUserClient } from "@/lib/server/authenticatedUserClient";
 import { resolveAuthenticatedRequest } from "@/lib/server/authenticationBoundary";
 import { resolveTenantFromHeaders } from "@/lib/server/tenantResolver";
@@ -252,7 +256,9 @@ export async function PATCH(request: Request) {
 }
 
 // Governed read for "my vendor requests" (Vendor Requests Stage 1 follow-up:
-// see 20260807120000_create_governed_member_vendor_request_read.sql).
+// see 20260807120000_create_governed_member_vendor_request_read.sql, and
+// its 20260807150000_repair_governed_member_vendor_request_read_boundary.sql
+// read-boundary repair).
 //
 // Unlike POST/PATCH above, this never assumes a Supabase Auth session
 // exists: the supported member entry path is event-code/registration-
@@ -263,6 +269,29 @@ export async function PATCH(request: Request) {
 // is absent, the request falls through to the anon-key client and the
 // event-code/registration-identifier branch, mirroring
 // app/api/member/checkin/route.ts's dual-path pattern.
+//
+// The RPC's two possible outcomes (a resolver failure, surfaced as zero
+// raw rows; or a resolved result, surfaced as a `status` column on every
+// row -- including a confirmed-zero sentinel row when the resolved
+// attendee has no matching requests) are surfaced as an explicit `status`
+// field on every response, mirroring app/api/member/assignments/route.ts's
+// already-established pattern -- never collapsed into a bare array that
+// could make "identity unresolved" indistinguishable from a confirmed
+// zero. The successful response still nests the row array under `data`,
+// unchanged from before this repair, so existing resolved-case consumers
+// (app/member/vendor-signup/page.tsx) require no change. The
+// interpretation itself lives in interpretVendorRequestRpcRows.ts, a
+// module with no Next.js-server-only imports, so it is directly
+// unit-testable outside this route.
+
+function transientErrorResponse() {
+  return NextResponse.json({ status: "transient_error" as const }, { status: 500 });
+}
+
+function invalidSessionResponse() {
+  return NextResponse.json({ status: "invalid_session" as const }, { status: 400 });
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const eventId = url.searchParams.get("eventId");
@@ -272,13 +301,13 @@ export async function GET(request: Request) {
   );
 
   if (!isUuid(eventId)) {
-    return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+    return invalidSessionResponse();
   }
 
   const authResolution = await resolveAuthenticatedRequest(request.headers);
 
   if (authResolution.state === "internal_error") {
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return transientErrorResponse();
   }
 
   const supabase =
@@ -287,7 +316,7 @@ export async function GET(request: Request) {
       : createAnonMemberClient();
 
   if (!supabase) {
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return transientErrorResponse();
   }
 
   const { data, error } = await supabase.rpc(
@@ -310,11 +339,29 @@ export async function GET(request: Request) {
       details: error.details,
       hint: error.hint,
     });
-    return NextResponse.json(
-      { error: "vendor_request_read_failed" },
-      { status: 400 },
-    );
+    return transientErrorResponse();
   }
 
-  return NextResponse.json({ data: data ?? [] });
+  const rows = (data ?? []) as VendorRequestRpcRow[];
+  const outcome = interpretVendorRequestRpcRows(rows);
+
+  if (outcome.kind === "invalid_session") {
+    // This route does not re-verify identity itself -- that would
+    // duplicate resolution the RPC already owns.
+    return invalidSessionResponse();
+  }
+
+  if (outcome.kind === "protocol_violation") {
+    // Fail closed: an unrecognized or mixed status set is a protocol
+    // violation between this route and the RPC, not an ordinary outcome.
+    // Never expose the raw status value(s) or any database detail to the
+    // caller.
+    console.error(
+      "get_my_vendor_service_requests returned an unrecognized or mixed status set:",
+      { statuses: rows.map((row) => row.status) },
+    );
+    return transientErrorResponse();
+  }
+
+  return NextResponse.json({ status: "resolved" as const, data: outcome.requests });
 }
