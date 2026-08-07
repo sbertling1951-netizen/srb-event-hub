@@ -12,6 +12,18 @@ export type NormalizedAgendaItem = {
   endTime: string | null;
 };
 
+// See docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
+// ("Evidence Quality Classification"). A deterministic, rule-based
+// classification of one slice's own collection -- never a probabilistic
+// or learned score, and never identity confidence (a different, governed
+// concept owned elsewhere). Reported by a Provider on its own slice.
+export type SliceEvidenceQuality =
+  | "governed"
+  | "external"
+  | "partial"
+  | "stale"
+  | "unavailable";
+
 export type SharedExperienceContext = {
   generatedAt: string;
   event: {
@@ -35,6 +47,17 @@ export type SharedExperienceContext = {
   agenda: {
     currentItem: NormalizedAgendaItem | null;
     nextItem: NormalizedAgendaItem | null;
+    evidenceQuality: SliceEvidenceQuality;
+    // See docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
+    // ("Freshness"): "every slice the Collector places in the Pool
+    // carries its own observed-at timestamp." null means nothing was
+    // actually observed this pass (Provider unavailable or not yet run)
+    // -- never a fabricated observation time. This is deliberately a
+    // separate fact from evidenceQuality: no staleness threshold is
+    // computed from it here, or anywhere in this Provider -- judging
+    // whether an age is acceptable is explicitly left to the Resolver
+    // or consumer, per the same architecture section.
+    observedAt: string | null;
   };
   announcements: {
     // null means "unavailable" (source not queried or the optional fetch

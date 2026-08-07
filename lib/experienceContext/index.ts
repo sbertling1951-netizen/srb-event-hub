@@ -11,4 +11,5 @@ export type {
   PrimaryExperienceContext,
   PrimaryExperienceContextKind,
   SharedExperienceContext,
+  SliceEvidenceQuality,
 } from "@/lib/experienceContext/types";

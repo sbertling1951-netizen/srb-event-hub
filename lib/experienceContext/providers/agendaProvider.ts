@@ -5,7 +5,49 @@ import type {
 } from "@/lib/experienceContext/types";
 import { supabase } from "@/lib/supabase";
 
-type AgendaRow = {
+// This Provider owns exactly the "agenda" Shared Context Pool slice. See
+// docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
+// ("Deduplication", "Evidence Quality Classification", "Freshness"). It
+// reads only the same governed, RLS-scoped agenda_items table the agenda
+// page already reads, performs no write of any kind, and resolves no
+// Person, Tenant, Relationship, Participation, Assignment, Authority, or
+// Workspace.
+//
+// Deduplication: deliberately not implemented at this layer. Investigated
+// against the actual schema and import code, not assumed:
+//   - public.agenda_items carries UNIQUE (event_id, external_id) (partial
+//     unique index, WHERE external_id IS NOT NULL --
+//     20260617000000_create_pre_20260618_public_baseline.sql). The only
+//     write path that populates agenda_items in bulk
+//     (app/admin/agenda/import/page.tsx) writes via
+//     an upsert call targeting the conflict pair "event_id,external_id". A
+//     re-import can therefore never create a second row for an item that
+//     already has an external_id -- the existing row is updated in
+//     place, keeping its original id. The database itself is the
+//     governed deduplication mechanism for every imported row; there is
+//     nothing left for this Provider to safely deduplicate among rows
+//     that carry an external_id, because two such rows sharing one
+//     cannot coexist in a query result at all.
+//   - `import_key` also exists on the table but is not referenced by any
+//     write path found in this repository and carries no uniqueness
+//     constraint -- it is not a governed identity mechanism and is not
+//     used here.
+//   - A manually created row (source = 'manual', the column default) has
+//     no external_id and therefore no governed identity signal at all.
+//     Two manual rows that happen to share a title, date, and start time
+//     are not provably the same underlying fact -- they may simply be
+//     two genuinely independent agenda items (parallel tracks, repeated
+//     time slots). This Provider must not, and does not, guess that they
+//     are duplicates or in conflict merely because they look similar. An
+//     earlier draft of this Provider grouped rows by
+//     (title, agenda_date, start_time) and treated a mismatched end_time
+//     as an unresolvable conflict; that was an invented heuristic with no
+//     evidence behind it and has been removed. Establishing a governed
+//     identity rule for manually created rows, if one is ever needed, is
+//     a separate, future, explicitly authorized architectural decision --
+//     not something this Provider may improvise.
+
+export type AgendaRow = {
   id: string;
   title: string | null;
   agenda_date: string | null;
@@ -73,6 +115,37 @@ function toNormalizedAgendaItem(row: AgendaRow): NormalizedAgendaItem {
   };
 }
 
+// Pure: no I/O, no mutation of its input, deterministic in `now`. Kept
+// separate from collectAgendaSlice below so normalization and
+// classification are testable without a Supabase call. Every row
+// received is treated as a genuine, independent fact -- see the
+// Deduplication note above for why this Provider does not attempt to
+// group or collapse rows itself.
+export function computeAgendaSlice(
+  rawRows: readonly AgendaRow[],
+  now: Date,
+): SharedExperienceContext["agenda"] {
+  const current =
+    rawRows.find((row) => classifyAgendaItem(row, now) === "now") ?? null;
+  const upcoming = rawRows
+    .filter((row) => classifyAgendaItem(row, now) === "upcoming")
+    .slice()
+    .sort((a, b) => agendaItemSortValue(a) - agendaItemSortValue(b));
+
+  return {
+    currentItem: current ? toNormalizedAgendaItem(current) : null,
+    nextItem: upcoming.length > 0 ? toNormalizedAgendaItem(upcoming[0]) : null,
+    // Reaching this point means the read succeeded. See Evidence Quality
+    // Classification -- this is deliberately independent of observedAt
+    // below; neither is derived from the other.
+    evidenceQuality: "governed",
+    // See Freshness: the moment this data was actually observed. Always
+    // sourced from the caller-supplied `now`, never a fresh wall-clock
+    // read here, so this function remains fully deterministic.
+    observedAt: now.toISOString(),
+  };
+}
+
 async function collectAgendaSlice(
   eventId: string,
   now: Date,
@@ -87,17 +160,7 @@ async function collectAgendaSlice(
     throw error;
   }
 
-  const rows = (data ?? []) as AgendaRow[];
-  const current =
-    rows.find((row) => classifyAgendaItem(row, now) === "now") ?? null;
-  const upcoming = rows
-    .filter((row) => classifyAgendaItem(row, now) === "upcoming")
-    .sort((a, b) => agendaItemSortValue(a) - agendaItemSortValue(b));
-
-  return {
-    currentItem: current ? toNormalizedAgendaItem(current) : null,
-    nextItem: upcoming.length > 0 ? toNormalizedAgendaItem(upcoming[0]) : null,
-  };
+  return computeAgendaSlice((data ?? []) as AgendaRow[], now);
 }
 
 export const agendaExperienceContextProvider: ExperienceContextProvider<"agenda"> = {

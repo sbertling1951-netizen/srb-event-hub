@@ -67,6 +67,14 @@ export function buildCanonicalBaseSharedExperienceContext(
     agenda: {
       currentItem: null,
       nextItem: null,
+      // The canonical unavailable default. A successful
+      // agendaExperienceContextProvider contribution overwrites this
+      // whole slice, including evidenceQuality and observedAt, with a
+      // real observation.
+      evidenceQuality: "unavailable",
+      // Nothing was actually observed this pass -- never a fabricated
+      // timestamp standing in for a real one.
+      observedAt: null,
     },
     announcements: { activeCount: null },
     // The canonical unavailable/default value. A successful
