@@ -1,5 +1,6 @@
 import { agendaExperienceContextProvider } from "@/lib/experienceContext/providers/agendaProvider";
 import { announcementsExperienceContextProvider } from "@/lib/experienceContext/providers/announcementsProvider";
+import { assignmentsExperienceContextProvider } from "@/lib/experienceContext/providers/assignmentsProvider";
 import type { AnyExperienceContextProvider } from "@/lib/experienceContext/providers/types";
 import { vendorRequestsExperienceContextProvider } from "@/lib/experienceContext/providers/vendorRequestsProvider";
 
@@ -26,6 +27,7 @@ const REGISTERED_EXPERIENCE_CONTEXT_PROVIDERS: readonly AnyExperienceContextProv
   [
     agendaExperienceContextProvider,
     announcementsExperienceContextProvider,
+    assignmentsExperienceContextProvider,
     vendorRequestsExperienceContextProvider,
   ];
 
