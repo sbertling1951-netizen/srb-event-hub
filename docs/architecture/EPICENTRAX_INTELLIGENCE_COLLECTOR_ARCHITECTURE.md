@@ -1,8 +1,34 @@
 # EpicentraX Intelligence Collector Architecture
 
 **Status:** Proposed architectural standard
-**Version:** 1.0
+**Version:** 1.2
 **Date:** August 7, 2026
+
+**Revision note (1.0 -> 1.1):** this revision added explicit
+Deduplication, Correlation, and Confidence Indication responsibilities, a
+literal branching data-flow rendering, a point-to-point integration
+comparison, and a closing implementation-guidance summary, all requested
+in a follow-up design conversation. No decision made in Version 1.0 was
+reversed; where a requested addition would have conflicted with a 1.0
+decision (Confidence Indication and the non-learning requirement), that
+conflict was named and reconciled explicitly in place.
+
+**Revision note (1.1 -> 1.2):** this revision closes findings from a
+constitutional and architectural review of 1.1: it renames Confidence
+Indication to Evidence Quality Classification throughout, to remove a
+three-way collision with the identity-stewardship document family's own
+"identity confidence" vocabulary and the Experience Intelligence
+document's separately reserved `confidence` field; it explicitly
+reconciles per-slice Evidence Quality with the composition-level Failure
+Model rather than leaving two similarly-worded taxonomies unrelated; it
+closes an ambiguity in Deduplication so that genuinely conflicting raw
+records are preserved as visible conflict, never merged or adjudicated by
+the Collector; it ties future changes to the Evidence Quality taxonomy to
+this document's own Change Governance; and it adds the previously
+requested Scalability and Future Evolution discussion. No decision made
+in Version 1.0 or 1.1 is reversed by this revision; every change here
+narrows ambiguity already present, rather than altering the architecture
+those versions established.
 
 ## Purpose
 
@@ -31,6 +57,12 @@ layer that gathers authoritative information from existing platform
 services, normalizes it into reusable runtime context, and distributes
 that context to consumers.
 
+The governing principle, stated plainly: **producers publish once, the
+Collector aggregates once, and every consumer reads from the Shared
+Context Pool rather than independently querying every service.** Every
+responsibility, boundary, and prohibition in this document exists to keep
+that principle true as the platform adds services and consumers.
+
 ## Relationship to Governing Architecture
 
 This document assumes the following as already established, and does not
@@ -48,12 +80,18 @@ restate, alter, weaken, or compete with any of them:
   document's Person, Tenant, Event, Activity, Responsibility, and
   Assignment vocabulary is ADR-011's vocabulary, consumed, not redefined.
 - ADR-012 (Person-Tenant Relationship Architecture; Accepted).
-- `EPICENTRAX_SHARED_EXPERIENCE_CONTEXT_ARCHITECTURE.md` (Proposed) and
-  `EPICENTRAX_EXPERIENCE_ARCHITECTURE.md` (Proposed) — this document is
-  written to remain consistent with both; neither is treated as governing
-  by this document, and where this document touches a concept either of
-  them already describes, it consumes that description rather than
-  redefining it.
+- `EPICENTRAX_SHARED_EXPERIENCE_CONTEXT_ARCHITECTURE.md` (Proposed),
+  `EPICENTRAX_EXPERIENCE_ARCHITECTURE.md` (Proposed),
+  `EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md`
+  (Proposed), and `EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md`
+  (Proposed) — this document is written to remain consistent with all
+  four; none is treated as governing by this document, and where this
+  document touches a concept any of them already describes, it consumes
+  that description rather than redefining it. In particular, the
+  boundary between a Collector-level fact and an Experience-Intelligence-
+  level interpretation of that fact (see Correlation, below) is
+  `EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md`'s boundary,
+  consumed here, not redrawn.
 
 **Placeholder ADRs.** ADR-002, ADR-003, ADR-004, ADR-005, ADR-006,
 ADR-007, ADR-008, and ADR-010 are currently empty files in this
@@ -163,6 +201,76 @@ This is the Experience Architecture's "Know more, show less" applied to
 collection: a Provider may read more than the Pool exposes; the Pool
 exposes only what composition and distribution require.
 
+### Deduplication
+
+Where a Provider's authoritative source can return more than one raw
+record describing what is actually the same underlying fact — two
+overlapping vendor-notice rows for the same Vendor/Event pair, or
+duplicate agenda rows produced by a repeated import — collapsing them to
+one canonical record is the responsibility of that Provider, performed
+before the record ever becomes a Pool slice. This keeps deduplication
+logic co-located with the one Provider that understands its own source's
+duplication patterns, rather than creating a second, generic
+deduplication mechanism in the Collector that would have to understand
+every source's shape to be useful.
+
+The Collector's own deduplication guarantee is structural, not
+algorithmic: exactly one Provider owns each Pool slice (Collector
+Provider Model, below), so the Collector never receives two competing
+values for the same slice from two different Providers to adjudicate
+between in the first place. The one-Provider-per-slice invariant *is* the
+Collector's deduplication mechanism at its own layer — enforced by
+registration, not resolved at runtime by preference.
+
+**Deduplication applies only to records that are substantively
+identical — never to records that disagree.** "Collapsing to one
+canonical record" means recognizing that two or more raw rows describe
+the exact same underlying fact (a repeated import, a duplicate row), not
+choosing among rows that give different answers to the same question. A
+Provider must never merge, average, or otherwise adjudicate between raw
+records that genuinely conflict in value to produce a single "winning"
+fact — doing so would be the Collector performing exactly the
+truth-determination this document already disclaims (Explicit
+Non-Responsibilities, "Determine truth"), just moved one layer down into
+a Provider instead of the Collector itself. Where raw records disagree
+rather than merely repeat, the Provider reports that slice as unavailable
+for this composition pass (Failure Model, "Provider unavailable") — the
+same representation already used for any other collection failure, not a
+new category invented for this case. Which raw value is actually correct
+remains the authoritative source's own problem to resolve, exactly as
+"Determine truth" already states; this mirrors the fail-closed discipline
+Unified Person Resolution Architecture (Proposed) already establishes for
+the structurally identical problem in identity evidence: disputed or
+conflicting evidence is never guessed at, only preserved and surfaced.
+
+### Correlation
+
+The Collector may compose one already-normalized slice alongside another
+for shared context — for example, tagging a Weather Provider's reading
+with the same Tenant/Event location an Agenda Provider's current item
+already carries — so that Resolvers do not each have to re-derive which
+facts share a location, Tenant, or Event on their own.
+
+Correlation is limited to exact structural matches on identifiers already
+present on both slices — the same Event id, the same Tenant id, the same
+governed location field — never a fuzzy, geographic-proximity, or
+otherwise computed judgment about whether two facts are "close enough" to
+relate. A computed proximity judgment would itself be a small
+interpretation, not a fact, and would blur exactly the boundary this
+section exists to hold.
+
+Correlation, in this sense, stays entirely within fact. It composes
+already-governed data alongside other already-governed data; it draws no
+conclusion about what the correlation means. "This weather reading and
+this agenda item share a location" is a fact the Collector may compose.
+"Bring a jacket to this outdoor session" is an interpretation of that
+correlation, and belongs to the Experience Intelligence layer
+(`EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md`, Proposed) and its
+Interpreters, strictly downstream of the Collector — never to the
+Collector itself. The Collector correlating facts must never be read as
+the Collector interpreting them; that boundary is not this document's to
+redraw.
+
 ### Freshness
 
 Every slice the Collector places in the Pool carries its own observed-at
@@ -173,6 +281,92 @@ may reasonably be several minutes old. The Collector's responsibility ends
 at recording when a slice was actually observed; judging whether that age
 is acceptable for a given purpose belongs to the Resolver or consumer
 using it.
+
+### Evidence Quality Classification (Deterministic, Not Learned)
+
+The Collector may attach an evidence-quality classification to a slice —
+but only a deterministic, rule-based classification, derived solely from
+already-known, structural properties of its source and its collection.
+This capability was named "Confidence Indication" in a prior revision;
+it is renamed here because "confidence" is already a term of art
+elsewhere in EpicentraX's governing architecture, in two different senses
+neither of which this capability means (see below), and reusing the word
+a third time risked exactly the collision this renaming closes.
+
+```text
+type SliceEvidenceQuality =
+  | "governed"      -- collected from an authoritative EpicentraX service
+  | "external"       -- collected from a non-authoritative external
+                       -- source (Weather is the standing example)
+  | "partial"         -- collected, but some required sub-fact within it
+                       -- could not be resolved
+  | "stale"            -- collected, but older than the slice's own
+                       -- freshness expectation
+  | "unavailable";      -- not collected at all this pass (Failure Model)
+```
+
+This is a classification of evidence quality, in the Domain Model's own
+sense ("evidence... must be interpreted according to its source,
+reliability, scope, context, age"), computed the same way every time from
+the same inputs. It is never a probabilistic or learned score.
+
+**Why the rename, precisely.** "Confidence" already means something
+specific in two other parts of EpicentraX's governing architecture, and
+`SliceEvidenceQuality` is neither of them:
+
+- Progressive Person Lifecycle and Identity Coalescence Architecture
+  (Proposed) and Unified Person Resolution Architecture (Proposed) use
+  "confidence" specifically for identity confidence — the platform's
+  evidenced conclusion about *who a Person is* ("Identity confidence
+  belongs to evidence and to governed conclusions drawn from it; it does
+  not belong to the Person"). `SliceEvidenceQuality` never describes a
+  Person's identity; it describes the collection quality of one data
+  slice. The Collector does not perform Person Resolution and never
+  will (Architectural Position, above), so this is a naming collision
+  only, not a functional one — but a naming collision between "identity
+  confidence" and "collector confidence" was real enough to fix rather
+  than footnote.
+- `EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md` (Proposed)
+  reserves its own `confidence` field on its signal contract specifically
+  as "the future home for a learning-informed ranking adjustment,"
+  explicitly withheld from its Stage 8/9 implementation because that
+  layer is required to remain fully deterministic and non-learning — and
+  it names confidence-weighted scoring, by name, as exactly the kind of
+  ranking that stage must not introduce.
+
+**The narrower reading this classification requires is deliberate, and
+the narrowing is load-bearing, not stylistic.** If the Collector computed
+a probabilistic or inferred value here, it would hand every Resolver a
+number indistinguishable from a learned score without any of the
+governance the Experience Intelligence document requires around one. The
+Collector's Evidence Quality Classification is therefore constrained to
+the fixed, reviewable, rule-based classification above — never a number a
+future model could quietly start producing instead, and never to be
+confused with either identity confidence or a future learned ranking
+adjustment. A genuinely learned confidence signal, if ever wanted, belongs
+to the same separately governed learning architecture this document's own
+Learning Separation section already requires, consumed downstream of the
+Pool — never computed by the Collector.
+
+**Relationship to the Failure Model.** `SliceEvidenceQuality` and the
+Failure Model (below) describe different grains, deliberately, and are
+not two competing accounts of the same thing. Evidence Quality is
+evaluated independently for each Provider's own output, at the grain of
+one slice: how good is *this* slice. The Failure Model describes the
+state of the overall composition pass: what happened to the Pool as a
+whole. The Failure Model remains the authoritative description of the
+composition process; Evidence Quality is per-slice metadata produced
+within that process, not a second, parallel state model. Where the same
+word appears in both — a slice classified `stale` under Evidence Quality
+sits within a composition the Failure Model might separately report as
+`Partial context` — the two are read together, at their own grains, never
+as interchangeable labels for one fact.
+
+**Governance of this taxonomy.** Adding to, removing from, or redefining
+the `SliceEvidenceQuality` values above is an architectural change to
+this document, and requires the same acceptance process as any other
+revision (Change Governance, below) — never a decision left to an
+individual Provider's own implementation choice.
 
 ### Caching
 
@@ -353,6 +547,38 @@ Pool is never fed back into a Provider, and a Provider never calls a
 Resolver. Nothing downstream of the Collector can become an input to
 anything upstream of it.
 
+The same flow, drawn at the finer grain the Architectural Position
+diagram above already establishes — named services in, named Resolvers
+out — for direct traceability against this document's earlier, more
+detailed rendering:
+
+```text
+Event Service ─┐
+               │
+Person Service ├──────────────┐
+               │              │
+Agenda Service ┤              ▼
+               │      Intelligence Collector
+Assignments ───┤              │
+               │              ▼
+Announcements ─┤     Shared Context Pool
+               │              │
+Weather ───────┘              │
+                              ├── Experience Resolver
+                              ├── Admin Resolver
+                              ├── Notification Resolver
+                              ├── Reporting
+                              ├── Analytics
+                              └── Future Services
+```
+
+This is not a second, competing model of the flow — it is the identical
+one-directional pipeline, at a grain closer to the Architectural Position
+diagram's named services and the Resolver Model's named consumers, kept
+here because a reader comparing this document against a specific
+service or consumer will often want the named version rather than the
+generic one.
+
 ## Learning Separation
 
 A future learning engine may read the Shared Context Pool exactly as any
@@ -412,6 +638,69 @@ needs to know any other exists, so the set of Providers can grow without
 bound, in any order, without the Providers or the Collector's composition
 logic being redesigned each time.
 
+## Scalability and Future Evolution
+
+**Horizontal scalability is inherent to the architecture already
+established, not a mechanism this section adds.** A Shared Context Pool
+is request-scoped, immutable once composed, and never shared across
+requests or Persons (The Shared Context Pool, above). The Collector
+therefore holds no state that requires coordination across server
+instances or requests. Any number of Collector instances may run
+concurrently, each composing its own Pool for its own request, with
+nothing to synchronize between them. This follows directly from
+decisions this document already made; it is named here so it is stated,
+not left implicit.
+
+**Event-driven Provider updates are a legitimate future evolution, not
+authorized here.** Every Provider described in this document collects on
+demand, once per composition pass (Collection, above). A future Provider
+could instead react to a push-based notification from its own
+authoritative source — a database change notification, a webhook, a
+queue message — and maintain a short-lived, request-scoped or
+narrowly time-bounded cache primed by that notification, rather than
+querying fresh on every pass. Any such Provider remains bound by the same
+Caching discipline already established above: request-scoped or narrowly
+time-bounded only, never a process-wide cache, and never a substitute for
+its source's own authoritative freshness. This document does not
+authorize introducing a queue, a message bus, or any other new
+infrastructure dependency (Scope Boundary, below); it only records that
+how a Provider internally collects — polling versus reacting to a push —
+is that Provider's own implementation detail, invisible to the
+Collector's orchestration and to every Resolver, exactly like any other
+Provider implementation choice (Collector Provider Model, above).
+
+## Comparison With Point-to-Point Integration
+
+Without a Collector, each new consumer (Admin Resolver, Notification
+Resolver, Reporting, Analytics, or any future one) that needs Event,
+Person, Agenda, Assignment, Announcement, or Weather context integrates
+directly against each authoritative service it needs. With N consumers
+and M authoritative services, that is up to N x M independent
+integrations, each with its own fetch logic, its own normalization, its
+own freshness and failure handling, and its own interpretation of what a
+given fact means — with no structural guarantee that two consumers'
+independent normalizations of the same fact ever agree.
+
+| | Point-to-point | Collector / Distributor |
+| --- | --- | --- |
+| Integration count | Up to N consumers x M services | N consumers + M Providers |
+| Normalization | Re-derived per consumer; may silently diverge | Performed once, in one Provider, per service |
+| Freshness / failure handling | Re-solved per consumer | Solved once, in the Collector, reused by every consumer |
+| Adding a new service | Every existing consumer that needs it writes its own integration | One new Provider; no existing consumer or Provider changes |
+| Adding a new consumer | Integrates against every service it needs, independently | Reads the existing Pool; no existing Provider changes |
+| Consistency across consumers | Not guaranteed — two consumers may reach different conclusions about the same underlying fact | Guaranteed by construction — every consumer in one composition reads the identical Pool instance |
+
+This is the same shape of argument ADR-011 already makes for Person and
+Workspace resolution (one resolver replacing three incompatible
+mechanisms) and ADR-009 already makes for Tenant resolution (one
+algorithm replacing per-feature guessing), applied here to
+experience-relevant context collection instead of identity or Tenant
+resolution. The Collector does not compete with either of those; it is
+the same architectural discipline — one governed resolution point instead
+of scattered, independently-reasoned integrations — applied to a third
+concern, for exactly the reason both of those ADRs already establish it
+for their own.
+
 ## Constitutional Compliance
 
 | Governing source | Requirement | How this architecture complies |
@@ -465,13 +754,48 @@ omission:
 - Exact per-slice freshness thresholds are each Provider's own domain
   concern and are not fixed by this document.
 
+## Summary
+
+**Architectural benefits.** One governed collection point instead of
+scattered point-to-point integrations; one normalization per source
+instead of one per consumer; consistent facts across every consumer
+reading the same Pool instance; new services and new consumers each added
+without touching existing ones; explicit, honest representation of
+unavailable, partial, and stale context instead of fabricated defaults;
+and a structural wall between governed fact and any future learned
+recommendation, so intelligence can grow without ever becoming a second
+source of truth.
+
+**Implementation guidance.** These are illustrative observations, not a
+project plan, and remain subject entirely to whatever future task is
+separately authorized to build this:
+
+- Build Providers before Resolvers. A Resolver with nothing to consume is
+  premature; a Provider with no Resolver yet is merely unused, which is
+  safe.
+- Decompose Stage 1's existing inline collection logic
+  (`lib/experienceContext/`) into Providers under this model before
+  adding new Providers from scratch, so the first real Providers are
+  refactors of already-proven code, not new code and a new architecture
+  at the same time.
+- Add one Provider at a time, each independently reviewable against the
+  Collector Provider Model above, never a batch of Providers introduced
+  alongside a redesign of the registry or composition logic itself.
+- Resist adding a Resolver-specific field to the Pool's shape merely
+  because one consumer wants it; if only one consumer needs a fact, that
+  fact may belong in that consumer's own Resolver logic rather than in
+  shared, multi-consumer infrastructure.
+- Treat every item in Unresolved Questions above as a decision to make
+  deliberately, when a real consumer needs it answered — not a gap to
+  fill speculatively now.
+
 ## Scope Boundary
 
 This document establishes the permanent Intelligence Collector
 architecture only. It does not authorize any database schema, migration,
 RLS policy, RPC, API, CSS, React component, or other implementation
 mechanism. It does not alter the Constitution, any ADR, the Domain Model,
-or either Proposed document it builds on. It does not resolve Person,
+or any of the Proposed documents it builds on. It does not resolve Person,
 Tenant, Relationship, Participation, Assignment, Authority, or Workspace —
 it consumes their already-governed outputs only, through Providers that
 read existing governed access paths. It does not authorize, and
