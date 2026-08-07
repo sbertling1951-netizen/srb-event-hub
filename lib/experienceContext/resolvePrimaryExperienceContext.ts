@@ -59,9 +59,10 @@ const FALLBACK_CONTEXT: PrimaryExperienceContext = {
 // assignments.activeCount is a governed fact -- a Responsibility has been
 // assigned to this Person for this Event -- never Authority. This card
 // only informs; it does not itself grant, imply, or route into any
-// privileged workflow. destination is intentionally null: no governed
-// destination exists yet for a Person to review their own Assignments, and
-// this resolver does not fabricate one. See
+// privileged workflow. destination points to app/member/my-assignments,
+// the governed, read-only page where a Person may review their own
+// Assignments; it unlocks nothing beyond what this reminder already
+// states. See
 // docs/architecture/EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md
 // ("Avoiding Assignment-as-Authority").
 function describeActiveAssignments(activeCount: number): PrimaryExperienceContext {
@@ -75,7 +76,7 @@ function describeActiveAssignments(activeCount: number): PrimaryExperienceContex
       activeCount === 1
         ? "A Responsibility has been assigned to you for this event."
         : "Responsibilities have been assigned to you for this event.",
-    destination: null,
+    destination: "/member/my-assignments",
   };
 }
 

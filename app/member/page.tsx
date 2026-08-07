@@ -732,6 +732,14 @@ export default function MemberDashboardPage() {
         >
           🧾 {myRequestsNavLabel}
         </button>
+
+        <button
+          type="button"
+          onClick={() => goTo("/member/my-assignments")}
+          style={memberGridButtonStyle}
+        >
+          📋 My Assignments
+        </button>
       </div>
 
       {vendorsLoading ? null : vendorError ? (
