@@ -79,10 +79,31 @@ function describeActiveAssignments(activeCount: number): PrimaryExperienceContex
   };
 }
 
+// vendorRequests.openCount is a governed fact -- one or more vendor
+// requests this Person submitted are still open (not completed or
+// cancelled) -- never proof that the member, or the vendor, owes the next
+// action. This card only informs. destination is the existing governed
+// "My Requests" page (app/member/my-requests/page.tsx), since a member can
+// already review their own requests there.
+function describeOpenVendorRequests(openCount: number): PrimaryExperienceContext {
+  return {
+    kind: "reminder",
+    title:
+      openCount === 1
+        ? "You have an open vendor request"
+        : `You have ${openCount} open vendor requests`,
+    summary:
+      openCount === 1
+        ? "A vendor request you submitted is still open."
+        : "Vendor requests you submitted are still open.",
+    destination: "/member/my-requests",
+  };
+}
+
 export function resolvePrimaryExperienceContext(
   context: SharedExperienceContext,
 ): PrimaryExperienceContext {
-  const { member, agenda, assignments } = context;
+  const { member, agenda, assignments, vendorRequests } = context;
 
   const hasKnownCapacity = typeof member.participantCapacity === "number";
   const isOverCapacity =
@@ -111,13 +132,16 @@ export function resolvePrimaryExperienceContext(
     };
   }
 
-  // Open-vendor-request priority tier is intentionally not implemented in
-  // Stage 1: the governed read model exposes only an open-request count,
-  // with no determinable "requires member action" signal per request. See
-  // the architecture document's Experience Context Resolver section.
-
   if (typeof assignments.activeCount === "number" && assignments.activeCount > 0) {
     return describeActiveAssignments(assignments.activeCount);
+  }
+
+  // Whether an open vendor request currently requires the member's own
+  // action remains undeterminable from the governed read model (only a
+  // status count is available, not a per-request "who owes the next
+  // step" signal). This tier states only that open requests exist.
+  if (typeof vendorRequests.openCount === "number" && vendorRequests.openCount > 0) {
+    return describeOpenVendorRequests(vendorRequests.openCount);
   }
 
   if (agenda.currentItem) {
