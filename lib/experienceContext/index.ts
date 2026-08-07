@@ -10,6 +10,8 @@ export type {
   NormalizedAgendaItem,
   PrimaryExperienceContext,
   PrimaryExperienceContextKind,
+  PrimaryExperienceSignal,
+  PrimaryExperienceSignalSourceSlice,
   SharedExperienceContext,
   SliceEvidenceQuality,
 } from "@/lib/experienceContext/types";

@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import AnnouncementBanner from "@/components/AnnouncementBanner";
+import ContextCard from "@/components/ContextCard";
 import {
   collectSharedExperienceContext,
-  type PrimaryExperienceContext,
-  type PrimaryExperienceContextKind,
+  type PrimaryExperienceSignal,
   resolvePrimaryExperienceContext,
 } from "@/lib/experienceContext";
 import {
@@ -127,7 +127,7 @@ export default function MemberDashboardPage() {
   // experience context rather than issuing a second RPC call.
   const [checkedIn, setCheckedIn] = useState<boolean | null>(null);
   const [primaryContext, setPrimaryContext] =
-    useState<PrimaryExperienceContext | null>(null);
+    useState<PrimaryExperienceSignal | null>(null);
   // Drives the header's displayed weekday/time and event-day label; updated
   // once per minute rather than every render.
   const [now, setNow] = useState(new Date());
@@ -501,43 +501,7 @@ export default function MemberDashboardPage() {
         </div>
       </div>
 
-      {primaryContext ? (
-        <button
-          type="button"
-          onClick={() =>
-            primaryContext.destination && goTo(primaryContext.destination)
-          }
-          style={{
-            display: "block",
-            width: "100%",
-            textAlign: "left",
-            padding: 18,
-            border: `1px solid ${contextCardTone(primaryContext.kind).border}`,
-            borderRadius: 12,
-            background: contextCardTone(primaryContext.kind).background,
-            cursor: primaryContext.destination ? "pointer" : "default",
-          }}
-        >
-          <div
-            style={{
-              fontWeight: 800,
-              fontSize: 17,
-              color: contextCardTone(primaryContext.kind).title,
-            }}
-          >
-            {primaryContext.title}
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              color: contextCardTone(primaryContext.kind).body,
-              marginTop: 4,
-            }}
-          >
-            {primaryContext.summary}
-          </div>
-        </button>
-      ) : null}
+      <ContextCard signal={primaryContext} onNavigate={goTo} />
 
       {/* Participants */}
       {(() => {
@@ -881,45 +845,3 @@ const memberGridButtonStyle: React.CSSProperties = {
   textAlign: "left",
   boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
 };
-
-// Presentation only -- maps the resolved Context Card kind to a subtle,
-// accessible color tone. Meaning is also carried by the title/summary text,
-// never by color alone.
-function contextCardTone(kind: PrimaryExperienceContextKind): {
-  background: string;
-  border: string;
-  title: string;
-  body: string;
-} {
-  switch (kind) {
-    case "action":
-      return {
-        background: "#f0fdf4",
-        border: "#bbf7d0",
-        title: "#15803d",
-        body: "#14532d",
-      };
-    case "reminder":
-      return {
-        background: "#fffbeb",
-        border: "#fde68a",
-        title: "#b45309",
-        body: "#78350f",
-      };
-    case "attention":
-      return {
-        background: "#fef2f2",
-        border: "#fecaca",
-        title: "#b91c1c",
-        body: "#7f1d1d",
-      };
-    case "information":
-    default:
-      return {
-        background: "#eff6ff",
-        border: "#bfdbfe",
-        title: "#1d4ed8",
-        body: "#1e3a8a",
-      };
-  }
-}
