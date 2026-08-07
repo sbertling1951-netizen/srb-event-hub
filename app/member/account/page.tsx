@@ -476,13 +476,16 @@ function EventCard({
         background: "white",
         padding: 16,
         display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
+        flexDirection: "column",
         gap: 12,
-        flexWrap: "wrap",
       }}
     >
-      <div style={{ display: "grid", gap: 2 }}>
+      {/* Content flows naturally at the top -- a longer address wraps to
+          more lines and makes the card taller, but never changes where
+          the action row below it sits: it is always the next (and only
+          other) item in this column, never centered against this block's
+          variable height. */}
+      <div style={{ display: "grid", gap: 2, flexGrow: 1 }}>
         <div style={{ fontWeight: 700, fontSize: 16 }}>
           {row.event_name || "Untitled event"}
         </div>
@@ -505,24 +508,29 @@ function EventCard({
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={onOpen}
-        disabled={opening}
-        style={{
-          minHeight: 44,
-          padding: "10px 16px",
-          borderRadius: 8,
-          border: "1px solid #cbd5e1",
-          background: "#0b5cff",
-          color: "#ffffff",
-          fontWeight: 700,
-          cursor: opening ? "not-allowed" : "pointer",
-          opacity: opening ? 0.7 : 1,
-        }}
-      >
-        {opening ? "Opening..." : "Open Event"}
-      </button>
+      {/* A dedicated action row, always at the bottom of the card,
+          regardless of content height above it. */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          onClick={onOpen}
+          disabled={opening}
+          style={{
+            minHeight: 44,
+            minWidth: 140,
+            padding: "10px 16px",
+            borderRadius: 8,
+            border: "1px solid #cbd5e1",
+            background: "#0b5cff",
+            color: "#ffffff",
+            fontWeight: 700,
+            cursor: opening ? "not-allowed" : "pointer",
+            opacity: opening ? 0.7 : 1,
+          }}
+        >
+          {opening ? "Opening..." : "Open Event"}
+        </button>
+      </div>
     </div>
   );
 }
