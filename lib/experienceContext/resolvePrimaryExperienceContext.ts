@@ -56,10 +56,33 @@ const FALLBACK_CONTEXT: PrimaryExperienceContext = {
   destination: "/member/agenda",
 };
 
+// assignments.activeCount is a governed fact -- a Responsibility has been
+// assigned to this Person for this Event -- never Authority. This card
+// only informs; it does not itself grant, imply, or route into any
+// privileged workflow. destination is intentionally null: no governed
+// destination exists yet for a Person to review their own Assignments, and
+// this resolver does not fabricate one. See
+// docs/architecture/EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md
+// ("Avoiding Assignment-as-Authority").
+function describeActiveAssignments(activeCount: number): PrimaryExperienceContext {
+  return {
+    kind: "reminder",
+    title:
+      activeCount === 1
+        ? "You have an active event duty"
+        : `You have ${activeCount} active event duties`,
+    summary:
+      activeCount === 1
+        ? "A Responsibility has been assigned to you for this event."
+        : "Responsibilities have been assigned to you for this event.",
+    destination: null,
+  };
+}
+
 export function resolvePrimaryExperienceContext(
   context: SharedExperienceContext,
 ): PrimaryExperienceContext {
-  const { member, agenda } = context;
+  const { member, agenda, assignments } = context;
 
   const hasKnownCapacity = typeof member.participantCapacity === "number";
   const isOverCapacity =
@@ -92,6 +115,10 @@ export function resolvePrimaryExperienceContext(
   // Stage 1: the governed read model exposes only an open-request count,
   // with no determinable "requires member action" signal per request. See
   // the architecture document's Experience Context Resolver section.
+
+  if (typeof assignments.activeCount === "number" && assignments.activeCount > 0) {
+    return describeActiveAssignments(assignments.activeCount);
+  }
 
   if (agenda.currentItem) {
     return describeCurrentAgendaItem(agenda.currentItem);
