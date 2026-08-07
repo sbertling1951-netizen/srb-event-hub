@@ -1,6 +1,6 @@
 import type {
   NormalizedAgendaItem,
-  PrimaryExperienceContext,
+  PrimaryExperienceSignal,
   SharedExperienceContext,
 } from "@/lib/experienceContext/types";
 
@@ -9,6 +9,40 @@ import type {
 // and never itself constitutes Authority, Assignment, Participation,
 // Relationship, or Identity. See
 // docs/architecture/EPICENTRAX_SHARED_EXPERIENCE_CONTEXT_ARCHITECTURE.md.
+//
+// Priority order (unchanged from Stage 1; verified against
+// EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md's Current-Rule
+// Migration Map, which documents this exact sequence -- over-capacity,
+// vacant slot, active Assignments, open vendor requests, current agenda
+// item, next agenda item, fallback -- as the architecture-approved order,
+// derived directly from this file. Nothing here reorders it.
+//
+// Evidence Quality gate: a Provider-owned slice's primary field (a count,
+// an item) is trusted only when that slice's own evidenceQuality is
+// "governed" -- the only value any current Provider produces on a
+// successful collection. This is a defense-in-depth guard, not a
+// behavior change: every non-"governed" value a Provider can currently
+// produce (assignments' "partial" for identity_unavailable, and the
+// canonical "unavailable" base default for any Provider failure) is
+// always paired with a null primary field already, so the pre-existing
+// `typeof x === "number"` / truthy checks below already failed closed on
+// every case that reaches this resolver today. Making the check explicit
+// closes that coincidence structurally, per
+// EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md's Null/Unknown/
+// Failure Semantics table ("partial must not be silently treated as
+// equivalent to governed"), without altering any currently observable
+// outcome. `member` carries no evidenceQuality -- it is caller-supplied
+// base context, not a Provider slice (see the Intelligence Collector
+// audit's own finding on this), so the capacity rules below have nothing
+// to gate on beyond the existing null check already present in their
+// condition.
+//
+// observedAt is deliberately NOT consulted for a staleness rule: no
+// per-slice staleness threshold is defined anywhere in governing
+// architecture ("Exact per-slice freshness thresholds are each
+// Provider's own domain concern and are not fixed by this document").
+// Inventing one here would fabricate a threshold no accepted document
+// supplies.
 
 function formatAgendaItemTime(item: NormalizedAgendaItem): string | null {
   if (!item.agendaDate || !item.startTime) {
@@ -23,7 +57,7 @@ function formatAgendaItemTime(item: NormalizedAgendaItem): string | null {
   return start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function describeCurrentAgendaItem(item: NormalizedAgendaItem): PrimaryExperienceContext {
+function describeCurrentAgendaItem(item: NormalizedAgendaItem): PrimaryExperienceSignal {
   const title = item.title || "Agenda item";
   const time = formatAgendaItemTime(item);
 
@@ -34,10 +68,12 @@ function describeCurrentAgendaItem(item: NormalizedAgendaItem): PrimaryExperienc
       ? `Happening now, started ${time}.`
       : "Happening now.",
     destination: "/member/agenda",
+    sourceSlice: "agenda",
+    reason: "agenda.currentItem is present under governed evidence quality",
   };
 }
 
-function describeNextAgendaItem(item: NormalizedAgendaItem): PrimaryExperienceContext {
+function describeNextAgendaItem(item: NormalizedAgendaItem): PrimaryExperienceSignal {
   const title = item.title || "Agenda item";
   const time = formatAgendaItemTime(item);
 
@@ -46,14 +82,23 @@ function describeNextAgendaItem(item: NormalizedAgendaItem): PrimaryExperienceCo
     title: `Next: ${title}`,
     summary: time ? `Starts at ${time}.` : "Coming up next.",
     destination: "/member/agenda",
+    sourceSlice: "agenda",
+    reason:
+      "agenda.nextItem is present under governed evidence quality (no current item)",
   };
 }
 
-const FALLBACK_CONTEXT: PrimaryExperienceContext = {
+// Not an interpretation of any Pool fact -- the Member Experience
+// Resolver's own policy for "nothing else applied" (see
+// EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md, "Fallback is not
+// migrated into an interpreter"). sourceSlice is null accordingly.
+const FALLBACK_SIGNAL: PrimaryExperienceSignal = {
   kind: "information",
   title: "Open today's agenda",
   summary: "See the next scheduled activity and everything coming up today.",
   destination: "/member/agenda",
+  sourceSlice: null,
+  reason: "no eligible signal from any higher-priority rule; resolver-owned default",
 };
 
 // assignments.activeCount is a governed fact -- a Responsibility has been
@@ -65,7 +110,7 @@ const FALLBACK_CONTEXT: PrimaryExperienceContext = {
 // states. See
 // docs/architecture/EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md
 // ("Avoiding Assignment-as-Authority").
-function describeActiveAssignments(activeCount: number): PrimaryExperienceContext {
+function describeActiveAssignments(activeCount: number): PrimaryExperienceSignal {
   return {
     kind: "reminder",
     title:
@@ -77,6 +122,8 @@ function describeActiveAssignments(activeCount: number): PrimaryExperienceContex
         ? "A Responsibility has been assigned to you for this event."
         : "Responsibilities have been assigned to you for this event.",
     destination: "/member/my-assignments",
+    sourceSlice: "assignments",
+    reason: "assignments.activeCount > 0 under governed evidence quality",
   };
 }
 
@@ -86,7 +133,7 @@ function describeActiveAssignments(activeCount: number): PrimaryExperienceContex
 // action. This card only informs. destination is the existing governed
 // "My Requests" page (app/member/my-requests/page.tsx), since a member can
 // already review their own requests there.
-function describeOpenVendorRequests(openCount: number): PrimaryExperienceContext {
+function describeOpenVendorRequests(openCount: number): PrimaryExperienceSignal {
   return {
     kind: "reminder",
     title:
@@ -98,12 +145,14 @@ function describeOpenVendorRequests(openCount: number): PrimaryExperienceContext
         ? "A vendor request you submitted is still open."
         : "Vendor requests you submitted are still open.",
     destination: "/member/my-requests",
+    sourceSlice: "vendorRequests",
+    reason: "vendorRequests.openCount > 0 under governed evidence quality",
   };
 }
 
 export function resolvePrimaryExperienceContext(
   context: SharedExperienceContext,
-): PrimaryExperienceContext {
+): PrimaryExperienceSignal {
   const { member, agenda, assignments, vendorRequests } = context;
 
   const hasKnownCapacity = typeof member.participantCapacity === "number";
@@ -121,6 +170,8 @@ export function resolvePrimaryExperienceContext(
       summary:
         "Your participant roster exceeds your authorized capacity. Administrator review required.",
       destination: "/member/participants",
+      sourceSlice: "member",
+      reason: "member.participantCount > member.participantCapacity",
     };
   }
 
@@ -130,10 +181,16 @@ export function resolvePrimaryExperienceContext(
       title: "Add a participant",
       summary: "You have an available participant slot on your registration.",
       destination: "/member/participants",
+      sourceSlice: "member",
+      reason: "member.participantCount < member.participantCapacity",
     };
   }
 
-  if (typeof assignments.activeCount === "number" && assignments.activeCount > 0) {
+  if (
+    assignments.evidenceQuality === "governed" &&
+    typeof assignments.activeCount === "number" &&
+    assignments.activeCount > 0
+  ) {
     return describeActiveAssignments(assignments.activeCount);
   }
 
@@ -141,17 +198,21 @@ export function resolvePrimaryExperienceContext(
   // action remains undeterminable from the governed read model (only a
   // status count is available, not a per-request "who owes the next
   // step" signal). This tier states only that open requests exist.
-  if (typeof vendorRequests.openCount === "number" && vendorRequests.openCount > 0) {
+  if (
+    vendorRequests.evidenceQuality === "governed" &&
+    typeof vendorRequests.openCount === "number" &&
+    vendorRequests.openCount > 0
+  ) {
     return describeOpenVendorRequests(vendorRequests.openCount);
   }
 
-  if (agenda.currentItem) {
+  if (agenda.evidenceQuality === "governed" && agenda.currentItem) {
     return describeCurrentAgendaItem(agenda.currentItem);
   }
 
-  if (agenda.nextItem) {
+  if (agenda.evidenceQuality === "governed" && agenda.nextItem) {
     return describeNextAgendaItem(agenda.nextItem);
   }
 
-  return FALLBACK_CONTEXT;
+  return FALLBACK_SIGNAL;
 }

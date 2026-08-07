@@ -131,3 +131,35 @@ export type PrimaryExperienceContext = {
   summary: string;
   destination: string | null;
 };
+
+// The Shared Context Pool slice a signal was derived from, for
+// developer-facing explainability -- never rendered to the member. The
+// resolver's own fallback (not an interpretation of any Pool fact) uses
+// null. See docs/architecture/EPICENTRAX_EXPERIENCE_INTELLIGENCE_
+// ARCHITECTURE.md, "Fallback is not migrated into an interpreter... it is
+// the Member Experience Resolver's own policy."
+export type PrimaryExperienceSignalSourceSlice = Exclude<
+  keyof SharedExperienceContext,
+  "generatedAt"
+>;
+
+// The Resolver's structured output contract -- a strict superset of
+// PrimaryExperienceContext, so existing consumers of that shape (e.g.
+// app/member/page.tsx's `useState<PrimaryExperienceContext | null>`)
+// continue to accept it unchanged. Deliberately narrower than
+// EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md's own `ExperienceSignal`
+// contract (no interpreterId, precedenceClass, tieRank, provenance array,
+// confidence, or freshness) -- that document describes the not-yet-built
+// Interpreter/ranking layer producing many candidates; this type is the
+// first bounded step: one Resolver's own already-chosen result, with just
+// enough structure (sourceSlice, reason) to separate machine-meaningful
+// signal from presentation text without redesigning the whole
+// experience-ranking system.
+export type PrimaryExperienceSignal = PrimaryExperienceContext & {
+  // Which Pool slice this signal was derived from.
+  sourceSlice: PrimaryExperienceSignalSourceSlice | null;
+  // Developer-facing rationale for which rule fired -- never rendered to
+  // the member (mirrors ExperienceSignal.reason in the Experience
+  // Intelligence document, kept narrow here).
+  reason: string;
+};
