@@ -76,7 +76,15 @@ export function buildCanonicalBaseSharedExperienceContext(
       // timestamp standing in for a real one.
       observedAt: null,
     },
-    announcements: { activeCount: null },
+    announcements: {
+      activeCount: null,
+      // The canonical unavailable default. A successful
+      // announcementsExperienceContextProvider contribution overwrites
+      // this whole slice, including evidenceQuality and observedAt, with
+      // a real observation.
+      evidenceQuality: "unavailable",
+      observedAt: null,
+    },
     // The canonical unavailable/default value. A successful
     // assignmentsExperienceContextProvider contribution overwrites this
     // with a governed count; null remains the fallback whenever
