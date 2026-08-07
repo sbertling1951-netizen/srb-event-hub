@@ -5,11 +5,11 @@ import type { CurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 // no authoritative state of its own.
 
 export type NormalizedAgendaItem = {
-  id: string;
-  title: string | null;
-  agendaDate: string | null;
-  startTime: string | null;
-  endTime: string | null;
+  readonly id: string;
+  readonly title: string | null;
+  readonly agendaDate: string | null;
+  readonly startTime: string | null;
+  readonly endTime: string | null;
 };
 
 // See docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
@@ -24,30 +24,36 @@ export type SliceEvidenceQuality =
   | "stale"
   | "unavailable";
 
+// All fields (including nested slice fields) are readonly: per
+// EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md's Shared Context Pool
+// definition, the Pool is "immutable once composed... nothing writes back
+// into it." This is a type-level guard only, matching that stated
+// discipline -- not runtime freezing, which the architecture does not
+// call for and which was deliberately not added here.
 export type SharedExperienceContext = {
-  generatedAt: string;
-  event: {
-    id: string;
-    name: string | null;
-    location: string | null;
-    startDate: string | null;
-    endDate: string | null;
-    dayNumber: number | null;
+  readonly generatedAt: string;
+  readonly event: {
+    readonly id: string;
+    readonly name: string | null;
+    readonly location: string | null;
+    readonly startDate: string | null;
+    readonly endDate: string | null;
+    readonly dayNumber: number | null;
     // No authoritative event-phase source exists yet; always null in
     // Stage 1. See the architecture document's "Optional slices
     // unavailable in Stage 1" section.
-    phase: string | null;
+    readonly phase: string | null;
   };
-  member: {
-    attendeeId: string | null;
-    participantCapacity: number | null;
-    participantCount: number;
-    checkedIn: boolean | null;
+  readonly member: {
+    readonly attendeeId: string | null;
+    readonly participantCapacity: number | null;
+    readonly participantCount: number;
+    readonly checkedIn: boolean | null;
   };
-  agenda: {
-    currentItem: NormalizedAgendaItem | null;
-    nextItem: NormalizedAgendaItem | null;
-    evidenceQuality: SliceEvidenceQuality;
+  readonly agenda: {
+    readonly currentItem: NormalizedAgendaItem | null;
+    readonly nextItem: NormalizedAgendaItem | null;
+    readonly evidenceQuality: SliceEvidenceQuality;
     // See docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
     // ("Freshness"): "every slice the Collector places in the Pool
     // carries its own observed-at timestamp." null means nothing was
@@ -57,45 +63,45 @@ export type SharedExperienceContext = {
     // computed from it here, or anywhere in this Provider -- judging
     // whether an age is acceptable is explicitly left to the Resolver
     // or consumer, per the same architecture section.
-    observedAt: string | null;
+    readonly observedAt: string | null;
   };
-  announcements: {
+  readonly announcements: {
     // null means "unavailable" (source not queried or the optional fetch
     // failed) -- never conflate with a governed-confirmed zero.
-    activeCount: number | null;
-    evidenceQuality: SliceEvidenceQuality;
+    readonly activeCount: number | null;
+    readonly evidenceQuality: SliceEvidenceQuality;
     // See docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
     // ("Freshness"). null means nothing was actually observed this pass
     // -- never a fabricated observation time. Deliberately independent
     // of evidenceQuality; no staleness threshold is computed from it.
-    observedAt: string | null;
+    readonly observedAt: string | null;
   };
-  assignments: {
+  readonly assignments: {
     // null means unavailable -- either a genuine collection failure, or
     // the governed API's own explicit "identity_unavailable" outcome
     // (see EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md).
     // Never conflated with a governed-confirmed zero.
-    activeCount: number | null;
-    evidenceQuality: SliceEvidenceQuality;
+    readonly activeCount: number | null;
+    readonly evidenceQuality: SliceEvidenceQuality;
     // See docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
     // ("Freshness"). null means nothing was actually observed this pass
     // -- never a fabricated observation time. Deliberately independent
     // of evidenceQuality; no staleness threshold is computed from it.
-    observedAt: string | null;
+    readonly observedAt: string | null;
   };
-  vendorRequests: {
+  readonly vendorRequests: {
     // null means unavailable -- a genuine collection failure. Never
     // conflated with a governed-confirmed zero (see
     // vendorRequestsProvider.ts for why this boundary cannot separately
     // distinguish an unresolved identity from a real zero, unlike
     // assignments).
-    openCount: number | null;
-    evidenceQuality: SliceEvidenceQuality;
+    readonly openCount: number | null;
+    readonly evidenceQuality: SliceEvidenceQuality;
     // See docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
     // ("Freshness"). null means nothing was actually observed this pass
     // -- never a fabricated observation time. Deliberately independent
     // of evidenceQuality; no staleness threshold is computed from it.
-    observedAt: string | null;
+    readonly observedAt: string | null;
   };
 };
 
