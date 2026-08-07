@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import ContextCard from "@/components/ContextCard";
+import MemberDashboardHeader from "@/components/MemberDashboardHeader";
 import {
   collectSharedExperienceContext,
   type PrimaryExperienceSignal,
@@ -19,6 +20,7 @@ import {
   getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
 import { getMemberSession } from "@/lib/memberSession";
+import { useTenant } from "@/lib/providers/TenantProvider";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 import { formatVendorNoticeDisplay, type VendorNotice } from "@/lib/vendorNotice";
@@ -67,38 +69,6 @@ function getDashboardVendorDetails(
   return value;
 }
 
-// Computes a "Day N" label from the event's start date. Returns null
-// (never a fabricated label) when the start date is absent, unparseable,
-// or the event has not yet begun.
-function computeEventDayLabel(
-  startDate: string | null,
-  now: Date,
-): string | null {
-  if (!startDate) {
-    return null;
-  }
-
-  const start = new Date(startDate);
-  if (Number.isNaN(start.getTime())) {
-    return null;
-  }
-
-  const startDay = new Date(
-    start.getFullYear(),
-    start.getMonth(),
-    start.getDate(),
-  );
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dayNumber =
-    Math.round((today.getTime() - startDay.getTime()) / 86400000) + 1;
-
-  if (dayNumber < 1) {
-    return null;
-  }
-
-  return `Day ${dayNumber}`;
-}
-
 export default function MemberDashboardPage() {
   const [ready, setReady] = useState(false);
   const [currentEvent, setCurrentEvent] = useState<CurrentMemberEvent | null>(
@@ -133,6 +103,7 @@ export default function MemberDashboardPage() {
   const [now, setNow] = useState(new Date());
 
   const router = useRouter();
+  const { tenant } = useTenant();
 
   const dashboardTitle = getTenantLabel("dashboard_title");
   const announcementsNavLabel = getTenantLabel("announcements_nav_label");
@@ -415,91 +386,21 @@ export default function MemberDashboardPage() {
     return null;
   }
 
-  const eventDayLabel = computeEventDayLabel(currentEvent.start_date, now);
-
   return (
     <div style={{ display: "grid", gap: 18, padding: 16 }}>
       <AnnouncementBanner />
 
-      <div
-        className="card"
-        style={{
-          padding: 18,
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          background: "#fff",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 12,
-          }}
-        >
-          <div>
-            <h1 style={{ marginTop: 0, marginBottom: 8 }}>
-              {currentEvent.name || dashboardTitle}
-            </h1>
-            {currentEvent.location ? (
-              <div style={{ fontSize: 14, opacity: 0.8 }}>
-                {currentEvent.location}
-              </div>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={() => goTo("/member/account")}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #cbd5e1",
-              background: "#f8fafc",
-              color: "#0f172a",
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            My Events
-          </button>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginTop: 12,
-            fontSize: 13,
-            color: "#4b5563",
-          }}
-        >
-          <span
-            aria-label="Active"
-            role="img"
-            style={{
-              display: "inline-block",
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "#22c55e",
-              flexShrink: 0,
-            }}
-          />
-          <span>
-            {now.toLocaleDateString(undefined, { weekday: "long" })}
-            {" · "}
-            {now.toLocaleTimeString(undefined, {
-              hour: "numeric",
-              minute: "2-digit",
-            })}
-            {eventDayLabel ? ` · ${eventDayLabel}` : ""}
-          </span>
-        </div>
-      </div>
+      <MemberDashboardHeader
+        eventName={currentEvent.name || dashboardTitle}
+        location={currentEvent.location}
+        startDate={currentEvent.start_date}
+        endDate={currentEvent.end_date}
+        now={now}
+        logoUrl={tenant?.logoUrl ?? null}
+        organizationName={tenant?.organizationName ?? null}
+        signal={primaryContext}
+        onMyEvents={() => goTo("/member/account")}
+      />
 
       <ContextCard signal={primaryContext} onNavigate={goTo} />
 
