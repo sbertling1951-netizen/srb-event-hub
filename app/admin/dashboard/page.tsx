@@ -1,10 +1,9 @@
-
 "use client";
-const MOBILE_STATS_PREF_KEY = "admin-dashboard-show-mobile-stats";
 
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import AdminSummaryLink from "@/components/admin/AdminSummaryLink";
+import AdminTrustIndicator from "@/components/admin/AdminTrustIndicator";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { useAdmin } from "@/lib/adminContext";
 import {
@@ -12,13 +11,46 @@ import {
   setCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
-
 import {
   type AdminAccessResult,
   canAccessEvent,
   hasPermission,
 } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
+
+// First implementation governed by
+// docs/architecture/EPICENTRAX_ADAPTIVE_UI_ARCHITECTURE.md and
+// docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md. The
+// Dashboard's job is now exactly what §3 ("the dashboard assembles entry
+// points and current context; it does not become the owner of every
+// operational statistic") and the Module Architecture's "Dashboard /
+// Entry Surface" section require: the working-event switcher (current
+// context), a Trust Indicator, at most one Context Card, and Summary
+// Links to the Level-1 modules. It owns no statistic of its own -- every
+// count this page previously recomputed (registered/arrived coaches,
+// parked/queue/assigned-site percentages) belonged to Attendees'/
+// Check-In's/Parking's own modules already
+// (EPICENTRAX_ADMIN_UI_INVENTORY_AUDIT.md, "C4/C5"), and is removed here,
+// not relocated into a different dashboard-owned form. The underlying
+// `attendees`/`attendee_household_members` data and the RPCs/tables that
+// produce it are untouched; only this page's own duplicate recomputation
+// of them is removed.
+//
+// Context Card: intentionally omitted. No Admin Experience Resolver or
+// governed Admin PrimaryExperienceSignal exists yet (lib/experienceContext
+// is member-only). Per EPICENTRAX_ADAPTIVE_UI_ARCHITECTURE.md §6, the
+// Context Card must consume governed resolver output, never UI-invented
+// priority logic -- an absent card is architecturally correct here, not
+// an oversight.
+//
+// Trust Indicator: renders a neutral, non-computing placeholder
+// (components/admin/AdminTrustIndicator.tsx). The prior "Super Admin
+// System Status" card polled a bespoke endpoint
+// (/api/admin/system-status) and rendered its own ad hoc health display
+// -- exactly the kind of non-governed, independently-aggregated status
+// computation this task requires be removed rather than relabeled as the
+// new Trust Indicator. That fetch and its state are removed entirely,
+// not demoted into the placeholder.
 
 type EventRow = {
   id: string;
@@ -29,39 +61,10 @@ type EventRow = {
   status?: string | null;
 };
 
-type Attendee = {
-  id: string;
-  arrival_status: string | null;
-  assigned_site: string | null;
-  registration_status: string | null;
-  is_active: boolean | null;
-};
-
-type SystemStatus = {
-  status: string;
-  commit: string | null;
-  lastDeployedAt: string | null;
-  environment?: string | null;
-  dirty?: boolean;
-};
-
-type HouseholdMember = {
-  id: string;
-  attendee_id: string;
-};
-
-function percent(value: number, total: number) {
-  if (!total) {
-    return 0;
-  }
-  return Math.round((value / total) * 100);
-}
-
 function formatEventLabel(evt: EventRow) {
   const name = evt.name || "Untitled event";
   const dates = [evt.start_date, evt.end_date].filter(Boolean).join(" – ");
   const loc = evt.location || "";
-  // Status icon logic always shows an icon (green for active, yellow otherwise)
   const statusIcon = isActiveEventStatus(evt.status) ? "🟢" : "🟡";
   return [statusIcon, name, dates, loc].filter(Boolean).join(" — ");
 }
@@ -140,220 +143,100 @@ function getInitialAdminEvent(): EventRow | null {
   }
 }
 
-const adminCards = [
-  {
-    title: "Events",
-    description: "Create, edit, activate, and manage event records.",
-    href: "/admin/events",
-    permission: "can_manage_events",
-  },
-  {
-    title: "Parking",
-    description: "Assign sites, track arrivals, and manage coach parking.",
-    href: "/admin/parking",
-    permission: "can_manage_parking",
-  },
-  {
-    title: "Announcements",
-    description: "Post updates, alerts, and member-facing notices.",
-    href: "/admin/announcements",
-    permission: "can_manage_announcements",
-  },
-  {
-    title: "Nearby",
-    description: "Manage nearby places shown to members for this event.",
-    href: "/admin/nearby",
-    permission: "can_manage_nearby",
-  },
+// The Level-1 Admin modules (docs/architecture/
+// EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md, "Which modules deserve direct
+// (Level 1) navigation"). Second-level modules (Event Configuration,
+// Maps & Locations, Admin Governance, Engagement/Intelligence) are
+// deliberately not represented here -- they remain reachable through
+// Sidebar's existing governed navigation without crowding this surface,
+// per that document's own determination.
+//
+// Each destination is the module's existing canonical entry route today
+// -- no route is moved or merged by this change. `permission` mirrors
+// components/layout/Sidebar.tsx's own gate for that exact destination
+// (Attendees' three-way OR included), so a Summary Link is visible if
+// and only if the equivalent Sidebar entry would be.
+export type AdminSummaryLinkDefinition = {
+  title: string;
+  description: string;
+  href: string;
+  permission: readonly string[];
+};
 
-  {
-    title: "Admin Maps",
-    description: "Manage maps, nearby locations, sites, and reusable layouts.",
-    href: "/admin/map-admin",
-    permission: "can_manage_master_maps",
-  },
-  {
-    title: "Agenda",
-    description: "Build and manage the event schedule and published items.",
-    href: "/admin/agenda",
-    permission: "can_manage_agenda",
-  },
-  {
-    title: "Attendee Management",
-    description:
-      "Manage attendees, data review, reports, imports, and validation rules.",
-    href: "/admin/attendees",
-    permission: "can_edit_attendees",
-  },
-  {
-    title: "Check-In",
-    description: "Manage arrivals, check-in flow, and site-ready coaches.",
-    href: "/admin/checkin",
-    permission: "can_manage_checkin",
-  },
-  {
-    title: "Vendors",
-    description:
-      "Manage event vendors, member actions, signup links, and service requests.",
-    href: "/admin/vendors",
-    permission: "can_manage_events",
-  },
-  {
-    title: "Reports",
-    description:
-      "View and export event rosters, parking, and activity reports.",
-    href: "/admin/reports",
-    permission: "can_manage_reports",
-  },
-  {
-    title: "Photos",
-    description: "Review, approve, reject, and manage member photo uploads.",
-    href: "/admin/photos",
-    permission: "can_manage_reports",
-  },
-  {
-    title: "Evaluations",
-    description: "Review event evaluations, member feedback, memories, and survey results.",
-    href: "/admin/evaluations",
-    permission: "can_manage_reports",
-  },
-  {
-    title: "Event Staff",
-    description: "Assign event staff and manage role-based permissions.",
-    href: "/admin/event-staff",
-    permission: "can_manage_event_staff",
-  },
-  {
-    title: "Locations",
-    description: "Manage event locations and map-linked place details.",
-    href: "/admin/locations",
-    permission: "can_manage_locations",
-  },
-  {
-    title: "Imports",
-    description: "Import attendee, registration, and event source data.",
-    href: "/admin/imports",
-    permission: "can_manage_imports",
-  },
-] as const;
+export const ADMIN_LEVEL1_SUMMARY_LINKS: readonly AdminSummaryLinkDefinition[] =
+  [
+    {
+      title: "Attendees",
+      description: "Search, edit, and review the attendee roster.",
+      href: "/admin/attendees",
+      permission: [
+        "can_manage_attendees",
+        "can_manage_checkin",
+        "can_manage_parking",
+      ],
+    },
+    {
+      title: "Check-In",
+      description: "Mark arrivals and confirm parking sites.",
+      href: "/admin/checkin",
+      permission: ["can_manage_checkin"],
+    },
+    {
+      title: "Parking",
+      description: "Assign and track coach parking sites.",
+      href: "/admin/parking",
+      permission: ["can_manage_parking"],
+    },
+    {
+      title: "Agenda",
+      description: "Build and publish the event schedule.",
+      href: "/admin/agenda",
+      permission: ["can_manage_agenda"],
+    },
+    {
+      title: "Communications",
+      description: "Post announcements and event updates.",
+      href: "/admin/announcements",
+      permission: ["can_manage_announcements"],
+    },
+    {
+      title: "Media",
+      description: "Review and moderate member photo uploads.",
+      href: "/admin/photos",
+      permission: ["can_manage_reports"],
+    },
+    {
+      title: "Vendors",
+      description: "Manage event vendors and service requests.",
+      href: "/admin/vendors",
+      permission: ["can_manage_vendors"],
+    },
+    {
+      title: "Reporting",
+      description: "Generate reports and print name tags or coach plates.",
+      href: "/admin/print",
+      permission: ["can_manage_reports"],
+    },
+  ];
 
-function MetricCard({
-  label,
-  value,
-  footer,
-}: {
-  label: string;
-  value: string | number;
-  footer?: string;
-}) {
-  return (
-    <div className="card" style={metricCardStyle}>
-      <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>
-        {label}
-      </div>
+// Pure: no I/O. Visibility is governed entirely by the already-resolved
+// AdminAccessResult and the same hasPermission(...) function Sidebar.tsx
+// and AdminRouteGuard already use -- never an independently-derived or
+// page-local permission check.
+export function visibleAdminSummaryLinks(
+  admin: AdminAccessResult | null,
+): AdminSummaryLinkDefinition[] {
+  if (!admin) {
+    return [];
+  }
 
-      <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>
-        {value}
-      </div>
-
-      {footer ? (
-        <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
-          {footer}
-        </div>
-      ) : null}
-    </div>
+  return ADMIN_LEVEL1_SUMMARY_LINKS.filter((link) =>
+    link.permission.some((key) => hasPermission(admin, key)),
   );
-}
-
-function getAdminToolIcon(href: string) {
-  if (href.includes("events")) {
-    return "📅";
-  }
-  if (href.includes("parking")) {
-    return "🅿️";
-  }
-  if (href.includes("announcements")) {
-    return "📢";
-  }
-  if (href.includes("nearby")) {
-    return "📍";
-  }
-  if (href.includes("master-maps") || href.includes("map")) {
-    return "🗺️";
-  }
-  if (href.includes("agenda")) {
-    return "🗓️";
-  }
-  if (href.includes("checkin")) {
-    return "✅";
-  }
-  if (href.includes("vendors")) {
-    return "🤝";
-  }
-  if (href.includes("reports")) {
-    return "📊";
-  }
-  if (href.includes("evaluations")) {
-    return "📝";
-  }
-  if (href.includes("event-staff")) {
-    return "👥";
-  }
-  if (href.includes("locations")) {
-    return "📌";
-  }
-  if (href.includes("imports")) {
-    return "⬆️";
-  }
-  return "⚙️";
-}
-
-function getAdminToolClass(href: string) {
-  if (href.includes("events")) {
-    return "admin-tool-events";
-  }
-  if (href.includes("parking")) {
-    return "admin-tool-parking";
-  }
-  if (href.includes("announcements")) {
-    return "admin-tool-announcements";
-  }
-  if (href.includes("nearby")) {
-    return "admin-tool-nearby";
-  }
-  if (href.includes("master-maps") || href.includes("map")) {
-    return "admin-tool-map";
-  }
-  if (href.includes("agenda")) {
-    return "admin-tool-agenda";
-  }
-  if (href.includes("checkin")) {
-    return "admin-tool-checkin";
-  }
-  if (href.includes("vendors")) {
-    return "admin-tool-vendors";
-  }
-  if (href.includes("reports")) {
-    return "admin-tool-reports";
-  }
-  if (href.includes("evaluations")) {
-    return "admin-tool-reports";
-  }
-  if (href.includes("event-staff")) {
-    return "admin-tool-staff";
-  }
-  if (href.includes("locations")) {
-    return "admin-tool-locations";
-  }
-  if (href.includes("imports")) {
-    return "admin-tool-imports";
-  }
-  return "admin-tool-reports";
 }
 
 function AdminDashboardPageInner() {
   const initialEvent = getInitialAdminEvent();
-  const router = useRouter();
 
   const { admin: adminAccess } = useAdmin();
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -361,24 +244,13 @@ function AdminDashboardPageInner() {
     initialEvent?.id || "",
   );
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(initialEvent);
-  const [attendees, setAttendees] = useState<Attendee[]>([]);
-  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
-    [],
-  );
   const [status, setStatus] = useState(
-    initialEvent ? "Loading attendees..." : "Loading dashboard...",
+    initialEvent ? "" : "Loading dashboard...",
   );
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
-  const [isWide, setIsWide] = useState(false);
-  const [isNarrow, setIsNarrow] = useState(false);
-  const [showMobileStats, setShowMobileStats] = useState(true);
-  const [showStats, setShowStats] = useState(true);
-  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
 
   const didInitialLoad = useRef(false);
-
-
 
   async function loadEvents(admin: AdminAccessResult | null) {
     const { data, error } = await supabase
@@ -405,70 +277,15 @@ function AdminDashboardPageInner() {
     return allEvents.filter((evt) => canAccessEvent(admin, evt.id));
   }
 
-  async function loadDashboardForEvent(selected: EventRow | null) {
-    if (!selected) {
-      setActiveEvent(null);
-      setAttendees([]);
-      setHouseholdMembers([]);
-      setStatus("No event selected. Choose one above.");
-      return;
-    }
-
-    setActiveEvent(selected);
-    setStatus("Loading attendees...");
-
-    const [attendeeResult, householdResult] = await Promise.all([
-      supabase
-        .from("attendees")
-        .select("id,arrival_status,assigned_site,registration_status,is_active")
-        .eq("event_id", selected.id),
-      supabase
-        .from("attendee_household_members")
-        .select("id,attendee_id")
-        .eq("event_id", selected.id),
-    ]);
-
-    if (attendeeResult.error) {
-      setAttendees([]);
-      setHouseholdMembers([]);
-      setStatus(`Could not load attendees: ${attendeeResult.error.message}`);
-      return;
-    }
-
-    if (householdResult.error) {
-      setAttendees([]);
-      setHouseholdMembers([]);
-      setStatus(
-        `Could not load household members: ${householdResult.error.message}`,
-      );
-      return;
-    }
-
-    setAttendees((attendeeResult.data || []) as Attendee[]);
-    setHouseholdMembers((householdResult.data || []) as HouseholdMember[]);
-    const activeCoachCount = ((attendeeResult.data || []) as Attendee[]).filter(
-      (a) => a.registration_status !== "cancelled" && a.is_active,
-    ).length;
-    setStatus(
-      `Loaded ${activeCoachCount} coaches and ${(householdResult.data || []).length} people.`,
-    );
-  }
-
   const loadPage = useCallback(async () => {
     try {
       setLoading(true);
       if (!adminAccess) {
         setSelectedEventId("");
         setActiveEvent(null);
-        setAttendees([]);
-        setHouseholdMembers([]);
         setStatus("No admin access.");
         setLoading(false);
         return;
-      }
-
-      if (!activeEvent) {
-        setStatus("Loading dashboard...");
       }
 
       const loadedEvents = await loadEvents(adminAccess);
@@ -477,13 +294,12 @@ function AdminDashboardPageInner() {
       if (loadedEvents.length === 0) {
         setSelectedEventId("");
         setActiveEvent(null);
-        setAttendees([]);
-        setHouseholdMembers([]);
         setStatus("No events found.");
         return;
       }
 
-      const stored = getCurrentAdminEvent();      const activeEvents = loadedEvents.filter((e) =>
+      const stored = getCurrentAdminEvent();
+      const activeEvents = loadedEvents.filter((e) =>
         isActiveEventStatus(e.status),
       );
       const storedEvent = loadedEvents.find((e) => e.id === stored?.id) || null;
@@ -502,14 +318,13 @@ function AdminDashboardPageInner() {
       if (!preferred) {
         setSelectedEventId("");
         setActiveEvent(null);
-        setAttendees([]);
-        setHouseholdMembers([]);
         setStatus("No event selected. Choose one above.");
         return;
       }
 
       setSelectedEventId(preferred.id);
       setActiveEvent(preferred);
+      setStatus("");
       setCurrentAdminEvent({
         id: preferred.id,
         name: preferred.name || "Selected Event",
@@ -517,7 +332,7 @@ function AdminDashboardPageInner() {
         location: preferred.location || null,
         start_date: preferred.start_date || null,
         end_date: preferred.end_date || null,
-      });      await loadDashboardForEvent(preferred);
+      });
     } catch (err: any) {
       console.error("loadDashboard error:", err);
       setStatus(err?.message || "Failed to load dashboard.");
@@ -525,48 +340,6 @@ function AdminDashboardPageInner() {
       setLoading(false);
     }
   }, [activeEvent, adminAccess]);
-
-  useEffect(() => {
-    function handleResize() {
-      setIsWide(window.innerWidth > 1200);
-      const mobile = window.innerWidth <= 900;
-      setIsNarrow(mobile);
-      const saved = localStorage.getItem(MOBILE_STATS_PREF_KEY);
-      if (saved === null) {
-        setShowMobileStats(!mobile);
-      } else {
-        setShowMobileStats(saved === "true");
-      }
-    }
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  useEffect(() => {
-    if (!adminAccess?.isSuperAdmin) {
-      setSystemStatus(null);
-      return;
-    }
-
-    void supabase.auth
-      .getSession()
-      .then(({ data }) => data.session?.access_token || null)
-      .then((accessToken) => {
-        if (!accessToken) {
-          setSystemStatus(null);
-          return null;
-        }
-
-        return fetch("/api/admin/system-status", {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-      })
-      .then((res) => (res?.ok ? res.json() : null))
-      .then((data) => setSystemStatus(data as SystemStatus | null))
-      .catch(() => setSystemStatus(null));
-  }, [adminAccess?.isSuperAdmin]);
 
   useEffect(() => {
     if (didInitialLoad.current) {
@@ -597,7 +370,6 @@ function AdminDashboardPageInner() {
       setSwitching(true);
       setSelectedEventId(nextEventId);
       setActiveEvent(nextEvent);
-      setStatus("Switching event...");
       setCurrentAdminEvent({
         id: nextEvent.id,
         name: nextEvent.name || "Selected Event",
@@ -605,7 +377,7 @@ function AdminDashboardPageInner() {
         location: nextEvent.location || null,
         start_date: nextEvent.start_date || null,
         end_date: nextEvent.end_date || null,
-      });      await loadDashboardForEvent(nextEvent);
+      });
       setStatus(
         `Admin working event changed to ${nextEvent.name || "Selected Event"}.`,
       );
@@ -617,128 +389,27 @@ function AdminDashboardPageInner() {
     }
   }
 
-  const metrics = useMemo(() => {
-    const activeAttendees = attendees.filter(
-      (a) => a.registration_status !== "cancelled" && a.is_active,
-    );
-    const registeredCoaches = activeAttendees.length;
-
-    const arrivedAttendeeIds = new Set(
-      activeAttendees
-        .filter(
-          (a) =>
-            a.arrival_status === "arrived" || a.arrival_status === "parked",
-        )
-        .map((a) => a.id),
-    );
-
-    const coachesArrived = arrivedAttendeeIds.size;
-    const peopleRegistered = householdMembers.length;
-    const peopleArrived = householdMembers.filter((m) =>
-      arrivedAttendeeIds.has(m.attendee_id),
-    ).length;
-
-    const parkedCount = activeAttendees.filter(
-      (a) => a.arrival_status === "parked",
-    ).length;
-
-    const queueSize = activeAttendees.filter(
-      (a) => a.arrival_status !== "parked",
-    ).length;
-
-    const assignedCount = activeAttendees.filter((a) => !!a.assigned_site).length;
-
-    return {
-      registeredCoaches,
-      coachesArrived,
-      peopleRegistered,
-      peopleArrived,
-      coachArrivedPercent: percent(coachesArrived, registeredCoaches),
-      peopleArrivedPercent: percent(peopleArrived, peopleRegistered),
-      parkedCount,
-      queueSize,
-      assignedCount,
-      parkedPercent: percent(parkedCount, registeredCoaches),
-      assignedPercent: percent(assignedCount, registeredCoaches),
-    };
-  }, [attendees, householdMembers]);
-
-  const visibleAdminCards = useMemo(() => {
-    if (!adminAccess) {
-      return [];
-    }
-
-    return adminCards
-      .filter((card) => hasPermission(adminAccess, card.permission))
-      .sort((a, b) =>
-        a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
-      );
-  }, [adminAccess]);
-
-  function goTo(href: string) {
-    router.push(href);
-  }
+  const visibleLinks = visibleAdminSummaryLinks(adminAccess);
 
   return (
-    <div
-      style={{
-        ...pageStyle,
-        padding: isNarrow ? 12 : 24,
-      }}
-    >
-      {isNarrow ? (
-        <button
-          type="button"
-          onClick={() => {
-            setShowMobileStats((v) => {
-              const next = !v;
-              localStorage.setItem(MOBILE_STATS_PREF_KEY, String(next));
-              return next;
-            });
-          }}
-          style={{
-            position: "fixed",
-            left: "calc(env(safe-area-inset-left, 0px) + 82px)",
-            top: "calc(env(safe-area-inset-top, 0px) + 16px)",
-            zIndex: 9998,
-            padding: "9px 13px",
-            borderRadius: 999,
-            border: "1px solid #cbd5e1",
-            background: "#fff",
-            fontWeight: 900,
-            color: "#0b5cff",
-            boxShadow: "0 3px 10px rgba(0,0,0,0.18)",
-          }}
-        >
-          📊 {showMobileStats ? "Hide Stats" : "Show Stats"}
-        </button>
-      ) : null}
-
+    <div style={pageStyle}>
       <div className="card" style={headerCardStyle}>
-        <div style={headerTopRowStyle}>
-          <div>
-            <h1 style={{ margin: 0, marginBottom: 8 }}>Admin Dashboard</h1>
-            <div style={subtleTextStyle}>
-              {activeEvent?.name || "No selected event"}
-              {activeEvent?.location ? ` • ${activeEvent.location}` : ""}
-              {formatEventDateRange(activeEvent)
-                ? ` • ${formatEventDateRange(activeEvent)}`
-                : ""}
-            </div>
-          </div>
+        <h1 style={{ margin: 0, marginBottom: 8 }}>Admin Dashboard</h1>
+        <div style={subtleTextStyle}>
+          {activeEvent?.name || "No selected event"}
+          {activeEvent?.location ? ` • ${activeEvent.location}` : ""}
+          {formatEventDateRange(activeEvent)
+            ? ` • ${formatEventDateRange(activeEvent)}`
+            : ""}
         </div>
 
-        <div
-          style={{
-            ...eventSelectorGridStyle,
-            gridTemplateColumns: isNarrow
-              ? "1fr"
-              : "minmax(0, 1.5fr) minmax(220px, 1fr)",
-          }}
-        >
+        <div style={eventSelectorGridStyle}>
           <div>
-            <label style={labelStyle}>Admin Working Event</label>
+            <label style={labelStyle} htmlFor="admin-working-event">
+              Admin Working Event
+            </label>
             <select
+              id="admin-working-event"
               value={selectedEventId}
               onChange={(e) => void handleSwitchEvent(e.target.value)}
               disabled={loading || switching}
@@ -753,338 +424,40 @@ function AdminDashboardPageInner() {
             </select>
           </div>
 
-          <div style={statusBoxStyle}>
-            {switching
-              ? "Switching event..."
-              : loading && activeEvent
-                ? "Refreshing dashboard..."
-                : status}
-          </div>
+          {(switching || loading || status) && (
+            <div style={statusBoxStyle} aria-live="polite">
+              {switching
+                ? "Switching event..."
+                : loading
+                  ? "Loading..."
+                  : status}
+            </div>
+          )}
         </div>
       </div>
 
-      {isNarrow ? (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: showMobileStats
-              ? "120px minmax(0, 1fr)"
-              : "1fr",
-            gap: 12,
-            alignItems: "start",
-          }}
-        >
-          {showMobileStats && (
-            <div
-              style={{
-                position: "sticky",
-                top: "calc(env(safe-area-inset-top, 0px) + 76px)",
-                display: "grid",
-                gap: 8,
-                alignSelf: "start",
-              }}
-            >
-              <MetricCard
-                label="Coaches"
-                value={
-                  loading && attendees.length === 0
-                    ? "…"
-                    : metrics.registeredCoaches
-                }
-              />
-              <MetricCard
-                label="Arrived"
-                value={
-                  loading && attendees.length === 0
-                    ? "…"
-                    : metrics.coachesArrived
-                }
-                footer={`${metrics.coachArrivedPercent}%`}
-              />
-              <MetricCard
-                label="Queue"
-                value={
-                  loading && attendees.length === 0 ? "…" : metrics.queueSize
-                }
-              />
-              <MetricCard
-                label="Parked"
-                value={
-                  loading && attendees.length === 0
-                    ? "…"
-                    : `${metrics.parkedPercent}%`
-                }
-                footer={`${metrics.parkedCount}`}
-              />
-              <MetricCard
-                label="Sites"
-                value={
-                  loading && attendees.length === 0
-                    ? "…"
-                    : `${metrics.assignedPercent}%`
-                }
-                footer={`${metrics.assignedCount}`}
-              />
-            </div>
-          )}
+      <AdminTrustIndicator />
 
-          <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
-            {adminAccess?.isSuperAdmin ? (
-              <div className="card" style={sectionCardStyle}>
-                <div style={sectionTitleStyle}>Super Admin System Status</div>
+      {/* No Context Card: no governed Admin Experience Resolver exists
+          yet. An absent card is architecturally correct here (see
+          module-level comment above), not an omission to fill in. */}
 
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 10,
-                    fontSize: 14,
-                  }}
-                >
-                  <div>
-                    <strong>App Health:</strong>{" "}
-                    {systemStatus?.status || "Refreshing..."}
-                  </div>
+      <div style={summaryLinkGridStyle}>
+        {visibleLinks.map((link) => (
+          <AdminSummaryLink
+            key={link.href}
+            title={link.title}
+            description={link.description}
+            href={link.href}
+          />
+        ))}
 
-                  <div>
-                    <strong>Last Good Deploy:</strong>{" "}
-                    {systemStatus?.lastDeployedAt
-                      ? new Date(systemStatus.lastDeployedAt).toLocaleString()
-                      : "Refreshing..."}
-                  </div>
-
-                  <div>
-                    <strong>Environment:</strong>{" "}
-                    {systemStatus?.environment || "Unknown"}
-                  </div>
-
-                  <div>
-                    <strong>Version:</strong>{" "}
-                    {systemStatus?.commit
-                      ? `${systemStatus.commit.slice(0, 7)}${systemStatus?.dirty ? "*" : ""}`
-                      : "Refreshing..."}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="card" style={sectionCardStyle}>
-              <div style={sectionTitleStyle}>Admin Tools</div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr",
-                  gap: 12,
-                }}
-              >
-                {visibleAdminCards.map((card) => (
-                  <button
-                    key={card.href}
-                    type="button"
-                    onClick={() => goTo(card.href)}
-                    className={`admin-tool-button ${getAdminToolClass(card.href)}`}
-                  >
-                    <span className="admin-tool-icon" aria-hidden="true">
-                      {getAdminToolIcon(card.href)}
-                    </span>
-
-                    <span>
-                      <span className="admin-tool-title">{card.title}</span>
-                      <span className="admin-tool-description">
-                        {card.description}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-
-                {visibleAdminCards.length === 0 ? (
-                  <div style={emptyCardStyle}>
-                    No admin tools are enabled for your current permissions.
-                  </div>
-                ) : null}
-              </div>
-            </div>
+        {visibleLinks.length === 0 ? (
+          <div style={emptyCardStyle}>
+            No admin modules are enabled for your current permissions.
           </div>
-        </div>
-      ) : (
-        <>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              onClick={() => setShowStats((v) => !v)}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 999,
-                border: "1px solid #cbd5e1",
-                background: "#fff",
-                fontWeight: 700,
-                color: "#0b5cff",
-                cursor: "pointer",
-              }}
-            >
-              📊 {showStats ? "Hide Stats" : "Show Stats"}
-            </button>
-          </div>
-          {showStats && (
-            <>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isWide
-                    ? "repeat(4, minmax(0, 1fr))"
-                    : "repeat(3, minmax(0, 1fr))",
-                  gap: 16,
-                }}
-              >
-                <MetricCard
-                  label="Registered Coaches"
-                  value={
-                    loading && attendees.length === 0
-                      ? "…"
-                      : metrics.registeredCoaches
-                  }
-                />
-                <MetricCard
-                  label="Coaches Arrived"
-                  value={
-                    loading && attendees.length === 0 ? "…" : metrics.coachesArrived
-                  }
-                  footer={`${metrics.coachArrivedPercent}%`}
-                />
-                <MetricCard
-                  label="People Registered"
-                  value={
-                    loading && householdMembers.length === 0
-                      ? "…"
-                      : metrics.peopleRegistered
-                  }
-                />
-                <MetricCard
-                  label="People Arrived"
-                  value={
-                    loading && householdMembers.length === 0
-                      ? "…"
-                      : metrics.peopleArrived
-                  }
-                  footer={`${metrics.peopleArrivedPercent}%`}
-                />
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isWide
-                    ? "repeat(3, minmax(0, 1fr))"
-                    : "repeat(3, minmax(0, 1fr))",
-                  gap: 16,
-                }}
-              >
-                <MetricCard
-                  label="Parked"
-                  value={
-                    loading && attendees.length === 0
-                      ? "…"
-                      : `${metrics.parkedPercent}%`
-                  }
-                  footer={`${metrics.parkedCount} of ${metrics.registeredCoaches}`}
-                />
-                <MetricCard
-                  label="Queue Size"
-                  value={
-                    loading && attendees.length === 0 ? "…" : metrics.queueSize
-                  }
-                  footer="still needing final parking"
-                />
-                <MetricCard
-                  label="Assigned Sites"
-                  value={
-                    loading && attendees.length === 0
-                      ? "…"
-                      : `${metrics.assignedPercent}%`
-                  }
-                  footer={`${metrics.assignedCount} of ${metrics.registeredCoaches}`}
-                />
-              </div>
-            </>
-          )}
-
-          {adminAccess?.isSuperAdmin ? (
-            <div className="card" style={sectionCardStyle}>
-              <div style={sectionTitleStyle}>Super Admin System Status</div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gap: 10,
-                  fontSize: 14,
-                }}
-              >
-                <div>
-                  <strong>App Health:</strong>{" "}
-                  {systemStatus?.status || "Refreshing..."}
-                </div>
-
-                <div>
-                  <strong>Last Good Deploy:</strong>{" "}
-                  {systemStatus?.lastDeployedAt
-                    ? new Date(systemStatus.lastDeployedAt).toLocaleString()
-                    : "Refreshing..."}
-                </div>
-
-                <div>
-                  <strong>Environment:</strong>{" "}
-                  {systemStatus?.environment || "Unknown"}
-                </div>
-
-                <div>
-                  <strong>Version:</strong>{" "}
-                  {systemStatus?.commit
-                    ? `${systemStatus.commit.slice(0, 7)}${systemStatus?.dirty ? "*" : ""}`
-                    : "Refreshing..."}
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="card" style={sectionCardStyle}>
-            <div style={sectionTitleStyle}>Admin Tools</div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                gap: 16,
-              }}
-            >
-              {visibleAdminCards.map((card) => (
-                <button
-                  key={card.href}
-                  type="button"
-                  onClick={() => goTo(card.href)}
-                  className={`admin-tool-button ${getAdminToolClass(card.href)}`}
-                >
-                  <span className="admin-tool-icon" aria-hidden="true">
-                    {getAdminToolIcon(card.href)}
-                  </span>
-
-                  <span>
-                    <span className="admin-tool-title">{card.title}</span>
-                    <span className="admin-tool-description">
-                      {card.description}
-                    </span>
-                  </span>
-                </button>
-              ))}
-
-              {visibleAdminCards.length === 0 ? (
-                <div style={emptyCardStyle}>
-                  No admin tools are enabled for your current permissions.
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1099,25 +472,23 @@ const headerCardStyle: React.CSSProperties = {
   padding: 18,
 };
 
-const headerTopRowStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-  alignItems: "start",
-  flexWrap: "wrap",
-  marginBottom: 14,
-};
-
 const subtleTextStyle: React.CSSProperties = {
   fontSize: 14,
   opacity: 0.8,
+  marginBottom: 14,
 };
 
+// Standards-first responsive layout only (Adaptive UI Architecture §10):
+// a single CSS grid that reflows by available space, no JS-computed
+// breakpoint state. Matches the pattern already used elsewhere in this
+// app (e.g. app/member/page.tsx's own nav grid) rather than the
+// dashboard's own prior window.innerWidth-driven layout state.
 const eventSelectorGridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "minmax(280px, 1.5fr) minmax(220px, 1fr)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
   gap: 14,
   alignItems: "end",
+  marginTop: 4,
 };
 
 const labelStyle: React.CSSProperties = {
@@ -1136,6 +507,7 @@ const selectStyle: React.CSSProperties = {
   borderRadius: 10,
   background: "#fff",
   fontSize: 14,
+  minHeight: 44,
 };
 
 const statusBoxStyle: React.CSSProperties = {
@@ -1152,20 +524,10 @@ const statusBoxStyle: React.CSSProperties = {
   alignItems: "center",
 };
 
-const metricCardStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 12,
-  minHeight: 0,
-};
-
-const sectionCardStyle: React.CSSProperties = {
-  padding: 18,
-};
-
-const sectionTitleStyle: React.CSSProperties = {
-  fontWeight: 700,
-  fontSize: 18,
-  marginBottom: 14,
+const summaryLinkGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 14,
 };
 
 const emptyCardStyle: React.CSSProperties = {
