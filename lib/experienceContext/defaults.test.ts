@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildCanonicalBaseSharedExperienceContext } from "@/lib/experienceContext/defaults";
+import {
+  buildCanonicalBaseSharedExperienceContext,
+  buildCanonicalEventSlice,
+} from "@/lib/experienceContext/defaults";
 import type { CurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 
 // Covers "unavailable source" for the agenda, announcements,
@@ -104,4 +107,64 @@ test("vendorRequests default represents an unavailable source, never a fabricate
   assert.equal(context.vendorRequests.openCount, null);
   assert.equal(context.vendorRequests.evidenceQuality, "unavailable");
   assert.equal(context.vendorRequests.observedAt, null);
+});
+
+// event.dayNumber delegates to the shared computeEventDayNumber
+// (lib/eventDayNumber.ts, also used by components/
+// MemberDashboardHeader.tsx) -- these tests cover the Collector's own
+// wiring of it, not the calculation itself (see lib/eventDayNumber.test.ts
+// for the full pre/start/mid/end/post-event matrix). start_date/end_date
+// are date-only strings, parsed as UTC per the ECMAScript spec, then
+// compared via LOCAL calendar components -- so `now` is derived from the
+// same local-calendar-date extraction the function itself performs on
+// EVENT.start_date, keeping these tests deterministic regardless of the
+// runner's timezone (the same technique already used in
+// lib/eventDayNumber.test.ts and components/MemberDashboardHeader.test.tsx).
+function localCalendarDateOf(dateOnly: string): Date {
+  const parsed = new Date(dateOnly);
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+function eventNowAtDaysAfterStart(daysAfterStart: number): Date {
+  const now = localCalendarDateOf(EVENT.start_date as string);
+  now.setDate(now.getDate() + daysAfterStart);
+  now.setHours(12, 0, 0, 0);
+  return now;
+}
+
+const EVENT_SLICE_INPUT_BASE = {
+  event: EVENT,
+  attendeeId: null,
+  participantCapacity: null,
+  participantCount: 0,
+  checkedIn: null,
+  eventCode: null,
+  registrationIdentifier: null,
+};
+
+test("event.dayNumber: mid-event is the correct Day N", () => {
+  const slice = buildCanonicalEventSlice({
+    ...EVENT_SLICE_INPUT_BASE,
+    now: eventNowAtDaysAfterStart(1),
+  });
+
+  assert.equal(slice.dayNumber, 2);
+});
+
+test("event.dayNumber: before the start date is null, never a fabricated Day number", () => {
+  const slice = buildCanonicalEventSlice({
+    ...EVENT_SLICE_INPUT_BASE,
+    now: eventNowAtDaysAfterStart(-1),
+  });
+
+  assert.equal(slice.dayNumber, null);
+});
+
+test("event.dayNumber: after the end date is null, never a fabricated in-event Day number", () => {
+  const slice = buildCanonicalEventSlice({
+    ...EVENT_SLICE_INPUT_BASE,
+    now: eventNowAtDaysAfterStart(30),
+  });
+
+  assert.equal(slice.dayNumber, null);
 });

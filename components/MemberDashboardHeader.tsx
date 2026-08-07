@@ -1,3 +1,4 @@
+import { computeEventDayNumber } from "@/lib/eventDayNumber";
 import type { PrimaryExperienceSignal } from "@/lib/experienceContext";
 
 // Presentation-only member dashboard header/status strip. Consumes only
@@ -22,55 +23,22 @@ export type MemberDashboardHeaderProps = {
   onMyEvents: () => void;
 };
 
-// Computes a "Day N" label from the event's own governed start/end dates.
-// Returns null (never a fabricated label) when:
-//   - no start date is available, or it is unparseable;
-//   - the event has not started yet (dayNumber < 1) -- never show a
-//     misleading positive Day number early;
-//   - the event is already over (today is past the end date) -- never
-//     fabricate an in-event Day number once the event has concluded.
-// Uses the browser's local timezone via the standard Date APIs, matching
-// every other date computation already in this application; no
-// event-specific timezone concept exists anywhere in the app to draw on,
-// so none is invented here.
+// Formats a "Day N" label from the shared computeEventDayNumber
+// calculation (lib/eventDayNumber.ts) -- the same governed calculation
+// the Collector's base event slice uses (lib/experienceContext/
+// defaults.ts's buildCanonicalEventSlice). Returns null (never a
+// fabricated label) whenever that calculation returns null: no start
+// date, an unparseable start date, the event has not started yet, or the
+// event is already over. See eventDayNumber.ts for the exact semantics
+// and the date-parsing convention it preserves.
 export function computeEventDayLabel(
   startDate: string | null,
   endDate: string | null,
   now: Date,
 ): string | null {
-  if (!startDate) {
-    return null;
-  }
+  const dayNumber = computeEventDayNumber(startDate, endDate, now);
 
-  const start = new Date(startDate);
-  if (Number.isNaN(start.getTime())) {
-    return null;
-  }
-
-  const startDay = new Date(
-    start.getFullYear(),
-    start.getMonth(),
-    start.getDate(),
-  );
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dayNumber =
-    Math.round((today.getTime() - startDay.getTime()) / 86400000) + 1;
-
-  if (dayNumber < 1) {
-    return null;
-  }
-
-  if (endDate) {
-    const end = new Date(endDate);
-    if (!Number.isNaN(end.getTime())) {
-      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-      if (today.getTime() > endDay.getTime()) {
-        return null;
-      }
-    }
-  }
-
-  return `Day ${dayNumber}`;
+  return dayNumber === null ? null : `Day ${dayNumber}`;
 }
 
 type StatusPresentation = {
