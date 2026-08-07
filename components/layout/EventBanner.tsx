@@ -84,7 +84,6 @@ export default function EventBanner() {
     };
   }, [loadActiveEvent]);
 
-  alert(JSON.stringify(tenant, null, 2));
   if (!event) {
     return null;
   }
