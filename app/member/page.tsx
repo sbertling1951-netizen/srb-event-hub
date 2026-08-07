@@ -6,6 +6,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import {
+  collectSharedExperienceContext,
+  type PrimaryExperienceContext,
+  type PrimaryExperienceContextKind,
+  resolvePrimaryExperienceContext,
+} from "@/lib/experienceContext";
+import {
   type CurrentMemberEvent,
   getCurrentMemberAttendeeId,
   getCurrentMemberEvent,
@@ -61,6 +67,38 @@ function getDashboardVendorDetails(
   return value;
 }
 
+// Computes a "Day N" label from the event's start date. Returns null
+// (never a fabricated label) when the start date is absent, unparseable,
+// or the event has not yet begun.
+function computeEventDayLabel(
+  startDate: string | null,
+  now: Date,
+): string | null {
+  if (!startDate) {
+    return null;
+  }
+
+  const start = new Date(startDate);
+  if (Number.isNaN(start.getTime())) {
+    return null;
+  }
+
+  const startDay = new Date(
+    start.getFullYear(),
+    start.getMonth(),
+    start.getDate(),
+  );
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayNumber =
+    Math.round((today.getTime() - startDay.getTime()) / 86400000) + 1;
+
+  if (dayNumber < 1) {
+    return null;
+  }
+
+  return `Day ${dayNumber}`;
+}
+
 export default function MemberDashboardPage() {
   const [ready, setReady] = useState(false);
   const [currentEvent, setCurrentEvent] = useState<CurrentMemberEvent | null>(
@@ -84,11 +122,19 @@ export default function MemberDashboardPage() {
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
     [],
   );
+  // has_arrived from the same get_my_attendee_record call that already
+  // supplies participantCapacity; threaded through for the shared
+  // experience context rather than issuing a second RPC call.
+  const [checkedIn, setCheckedIn] = useState<boolean | null>(null);
+  const [primaryContext, setPrimaryContext] =
+    useState<PrimaryExperienceContext | null>(null);
+  // Drives the header's displayed weekday/time and event-day label; updated
+  // once per minute rather than every render.
+  const [now, setNow] = useState(new Date());
 
   const router = useRouter();
 
   const dashboardTitle = getTenantLabel("dashboard_title");
-  const agendaNavLabel = getTenantLabel("agenda_nav_label");
   const announcementsNavLabel = getTenantLabel("announcements_nav_label");
   const attendeesNavLabel = getTenantLabel("attendees_nav_label");
   const nearbyNavLabel = getTenantLabel("nearby_nav_label");
@@ -156,6 +202,11 @@ export default function MemberDashboardPage() {
             }
             const record = Array.isArray(recordData) ? recordData[0] : null;
             setParticipantCapacity(record?.participant_capacity ?? null);
+            setCheckedIn(
+              typeof record?.has_arrived === "boolean"
+                ? record.has_arrived
+                : null,
+            );
 
             // Get household members
             const { data: membersData, error: membersError } =
@@ -187,6 +238,60 @@ export default function MemberDashboardPage() {
       cancelled = true;
     };
   }, [router]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(new Date());
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Drives the primary Context Card. Requires the event context this
+  // component already resolved above; the collector performs no Person,
+  // Workspace, or event resolution of its own. Re-runs on the same minute
+  // tick as the header clock so "now"/"next" agenda framing stays current.
+  useEffect(() => {
+    if (!currentEvent) {
+      setPrimaryContext(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      const session = getMemberSession();
+
+      try {
+        const sharedContext = await collectSharedExperienceContext({
+          event: currentEvent,
+          now,
+          attendeeId: getCurrentMemberAttendeeId(),
+          participantCapacity,
+          participantCount: householdMembers.length,
+          checkedIn,
+          eventCode: session?.event_code ?? null,
+          registrationIdentifier:
+            session?.attendee_email || session?.attendee_phone || null,
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        setPrimaryContext(resolvePrimaryExperienceContext(sharedContext));
+      } catch (err) {
+        console.error("Shared experience context collection failed:", err);
+        if (!cancelled) {
+          setPrimaryContext(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentEvent, participantCapacity, householdMembers, checkedIn, now]);
 
   const loadVendors = useCallback(async () => {
     try {
@@ -310,6 +415,8 @@ export default function MemberDashboardPage() {
     return null;
   }
 
+  const eventDayLabel = computeEventDayLabel(currentEvent.start_date, now);
+
   return (
     <div style={{ display: "grid", gap: 18, padding: 16 }}>
       <AnnouncementBanner />
@@ -335,9 +442,11 @@ export default function MemberDashboardPage() {
             <h1 style={{ marginTop: 0, marginBottom: 8 }}>
               {currentEvent.name || dashboardTitle}
             </h1>
-            <div style={{ fontSize: 14, opacity: 0.8 }}>
-              {currentEvent.location || ""}
-            </div>
+            {currentEvent.location ? (
+              <div style={{ fontSize: 14, opacity: 0.8 }}>
+                {currentEvent.location}
+              </div>
+            ) : null}
           </div>
           <button
             type="button"
@@ -357,7 +466,78 @@ export default function MemberDashboardPage() {
             My Events
           </button>
         </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 12,
+            fontSize: 13,
+            color: "#4b5563",
+          }}
+        >
+          <span
+            aria-label="Active"
+            role="img"
+            style={{
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "#22c55e",
+              flexShrink: 0,
+            }}
+          />
+          <span>
+            {now.toLocaleDateString(undefined, { weekday: "long" })}
+            {" · "}
+            {now.toLocaleTimeString(undefined, {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+            {eventDayLabel ? ` · ${eventDayLabel}` : ""}
+          </span>
+        </div>
       </div>
+
+      {primaryContext ? (
+        <button
+          type="button"
+          onClick={() =>
+            primaryContext.destination && goTo(primaryContext.destination)
+          }
+          style={{
+            display: "block",
+            width: "100%",
+            textAlign: "left",
+            padding: 18,
+            border: `1px solid ${contextCardTone(primaryContext.kind).border}`,
+            borderRadius: 12,
+            background: contextCardTone(primaryContext.kind).background,
+            cursor: primaryContext.destination ? "pointer" : "default",
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 800,
+              fontSize: 17,
+              color: contextCardTone(primaryContext.kind).title,
+            }}
+          >
+            {primaryContext.title}
+          </div>
+          <div
+            style={{
+              fontSize: 14,
+              color: contextCardTone(primaryContext.kind).body,
+              marginTop: 4,
+            }}
+          >
+            {primaryContext.summary}
+          </div>
+        </button>
+      ) : null}
 
       {/* Participants */}
       {(() => {
@@ -498,14 +678,6 @@ export default function MemberDashboardPage() {
           marginTop: 12,
         }}
       >
-        <button
-          type="button"
-          onClick={() => goTo("/member/agenda")}
-          style={memberGridButtonStyle}
-        >
-          📅 {agendaNavLabel}
-        </button>
-
         <button
           type="button"
           onClick={() => goTo("/member/announcements")}
@@ -701,3 +873,45 @@ const memberGridButtonStyle: React.CSSProperties = {
   textAlign: "left",
   boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
 };
+
+// Presentation only -- maps the resolved Context Card kind to a subtle,
+// accessible color tone. Meaning is also carried by the title/summary text,
+// never by color alone.
+function contextCardTone(kind: PrimaryExperienceContextKind): {
+  background: string;
+  border: string;
+  title: string;
+  body: string;
+} {
+  switch (kind) {
+    case "action":
+      return {
+        background: "#f0fdf4",
+        border: "#bbf7d0",
+        title: "#15803d",
+        body: "#14532d",
+      };
+    case "reminder":
+      return {
+        background: "#fffbeb",
+        border: "#fde68a",
+        title: "#b45309",
+        body: "#78350f",
+      };
+    case "attention":
+      return {
+        background: "#fef2f2",
+        border: "#fecaca",
+        title: "#b91c1c",
+        body: "#7f1d1d",
+      };
+    case "information":
+    default:
+      return {
+        background: "#eff6ff",
+        border: "#bfdbfe",
+        title: "#1d4ed8",
+        body: "#1e3a8a",
+      };
+  }
+}
