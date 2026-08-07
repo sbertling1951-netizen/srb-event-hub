@@ -37,6 +37,63 @@ type VendorRequestApiRow = {
   site_number: string | null;
 };
 
+// Matches the exact PATCH body app/api/member/vendor-requests/route.ts
+// requires (StatusChangeBody) -- eventId is REQUIRED there (the route
+// rejects a request missing it with 400 invalid_request before the RPC
+// is ever called), since public.set_my_vendor_service_request_status
+// (20260807130000_extend_governed_member_vendor_request_write_boundary.sql)
+// needs it to call the same shared resolver
+// (resolve_temporary_or_authenticated_attendee) the governed read already
+// uses. eventCode/registrationIdentifier are optional evidence for that
+// same resolver's temporary/event-code branch.
+export type VendorRequestStatusChangeBody = {
+  requestId: string;
+  nextStatus: "cancelled" | "new";
+  eventId: string;
+  eventCode: string | null;
+  registrationIdentifier: string | null;
+};
+
+export function buildStatusChangeBody(
+  requestId: string,
+  nextStatus: "cancelled" | "new",
+  event: { id: string; event_code?: string | null },
+  memberEmail: string | null,
+): VendorRequestStatusChangeBody {
+  return {
+    requestId,
+    nextStatus,
+    eventId: event.id,
+    eventCode: event.event_code || null,
+    registrationIdentifier: memberEmail || null,
+  };
+}
+
+// The route echoes the RPC's own RETURNS TABLE result back as
+// { data: [{ id, request_status }] } on success. Parses that shape and
+// returns the authoritative updated status, or null if the shape is not
+// recognized -- never assumed from the status the caller requested, so a
+// malformed success response cannot be silently treated as if the
+// requested transition took effect.
+export function parseStatusChangeResponseData(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data) || data.length === 0) {
+    return null;
+  }
+
+  const first = data[0];
+  if (!first || typeof first !== "object") {
+    return null;
+  }
+
+  const requestStatus = (first as { request_status?: unknown }).request_status;
+  return typeof requestStatus === "string" ? requestStatus : null;
+}
+
 export function toRequestRow(row: VendorRequestApiRow): RequestRow {
   return {
     id: row.id,
@@ -225,40 +282,78 @@ function MyRequestsInner() {
     }
   }, []);
 
-  async function patchRequestStatus(id: string, nextStatus: "cancelled" | "new") {
+  // Governed write boundary: PATCH /api/member/vendor-requests ->
+  // public.set_my_vendor_service_request_status, which independently
+  // re-derives and verifies the caller's attendee identity via
+  // resolve_temporary_or_authenticated_attendee and re-proves ownership
+  // by attendee_id + event_id -- never by a browser-supplied claim. This
+  // mirrors loadRequests' own dual-path pattern exactly: a bearer token
+  // is forwarded when a Supabase Auth session exists, but is never
+  // required, since the supported event-code member path never
+  // establishes one.
+  async function patchRequestStatus(
+    id: string,
+    nextStatus: "cancelled" | "new",
+  ): Promise<string> {
+    if (typeof window === "undefined") {
+      throw new Error("No member session found.");
+    }
+
+    const rawEvent = localStorage.getItem("fcoc-member-event-context");
+    const memberEmail = localStorage.getItem("fcoc-member-email");
+
+    if (!rawEvent) {
+      throw new Error("No member session found.");
+    }
+
+    const event = JSON.parse(rawEvent);
+    if (!event?.id) {
+      throw new Error("No event selected.");
+    }
+
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
-
-    if (!accessToken) {
-      throw new Error("Your session has expired. Please sign in again.");
-    }
 
     const response = await fetch("/api/member/vendor-requests", {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      body: JSON.stringify({ requestId: id, nextStatus }),
+      body: JSON.stringify(
+        buildStatusChangeBody(id, nextStatus, event, memberEmail),
+      ),
     });
 
+    const failureMessage =
+      nextStatus === "cancelled"
+        ? "Could not cancel your request."
+        : "Could not restore your request.";
+
     if (!response.ok) {
-      throw new Error(
-        nextStatus === "cancelled"
-          ? "Could not cancel your request."
-          : "Could not restore your request.",
-      );
+      throw new Error(failureMessage);
     }
+
+    const updatedStatus = parseStatusChangeResponseData(await response.json());
+
+    if (!updatedStatus) {
+      // Fail closed: a 2xx response with no recognizable updated status is
+      // a protocol violation -- never assumed from the requested
+      // nextStatus.
+      throw new Error(failureMessage);
+    }
+
+    return updatedStatus;
   }
 
   async function cancelRequest(id: string) {
     try {
       setError(null);
-      await patchRequestStatus(id, "cancelled");
+      const updatedStatus = await patchRequestStatus(id, "cancelled");
 
       setRequests((prev) =>
         prev.map((r) =>
-          r.id === id ? { ...r, request_status: "cancelled" } : r,
+          r.id === id ? { ...r, request_status: updatedStatus } : r,
         ),
       );
     } catch (err) {
@@ -272,10 +367,12 @@ function MyRequestsInner() {
   async function undoCancelRequest(id: string) {
     try {
       setError(null);
-      await patchRequestStatus(id, "new");
+      const updatedStatus = await patchRequestStatus(id, "new");
 
       setRequests((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, request_status: "new" } : r)),
+        prev.map((r) =>
+          r.id === id ? { ...r, request_status: updatedStatus } : r,
+        ),
       );
     } catch (err) {
       console.error("undo cancel request error:", err);
