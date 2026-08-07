@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import {
   type CSSProperties,
   useCallback,
@@ -33,7 +32,7 @@ type EventContext = {
 
 type ReviewSeverity = "error" | "warning";
 
-type AttendeeRow = {
+export type AttendeeRow = {
   id: string;
   event_id: string;
   entry_id: string | null;
@@ -101,7 +100,7 @@ type ValidationRule = {
   applies_to_event_id: string | null;
 };
 
-type AttendeeEditorState = {
+export type AttendeeEditorState = {
   id: string | null;
   pilot_first: string;
   pilot_last: string;
@@ -143,6 +142,12 @@ type AttendeeEditorState = {
   // applicable to create mode (always false there).
   had_copilot_at_load: boolean;
   had_additional_at_load: boolean;
+  // The Co-Pilot's / Additional Participant's display name as loaded, used
+  // only to name them in the removal-confirmation prompt if their fields
+  // are cleared before Save -- never written back, never used to infer
+  // identity. Empty when no such household member existed at load.
+  copilot_name_at_load: string;
+  additional_name_at_load: string;
   // Optional operational note attached to a capacity adjustment, if any
   // occurs this save. EpicentraX does not ask how a slot was authorized or
   // record payment information -- this is purely an optional free-text
@@ -325,7 +330,7 @@ function validateField(
   return null;
 }
 
-function emptyAttendeeEditorState(): AttendeeEditorState {
+export function emptyAttendeeEditorState(): AttendeeEditorState {
   return {
     id: null,
     pilot_first: "",
@@ -352,6 +357,8 @@ function emptyAttendeeEditorState(): AttendeeEditorState {
     registration_capacity_original: null,
     had_copilot_at_load: false,
     had_additional_at_load: false,
+    copilot_name_at_load: "",
+    additional_name_at_load: "",
     capacity_increase_note: "",
     primary_phone: "",
     cell_phone: "",
@@ -404,6 +411,10 @@ function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
     // once the actual attendee_household_members rows are known.
     had_copilot_at_load: false,
     had_additional_at_load: false,
+    // Overwritten immediately after this call in openEditAttendeeEditor,
+    // alongside had_copilot_at_load/had_additional_at_load above.
+    copilot_name_at_load: "",
+    additional_name_at_load: "",
     capacity_increase_note: "",
     primary_phone: attendee.primary_phone || "",
     cell_phone: attendee.cell_phone || "",
@@ -423,6 +434,82 @@ function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
     entry_id: attendee.entry_id || "",
     notes: attendee.notes || "",
   };
+}
+
+export type HouseholdRemovalWarning = {
+  role: "copilot" | "additional";
+  name: string;
+};
+
+// Pure decision gate: given the editor's loaded-vs-current household
+// state, determines which household-member rows this save would silently
+// hard-delete (per syncHouseholdMembers's own clear-the-row-when-empty
+// behavior), so the save flow can require explicit confirmation before any
+// write occurs rather than deleting a person record because a field was
+// cleared. Exported so this decision logic is directly unit-testable
+// without needing to drive the full save flow.
+export function computeHouseholdRemovalWarnings(
+  editorMode: "create" | "edit",
+  state: AttendeeEditorState,
+): HouseholdRemovalWarning[] {
+  if (editorMode !== "edit") {
+    return [];
+  }
+
+  const hasCopilot =
+    state.copilot_first.trim() !== "" ||
+    state.copilot_last.trim() !== "" ||
+    state.copilot_email.trim() !== "";
+  const hasAdditional =
+    (state.additional_first_name ?? "").trim() !== "" ||
+    (state.additional_last_name ?? "").trim() !== "" ||
+    (state.additional_email ?? "").trim() !== "" ||
+    (state.additional_nickname ?? "").trim() !== "" ||
+    (state.additional_cell_phone ?? "").trim() !== "";
+
+  const warnings: HouseholdRemovalWarning[] = [];
+
+  if (state.had_copilot_at_load && !hasCopilot) {
+    warnings.push({
+      role: "copilot",
+      name: state.copilot_name_at_load || "the Co-Pilot",
+    });
+  }
+
+  if (state.had_additional_at_load && !hasAdditional) {
+    warnings.push({
+      role: "additional",
+      name: state.additional_name_at_load || "the Additional Participant",
+    });
+  }
+
+  return warnings;
+}
+
+const HOUSEHOLD_ROLE_LABEL: Record<HouseholdRemovalWarning["role"], string> = {
+  copilot: "Co-Pilot",
+  additional: "Additional Participant",
+};
+
+// Builds the exact, specific confirmation prompt for a pending
+// household-member removal -- deliberately names who is being removed and
+// what will happen, per this task's explicit prohibition on vague
+// "Are you sure?" wording.
+export function buildHouseholdRemovalConfirmMessage(
+  warnings: HouseholdRemovalWarning[],
+): string {
+  const names = warnings
+    .map((w) => `${w.name} (${HOUSEHOLD_ROLE_LABEL[w.role]})`)
+    .join(" and ");
+
+  const pronoun = warnings.length === 1 ? "them" : "both";
+
+  return (
+    `This save will permanently remove ${names} as a household member on ` +
+    `this attendee record, because their information was cleared from the ` +
+    `form. This cannot be undone from here.\n\n` +
+    `Continue and remove ${pronoun}?`
+  );
 }
 
 // Normalized event-status helpers
@@ -544,6 +631,33 @@ function formatDateRange(startDate?: string | null, endDate?: string | null) {
     return `${startDate} – ${endDate}`;
   }
   return startDate || endDate || "";
+}
+
+// Surfaces cancellation metadata the record already stores but the UI
+// previously fetched and never displayed. Returns null for a non-cancelled
+// record so this never appears outside the one context where it is
+// relevant (Know More / Show Less).
+export function formatCancellationDetail(
+  attendee: Pick<
+    AttendeeRow,
+    "registration_status" | "cancelled_at" | "cancellation_reason"
+  >,
+): string | null {
+  if (attendee.registration_status !== "cancelled") {
+    return null;
+  }
+
+  const when = attendee.cancelled_at
+    ? new Date(attendee.cancelled_at).toLocaleString()
+    : null;
+
+  const parts = [when ? `Cancelled ${when}` : "Cancelled"];
+
+  if (attendee.cancellation_reason) {
+    parts.push(attendee.cancellation_reason);
+  }
+
+  return parts.join(" — ");
 }
 
 function participantTypeLabel(value?: string | null) {
@@ -849,13 +963,15 @@ function FilterBar(props: {
   );
 }
 
-function QuickActionBar(props: {
+export function QuickActionBar(props: {
+  canEdit: boolean;
   onAddAttendee: () => void;
   onSetReviewMode: () => void;
   onSetAllMode: () => void;
   onRefresh: () => void;
 }) {
-  const { onAddAttendee, onSetReviewMode, onSetAllMode, onRefresh } = props;
+  const { canEdit, onAddAttendee, onSetReviewMode, onSetAllMode, onRefresh } =
+    props;
 
   return (
     <div
@@ -875,6 +991,7 @@ function QuickActionBar(props: {
           type="button"
           onClick={onAddAttendee}
           style={primaryButtonStyle}
+          disabled={!canEdit}
         >
           + Add Attendee
         </button>
@@ -903,8 +1020,99 @@ function QuickActionBar(props: {
   );
 }
 
+// Shared action-button row for one attendee, used identically by both
+// ReviewQueue and AttendeeList (previously two independently-drifted
+// implementations -- one horizontal-scroll-only, one wrapping). Both
+// consumers now share one layout, one responsive behavior, and one
+// permission-gating rule. `showBackToPending` and `viewToggle` are the
+// only two points of legitimate difference between the two contexts;
+// no action was added or removed from either context's existing set.
+export function AttendeeActionRow(props: {
+  attendee: AttendeeRow;
+  canEdit: boolean;
+  showBackToPending: boolean;
+  viewToggle?: { isExpanded: boolean; onToggle: () => void };
+  onOpenEdit: (attendee: AttendeeRow) => void;
+  onUpdateDataStatus: (
+    attendeeId: string,
+    nextStatus: string,
+  ) => Promise<void>;
+  onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
+}) {
+  const {
+    attendee,
+    canEdit,
+    showBackToPending,
+    viewToggle,
+    onOpenEdit,
+    onUpdateDataStatus,
+    onCancelRegistration,
+  } = props;
+
+  return (
+    <div style={actionRowStyle}>
+      {viewToggle ? (
+        <button
+          type="button"
+          onClick={viewToggle.onToggle}
+          style={secondaryButtonStyle}
+        >
+          {viewToggle.isExpanded ? "Hide Details" : "View Details"}
+        </button>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => onOpenEdit(attendee)}
+        style={secondaryButtonStyle}
+      >
+        Edit Record
+      </button>
+
+      <button
+        type="button"
+        disabled={!canEdit}
+        onClick={() => void onUpdateDataStatus(attendee.id, "reviewed")}
+        style={secondaryButtonStyle}
+      >
+        Mark Reviewed
+      </button>
+
+      <button
+        type="button"
+        disabled={!canEdit}
+        onClick={() => void onCancelRegistration(attendee)}
+        style={secondaryButtonStyle}
+      >
+        Cancel Registration
+      </button>
+
+      <button
+        type="button"
+        disabled={!canEdit}
+        onClick={() => void onUpdateDataStatus(attendee.id, "locked")}
+        style={secondaryButtonStyle}
+      >
+        Lock Record
+      </button>
+
+      {showBackToPending ? (
+        <button
+          type="button"
+          disabled={!canEdit}
+          onClick={() => void onUpdateDataStatus(attendee.id, "pending")}
+          style={secondaryButtonStyle}
+        >
+          Back To Pending
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function ReviewQueue(props: {
   loading: boolean;
+  canEdit: boolean;
   filteredReviewItems: ReviewItem[];
   visibleReviewItems: ReviewItem[];
   drafts: Record<string, string>;
@@ -919,6 +1127,7 @@ function ReviewQueue(props: {
 }) {
   const {
     loading,
+    canEdit,
     filteredReviewItems,
     visibleReviewItems,
     drafts,
@@ -1095,7 +1304,7 @@ function ReviewQueue(props: {
                       }}
                       placeholder="Must begin with F or C"
                       style={inputStyle}
-                      disabled={saving}
+                      disabled={saving || !canEdit}
                     />
                   </div>
 
@@ -1103,7 +1312,7 @@ function ReviewQueue(props: {
                     type="button"
                     onClick={() => void onSaveMembership(item)}
                     style={primaryButtonStyle}
-                    disabled={saving}
+                    disabled={saving || !canEdit}
                   >
                     {saving ? "Saving..." : "Save Correction"}
                   </button>
@@ -1119,61 +1328,14 @@ function ReviewQueue(props: {
                   {` • Data Status: ${dataStatusLabel(attendee.data_status)}`}
                 </div>
 
-                <div
-                  style={{
-                    marginTop: 12,
-                    display: "flex",
-                    gap: 10,
-                    flexWrap: "nowrap",
-                    overflowX: "auto",
-                    WebkitOverflowScrolling: "touch",
-                    paddingBottom: 6,
-                    marginBottom: -2,
-                    scrollbarWidth: "thin",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onOpenEdit(attendee)}
-                    style={secondaryButtonStyle}
-                  >
-                    Edit Record
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void onUpdateDataStatus(attendee.id, "reviewed")
-                    }
-                    style={secondaryButtonStyle}
-                  >
-                    Mark Reviewed
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void onCancelRegistration(attendee)}
-                    style={secondaryButtonStyle}
-                  >
-                    Cancel Registration
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void onUpdateDataStatus(attendee.id, "locked")
-                    }
-                    style={secondaryButtonStyle}
-                  >
-                    Lock Record
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void onUpdateDataStatus(attendee.id, "pending")
-                    }
-                    style={secondaryButtonStyle}
-                  >
-                    Back To Pending
-                  </button>
-                </div>
+                <AttendeeActionRow
+                  attendee={attendee}
+                  canEdit={canEdit}
+                  showBackToPending
+                  onOpenEdit={onOpenEdit}
+                  onUpdateDataStatus={onUpdateDataStatus}
+                  onCancelRegistration={onCancelRegistration}
+                />
               </div>
             );
           })}
@@ -1185,6 +1347,7 @@ function ReviewQueue(props: {
 
 function AttendeeList(props: {
   loading: boolean;
+  canEdit: boolean;
   filteredAttendees: AttendeeRow[];
   visibleAttendees: AttendeeRow[];
   reviewItems: ReviewItem[];
@@ -1197,6 +1360,7 @@ function AttendeeList(props: {
 }) {
   const {
     loading,
+    canEdit,
     filteredAttendees,
     visibleAttendees,
     reviewItems,
@@ -1396,54 +1560,19 @@ function AttendeeList(props: {
                     </div>
                   </div>
 
-                  <div
-                    onClick={(event) => event.stopPropagation()}
-                    style={{
-                      marginTop: 12,
-                      display: "flex",
-                      gap: 10,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onToggleExpanded(attendee.id)}
-                      style={secondaryButtonStyle}
-                    >
-                      {isExpanded ? "Hide Details" : "View Details"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onOpenEdit(attendee)}
-                      style={secondaryButtonStyle}
-                    >
-                      Edit Record
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void onUpdateDataStatus(attendee.id, "reviewed")
-                      }
-                      style={secondaryButtonStyle}
-                    >
-                      Mark Reviewed
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void onCancelRegistration(attendee)}
-                      style={secondaryButtonStyle}
-                    >
-                      Cancel Registration
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void onUpdateDataStatus(attendee.id, "locked")
-                      }
-                      style={secondaryButtonStyle}
-                    >
-                      Lock Record
-                    </button>
+                  <div onClick={(event) => event.stopPropagation()}>
+                    <AttendeeActionRow
+                      attendee={attendee}
+                      canEdit={canEdit}
+                      showBackToPending={false}
+                      viewToggle={{
+                        isExpanded,
+                        onToggle: toggleAttendeeDetails,
+                      }}
+                      onOpenEdit={onOpenEdit}
+                      onUpdateDataStatus={onUpdateDataStatus}
+                      onCancelRegistration={onCancelRegistration}
+                    />
                   </div>
 
                   {isExpanded ? (
@@ -1568,6 +1697,24 @@ function AttendeeList(props: {
                           </div>
                         </div>
                       ) : null}
+
+                      {formatCancellationDetail(attendee) ? (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            background: "#fef2f2",
+                            border: "1px solid #fecaca",
+                            fontSize: 13,
+                          }}
+                        >
+                          <strong>Cancellation Details</strong>
+                          <div style={{ marginTop: 4 }}>
+                            {formatCancellationDetail(attendee)}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -1600,11 +1747,12 @@ function AttendeeList(props: {
   );
 }
 
-function AttendeeEditorModal(props: {
+export function AttendeeEditorModal(props: {
   open: boolean;
   mode: "create" | "edit";
   state: AttendeeEditorState;
   saving: boolean;
+  canEdit: boolean;
   onClose: () => void;
   onChange: <K extends keyof AttendeeEditorState>(
     key: K,
@@ -1612,7 +1760,8 @@ function AttendeeEditorModal(props: {
   ) => void;
   onSave: () => Promise<void>;
 }) {
-  const { open, mode, state, saving, onClose, onChange, onSave } = props;
+  const { open, mode, state, saving, canEdit, onClose, onChange, onSave } =
+    props;
   const [showAdditionalParticipant, setShowAdditionalParticipant] =
     useState(false);
 
@@ -2192,7 +2341,7 @@ function AttendeeEditorModal(props: {
             type="button"
             onClick={() => void onSave()}
             style={primaryButtonStyle}
-            disabled={saving}
+            disabled={saving || !canEdit}
           >
             {saving
               ? "Saving..."
@@ -2206,86 +2355,18 @@ function AttendeeEditorModal(props: {
   );
 }
 
-function ReportsEmbedPanel() {
-  return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Reports</h2>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          Reporting and exports for the selected event.
-        </div>
-      </div>
-
-      <iframe
-        title="Reports"
-        src="/admin/reports?embedded=1"
-        style={{
-          width: "100%",
-          minHeight: "2200px",
-          border: "none",
-          display: "block",
-          background: "white",
-        }}
-      />
-    </div>
-  );
-}
-function ImportsEmbedPanel() {
-  return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Imports</h2>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          Import attendee and registration data for the selected event.
-        </div>
-      </div>
-
-      <iframe
-        title="Imports"
-        src="/admin/imports?embedded=1"
-        style={{
-          width: "100%",
-          minHeight: "2600px",
-          border: "none",
-          display: "block",
-          background: "white",
-        }}
-      />
-    </div>
-  );
-}
-
-function ValidationRulesEmbedPanel() {
-  return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Validation Rules</h2>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          Review and maintain the rules used to flag attendee data.
-        </div>
-      </div>
-
-      <iframe
-        title="Validation Rules"
-        src="/admin/validation-rules?embedded=1"
-        style={{
-          width: "100%",
-          minHeight: "2200px",
-          border: "none",
-          display: "block",
-          background: "white",
-        }}
-      />
-    </div>
-  );
-}
-
 function AdminAttendeesPageInner() {
   console.count("ATTENDEES RENDER");
   const storedPrefs = useMemo(() => getStoredAttendeeCommandCenterPrefs(), []);
   const { admin } = useAdmin();
   const adminRef = useRef(admin);
-  const router = useRouter();
+  // UI defense-in-depth only, per the same governed mechanism Sidebar.tsx
+  // and AdminRouteGuard already use -- this does not replace backend
+  // authorization (RLS remains the actual enforcement boundary). Fails
+  // closed while admin access is still resolving (hasPermission(null, ...)
+  // is false), so mutation controls never appear enabled before a real
+  // permission decision exists.
+  const canEditAttendees = hasPermission(admin, "can_edit_attendees");
 
   useEffect(() => {
     adminRef.current = admin;
@@ -3249,6 +3330,15 @@ created_at
 
     nextState.had_copilot_at_load = !!copilot;
     nextState.had_additional_at_load = !!additional;
+    nextState.copilot_name_at_load =
+      fullName(attendee.copilot_first, attendee.copilot_last) ||
+      copilot?.email ||
+      "";
+    nextState.additional_name_at_load = additional
+      ? fullName(additional.first_name, additional.last_name) ||
+        additional.email ||
+        ""
+      : "";
 
     setEditorState(nextState);
     setEditorOpen(true);
@@ -3287,6 +3377,28 @@ created_at
       setError("Pilot first or last name is required.");
       setStatus("Save blocked.");
       return;
+    }
+
+    // Household-member deletion must never happen silently: if clearing
+    // the Co-Pilot / Additional Participant fields would cause
+    // syncHouseholdMembers to hard-delete that row below, require explicit,
+    // specific confirmation first. Declining aborts the entire save before
+    // any write occurs, so the existing household member (and every other
+    // field on this record) is left exactly as stored.
+    const pendingRemovals = computeHouseholdRemovalWarnings(
+      editorMode,
+      editorState,
+    );
+
+    if (pendingRemovals.length > 0) {
+      const confirmedRemoval = window.confirm(
+        buildHouseholdRemovalConfirmMessage(pendingRemovals),
+      );
+
+      if (!confirmedRemoval) {
+        setStatus("Save cancelled. No changes were made.");
+        return;
+      }
     }
 
     // --- Compute participant capacity ---
@@ -3691,50 +3803,11 @@ created_at
         ) : null}
 
         {!loading && error ? <div style={errorBoxStyle}>{error}</div> : null}
-        <div
-          style={{
-            marginTop: 14,
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => router.push("/admin/attendees")}
-            style={primaryButtonStyle}
-          >
-            Attendee Management
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.push("/admin/reports")}
-            style={secondaryButtonStyle}
-          >
-            Reports
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.push("/admin/imports")}
-            style={secondaryButtonStyle}
-          >
-            Imports
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.push("/admin/validation-rules")}
-            style={secondaryButtonStyle}
-          >
-            Validation Rules
-          </button>
-        </div>
       </div>
 
       <>
         <QuickActionBar
+          canEdit={canEditAttendees}
           onAddAttendee={openCreateAttendeeEditor}
           onSetReviewMode={() => {
             setViewMode("review");
@@ -3771,16 +3844,6 @@ created_at
               <div style={{ fontSize: 14, opacity: 0.8 }}>
                 One-stop attendee management for the selected event.
               </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={openCreateAttendeeEditor}
-                style={primaryButtonStyle}
-              >
-                Add Attendee Record
-              </button>
             </div>
 
             <SummaryCards items={summaryItems.slice(0, 6)} />
@@ -3927,6 +3990,7 @@ created_at
         {showReviewQueue ? (
           <ReviewQueue
             loading={loading}
+            canEdit={canEditAttendees}
             filteredReviewItems={filteredReviewItems}
             visibleReviewItems={visibleReviewItems}
             drafts={drafts}
@@ -3943,6 +4007,7 @@ created_at
 
         <AttendeeList
           loading={loading}
+          canEdit={canEditAttendees}
           filteredAttendees={filteredAttendees}
           visibleAttendees={visibleAttendees}
           reviewItems={reviewItems}
@@ -3960,6 +4025,7 @@ created_at
         mode={editorMode}
         state={editorState}
         saving={editorSaving}
+        canEdit={canEditAttendees}
         onClose={closeAttendeeEditor}
         onChange={updateEditorField}
         onSave={handleSaveAttendeeRecord}
@@ -4019,6 +4085,17 @@ const secondaryButtonStyle: CSSProperties = {
   fontWeight: 700,
   lineHeight: 1.2,
   cursor: "pointer",
+};
+
+// Shared by AttendeeActionRow in both its ReviewQueue and AttendeeList
+// usages -- always wraps, never depends on horizontal scrolling, matching
+// the wrapping behavior AttendeeList's row already used (this replaces
+// ReviewQueue's own prior horizontal-scroll-only row).
+const actionRowStyle: CSSProperties = {
+  marginTop: 12,
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
 };
 
 const statusBoxStyle: CSSProperties = {
