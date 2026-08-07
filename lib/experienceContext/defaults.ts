@@ -1,0 +1,77 @@
+import type {
+  CollectSharedExperienceContextInput,
+  SharedExperienceContext,
+} from "@/lib/experienceContext/types";
+
+function computeEventDayNumber(
+  startDate: string | null,
+  now: Date,
+): number | null {
+  if (!startDate) {
+    return null;
+  }
+
+  const start = new Date(startDate);
+  if (Number.isNaN(start.getTime())) {
+    return null;
+  }
+
+  const startDay = new Date(
+    start.getFullYear(),
+    start.getMonth(),
+    start.getDate(),
+  );
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayNumber =
+    Math.round((today.getTime() - startDay.getTime()) / 86400000) + 1;
+
+  return dayNumber < 1 ? null : dayNumber;
+}
+
+export function buildCanonicalEventSlice(
+  input: CollectSharedExperienceContextInput,
+): SharedExperienceContext["event"] {
+  const { event, now } = input;
+
+  return {
+    id: event.id,
+    name: event.name,
+    location: event.location,
+    startDate: event.start_date,
+    endDate: event.end_date,
+    dayNumber: computeEventDayNumber(event.start_date, now),
+    // No authoritative event-phase source exists yet. See the
+    // architecture document.
+    phase: null,
+  };
+}
+
+export function buildCanonicalMemberSlice(
+  input: CollectSharedExperienceContextInput,
+): SharedExperienceContext["member"] {
+  return {
+    attendeeId: input.attendeeId,
+    participantCapacity: input.participantCapacity,
+    participantCount: input.participantCount,
+    checkedIn: input.checkedIn,
+  };
+}
+
+export function buildCanonicalBaseSharedExperienceContext(
+  input: CollectSharedExperienceContextInput,
+): SharedExperienceContext {
+  return {
+    generatedAt: input.now.toISOString(),
+    event: buildCanonicalEventSlice(input),
+    member: buildCanonicalMemberSlice(input),
+    agenda: {
+      currentItem: null,
+      nextItem: null,
+    },
+    announcements: { activeCount: null },
+    // No governed member-facing read path exists for public.assignments
+    // yet. See the architecture document.
+    assignments: { activeCount: null },
+    vendorRequests: { openCount: null },
+  };
+}
