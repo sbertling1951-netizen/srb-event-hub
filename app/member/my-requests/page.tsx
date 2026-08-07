@@ -11,10 +11,6 @@ type RequestVendorRow = {
 
 type RequestRow = {
   id: string;
-  event_id: string | null;
-  requester_email: string | null;
-  requester_name: string | null;
-  requester_phone: string | null;
   site_number: string | null;
   requested_service: string | null;
   guest_count: number | null;
@@ -23,6 +19,36 @@ type RequestRow = {
   created_at: string | null;
   vendors?: RequestVendorRow | RequestVendorRow[] | null;
 };
+
+// Matches the governed GET /api/member/vendor-requests response row shape
+// (app/api/member/vendor-requests/interpretVendorRequestRpcRows.ts) --
+// flat vendor_business_name, not a nested `vendors` relation, since this
+// Provider-shaped read goes through the RPC's own normalized columns, not
+// a PostgREST embed. Only the fields this page actually renders are
+// declared.
+type VendorRequestApiRow = {
+  id: string;
+  vendor_business_name: string | null;
+  requested_service: string | null;
+  guest_count: number | null;
+  request_notes: string | null;
+  request_status: string | null;
+  created_at: string | null;
+  site_number: string | null;
+};
+
+export function toRequestRow(row: VendorRequestApiRow): RequestRow {
+  return {
+    id: row.id,
+    site_number: row.site_number,
+    requested_service: row.requested_service,
+    guest_count: row.guest_count,
+    request_notes: row.request_notes,
+    request_status: row.request_status,
+    created_at: row.created_at,
+    vendors: { business_name: row.vendor_business_name },
+  };
+}
 
 function statusBadgeStyle(status: string): React.CSSProperties {
   const normalized = status.toLowerCase();
@@ -133,35 +159,56 @@ function MyRequestsInner() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("vendor_service_requests")
-        .select(
-          `
-          id,
-          event_id,
-          requester_email,
-          requester_name,
-          requester_phone,
-          site_number,
-          requested_service,
-          guest_count,
-          request_notes,
-          request_status,
-          created_at,
-          vendors (
-            business_name
-          )
-        `,
-        )
-        .eq("event_id", event.id)
-        .eq("requester_email", memberEmail)
-        .order("created_at", { ascending: false });
+      // Governed read boundary: GET /api/member/vendor-requests ->
+      // public.get_my_vendor_service_requests, which independently
+      // re-derives and verifies the caller's attendee identity via
+      // resolve_temporary_or_authenticated_attendee. This page supplies
+      // only the same operational evidence app/member/vendor-signup
+      // /page.tsx already sends (event id/code, a registration
+      // identifier) -- never a trusted ownership claim of its own -- and
+      // performs no Person, Tenant, attendee, or ownership resolution
+      // itself.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
 
-      if (error) {
-        throw error;
+      const params = new URLSearchParams({ eventId: event.id });
+      if (event.event_code) {
+        params.set("eventCode", event.event_code);
+      }
+      if (memberEmail) {
+        params.set("registrationIdentifier", memberEmail);
       }
 
-      const rows = (data || []) as RequestRow[];
+      const response = await fetch(
+        `/api/member/vendor-requests?${params.toString()}`,
+        accessToken
+          ? { headers: { Authorization: `Bearer ${accessToken}` } }
+          : undefined,
+      );
+
+      if (!response.ok) {
+        // Covers invalid_session (identity could not be resolved) and
+        // transient_error alike -- both are a failed read, never a
+        // confirmed zero. The route's repaired boundary
+        // (20260807150000_repair_governed_member_vendor_request_read_
+        // boundary.sql) guarantees a resolver failure is never returned
+        // as a 200 empty result.
+        throw new Error("Could not load your requests.");
+      }
+
+      const payload = (await response.json()) as {
+        status?: string;
+        data?: VendorRequestApiRow[];
+      };
+
+      if (payload.status !== "resolved") {
+        // Fail closed: a 2xx response that isn't the recognized
+        // "resolved" shape is a protocol violation, never guessed at or
+        // treated as a confirmed zero.
+        throw new Error("Could not load your requests.");
+      }
+
+      const rows = (payload.data ?? []).map(toRequestRow);
       setRequests(rows);
       setStatus(
         `Loaded ${rows.length} service request${rows.length === 1 ? "" : "s"}.`,
