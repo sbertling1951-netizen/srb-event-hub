@@ -90,7 +90,11 @@ export function buildCanonicalBaseSharedExperienceContext(
     // with a governed count; null remains the fallback whenever
     // Assignment context is unavailable (provider not yet run, or failed
     // -- see EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md).
-    assignments: { activeCount: null },
+    assignments: {
+      activeCount: null,
+      evidenceQuality: "unavailable",
+      observedAt: null,
+    },
     vendorRequests: { openCount: null },
   };
 }

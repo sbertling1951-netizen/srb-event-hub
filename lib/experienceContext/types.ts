@@ -71,9 +71,17 @@ export type SharedExperienceContext = {
     observedAt: string | null;
   };
   assignments: {
-    // Always null in Stage 1: no governed member-facing read path exists
-    // for public.assignments.
+    // null means unavailable -- either a genuine collection failure, or
+    // the governed API's own explicit "identity_unavailable" outcome
+    // (see EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md).
+    // Never conflated with a governed-confirmed zero.
     activeCount: number | null;
+    evidenceQuality: SliceEvidenceQuality;
+    // See docs/architecture/EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md
+    // ("Freshness"). null means nothing was actually observed this pass
+    // -- never a fabricated observation time. Deliberately independent
+    // of evidenceQuality; no staleness threshold is computed from it.
+    observedAt: string | null;
   };
   vendorRequests: {
     openCount: number | null;
