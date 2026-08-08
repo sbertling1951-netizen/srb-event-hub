@@ -143,6 +143,31 @@ classification result inconsistent with ordinary parking inventory shape,
 shall automatically resolve to Excluded pending human review, rather than
 being processed automatically regardless of its apparent eligibility.
 
+### Classification Precedence
+
+Candidate analysis shall apply the following decision order. Each examined
+row receives exactly one final classification; a group classification always
+precedes consideration of standalone Direct Repair eligibility.
+
+1. **Excluded** — structural or anomalous overlapping group membership.
+2. **Identity Conflict** — Physical Equivalence holds, but Identity
+   Equivalence fails.
+3. **Occupied Conflict** — Physical and Identity Equivalence both hold, and
+   one or more group members is occupied.
+4. **Duplicate Survivor / Duplicate Retirement** — Physical and Identity
+   Equivalence both hold and every group member is vacant; apply the
+   Deterministic Survivor Rule to assign the survivor and each retirement.
+5. **Metadata Conflict** — the deterministic Metadata Conflict anchor in
+   §11 holds, but Physical Equivalence fails.
+6. **Direct Repair** — the row belongs to no qualifying group and standalone
+   Direct Repair eligibility is proven.
+7. **Excluded** — every residual or otherwise unproven outcome.
+
+No row may proceed to Direct Repair merely because it is also capable of a
+standalone match; group classification is evaluated first. This order does
+not relax any automatic-repair condition: any condition that cannot be
+proven resolves fail-closed to Excluded.
+
 ## 7. Physical Inventory Equivalence
 
 **Comparison Scope:**
@@ -268,19 +293,32 @@ Not every candidate duplicate group qualifies for the Deterministic
 Survivor Rule. Two conflict classes are recorded separately and never
 automatically resolved:
 
-- **Metadata Conflict** — two or more rows that plausibly represent the
-  same physical site but differ in at least one Inventory Equivalence
-  Field. Because Retire Duplicate Row condition 3 cannot be proven, no row
-  in the group is retired.
-- **Occupied Conflict** — two or more rows that would otherwise qualify
-  under the Deterministic Survivor Rule, except that one or more rows in
-  the group is currently occupied by an attendee. Because Retire Duplicate
-  Row condition 1 cannot be proven for the occupied row, no row in the
-  group is retired.
+- **Metadata Conflict** — two or more rows form a candidate Metadata Conflict
+  group only when they have the same `event_id`, every row has a non-null
+  `site_number`, and `site_number` is exactly equal across the group, but the
+  rows are not already a Physical Equivalence group under §7 because at
+  least one of `display_label`, `map_x`, `map_y`, or `map_image_url` differs.
+  A null `site_number` can never anchor a Metadata Conflict group. Rows that
+  merely appear similar but lack this exact anchor are never grouped
+  heuristically; they continue through independent classification and
+  otherwise resolve to Excluded. Because Retire Duplicate Row condition 3
+  cannot be proven, no row in a Metadata Conflict group is retired.
+- **Occupied Conflict** — evaluated only after Physical Equivalence and
+  Identity Equivalence have both been established. It consists of two or
+  more rows that would otherwise qualify under the Deterministic Survivor
+  Rule, except that one or more rows in the group is currently occupied by
+  an attendee. Because Retire Duplicate Row condition 1 cannot be proven
+  for the occupied row, no row in the group is retired.
 
 Both classes are recorded in full, with their group membership and the
 specific condition each failed, for separately governed resolution. This
 plan does not decide that resolution.
+
+**Implementation consequence:** Once this amendment is accepted,
+`_repair_detect_remaining_candidates` requires follow-up hardening so
+Metadata Conflict rows are not incorrectly counted as remaining Direct Repair
+candidates. This is a safe-direction implementation consequence, not an
+architecture blocker.
 
 ## 12. Approved Immutable Repair Manifest
 
