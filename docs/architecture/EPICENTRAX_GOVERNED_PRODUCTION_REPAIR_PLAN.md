@@ -1,7 +1,9 @@
 # EpicentraX Governed Production Repair Plan — Parking Inventory Duplicate Consolidation
 
-**Status:** Proposed
-**Date:** August 8, 2026
+**Status:** Accepted
+
+**Acceptance Date:** August 8, 2026
+
 **Governing architecture:** `EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md`,
 `EPICENTRAX_SITE_PLACEMENT_IMPLEMENTATION_SPECIFICATION.md`
 
