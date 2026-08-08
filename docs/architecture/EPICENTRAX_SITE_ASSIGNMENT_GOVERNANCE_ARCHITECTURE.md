@@ -1,544 +1,222 @@
 # EpicentraX Site Assignment Governance Architecture
 
-**Status:** Proposed v1.0
-**Date:** August 7, 2026
+**Status:** Accepted v1.1
+**Date:** August 8, 2026
 
 ## 1. Purpose
 
-Define the single authoritative pathway for assigning, reassigning,
-correcting, releasing, and later verifying an attendee's physical
-parking site — before any existing write path is changed. This document
-is architecture and evidence only; it creates no RPC, migration, or UI
-change, and it does not decide the one question current governance
-genuinely does not answer (attendee self-reporting authority, §10) —
-that question is reported, not resolved.
+This proposed architecture defines the single authoritative pathway for an
+attendee's current physical parking site. It resolves the remaining policy
+question: attendee-entered site information is reported evidence, never an
+independent authoritative placement.
 
-**Naming note, read first:** this document deliberately avoids
-"Assignment" as this concept's head noun. ADR-011 §8 and
-`EPICENTRAX_DOMAIN_MODEL.md` already use "Parking" as the name of a
-staff **Responsibility** (Person × Event × Responsibility, per ADR-012
-§3's Assignment row) — a Person can already be *assigned to* "Parking"
-duty. That is a wholly different concept from an *attendee* occupying a
-*physical site*. Calling this new concept "Parking Assignment" would
-collide, in vocabulary only, with an already-Accepted concept. This
-document names it **Site Placement** throughout, and the proposed
-operation is `record_site_placement`, specifically to keep the two
-concepts unmistakable from each other.
+This document is architectural. It specifies ownership, authority, evidence,
+invariants, and audit requirements. It creates no schema, migration, RPC, UI,
+API, or implementation change.
 
-## 2. Current Problem
+## 2. Terminology
 
-Three admin surfaces and one member-facing surface each independently
-write `attendees.assigned_site`, `attendees.has_arrived` /
-`arrival_status`, and `parking_sites.assigned_attendee_id`, with no
-shared code and no shared authoritative operation:
+**Site Placement** is Event-owned Operational Context: the current, governed
+determination of where an attendee's coach is placed. It is distinct from the
+existing Parking Responsibility, which is a staff duty, and from an attendee's
+Participation, which establishes that the person is attending the Event.
 
-- `app/admin/attendees/page.tsx`'s editor writes `attendees` directly,
-  including `assigned_site` and `has_arrived`, with **no corresponding
-  `parking_sites` write and no prior-occupant handling at all** —
-  already identified as a data-integrity risk in
-  `EPICENTRAX_ATTENDEES_MODULE_REFACTOR_AUDIT.md` Section B.
-- `app/admin/checkin/page.tsx`'s `saveCheckin()` writes both tables and
-  clears the prior occupant, independently implemented.
-- `app/admin/parking/page.tsx`'s `assignAttendeeToSite()`/`clearSite()`/
-  `setArrivalStatus()` write both tables and clear the prior occupant,
-  independently implemented a third time.
-- `app/member/checkin/page.tsx` → `POST /api/member/checkin` →
-  `public.submit_member_checkin(...)` is a **fourth, genuinely governed
-  and atomic** write path (row-locked, tenant-verified, audited into
-  `member_checkin_audit`) — but it is member self-service only, accepts
-  a free-text site number from the attendee with no inventory
-  validation visible client-side, and is not accounted for in either
-  `EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md`'s or the Attendees audit's
-  duplicate-path analysis.
+**Authoritative placement** is the single current Site Placement determination
+for an attendee. It may be established, changed, cleared, confirmed, or
+corrected only by `record_site_placement`. A confirmation is authoritative as
+an audited determination even when it does not change the current site.
 
-No RPC for **admin/staff-initiated** site placement exists at all. RLS
-on `attendees` is documented (via `20260805150000_create_participant_
-capacity_adjustments.sql`'s own production-evidence note) as row-scoped
-only — any authenticated event-scoped admin may `UPDATE` any column,
-including `assigned_site`/`has_arrived`, directly via REST, with no
-column-level governance. `parking_sites.assigned_attendee_id` has a
-plain foreign key but **no uniqueness constraint** — nothing at the
-database layer prevents two sites from claiming the same attendee, or
-two attendees from sharing one site; today that invariant is upheld
-only by three independently-written, inconsistent application-code
-implementations (and not upheld at all by the Attendees editor's path).
+**Reported placement** is a statement or observation about an attendee's site
+that has not itself determined the current authoritative placement. A member's
+entered site, park-provided information, and an observation made during QR
+verification are reported placement evidence until an authorized actor uses
+the governed operation to determine the authoritative result.
 
-`EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md` (Proposed, not Accepted)
-already names this exact gap as an open, unresolved boundary conflict
-between its Check-In and Parking modules, and explicitly declines to
-resolve it. This document is that resolution.
+**Evidence source** identifies where the information supporting a governed
+determination came from. It does not grant authority and does not create a
+second source of truth.
 
-## 3. Authoritative State Definition
+## 3. Ownership and Sources of Truth
 
-Per ADR-000 Article II, every operation occurs within one of four
-foundational contexts — Identity, Tenant, Authorization, or
-**Operational Context** — each with one authoritative source of truth.
-Site Placement is Operational Context data. Per Article III, "Events
-own their operational records" — Site Placement is owned by the
-governing Event, not by a Person, Tenant, or Relationship concept.
+Site Placement belongs to the governing Event. The authoritative current
+placement is the Event-scoped attendee/site relationship maintained by the
+single governed operation. No page, client, member workflow, scan, cache, or
+audit record may independently maintain or establish a competing current
+placement.
 
-This is a deliberate determination, made here rather than left open:
-**Site Placement does not become a new row in ADR-012 §3's six-concept
-table (Identity/Relationship/Participation/Assignment/Authority/
-Workspace).** It is not a Person-Tenant relationship concept at all —
-an attendee's Participation record establishes *that* they are
-attending; Site Placement is separate, Event-scoped operational state
-about *where* their coach currently is. `EPICENTRAX_DOMAIN_MODEL.md`
-confirms no such concept exists there today (its only "parking"
-reference is the unrelated Responsibility example). No amendment to
-ADR-012 or the Domain Model is required or proposed by this document.
+Historical evidence and placement history are separate from the current
+authoritative placement. They preserve what was reported, observed, decided,
+and by whom; they do not become a parallel current-state source.
 
-The authoritative current state for one attendee, at any moment, is
-exactly: `(assigned_site: text | null, has_arrived: boolean,
-arrival_status: text)` on `attendees`, kept consistent with at most one
-`parking_sites` row per event whose `assigned_attendee_id` equals that
-attendee's id. Authoritative does not mean immutable — it means there
-is exactly one governed pathway by which that current state may change,
-and every prior state remains recoverable as history (§12), never
-overwritten without a trace.
+The architecture does not introduce a new Person-Tenant relationship concept.
+Site Placement remains Event-owned Operational Context data.
 
-## 4. Source of Knowledge vs. Authorized Actor
+## 4. Arrival Is Independent
 
-These are answered separately, per this task's own framing — a
-legitimate real-world knowledge source is not automatically a
-legitimate EpicentraX write actor.
+Arrival answers whether an attendee has arrived. Site Placement answers where
+the attendee is placed. Neither establishes, implies, or clears the other.
 
-| Knowledge source | Has direct system write authority? | Basis |
-| --- | --- | --- |
-| Parking staff | Yes — full authority | Parking's stated mission ("own the spatial assignment of attendees to parking sites") makes staff holding `can_manage_parking` the primary authorized actor, including displacing an existing occupant. |
-| Event Admin | Yes — full authority | Super-admin / event-scoped admin, same governed check (`is_event_scoped_admin`) already used by `record_participant_capacity_increase`. |
-| Check-In staff (Admin surrogate) | Yes — **scoped** authority | Check-In's stated responsibility ("assign or confirm a parking site... in the same motion" as arrival) makes `can_manage_checkin` an authorized actor for a first assignment onto a vacant site, or confirming/correcting the calling attendee's own site — but not for displacing another attendee's already-claimed site without the elevated `can_manage_parking` authority. This is the concrete resolution to the Admin Module Architecture's named open question (§17 item 1 notes this still needs explicit acceptance). |
-| Attendee / driver | **Unresolved** — see §10 | Current code treats them as a direct write actor via `submit_member_checkin`; no governing document has decided this is correct. |
-| RV park staff / park-provided information | No — always mediated | External party, no EpicentraX account or session. Their knowledge must be relayed through an authorized actor (Parking, Check-In, or Admin), who becomes the one who actually records it, citing the park as the evidence source. |
-| Future QR field verification | Authorized staff performing the scan, not the QR code itself | The scan identifies the attendee; the staff member holding it is the actor. See §13. |
+- An attendee may arrive before a site is known.
+- A site may be placed before an attendee arrives.
+- A later site change, correction, confirmation, or clearing does not change
+  Arrival.
+- An Arrival change does not establish, change, clear, confirm, or correct a
+  Site Placement.
 
-**Authoritative write path**: exactly one, regardless of which
-authorized actor invokes it — §7.
+An experience may present Arrival and Site Placement together, but their
+separate state, authority, evidence, and audit meaning must remain intact.
 
-## 5. Current Write-Path Inventory
+## 5. Single Governed Operation
 
-| Path | UI/page | Actor | Mechanism | Tables touched | Prior site cleared? | New occupancy claimed? | Occupant displaced/blocked? | Event scope validated? | Identity validated? | Atomic? | Audited? |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Attendees editor | `app/admin/attendees/page.tsx`, generic `handleSaveAttendeeRecord` | Any admin passing the page's single coarse permission gate | Raw `supabase.from("attendees").update(payload)` | `attendees` only | No | No (`parking_sites` never touched) | No | No (no site/event cross-check) | Implicit (session-scoped RLS row match only) | Single-table write, not multi-table | No |
-| Check-In | `app/admin/checkin/page.tsx`, `saveCheckin()` | `can_manage_checkin` (page-level gate) | Raw `supabase.from(...).update(...)` × 2, hand-written | `attendees`, `parking_sites` | Yes (own hand-written logic) | Yes | Partially — clears previous occupant unconditionally, no conflict check against a third party mid-race | No explicit cross-table event check | Implicit (RLS row match only) | No — two separate `.update()` calls, no transaction/lock | No |
-| Parking | `app/admin/parking/page.tsx`, `assignAttendeeToSite()`/`clearSite()`/`setArrivalStatus()` | `can_manage_parking` (page-level gate) | Raw `supabase.from(...).update(...)` × 2, hand-written, independently from Check-In's version | `attendees`, `parking_sites` | Yes (own hand-written logic, third independent implementation) | Yes | Same partial handling as Check-In, independently coded | No explicit cross-table event check | Implicit (RLS row match only) | No — separate `.update()` calls | No |
-| Member self-check-in | `app/member/checkin/page.tsx` → `POST /api/member/checkin` → `public.submit_member_checkin` | The attendee themselves (authenticated or "temporary"/event-code verified) | `SECURITY DEFINER` RPC, row-locked (`FOR UPDATE`) | `attendees`, `parking_sites`, `member_checkin_audit` | Yes, correctly | Yes, correctly | Yes — refuses to move a site already claimed by a **different verified** attendee | Yes — re-derives Tenant/event ownership server-side | Yes — re-verifies caller identity server-side, never trusts client-asserted IDs | **Yes** — single transaction, row locks | **Yes** — full before/after audit row |
+`record_site_placement` is the sole governed operation that may establish,
+change, clear, confirm, or correct the authoritative current Site Placement.
+It is the single decision boundary for every actor and evidence source.
 
-**No other write path was found.** `app/attendees/[id]/page.tsx` (public
-attendee detail) and `app/member/vendor-signup/page.tsx` (prefills
-`siteNumber` into an unrelated vendor-request field) are read-only with
-respect to `assigned_site`.
+The operation must make an explicit, auditable determination. Its outcomes
+are limited to:
 
-Only one of the four paths (`submit_member_checkin`) meets the atomicity
-and audit bar this document requires of the single governed operation —
-and it is architecturally unsuitable to serve as that operation for
-admin/staff use, because it hard-codes self-service identity
-verification and unconditionally refuses to move another attendee's
-site, with no concept of an administrator acting on someone else's
-behalf or of an explicit, authorized displacement.
+- establish an initial authoritative placement;
+- change or correct an authoritative placement;
+- clear an authoritative placement;
+- confirm the existing authoritative placement without changing it; or
+- reject the requested determination without changing authoritative state.
 
-## 6. Arrival vs. Assignment vs. Reassignment vs. Verification
+The operation may receive reported placement evidence, but receiving evidence
+is not the same as accepting it as the authoritative outcome. A report may be
+recorded, rejected, or result in an authorized placement determination. In all
+cases, the authoritative result comes only from this operation.
 
-These are four distinct governed concepts. None is preserved as
-"the same thing" merely because Check-In's UI updates two of them in
-one user motion:
+No existing member-facing or staff-facing write path is an exception to this
+model. Existing paths that directly establish placement are legacy behavior to
+be brought into conformance by future, separately authorized implementation
+work; this document makes no such change.
 
-- **Can someone arrive before a site is known?** Yes — Check-In's own
-  stated mission ("confirming an attendee has physically arrived") is
-  independent of site; an attendee may check in pending a site
-  assignment.
-- **Can a site change after arrival?** Yes — reassignment routinely
-  happens post-arrival (the RV park relocates a coach, a site turns out
-  to be unusable).
-- **Can a site be corrected without changing arrival?** Yes — fixing a
-  mistyped site number must never touch arrival state.
-- **Can arrival change without changing site?** Yes — Parking may
-  pre-assign a site to someone not yet arrived; Check-In may mark
-  arrival without knowing or touching the site.
-- **Can a later verification confirm an assignment without changing
-  it?** Yes — this is the entire point of §13's field-verification
-  compatibility requirement: confirmation must be recordable as its own
-  event, distinct from a mutation, even when the confirmed value is
-  unchanged.
+## 6. Authority Boundary
 
-All five answers are "yes." The single governed operation (§7) must
-therefore treat Site Placement and Arrival as two independently
-optional state changes composed into one call for UX convenience, never
-as one merged concept — this is Atomic Invariant 10 (§8).
+Authentication establishes the actor's identity. Server-side authorization,
+within the Event's scope, establishes whether that actor may invoke
+`record_site_placement` and what determination the actor may make.
 
-## 7. Single Governed Operation
-
-**No existing RPC already serves this role.** `submit_member_checkin`
-is the only existing atomic, audited operation touching these tables,
-and per §5/§8 above it cannot safely be the canonical admin/staff
-operation without changing its actor model in ways that would weaken
-its own member-facing guarantees. **A new canonical operation is
-required (Phase 10 answer: C).**
-
-Proposed operation: `record_site_placement`, modeled directly on the
-already-Accepted-in-code pattern established by
-`record_participant_capacity_increase`
-(`20260805150000_create_participant_capacity_adjustments.sql`,
-superseded by `20260805160000_align_admin_participant_addition_with_
-capacity.sql`) — `SECURITY DEFINER`, row-locked, server-side
-authorization re-derivation via the existing `is_event_scoped_admin()`
-helper, and a `BEFORE UPDATE` trigger + transaction-local `set_config`
-flag on `attendees` and `parking_sites` closing the direct-REST-PATCH
-bypass that RLS alone cannot close (RLS is row-scoped, not
-column-scoped — the same documented gap that motivated that trigger the
-first time).
-
-Illustrative shape (not final implementation — a future, separately
-authorized migration task):
-
-```text
-record_site_placement(
-  p_event_id uuid,
-  p_attendee_id uuid,
-  p_action text,                    -- 'assign' | 'reassign' | 'release'
-                                     -- | 'correct' | 'confirm'
-  p_site_number text,               -- null only for 'release'
-  p_displace_current_occupant boolean default false,
-  p_change_arrival boolean default false,
-  p_has_arrived boolean default null,
-  p_evidence_source text,           -- 'parking_staff' | 'checkin_staff'
-                                     -- | 'event_admin' | 'attendee_reported'
-                                     -- | 'park_provided'
-                                     -- | 'field_qr_verification'
-  p_note text default null
-) returns <resulting authoritative attendee + site state>
-```
-
-It supports every case Phase 4 requires: first assignment
-(`p_action = 'assign'` onto a vacant site), reassignment/correction
-(`'reassign'`/`'correct'` onto a different site, releasing the prior
-one), clearing (`'release'`, `p_site_number = null`), and confirmation
-of an already-correct assignment (`'confirm'`, no state change, audit
-row only). No caller independently reimplements "clear the prior
-occupant" or "claim the new site" logic — that is the operation's own,
-single implementation.
-
-## 8. Atomic Invariants
-
-The governed operation must enforce, deterministically, every invariant
-this task requires:
-
-1. **One current authoritative site per attendee.** `attendees.
-   assigned_site` is written only by this operation; there is exactly
-   one current value.
-2. **One current occupant per parking site.** Enforced in the function
-   body via the conflict check in Invariant 9, and recommended as a
-   defense-in-depth schema addition (a partial unique index on
-   `parking_sites (event_id, assigned_attendee_id) WHERE
-   assigned_attendee_id IS NOT NULL`) — currently **no such constraint
-   exists at all**; this is a genuine schema gap this document
-   identifies but does not create (no migration is written here).
-3. **Reassignment releases the prior site** — always, within the same
-   transaction, before or atomically with claiming the new one.
-4. **Reassignment claims the new site** — same transaction.
-5. **No half-written state.** Both tables are written inside one
-   `SECURITY DEFINER` function call under row locks (`FOR UPDATE`),
-   exactly as `submit_member_checkin` already proves is possible for
-   this same pair of tables — never two independent `.update()` calls
-   from client code, which is the actual defect already present in all
-   three current admin paths.
-6. **Event mismatch fails closed.** The attendee's `event_id` and the
-   target site's `event_id` must both equal `p_event_id`, re-derived
-   server-side; mismatch raises and aborts.
-7. **Unauthorized actor fails closed.** Server-side re-derivation of
-   `is_event_scoped_admin()` plus the specific permission check from
-   §9 — never a client-asserted role.
-8. **Invalid/nonexistent site fails closed.** The target site must
-   resolve to a real `parking_sites` row scoped to the event (except
-   `'release'`, which is the one explicit, non-error way to reach a
-   null site).
-9. **Correction must not silently overwrite another attendee's valid
-   assignment without an explicit governed rule.** A site already
-   claimed by a *different* attendee fails closed unless
-   `p_displace_current_occupant = true`, which itself requires the
-   caller to hold the elevated `can_manage_parking` authority (§9) —
-   `can_manage_checkin` alone can never displace.
-10. **Arrival state must not be changed unless the requested operation
-    actually includes an arrival change.** `p_change_arrival` gates
-    whether `has_arrived`/`arrival_status`/`checked_in_at` are touched
-    at all — a pure site correction leaves arrival state byte-for-byte
-    unchanged, per §6's determination that these are separate concepts.
-
-## 9. Permission / Authority Boundary
-
-Reuses existing governed mechanisms; invents nothing new:
-
-- **Server-side enforcement**: `is_event_scoped_admin(auth.uid(),
-  event_id)` (already defined, already used by
-  `record_participant_capacity_increase`) plus a specific permission
-  key check, re-derived inside the `SECURITY DEFINER` function on every
-  call — never trusted from the client.
-- **`can_manage_parking`** — full authority: assign, reassign, release,
-  confirm, and displace an existing occupant.
-- **`can_manage_checkin`** — scoped authority: assign onto a vacant
-  site, confirm/correct the record just checked in, change arrival —
-  but `p_displace_current_occupant = true` is rejected server-side for
-  this permission alone.
-- **Super admin / event admin** — full authority, identical to
-  `can_manage_parking`, via the same `isSuperAdmin` short-circuit
-  `hasPermission()` already uses everywhere else.
-- **UI-side gating** is required in addition, mirroring the Stage 6
-  Attendees pass's own "UI defense-in-depth only" discipline — visible
-  controls must reflect `hasPermission(admin, ...)`, but the RPC's own
-  server-side check remains the actual enforcement boundary, exactly as
-  Stage 6's own components state explicitly in their code comments.
-- **RLS is not the enforcement layer for this operation.** Per §2's
-  documented finding that `attendees`' current RLS policy is
-  row-scoped, not column-scoped, the same bypass-closure technique
-  `record_participant_capacity_increase` already established (trigger +
-  transaction-local flag) is the mechanism that closes direct-REST
-  writes to `assigned_site`/`has_arrived`/`arrival_status` and
-  `parking_sites.assigned_attendee_id` — not a new RLS policy, which
-  could not express this column-level, cross-table rule alone.
-
-## 10. Attendee Self-Reporting
-
-**This is a genuine, unresolved governance gap — reported here, not
-decided.** Per this task's own Phase 8 instruction, no answer is
-guessed.
-
-**Current code behavior**: `app/member/checkin/page.tsx` lets an
-attendee type a free-text site number ("Enter your assigned site," no
-client-side validation against real inventory), which
-`submit_member_checkin` writes directly and immediately as the
-authoritative `assigned_site`/`parking_sites.assigned_attendee_id`
-value — Option **A** ("immediately authoritative"), as implemented
-today.
-
-**What existing governance decides**: nothing. `EPICENTRAX_ADAPTIVE_
-UI_ARCHITECTURE.md`, `EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md`, ADR-011,
-ADR-012, and `EPICENTRAX_DOMAIN_MODEL.md` are all silent on whether an
-attendee's own self-reported operational data should be immediately
-authoritative, a reported correction awaiting confirmation, or
-event-policy-configurable. This is a real gap, not an oversight in this
-document's research.
-
-**Non-binding observation for a future, separately authorized
-decision**: Option **B** ("a reported correction requiring governed
-confirmation") is more consistent with this codebase's established
-fail-closed discipline (ADR-000 Article Fundamental Principles;
-`EPICENTRAX_DOMAIN_MODEL.md`'s fail-closed principle) than treating
-unverified, un-cross-checked attendee free text as immediately
-authoritative operational state that other staff then rely on at face
-value. But this document does not decide it. If and when this is
-decided, `record_site_placement`'s `p_evidence_source =
-'attendee_reported'` value is already positioned to carry that
-distinction (e.g., a future policy could require attendee-reported
-placements to enter as `p_action = 'correct'` with a
-`requires_confirmation` state, gated by event policy) without
-requiring a new operation.
-
-## 11. Reassignment / Correction
-
-Reassignment and correction are the *same* operation
-(`record_site_placement` with `p_action = 'reassign'` or `'correct'` —
-the distinction is presentational/audit-labeling only, not a different
-code path), always releasing the prior site and claiming the new one
-atomically (§8, invariants 3–4), always fails closed against silently
-overwriting a different attendee's valid claim (§8, invariant 9), and
-always distinct from an arrival change unless explicitly requested
-(§8, invariant 10). "Correction" carries no different authority
-requirement than "reassignment" — both require the same permission
-class (§9); a "correction" is not a lesser-privileged operation, since
-an incorrect value is exactly as operationally consequential as a
-deliberate reassignment.
-
-## 12. Audit / History
-
-**Existing capability is insufficient, and reuse is not viable
-as-is.** `member_checkin_audit` (`20260801120700_add_member_checkin_
-provenance.sql`) is scoped specifically to the member self-checkin RPC
-— its `changed_fields` CHECK constraint is hard-limited to
-`{'has_arrived','share_with_attendees','assigned_site',
-'arrival_status'}`, it has no admin-actor columns, and no
-`parking_sites`-row-level before/after detail (no site *number*
-captured, only the JSON `attendees` row diff). `participant_capacity_
-adjustments` is a strong **structural** template (locking, dual actor
-columns, `SECURITY DEFINER`-only write access via RLS deny-all) but the
-wrong domain entirely.
-
-**Smallest missing capability**: one new table,
-`site_placement_history`, following `participant_capacity_
-adjustments`'s exact governance pattern (RLS enabled, deny-all to every
-role including `service_role`, written only by the
-`SECURITY DEFINER` function):
-
-- `id`, `occurred_at` — when.
-- `event_id`, `attendee_id` — scope.
-- `action_type` — `'assign' | 'reassign' | 'release' | 'correct' |
-  'confirm'`.
-- `previous_site`, `new_site` — what changed (or, for `'confirm'`, the
-  same value in both).
-- `arrival_changed boolean`, `previous_arrival_state`,
-  `new_arrival_state` — present and populated only when
-  `p_change_arrival` was true, per §8 invariant 10, so the audit trail
-  itself reflects the conceptual separation §6 requires rather than
-  implying every row is a combined action.
-- `evidence_source` — the §4 knowledge-source classification.
-- `actor_admin_user_id`, `actor_auth_user_id` — who, re-derived
-  server-side, never client-supplied (mirroring
-  `participant_capacity_adjustments`'s dual-column pattern).
-- `note` — optional free text.
-
-This directly answers every question Phase 6 requires ("what was the
-prior site, what is current, who changed or confirmed it, when, what
-evidence class") without inventing new historical-storage machinery —
-it is the same, already-accepted-in-this-codebase pattern applied to a
-new table. No migration is created by this document.
-
-## 13. QR Verification Compatibility
-
-The proposed architecture already supports the described future
-workflow without modification, because verification is designed as a
-first-class action of the *same* operation rather than a parallel
-mechanism:
-
-- A QR identifier would resolve to one attendee (not a hardcoded site)
-  — this is an identity-resolution concern, entirely upstream of
-  `record_site_placement`, analogous to how `submit_member_checkin`
-  already resolves identity before ever touching `parking_sites`.
-- Authorized staff, having scanned and resolved the attendee, call
-  `record_site_placement` with `p_evidence_source =
-  'field_qr_verification'`.
-- If the stored site matches what staff observe, `p_action = 'confirm'`
-  writes a `site_placement_history` row with no state change — directly
-  satisfying "a later field check proves the stored assignment is
-  wrong" being distinguishable from "a later field check proves the
-  stored assignment is right," both as first-class, auditable events.
-- If it does not match, `p_action = 'correct'` runs through the
-  identical reassignment logic (§8, §11) — **the QR code never becomes
-  a second source of truth**; it is only ever a trigger for a call into
-  the one existing governed operation, exactly as this task requires.
-
-No QR-related code, column, or package exists anywhere in the repository
-today (confirmed by full-repo search) — this is genuinely greenfield,
-and nothing about it is implemented here.
-
-## 14. Failure Model
-
-| Condition | Behavior |
+| Actor or source | Architectural role |
 | --- | --- |
-| Event mismatch (attendee or site belongs to a different event) | Fails closed; no write. |
-| Actor lacks required permission | Fails closed; no write. |
-| `p_action` requires displacement but caller lacks `can_manage_parking` | Fails closed; no write. |
-| Target site does not exist / not scoped to event | Fails closed; no write (except `'release'`, which requires no target site). |
-| Target site already claimed by a different attendee, no displacement authorized | Fails closed; no write; the conflict itself is not silently resolved in either direction. |
-| Concurrent calls targeting the same attendee or site | Serialized via `FOR UPDATE` row locks, exactly as `submit_member_checkin` and `record_participant_capacity_increase` already do — the second caller sees the first caller's committed result, never a lost update. |
-| `p_change_arrival = false` | Arrival columns are read for the response but never included in the `UPDATE` statement's `SET` clause — not merely left unchanged by coincidence. |
-| Direct REST `PATCH` to `attendees`/`parking_sites` bypassing the RPC | Rejected by the `BEFORE UPDATE` trigger unless the transaction-local `set_config` flag is set, which only this RPC's own body sets, immediately before its own write — the same closure `record_participant_capacity_increase` already established for `participant_capacity`. |
+| Parking staff and Event Admin | Authorized actors for governed placement decisions, including an authorized override or displacement. |
+| Check-In staff | Authorized only within the adopted Event permission boundary; any narrower scope must be enforced by the governed operation, not inferred from a UI. |
+| Member or driver | Reporter of placement evidence. They do not directly establish authoritative placement. |
+| RV park staff or park information | External evidence source, relayed through an authorized EpicentraX actor. |
+| QR scan or QR identifier | Evidence-acquisition mechanism; never an actor and never a source of authoritative placement. |
 
-## 15. Migration of Existing Callers
+The exact permission names and implementation mechanism are outside this
+architecture. Every privileged determination, including a staff override,
+must be authorized in Event scope and auditable.
 
-Recommended target state for a future, separately authorized
-implementation task (none of this is performed here):
+## 7. Evidence Model
 
-- **Check-In** (`saveCheckin()`) and **Parking**
-  (`assignAttendeeToSite()`/`clearSite()`/`setArrivalStatus()`) should
-  become the two staff-facing callers of `record_site_placement`,
-  distinguished only by which permission each holds (§9) — not by
-  separate implementations. This directly resolves
-  `EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md`'s named open boundary
-  conflict: the two modules remain separate (different missions,
-  different UI, per that document's own reasoning for not merging
-  them), while sharing exactly one underlying write operation.
-- **Attendees editor**: per
-  `EPICENTRAX_ATTENDEES_MODULE_REFACTOR_AUDIT.md` Section F, the
-  Attendees module's own recommended future state already treats
-  Assigned Site as read-only with a deep link to the owning module.
-  This document is consistent with, and reinforces, that
-  recommendation — but does not require it: if the Attendees editor
-  ever retains any site-editing affordance, it **must** call
-  `record_site_placement` rather than its current raw `attendees.
-  update(payload)` write, which today is the one path with no
-  `parking_sites` coordination at all.
-- **Member self-check-in** (`submit_member_checkin`) is **not**
-  recommended for migration onto `record_site_placement` — its actor
-  model (self-service, anon/temporary-attendee identity verification)
-  is fundamentally different from an authorized staff/admin actor, and
-  forcing one signature to serve both would weaken guarantees either
-  operation currently makes cleanly. A future opportunity (not required
-  by this document) is extracting the shared "atomically release prior
-  site, claim new site, write both tables" core logic into one internal
-  helper function both RPCs call, so there remains only one piece of
-  code that knows how to perform that specific atomic write, even
-  though there are two distinct, differently-authorized entry points.
+Member-entered site information must be preserved with its provenance,
+including the reporter, time, Event and attendee scope, reported value, and
+the resulting disposition when one is made. An incorrect report remains a
+historical observation; it must not be rewritten to look correct merely
+because a later decision differs. A correct report is likewise evidence of
+what the member reported, not a second placement record.
 
-## 16. Explicit Non-Responsibilities
+An authorized actor may use member-reported information as evidence for an
+initial placement, correction, or confirmation through
+`record_site_placement`. The history must distinguish the report from the
+actor's authoritative determination, including when they have the same site
+value.
 
-This document, and the operation it proposes, do **not**:
+QR verification follows the identical model. A scan resolves the relevant
+attendee and provides reported field evidence. If the observed site agrees
+with the current placement, an authorized actor records a confirmation through
+the governed operation. If it disagrees, the actor records a correction only
+through that same operation. QR creates no alternate placement state and no
+alternate write path.
 
-- Perform or implement QR scanning (§13) — future, separately
-  authorized work.
-- Decide attendee self-reporting authority (§10) — explicitly reported
-  as unresolved.
-- Add a new concept to ADR-012's six-concept table or to
-  `EPICENTRAX_DOMAIN_MODEL.md` (§3) — Site Placement remains
-  Event-owned Operational Context data, not a Person-Tenant-Relationship
-  concept.
-- Migrate or modify `submit_member_checkin` (§15).
-- Create any migration, RPC, trigger, or schema change — every SQL
-  fragment above is illustrative of a future, separately authorized
-  implementation task, not executed here.
-- Modify `app/admin/attendees/page.tsx`, `app/admin/checkin/page.tsx`,
-  `app/admin/parking/page.tsx`, or any other application code.
-- Resolve the exact validation strictness for site numbers (free text
-  vs. required inventory match) — named as unresolved in §17.
-- Modify any other architecture document, including
-  `EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md`, whose own open question
-  this document answers but does not edit.
+## 8. Authoritative Invariants
 
-## 17. Unresolved Questions
+The governed operation must preserve all of the following:
 
-1. **Attendee self-reporting authority** (§10) — the primary unresolved
-   question this audit surfaces. Requires a separate, explicit
-   architectural decision before `p_evidence_source =
-   'attendee_reported'` behavior can be finalized.
-2. **Check-In's exact scoped-authority boundary** (§4, §9) — this
-   document proposes "assign onto vacant, confirm/correct own, no
-   displacement" as the concrete resolution to
-   `EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md`'s named open conflict, but
-   that proposal itself requires acceptance, not just this document's
-   authorship, before implementation.
-3. **Whether `submit_member_checkin` should eventually share internal
-   write logic with `record_site_placement`** (§15) — a recommended
-   direction, not a requirement.
-4. **Site-number validation strictness** — whether the governed
-   operation should require the target site to exist in
-   `parking_sites`/`master_map_sites` (tightening today's free-text,
-   no-FK reality) or continue accepting free text for ad hoc labeling.
-5. **Whether the recommended partial unique index on
-   `parking_sites (event_id, assigned_attendee_id)`** (§8, invariant 2)
-   should be added as defense-in-depth alongside the RPC's own
-   application-level check, or whether the RPC's row-locked check alone
-   is judged sufficient.
+1. An attendee has at most one current authoritative site.
+2. A site has at most one current authoritative occupant.
+3. A placement is scoped to one Event; cross-Event placement fails closed.
+4. A change or correction removes the prior authoritative relationship and
+   establishes the new relationship as one indivisible determination.
+5. A conflicting occupied site fails closed unless an explicitly authorized
+   override determines the displacement and its resulting state.
+6. A clearing removes the authoritative placement without fabricating another
+   placement or changing Arrival.
+7. A confirmation preserves the current placement and records the confirming
+   evidence and authorized actor without creating a duplicate current state.
+8. A reported placement never changes authoritative placement unless an
+   authorized invocation of `record_site_placement` makes that determination.
+9. Concurrent attempts affecting the same attendee or site are serialized so
+   that no lost update, dual occupancy, or split placement can persist.
+10. Rejected requests leave authoritative placement unchanged while retaining
+    any report whose preservation is required by the evidence policy.
 
-## 18. Change Governance
+## 9. Audit and Historical Reconstruction
 
-This document is **Proposed v1.0**. It governs nothing until accepted.
-It is compatible with, and introduces no redefinition of, any Accepted
-document it depends on (ADR-000, ADR-011, ADR-012,
-`EPICENTRAX_DOMAIN_MODEL.md`) — §3's determination that Site Placement
-is Operational Context data owned by the Event, not a new
-Person-Tenant-Relationship concept, is stated as a determination this
-document makes within its own proposed scope, subject to the same
-acceptance process as the rest of this document.
+Each invocation must produce an auditable historical record of the attempted
+or completed determination. For a completed determination, history must show
+the Event and attendee, authorized actor, time, action, prior and resulting
+authoritative placement, evidence source, and whether the action was a
+confirmation, correction, clearing, reassignment, or override. It must also
+retain the necessary provenance of any member or QR report relied upon.
 
-This document directly resolves the open boundary question
-`EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md` names and explicitly declines
-to answer (Check-In vs. Parking site-assignment ownership). Because
-that document is itself only Proposed, this document does not amend it
-directly (per this task's explicit instruction); the two documents
-should be reviewed and accepted together, and
-`EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md` may warrant a small future
-cross-reference amendment once both are accepted, as a separately
-authorized editorial task.
+History must distinguish an observation, the authorized decision made from
+that observation, and the resulting current placement. It must preserve enough
+ordered information to reconstruct authoritative placement at a past point in
+time, including site clearing, displacement, and confirmations with no state
+change. Reconstruction derives historical state from governed records; it
+does not treat a report as a historical authoritative placement.
 
-Changes to the `record_site_placement` contract (§7), its atomic
-invariants (§8), or the permission boundary (§9) are architectural
-changes to this document and require the same acceptance process as any
-other revision.
+## 10. Failure and Conflict Model
+
+| Condition | Required architectural result |
+| --- | --- |
+| Invalid Event scope, attendee, or site | Fail closed; no authoritative change. |
+| Unauthorized actor | Fail closed; no authoritative change. |
+| Member-reported incorrect site | Preserve the report as evidence; no authoritative change unless an authorized determination says otherwise. |
+| Member-reported correct site | Preserve the report; an authorized actor may confirm or otherwise determine the same site through the governed operation. |
+| QR observation agrees with current placement | Record an authorized confirmation; do not create a new current placement. |
+| QR observation disagrees with current placement | Preserve the observation and use the governed correction path; do not write an alternate QR placement. |
+| Conflicting occupied site | Fail closed unless an authorized override explicitly resolves all affected placements. |
+| Simultaneous placement attempts | Serialize and resolve by governed ordering; preserve a coherent audit sequence. |
+| Abandoned or cleared site | Clear only through the governed operation; retain the prior placement in history. |
+
+## 11. Adversarial Architecture Review
+
+The proposed model was tested against the following attempts to create a
+second source of truth or collapse independent concepts:
+
+| Scenario | Result under this architecture |
+| --- | --- |
+| Initial placement | An authorized actor establishes it only through `record_site_placement`. |
+| Reassignment or correction | The same operation replaces the prior placement as one governed determination. |
+| Confirmation without change | The same operation records evidence and confirmation without a second current record. |
+| Arrival before placement | Valid; Arrival does not establish a site. |
+| Placement before arrival | Valid; Site Placement does not establish Arrival. |
+| Member-reported incorrect site | Preserved evidence, not authoritative placement. |
+| Member-reported correct site | Preserved evidence; authoritative only after governed determination. |
+| QR confirmation or QR correction | QR is evidence; confirmation or correction uses the same operation. |
+| Simultaneous placement attempts | Serialization prevents dual or split current placement. |
+| Conflicting occupancy | Fails closed unless an authorized override resolves it. |
+| Abandoned site or site clearing | Governed clearing removes current placement and retains history. |
+| Staff override | Authorized, scoped, explicit, and auditable; never an unrecorded side path. |
+| Audit reconstruction | Ordered governed history distinguishes evidence from decision and result. |
+| Historical replay | Reconstructs prior authoritative state from governed determinations, not from later reports or current state. |
+
+No unresolved contradiction remains in these scenarios. The prior
+contradiction between member self-service as an authoritative write path and
+the single-governed-operation rule is resolved: member input is evidence, and
+only the governed operation can determine current placement.
+
+## 12. Scope and Acceptance
+
+This document does not prescribe implementation details or modify current
+application behavior. Future implementation must conform every placement
+write path to this architecture without weakening authorization, tenant
+isolation, evidence preservation, or auditability.
+
+The architecture is recommended for **Accepted** status. Its governing
+decision is complete: all authoritative Site Placement changes use one
+governed operation, while member and QR information remain preserved evidence.
