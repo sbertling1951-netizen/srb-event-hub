@@ -16,13 +16,13 @@ enumerated set of parking-inventory state and reusing this codebase's own
 proven bypass-closure pattern, a manifest-gated execution sequence with
 per-row atomic transactions, and a concrete, automatable idempotence test.
 
-This is implementation architecture only. It authors no SQL, no migration,
-no trigger, and no application code — it designs what a future, separately
-authorized code/migration-authoring task will build. Two distinct future
-activities are prepared for here but not performed: authoring and
-deploying the additive schema/trigger code, and the actual, separately
-Platform-Administration-authorized production repair execution. This
-document authorizes neither.
+This is implementation architecture only. It does not itself author SQL,
+migrations, triggers, or application code. The additive database
+infrastructure and executor designed here are now authored in the repository
+by migrations `20260808100000` through `20260808150000`; their implementation
+does not authorize or constitute a production repair execution. The actual,
+separately Platform-Administration-authorized production repair execution
+remains future work and is not authorized by this document.
 
 ## 2. Implementation Architecture
 
@@ -333,11 +333,13 @@ until this proof passes.
 
 ## 12. Migration Plan
 
-1. **Migration 1 (additive, zero behavioral change):** create
+1. **Migration 1 (additive, zero behavioral change; implemented as
+   `20260808100000_create_parking_repair_infrastructure.sql`):** create
    `parking_repair_manifest`, `parking_repair_manifest_entry`,
    `parking_repair_audit`, `parking_repair_execution`, and
    `parking_inventory_quiescence` — RLS-enabled, deny-by-default.
-2. **Migration 2 (additive, initially inert):** add the
+2. **Migration 2 (additive, initially inert; implemented as
+   `20260808110000_create_parking_repair_quiescence_guard.sql`):** add the
    quiescence-enforcement trigger against the explicit protected surface
    in §8 — with no active quiescence row, a complete no-op. Deploy and
    verify inertness before ever engaging it for real.
@@ -351,11 +353,26 @@ until this proof passes.
    `NOT NULL` hardening) become safe — strictly sequenced after, never
    combined with, this repair.
 
-**Production execution boundary:** steps 1–3 are implementation
-preparation, appropriate for a future code/migration-authoring task
-informed by this plan. Step 4 is the production execution — separate,
-later, Platform-Administration-authorized, designed for but not
-authorized, initiated, or performed by this document.
+**Production execution boundary:** steps 1–2 are implemented repository
+infrastructure; step 3 remains separately scoped application/tooling work.
+Step 4 is the production execution — separate, later,
+Platform-Administration-authorized, designed for but not authorized,
+initiated, or performed by this document.
+
+**Repository implementation status:**
+`20260808120000_create_parking_repair_executor.sql` authors the governed
+executor; `20260808130000_protect_parking_repair_manifest_immutability.sql`
+enforces approved-manifest immutability;
+`20260808140000_add_dynamic_parking_repair_retained_reference_check.sql`
+hardens Duplicate Retirement retained-reference revalidation through dynamic
+foreign-key discovery while preserving the governed-history backstop, and
+incorporates the execution-time identity-equivalence correction that
+eliminated the previously identified NULL-propagation defect in Duplicate
+Retirement revalidation before the migration entered repository history; and
+`20260808150000_align_parking_repair_idempotence_detection.sql` aligns Direct
+Repair idempotence detection with no-conflicting-claim eligibility. This
+records completed repository implementation without changing the sequence
+above or authorizing execution.
 
 ## 13. Risks / Unresolved Questions
 
@@ -377,15 +394,13 @@ authorized, initiated, or performed by this document.
 
 ## 14. Readiness Recommendation
 
-The implementation design is ready to proceed to: (1) additive schema
-authoring for `parking_repair_manifest`, `parking_repair_manifest_entry`,
-`parking_repair_audit`, and `parking_repair_execution`; (2) inert-by-default
-quiescence-enforcement trigger authoring against the explicit column-level
-protected surface in §8; and (3) manifest- and audit-tooling design. Each
-should still receive its own focused review once drafted, given its direct
-bearing on production safety. Production execution remains **not
-authorized** by this document and is gated on separate Platform
-Administration approval per the Accepted Repair Plan §5.
+The additive schema, inert-by-default quiescence trigger, governed executor,
+approved-manifest immutability enforcement, retained-reference hardening, and
+idempotence-detector parity hardening are implemented in the repository. The
+remaining prepared work is the separately scoped manifest-preparation and
+execution-runbook tooling. Production execution remains **not authorized** by
+this document and is gated on separate Platform Administration approval per
+the Accepted Repair Plan §5.
 
 ## 15. Change Governance
 
