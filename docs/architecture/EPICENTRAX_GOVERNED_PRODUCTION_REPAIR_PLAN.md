@@ -412,17 +412,15 @@ built to this plan's governed conditions.
 
 ## 20. Change Governance
 
-This plan is **Proposed**. It governs nothing until accepted. Changes to
-the Retire Duplicate Row conditions (§9), the Deterministic Survivor Rule
-(§10), the Physical Inventory Equivalence definition (§7), the Identity
-Equivalence definition (§8), the Approved Immutable Repair Manifest
-requirement (§12), the Legacy Writer Quiescence requirement (§13), the
-Final Identity Verification Gate (§14), or the Idempotence Requirement
-(§15) are governing changes to this plan and require the same acceptance
-process as any other revision.
+This plan is **Accepted**. Changes to the Retire Duplicate Row conditions
+(§9), the Deterministic Survivor Rule (§10), the Physical Inventory
+Equivalence definition (§7), the Identity Equivalence definition (§8), the
+Approved Immutable Repair Manifest requirement (§12), the Legacy Writer
+Quiescence requirement (§13), the Final Identity Verification Gate (§14),
+or the Idempotence Requirement (§15) are governing changes to this plan and
+require the same architectural acceptance process as any other revision.
 
 ---
 
-PROPOSED
-READY FOR ACCEPTANCE REVIEW
+ACCEPTED
 NOT AUTHORIZED FOR EXECUTION
