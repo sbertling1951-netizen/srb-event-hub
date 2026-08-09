@@ -220,3 +220,10 @@ isolation, evidence preservation, or auditability.
 The architecture is recommended for **Accepted** status. Its governing
 decision is complete: all authoritative Site Placement changes use one
 governed operation, while member and QR information remain preserved evidence.
+
+**See also (Accepted, informational pointer only — no interpretation of this
+document's own terms is made or implied here):**
+`EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md` describes a
+narrow, sibling capability. Any relationship between that capability and the
+terms this document defines is stated entirely within that document, not
+here.

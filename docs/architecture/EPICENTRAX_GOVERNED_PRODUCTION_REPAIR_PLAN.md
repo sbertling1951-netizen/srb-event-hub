@@ -505,6 +505,25 @@ Quiescence requirement (§13), the Final Identity Verification Gate (§14),
 or the Idempotence Requirement (§15) are governing changes to this plan and
 require the same architectural acceptance process as any other revision.
 
+## 21. Related Governed Capabilities (Cross-Reference)
+
+Two narrow, sibling capabilities exist for scenarios this plan deliberately
+does not cover, discovered during this plan's own first production use:
+
+- `EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md` governs
+  correcting a vacant row's already-non-null `master_site_id` when it
+  provably references an obsolete, non-selected map generation — a case
+  this plan's Direct Repair (§9, null-only) never touches.
+- `EPICENTRAX_PARKING_REPAIR_PARTIAL_RECOVERY_ADDENDUM.md` governs recovery
+  after a repair execution completes with `final_disposition = 'partial'`
+  and leaves quiescence engaged for a reason outside the executing
+  manifest's own candidates.
+
+Neither document amends, narrows, or grants any authority beyond what this
+plan itself already states. This plan's own gates (§14 Final Identity
+Verification, §15 Idempotence, §16 Completion Semantics) are unchanged by
+either sibling document.
+
 ---
 
 ACCEPTED

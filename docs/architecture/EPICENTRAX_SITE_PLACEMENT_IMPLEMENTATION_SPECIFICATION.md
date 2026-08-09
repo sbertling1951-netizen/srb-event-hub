@@ -414,3 +414,10 @@ reactivate a legacy placement write path.
 No new business policy or architectural boundary is introduced. Preflight is
 an implementation stop condition: constraints require current data to be
 proven compatible or repaired under separately authorized evidence.
+
+**See also (Accepted, informational pointer only — no interpretation of this
+document's own terms is made or implied here):**
+`EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md` describes a
+narrow, sibling capability. Any relationship between that capability and the
+terms this document defines is stated entirely within that document, not
+here.

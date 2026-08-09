@@ -46,3 +46,13 @@ authority.
 On partial or failed execution, stop. Do not manually release quiescence,
 edit an approved manifest, retry direct SQL, or resolve a conflict by guess.
 Preserve the evidence and obtain a new governed maintenance decision.
+
+If a partial execution's Final Identity Verification Gate failed on a
+pre-existing row referencing an obsolete master-map generation, the new
+governed maintenance decision in the preceding paragraph is governed by
+`EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md` (for
+correcting that row) and
+`EPICENTRAX_PARKING_REPAIR_PARTIAL_RECOVERY_ADDENDUM.md` (for the recovery
+and reviewed quiescence-release procedure). Neither document is implemented
+as tooling yet; this note exists so a future partial disposition of this
+kind is not investigated as if for the first time.

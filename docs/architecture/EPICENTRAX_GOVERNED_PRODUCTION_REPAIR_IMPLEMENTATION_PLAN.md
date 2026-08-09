@@ -408,6 +408,19 @@ above or authorizing execution.
    repair-in-progress state is explicitly outside this implementation
    architecture's scope (§8), not an open question this document is
    positioned to resolve.
+5. **Now named and addressed:** a pre-existing row outside the executing
+   manifest's own candidates (for example, an `identity_conflict` row whose
+   `master_site_id` references a non-selected map generation) can cause the
+   Final Identity Verification Gate (Repair Plan §14) to fail even when
+   every manifested action applied correctly, leaving quiescence engaged
+   with no defined recovery path. First observed during Crystal Beach's
+   first real execution (`1a9f0d0e-4fc6-48f8-b895-d78a1af4ee78`,
+   `final_disposition = 'partial'`). Addressed by
+   `EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md` (for
+   that specific cause) and
+   `EPICENTRAX_PARKING_REPAIR_PARTIAL_RECOVERY_ADDENDUM.md` (for the
+   recovery/release path in general) — both Accepted (August 9, 2026), but
+   neither yet implemented as tooling as of this entry.
 
 ## 14. Readiness Recommendation
 

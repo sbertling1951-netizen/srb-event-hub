@@ -33,6 +33,23 @@ Do not duplicate these documents into another context system. Reference and upda
 | Stage 8A claim foundation | `supabase/identity-audits/baseline-diagnostics/stage8a_identity_claim_foundation.md` |
 | Tenant identity recommendation | `supabase/identity-audits/baseline-diagnostics/tenant_identity_architecture_recommendation.md` |
 
+## Parking repair governance
+
+Status is stated explicitly per row. Per the Domain Model's governing
+precedence rules, a `Proposed` entry has no governing precedence over any
+`Accepted` source and does not become authoritative merely by appearing in
+this index.
+
+| Domain | Authoritative source | Status |
+|---|---|---|
+| Parking inventory duplicate/repair governance | `docs/architecture/EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_PLAN.md` | Accepted |
+| Parking repair implementation design | `docs/architecture/EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_IMPLEMENTATION_PLAN.md` | Accepted |
+| Parking repair operational runbook | `docs/operations/EPICENTRAX_GOVERNED_PARKING_REPAIR_RUNBOOK.md` | Operational procedure (no formal accept/proposed status) |
+| Stale master-map identity correction | `docs/architecture/EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md` | Accepted (August 9, 2026) |
+| Partial parking-repair recovery / quiescence release | `docs/architecture/EPICENTRAX_PARKING_REPAIR_PARTIAL_RECOVERY_ADDENDUM.md` | Accepted (August 9, 2026) |
+| Attendee Site Placement governance | `docs/architecture/EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md` | Accepted v1.1 |
+| Site Placement implementation design | `docs/architecture/EPICENTRAX_SITE_PLACEMENT_IMPLEMENTATION_SPECIFICATION.md` | Accepted |
+
 ## Operational authority
 
 | Domain | Authoritative source |
