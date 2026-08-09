@@ -2066,3 +2066,290 @@ body.slideshow-view-mode .app-header-card {
     animation: none;
   }
 }
+
+/* ==========================================================================
+   Canonical Shell Foundation (EPICENTRAX UI STAGE 2 / 2B)
+
+   New shell-scoped styles backing components/shell/*. Prefixed `.shell-*`
+   to avoid any collision with the existing `.app-*` / `.card` classes
+   above, which remain unchanged and continue to serve every currently
+   un-migrated (legacy-mode) page. Breakpoint (899/900) matches the value
+   already used throughout this file and by components/layout/Sidebar.tsx's
+   MOBILE_BREAKPOINT, and is the exact value components/shell/
+   useShellViewport.ts's SHELL_BREAKPOINT_COMPACT also uses, so JS and CSS
+   never disagree about where "compact" begins (Stage 2B §F).
+
+   Stage 2B §I: `.shell-root` is now a fixed-height (not min-height) flex
+   column, which makes `.shell-main` the single, real, bounded vertical
+   scroll region for canonical routes -- not the document. `.shell-nav-
+   desktop` scrolls independently for a long nav list, which is normal
+   sidebar behavior, not a second scroll owner for the same content.
+   Values reuse the existing design tokens declared in `:root` above
+   wherever an existing token clearly represents the same value (§J);
+   only genuinely shell-specific values (sidebar width, safe-area insets,
+   responsive clamp()s) remain as literals.
+   ========================================================================== */
+
+.shell-root {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  width: 100%;
+  align-items: stretch;
+}
+
+.shell-nav-desktop {
+  flex: 0 0 260px;
+  width: 260px;
+  border-right: 1px solid var(--color-border-default);
+  background: var(--color-bg-panel);
+  overflow-y: auto;
+  padding: var(--space-8) var(--space-5);
+  padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom));
+}
+
+.shell-nav-section + .shell-nav-section {
+  margin-top: 18px;
+}
+
+.shell-nav-section-title {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  padding: 0 var(--space-5) 6px;
+}
+
+.shell-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shell-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-4) var(--space-5);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  text-decoration: none;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-body);
+}
+
+.shell-nav-item:hover {
+  background: var(--color-bg-muted);
+}
+
+.shell-nav-item-active {
+  background: var(--color-nav-active-bg);
+  color: var(--color-nav-active-text);
+}
+
+.shell-nav-item:focus-visible,
+.shell-nav-trigger:focus-visible,
+.shell-account-action:focus-visible,
+.shell-back-action:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.shell-nav-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.shell-nav-trigger {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-bg-panel);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.shell-nav-trigger-bar {
+  display: block;
+  height: 2px;
+  width: 20px;
+  background: var(--color-text-primary);
+  border-radius: 1px;
+}
+
+.shell-nav-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--color-overlay);
+  z-index: 60;
+  display: flex;
+}
+
+.shell-nav-drawer {
+  width: min(320px, calc(100vw - 32px));
+  height: 100%;
+  background: var(--color-bg-panel);
+  padding: var(--space-8);
+  padding-top: calc(var(--space-8) + env(safe-area-inset-top));
+  padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
+}
+
+.shell-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.shell-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--color-bg-panel);
+  border-bottom: 1px solid var(--color-border-default);
+  padding: var(--space-5) clamp(16px, 3vw, 32px);
+  padding-top: calc(var(--space-5) + env(safe-area-inset-top));
+  flex-shrink: 0;
+}
+
+.shell-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.shell-header-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.shell-header-titles {
+  min-width: 0;
+}
+
+.shell-brand-title {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.shell-workspace-name {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.shell-page-title {
+  margin: 2px 0 0;
+  font-size: clamp(18px, 2.2vw, 24px);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.shell-page-subtitle {
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.shell-back-action {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.shell-brand-logo {
+  height: 36px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.shell-account-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.shell-account-action {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-3) var(--space-5);
+  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.shell-account-action-danger {
+  border-color: var(--color-status-error-bg);
+  color: var(--color-status-error);
+}
+
+.shell-status-area {
+  margin-top: var(--space-4);
+}
+
+.shell-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.shell-content {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: clamp(16px, 3vw, 32px);
+  padding-bottom: calc(clamp(16px, 3vw, 32px) + env(safe-area-inset-bottom));
+}
+
+.shell-main-full-bleed .shell-content {
+  max-width: none;
+  padding: 0;
+}
+
+@media (max-width: 899px) {
+  .shell-nav-desktop {
+    display: none;
+  }
+}
+
+@media (min-width: 900px) {
+  .shell-nav-trigger {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-nav-drawer-backdrop,
+  .shell-nav-drawer {
+    animation: none;
+  }
+}

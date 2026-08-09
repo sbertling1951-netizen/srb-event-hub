@@ -2,7 +2,7 @@ import "./globals.css";
 
 import type { Metadata, Viewport } from "next";
 
-import Sidebar from "@/components/layout/Sidebar";
+import { ShellTransition } from "@/components/shell/ShellTransition";
 import { AdminProvider } from "@/lib/adminContext";
 import { AdminWorkspaceProvider } from "@/lib/AdminWorkspaceProvider";
 import { MemberWorkspaceProvider } from "@/lib/memberWorkspace";
@@ -66,40 +66,14 @@ export default async function RootLayout({
               />
 
             <MemberWorkspaceProvider>
-              <Sidebar />
-
-              <main className="app-main">
-                <div className="app-inner">
-                  <div className="app-header-card">
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                      }}
-                    >
-                      {brandLogoUrl ? (
-                        <img
-                          src={brandLogoUrl}
-                          alt={brandLogoAlt}
-                          style={{
-                            height: 48,
-                            width: "auto",
-                            flexShrink: 0,
-                          }}
-                        />
-                      ) : null}
-
-                      <div>
-                        <div className="app-brand">{brandTitle}</div>
-                        <div className="app-subtle">{brandTagline}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {children}
-                </div>
-              </main>
+              <ShellTransition
+                brandTitle={brandTitle}
+                brandTagline={brandTagline}
+                brandLogoUrl={brandLogoUrl}
+                brandLogoAlt={brandLogoAlt}
+              >
+                {children}
+              </ShellTransition>
             </MemberWorkspaceProvider>
             </AdminWorkspaceProvider>
           </AdminProvider>
