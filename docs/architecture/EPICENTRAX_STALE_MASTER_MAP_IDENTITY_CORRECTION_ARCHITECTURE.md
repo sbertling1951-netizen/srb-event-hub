@@ -1,8 +1,12 @@
 # EpicentraX Stale Master Map Identity Correction Architecture
 
-**Status:** Accepted
+**Status:** Accepted v1.1
 
 **Acceptance Date:** August 9, 2026
+
+**Amended:** August 9, 2026 — §6 condition 8 and §7's retained-reference
+cross-reference corrected; see §6.3 for the amendment and its rationale.
+No other section changed.
 
 **Governing relationship:** Sibling to, and does not amend, extend, or weaken,
 `EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_PLAN.md`. Subordinate to
@@ -245,10 +249,15 @@ single failure excludes the row and performs no mutation:
    exclusion, full stop (§3).
 7. No other live `parking_sites` row for that Event already claims the new
    `master_site_id`.
-8. No retained reference or history prohibits correction — reusing the
-   Repair Plan's existing dynamic retained-reference discovery
-   (`_repair_retained_reference_absent` or its structural equivalent)
-   unchanged; it is already generic and needs no modification for this use.
+8. Retained-reference safety is established by construction, not by a
+   runtime scan of external foreign keys: `parking_sites.id` is preserved,
+   the row is never deleted or retired by this operation, and only
+   `master_site_id` changes. Every reference to `parking_sites.id` —
+   foreign key or otherwise — therefore remains exactly as valid after
+   correction as before it. See §6.3 for the corrected invariant, why the
+   Repair Plan's deletion-oriented retained-reference scanner
+   (`_repair_retained_reference_absent`) does not apply to this operation,
+   and why that scanner itself is unchanged and still required elsewhere.
 9. Applying the correction would not create a duplicate
    `(event_id, master_site_id)` identity — checked in the same transaction,
    before commit.
@@ -305,6 +314,67 @@ is sufficient to prevent a bad *outcome*, but not sufficient to prevent a
 confusing, competing pair of `approved` records existing at once. See
 Appendix B for the recommended constraint shape.
 
+### 6.3 Retained-Reference Invariant (Amendment, v1.1)
+
+STOP condition 8 (§6) governs a materially different invariant than
+`_repair_retained_reference_absent` protects. This document no longer
+requires that function, or any structurally equivalent external-foreign-key
+scan, to be called for stale-map correction. Conditions 1–7, 9–10 and
+§6.1–§6.2 are unchanged by this amendment.
+
+**The invariant `_repair_retained_reference_absent` protects:** that a
+`parking_sites` row's `id` continues to exist after an operation that may
+delete it — specifically Duplicate Retirement (Repair Plan §9), which
+deletes the non-surviving row of a duplicate group. Deleting a row that
+some other table's foreign key still points at would either destroy that
+other table's evidence (if the reference cascaded) or block the repair
+outright (if restricted) — the scanner exists to catch that before it
+happens.
+
+**Why it does not apply here.** A stale-map identity correction never
+deletes a row. `parking_sites.id` is preserved; only `master_site_id`
+changes. A foreign key's referential integrity depends solely on the
+referenced column (`id`) continuing to exist — it says nothing about any
+other column on that row. Every reference to `parking_sites.id`, current
+or future, therefore remains exactly as valid after a stale-map correction
+as before one. There is no retained-reference risk here for a scan to find.
+
+**The Repair Plan's scanner is unchanged and still required where it
+applies.** This amendment narrows only where the generic deletion-oriented
+scan is invoked. It does not weaken, alter, or generalize
+`_repair_retained_reference_absent` itself, which remains exactly as
+written and exactly as required for Duplicate Retirement and any other
+future operation that deletes a `parking_sites` row.
+
+**Correction-table referential integrity is retained, deliberately.**
+`master_site_identity_correction.parking_site_id` may, and should, remain
+an ordinary foreign key to `parking_sites.id`, because a correction's
+target row is always expected to survive the operation — the opposite
+situation from `parking_repair_manifest_entry.parking_site_id`, which is
+deliberately *not* a foreign key precisely because Duplicate Retirement may
+delete the row it references. The two tables reference the same parent for
+opposite structural reasons, and each table's FK-or-not choice is correct
+for its own operation.
+
+**Audit symmetry is preserved.** Execution-time revalidation still records
+a retained-reference determination in `execution_time_proof`, so this STOP
+condition remains visible and auditable exactly like every other one — but
+that determination documents `row_preserved = true`,
+`parking_sites_id_unchanged = true`, `deletion_attempted = false`,
+`passed = true`, established by the operation's own structure. It is never
+described as, or implemented as, a scan for external foreign keys.
+
+**Why this was corrected.** The original condition 8 reused
+`_repair_retained_reference_absent` unchanged, reasoning by analogy from
+Duplicate Retirement without independently proving the analogy held for a
+non-deleting operation. It did not: any table with a legitimate foreign key
+to `parking_sites` — including this document's own correction table — will
+always appear as a "retained reference" to that generic scanner, regardless
+of whether the operation in question ever deletes anything. Crystal Beach's
+H04/H08 corrections were the first case that exposed this during
+implementation; the corrected rule above is general and is not specific to
+that Event or those rows.
+
 ## 7. Authority
 
 **This changes an existing, established `master_site_id` reference — a
@@ -336,11 +406,13 @@ materially higher-stakes action than filling a null.** Accordingly:
   to cover vacant-row identity as well — a future document decision, not
   this one's.
 - **Relationship to the Parking Repair Plan:** sibling, not subordinate or
-  superior. Reuses the Repair Plan's proof discipline (§4, §6) and
-  retained-reference helper by cross-reference, not by amendment. Repair
-  Plan §5's boundary is unchanged and unweakened — it still authorizes
-  nothing beyond null-fill and duplicate consolidation; this document is the
-  **separate** authorization for a **separate** action.
+  superior. Reuses the Repair Plan's proof discipline (§4, §6) by
+  cross-reference, not by amendment. Does **not** reuse the Repair Plan's
+  retained-reference scanner (§6.3) — that scanner's own invariant does not
+  apply to this operation, and it remains unchanged for the Repair Plan's
+  own use. Repair Plan §5's boundary is unchanged and unweakened — it still
+  authorizes nothing beyond null-fill and duplicate consolidation; this
+  document is the **separate** authorization for a **separate** action.
 
 ## 8. Immutable Evidence and Audit Requirements
 

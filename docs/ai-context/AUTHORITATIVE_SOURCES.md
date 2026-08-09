@@ -45,7 +45,7 @@ this index.
 | Parking inventory duplicate/repair governance | `docs/architecture/EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_PLAN.md` | Accepted |
 | Parking repair implementation design | `docs/architecture/EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_IMPLEMENTATION_PLAN.md` | Accepted |
 | Parking repair operational runbook | `docs/operations/EPICENTRAX_GOVERNED_PARKING_REPAIR_RUNBOOK.md` | Operational procedure (no formal accept/proposed status) |
-| Stale master-map identity correction | `docs/architecture/EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md` | Accepted (August 9, 2026) |
+| Stale master-map identity correction | `docs/architecture/EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md` | Accepted v1.1 (amended August 9, 2026 — retained-reference semantics) |
 | Partial parking-repair recovery / quiescence release | `docs/architecture/EPICENTRAX_PARKING_REPAIR_PARTIAL_RECOVERY_ADDENDUM.md` | Accepted (August 9, 2026) |
 | Attendee Site Placement governance | `docs/architecture/EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md` | Accepted v1.1 |
 | Site Placement implementation design | `docs/architecture/EPICENTRAX_SITE_PLACEMENT_IMPLEMENTATION_SPECIFICATION.md` | Accepted |
