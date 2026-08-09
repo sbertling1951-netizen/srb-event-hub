@@ -12,12 +12,41 @@ export type ShellHeaderProps = {
 };
 
 /**
- * Canonical header composition (§G, Stage 2). Defines consistent slots --
- * brand, workspace/Event identity, page title/subtitle, back action,
- * mobile menu control, account controls, optional contextual status area
- * -- without forcing every page to populate every slot. A role/page
- * adapter decides which fields are present; the shell only guarantees
- * consistent spacing and slot order.
+ * Formats an already-supplied start/end date pair for display. Pure
+ * presentation formatting of strings `ShellWorkspaceIdentity` already
+ * carries -- no new context source, no query. Mirrors the identical
+ * `formatDateRange` pattern already used in three other places in this
+ * codebase (`components/layout/Sidebar.tsx`, `components/layout/
+ * EventBanner.tsx`, `lib/memberAccountSession.ts`) so the shell's display
+ * format matches existing convention rather than inventing a fourth,
+ * slightly different one.
+ */
+function formatWorkspaceDateRange(startDate?: string | null, endDate?: string | null): string {
+  if (!startDate && !endDate) {
+    return "";
+  }
+  if (startDate && endDate) {
+    return `${startDate} – ${endDate}`;
+  }
+  return startDate || endDate || "";
+}
+
+/**
+ * Canonical header composition (§G, Stage 2; workspace metadata completed
+ * Stage 3B §B). Defines consistent slots -- brand, workspace/Event
+ * identity (name, location, date range), page title/subtitle, back
+ * action, mobile menu control, account controls, optional contextual
+ * status area -- without forcing every page to populate every slot. A
+ * role/page adapter decides which fields are present; the shell only
+ * guarantees consistent spacing and slot order.
+ *
+ * Workspace location/date render as subordinate metadata beneath the
+ * workspace name, never as a second page title -- `pageTitle` remains the
+ * only `<h1>` this header ever renders. Location and date range are
+ * omitted individually when absent (Vendor, for example, supplies only a
+ * `name`), and the whole metadata line is omitted when neither is
+ * present, so no adapter is forced to populate fields it has no source
+ * for.
  *
  * The mobile-menu trigger carries `aria-controls` pointing at the drawer
  * `ShellNav` renders (§H) so assistive technology can associate the two
@@ -27,6 +56,8 @@ export type ShellHeaderProps = {
  */
 export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTriggerRef }: ShellHeaderProps) {
   const { brand, workspace, pageTitle, pageSubtitle, backTarget, accountActions, statusContent } = config;
+  const workspaceDateRange = formatWorkspaceDateRange(workspace?.startDate, workspace?.endDate);
+  const hasWorkspaceMeta = Boolean(workspace?.location || workspaceDateRange);
 
   return (
     <header className="shell-header">
@@ -60,7 +91,27 @@ export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTrigge
 
           <div className="shell-header-titles">
             <div className="shell-brand-title">{brand.title}</div>
-            {workspace?.name ? <div className="shell-workspace-name">{workspace.name}</div> : null}
+            {workspace?.name ? (
+              <div className="shell-workspace-identity">
+                <div className="shell-workspace-name">{workspace.name}</div>
+                {hasWorkspaceMeta ? (
+                  <div className="shell-workspace-meta">
+                    {workspace?.location ? (
+                      <span className="shell-workspace-location">{workspace.location}</span>
+                    ) : null}
+                    {workspace?.location && workspaceDateRange ? (
+                      <span className="shell-workspace-meta-sep" aria-hidden="true">
+                        {" "}
+                        •{" "}
+                      </span>
+                    ) : null}
+                    {workspaceDateRange ? (
+                      <span className="shell-workspace-daterange">{workspaceDateRange}</span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {pageTitle ? <h1 className="shell-page-title">{pageTitle}</h1> : null}
             {pageSubtitle ? <div className="shell-page-subtitle">{pageSubtitle}</div> : null}
           </div>

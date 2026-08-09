@@ -2250,10 +2250,31 @@ body.slideshow-view-mode .app-header-card {
   color: var(--color-text-muted);
 }
 
+.shell-workspace-identity {
+  overflow-wrap: anywhere;
+}
+
 .shell-workspace-name {
   font-size: var(--font-size-small);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-secondary);
+}
+
+/*
+ * Subordinate to `.shell-workspace-name`, never a second page title
+ * (Stage 3B §B/§E). Wraps freely on narrow phone widths rather than
+ * truncating -- a location or date range silently cut off is worse than
+ * one that wraps to a second line, and `.shell-header-row`'s existing
+ * `flex-wrap: wrap` already gives the whole header room to grow taller.
+ */
+.shell-workspace-meta {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-muted);
+  margin-top: 1px;
+}
+
+.shell-workspace-meta-sep {
+  white-space: pre;
 }
 
 .shell-page-title {

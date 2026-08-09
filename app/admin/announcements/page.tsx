@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { useAdmin } from "@/lib/adminContext";
 import { type AdminEventContext, getAdminEvent } from "@/lib/getAdminEvent";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
-import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type Announcement = {
@@ -126,7 +127,9 @@ const primaryButtonStyle = {
 export default function AdminAnnouncementsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_announcements">
-      <AdminAnnouncementsPageInner />
+      <AdminShellAdapter pageTitle="Announcements">
+        <AdminAnnouncementsPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
@@ -504,19 +507,21 @@ function AdminAnnouncementsPageInner() {
         onConfirm={() => closeConfirmDialog(true)}
       />
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Announcements Admin</h1>
-
-        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
-          {loadingEvent
-            ? "Loading selected event..."
-            : currentEvent?.name || "No event selected"}
-          {currentEvent?.location ? ` • ${currentEvent.location}` : ""}
-          {currentEvent?.start_date || currentEvent?.end_date
-            ? ` • ${[currentEvent?.start_date, currentEvent?.end_date]
-                .filter(Boolean)
-                .join(" – ")}`
-            : ""}
-        </div>
+        {/* Non-steady-state only (Stage 3B §D): the canonical Admin shell
+            header now owns Event name/location/date range for the normal
+            resolved+authorized case, so this line shows only what the
+            shell cannot -- that a selection is still loading, or that
+            nothing is currently selected. The specific access-denied
+            reason remains the separate `error` banner below, unchanged. */}
+        {loadingEvent ? (
+          <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
+            Loading selected event...
+          </div>
+        ) : !currentEvent ? (
+          <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
+            No event selected
+          </div>
+        ) : null}
 
         {status ? (
           <div style={{ marginBottom: 12, fontSize: 14 }}>{status}</div>

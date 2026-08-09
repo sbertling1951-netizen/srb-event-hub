@@ -6,9 +6,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { ObjectPanel } from "@/components/ObjectPanel";
 import { PreferredMapChooser } from "@/components/PreferredMapChooser";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import { Page } from "@/components/ui/Page";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { calculateDistanceMiles } from "@/lib/calculateDistanceMiles";
 import { copyTextToClipboard } from "@/lib/copyTextToClipboard";
 import { logEngagement } from "@/lib/engagement";
@@ -53,19 +53,6 @@ type EventRow = {
   lat: number | null;
   lng: number | null;
 };
-
-function formatDateRange(
-  startDate: string | null | undefined,
-  endDate: string | null | undefined,
-) {
-  if (!startDate && !endDate) {
-    return "";
-  }
-  if (startDate && endDate) {
-    return `${startDate} – ${endDate}`;
-  }
-  return startDate || endDate || "";
-}
 
 function getNearbyCardColor(category: string | null | undefined) {
   const normalized = (category || "").trim().toLowerCase();
@@ -483,7 +470,6 @@ function NearbyPageInner() {
   const panelHasNext =
     panelIndex >= 0 && panelIndex < filteredPlaces.length - 1;
 
-  const dateRange = formatDateRange(event?.start_date, event?.end_date);
   const listReady =
     !error && !!event && !status.toLowerCase().startsWith("loading");
   function toggleFavorite(placeId: string) {
@@ -605,28 +591,6 @@ function NearbyPageInner() {
           >
             Nearby List Ready
           </span>
-        ) : null}
-        <PageHeader
-          title="Nearby"
-          headingLevel="h1"
-          titleStyle={{ margin: "4px 0 4px", fontSize: 22 }}
-          description="Fuel, urgent care, pharmacy, groceries, and local stops."
-          descriptionClassName="subtle"
-          descriptionStyle={{ margin: "0 0 4px", fontSize: 13 }}
-        />
-        <div style={{ marginTop: 4, fontWeight: 700, fontSize: 14 }}>
-          Current event: {event?.name || "No current event"}
-        </div>
-        {event?.venue_name ? (
-          <div style={{ color: "#555", marginTop: 2 }}>{event.venue_name}</div>
-        ) : null}
-        {event?.location ? (
-          <div style={{ color: "#555", marginTop: 2 }}>{event.location}</div>
-        ) : null}
-        {dateRange ? (
-          <div style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
-            {dateRange}
-          </div>
         ) : null}
         <div
           className="nearby-search-row"
@@ -1232,7 +1196,12 @@ function NearbyPageInner() {
 export default function NearbyPage() {
   return (
     <MemberRouteGuard>
-      <NearbyPageInner />
+      <MemberShellAdapter
+        pageTitle="Nearby"
+        pageSubtitle="Fuel, urgent care, pharmacy, groceries, and local stops."
+      >
+        <NearbyPageInner />
+      </MemberShellAdapter>
     </MemberRouteGuard>
   );
 }

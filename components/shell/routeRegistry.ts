@@ -87,14 +87,15 @@ const PREFIX_EXCEPTION_ROUTES: readonly string[] = [
 const CANONICAL_VENDOR_PREFIXES: readonly string[] = ["/vendor/workspace"];
 
 /**
- * No route is registered canonical-member/canonical-admin yet. Member and
- * Admin pages remain "legacy" until their own, separately authorized
- * pilot-migration stage (§N) actually moves a route onto
- * MemberShellAdapter/AdminShellAdapter. Populate these when that stage
- * begins -- do not pre-populate them speculatively now.
+ * EPICENTRAX UI STAGE 3: exactly the three pilot routes, and no others,
+ * are registered canonical. Every other Member/Admin route remains
+ * "legacy" until its own, separately authorized future migration --
+ * adding a route here is what actually moves it off legacy chrome, so
+ * this list must never grow beyond what a given stage explicitly
+ * authorizes.
  */
-const CANONICAL_MEMBER_PREFIXES: readonly string[] = [];
-const CANONICAL_ADMIN_PREFIXES: readonly string[] = [];
+const CANONICAL_MEMBER_PREFIXES: readonly string[] = ["/member/nearby"];
+const CANONICAL_ADMIN_PREFIXES: readonly string[] = ["/admin/announcements"];
 
 function matchesExact(pathname: string, routes: readonly string[]): boolean {
   return routes.includes(pathname);

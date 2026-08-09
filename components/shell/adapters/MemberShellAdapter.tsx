@@ -37,6 +37,13 @@ export function MemberShellAdapter({
   const { tenant } = useTenant();
   const navSections = buildMemberNavSections({ mapNavLabel: getTenantLabel("map_nav_label") });
 
+  // Combines two already-resolved fields (`event.venue_name`, `event.location`)
+  // into the single `location` slot ShellWorkspaceIdentity carries -- not a
+  // new context source, just reshaping already-fetched data for display, so
+  // the shell's one workspace-metadata line fully covers what the former
+  // page-local event block (Stage 3, removed) showed as two separate lines.
+  const combinedLocation = event ? [event.venue_name, event.location].filter(Boolean).join(" — ") || null : null;
+
   const accountActions: ShellAccountAction[] = [
     {
       id: "sign-out",
@@ -58,7 +65,7 @@ export function MemberShellAdapter({
         workspace: event
           ? {
               name: event.name || event.eventName,
-              location: event.location,
+              location: combinedLocation,
               startDate: event.start_date,
               endDate: event.end_date,
             }
