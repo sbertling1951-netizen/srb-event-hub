@@ -37,7 +37,8 @@ remains future work and is not authorized by this document.
 | 7 | Legacy-writer quiescence mechanism | Database-level trigger closure over an explicit, enumerated column set — never a UI-only check. | Repair Plan §13 |
 | 8 | Final identity verification | Full post-repair scan of the execution's Event scope, not just touched rows. | Repair Plan §14 |
 | 9 | Idempotence verification | Automated re-run of the same read-only candidate analysis against post-repair state; success requires zero proposed mutations. | Repair Plan §15 |
-| 10 | Failure/rollback handling | Per-row transaction rollback only (native Postgres); no partial row state is possible; already-committed audit history is never rewritten. | Repair Plan §4, §17 |
+| 10 | Post-Consolidation Survivor Direct Repair | After approved sibling retirements, conditionally fills an eligible Duplicate Survivor using the existing Direct Repair proof and records either its result or a fail-closed non-attempt. | Repair Plan §10.1 |
+| 11 | Failure/rollback handling | Per-row transaction rollback only (native Postgres); no partial row state is possible; already-committed audit history is never rewritten. | Repair Plan §4, §17 |
 
 ## 3. Schema Design
 
@@ -126,11 +127,16 @@ value the row held at the moment of deletion.
 5. **Duplicate consolidation** — each group revalidated (physical +
    identity equivalence, vacancy, no retained reference) and, if still
    eligible, the non-survivor row(s) deleted.
-6. **Final validation** — Final Identity Verification Gate run against
+6. **Post-Consolidation Survivor Direct Repair** — evaluate only approved
+   Duplicate Survivor entries carrying the conditional authorization. Confirm
+   every sibling retirement succeeded, reuse the existing Direct Repair proof,
+   then perform the governed fill or record the explicit non-attempt/exclusion
+   evidence. This is not a parallel identity-resolution proof.
+7. **Final validation** — Final Identity Verification Gate run against
    the full post-repair state for scope.
-7. **Idempotence proof** — the same read-only candidate analysis re-run
+8. **Idempotence proof** — the same read-only candidate analysis re-run
    against post-repair state; must propose zero mutations.
-8. **Writer release** — quiescence lifted only after steps 6 and 7 both
+9. **Writer release** — quiescence lifted only after steps 7 and 8 both
    pass. Any failure at either leaves quiescence engaged and marks the
    execution `partial`/`failed` pending Platform Administration review.
 
@@ -285,6 +291,17 @@ Execution-time proof, re-checked immediately before write:
 4. If zero rows match, more than one row matches, or the match is
    partial, the candidate is excluded — never force-resolved on a single
    weaker signal.
+
+The same revalidation is reused without weakening for an approved conditional
+Post-Consolidation Survivor Direct Repair. No parallel identity-resolution
+proof is introduced.
+
+### Post-Consolidation Implementation Consequence
+
+Later implementation requires one nullable, CHECK-constrained
+`post_consolidation_action` field on `parking_repair_manifest_entry`, additive
+audit support for the fail-closed non-attempt case, and one executor
+step/helper. It does not change `_repair_detect_remaining_candidates`.
 
 This design is independently corroborated: Admin Parking, Admin
 Check-In, and Coach Map all join on `master_site_id` via a first-match

@@ -168,6 +168,12 @@ standalone match; group classification is evaluated first. This order does
 not relax any automatic-repair condition: any condition that cannot be
 proven resolves fail-closed to Excluded.
 
+A Duplicate Survivor remains that row's one and only final classification.
+It may separately carry one explicitly approved conditional
+Post-Consolidation Direct Repair authorization under §10.1. That
+authorization sequences a possible later action; it is not a second
+classification and does not alter the group-first precedence above.
+
 ## 7. Physical Inventory Equivalence
 
 **Comparison Scope:**
@@ -287,6 +293,40 @@ to the Retire Duplicate Row conditions — every non-surviving row in a group
 still requires all five conditions, revalidated at the moment of deletion,
 to be independently true before retirement.
 
+### 10.1 Conditional Post-Consolidation Direct Repair Authorization
+
+An approved manifest may give a Duplicate Survivor one conditional
+Post-Consolidation Direct Repair authorization only when manifest preparation
+proves all of the following:
+
+1. The survivor's `master_site_id` is `NULL`.
+2. The survivor belongs to a Physical and Identity Equivalent duplicate group.
+3. The Event's selected master map resolves the survivor to exactly one master
+   site using the existing Direct Repair four-field proof.
+4. No `parking_sites` row outside that duplicate group already claims that
+   master-site identity.
+5. Successful retirement of every approved sibling Duplicate Retirement entry
+   would leave the survivor as the group's sole remaining member.
+6. No other manifest entry independently resolves to that same master-site
+   identity.
+
+The manifest records this conditional authorization only. It does not freeze
+or store a target `master_site_id`; the target is re-derived at execution
+time through the existing Direct Repair proof.
+
+The action may run only after every approved sibling Duplicate Retirement
+entry in its group has recorded `retirement_applied` in that execution, the
+survivor still exists, and the existing Direct Repair revalidation again
+proves exactly one selected-map match, no conflicting surviving claim, and
+every other ordinary Direct Repair condition. Vacancy is not an additional
+requirement, because ordinary Direct Repair does not require vacancy.
+
+If any sibling retirement fails or is excluded, the executor must not attempt
+the survivor follow-up. It records the specific non-attempt or exclusion
+reason, performs no silent fallback, and synthesizes no second manifest
+action. The final disposition remains partial or failed as the ordinary
+execution gates require.
+
 ## 11. Metadata-Conflict and Occupied-Conflict Handling
 
 Not every candidate duplicate group qualifies for the Deterministic
@@ -378,6 +418,10 @@ repaired or consolidated.
 A completed repair execution must satisfy: **immediate re-execution
 performs zero mutations.**
 
+The conditional Post-Consolidation Direct Repair authorization exists so a
+successful approved execution completes this deterministic transformation
+before this unchanged final idempotence proof runs.
+
 Idempotence is a required success criterion, not an optional property. A
 repair execution that would perform any mutation if run again immediately
 against its own resulting state has not completed successfully, regardless
@@ -435,6 +479,9 @@ Each immutable repair audit record includes, at minimum:
 - validation assertions executed;
 - elapsed execution time;
 - final success/failure state.
+
+A successful Post-Consolidation Direct Repair is included in the existing
+`rows directly repaired` metric; it introduces no separate metric.
 
 ## 19. Explicit Non-Responsibilities
 
