@@ -39,6 +39,7 @@ export type ShellPresentationMode =
  */
 const EXACT_EXCEPTION_ROUTES: readonly string[] = [
   "/",
+  "/login",
   "/member/login",
   "/member/activate",
   "/member/account",

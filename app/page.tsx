@@ -1,10 +1,9 @@
 "use client";
 
-import type { Route } from "next";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { LoginSelector } from "@/components/auth/LoginSelector";
 import {
   getCurrentMemberEvent,
   getStoredMemberAttendeeId,
@@ -12,16 +11,11 @@ import {
 } from "@/lib/getCurrentMemberEvent";
 import { getStoredUserMode } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
-import { getTenantLabel } from "@/lib/tenantLabels";
 
 export default function HomePage() {
   const [checked, setChecked] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const router = useRouter();
-  const appTitle = getTenantLabel("app_title");
-  const welcomeMessage = getTenantLabel("welcome_message");
-  const memberLoginLabel = getTenantLabel("member_login_label");
-  const adminLoginLabel = getTenantLabel("admin_login_label");
 
   useEffect(() => {
     async function run() {
@@ -94,51 +88,7 @@ export default function HomePage() {
   }
 
   if (!hasSession) {
-    const links = [
-      { href: "/member/login", label: memberLoginLabel },
-      { href: "/admin/login", label: adminLoginLabel },
-      { href: "/vendor/login", label: "Vendor Login" },
-    ];
-
-    return (
-      <div style={{ padding: 30, maxWidth: 700, margin: "0 auto" }}>
-        <h1 style={{ marginTop: 0 }}>{appTitle}</h1>
-
-        <p>{welcomeMessage}</p>
-
-        <h2 style={{ fontSize: 16, color: "#555", marginTop: 24, marginBottom: 0 }}>
-          Choose Login Type
-        </h2>
-
-        <div
-          style={{
-            display: "grid",
-            gap: 14,
-            marginTop: 12,
-          }}
-        >
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href as Route}
-              style={{
-                display: "block",
-                padding: "16px 18px",
-                border: "1px solid #ddd",
-                borderRadius: 10,
-                textDecoration: "none",
-                color: "#111",
-                background: "white",
-                fontWeight: 700,
-                textAlign: "center",
-              }}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </div>
-      </div>
-    );
+    return <LoginSelector />;
   }
 
   return null;

@@ -727,7 +727,7 @@ export default function MemberLoginPage() {
       ) : null}
 
       <div style={{ marginTop: 12 }}>
-        <LoginActionButton variant="back" href="/">
+        <LoginActionButton variant="back" href="/login">
           Back to Login
         </LoginActionButton>
       </div>

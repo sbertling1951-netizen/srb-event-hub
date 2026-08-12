@@ -222,7 +222,7 @@ export default function VendorLoginPage() {
         ) : null}
       </div>
 
-      <LoginActionButton variant="back" href="/">
+      <LoginActionButton variant="back" href="/login">
         Back to Login
       </LoginActionButton>
     </div>
