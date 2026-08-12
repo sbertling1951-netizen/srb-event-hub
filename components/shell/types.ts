@@ -36,6 +36,15 @@ export type ShellBrand = {
 /** Event/workspace identity (§C). Never business Authority -- display only. */
 export type ShellWorkspaceIdentity = {
   name: string | null;
+  /**
+   * Optional short/compact form of `name` for narrow-viewport presentation
+   * (Stage 4C §A) -- e.g. a governed `events.short_name` value ("Saint
+   * George") standing in for a longer official name ("St. George, Utah
+   * Fall Event"). Purely an alternate PRESENTATION string for the same
+   * Event identity, never a second identity. When absent, compact
+   * presentation falls back to `name` itself.
+   */
+  compactName?: string | null;
   location?: string | null;
   startDate?: string | null;
   endDate?: string | null;
@@ -46,6 +55,7 @@ export type ShellAccountAction = {
   label: string;
   href?: string;
   onClick?: () => void;
+  disabled?: boolean;
   variant?: "default" | "danger";
 };
 

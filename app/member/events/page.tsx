@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { setCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { supabase } from "@/lib/supabase";
 
@@ -76,113 +77,113 @@ export default function MemberEventsPage() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ marginTop: 0 }}>Member Events</h1>
-      <p>Select an event to continue.</p>
+    <MemberShellAdapter pageTitle="Member Events">
+      <div style={{ display: "grid", gap: 16, maxWidth: 760 }}>
+        <p style={{ margin: 0 }}>Select an event to continue.</p>
 
-      {status ? (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "#f8f9fb",
-            padding: 14,
-            marginBottom: 16,
-            fontSize: 13,
-            color: "#555",
-          }}
-        >
-          {status}
-        </div>
-      ) : null}
-
-      {error ? (
-        <div
-          role="alert"
-          style={{
-            border: "1px solid #fecaca",
-            borderRadius: 10,
-            background: "#fef2f2",
-            color: "#991b1b",
-            padding: 14,
-            marginBottom: 16,
-            fontWeight: 700,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
-
-      <div style={{ display: "grid", gap: 14 }}>
-        {events.map((event) => (
-          <div
-            key={event.id}
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 10,
-              background: "white",
-              padding: 16,
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: 18 }}>
-              {event.name || "Untitled event"}
-            </div>
-
-            {event.venue_name ? (
-              <div style={{ color: "#555", marginTop: 4 }}>
-                {event.venue_name}
-              </div>
-            ) : null}
-
-            {event.location ? (
-              <div style={{ color: "#555", marginTop: 4 }}>
-                {event.location}
-              </div>
-            ) : null}
-
-            <div style={{ fontSize: 13, color: "#666", marginTop: 6 }}>
-              {formatDateRange(event.start_date, event.end_date)}
-            </div>
-
-            {event.event_code ? (
-              <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
-                Event code: {event.event_code}
-              </div>
-            ) : null}
-
-            <div style={{ marginTop: 12 }}>
-              <button
-                type="button"
-                onClick={() => handleSelectEvent(event)}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  background: "#fff",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                }}
-              >
-                Select Event
-              </button>
-            </div>
-          </div>
-        ))}
-
-        {events.length === 0 ? (
+        {status ? (
           <div
             style={{
               border: "1px solid #ddd",
               borderRadius: 10,
-              background: "white",
-              padding: 16,
-              color: "#666",
+              background: "#f8f9fb",
+              padding: 14,
+              fontSize: 13,
+              color: "#555",
             }}
           >
-            No member events available.
+            {status}
           </div>
         ) : null}
+
+        {error ? (
+          <div
+            role="alert"
+            style={{
+              border: "1px solid #fecaca",
+              borderRadius: 10,
+              background: "#fef2f2",
+              color: "#991b1b",
+              padding: 14,
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
+
+        <div style={{ display: "grid", gap: 14 }}>
+          {events.map((event) => (
+            <div
+              key={event.id}
+              style={{
+                border: "1px solid #ddd",
+                borderRadius: 10,
+                background: "white",
+                padding: 16,
+                minWidth: 0,
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 18, overflowWrap: "anywhere" }}>
+                {event.name || "Untitled event"}
+              </div>
+
+              {event.venue_name ? (
+                <div style={{ color: "#555", marginTop: 4, overflowWrap: "anywhere" }}>
+                  {event.venue_name}
+                </div>
+              ) : null}
+
+              {event.location ? (
+                <div style={{ color: "#555", marginTop: 4, overflowWrap: "anywhere" }}>
+                  {event.location}
+                </div>
+              ) : null}
+
+              <div style={{ fontSize: 13, color: "#666", marginTop: 6, overflowWrap: "anywhere" }}>
+                {formatDateRange(event.start_date, event.end_date)}
+              </div>
+
+              {event.event_code ? (
+                <div style={{ fontSize: 13, color: "#666", marginTop: 4, overflowWrap: "anywhere" }}>
+                  Event code: {event.event_code}
+                </div>
+              ) : null}
+
+              <div style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => handleSelectEvent(event)}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    background: "#fff",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  Select Event
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {events.length === 0 ? (
+            <div
+              style={{
+                border: "1px solid #ddd",
+                borderRadius: 10,
+                background: "white",
+                padding: 16,
+                color: "#666",
+              }}
+            >
+              No member events available.
+            </div>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </MemberShellAdapter>
   );
 }

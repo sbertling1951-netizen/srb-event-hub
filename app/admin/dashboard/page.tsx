@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AdminSummaryLink from "@/components/admin/AdminSummaryLink";
 import AdminTrustIndicator from "@/components/admin/AdminTrustIndicator";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -67,16 +68,6 @@ function formatEventLabel(evt: EventRow) {
   const loc = evt.location || "";
   const statusIcon = isActiveEventStatus(evt.status) ? "🟢" : "🟡";
   return [statusIcon, name, dates, loc].filter(Boolean).join(" — ");
-}
-
-function formatEventDateRange(evt: EventRow | null) {
-  if (!evt) {
-    return "";
-  }
-  if (evt.start_date && evt.end_date) {
-    return `${evt.start_date} – ${evt.end_date}`;
-  }
-  return evt.start_date || evt.end_date || "";
 }
 
 function normalizeEventStatus(status?: string | null) {
@@ -394,17 +385,8 @@ function AdminDashboardPageInner() {
   return (
     <div style={pageStyle}>
       <div className="card" style={headerCardStyle}>
-        <h1 style={{ margin: 0, marginBottom: 8 }}>Admin Dashboard</h1>
-        <div style={subtleTextStyle}>
-          {activeEvent?.name || "No selected event"}
-          {activeEvent?.location ? ` • ${activeEvent.location}` : ""}
-          {formatEventDateRange(activeEvent)
-            ? ` • ${formatEventDateRange(activeEvent)}`
-            : ""}
-        </div>
-
         <div style={eventSelectorGridStyle}>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <label style={labelStyle} htmlFor="admin-working-event">
               Admin Working Event
             </label>
@@ -465,17 +447,12 @@ function AdminDashboardPageInner() {
 const pageStyle: React.CSSProperties = {
   display: "grid",
   gap: 18,
-  padding: 24,
+  minWidth: 0,
 };
 
 const headerCardStyle: React.CSSProperties = {
   padding: 18,
-};
-
-const subtleTextStyle: React.CSSProperties = {
-  fontSize: 14,
-  opacity: 0.8,
-  marginBottom: 14,
+  minWidth: 0,
 };
 
 // Standards-first responsive layout only (Adaptive UI Architecture §10):
@@ -485,10 +462,11 @@ const subtleTextStyle: React.CSSProperties = {
 // dashboard's own prior window.innerWidth-driven layout state.
 const eventSelectorGridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))",
   gap: 14,
   alignItems: "end",
   marginTop: 4,
+  minWidth: 0,
 };
 
 const labelStyle: React.CSSProperties = {
@@ -522,12 +500,15 @@ const statusBoxStyle: React.CSSProperties = {
   minHeight: 42,
   display: "flex",
   alignItems: "center",
+  minWidth: 0,
+  overflowWrap: "anywhere",
 };
 
 const summaryLinkGridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
   gap: 14,
+  minWidth: 0,
 };
 
 const emptyCardStyle: React.CSSProperties = {
@@ -536,12 +517,16 @@ const emptyCardStyle: React.CSSProperties = {
   background: "white",
   padding: 18,
   color: "#555",
+  minWidth: 0,
+  overflowWrap: "anywhere",
 };
 
 export default function AdminDashboardPage() {
   return (
     <AdminRouteGuard requiredPermission="can_view_admin_dashboard">
-      <AdminDashboardPageInner />
+      <AdminShellAdapter pageTitle="Admin Dashboard">
+        <AdminDashboardPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

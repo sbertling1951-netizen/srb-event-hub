@@ -98,10 +98,10 @@ function getEventAccessRole(privilegeGroup: PrivilegeGroup) {
   switch (privilegeGroup) {
     case "super_admin": return "event_admin";
     case "event_admin": return "event_admin";
-    case "content_admin": return "content_admin";
-    case "checkin": return "event_admin";
-    case "parking": return "event_admin";
-    case "read_only": return "content_admin";
+    case "content_admin": return "content";
+    case "checkin": return "checkin";
+    case "parking": return "parking";
+    case "read_only": return "view_only";
     default: return "event_admin";
   }
 }
@@ -144,6 +144,7 @@ function AdminUsersPageInner() {
   const [privilegeGroup, setPrivilegeGroup] = useState<PrivilegeGroup>(defaultGroup);
   const [permissions, setPermissions] = useState<AdminPermissions>(getPresetPermissions(defaultGroup));
   const [assignedEventIds, setAssignedEventIds] = useState<string[]>([]);
+  const [currentAssignments, setCurrentAssignments] = useState<Array<{ id: string; event_id: string; role: string | null }>>([]);
   const [saveStatus, setSaveStatus] = useState("");
   const [password, setPassword] = useState("");
   const [resetStatus, setResetStatus] = useState("");
@@ -210,10 +211,17 @@ function AdminUsersPageInner() {
     void loadAssignedEvents(selectedRow.id);
   }, [selectedRow]);
 
+  // Direct SELECT remains appropriate here (Stage 11): this is a per-admin,
+  // across-Events read under the existing admin_event_access RLS policies,
+  // not a per-Event governor-management projection -- that shape is what
+  // list_event_authority_assignments exists for, on the Event Staff page.
+  // No write happens in this function.
   async function loadAssignedEvents(adminUserId: string) {
-    const { data, error } = await supabase.from("admin_event_access").select("event_id").eq("admin_user_id", adminUserId);
-    if (error) { setAssignedEventIds([]); return; }
-    setAssignedEventIds((data || []).map((row) => row.event_id));
+    const { data, error } = await supabase.from("admin_event_access").select("id,event_id,role").eq("admin_user_id", adminUserId);
+    if (error) { setAssignedEventIds([]); setCurrentAssignments([]); return; }
+    const assignments = (data || []) as Array<{ id: string; event_id: string; role: string | null }>;
+    setCurrentAssignments(assignments);
+    setAssignedEventIds(assignments.map((row) => row.event_id));
   }
 
   function startNewAdmin() {
@@ -224,6 +232,7 @@ function AdminUsersPageInner() {
     setPrivilegeGroup(defaultGroup);
     setPermissions(getPresetPermissions(defaultGroup));
     setAssignedEventIds([]);
+    setCurrentAssignments([]);
     setPassword("");
     setSaveStatus("");
     setResetStatus("");
@@ -289,12 +298,52 @@ function AdminUsersPageInner() {
     };
   }
 
+  // Governed cutover: no direct admin_event_access mutation. Diffs the
+  // admin's current assignments (loaded via loadAssignedEvents) against the
+  // checkbox selection and issues only the governed RPC calls actually
+  // needed -- removals, additions, and profile corrections for retained
+  // assignments whose profile no longer matches the (possibly just
+  // changed) privilege group. Nothing is touched that doesn't need to be.
   async function syncEventAccess(adminUserId: string, group: PrivilegeGroup, eventIds: string[]) {
-    const { error: deleteAccessError } = await supabase.from("admin_event_access").delete().eq("admin_user_id", adminUserId);
-    if (deleteAccessError) { return group === "super_admin" ? `Saved admin user, but could not clear event access: ${deleteAccessError.message}` : `Saved admin user, but could not reset event access: ${deleteAccessError.message}`; }
-    if (group === "super_admin" || eventIds.length === 0) { return null; }
-    const { error: insertAccessError } = await supabase.from("admin_event_access").insert(eventIds.map((eventId) => ({ admin_user_id: adminUserId, event_id: eventId, role: getEventAccessRole(group) })));
-    if (insertAccessError) { return `Saved admin user, but event access failed: ${insertAccessError.message}`; }
+    const targetProfile = getEventAccessRole(group);
+    const wantEventIds = group === "super_admin" ? new Set<string>() : new Set(eventIds);
+    const errors: string[] = [];
+
+    const toRemove = currentAssignments.filter((a) => !wantEventIds.has(a.event_id));
+    const toAdd = Array.from(wantEventIds).filter((eventId) => !currentAssignments.some((a) => a.event_id === eventId));
+    const toReprofile = currentAssignments.filter((a) => wantEventIds.has(a.event_id) && a.role !== targetProfile);
+
+    for (const assignment of toRemove) {
+      const { error } = await supabase.rpc("remove_event_authority_assignment", { p_assignment_id: assignment.id });
+      if (error) { errors.push(`remove: ${error.message}`); }
+    }
+
+    for (const eventId of toAdd) {
+      const { error } = await supabase.rpc("create_event_authority_assignment", {
+        p_target_admin_user_id: adminUserId,
+        p_event_id: eventId,
+        p_profile_key: targetProfile,
+      });
+      if (error) { errors.push(`add: ${error.message}`); }
+    }
+
+    for (const assignment of toReprofile) {
+      // Faithful to the prior behavior (which unconditionally reset
+      // permissions to the role's defaults on every save): apply the new
+      // profile's DB-owned defaults rather than silently carrying forward
+      // whatever explicit grants existed under the old profile. The
+      // fine-grained Event Staff page is where an operator chooses
+      // preserve_exceptions deliberately.
+      const { error } = await supabase.rpc("change_event_authority_profile", {
+        p_assignment_id: assignment.id,
+        p_profile_key: targetProfile,
+        p_disposition: "reset_to_defaults",
+        p_final_task_keys: null,
+      });
+      if (error) { errors.push(`profile update: ${error.message}`); }
+    }
+
+    if (errors.length > 0) { return `Saved admin user, but event access failed: ${errors.join("; ")}`; }
     return null;
   }
 

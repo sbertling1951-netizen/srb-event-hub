@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { type RefObject,useEffect, useRef } from "react";
 
-import type { ShellNavSection } from "@/components/shell/types";
+import type { ShellAccountAction, ShellNavSection } from "@/components/shell/types";
 
 export type ShellNavProps = {
   sections: ShellNavSection[];
+  accountActions?: ShellAccountAction[];
   activeHref?: string | null;
   isCompact: boolean;
   open: boolean;
@@ -46,10 +47,12 @@ function resolveActiveHref(sections: ShellNavSection[], activeHref?: string | nu
 
 function NavSections({
   sections,
+  accountActions,
   resolvedActiveHref,
   onNavigate,
 }: {
   sections: ShellNavSection[];
+  accountActions?: ShellAccountAction[];
   resolvedActiveHref: string | null;
   onNavigate?: () => void;
 }) {
@@ -78,6 +81,41 @@ function NavSections({
           </div>
         </div>
       ))}
+      {accountActions && accountActions.length > 0 ? (
+        <div className="shell-nav-account-actions">
+          {accountActions.map((action) =>
+            action.href ? (
+              <Link
+                key={action.id}
+                href={action.href}
+                className={
+                  "shell-nav-account-action" +
+                  (action.variant === "danger" ? " shell-nav-account-action-danger" : "")
+                }
+                onClick={onNavigate}
+              >
+                {action.label}
+              </Link>
+            ) : (
+              <button
+                key={action.id}
+                type="button"
+                className={
+                  "shell-nav-account-action" +
+                  (action.variant === "danger" ? " shell-nav-account-action-danger" : "")
+                }
+                onClick={() => {
+                  onNavigate?.();
+                  action.onClick?.();
+                }}
+                disabled={action.disabled}
+              >
+                {action.label}
+              </button>
+            ),
+          )}
+        </div>
+      ) : null}
     </nav>
   );
 }
@@ -98,7 +136,7 @@ function NavSections({
  * listener) rather than a new library, per §H's "use the simplest
  * accessible pattern... do not add a dependency unless truly necessary."
  */
-export function ShellNav({ sections, activeHref, isCompact, open, onClose, triggerRef }: ShellNavProps) {
+export function ShellNav({ sections, accountActions, activeHref, isCompact, open, onClose, triggerRef }: ShellNavProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
   const resolvedActiveHref = resolveActiveHref(sections, activeHref);
 
@@ -152,7 +190,7 @@ export function ShellNav({ sections, activeHref, isCompact, open, onClose, trigg
   if (!isCompact) {
     return (
       <aside className="shell-nav-desktop">
-        <NavSections sections={sections} resolvedActiveHref={resolvedActiveHref} />
+        <NavSections sections={sections} accountActions={accountActions} resolvedActiveHref={resolvedActiveHref} />
       </aside>
     );
   }
@@ -172,7 +210,7 @@ export function ShellNav({ sections, activeHref, isCompact, open, onClose, trigg
         aria-modal="true"
         aria-label="Navigation"
       >
-        <NavSections sections={sections} resolvedActiveHref={resolvedActiveHref} onNavigate={onClose} />
+        <NavSections sections={sections} accountActions={accountActions} resolvedActiveHref={resolvedActiveHref} onNavigate={onClose} />
       </div>
     </div>
   );

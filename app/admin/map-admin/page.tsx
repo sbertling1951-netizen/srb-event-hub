@@ -125,6 +125,23 @@ const mapCards = [
       border: "1px solid #e9d5ff",
     },
   },
+  {
+    title: "Nearby Settings",
+    description:
+      "Tenant-level Nearby category curation and shared-place knowledge.",
+    href: "/admin/nearby-settings",
+    buttonLabel: "Open Nearby Settings",
+    icon: "🧭",
+    cardStyle: {
+      background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
+      border: "1px solid #fed7aa",
+    },
+    iconStyle: {
+      background: "#ffedd5",
+      color: "#c2410c",
+      border: "1px solid #fed7aa",
+    },
+  },
 ] as const;
 
 function MapAdminPageInner() {

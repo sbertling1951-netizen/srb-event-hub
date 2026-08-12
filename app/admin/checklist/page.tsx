@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 
 type ChecklistSection = {
   title: string;
@@ -62,7 +63,9 @@ const STORAGE_KEY_BASE = "fcoc-pre-rally-checklist";
 export default function AdminChecklistPage() {
   return (
     <AdminRouteGuard requiredPermission="can_view_admin_dashboard">
-      <AdminChecklistPageInner />
+      <AdminShellAdapter pageTitle="Pre-Rally Checklist">
+        <AdminChecklistPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
@@ -140,9 +143,8 @@ function AdminChecklistPageInner() {
   }
 
   return (
-    <div style={{ display: "grid", gap: 18 }}>
+    <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Pre-Rally Checklist</h1>
         <p style={{ marginTop: 0, opacity: 0.8 }}>
           Track your rally readiness from setup through departure.
         </p>
@@ -151,7 +153,8 @@ function AdminChecklistPageInner() {
           style={{
             display: "grid",
             gap: 12,
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
             marginTop: 14,
           }}
         >
@@ -192,6 +195,7 @@ function AdminChecklistPageInner() {
                     display: "flex",
                     alignItems: "flex-start",
                     gap: 10,
+                    minWidth: 0,
                     padding: "10px 12px",
                     border: "1px solid #ddd",
                     borderRadius: 10,
@@ -210,6 +214,8 @@ function AdminChecklistPageInner() {
                     style={{
                       textDecoration: isDone ? "line-through" : "none",
                       opacity: isDone ? 0.75 : 1,
+                      minWidth: 0,
+                      overflowWrap: "anywhere",
                     }}
                   >
                     {item}

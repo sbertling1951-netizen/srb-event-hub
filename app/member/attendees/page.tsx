@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
 import { fullName, preferredDisplayLine } from "@/lib/formatters";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
@@ -48,19 +49,6 @@ function yesNo(value?: boolean | null) {
 
 function displayPhone(attendee: Attendee) {
   return attendee.primary_phone || attendee.cell_phone || "";
-}
-
-function formatDateRange(
-  startDate: string | null | undefined,
-  endDate: string | null | undefined,
-) {
-  if (!startDate && !endDate) {
-    return "";
-  }
-  if (startDate && endDate) {
-    return `${startDate} – ${endDate}`;
-  }
-  return startDate || endDate || "";
 }
 
 function memberLine(member: HouseholdMember) {
@@ -284,18 +272,15 @@ function AttendeesPageInner() {
     });
   }, [attendees, householdByAttendee, search]);
 
-  const dateRange = formatDateRange(event?.start_date, event?.end_date);
-
   return (
-    <div style={{ padding: 24 }}>
-      <h1>Attendee Locator</h1>
-      <p>
+    <div style={{ display: "grid", gap: 16, maxWidth: 1000 }}>
+      <p style={{ margin: 0 }}>
         <strong>Welcome! The excitement is already building.</strong> Members
         who have chosen to share their information appear here as they begin
         using the Event Hub.
       </p>
 
-      <p>
+      <p style={{ margin: 0 }}>
         As attendees arrive and complete check-in, additional
         information—including campsite assignments and coach locations (for
         those who choose to share them)—will automatically become available.
@@ -307,29 +292,8 @@ function AttendeesPageInner() {
           borderRadius: 10,
           background: "#f8f9fb",
           padding: 14,
-          marginBottom: 16,
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>
-          Current event: {event?.name || "No current event"}
-        </div>
-
-        {event?.venue_name ? (
-          <div style={{ marginBottom: 4, color: "#555" }}>
-            {event.venue_name}
-          </div>
-        ) : null}
-
-        {event?.location ? (
-          <div style={{ marginBottom: 4, color: "#555" }}>{event.location}</div>
-        ) : null}
-
-        {dateRange ? (
-          <div style={{ marginBottom: 4, fontSize: 13, color: "#666" }}>
-            {dateRange}
-          </div>
-        ) : null}
-
         {status ? (
           <div style={{ fontSize: 13, color: "#555" }}>Status: {status}</div>
         ) : null}
@@ -344,7 +308,6 @@ function AttendeesPageInner() {
             background: "#fef2f2",
             color: "#991b1b",
             padding: 14,
-            marginBottom: 16,
             fontWeight: 700,
           }}
         >
@@ -360,7 +323,6 @@ function AttendeesPageInner() {
             background: "#fffbeb",
             color: "#92400e",
             padding: 16,
-            marginBottom: 16,
           }}
         >
           <div style={{ fontWeight: 800, marginBottom: 6 }}>
@@ -382,8 +344,9 @@ function AttendeesPageInner() {
               borderRadius: 10,
               background: "white",
               padding: 12,
-              marginBottom: 16,
               maxWidth: 420,
+              width: "100%",
+              minWidth: 0,
             }}
           >
             <div style={{ fontWeight: 700, marginBottom: 8 }}>Search</div>
@@ -391,11 +354,11 @@ function AttendeesPageInner() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Name, nickname, email, phone, coach, or site"
-              style={{ width: "100%", padding: 8 }}
+              style={{ width: "100%", minWidth: 0, padding: 8 }}
             />
           </div>
 
-          <div style={{ marginBottom: 12, fontSize: 13, color: "#555" }}>
+          <div style={{ fontSize: 13, color: "#555" }}>
             Showing {filtered.length} attendee{filtered.length === 1 ? "" : "s"}
             .
           </div>
@@ -421,6 +384,7 @@ function AttendeesPageInner() {
                     borderRadius: 10,
                     background: "white",
                     padding: 14,
+                    minWidth: 0,
                   }}
                 >
                   <div
@@ -431,8 +395,8 @@ function AttendeesPageInner() {
                       gap: 12,
                     }}
                   >
-                    <div>
-                      <div style={{ fontWeight: 700 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>
                         Pilot:{" "}
                         {pilotMember
                           ? memberLine(pilotMember)
@@ -440,22 +404,22 @@ function AttendeesPageInner() {
                       </div>
                       {a.email ? (
                         <div
-                          style={{ fontSize: 12, color: "#666", marginTop: 4 }}
+                          style={{ fontSize: 12, color: "#666", marginTop: 4, overflowWrap: "anywhere" }}
                         >
                           {a.email}
                         </div>
                       ) : null}
                       {phone ? (
                         <div
-                          style={{ fontSize: 12, color: "#666", marginTop: 4 }}
+                          style={{ fontSize: 12, color: "#666", marginTop: 4, overflowWrap: "anywhere" }}
                         >
                           {phone}
                         </div>
                       ) : null}
                     </div>
 
-                    <div>
-                      <div style={{ fontWeight: 700 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>
                         Co-Pilot:{" "}
                         {copilotMember
                           ? memberLine(copilotMember)
@@ -463,8 +427,8 @@ function AttendeesPageInner() {
                       </div>
                     </div>
 
-                    <div>
-                      <div style={{ fontWeight: 700 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>
                         {[a.coach_make, a.coach_model]
                           .filter(Boolean)
                           .join(" ") || "—"}
@@ -478,7 +442,7 @@ function AttendeesPageInner() {
                       ) : null}
                     </div>
 
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 700 }}>Site</div>
                       <div>
                         {a.has_arrived
@@ -516,7 +480,7 @@ function AttendeesPageInner() {
                       </div>
                       <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
                         {members.map((member) => (
-                          <div key={member.id}>
+                          <div key={member.id} style={{ overflowWrap: "anywhere" }}>
                             {member.person_role === "pilot"
                               ? "Pilot"
                               : member.person_role === "copilot"
@@ -555,7 +519,9 @@ function AttendeesPageInner() {
 export default function AttendeesPage() {
   return (
     <MemberRouteGuard>
-      <AttendeesPageInner />
+      <MemberShellAdapter pageTitle="Attendee Locator">
+        <AttendeesPageInner />
+      </MemberShellAdapter>
     </MemberRouteGuard>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -135,7 +136,9 @@ function openParkingMapForSite(siteNumber: string | null) {
 export default function VendorRequestsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_events">
-      <VendorRequestsInner />
+      <AdminShellAdapter pageTitle="Vendor Requests">
+        <VendorRequestsInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
@@ -469,10 +472,11 @@ function VendorRequestsInner() {
   }
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 16 }}>
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0 }}>Vendor Requests</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>{status}</div>
+    <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
+      <div className="card" style={{ padding: 18, minWidth: 0 }}>
+        <div role="status" style={{ fontSize: 14, opacity: 0.8 }}>
+          {status}
+        </div>
       </div>
 
       <div
@@ -481,8 +485,10 @@ function VendorRequestsInner() {
           padding: 18,
           display: "grid",
           gap: 12,
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
           alignItems: "end",
+          minWidth: 0,
         }}
       >
         <label>
@@ -530,7 +536,10 @@ function VendorRequestsInner() {
       </div>
 
       {groupedRequests.length > 0 ? (
-        <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
+        <div
+          className="card"
+          style={{ padding: 16, display: "grid", gap: 12, minWidth: 0 }}
+        >
           <div style={{ fontWeight: 800, fontSize: 18 }}>
             Vendor Dispatch Lists
           </div>
@@ -556,6 +565,8 @@ function VendorRequestsInner() {
                   padding: 12,
                   display: "grid",
                   gap: 8,
+                  minWidth: 0,
+                  overflowWrap: "anywhere",
                 }}
               >
                 <div
@@ -567,8 +578,10 @@ function VendorRequestsInner() {
                     alignItems: "center",
                   }}
                 >
-                  <div>
-                    <div style={{ fontWeight: 800 }}>{vendorName}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, overflowWrap: "anywhere" }}>
+                      {vendorName}
+                    </div>
                     <div style={{ fontSize: 13, color: "#555" }}>
                       {vendorRequests.length} request
                       {vendorRequests.length === 1 ? "" : "s"}
@@ -579,9 +592,11 @@ function VendorRequestsInner() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(min(160px, 100%), 1fr))",
                       gap: 8,
                       width: "min(100%, 520px)",
+                      minWidth: 0,
                     }}
                   >
                     <button
@@ -659,9 +674,13 @@ function VendorRequestsInner() {
             background: "white",
             display: "grid",
             gap: 10,
+            minWidth: 0,
+            overflowWrap: "anywhere",
           }}
         >
-          <div style={{ fontWeight: 800, fontSize: 18 }}>
+          <div
+            style={{ fontWeight: 800, fontSize: 18, overflowWrap: "anywhere" }}
+          >
             {r.requester_name || "Unnamed"}
           </div>
 
@@ -761,7 +780,7 @@ function VendorRequestsInner() {
       ))}
 
       {filtered.length === 0 ? (
-        <div className="card" style={{ padding: 16 }}>
+        <div className="card" style={{ padding: 16, minWidth: 0 }}>
           No vendor requests found.
         </div>
       ) : null}

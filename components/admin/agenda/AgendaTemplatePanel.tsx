@@ -5,11 +5,18 @@ type ActiveEvent = {
   name: string;
 };
 
+// Matches the shape returned by the governed list_available_agenda_templates
+// RPC -- a "template" the admin can select is always a specific published
+// revision of a Platform- or Tenant-owned root, never a draft.
 type AgendaTemplate = {
-  id: string;
-  name: string;
+  source_scope: "platform" | "tenant";
+  template_root_id: string;
+  revision_id: string;
+  revision_number: number;
+  title: string;
   description: string | null;
-  status: string;
+  revision_status: string;
+  tenant_id: string | null;
 };
 
 type Props = {
@@ -18,16 +25,16 @@ type Props = {
   itemCount: number;
   templates: AgendaTemplate[];
   selectedTemplateId: string;
-  assignedTemplateName: string;
   newTemplateName: string;
   newTemplateDescription: string;
   savingTemplate: boolean;
+  applyingTemplate: boolean;
+  replacingFromTemplate: boolean;
   setSelectedTemplateId: (value: string) => void;
   setNewTemplateName: (value: string) => void;
   setNewTemplateDescription: (value: string) => void;
   onSaveTemplate: () => Promise<void>;
-  onAssignTemplate: () => Promise<void>;
-  onCopyTemplate: () => Promise<void>;
+  onApplyTemplate: () => Promise<void>;
   onReplaceFromTemplate: () => Promise<void>;
 };
 
@@ -38,16 +45,16 @@ export default function AgendaTemplatePanel(props: Props) {
     itemCount,
     templates,
     selectedTemplateId,
-    assignedTemplateName,
     newTemplateName,
     newTemplateDescription,
     savingTemplate,
+    applyingTemplate,
+    replacingFromTemplate,
     setSelectedTemplateId,
     setNewTemplateName,
     setNewTemplateDescription,
     onSaveTemplate,
-    onAssignTemplate,
-    onCopyTemplate,
+    onApplyTemplate,
     onReplaceFromTemplate,
   } = props;
 
@@ -101,7 +108,8 @@ export default function AgendaTemplatePanel(props: Props) {
         <div>
           <div style={titleStyle}>Use Saved Template</div>
           <div style={helpStyle}>
-            Assign or copy an existing reusable agenda template.
+            Apply an existing reusable agenda template to this event, or
+            replace this event&apos;s agenda with one.
           </div>
         </div>
 
@@ -112,28 +120,31 @@ export default function AgendaTemplatePanel(props: Props) {
         >
           <option value="">Select template</option>
           {templates.map((template) => (
-            <option key={template.id} value={template.id}>
-              {template.name}
+            <option key={template.revision_id} value={template.revision_id}>
+              {template.source_scope === "platform" ? "Platform: " : "Tenant: "}
+              {template.title} (rev {template.revision_number})
             </option>
           ))}
         </select>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" onClick={() => void onAssignTemplate()}>
-            Assign Template to Event
+          <button
+            type="button"
+            onClick={() => void onApplyTemplate()}
+            disabled={applyingTemplate || replacingFromTemplate}
+          >
+            {applyingTemplate ? "Applying…" : "Apply Template to Event"}
           </button>
 
-          <button type="button" onClick={() => void onCopyTemplate()}>
-            Copy Template Items to Event
+          <button
+            type="button"
+            onClick={() => void onReplaceFromTemplate()}
+            disabled={applyingTemplate || replacingFromTemplate}
+          >
+            {replacingFromTemplate
+              ? "Replacing…"
+              : "Replace Event Agenda From Template"}
           </button>
-
-          <button type="button" onClick={() => void onReplaceFromTemplate()}>
-            Replace Event Agenda From Template
-          </button>
-        </div>
-
-        <div style={{ fontSize: 12, color: "#666" }}>
-          Current assigned template: {assignedTemplateName}
         </div>
       </div>
     </div>

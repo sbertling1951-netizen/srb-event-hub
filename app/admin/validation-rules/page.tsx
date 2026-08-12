@@ -1,6 +1,5 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import {
   type CSSProperties,
   Suspense,
@@ -62,14 +61,6 @@ type RuleFormState = {
   priority: string;
   applies_to_event_id: string;
 };
-
-function isEmbeddedMode() {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  return new URLSearchParams(window.location.search).get("embedded") === "1";
-}
 
 function createEmptyForm(): RuleFormState {
   return {
@@ -160,21 +151,9 @@ function AdminValidationRulesPageInner() {
   const [form, setForm] = useState<RuleFormState>(createEmptyForm());
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const searchParams = useSearchParams();
-  const isEmbedded = searchParams.get("embedded") === "1";
   const pageTitle = "Validation Rules";
 
   const { admin } = useAdmin();
-
-  useEffect(() => {
-    if (!isEmbedded) {
-      return;
-    }
-    document.body.classList.add("admin-embedded-shell");
-    return () => {
-      document.body.classList.remove("admin-embedded-shell");
-    };
-  }, [isEmbedded]);
 
   useEffect(() => {
     if (!admin) {
@@ -445,24 +424,16 @@ function AdminValidationRulesPageInner() {
   }, [rules, search]);
 
   return (
-    <>
-      <ValidationRulesEmbeddedStyles />
-      <div style={{ display: "grid", gap: 18 }}>
-        {!isEmbedded ? (
-          <PageNavigation
-            homeHref="/admin/dashboard"
-            homeLabel="Dashboard"
-            parentHref="/admin/attendees"
-            parentLabel="Attendees"
-          />
-        ) : null}
+    <div style={{ display: "grid", gap: 18 }}>
+      <PageNavigation
+        homeHref="/admin/dashboard"
+        homeLabel="Dashboard"
+        parentHref="/admin/attendees"
+        parentLabel="Attendees"
+      />
 
-        <div className="card" style={{ padding: 18 }}>
-          {isEmbedded ? (
-            <h2 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h2>
-          ) : (
-            <h1 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h1>
-          )}
+      <div className="card" style={{ padding: 18 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h1>
           <div style={{ fontSize: 14, opacity: 0.8 }}>
             Superadmin rule editor for Data Review and future validation checks.
             {currentEvent?.name || currentEvent?.eventName
@@ -470,28 +441,11 @@ function AdminValidationRulesPageInner() {
               : ""}
           </div>
           <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
-          {isEmbedded ? (
-            <div
-              style={{
-                marginTop: 12,
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #dbeafe",
-                background: "#eff6ff",
-                color: "#1d4ed8",
-                fontSize: 14,
-              }}
-            >
-              Embedded validation-rules mode is active. Changes made here are
-              saved immediately and stay tied to the current admin event scope
-              when an event-specific rule is selected.
-            </div>
-          ) : null}
           {flashMessage ? (
             <div style={successBoxStyle}>{flashMessage}</div>
           ) : null}
           {error ? <div style={errorBoxStyle}>{error}</div> : null}
-        </div>
+      </div>
 
         <div className="card" style={{ padding: 18 }}>
           <div
@@ -763,41 +717,11 @@ function AdminValidationRulesPageInner() {
             </div>
           )}
         </div>
-      </div>
-    </>
+    </div>
   );
 }
 
-function ValidationRulesEmbeddedStyles() {
-  useEffect(() => {
-    const existing = document.getElementById(
-      "validation-rules-embedded-styles",
-    );
-    if (existing) {
-      return;
-    }
-    const style = document.createElement("style");
-    style.id = "validation-rules-embedded-styles";
-    style.innerHTML = `
-      body.admin-embedded-shell > :first-child { display: none !important; }
-      body.admin-embedded-shell .app-main { margin-left: 0 !important; width: 100% !important; max-width: 100% !important; }
-      body.admin-embedded-shell .app-inner { max-width: 100% !important; padding: 0 !important; }
-      body.admin-embedded-shell .app-header-card { display: none !important; }
-    `;
-    document.head.appendChild(style);
-    return () => {
-      style.remove();
-    };
-  }, []);
-  return null;
-}
-
 function AdminValidationRulesPageContent() {
-  const searchParams = useSearchParams();
-  const isEmbedded = searchParams.get("embedded") === "1";
-  if (isEmbedded) {
-    return <AdminValidationRulesPageInner />;
-  }
   return (
     <AdminRouteGuard requiredPermission="can_manage_validation_rules">
       <AdminValidationRulesPageInner />

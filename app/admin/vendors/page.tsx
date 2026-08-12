@@ -3,11 +3,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
-} from "@/lib/adminWorkspaceContext";import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
-import { useAdmin } from "@/lib/adminContext";
+} from "@/lib/adminWorkspaceContext";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type Vendor = {
@@ -382,28 +384,26 @@ function AdminVendorsPageInner() {
   }
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 18 }}>
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0 }}>Vendor Admin</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          Current event: {adminEvent?.name || "No event selected"}
-        </div>
-        <div style={{ marginTop: 8, fontSize: 13 }}>{status}</div>
-        {error ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 10,
-              borderRadius: 8,
-              border: "1px solid #e2b4b4",
-              background: "#fff3f3",
-              color: "#8a1f1f",
-            }}
-          >
-            {error}
-          </div>
-        ) : null}
+    <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
+      <div role="status" style={{ fontSize: 13 }}>
+        {status}
       </div>
+      {error ? (
+        <div
+          role="alert"
+          style={{
+            padding: 10,
+            borderRadius: 8,
+            border: "1px solid #e2b4b4",
+            background: "#fff3f3",
+            color: "#8a1f1f",
+            minWidth: 0,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
 
       <div
         className="card"
@@ -411,6 +411,7 @@ function AdminVendorsPageInner() {
           padding: 18,
           display: "grid",
           gap: 12,
+          minWidth: 0,
         }}
       >
         <h2 style={{ margin: 0 }}>Vendor Dashboard</h2>
@@ -418,8 +419,10 @@ function AdminVendorsPageInner() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
             gap: 12,
+            minWidth: 0,
           }}
         >
           <a href="/admin/vendors" style={dashboardLinkStyle}>
@@ -454,9 +457,10 @@ function AdminVendorsPageInner() {
           gridTemplateColumns:
             "repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
           gap: 18,
+          minWidth: 0,
         }}
       >
-        <div className="card" style={{ padding: 18 }}>
+        <div className="card" style={{ padding: 18, minWidth: 0 }}>
           <h2 style={{ marginTop: 0 }}>
             {form.id ? "Edit Vendor" : "Add Vendor"}
           </h2>
@@ -625,7 +629,7 @@ function AdminVendorsPageInner() {
           </div>
         </div>
 
-        <div className="card" style={{ padding: 18 }}>
+        <div className="card" style={{ padding: 18, minWidth: 0 }}>
           <h2 style={{ marginTop: 0 }}>Vendors</h2>
 
           <div style={{ display: "grid", gap: 10 }}>
@@ -641,6 +645,8 @@ function AdminVendorsPageInner() {
                     borderRadius: 10,
                     padding: 12,
                     background: assigned ? "#f0fdf4" : "white",
+                    minWidth: 0,
+                    overflowWrap: "anywhere",
                   }}
                 >
                   <div
@@ -648,6 +654,7 @@ function AdminVendorsPageInner() {
                       display: "flex",
                       gap: 12,
                       alignItems: "center",
+                      minWidth: 0,
                     }}
                   >
                     {vendor.logo_url ? (
@@ -667,7 +674,7 @@ function AdminVendorsPageInner() {
                       />
                     ) : null}
 
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 800 }}>
                         {vendor.business_name}
                       </div>
@@ -821,7 +828,9 @@ function AdminVendorsPageInner() {
 export default function AdminVendorsPage() {
   return (
     <AdminRouteGuard>
-      <AdminVendorsPageInner />
+      <AdminShellAdapter pageTitle="Vendor Admin">
+        <AdminVendorsPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

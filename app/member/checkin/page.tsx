@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
 import { preferredDisplayLine } from "@/lib/formatters";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
@@ -42,19 +43,6 @@ type CheckinResult = {
   share_with_attendees: boolean;
   has_arrived: boolean;
 };
-
-function formatDateRange(
-  startDate: string | null | undefined,
-  endDate: string | null | undefined,
-) {
-  if (!startDate && !endDate) {
-    return "";
-  }
-  if (startDate && endDate) {
-    return `${startDate} – ${endDate}`;
-  }
-  return startDate || endDate || "";
-}
 
 function householdLine(member: HouseholdMember) {
   const first = member.first_name?.trim() || "";
@@ -310,47 +298,26 @@ function MemberCheckinPageInner() {
     }
   }
 
-  const dateRange = formatDateRange(event?.start_date, event?.end_date);
   const participantCapacity = event?.participant_capacity ?? 0;
   const participantCount = household.length;
   const availableSlots = Math.max(0, participantCapacity - participantCount);
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 16, maxWidth: 760 }}>
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-        }}
-      >
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>My Check-In</h1>
-
-        <div style={{ fontWeight: 700 }}>
-          Current event: {event?.name || "No current event"}
+    <div style={{ display: "grid", gap: 16, maxWidth: 760 }}>
+      {status ? (
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "#f8f9fb",
+            padding: 14,
+            fontSize: 13,
+            color: "#666",
+          }}
+        >
+          {status}
         </div>
-
-        {event?.venue_name ? (
-          <div style={{ color: "#555", marginTop: 4 }}>{event.venue_name}</div>
-        ) : null}
-
-        {event?.location ? (
-          <div style={{ color: "#555", marginTop: 4 }}>{event.location}</div>
-        ) : null}
-
-        {dateRange ? (
-          <div style={{ color: "#666", marginTop: 4, fontSize: 13 }}>
-            {dateRange}
-          </div>
-        ) : null}
-
-        {status ? (
-          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-            {status}
-          </div>
-        ) : null}
-      </div>
+      ) : null}
 
       {error ? (
         <div
@@ -398,7 +365,7 @@ function MemberCheckinPageInner() {
             {household.length > 0 ? (
               <div style={{ display: "grid", gap: 4 }}>
                 {household.map((member) => (
-                  <div key={member.id}>
+                  <div key={member.id} style={{ overflowWrap: "anywhere" }}>
                     {member.person_role === "pilot"
                       ? "Pilot"
                       : member.person_role === "copilot"
@@ -440,7 +407,9 @@ function MemberCheckinPageInner() {
             </div>
           ) : null}
 
-          <div style={{ display: "grid", gap: 10, maxWidth: 360 }}>
+          <div
+            style={{ display: "grid", gap: 10, width: "100%", maxWidth: 360, minWidth: 0 }}
+          >
             <label>
               <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
                 Site Number
@@ -453,16 +422,12 @@ function MemberCheckinPageInner() {
               />
             </label>
 
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={hasArrived}
-                onChange={(e) => setHasArrived(e.target.checked)}
-              />
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <input type="checkbox" checked={hasArrived} onChange={(e) => setHasArrived(e.target.checked)} />
               I have arrived
             </label>
 
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <input
                 type="checkbox"
                 checked={shareWithAttendees}
@@ -491,6 +456,7 @@ function MemberCheckinPageInner() {
                   onChange={(event) => setTemporaryEventCode(event.target.value)}
                   placeholder="Event code"
                   autoComplete="off"
+                  style={{ width: "100%", minWidth: 0, padding: 10 }}
                 />
                 <input
                   type="text"
@@ -500,6 +466,7 @@ function MemberCheckinPageInner() {
                   }
                   placeholder="Registration email or mobile number"
                   autoComplete="off"
+                  style={{ width: "100%", minWidth: 0, padding: 10 }}
                 />
               </div>
             ) : null}
@@ -531,7 +498,9 @@ function MemberCheckinPageInner() {
 export default function MemberCheckinPage() {
   return (
     <MemberRouteGuard>
-      <MemberCheckinPageInner />
+      <MemberShellAdapter pageTitle="My Check-In">
+        <MemberCheckinPageInner />
+      </MemberShellAdapter>
     </MemberRouteGuard>
   );
 }

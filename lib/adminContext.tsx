@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 
+import { ensureAdminIdentityLinked } from "@/lib/ensureAdminIdentityLinked";
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -83,6 +84,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (session) {
+        void ensureAdminIdentityLinked();
         await loadAdmin();
       } else {
         setAdmin(null);
@@ -104,6 +106,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (event === "SIGNED_IN") {
+        void ensureAdminIdentityLinked();
         void loadAdmin();
         return;
       }

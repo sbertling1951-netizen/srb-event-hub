@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
@@ -501,7 +502,7 @@ function MemberVendorSignupInner() {
   }
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 18, maxWidth: 920 }}>
+    <div style={{ display: "grid", gap: 18, maxWidth: 920 }}>
       <div
         className="card"
         style={{
@@ -511,12 +512,6 @@ function MemberVendorSignupInner() {
           padding: 18,
         }}
       >
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>
-          Vendor Service Request
-        </h1>
-        <div style={{ fontSize: 14, color: "#555" }}>
-          Current event: {event?.name || "Current event"}
-        </div>
         <div style={{ fontSize: 13, marginTop: 8 }}>{status}</div>
         {error ? (
           <div
@@ -594,7 +589,15 @@ function MemberVendorSignupInner() {
               gap: 10,
             }}
           >
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                flexWrap: "wrap",
+                minWidth: 0,
+              }}
+            >
               {selectedVendor.logo_url ? (
                 <img
                   src={selectedVendor.logo_url}
@@ -610,7 +613,7 @@ function MemberVendorSignupInner() {
                   }}
                 />
               ) : null}
-              <div>
+              <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>
                 <div style={{ fontWeight: 800 }}>
                   {selectedVendor.business_name}
                 </div>
@@ -922,7 +925,9 @@ function MemberVendorSignupInner() {
 export default function MemberVendorSignupPage() {
   return (
     <MemberRouteGuard>
-      <MemberVendorSignupInner />
+      <MemberShellAdapter pageTitle="Vendor Service Request">
+        <MemberVendorSignupInner />
+      </MemberShellAdapter>
     </MemberRouteGuard>
   );
 }

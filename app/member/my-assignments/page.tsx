@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
 
@@ -52,7 +53,12 @@ function formatAttributedAt(value: string) {
 export default function MyAssignmentsPage() {
   return (
     <MemberRouteGuard>
-      <MyAssignmentsInner />
+      <MemberShellAdapter
+        pageTitle="My Assignments"
+        pageSubtitle="Event duties that have been assigned to you."
+      >
+        <MyAssignmentsInner />
+      </MemberShellAdapter>
     </MemberRouteGuard>
   );
 }
@@ -134,14 +140,7 @@ function MyAssignmentsInner() {
   }, [isReady, loadAssignments]);
 
   return (
-    <div style={{ padding: 18, display: "grid", gap: 14 }}>
-      <div style={cardStyle}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>My Assignments</h1>
-        <div style={{ fontSize: 14, color: "#555" }}>
-          Event duties that have been assigned to you.
-        </div>
-      </div>
-
+    <div style={{ display: "grid", gap: 14 }}>
       {!isReady || state.kind === "loading" ? (
         <div style={cardStyle}>Loading your assignments...</div>
       ) : state.kind === "no_event" ? (
@@ -154,7 +153,7 @@ function MyAssignmentsInner() {
         ) : (
           state.assignments.map((assignment) => (
             <div key={assignment.id} style={cardStyle}>
-              <div style={{ fontWeight: 800, fontSize: 16 }}>
+              <div style={{ fontWeight: 800, fontSize: 16, overflowWrap: "anywhere" }}>
                 {assignment.responsibilityLabel}
               </div>
               <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
@@ -188,6 +187,7 @@ function MyAssignmentsInner() {
 }
 
 const cardStyle: React.CSSProperties = {
+  minWidth: 0,
   padding: 16,
   border: "1px solid #ddd",
   borderRadius: 12,

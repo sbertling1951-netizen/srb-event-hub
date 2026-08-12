@@ -1,11 +1,14 @@
 "use client";
 
+import { createClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
+
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
-import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -53,6 +56,16 @@ function parseMultiSelectAnswer(raw: string): string[] {
 }
 
 export default function AdminEvaluationsPage() {
+  return (
+    <AdminRouteGuard>
+      <AdminShellAdapter pageTitle="Event Evaluations">
+        <AdminEvaluationsPageInner />
+      </AdminShellAdapter>
+    </AdminRouteGuard>
+  );
+}
+
+function AdminEvaluationsPageInner() {
   const [started, setStarted] = useState(0);
   const [completed, setCompleted] = useState(0);
   const [lastSubmission, setLastSubmission] = useState<string>("--");
@@ -67,15 +80,6 @@ export default function AdminEvaluationsPage() {
   const [futureInterestCounts, setFutureInterestCounts] = useState<Record<string, number>>({});
 
   const loadStats = useCallback(async () => {
-  useEffect(() => {
-    void loadStats();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadStats();
-    });
-
-    return unsubscribe;
-  }, [loadStats]);
     const currentEvent = getCurrentAdminEvent();
     if (!currentEvent?.id) {
       setStarted(0);
@@ -205,46 +209,55 @@ export default function AdminEvaluationsPage() {
     }
   }, []);
 
+  useEffect(() => {
+    void loadStats();
+
+    const unsubscribe = subscribeToAdminWorkspace(() => {
+      void loadStats();
+    });
+
+    return unsubscribe;
+  }, [loadStats]);
+
   const completionRate =
     started > 0 ? Math.round((completed / started) * 100) : 0;
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Event Evaluations</h1>
-      <p className="text-gray-500 mb-6">
+    <div style={{ display: "grid", gap: 24, minWidth: 0 }}>
+      <p className="text-gray-500" style={{ margin: 0 }}>
         Review attendee feedback, trends, suggestions, and event satisfaction.
       </p>
 
-      <div className="app-stack-8 gap-4 md:grid-cols-4 mb-6">
-        <div className="border rounded-lg p-4">
+      <div className="app-stack-8 gap-4 md:grid-cols-4" style={{ minWidth: 0 }}>
+        <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
           <div className="text-sm text-gray-500">Started</div>
           <div className="text-2xl font-semibold">
             {loading ? "--" : started}
           </div>
         </div>
 
-        <div className="border rounded-lg p-4">
+        <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
           <div className="text-sm text-gray-500">Completed</div>
           <div className="text-2xl font-semibold">
             {loading ? "--" : completed}
           </div>
         </div>
 
-        <div className="border rounded-lg p-4">
+        <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
           <div className="text-sm text-gray-500">Completion Rate</div>
           <div className="text-2xl font-semibold">
             {loading ? "--" : `${completionRate}%`}
           </div>
         </div>
 
-        <div className="border rounded-lg p-4">
+        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
           <div className="text-sm text-gray-500">Last Submission</div>
           <div className="text-sm font-semibold">{lastSubmission}</div>
         </div>
       </div>
 
-      <div className="app-stack-8 gap-6 lg:grid-cols-2 mb-6">
-        <div className="border rounded-lg p-4">
+      <div className="app-stack-8 gap-6 lg:grid-cols-2" style={{ minWidth: 0 }}>
+        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
           <h2 className="text-lg font-semibold mb-3">Overall Impression</h2>
           {Object.keys(overallRatings).length === 0 ? (
             <p className="text-gray-500">No responses yet.</p>
@@ -259,7 +272,7 @@ export default function AdminEvaluationsPage() {
           )}
         </div>
 
-        <div className="border rounded-lg p-4">
+        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
           <h2 className="text-lg font-semibold mb-3">Likelihood to Attend Again</h2>
           {Object.keys(attendAgainRatings).length === 0 ? (
             <p className="text-gray-500">No responses yet.</p>
@@ -275,8 +288,8 @@ export default function AdminEvaluationsPage() {
         </div>
       </div>
 
-      <div className="app-stack-8 gap-6 lg:grid-cols-2 mb-6">
-        <div className="border rounded-lg p-4">
+      <div className="app-stack-8 gap-6 lg:grid-cols-2" style={{ minWidth: 0 }}>
+        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
           <h2 className="text-lg font-semibold mb-3">Most Valuable Parts of Event</h2>
           {Object.keys(mostValuableCounts).length === 0 ? (
             <p className="text-gray-500">No responses yet.</p>
@@ -293,7 +306,7 @@ export default function AdminEvaluationsPage() {
           )}
         </div>
 
-        <div className="border rounded-lg p-4">
+        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
           <h2 className="text-lg font-semibold mb-3">Future Topic Interests</h2>
           {Object.keys(futureInterestCounts).length === 0 ? (
             <p className="text-gray-500">No responses yet.</p>
@@ -311,7 +324,7 @@ export default function AdminEvaluationsPage() {
         </div>
       </div>
 
-      <div className="border rounded-lg p-4 mb-6">
+      <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
         <h2 className="text-lg font-semibold mb-3">
           Favorite Memories ({favoriteMemories.length})
         </h2>
@@ -320,7 +333,7 @@ export default function AdminEvaluationsPage() {
         ) : (
           <div className="space-y-3">
             {[...favoriteMemories].reverse().map((memory, index) => (
-              <div key={index} className="border rounded p-3 bg-gray-50">
+              <div key={index} className="border rounded p-3 bg-gray-50" style={{ overflowWrap: "anywhere" }}>
                 {memory}
               </div>
             ))}
@@ -328,7 +341,7 @@ export default function AdminEvaluationsPage() {
         )}
       </div>
 
-      <div className="border rounded-lg p-4 mb-6">
+      <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
         <h2 className="text-lg font-semibold mb-3">
           Where Did We Miss The Mark? ({improvements.length})
         </h2>
@@ -337,7 +350,7 @@ export default function AdminEvaluationsPage() {
         ) : (
           <div className="space-y-3">
             {[...improvements].reverse().map((item, index) => (
-              <div key={index} className="border rounded p-3 bg-gray-50">
+              <div key={index} className="border rounded p-3 bg-gray-50" style={{ overflowWrap: "anywhere" }}>
                 {item}
               </div>
             ))}
@@ -345,7 +358,7 @@ export default function AdminEvaluationsPage() {
         )}
       </div>
 
-      <div className="border rounded-lg p-4">
+      <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
         <h2 className="text-lg font-semibold mb-3">
           Additional Comments ({additionalComments.length})
         </h2>
@@ -354,7 +367,7 @@ export default function AdminEvaluationsPage() {
         ) : (
           <div className="space-y-3">
             {[...additionalComments].reverse().map((comment, index) => (
-              <div key={index} className="border rounded p-3 bg-gray-50">
+              <div key={index} className="border rounded p-3 bg-gray-50" style={{ overflowWrap: "anywhere" }}>
                 {comment}
               </div>
             ))}
@@ -364,4 +377,3 @@ export default function AdminEvaluationsPage() {
     </div>
   );
 }
-

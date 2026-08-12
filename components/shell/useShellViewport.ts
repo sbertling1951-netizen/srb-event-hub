@@ -19,80 +19,87 @@ export const SHELL_BREAKPOINT_WIDE = 1200;
 
 export type ShellViewportClass = "compact" | "standard" | "wide";
 
-export type ShellViewport = {
+/**
+ * Deterministic presentation facts resolved from the current browser
+ * environment. This is intentionally not a device identity, preference,
+ * remembered-device record, or authority input.
+ */
+export type ShellInterfaceCapabilities = {
   isCompact: boolean;
-  isWide: boolean;
+  supportsPersistentNavigation: boolean;
+  prefersReducedMotion: boolean;
   viewportClass: ShellViewportClass;
-  /**
-   * False until the post-mount effect has read the real viewport once.
-   * Before that, `viewportClass` is the fixed "standard" default, not a
-   * measurement -- exposed so a consumer that cares about the brief
-   * post-hydration correction (e.g. to suppress a transition/animation
-   * during it) can detect that window, though neither AppShell nor
-   * ShellNav currently need to.
-   */
-  measured: boolean;
 };
 
-function computeViewportClass(width: number): ShellViewportClass {
-  if (width < SHELL_BREAKPOINT_COMPACT) {
-    return "compact";
-  }
-  if (width < SHELL_BREAKPOINT_WIDE) {
-    return "standard";
-  }
-  return "wide";
+export function resolveShellInterfaceCapabilities(
+  width: number,
+  prefersReducedMotion = false,
+): ShellInterfaceCapabilities {
+  const viewportClass: ShellViewportClass =
+    width < SHELL_BREAKPOINT_COMPACT
+      ? "compact"
+      : width < SHELL_BREAKPOINT_WIDE
+        ? "standard"
+        : "wide";
+
+  const isCompact = viewportClass === "compact";
+
+  return {
+    viewportClass,
+    isCompact,
+    supportsPersistentNavigation: !isCompact,
+    prefersReducedMotion,
+  };
 }
 
+const SERVER_CAPABILITIES = resolveShellInterfaceCapabilities(
+  SHELL_BREAKPOINT_COMPACT,
+);
+
 /**
- * The shell's single shared responsive hook. Isolates the one remaining
- * JS-driven viewport check the shell needs (nav trigger/drawer vs. static
- * desktop nav) rather than letting matchMedia/innerWidth logic spread
- * across shell files. Governed, static breakpoints only -- carries no
- * learned or remembered device state (§J); this is not the Adaptive UI
- * Architecture's device-presentation layer, which remains Proposed.
- *
- * Hydration-safe by construction (§F, "deterministic initial state +
- * effect update"): the initial state is a fixed constant ("standard"),
- * identical on the server and on the client's first render -- it never
- * reads `window.innerWidth` synchronously during render, which is what
- * would produce a server/client markup mismatch. The real viewport is
- * measured only inside `useEffect`, strictly after hydration completes,
- * so React never compares two different DOM shapes for the same render.
- * Breakpoint semantics are kept consistent with the shell's CSS: this
- * hook's `SHELL_BREAKPOINT_COMPACT` (900) is the exact value the
- * `.shell-nav-desktop` / `.shell-nav-trigger` media queries in
- * `app/globals.css` also use, so JS and CSS never disagree about where
- * "compact" begins once both have settled (no 899/900 off-by-one).
+ * The shell's single deterministic presentation-capability hook. Its fixed
+ * server/first-client result preserves hydration safety; the browser is read
+ * only after hydration, then updates width and reduced-motion facts together.
+ * CSS remains authoritative for safe-area geometry.
  */
-export function useShellViewport(): ShellViewport {
-  const [state, setState] = useState<{ viewportClass: ShellViewportClass; measured: boolean }>({
-    viewportClass: "standard",
-    measured: false,
-  });
+export function useShellInterfaceCapabilities(): ShellInterfaceCapabilities {
+  const [capabilities, setCapabilities] = useState<ShellInterfaceCapabilities>(
+    SERVER_CAPABILITIES,
+  );
 
   useEffect(() => {
-    const update = () => setState({ viewportClass: computeViewportClass(window.innerWidth), measured: true });
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    const update = () => {
+      setCapabilities(
+        resolveShellInterfaceCapabilities(
+          window.innerWidth,
+          reducedMotionQuery.matches,
+        ),
+      );
+    };
+
     update();
 
-    const compactQuery = window.matchMedia(`(max-width: ${SHELL_BREAKPOINT_COMPACT - 1}px)`);
-    const wideQuery = window.matchMedia(`(min-width: ${SHELL_BREAKPOINT_WIDE}px)`);
+    const compactQuery = window.matchMedia(
+      `(max-width: ${SHELL_BREAKPOINT_COMPACT - 1}px)`,
+    );
+    const wideQuery = window.matchMedia(
+      `(min-width: ${SHELL_BREAKPOINT_WIDE}px)`,
+    );
 
     compactQuery.addEventListener("change", update);
     wideQuery.addEventListener("change", update);
+    reducedMotionQuery.addEventListener("change", update);
     window.addEventListener("resize", update);
 
     return () => {
       compactQuery.removeEventListener("change", update);
       wideQuery.removeEventListener("change", update);
+      reducedMotionQuery.removeEventListener("change", update);
       window.removeEventListener("resize", update);
     };
   }, []);
 
-  return {
-    isCompact: state.viewportClass === "compact",
-    isWide: state.viewportClass === "wide",
-    viewportClass: state.viewportClass,
-    measured: state.measured,
-  };
+  return capabilities;
 }

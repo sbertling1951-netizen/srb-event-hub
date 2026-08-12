@@ -10,7 +10,7 @@ import {
 } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import PageNavigation from "@/components/layout/PageNavigation";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -621,16 +621,6 @@ function attendeeMatchesSearch(row: AttendeeRow, term: string) {
     .toLowerCase();
 
   return haystack.includes(term);
-}
-
-function formatDateRange(startDate?: string | null, endDate?: string | null) {
-  if (!startDate && !endDate) {
-    return "";
-  }
-  if (startDate && endDate) {
-    return `${startDate} – ${endDate}`;
-  }
-  return startDate || endDate || "";
 }
 
 // Surfaces cancellation metadata the record already stores but the UI
@@ -3770,40 +3760,19 @@ created_at
     }
   }
 
-  const eventName =
-    currentEvent?.name || currentEvent?.eventName || "No event selected";
-  const eventLocation = currentEvent?.location || "";
-  const eventDates = formatDateRange(
-    currentEvent?.start_date,
-    currentEvent?.end_date,
-  );
-
   return (
     <div style={{ display: "grid", gap: 18 }}>
-      <PageNavigation
-        homeHref="/admin/dashboard"
-        homeLabel="Dashboard"
-        parentHref="/admin/events"
-        parentLabel="Events"
-      />
+      {(!loading && (status || error)) || flashMessage ? (
+        <div className="card" style={{ padding: 18 }}>
+          {!loading && status ? <div style={statusBoxStyle}>{status}</div> : null}
 
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Command Center</h1>
+          {flashMessage ? (
+            <div style={successBoxStyle}>{flashMessage}</div>
+          ) : null}
 
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          {eventName}
-          {eventLocation ? ` • ${eventLocation}` : ""}
-          {eventDates ? ` • ${eventDates}` : ""}
+          {!loading && error ? <div style={errorBoxStyle}>{error}</div> : null}
         </div>
-
-        {!loading && status ? <div style={statusBoxStyle}>{status}</div> : null}
-
-        {flashMessage ? (
-          <div style={successBoxStyle}>{flashMessage}</div>
-        ) : null}
-
-        {!loading && error ? <div style={errorBoxStyle}>{error}</div> : null}
-      </div>
+      ) : null}
 
       <>
         <QuickActionBar
@@ -4185,7 +4154,9 @@ const okBadgeStyle: CSSProperties = {
 export default function AdminAttendeesPage() {
   return (
     <AdminRouteGuard>
-      <AdminAttendeesPageInner />
+      <AdminShellAdapter pageTitle="Attendees">
+        <AdminAttendeesPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

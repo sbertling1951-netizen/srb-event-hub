@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
@@ -46,12 +47,14 @@ export default function MemberEvaluationPage() {
         return;
       }
 
-      let { data: evaluation, error: lookupError } = await supabase
+      const { data: existingEvaluation, error: lookupError } = await supabase
         .from("event_evaluations")
         .select("id,is_complete")
         .eq("event_id", event.id)
         .eq("attendee_id", attendeeId)
         .maybeSingle();
+
+      let evaluation = existingEvaluation;
 
       console.log("Evaluation lookup", {
         evaluation,
@@ -232,7 +235,8 @@ export default function MemberEvaluationPage() {
     display: "flex",
     alignItems: "center",
     gap: "12px",
-    width: "auto",
+    width: "100%",
+    minWidth: 0,
     flex: "1 1 0",
     minHeight: "56px",
     padding: "12px 16px",
@@ -247,16 +251,13 @@ export default function MemberEvaluationPage() {
   });
 
   return (
-    <div className="w-full p-6 space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Event Evaluation</h1>
-        <p className="text-gray-600 mt-2">
-          We value your feedback. Help us improve future events.
-        </p>
-      </div>
-
-      <div className="space-y-6 w-full">
-        <div className="w-full max-w-none">
+    <MemberShellAdapter
+      pageTitle="Event Evaluation"
+      pageSubtitle="We value your feedback. Help us improve future events."
+    >
+      <div className="w-full space-y-8" style={{ maxWidth: 760 }}>
+        <div className="space-y-6 w-full">
+          <div className="w-full max-w-none">
           <div>
             <div className="text-sm font-medium mb-2">
               Question {currentQuestion} of {totalQuestions}
@@ -265,7 +266,7 @@ export default function MemberEvaluationPage() {
 
             <div
               style={{
-                width: "50%",
+                width: "min(100%, 480px)",
                 height: "28px",
                 backgroundColor: "#d1d5db",
                 border: "1px solid #9ca3af",
@@ -297,7 +298,8 @@ export default function MemberEvaluationPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
                   gap: "12px",
                   marginBottom: "24px",
                 }}
@@ -345,7 +347,8 @@ export default function MemberEvaluationPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
                   gap: "12px",
                   marginBottom: "24px",
                 }}
@@ -402,7 +405,8 @@ export default function MemberEvaluationPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
                   gap: "12px",
                   marginBottom: "24px",
                 }}
@@ -461,7 +465,8 @@ export default function MemberEvaluationPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
                     gap: "12px",
                     marginBottom: "16px",
                   }}
@@ -489,7 +494,8 @@ export default function MemberEvaluationPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
                     gap: "12px",
                     marginBottom: "12px",
                   }}
@@ -583,7 +589,8 @@ export default function MemberEvaluationPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
                   gap: "12px",
                   marginBottom: "24px",
                 }}
@@ -631,6 +638,7 @@ export default function MemberEvaluationPage() {
           justifyContent: "center",
           alignItems: "center",
           gap: "16px",
+          flexWrap: "wrap",
           width: "100%",
           marginTop: "24px",
         }}
@@ -675,6 +683,7 @@ export default function MemberEvaluationPage() {
           </button>
         )}
       </div>
-    </div>
+      </div>
+    </MemberShellAdapter>
   );
 }

@@ -593,36 +593,6 @@ a.app-button-stop:hover {
   }
 }
 
-html.admin-embedded-mode,
-body.admin-embedded-mode {
-  background: transparent !important;
-}
-
-body.admin-embedded-mode> :not(.app-main):not(script):not(style) {
-  display: none !important;
-}
-
-body.admin-embedded-mode .app-main {
-  margin-left: 0 !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  padding: 0 !important;
-}
-
-body.admin-embedded-mode .app-inner {
-  max-width: 100% !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-body.admin-embedded-mode .app-header-card {
-  display: none !important;
-}
-
-body.admin-embedded-mode .card:first-child {
-  margin-top: 0 !important;
-}
-
 /* ===== NEARBY FILTER CHIPS ===== */
 .nearby-chip {
   padding: 6px 12px;
@@ -906,6 +876,126 @@ button[style*="background-color: #fafafa"] * {
 .nearby-sort-button.active {
   background: #dbeafe;
   color: #1d4ed8;
+}
+
+.nearby-filter-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.nearby-filter-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.nearby-filter-controls select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+}
+
+/*
+ * View / Directions preference toggles (Stage 4C §C/§D). Two compact
+ * labeled segmented controls, one row, replacing the former separate
+ * List/Map button pair + "Reset filters" link + "Preferred Map..." link
+ * row -- part of "Know more. Show less." control compaction (§B/§I).
+ */
+.nearby-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.nearby-segmented {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nearby-segmented-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.nearby-segmented-buttons {
+  display: inline-flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.nearby-segmented-option {
+  border: 0;
+  background: #fff;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 12px;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.nearby-segmented-option + .nearby-segmented-option {
+  border-left: 1px solid #cbd5e1;
+}
+
+.nearby-segmented-option.active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+/*
+ * Selected-place identity/action surface (Stage 4E §D/§E). Rendered by
+ * React below the map viewport, outside Leaflet's DOM -- a single tap
+ * target that hands off to the existing ObjectPanel. No Leaflet
+ * Tooltip/Popup identity surface remains (Stage 4E §C finding: those are
+ * `pointer-events: none` by default in Leaflet's own stylesheet, so a tap
+ * there fell through to the map's background-dismissal handler instead).
+ */
+.nearby-map-selected-card {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+  color: #0f172a;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  padding: 12px 14px;
+  touch-action: manipulation;
+}
+
+.nearby-map-selected-card:hover,
+.nearby-map-selected-card:focus-visible {
+  background: #f1f5f9;
+}
+
+.nearby-map-selected-card-meta {
+  color: #475569;
+  font-size: 12px;
+}
+
+.nearby-map-selected-card-cta {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .nearby-chip-row {
@@ -1363,6 +1453,20 @@ button[style*="background-color: #fafafa"] * {
   gap: 6px;
 }
 
+@media (max-width: 640px) {
+  /* Two per row, not a fully stacked column (Stage 4C §B/§I) -- three
+     controls (Category, Quick Find, Sort) pair into two rows instead of
+     three, matching "preferably 1-2 controls per row" without shrinking
+     the 42px touch target set on `.nearby-filter-controls select` above. */
+  .nearby-filter-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nearby-toggle-row {
+    align-items: flex-start;
+  }
+}
+
 /* ================================
    MEMBER NEARBY FINAL OVERRIDES
 ================================ */
@@ -1375,6 +1479,22 @@ button[style*="background-color: #fafafa"] * {
 .nearby-header-card {
   padding: 16px;
   border-radius: 18px;
+}
+
+/* The map should begin substantially higher on a narrow phone (Stage 4C
+   §B/§I) -- tighten the header card's own padding/gaps here only, placed
+   after the unconditional rule above so it actually wins the cascade at
+   this width; standard/desktop spacing above is otherwise untouched. */
+@media (max-width: 640px) {
+  .nearby-header-card {
+    padding: 10px;
+  }
+
+  .nearby-search-row,
+  .nearby-filter-controls,
+  .nearby-toggle-row {
+    margin-top: 6px;
+  }
 }
 
 .nearby-place-card {
@@ -2127,6 +2247,46 @@ body.slideshow-view-mode .app-header-card {
   gap: 2px;
 }
 
+.shell-nav {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.shell-nav-account-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border-default);
+}
+
+.shell-nav-account-action {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  text-decoration: none;
+}
+
+.shell-nav-account-action:hover:not(:disabled) {
+  background: var(--color-bg-muted);
+}
+
+.shell-nav-account-action-danger {
+  color: var(--color-status-error);
+}
+
 .shell-nav-item {
   display: flex;
   align-items: center;
@@ -2149,6 +2309,7 @@ body.slideshow-view-mode .app-header-card {
 }
 
 .shell-nav-item:focus-visible,
+.shell-nav-account-action:focus-visible,
 .shell-nav-trigger:focus-visible,
 .shell-account-action:focus-visible,
 .shell-back-action:focus-visible {
@@ -2201,6 +2362,8 @@ body.slideshow-view-mode .app-header-card {
   padding-top: calc(var(--space-8) + env(safe-area-inset-top));
   padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom));
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
 }
 

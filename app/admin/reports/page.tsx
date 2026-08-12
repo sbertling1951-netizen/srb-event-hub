@@ -1,9 +1,7 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import {
   type CSSProperties,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -22,9 +20,8 @@ import ReportsPanel from "@/components/admin/reports/ReportsPanel";
 import ReportsSummaryCards from "@/components/admin/reports/ReportsSummaryCards";
 import SavedPresetsCard from "@/components/admin/reports/SavedPresetsCard";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import PageNavigation from "@/components/layout/PageNavigation";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Page } from "@/components/ui/Page";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -153,8 +150,6 @@ type RosterRow = {
   copilotFirst: string;
   copilotLast: string;
 };
-
-const REPORT_PRESETS_STORAGE_KEY = "fcoc-admin-report-presets";
 
 function fullName(first?: string | null, last?: string | null) {
   return [first, last].filter(Boolean).join(" ").trim();
@@ -306,36 +301,16 @@ function sortRosterRows(rows: RosterRow[], sortType: SortType) {
 
 export default function AdminReportsPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="card" style={{ padding: 18 }}>
-          Loading reports...
-        </div>
-      }
-    >
-      <AdminReportsPageContent />
-    </Suspense>
-  );
-}
-
-function AdminReportsPageContent() {
-  const searchParams = useSearchParams();
-  const isEmbedded = searchParams.get("embedded") === "1";
-
-  if (isEmbedded) {
-    return <AdminReportsPageInner />;
-  }
-
-  return (
     <AdminRouteGuard requiredPermission="can_manage_reports">
-      <AdminReportsPageInner />
+      <AdminShellAdapter pageTitle="Reports">
+        <AdminReportsPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
 
 function AdminReportsPageInner() {
   const { admin } = useAdmin();
-  const searchParams = useSearchParams();
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [activities, setActivities] = useState<ActivityRow[]>([]);
@@ -353,7 +328,6 @@ function AdminReportsPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [canExport, setCanExport] = useState(false);
   const [presetName, setPresetName] = useState("");
-  const [showReports, setShowReports] = useState(false);
   const [showReportMenu, setShowReportMenu] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
@@ -361,20 +335,6 @@ function AdminReportsPageInner() {
   const [reportPackType, setReportPackType] = useState<
     "parking_ops" | "checkin_ops" | "hospitality_ops"
   >("parking_ops");
-
-  const isEmbedded = searchParams.get("embedded") === "1";
-
-  useEffect(() => {
-    if (!isEmbedded) {
-      return;
-    }
-
-    document.body.classList.add("admin-embedded-shell");
-
-    return () => {
-      document.body.classList.remove("admin-embedded-shell");
-    };
-  }, [isEmbedded]);
 
   function resetPageState() {
     setCurrentEvent(null);
@@ -1115,51 +1075,11 @@ function AdminReportsPageInner() {
   }
 
   return (
-    <>
-      <ReportsPrintStyles />
-      <Page style={{ display: "grid", gap: 18 }}>
-        {!isEmbedded ? (
-          <PageNavigation
-            homeHref="/admin/dashboard"
-            homeLabel="Dashboard"
-            parentHref="/admin/attendees"
-            parentLabel="Attendees"
-          />
-        ) : null}
-
-        <div className="card" style={{ padding: 18 }}>
-          <PageHeader
-            title="Reports"
-            headingLevel={isEmbedded ? "h2" : "h1"}
-            titleStyle={{ marginTop: 0, marginBottom: 8 }}
-          />
-
-          <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
-            {currentEvent?.name ||
-              currentEvent?.eventName ||
-              "No event selected"}
-            {currentEvent?.location ? ` • ${currentEvent.location}` : ""}
-          </div>
+    <Page style={{ display: "grid", gap: 18, minWidth: 0 }}>
+      <div className="card" style={{ padding: 18 }}>
 
           {status ? (
             <div style={{ marginBottom: 12, fontSize: 14 }}>{status}</div>
-          ) : null}
-
-          {isEmbedded ? (
-            <div
-              style={{
-                marginBottom: 12,
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #dbeafe",
-                background: "#eff6ff",
-                color: "#1d4ed8",
-                fontSize: 14,
-              }}
-            >
-              Embedded reports mode is active. Use the controls below to adjust
-              the report shown inside attendee management.
-            </div>
           ) : null}
 
           {error ? <div style={errorBoxStyle}>{error}</div> : null}
@@ -1332,97 +1252,40 @@ function AdminReportsPageInner() {
               </div>
             </div>
           ) : null}
-        </div>
+      </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <button className="btn" onClick={() => setShowSummary((v) => !v)}>
-            {showSummary ? "▼ Hide Summary" : "▶ Summary"}
-          </button>
-        </div>
+      <div style={{ marginBottom: 12 }}>
+        <button className="btn" onClick={() => setShowSummary((v) => !v)}>
+          {showSummary ? "▼ Hide Summary" : "▶ Summary"}
+        </button>
+      </div>
 
-        {showSummary ? (
-          <ReportsSummaryCards
-            participantBreakdown={participantBreakdown}
-            dataStatusBreakdown={dataStatusBreakdown}
-            unassignedParkingCount={unassignedParkingRows.length}
-            unassignedParkingRows={unassignedParkingRows}
-            notArrivedCount={notArrivedRows.length}
-            notArrivedRows={notArrivedRows}
-            firstTimerCount={firstTimerRows.length}
-            firstTimerRows={firstTimerRows}
-            vendorStaffCount={vendorStaffRows.length}
-            vendorStaffRows={vendorStaffRows}
-          />
-        ) : null}
-
-        <ReportsPanel
-          reportTitle={reportTitle}
-          loading={loading}
-          reportType={reportType}
-          participantTypeFilter={participantTypeFilter}
-          dataStatusFilter={dataStatusFilter}
-          activitySummaryRows={activitySummaryRows}
-          sortedRosterRows={sortedRosterRows}
+      {showSummary ? (
+        <ReportsSummaryCards
+          participantBreakdown={participantBreakdown}
+          dataStatusBreakdown={dataStatusBreakdown}
+          unassignedParkingCount={unassignedParkingRows.length}
+          unassignedParkingRows={unassignedParkingRows}
+          notArrivedCount={notArrivedRows.length}
+          notArrivedRows={notArrivedRows}
+          firstTimerCount={firstTimerRows.length}
+          firstTimerRows={firstTimerRows}
+          vendorStaffCount={vendorStaffRows.length}
+          vendorStaffRows={vendorStaffRows}
         />
-      </Page>
-    </>
+      ) : null}
+
+      <ReportsPanel
+        reportTitle={reportTitle}
+        loading={loading}
+        reportType={reportType}
+        participantTypeFilter={participantTypeFilter}
+        dataStatusFilter={dataStatusFilter}
+        activitySummaryRows={activitySummaryRows}
+        sortedRosterRows={sortedRosterRows}
+      />
+    </Page>
   );
-}
-
-function ReportsPrintStyles() {
-  useEffect(() => {
-    const existing = document.getElementById("print-styles");
-    if (existing) {
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.id = "print-styles";
-    style.innerHTML = `
-      body.admin-embedded-shell > :first-child {
-        display: none !important;
-      }
-
-      body.admin-embedded-shell .app-main {
-        margin-left: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-      }
-
-      body.admin-embedded-shell .app-inner {
-        max-width: 100% !important;
-        padding: 0 !important;
-      }
-
-      body.admin-embedded-shell .app-header-card {
-        display: none !important;
-      }
-
-      @media print {
-        body {
-          background: white !important;
-        }
-
-        .card {
-          box-shadow: none !important;
-          border: none !important;
-        }
-
-        button,
-        select,
-        input {
-          display: none !important;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-
-    return () => {
-      style.remove();
-    };
-  }, []);
-
-  return null;
 }
 
 const errorBoxStyle: CSSProperties = {

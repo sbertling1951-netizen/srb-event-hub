@@ -1,4 +1,5 @@
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
+import { resolveAndLinkAdminIdentity } from "@/lib/server/adminIdentityLinkage";
 
 type AdminUserRow = {
   id: string;
@@ -120,13 +121,23 @@ export async function resolveAdminActorFromBearer(
     return { admin: null, error: "Authentication is required.", status: 401 };
   }
 
+  // Single identity-matching algorithm, shared with the dedicated
+  // /api/admins/link-identity route -- resolves an already-linked row, or
+  // backfills admin_users.user_id via the same governed email-match
+  // (now additionally corroborated against the Person identity graph
+  // when that graph has data for this auth user).
+  const linkage = await resolveAndLinkAdminIdentity(supabaseAdmin, {
+    id: user.id,
+    email: user.email,
+  });
+
   let adminUser: AdminUserRow | null = null;
 
-  {
+  if (linkage.status === "linked" || linkage.status === "already_linked") {
     const { data, error } = await supabaseAdmin
       .from("admin_users")
       .select("id,email,privilege_group")
-      .eq("user_id", user.id)
+      .eq("id", linkage.adminUserId)
       .eq("is_active", true)
       .maybeSingle<AdminUserRow>();
 
@@ -135,28 +146,6 @@ export async function resolveAdminActorFromBearer(
     }
 
     adminUser = data;
-  }
-
-  if (!adminUser && user.email) {
-    const { data, error } = await supabaseAdmin
-      .from("admin_users")
-      .select("id,email,privilege_group")
-      .eq("email", user.email)
-      .eq("is_active", true)
-      .maybeSingle<AdminUserRow>();
-
-    if (error) {
-      return { admin: null, error: error.message, status: 500 };
-    }
-
-    adminUser = data;
-
-    if (adminUser) {
-      await supabaseAdmin
-        .from("admin_users")
-        .update({ user_id: user.id })
-        .eq("id", adminUser.id);
-    }
   }
 
   if (!adminUser) {

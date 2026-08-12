@@ -14,38 +14,44 @@ import { supabase } from "@/lib/supabase";
 // Workspace.
 //
 // Deduplication: deliberately not implemented at this layer. Investigated
-// against the actual schema and import code, not assumed:
+// against the actual schema and write paths, not assumed -- re-verified
+// after the Agenda Consumer Migration governed cutover (Stages 2A/2B):
 //   - public.agenda_items carries UNIQUE (event_id, external_id) (partial
 //     unique index, WHERE external_id IS NOT NULL --
-//     20260617000000_create_pre_20260618_public_baseline.sql). The only
-//     write path that populates agenda_items in bulk
-//     (app/admin/agenda/import/page.tsx) writes via
-//     an upsert call targeting the conflict pair "event_id,external_id". A
-//     re-import can therefore never create a second row for an item that
-//     already has an external_id -- the existing row is updated in
-//     place, keeping its original id. The database itself is the
-//     governed deduplication mechanism for every imported row; there is
-//     nothing left for this Provider to safely deduplicate among rows
-//     that carry an external_id, because two such rows sharing one
-//     cannot coexist in a query result at all.
+//     20260617000000_create_pre_20260618_public_baseline.sql). Bulk writes
+//     now go through governed RPCs rather than any direct browser table
+//     access: import_event_agenda_items() upserts on the conflict pair
+//     "event_id,external_id" (a re-import can therefore never create a
+//     second row for an item that already has an external_id -- the
+//     existing row is updated in place, keeping its original id), while
+//     apply_agenda_template_to_event()/replace_agenda_from_template()
+//     insert fresh rows with external_id always NULL (template-derived
+//     copies never inherit the source template item's external_id -- see
+//     20260811300000-era repair). Both cases leave the database itself as
+//     the governed deduplication mechanism (or, for template-derived
+//     rows, the *absence* of any external-id-based identity to collide
+//     on); there is nothing left for this Provider to safely deduplicate
+//     among rows that carry an external_id, because two such rows sharing
+//     one cannot coexist in a query result at all.
 //   - `import_key` also exists on the table but is not referenced by any
 //     write path found in this repository and carries no uniqueness
 //     constraint -- it is not a governed identity mechanism and is not
 //     used here.
-//   - A manually created row (source = 'manual', the column default) has
-//     no external_id and therefore no governed identity signal at all.
-//     Two manual rows that happen to share a title, date, and start time
-//     are not provably the same underlying fact -- they may simply be
-//     two genuinely independent agenda items (parallel tracks, repeated
-//     time slots). This Provider must not, and does not, guess that they
-//     are duplicates or in conflict merely because they look similar. An
-//     earlier draft of this Provider grouped rows by
-//     (title, agenda_date, start_time) and treated a mismatched end_time
-//     as an unresolvable conflict; that was an invented heuristic with no
-//     evidence behind it and has been removed. Establishing a governed
-//     identity rule for manually created rows, if one is ever needed, is
-//     a separate, future, explicitly authorized architectural decision --
-//     not something this Provider may improvise.
+//   - A manually created row (source = 'manual', or a template-derived
+//     row with source = 'template') has no external_id and therefore no
+//     governed identity signal at all. Two such rows that happen to share
+//     a title, date, and start time are not provably the same underlying
+//     fact -- they may simply be two genuinely independent agenda items
+//     (parallel tracks, repeated time slots). This Provider must not, and
+//     does not, guess that they are duplicates or in conflict merely
+//     because they look similar. An earlier draft of this Provider
+//     grouped rows by (title, agenda_date, start_time) and treated a
+//     mismatched end_time as an unresolvable conflict; that was an
+//     invented heuristic with no evidence behind it and has been removed.
+//     Establishing a governed identity rule for manually or
+//     template-created rows, if one is ever needed, is a separate,
+//     future, explicitly authorized architectural decision -- not
+//     something this Provider may improvise.
 
 export type AgendaRow = {
   id: string;

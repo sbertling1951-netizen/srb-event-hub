@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import PageNavigation from "@/components/layout/PageNavigation";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -11,6 +11,16 @@ import {
 import { supabase } from "@/lib/supabase";
 
 export default function AdminPhotosPage() {
+  return (
+    <AdminRouteGuard>
+      <AdminShellAdapter pageTitle="Admin Photos">
+        <AdminPhotosPageInner />
+      </AdminShellAdapter>
+    </AdminRouteGuard>
+  );
+}
+
+function AdminPhotosPageInner() {
   const [pendingCount, setPendingCount] = useState(0);
   const [totalSubmitted, setTotalSubmitted] = useState(0);
   const [approvedCount, setApprovedCount] = useState(0);
@@ -44,6 +54,8 @@ export default function AdminPhotosPage() {
     previousStatus: string;
     previousCaption: string;
     previousShowCaption: boolean;
+    previousFeaturedLevel: number;
+    previousMemberCaption: string;
   } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -59,14 +71,14 @@ export default function AdminPhotosPage() {
       return;
     }
 
-    const { error } = await supabase
-      .from("event_photos")
-      .update({
-        photo_status: undoData.previousStatus,
-        admin_caption: undoData.previousCaption,
-        show_caption: undoData.previousShowCaption,
-      })
-      .eq("id", undoData.photoId);
+    const { error } = await supabase.rpc("manage_event_photo", {
+      p_photo_id: undoData.photoId,
+      p_photo_status: undoData.previousStatus,
+      p_member_caption: undoData.previousMemberCaption || null,
+      p_admin_caption: undoData.previousCaption,
+      p_show_caption: undoData.previousShowCaption,
+      p_featured_level: undoData.previousFeaturedLevel,
+    });
 
     if (error) {
       console.error("undo photo moderation error:", error);
@@ -84,23 +96,23 @@ export default function AdminPhotosPage() {
   ) {
     const currentPhoto = photos.find((p) => p.id === photoId);
 
-    const { data: updateData, error } = await supabase
-      .from("event_photos")
-      .update({
-        photo_status: status,
-        admin_caption: captionText,
-        show_caption: showCaption,
-        featured_level: featuredLevel,
-        is_featured: featuredLevel > 0,
-      })
-      .eq("id", photoId)
-      .select();
+    const { data: updateData, error } = await supabase.rpc(
+      "manage_event_photo",
+      {
+        p_photo_id: photoId,
+        p_photo_status: status,
+        p_member_caption: currentPhoto?.member_caption ?? null,
+        p_admin_caption: captionText,
+        p_show_caption: showCaption,
+        p_featured_level: featuredLevel,
+      },
+    );
 
     if (error) {
       console.error("update photo status error:", error);
       return;
     }
-    if (!updateData || updateData.length === 0) {
+    if (!updateData) {
       console.error("Photo moderation updated 0 rows.");
       return;
     }
@@ -115,6 +127,8 @@ export default function AdminPhotosPage() {
       previousCaption:
         currentPhoto?.admin_caption || currentPhoto?.member_caption || "",
       previousShowCaption: currentPhoto?.show_caption ?? true,
+      previousFeaturedLevel: currentPhoto?.featured_level ?? 0,
+      previousMemberCaption: currentPhoto?.member_caption ?? "",
     });
 
     setToastMessage(
@@ -282,41 +296,35 @@ export default function AdminPhotosPage() {
 
     return unsubscribe;
   }, [loadPendingPhotos]);
+
   return (
-    <AdminRouteGuard>
-      <div style={{ padding: 16 }}>
-        <PageNavigation
-          homeHref="/admin/dashboard"
-          homeLabel="Dashboard"
-          parentHref="/admin/events"
-          parentLabel="Events"
-        />
-        <h1>Admin Photos</h1>
+    <>
+      <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(140px, 100%), 1fr))",
             gap: 12,
-            marginTop: 12,
-            marginBottom: 12,
+            minWidth: 0,
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <strong>Submitted</strong>
             <br />
             {totalSubmitted}
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <strong>Approved</strong>
             <br />
             {approvedCount}
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <strong>Rejected</strong>
             <br />
             {rejectedCount}
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <strong>Pending</strong>
             <br />
             {pendingCount}
@@ -329,7 +337,7 @@ export default function AdminPhotosPage() {
         <div style={{ marginTop: 12, fontWeight: 600 }}>
           {pendingCount} Remaining For Review
         </div>
-        <div style={{ marginTop: 12 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
           <a
             href="/admin/slideshow"
             style={{
@@ -348,7 +356,6 @@ export default function AdminPhotosPage() {
             href="/admin/photo-library"
             style={{
               display: "inline-block",
-              marginLeft: 12,
               padding: "8px 14px",
               backgroundColor: "#475569",
               color: "white",
@@ -364,7 +371,7 @@ export default function AdminPhotosPage() {
           style={{
             display: "grid",
             gap: 16,
-            marginTop: 16,
+            minWidth: 0,
           }}
         >
           {photos.map((photo) => (
@@ -377,6 +384,8 @@ export default function AdminPhotosPage() {
                 padding: 12,
                 cursor: "pointer",
                 transition: "box-shadow 0.2s ease",
+                minWidth: 0,
+                overflowWrap: "anywhere",
               }}
             >
               {photo.imageUrl && (
@@ -392,15 +401,17 @@ export default function AdminPhotosPage() {
                   }}
                 />
               )}
-              <div style={{ marginTop: 8 }}>Status: {photo.photo_status}</div>
+              <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>
+                Status: {photo.photo_status}
+              </div>
               <div style={{ marginTop: 4 }}>
                 Uploaded: {new Date(photo.uploaded_at).toLocaleString()}
               </div>
-              <div style={{ marginTop: 4 }}>
+              <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>
                 Caption:{" "}
                 {photo.admin_caption || photo.member_caption || "(none)"}
               </div>
-              <div style={{ marginTop: 4 }}>
+              <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>
                 Member: {photo.member_name || "Unknown"}
               </div>
             </div>
@@ -417,6 +428,9 @@ export default function AdminPhotosPage() {
               justifyContent: "center",
               zIndex: 1000,
             }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="photo-moderation-title"
           >
             <div
               style={{
@@ -427,9 +441,11 @@ export default function AdminPhotosPage() {
                 width: "90%",
                 maxHeight: "90vh",
                 overflow: "auto",
+                minWidth: 0,
+                boxSizing: "border-box",
               }}
             >
-              <h2>Photo Moderation</h2>
+              <h2 id="photo-moderation-title">Photo Moderation</h2>
 
               {selectedPhoto.reviewImageUrl ? (
                 <img
@@ -459,7 +475,7 @@ export default function AdminPhotosPage() {
                 </div>
               )}
 
-              <div style={{ marginTop: 6 }}>
+              <div style={{ marginTop: 6, overflowWrap: "anywhere" }}>
                 <strong>Member:</strong>{" "}
                 {selectedPhoto.member_name || "Unknown"}
               </div>
@@ -476,7 +492,7 @@ export default function AdminPhotosPage() {
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>
                   Member Caption
                 </div>
-                <div style={{ color: "#334155" }}>
+                <div style={{ color: "#334155", overflowWrap: "anywhere" }}>
                   {selectedPhoto.member_caption?.trim() ||
                     "(No member caption provided)"}
                 </div>
@@ -490,7 +506,7 @@ export default function AdminPhotosPage() {
                   value={captionText}
                   onChange={(e) => setCaptionText(e.target.value)}
                   rows={3}
-                  style={{ width: "100%", marginTop: 4 }}
+                  style={{ width: "100%", marginTop: 4, boxSizing: "border-box" }}
                 />
               </div>
               <div
@@ -526,6 +542,7 @@ export default function AdminPhotosPage() {
                     marginTop: 4,
                     padding: "8px",
                     minWidth: 220,
+                    maxWidth: "100%",
                   }}
                 >
                   <option value={0}>Level 0 - Normal Rotation</option>
@@ -545,7 +562,14 @@ export default function AdminPhotosPage() {
                 frequency.
               </div>
 
-              <div style={{ marginTop: 8 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginTop: 8,
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => void approvePhoto(selectedPhoto.id)}
@@ -555,6 +579,7 @@ export default function AdminPhotosPage() {
                     color: "white",
                     border: "none",
                     borderRadius: 4,
+                    flex: "1 1 110px",
                   }}
                 >
                   Approve
@@ -564,12 +589,12 @@ export default function AdminPhotosPage() {
                   type="button"
                   onClick={() => void rejectPhoto(selectedPhoto.id)}
                   style={{
-                    marginLeft: 8,
                     padding: "8px 14px",
                     backgroundColor: "#dc2626",
                     color: "white",
                     border: "none",
                     borderRadius: 4,
+                    flex: "1 1 110px",
                   }}
                 >
                   Reject
@@ -579,12 +604,12 @@ export default function AdminPhotosPage() {
                   type="button"
                   onClick={() => setSelectedPhoto(null)}
                   style={{
-                    marginLeft: 8,
                     padding: "8px 14px",
                     backgroundColor: "#6b7280",
                     color: "white",
                     border: "none",
                     borderRadius: 4,
+                    flex: "1 1 110px",
                   }}
                 >
                   Cancel
@@ -605,9 +630,12 @@ export default function AdminPhotosPage() {
             padding: "12px 16px",
             borderRadius: 8,
             display: "flex",
+            flexWrap: "wrap",
             gap: 12,
             alignItems: "center",
             zIndex: 2000,
+            maxWidth: "calc(100vw - 40px)",
+            boxSizing: "border-box",
           }}
         >
           <span>{toastMessage}</span>
@@ -627,6 +655,6 @@ export default function AdminPhotosPage() {
           </button>
         </div>
       )}
-    </AdminRouteGuard>
+    </>
   );
 }

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { ObjectPanel } from "@/components/ObjectPanel";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { logEngagement } from "@/lib/engagement";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
@@ -38,36 +40,6 @@ type GroupedAgenda = {
   label: string;
   items: AgendaItem[];
 };
-
-function formatDateRange(
-  startDate: string | null | undefined,
-  endDate: string | null | undefined,
-) {
-  if (!startDate && !endDate) {
-    return "";
-  }
-  if (startDate && endDate) {
-    return `${formatDateOnly(startDate)} – ${formatDateOnly(endDate)}`;
-  }
-  return startDate
-    ? formatDateOnly(startDate)
-    : endDate
-      ? formatDateOnly(endDate)
-      : "";
-}
-
-function formatDateOnly(value: string) {
-  const d = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(d.getTime())) {
-    return value;
-  }
-
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function formatGroupLabel(dateValue: string) {
   const d = new Date(`${dateValue}T12:00:00`);
@@ -288,6 +260,7 @@ function MemberAgendaPageInner() {
     attendeeId,
     isReady,
   } = useMemberWorkspace();
+  const { isCompact } = useShellInterfaceCapabilities();
   const [event, setEvent] = useState<MemberEvent | null>(null);
   const [items, setItems] = useState<AgendaItem[]>([]);
   const [status, setStatus] = useState("Loading agenda...");
@@ -430,8 +403,6 @@ function MemberAgendaPageInner() {
     );
   }, [items, now]);
 
-  const dateRange = formatDateRange(event?.start_date, event?.end_date);
-
   const selectedItemStatus = selectedAgendaItem
     ? getItemStatus(selectedAgendaItem, now)
     : null;
@@ -440,41 +411,12 @@ function MemberAgendaPageInner() {
     : null;
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 16, maxWidth: 960 }}>
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-        }}
-      >
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Agenda</h1>
-
-        <div style={{ fontWeight: 700 }}>
-          Current event: {event?.name || "No current event"}
+    <div style={{ display: "grid", gap: 16, minWidth: 0, maxWidth: 960 }}>
+      {status ? (
+        <div role="status" style={{ fontSize: 13, color: "#666" }}>
+          {status}
         </div>
-
-        {event?.venue_name ? (
-          <div style={{ color: "#555", marginTop: 4 }}>{event.venue_name}</div>
-        ) : null}
-
-        {event?.location ? (
-          <div style={{ color: "#555", marginTop: 4 }}>{event.location}</div>
-        ) : null}
-
-        {dateRange ? (
-          <div style={{ color: "#666", marginTop: 4, fontSize: 13 }}>
-            {dateRange}
-          </div>
-        ) : null}
-
-        {status ? (
-          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-            {status}
-          </div>
-        ) : null}
-      </div>
+      ) : null}
 
       {error ? (
         <div
@@ -629,8 +571,12 @@ function MemberAgendaPageInner() {
                 ),
               ),
             ).sort((a, b) => {
-              if (a === "unscheduled") return 1;
-              if (b === "unscheduled") return -1;
+              if (a === "unscheduled") {
+                return 1;
+              }
+              if (b === "unscheduled") {
+                return -1;
+              }
               return a.localeCompare(b);
             });
 
@@ -688,6 +634,8 @@ function MemberAgendaPageInner() {
                       textAlign: "left",
                       font: "inherit",
                       marginBottom: 10,
+                      minWidth: 0,
+                      overflowWrap: "anywhere",
                     }}
                   >
                     <div
@@ -706,6 +654,7 @@ function MemberAgendaPageInner() {
                         fontWeight: 800,
                         fontSize: 17,
                         color: itemStatus === "now" ? "#064e3b" : "#111827",
+                        overflowWrap: "anywhere",
                       }}
                     >
                       {item.title || "Untitled item"}
@@ -735,6 +684,7 @@ function MemberAgendaPageInner() {
                           WebkitLineClamp: 3,
                           textAlign: "justify",
                           hyphens: "auto",
+                          overflowWrap: "anywhere",
                         }}
                       >
                         {item.description}
@@ -796,7 +746,10 @@ function MemberAgendaPageInner() {
             }
 
             return (
-              <section key={group.key} style={{ display: "grid", gap: 10 }}>
+              <section
+                key={group.key}
+                style={{ display: "grid", gap: 10, minWidth: 0 }}
+              >
                 <div
                   style={{
                     fontWeight: 800,
@@ -809,11 +762,11 @@ function MemberAgendaPageInner() {
                 >
                   {group.label}
                 </div>
-                <div style={{ display: "grid", gap: 0 }}>
+                <div style={{ display: "grid", gap: 0, minWidth: 0 }}>
   <div
     style={{
       display: "grid",
-      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+      gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))",
       gap: 10,
       position: "sticky",
       top: 0,
@@ -821,35 +774,39 @@ function MemberAgendaPageInner() {
       background: "white",
     }}
   >
-    <div
-      style={{
-        fontWeight: 700,
-        fontSize: 16,
-        borderBottom: "1px solid #e5e7eb",
-        marginBottom: 12,
-        paddingBottom: 6,
-        color: "#22223b",
-        letterSpacing: 0.2,
-        minWidth: 0,
-      }}
-    >
-      Morton Building
-    </div>
+    {isCompact ? null : (
+      <>
+        <div
+          style={{
+            fontWeight: 700,
+            fontSize: 16,
+            borderBottom: "1px solid #e5e7eb",
+            marginBottom: 12,
+            paddingBottom: 6,
+            color: "#22223b",
+            letterSpacing: 0.2,
+            minWidth: 0,
+          }}
+        >
+          Morton Building
+        </div>
 
-    <div
-      style={{
-        fontWeight: 700,
-        fontSize: 16,
-        borderBottom: "1px solid #e5e7eb",
-        marginBottom: 12,
-        paddingBottom: 6,
-        color: "#22223b",
-        letterSpacing: 0.2,
-        minWidth: 0,
-      }}
-    >
-      Pioneer Building
-    </div>
+        <div
+          style={{
+            fontWeight: 700,
+            fontSize: 16,
+            borderBottom: "1px solid #e5e7eb",
+            marginBottom: 12,
+            paddingBottom: 6,
+            color: "#22223b",
+            letterSpacing: 0.2,
+            minWidth: 0,
+          }}
+        >
+          Pioneer Building
+        </div>
+      </>
+    )}
   </div>
 
   {timeSlotKeys.map((timeSlot) => {
@@ -866,18 +823,24 @@ function MemberAgendaPageInner() {
         key={timeSlot}
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))",
           gap: 10,
           alignItems: "start",
         }}
       >
         <div style={{ minWidth: 0 }}>
+          {isCompact && mortonSlotItems.length > 0 ? (
+            <div style={compactLocationHeadingStyle}>Morton Building</div>
+          ) : null}
           {mortonSlotItems.length > 0
             ? renderAgendaCards(mortonSlotItems)
             : null}
         </div>
 
         <div style={{ minWidth: 0 }}>
+          {isCompact && pioneerSlotItems.length > 0 ? (
+            <div style={compactLocationHeadingStyle}>Pioneer Building</div>
+          ) : null}
           {pioneerSlotItems.length > 0
             ? renderAgendaCards(pioneerSlotItems)
             : null}
@@ -974,7 +937,16 @@ function MemberAgendaPageInner() {
 export default function MemberAgendaPage() {
   return (
     <MemberRouteGuard>
-      <MemberAgendaPageInner />
+      <MemberShellAdapter pageTitle="Agenda">
+        <MemberAgendaPageInner />
+      </MemberShellAdapter>
     </MemberRouteGuard>
   );
 }
+
+const compactLocationHeadingStyle = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#475569",
+  marginBottom: 6,
+};

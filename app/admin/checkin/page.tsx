@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { fullName, preferredDisplayLine } from "@/lib/formatters";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { fullName, preferredDisplayLine } from "@/lib/formatters";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
-import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type AttendeeRow = {
@@ -85,19 +87,6 @@ type EditState = {
   shareWithAttendees: boolean;
 };
 
-function formatDateRange(
-  startDate: string | null | undefined,
-  endDate: string | null | undefined,
-) {
-  if (!startDate && !endDate) {
-    return "";
-  }
-  if (startDate && endDate) {
-    return `${startDate} – ${endDate}`;
-  }
-  return startDate || endDate || "";
-}
-
 function normalizeSite(value: string) {
   return value.trim().toUpperCase();
 }
@@ -120,7 +109,9 @@ function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
 export default function AdminCheckinPage() {
   return (
     <AdminRouteGuard requiredPermission="can_mark_arrived">
-      <AdminCheckinPageInner />
+      <AdminShellAdapter pageTitle="Admin Check-In">
+        <AdminCheckinPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
@@ -138,21 +129,9 @@ function AdminCheckinPageInner() {
   const [editState, setEditState] = useState<Record<string, EditState>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
 
   const { admin } = useAdmin();
-
-  useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 900);
-    }
-
-    handleResize();
-
-    window.addEventListener("resize", handleResize);
-
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  const { isCompact } = useShellInterfaceCapabilities();
 
   function showStatus(message: string) {
     setError(null);
@@ -755,35 +734,18 @@ function AdminCheckinPageInner() {
     }
   }
 
-  const dateRange = formatDateRange(event?.start_date, event?.end_date);
-
   return (
-    <div style={{ padding: 24, display: "grid", gap: 16 }}>
+    <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
       <div
         style={{
           border: "1px solid #ddd",
           borderRadius: 10,
           background: "#f8f9fb",
           padding: 14,
+          minWidth: 0,
         }}
       >
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Check-In</h1>
-
-        <div style={{ fontWeight: 700 }}>
-          Working event: {event?.name || "No working event selected"}
-        </div>
-
-        {event?.location ? (
-          <div style={{ color: "#555", marginTop: 4 }}>{event.location}</div>
-        ) : null}
-
-        {dateRange ? (
-          <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
-            {dateRange}
-          </div>
-        ) : null}
-
-        <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+        <div role="status" style={{ fontSize: 13, color: "#666" }}>
           {status}
         </div>
       </div>
@@ -796,7 +758,10 @@ function AdminCheckinPageInner() {
             background: "#fff3f3",
             color: "#8a1f1f",
             padding: 12,
+            minWidth: 0,
+            overflowWrap: "anywhere",
           }}
+          role="alert"
         >
           {error}
         </div>
@@ -809,6 +774,7 @@ function AdminCheckinPageInner() {
           background: "white",
           padding: 12,
           maxWidth: 460,
+          minWidth: 0,
         }}
       >
         <div style={{ fontWeight: 700, marginBottom: 8 }}>Search arrivals</div>
@@ -816,7 +782,12 @@ function AdminCheckinPageInner() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Name, nickname, email, coach, or site"
-          style={{ width: "100%", padding: 10 }}
+          style={{
+            width: "100%",
+            minWidth: 0,
+            boxSizing: "border-box",
+            padding: 10,
+          }}
         />
       </div>
 
@@ -825,7 +796,7 @@ function AdminCheckinPageInner() {
         {filteredAttendees.length === 1 ? "" : "s"}.
       </div>
 
-      <div style={{ display: "grid", gap: 14 }}>
+      <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
         {filteredAttendees.map((attendee) => {
           const members = householdByAttendee.get(attendee.id) || [];
           const pilotMember = getRoleMember(members, "pilot");
@@ -847,18 +818,21 @@ function AdminCheckinPageInner() {
                 padding: 14,
                 display: "grid",
                 gap: 12,
+                minWidth: 0,
+                overflowWrap: "anywhere",
               }}
             >
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: isMobile
+                  gridTemplateColumns: isCompact
                     ? "minmax(0, 1fr)"
                     : "minmax(0, 1.3fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr)",
                   gap: 12,
+                  minWidth: 0,
                 }}
               >
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700 }}>
                     Pilot:{" "}
                     {pilotMember
@@ -873,7 +847,7 @@ function AdminCheckinPageInner() {
                   ) : null}
                 </div>
 
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700 }}>
                     Co-Pilot:{" "}
                     {copilotMember
@@ -885,7 +859,7 @@ function AdminCheckinPageInner() {
                   </div>
                 </div>
 
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700 }}>
                     {[attendee.coach_make, attendee.coach_model]
                       .filter(Boolean)
@@ -898,7 +872,7 @@ function AdminCheckinPageInner() {
                   ) : null}
                 </div>
 
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700 }}>Current Site</div>
                   <div>{attendee.assigned_site?.toUpperCase() || "—"}</div>
                 </div>
@@ -927,14 +901,15 @@ function AdminCheckinPageInner() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: isMobile
+                  gridTemplateColumns: isCompact
                     ? "minmax(0, 1fr)"
                     : "minmax(220px, 1.2fr) auto auto auto",
                   gap: 12,
-                  alignItems: isMobile ? "stretch" : "center",
+                  alignItems: isCompact ? "stretch" : "center",
+                  minWidth: 0,
                 }}
               >
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
                     Site Number
                   </div>
@@ -975,7 +950,7 @@ function AdminCheckinPageInner() {
                     style={{
                       marginTop: 6,
                       padding: "10px 12px",
-                      width: isMobile ? "100%" : "auto",
+                      width: isCompact ? "100%" : "auto",
                       background: "#facc15",
                       border: "1px solid #eab308",
                       color: "#111827",
@@ -1034,10 +1009,7 @@ function AdminCheckinPageInner() {
                   style={{
                     minHeight: 44,
                     padding: "10px 14px",
-                    width:
-                      typeof window !== "undefined" && window.innerWidth < 900
-                        ? "100%"
-                        : "auto",
+                    width: isCompact ? "100%" : "auto",
                   }}
                 >
                   {savingId === attendee.id ? "Saving..." : "Save"}
@@ -1069,6 +1041,7 @@ function AdminCheckinPageInner() {
               background: "white",
               padding: 16,
               color: "#666",
+              minWidth: 0,
             }}
           >
             No attendees found.

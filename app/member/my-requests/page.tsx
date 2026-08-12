@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { supabase } from "@/lib/supabase";
 
 type RequestVendorRow = {
@@ -170,7 +171,9 @@ function statusMessage(status: string) {
 export default function MyRequestsPage() {
   return (
     <MemberRouteGuard>
-      <MyRequestsInner />
+      <MemberShellAdapter pageTitle="My Requests">
+        <MyRequestsInner />
+      </MemberShellAdapter>
     </MemberRouteGuard>
   );
 }
@@ -394,7 +397,7 @@ function MyRequestsInner() {
   }, [requests]);
 
   return (
-    <div style={{ padding: 18, display: "grid", gap: 14 }}>
+    <div style={{ display: "grid", gap: 14 }}>
       <div
         className="card"
         style={{
@@ -404,7 +407,6 @@ function MyRequestsInner() {
           background: "#fff",
         }}
       >
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>My Requests</h1>
         {memberName ? (
           <div style={{ fontSize: 14, color: "#555" }}>
             {memberName}, here are your service requests.

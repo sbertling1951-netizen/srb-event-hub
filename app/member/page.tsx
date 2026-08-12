@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import ContextCard from "@/components/ContextCard";
-import MemberDashboardHeader from "@/components/MemberDashboardHeader";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import {
   collectSharedExperienceContext,
   type PrimaryExperienceSignal,
@@ -20,7 +20,6 @@ import {
   getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
 import { getMemberSession } from "@/lib/memberSession";
-import { useTenant } from "@/lib/providers/TenantProvider";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 import { formatVendorNoticeDisplay, type VendorNotice } from "@/lib/vendorNotice";
@@ -98,13 +97,11 @@ export default function MemberDashboardPage() {
   const [checkedIn, setCheckedIn] = useState<boolean | null>(null);
   const [primaryContext, setPrimaryContext] =
     useState<PrimaryExperienceSignal | null>(null);
-  // Drives the header's displayed weekday/time and event-day label; updated
-  // once per minute rather than every render.
+  // Recomputes time-sensitive Shared Experience Context once per minute.
+  // This is not a visible dashboard clock.
   const [now, setNow] = useState(new Date());
 
   const router = useRouter();
-  const { tenant } = useTenant();
-
   const dashboardTitle = getTenantLabel("dashboard_title");
   const announcementsNavLabel = getTenantLabel("announcements_nav_label");
   const attendeesNavLabel = getTenantLabel("attendees_nav_label");
@@ -379,28 +376,25 @@ export default function MemberDashboardPage() {
   const activeVendor = vendors[currentVendorIndex] ?? vendors[0] ?? null;
 
   if (!ready) {
-    return <div style={{ padding: 30 }}>Loading...</div>;
+    return (
+      <MemberShellAdapter pageTitle={dashboardTitle}>
+        <div>Loading...</div>
+      </MemberShellAdapter>
+    );
   }
 
   if (!currentEvent) {
-    return null;
+    return (
+      <MemberShellAdapter pageTitle={dashboardTitle}>
+        <div />
+      </MemberShellAdapter>
+    );
   }
 
   return (
-    <div style={{ display: "grid", gap: 18, padding: 16 }}>
+    <MemberShellAdapter pageTitle={dashboardTitle}>
+      <div style={{ display: "grid", gap: 18, maxWidth: 1000, minWidth: 0 }}>
       <AnnouncementBanner />
-
-      <MemberDashboardHeader
-        eventName={currentEvent.name || dashboardTitle}
-        location={currentEvent.location}
-        startDate={currentEvent.start_date}
-        endDate={currentEvent.end_date}
-        now={now}
-        logoUrl={tenant?.logoUrl ?? null}
-        organizationName={tenant?.organizationName ?? null}
-        signal={primaryContext}
-        onMyEvents={() => goTo("/member/account")}
-      />
 
       <ContextCard signal={primaryContext} onNavigate={goTo} />
 
@@ -420,6 +414,7 @@ export default function MemberDashboardPage() {
           <div
             className="card"
             style={{
+              minWidth: 0,
               padding: 18,
               border: "1px solid #ddd",
               borderRadius: 12,
@@ -431,6 +426,8 @@ export default function MemberDashboardPage() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                flexWrap: "wrap",
+                gap: 8,
                 marginBottom: 12,
               }}
             >
@@ -492,9 +489,11 @@ export default function MemberDashboardPage() {
                   <div
                     key={member.id}
                     style={{
+                      minWidth: 0,
                       padding: "10px 12px",
                       border: "1px solid #e5e7eb",
                       borderRadius: 8,
+                      overflowWrap: "anywhere",
                     }}
                   >
                     {name}
@@ -538,11 +537,19 @@ export default function MemberDashboardPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(min(160px, 100%), 1fr))",
           gap: 12,
           marginTop: 12,
         }}
       >
+        <button
+          type="button"
+          onClick={() => goTo("/member/account")}
+          style={memberGridButtonStyle}
+        >
+          My Events
+        </button>
         <button
           type="button"
           onClick={() => goTo("/member/announcements")}
@@ -625,6 +632,7 @@ export default function MemberDashboardPage() {
         <div
           className="card"
           style={{
+            minWidth: 0,
             border: "1px solid #ddd",
             borderRadius: 12,
             background: "white",
@@ -650,12 +658,21 @@ export default function MemberDashboardPage() {
                 />
               ) : null}
 
-              <div style={{ fontWeight: 800, fontSize: 20 }}>
+              <div
+                style={{ fontWeight: 800, fontSize: 20, overflowWrap: "anywhere" }}
+              >
                 {activeVendor.business_name}
               </div>
 
               {activeVendor.business_description ? (
-                <div style={{ fontSize: 14, color: "#555", lineHeight: 1.45 }}>
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "#555",
+                    lineHeight: 1.45,
+                    overflowWrap: "anywhere",
+                  }}
+                >
                   {activeVendor.business_description}
                 </div>
               ) : null}
@@ -717,7 +734,8 @@ export default function MemberDashboardPage() {
           ) : null}
         </div>
       ) : null}
-    </div>
+      </div>
+    </MemberShellAdapter>
   );
 }
 

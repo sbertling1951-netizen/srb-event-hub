@@ -1,16 +1,15 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import {
-  getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
-} from "@/lib/adminWorkspaceContext";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { useAdmin } from "@/lib/adminContext";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -652,8 +651,6 @@ export default function AdminAttendeeImportsPage() {
 function AdminAttendeeImportsPageInner() {
   const { admin, loading: adminLoading } = useAdmin();
 
-  const searchParams = useSearchParams();
-  const isEmbedded = searchParams.get("embedded") === "1";
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [availableEvents, setAvailableEvents] = useState<EventContext[]>([]);
   const [selectedImportEventId, setSelectedImportEventId] = useState("");
@@ -1446,7 +1443,7 @@ function AdminAttendeeImportsPageInner() {
 
   const selectedImportEvent =
     availableEvents.find((event) => event.id === selectedImportEventId) || null;
-  const pageTitle = isEmbedded ? "Imports" : "Attendee Imports";
+  const pageTitle = "Attendee Imports";
 
   const assignedVendorIds = useMemo(
     () => new Set(eventVendors.map((assignment) => assignment.vendor_id)),
@@ -1988,14 +1985,12 @@ function AdminAttendeeImportsPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
-      {!isEmbedded ? (
-        <PageNavigation
-          homeHref="/admin/dashboard"
-          homeLabel="Dashboard"
-          parentHref="/admin/attendees"
-          parentLabel="Attendees"
-        />
-      ) : null}
+      <PageNavigation
+        homeHref="/admin/dashboard"
+        homeLabel="Dashboard"
+        parentHref="/admin/attendees"
+        parentLabel="Attendees"
+      />
 
       <div className="card" style={{ padding: 18 }}>
         <div
@@ -2575,11 +2570,7 @@ function AdminAttendeeImportsPageInner() {
       </div>
 
       <div className="card" style={{ padding: 18 }}>
-        {!isEmbedded ? (
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h1>
-        ) : (
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h2>
-        )}
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h1>
 
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
           <div style={{ fontWeight: 600 }}>Target Event</div>
@@ -2628,22 +2619,6 @@ function AdminAttendeeImportsPageInner() {
 
         <div style={{ fontSize: 14, marginBottom: 12 }}>{status}</div>
 
-        {isEmbedded ? (
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #dbeafe",
-              background: "#eff6ff",
-              color: "#1d4ed8",
-              fontSize: 14,
-            }}
-          >
-            Embedded imports mode is active. Imported attendees and preview
-            settings stay tied to the selected event.
-          </div>
-        ) : null}
         {error ? (
           <div
             style={{

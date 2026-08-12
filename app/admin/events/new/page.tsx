@@ -3,8 +3,8 @@
 import { FormEvent, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Page } from "@/components/ui/Page";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 
 type EventFormState = {
@@ -43,7 +43,9 @@ const DEFAULT_FORM: EventFormState = {
 export default function NewEventPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_events">
-      <NewEventPageInner />
+      <AdminShellAdapter pageTitle="Create Event">
+        <NewEventPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
@@ -107,20 +109,15 @@ function NewEventPageInner() {
   }
 
   return (
-    <Page className="card">
-      <PageHeader
-        title="Create Event"
-        headingLevel="h2"
-        description="Set event details, map anchor, and cutoff dates."
-        descriptionClassName="app-muted-text"
-        actions={
-          saved ? (
-            <span className="app-status-pill app-status-pill-success">
-              Draft saved
-            </span>
-          ) : null
-        }
-      />
+    <Page className="card" style={{ minWidth: 0 }}>
+      <div className="app-row-between-wrap">
+        <p className="app-muted-text">Set event details, map anchor, and cutoff dates.</p>
+        {saved ? (
+          <span className="app-status-pill app-status-pill-success">
+            Draft saved
+          </span>
+        ) : null}
+      </div>
 
       <form className="app-form-grid-2" onSubmit={handleSubmit}>
         <label>

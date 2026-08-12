@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { supabase } from "@/lib/supabase";
 
 type VendorRow = {
@@ -234,13 +235,20 @@ function AdminVendorAccessInner() {
   }
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 14 }}>
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0 }}>Vendor Access Invitations</h1>
-        <div style={{ fontSize: 14, color: "#555" }}>{status}</div>
+    <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+      <div className="card" style={{ padding: 18, minWidth: 0 }}>
+        <div
+          role="status"
+          style={{ fontSize: 14, color: "#555", overflowWrap: "anywhere" }}
+        >
+          {status}
+        </div>
       </div>
 
-      <div className="card" style={{ padding: 18, display: "grid", gap: 12 }}>
+      <div
+        className="card"
+        style={{ padding: 18, display: "grid", gap: 12, minWidth: 0 }}
+      >
         <h2 style={{ marginTop: 0, marginBottom: 0 }}>Invite or Resend</h2>
 
         <label>
@@ -308,7 +316,10 @@ function AdminVendorAccessInner() {
         </div>
       </div>
 
-      <div className="card" style={{ padding: 18, display: "grid", gap: 10 }}>
+      <div
+        className="card"
+        style={{ padding: 18, display: "grid", gap: 10, minWidth: 0 }}
+      >
         <h2 style={{ marginTop: 0, marginBottom: 0 }}>Current Vendor Access</h2>
 
         {accessRows.length === 0 ? (
@@ -321,8 +332,14 @@ function AdminVendorAccessInner() {
             const contact = contacts.find((c) => c.id === row.vendor_contact_id);
 
             return (
-              <div key={row.id} className="app-card-section-muted" style={{ display: "grid", gap: 5 }}>
-                <div style={{ fontWeight: 800 }}>{vendorName}</div>
+              <div
+                key={row.id}
+                className="app-card-section-muted"
+                style={{ display: "grid", gap: 5, minWidth: 0, overflowWrap: "anywhere" }}
+              >
+                <div style={{ fontWeight: 800, overflowWrap: "anywhere" }}>
+                  {vendorName}
+                </div>
                 <div>Contact: {contactName(contact)}</div>
                 <div>Email: {row.invitation_email}</div>
                 <div>Role: {row.access_role}</div>
@@ -355,7 +372,9 @@ function AdminVendorAccessInner() {
 export default function AdminVendorAccessPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_vendors">
-      <AdminVendorAccessInner />
+      <AdminShellAdapter pageTitle="Vendor Access Invitations">
+        <AdminVendorAccessInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

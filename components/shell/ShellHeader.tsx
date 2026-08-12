@@ -33,12 +33,13 @@ function formatWorkspaceDateRange(startDate?: string | null, endDate?: string | 
 
 /**
  * Canonical header composition (§G, Stage 2; workspace metadata completed
- * Stage 3B §B). Defines consistent slots -- brand, workspace/Event
- * identity (name, location, date range), page title/subtitle, back
- * action, mobile menu control, account controls, optional contextual
- * status area -- without forcing every page to populate every slot. A
- * role/page adapter decides which fields are present; the shell only
- * guarantees consistent spacing and slot order.
+ * Stage 3B §B; compact "show less" hierarchy completed Stage 4C §A).
+ * Defines consistent slots -- brand, workspace/Event identity (name,
+ * location, date range), page title/subtitle, back action, mobile menu
+ * control, account controls, optional contextual status area -- without
+ * forcing every page to populate every slot. A role/page adapter decides
+ * which fields are present; the shell only guarantees consistent spacing
+ * and slot order.
  *
  * Workspace location/date render as subordinate metadata beneath the
  * workspace name, never as a second page title -- `pageTitle` remains the
@@ -47,6 +48,17 @@ function formatWorkspaceDateRange(startDate?: string | null, endDate?: string | 
  * `name`), and the whole metadata line is omitted when neither is
  * present, so no adapter is forced to populate fields it has no source
  * for.
+ *
+ * Compact (`isCompact`) presentation deliberately shows less permanent
+ * context than standard/desktop, per the "Know more. Show less."
+ * principle: the brand title, workspace location/date metadata, and page
+ * subtitle are all omitted, leaving only the workspace name (preferring
+ * `compactName` when supplied) and the page title -- exactly the two-line
+ * hierarchy Stage 4C's phone review asked for. Nothing here resolves or
+ * infers a shorter name itself; `compactName` arrives already resolved
+ * from the adapter (§C: "the shell remains presentation only"). Standard
+ * presentation is completely unaffected -- every field still renders
+ * exactly as before.
  *
  * The mobile-menu trigger carries `aria-controls` pointing at the drawer
  * `ShellNav` renders (§H) so assistive technology can associate the two
@@ -57,7 +69,8 @@ function formatWorkspaceDateRange(startDate?: string | null, endDate?: string | 
 export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTriggerRef }: ShellHeaderProps) {
   const { brand, workspace, pageTitle, pageSubtitle, backTarget, accountActions, statusContent } = config;
   const workspaceDateRange = formatWorkspaceDateRange(workspace?.startDate, workspace?.endDate);
-  const hasWorkspaceMeta = Boolean(workspace?.location || workspaceDateRange);
+  const hasWorkspaceMeta = !isCompact && Boolean(workspace?.location || workspaceDateRange);
+  const workspaceDisplayName = isCompact ? (workspace?.compactName ?? workspace?.name) : workspace?.name;
 
   return (
     <header className="shell-header">
@@ -90,10 +103,10 @@ export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTrigge
           ) : null}
 
           <div className="shell-header-titles">
-            <div className="shell-brand-title">{brand.title}</div>
-            {workspace?.name ? (
+            {isCompact ? null : <div className="shell-brand-title">{brand.title}</div>}
+            {workspaceDisplayName ? (
               <div className="shell-workspace-identity">
-                <div className="shell-workspace-name">{workspace.name}</div>
+                <div className="shell-workspace-name">{workspaceDisplayName}</div>
                 {hasWorkspaceMeta ? (
                   <div className="shell-workspace-meta">
                     {workspace?.location ? (
@@ -113,11 +126,11 @@ export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTrigge
               </div>
             ) : null}
             {pageTitle ? <h1 className="shell-page-title">{pageTitle}</h1> : null}
-            {pageSubtitle ? <div className="shell-page-subtitle">{pageSubtitle}</div> : null}
+            {!isCompact && pageSubtitle ? <div className="shell-page-subtitle">{pageSubtitle}</div> : null}
           </div>
         </div>
 
-        {accountActions && accountActions.length > 0 ? (
+        {!isCompact && accountActions && accountActions.length > 0 ? (
           <div className="shell-account-actions">
             {accountActions.map((action) =>
               action.href ? (
@@ -135,6 +148,7 @@ export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTrigge
                   key={action.id}
                   type="button"
                   onClick={action.onClick}
+                  disabled={action.disabled}
                   className={
                     "shell-account-action" + (action.variant === "danger" ? " shell-account-action-danger" : "")
                   }

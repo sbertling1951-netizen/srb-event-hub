@@ -75,28 +75,33 @@ type AgendaForm = {
   sort_order: string;
   is_published: boolean;
 };
+// Shape returned by the governed list_available_agenda_templates RPC.
+// Replaces the legacy flat agenda_templates row -- a "template" the
+// admin selects is now a specific published revision of a Platform- or
+// Tenant-owned root, never a draft.
 type AgendaTemplate = {
-  id: string;
-  name: string;
-  description: string | null;
-  status: string;
-};
-
-type AgendaTemplateItem = {
-  id: string;
-  template_id: string;
-  external_id: string | null;
+  source_scope: "platform" | "tenant";
+  template_root_id: string;
+  revision_id: string;
+  revision_number: number;
   title: string;
   description: string | null;
-  location: string | null;
-  speaker: string | null;
-  category: string | null;
-  color: string | null;
-  agenda_date: string | null;
-  start_time: string | null;
-  end_time: string | null;
-  sort_order: number | null;
-  is_published: boolean | null;
+  revision_status: string;
+  tenant_id: string | null;
+};
+
+// Shape returned by read_agenda_template_application_history.
+type AgendaTemplateApplication = {
+  application_id: string;
+  operation: "apply" | "replace";
+  source_template_root_id: string;
+  source_revision_id: string;
+  applied_at: string;
+  actor_auth_user_id: string;
+  copied_item_count: number;
+  replaced_item_count: number;
+  outcome_status: string;
+  correlation_id: string;
 };
 
 type AgendaAdminMode = "items" | "import";
@@ -412,16 +417,52 @@ function moveItem<T>(arr: T[], fromIndex: number, toIndex: number) {
   return copy;
 }
 
-function ensureRowsAffected<T>(rows: T[] | null, message: string) {
-  if (!rows || rows.length === 0) {
-    throw new Error(message);
-  }
+// One consistent mapping from governed Agenda RPC error codes (raised
+// via RAISE EXCEPTION in the database) to short, actionable admin-facing
+// text. Unrecognized codes fall through to the raw message so nothing is
+// silently swallowed -- only the known codes get a friendlier rendering.
+const AGENDA_ERROR_MESSAGES: Record<string, string> = {
+  unauthorized:
+    "You do not have Agenda management authority for this event.",
+  unauthorized_event_agenda:
+    "You do not have Event agenda management authority for this event.",
+  unauthorized_tenant_template:
+    "You do not have authority to manage this Tenant's reusable templates.",
+  stale_agenda_version:
+    "This event's agenda changed since you loaded it. Reload before trying again.",
+  unpublished_revision: "That template has no published version to use.",
+  archived_template: "That template has been archived and can no longer be applied.",
+  cross_tenant_apply: "That template belongs to a different Tenant and cannot be applied here.",
+  malformed_row: "One or more rows are missing a required field (title, start time).",
+  duplicate_item_id: "The same agenda item was included twice in this request.",
+  foreign_or_missing_item:
+    "One or more agenda items do not belong to this event.",
+  duplicate_idempotency_key_conflict:
+    "This action appears to have already been submitted with different details. Reload and try again.",
+  empty_source_agenda: "This event has no agenda items to save as a template.",
+  "item not found": "That agenda item no longer exists.",
+  "wrong_event": "No admin working event selected, or it could not be found.",
+};
 
-  return rows;
+// Exported for focused testing (app/admin/agenda/page.test.ts).
+export function mapAgendaRpcError(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : "";
+  const mapped = AGENDA_ERROR_MESSAGES[raw];
+  if (mapped) {
+    return mapped;
+  }
+  return raw || fallback;
 }
 
-function getErrorMessage(err: unknown, fallback: string) {
-  return err instanceof Error ? err.message : fallback;
+export function isStaleAgendaVersionError(err: unknown): boolean {
+  return err instanceof Error && err.message === "stale_agenda_version";
+}
+
+function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function timeToMinutes(value: string | null | undefined) {
@@ -573,13 +614,36 @@ function AdminAgendaPageInner() {
   const calendarResizeDragRef = useRef<AgendaResizeDrag | null>(null);
   const itemsRef = useRef<AgendaItem[]>([]);
   const activeEventRef = useRef<ActiveEvent | null>(null);
+  // Authoritative event_agenda_state.version for the current working
+  // Event. Read via get_event_agenda_version on load, then replaced by
+  // whatever new_version each successful governed mutation returns --
+  // never incremented locally. A ref mirrors it for use inside async
+  // calendar drag/resize handlers, matching the existing itemsRef /
+  // activeEventRef pattern in this file.
+  const [agendaVersion, setAgendaVersionState] = useState(0);
+  const agendaVersionRef = useRef(0);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [replacingFromTemplate, setReplacingFromTemplate] = useState(false);
+
+  function setAgendaVersion(next: number) {
+    agendaVersionRef.current = next;
+    setAgendaVersionState(next);
+  }
+  // Page-content access is governed by the canonical Task Authority
+  // resolver (event.agenda.view / event.agenda.manage for the current
+  // working Event), not the legacy can_manage_agenda permission. null =
+  // not yet checked (no Event selected, or check in flight); this page
+  // never inspects privilege_group/is_super_admin or reimplements
+  // has_event_task_authority's semantics itself -- it only asks the
+  // existing governed resolver the one question it needs answered.
+  const [hasAgendaAccess, setHasAgendaAccess] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
   const [compactCalendarView, setCompactCalendarView] = useState(false);
   const useButtonReorder = isMobile && !forceDesktopDrag;
   const [templates, setTemplates] = useState<AgendaTemplate[]>([]);
+  const [applicationHistory, setApplicationHistory] = useState<AgendaTemplateApplication[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [assignedTemplateId, setAssignedTemplateId] = useState("");
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateDescription, setNewTemplateDescription] = useState("");
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -675,6 +739,7 @@ function AdminAgendaPageInner() {
       setActiveEvent(null);
       setItems([]);
       setStatus("No admin working event selected.");
+      setHasAgendaAccess(null);
       setLoading(false);
       return;
     }
@@ -685,26 +750,74 @@ function AdminAgendaPageInner() {
     };
 
     setActiveEvent(selectedEvent);
-    const { data: eventData, error: eventDataError } = await supabase
-      .from("events")
-      .select("assigned_agenda_template_id")
-      .eq("id", selectedEvent.id)
-      .maybeSingle();
 
-    if (eventDataError) {
-      showError(eventDataError.message || "Could not load event settings.");
+    // Governed page-content access: replaces the transitional
+    // can_manage_agenda page-visibility gate with the same canonical
+    // Event Task Authority resolver every mutation RPC already enforces
+    // server-side. "view" is sufficient to see the page; mutation
+    // buttons remain gated only by the RPCs' own event.agenda.manage
+    // checks (never re-derived here).
+    const { data: viewAccess, error: viewAccessError } = await supabase.rpc(
+      "has_event_task_authority",
+      { p_task_key: "event.agenda.view", p_event_id: selectedEvent.id },
+    );
+
+    if (viewAccessError) {
+      showError(
+        mapAgendaRpcError(
+          new Error(viewAccessError.message),
+          "Could not check Agenda access for this event.",
+        ),
+      );
+      setHasAgendaAccess(false);
       setLoading(false);
       return;
     }
 
-    const assignedId =
-      (
-        eventData as {
-          assigned_agenda_template_id?: string | null;
-        } | null
-      )?.assigned_agenda_template_id || "";
-    setAssignedTemplateId(assignedId);
-    setSelectedTemplateId(assignedId);
+    if (!viewAccess) {
+      const { data: manageAccess } = await supabase.rpc("has_event_task_authority", {
+        p_task_key: "event.agenda.manage",
+        p_event_id: selectedEvent.id,
+      });
+
+      if (!manageAccess) {
+        setHasAgendaAccess(false);
+        setItems([]);
+        setStatus("You do not have Agenda access for this event.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    setHasAgendaAccess(true);
+
+    // Stage 2B decision (assigned_agenda_template_id): no longer read or
+    // displayed by this page at all. It refers to a flat legacy
+    // agenda_templates row that cannot be resolved to a human-readable
+    // name against the new root/revision catalog, only 1 of 6 real
+    // Events has it set, and the application-history panel below now
+    // provides materially more useful, current provenance ("Applied
+    // agenda (N items) -- <timestamp>"). Presenting an unexplained
+    // legacy UUID as though it were meaningful operational state was
+    // judged worse than omitting it. The database column itself is
+    // untouched -- this is a display decision only.
+    const { data: versionData, error: versionError } = await supabase.rpc(
+      "get_event_agenda_version",
+      { p_event_id: selectedEvent.id },
+    );
+
+    if (versionError) {
+      showError(
+        mapAgendaRpcError(
+          new Error(versionError.message),
+          "Could not load the current agenda version.",
+        ),
+      );
+      setLoading(false);
+      return;
+    }
+
+    setAgendaVersion(typeof versionData === "number" ? versionData : 0);
 
     const { data, error } = await supabase
       .from("agenda_items")
@@ -728,26 +841,82 @@ function AdminAgendaPageInner() {
     setLoading(false);
   }, []);
 
-  const loadTemplates = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("agenda_templates")
-      .select("id,name,description,status")
-      .eq("status", "active")
-      .order("name", { ascending: true });
+  const loadTemplates = useCallback(async (eventIdOverride?: string) => {
+    // Accepts an explicit event id because this can run concurrently
+    // with loadPage() (via Promise.all in refreshAgendaData), before
+    // activeEventRef's own effect has had a chance to update it.
+    const eventId = eventIdOverride ?? activeEventRef.current?.id;
 
-    console.log("Agenda Categories:", data, error);
+    if (!eventId) {
+      setTemplates([]);
+      return;
+    }
+
+    const { data, error } = await supabase.rpc("list_available_agenda_templates", {
+      p_event_id: eventId,
+    });
 
     if (error) {
-      showError(error.message || "Could not load agenda templates.");
+      showError(
+        mapAgendaRpcError(new Error(error.message), "Could not load agenda templates."),
+      );
       return;
     }
 
     setTemplates((data || []) as AgendaTemplate[]);
   }, []);
 
+  // Compact provenance status only -- not an audit dashboard. Shows the
+  // most recent few apply/replace commands for the current Event so an
+  // admin can see what was last applied and when, without a new UI
+  // surface beyond a short list.
+  const loadApplicationHistory = useCallback(async (eventIdOverride?: string) => {
+    const eventId = eventIdOverride ?? activeEventRef.current?.id;
+
+    if (!eventId) {
+      setApplicationHistory([]);
+      return;
+    }
+
+    const { data, error } = await supabase.rpc(
+      "read_agenda_template_application_history",
+      { p_event_id: eventId },
+    );
+
+    if (error) {
+      // Non-critical: this is supplementary provenance display, not a
+      // blocking read. Log and continue rather than surfacing an error
+      // banner for a status list.
+      console.error("loadApplicationHistory error:", error.message);
+      return;
+    }
+
+    setApplicationHistory(
+      ((data || []) as AgendaTemplateApplication[]).slice(0, 5),
+    );
+  }, []);
+
   const refreshAgendaData = useCallback(async () => {
-    await Promise.all([loadPage(), loadTemplates(), loadAgendaCategories()]);
-  }, [loadPage, loadTemplates, loadAgendaCategories]);
+    const eventId = getCurrentAdminEvent()?.id;
+    await Promise.all([
+      loadPage(),
+      loadTemplates(eventId),
+      loadApplicationHistory(eventId),
+      loadAgendaCategories(),
+    ]);
+  }, [loadPage, loadTemplates, loadApplicationHistory, loadAgendaCategories]);
+
+  // Reconcile local Agenda state with the server after a stale-version
+  // conflict: reload everything and tell the admin plainly what
+  // happened, rather than retrying blindly or silently overwriting
+  // whatever the other admin just saved.
+  async function reconcileAfterStaleVersion() {
+    showError(
+      "This event's agenda was changed by someone else since you loaded it. " +
+        "The agenda has been reloaded with the current data -- please review it before retrying your change.",
+    );
+    await refreshAgendaData();
+  }
 
   useEffect(() => {
     function handleResize() {
@@ -785,12 +954,14 @@ function AdminAgendaPageInner() {
 
     void loadPage();
     void loadTemplates();
+    void loadApplicationHistory();
     void loadAgendaCategories();
 
     // Listener logic copied from events admin:
     function handleAdminEventUpdated() {
       void loadPage();
       void loadTemplates();
+      void loadApplicationHistory();
       void loadAgendaCategories();
     }
     const unsubscribe = subscribeToAdminWorkspace(handleAdminEventUpdated);
@@ -798,7 +969,7 @@ function AdminAgendaPageInner() {
     return () => {
       unsubscribe();
     };
-  }, [admin, loadPage, loadTemplates, loadAgendaCategories]);
+  }, [admin, loadPage, loadTemplates, loadApplicationHistory, loadAgendaCategories]);
 
   function moveItemUp(id: string) {
     setItems((prev) => {
@@ -859,73 +1030,69 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    const externalId = buildExternalId(form);
-
-    const payload = {
-      event_id: activeEvent.id,
-      external_id: externalId,
-      title: form.title.trim(),
-      description: normalizeText(form.description),
-      location: normalizeText(form.location),
-      speaker: normalizeText(form.speaker),
-      category: normalizeText(form.category),
-      color: getAgendaColor(form.category, form.color),
-      agenda_date: form.agenda_date.trim(),
-      start_time: form.start_time.trim(),
-      end_time: normalizeText(form.end_time),
-      sort_order: normalizeNumber(form.sort_order),
-      is_published: form.is_published,
-      source: form.id ? "admin" : "manual",
-    };
+    const externalId = form.id ? undefined : buildExternalId(form);
 
     setSaving(true);
     showStatus(form.id ? "Updating agenda item..." : "Adding agenda item...");
 
     try {
       if (form.id) {
-        const { data: updatedRows, error } = await supabase
-          .from("agenda_items")
-          .update(payload)
-          .eq("id", form.id)
-          .eq("event_id", activeEvent.id)
-          .select("id,title");
+        const { data, error } = await supabase.rpc("update_event_agenda_item", {
+          p_item_id: form.id,
+          p_expected_agenda_version: agendaVersionRef.current,
+          p_title: form.title.trim(),
+          p_description: normalizeText(form.description),
+          p_location: normalizeText(form.location),
+          p_speaker: normalizeText(form.speaker),
+          p_category: normalizeText(form.category),
+          p_color: getAgendaColor(form.category, form.color),
+          p_agenda_date: form.agenda_date.trim() || null,
+          p_start_time: form.start_time.trim(),
+          p_end_time: normalizeText(form.end_time),
+          p_is_published: form.is_published,
+          p_sort_order: normalizeNumber(form.sort_order),
+        });
 
         if (error) {
-          showError(error.message || "Could not update agenda item.");
+          if (isStaleAgendaVersionError(new Error(error.message))) {
+            await reconcileAfterStaleVersion();
+            return;
+          }
+          showError(mapAgendaRpcError(new Error(error.message), "Could not update agenda item."));
           return;
         }
 
-        ensureRowsAffected(
-          updatedRows,
-          "No agenda item was updated. This usually means the row is blocked by RLS or does not belong to the selected event.",
-        );
+        const result = (data as Array<{ new_version: number }> | null)?.[0];
+        if (typeof result?.new_version === "number") {
+          setAgendaVersion(result.new_version);
+        }
 
         setStatus(`Updated "${form.title.trim()}".`);
       } else {
-        const { data: existing, error: findError } = await supabase
-          .from("agenda_items")
-          .select("id")
-          .eq("event_id", activeEvent.id)
-          .eq("external_id", externalId)
-          .maybeSingle();
-
-        if (findError) {
-          showError(findError.message || "Could not check for duplicate item.");
-          return;
-        }
-
-        if (existing?.id) {
-          showError(
-            `An item with external_id "${externalId}" already exists. Edit that item or change the title/date/time.`,
-          );
-          return;
-        }
-
-        const { error } = await supabase.from("agenda_items").insert(payload);
+        const { data, error } = await supabase.rpc("create_event_agenda_item", {
+          p_event_id: activeEvent.id,
+          p_title: form.title.trim(),
+          p_description: normalizeText(form.description),
+          p_location: normalizeText(form.location),
+          p_speaker: normalizeText(form.speaker),
+          p_category: normalizeText(form.category),
+          p_color: getAgendaColor(form.category, form.color),
+          p_agenda_date: form.agenda_date.trim() || null,
+          p_start_time: form.start_time.trim(),
+          p_end_time: normalizeText(form.end_time),
+          p_is_published: form.is_published,
+          p_sort_order: normalizeNumber(form.sort_order),
+          p_external_id: externalId,
+        });
 
         if (error) {
-          showError(error.message || "Could not add agenda item.");
+          showError(mapAgendaRpcError(new Error(error.message), "Could not add agenda item."));
           return;
+        }
+
+        const result = (data as Array<{ new_version: number }> | null)?.[0];
+        if (typeof result?.new_version === "number") {
+          setAgendaVersion(result.new_version);
         }
 
         setStatus(`Added "${form.title.trim()}".`);
@@ -955,27 +1122,24 @@ function AdminAgendaPageInner() {
 
     showStatus(`Deleting "${itemTitle}"...`);
 
-    const { data: deletedRows, error } = await supabase
-      .from("agenda_items")
-      .delete()
-      .eq("id", id)
-      .select("id,title,event_id");
+    const { data, error } = await supabase.rpc("delete_event_agenda_item", {
+      p_item_id: id,
+      p_expected_agenda_version: agendaVersionRef.current,
+    });
 
     if (error) {
-      showError(error.message || "Could not delete item.");
+      if (isStaleAgendaVersionError(new Error(error.message))) {
+        await reconcileAfterStaleVersion();
+        return;
+      }
+      showError(mapAgendaRpcError(new Error(error.message), "Could not delete item."));
       return;
     }
 
-    ensureRowsAffected(
-      deletedRows,
-      [
-        "No agenda item was deleted.",
-        `Item ID: ${id}`,
-        `Item event_id: ${itemToDelete?.event_id || "unknown"}`,
-        `Admin event_id: ${activeEvent?.id || "unknown"}`,
-        "Most likely cause: Supabase RLS does not allow DELETE for this logged-in admin, or this item is stale/mismatched data.",
-      ].join(" "),
-    );
+    const result = (data as Array<{ new_version: number }> | null)?.[0];
+    if (typeof result?.new_version === "number") {
+      setAgendaVersion(result.new_version);
+    }
 
     if (form.id === id) {
       setForm(emptyForm);
@@ -983,7 +1147,7 @@ function AdminAgendaPageInner() {
 
     setItems((prev) => prev.filter((item) => item.id !== id));
     void refreshAgendaData();
-    setStatus(`Deleted "${deletedRows[0]?.title || itemTitle}".`);
+    setStatus(`Deleted "${itemTitle}".`);
   }
 
   async function togglePublished(item: AgendaItem) {
@@ -992,22 +1156,90 @@ function AdminAgendaPageInner() {
         ? "Unpublishing agenda item..."
         : "Publishing agenda item...",
     );
-    const { error } = await supabase
-      .from("agenda_items")
-      .update({
-        is_published: !item.is_published,
-      })
-      .eq("id", item.id);
+
+    const { data, error } = await supabase.rpc("update_event_agenda_item", {
+      p_item_id: item.id,
+      p_expected_agenda_version: agendaVersionRef.current,
+      p_title: item.title,
+      p_description: item.description,
+      p_location: item.location,
+      p_speaker: item.speaker,
+      p_category: item.category,
+      p_color: item.color,
+      p_agenda_date: item.agenda_date,
+      p_start_time: item.start_time,
+      p_end_time: item.end_time,
+      p_is_published: !item.is_published,
+      p_sort_order: item.sort_order,
+    });
 
     if (error) {
-      showError(error.message || "Could not update publish status.");
+      if (isStaleAgendaVersionError(new Error(error.message))) {
+        await reconcileAfterStaleVersion();
+        return;
+      }
+      showError(mapAgendaRpcError(new Error(error.message), "Could not update publish status."));
       return;
+    }
+
+    const result = (data as Array<{ new_version: number }> | null)?.[0];
+    if (typeof result?.new_version === "number") {
+      setAgendaVersion(result.new_version);
     }
 
     void refreshAgendaData();
     setStatus(
       `${item.title} ${item.is_published ? "unpublished" : "published"}.`,
     );
+  }
+
+  // Shared single-field-change helper used by the calendar drag/resize
+  // interactions (start-time resize, end-time resize, drag-to-slot).
+  // update_event_agenda_item always takes the full editable field set,
+  // so this merges the one changed field over the item's current values
+  // rather than duplicating the RPC call three times. Returns the new
+  // version on success, or null on failure/stale-version (caller is
+  // responsible for its own optimistic-UI rollback via refreshAgendaData,
+  // matching this file's existing pattern for these handlers).
+  async function updateAgendaItemField(
+    item: AgendaItem,
+    overrides: Partial<
+      Pick<AgendaItem, "agenda_date" | "start_time" | "end_time" | "sort_order">
+    >,
+  ): Promise<number | null> {
+    const merged = { ...item, ...overrides };
+
+    const { data, error } = await supabase.rpc("update_event_agenda_item", {
+      p_item_id: item.id,
+      p_expected_agenda_version: agendaVersionRef.current,
+      p_title: merged.title,
+      p_description: merged.description,
+      p_location: merged.location,
+      p_speaker: merged.speaker,
+      p_category: merged.category,
+      p_color: merged.color,
+      p_agenda_date: merged.agenda_date,
+      p_start_time: merged.start_time,
+      p_end_time: merged.end_time,
+      p_is_published: merged.is_published,
+      p_sort_order: merged.sort_order,
+    });
+
+    if (error) {
+      if (isStaleAgendaVersionError(new Error(error.message))) {
+        await reconcileAfterStaleVersion();
+        return null;
+      }
+      showError(mapAgendaRpcError(new Error(error.message), "Could not update agenda item."));
+      return null;
+    }
+
+    const result = (data as Array<{ new_version: number }> | null)?.[0];
+    if (typeof result?.new_version === "number") {
+      setAgendaVersion(result.new_version);
+      return result.new_version;
+    }
+    return null;
   }
 
   const categories = useMemo(() => {
@@ -1374,30 +1606,9 @@ function AdminAgendaPageInner() {
 
     showStatus(`Resizing "${item.title}" to start at ${nextStartTime}...`);
 
-    const { data: updatedRows, error: updateError } = await supabase
-      .from("agenda_items")
-      .update({
-        start_time: nextStartTime,
-      })
-      .eq("id", itemId)
-      .eq("event_id", currentEvent.id)
-      .select("id,title");
+    const newVersion = await updateAgendaItemField(item, { start_time: nextStartTime });
 
-    if (updateError) {
-      showError(updateError.message || "Could not resize agenda item.");
-      setCalendarResizePreview(null);
-      void refreshAgendaData();
-      return;
-    }
-
-    try {
-      ensureRowsAffected(
-        updatedRows,
-        "No agenda item was resized. This usually means the row is blocked by RLS or does not belong to the selected event.",
-      );
-    } catch (err) {
-      showError(getErrorMessage(err, "No agenda item was resized."));
-
+    if (newVersion === null) {
       setCalendarResizePreview(null);
       void refreshAgendaData();
       return;
@@ -1588,30 +1799,9 @@ function AdminAgendaPageInner() {
 
     showStatus(`Resizing "${item.title}" to end at ${nextEndTime}...`);
 
-    const { data: updatedRows, error: updateError } = await supabase
-      .from("agenda_items")
-      .update({
-        end_time: nextEndTime,
-      })
-      .eq("id", itemId)
-      .eq("event_id", currentEvent.id)
-      .select("id,title");
+    const newVersion = await updateAgendaItemField(item, { end_time: nextEndTime });
 
-    if (updateError) {
-      showError(updateError.message || "Could not resize agenda item.");
-      setCalendarResizePreview(null);
-      void refreshAgendaData();
-      return;
-    }
-
-    try {
-      ensureRowsAffected(
-        updatedRows,
-        "No agenda item was resized. This usually means the row is blocked by RLS or does not belong to the selected event.",
-      );
-    } catch (err) {
-      showError(getErrorMessage(err, "No agenda item was resized."));
-
+    if (newVersion === null) {
       setCalendarResizePreview(null);
       void refreshAgendaData();
       return;
@@ -1662,32 +1852,13 @@ function AdminAgendaPageInner() {
       `Moving "${item.title}" to ${formatAgendaDate(nextDate)} at ${nextStartTime}...`,
     );
 
-    const { data: updatedRows, error: updateError } = await supabase
-      .from("agenda_items")
-      .update({
-        agenda_date: nextDate,
-        start_time: nextStartTime,
-        end_time: nextEndTime,
-      })
-      .eq("id", itemId)
-      .eq("event_id", activeEvent.id)
-      .select("id,title");
+    const newVersion = await updateAgendaItemField(item, {
+      agenda_date: nextDate,
+      start_time: nextStartTime,
+      end_time: nextEndTime,
+    });
 
-    if (updateError) {
-      showError(updateError.message || "Could not move agenda item.");
-      setCalendarDraggingId(null);
-      void refreshAgendaData();
-      return;
-    }
-
-    try {
-      ensureRowsAffected(
-        updatedRows,
-        "No agenda item was moved. This usually means the row is blocked by RLS or does not belong to the selected event.",
-      );
-    } catch (err) {
-      showError(getErrorMessage(err, "No agenda item was moved."));
-
+    if (newVersion === null) {
       setCalendarDraggingId(null);
       void refreshAgendaData();
       return;
@@ -1765,20 +1936,29 @@ function AdminAgendaPageInner() {
       setSavingOrder(true);
       showStatus("Saving agenda order...");
 
-      const sortOrderPayload = items.map((item, index) => ({
+      // One atomic governed command for the whole batch -- not one
+      // .upsert() row per item.
+      const itemOrders = items.map((item, index) => ({
         id: item.id,
-        event_id: activeEvent.id,
         sort_order: index + 1,
       }));
 
-      const { error } = await supabase
-        .from("agenda_items")
-        .upsert(sortOrderPayload, {
-          onConflict: "id",
-        });
+      const { data, error } = await supabase.rpc("reorder_event_agenda_items", {
+        p_event_id: activeEvent.id,
+        p_expected_agenda_version: agendaVersionRef.current,
+        p_item_orders: itemOrders,
+      });
 
       if (error) {
-        throw error;
+        if (isStaleAgendaVersionError(new Error(error.message))) {
+          await reconcileAfterStaleVersion();
+          return;
+        }
+        throw new Error(mapAgendaRpcError(new Error(error.message), "Failed to save order."));
+      }
+
+      if (typeof data === "number") {
+        setAgendaVersion(data);
       }
 
       setStatus("Agenda order saved.");
@@ -1791,39 +1971,14 @@ function AdminAgendaPageInner() {
     }
   }
 
-  async function assignTemplate() {
-    if (!activeEvent?.id) {
-      showError("No admin working event selected.");
-      return;
-    }
-
-    try {
-      showStatus("Assigning agenda template...");
-
-      const { error } = await supabase
-        .from("events")
-        .update({
-          assigned_agenda_template_id: selectedTemplateId || null,
-        })
-        .eq("id", activeEvent.id);
-
-      if (error) {
-        throw error;
-      }
-
-      setAssignedTemplateId(selectedTemplateId || "");
-
-      const templateName =
-        templates.find((t) => t.id === selectedTemplateId)?.name || "None";
-
-      setStatus(`Assigned agenda template: ${templateName}.`);
-    } catch (err) {
-      console.error("assignTemplate error:", err);
-      showError(
-        err instanceof Error ? err.message : "Could not assign template.",
-      );
-    }
-  }
+  // NOTE: assignTemplate() (writing events.assigned_agenda_template_id as
+  // the operational "which template applies here" mechanism) has been
+  // removed. apply_agenda_template_to_event / replace_agenda_from_template
+  // and their agenda_template_applications provenance now fully supersede
+  // its purpose. As of Stage 2B, assigned_agenda_template_id is no longer
+  // read or displayed by this page at all (see the loadPage() comment
+  // where it used to be fetched) -- the application-history panel below
+  // is the current, useful provenance display.
 
   async function saveCurrentAgendaAsTemplate() {
     if (!activeEvent?.id) {
@@ -1860,66 +2015,31 @@ function AdminAgendaPageInner() {
       setSavingTemplate(true);
       showStatus("Saving agenda template...");
 
-      const { data: insertedTemplate, error: templateError } = await supabase
-        .from("agenda_templates")
-        .insert({
-          name: templateName,
-          description: templateDescription || null,
-          status: "active",
-        })
-        .select("id,name,description,status")
-        .single();
+      // The database owns the Event -> template transformation entirely
+      // (snapshot, section grouping, revision creation) -- this page
+      // never reads or copies item rows itself for this operation.
+      // Publishes immediately so the new template is selectable right
+      // away, matching the legacy UI's behavior where a saved template
+      // was instantly usable with no separate draft step.
+      const { error } = await supabase.rpc("save_event_agenda_as_tenant_template", {
+        p_event_id: activeEvent.id,
+        p_title: templateName,
+        p_description: templateDescription || null,
+        p_publish: true,
+        p_idempotency_key: newIdempotencyKey(),
+      });
 
-      if (templateError || !insertedTemplate?.id) {
-        throw templateError || new Error("Could not create agenda template.");
+      if (error) {
+        throw new Error(
+          mapAgendaRpcError(new Error(error.message), "Could not save agenda template."),
+        );
       }
 
-      const templateId = insertedTemplate.id;
-
-      const templateItems = items.map((item, index) => ({
-        template_id: templateId,
-        template_set_id: templateId,
-        external_id:
-          item.external_id ||
-          [
-            "template",
-            templateId,
-            String(index + 1),
-            slugify(item.title || "agenda-item"),
-          ].join("-"),
-        title: item.title || "Untitled item",
-        description: item.description,
-        location: item.location,
-        speaker: item.speaker,
-        category: item.category,
-        color: item.color,
-        agenda_date: item.agenda_date,
-        start_time: item.start_time,
-        end_time: item.end_time,
-        sort_order: item.sort_order ?? index + 1,
-        is_published: item.is_published ?? true,
-      }));
-
-      const { error: itemsError } = await supabase
-        .from("agenda_template_items")
-        .insert(templateItems);
-
-      if (itemsError) {
-        throw itemsError;
-      }
-
-      setTemplates((prev) => [
-        insertedTemplate as AgendaTemplate,
-        ...prev.filter((template) => template.id !== templateId),
-      ]);
-
-      setSelectedTemplateId(templateId);
+      await loadTemplates(activeEvent.id);
       setNewTemplateName("");
       setNewTemplateDescription("");
 
-      setStatus(
-        `Saved "${templateName}" with ${templateItems.length} agenda items.`,
-      );
+      setStatus(`Saved "${templateName}" as a reusable template.`);
     } catch (err) {
       console.error("saveCurrentAgendaAsTemplate error:", err);
 
@@ -1931,7 +2051,12 @@ function AdminAgendaPageInner() {
     }
   }
 
-  async function copyTemplateToEvent() {
+  // Apply is additive: it only ever adds new, freshly-copied rows and
+  // never touches, merges into, or overwrites any existing agenda_items
+  // row -- this is not "merge" or "upsert" behavior. One idempotency key
+  // per user click, so a duplicate network retry of the same click
+  // cannot double-apply the same template.
+  async function applyTemplateToEvent() {
     if (!activeEvent?.id) {
       showError("No admin working event selected.");
       return;
@@ -1942,68 +2067,43 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    try {
-      showStatus("Copying template items to event...");
+    if (applyingTemplate) {
+      return;
+    }
 
-      const { data, error } = await supabase
-        .from("agenda_template_items")
-        .select(
-          "external_id,title,description,location,speaker,category,color,agenda_date,start_time,end_time,sort_order,is_published",
-        )
-        .eq("template_id", selectedTemplateId)
-        .order("sort_order", { ascending: true, nullsFirst: false });
+    try {
+      setApplyingTemplate(true);
+      showStatus("Applying template to event...");
+
+      const { error } = await supabase.rpc("apply_agenda_template_to_event", {
+        p_event_id: activeEvent.id,
+        p_source_revision_id: selectedTemplateId,
+        p_idempotency_key: newIdempotencyKey(),
+      });
 
       if (error) {
-        throw error;
-      }
-
-      const rows = ((data || []) as AgendaTemplateItem[]).map(
-        (item, index) => ({
-          event_id: activeEvent.id,
-          external_id:
-            item.external_id ||
-            [
-              "template",
-              selectedTemplateId,
-              String(index + 1),
-              slugify(item.title || "agenda-item"),
-            ].join("-"),
-          title: item.title,
-          description: item.description,
-          location: item.location,
-          speaker: item.speaker,
-          category: item.category,
-          color: item.color,
-          agenda_date: item.agenda_date,
-          start_time: item.start_time,
-          end_time: item.end_time,
-          sort_order: item.sort_order ?? index + 1,
-          is_published: !!item.is_published,
-          source: "template",
-        }),
-      );
-
-      const { error: upsertError } = await supabase
-        .from("agenda_items")
-        .upsert(rows, {
-          onConflict: "event_id,external_id",
-        });
-
-      if (upsertError) {
-        throw upsertError;
+        if (isStaleAgendaVersionError(new Error(error.message))) {
+          await reconcileAfterStaleVersion();
+          return;
+        }
+        throw new Error(
+          mapAgendaRpcError(new Error(error.message), "Could not apply template to event."),
+        );
       }
 
       await loadPage();
 
-      setStatus(`Copied ${rows.length} template items into this event.`);
+      setStatus("Template applied to this event.");
     } catch (err) {
-      console.error("copyTemplateToEvent error:", err);
+      console.error("applyTemplateToEvent error:", err);
 
       showError(
         err instanceof Error
           ? err.message
-          : "Could not copy template to event.",
+          : "Could not apply template to event.",
       );
+    } finally {
+      setApplyingTemplate(false);
     }
   }
 
@@ -2030,19 +2130,38 @@ function AdminAgendaPageInner() {
       return;
     }
 
+    if (replacingFromTemplate) {
+      return;
+    }
+
     try {
+      setReplacingFromTemplate(true);
       showStatus("Replacing event agenda from template...");
 
-      const { error: deleteError } = await supabase
-        .from("agenda_items")
-        .delete()
-        .eq("event_id", activeEvent.id);
+      // One atomic governed command: authoritative replacement of the
+      // Event's agenda with the template's contents. Never a separate
+      // browser-side delete-then-copy sequence, so there is no window
+      // where the Event's agenda can be observed empty.
+      const { error } = await supabase.rpc("replace_agenda_from_template", {
+        p_event_id: activeEvent.id,
+        p_source_revision_id: selectedTemplateId,
+        p_expected_agenda_version: agendaVersionRef.current,
+        p_idempotency_key: newIdempotencyKey(),
+      });
 
-      if (deleteError) {
-        throw deleteError;
+      if (error) {
+        if (isStaleAgendaVersionError(new Error(error.message))) {
+          await reconcileAfterStaleVersion();
+          return;
+        }
+        throw new Error(
+          mapAgendaRpcError(new Error(error.message), "Could not replace event from template."),
+        );
       }
 
-      await copyTemplateToEvent();
+      await loadPage();
+
+      setStatus("Event agenda replaced from template.");
     } catch (err) {
       console.error("replaceEventFromTemplate error:", err);
 
@@ -2051,6 +2170,8 @@ function AdminAgendaPageInner() {
           ? err.message
           : "Could not replace event from template.",
       );
+    } finally {
+      setReplacingFromTemplate(false);
     }
   }
 
@@ -2210,14 +2331,37 @@ function AdminAgendaPageInner() {
         `Importing ${payloads.length} valid rows into ${activeEvent.name}...`,
       );
 
-      const { error: importError } = await supabase
-        .from("agenda_items")
-        .upsert(payloads, {
-          onConflict: "event_id,external_id",
-        });
+      // One atomic governed import command for the whole parsed batch --
+      // never a direct .upsert() against agenda_items. A single
+      // malformed row (caught above during client-side parsing, and
+      // re-validated server-side) fails the entire batch rather than
+      // partially updating local UI.
+      const { data: importResult, error: importError } = await supabase.rpc(
+        "import_event_agenda_items",
+        {
+          p_event_id: activeEvent.id,
+          p_expected_agenda_version: agendaVersionRef.current,
+          p_rows: payloads,
+        },
+      );
 
       if (importError) {
-        throw new Error(`Bulk import failed: ${importError.message}`);
+        if (isStaleAgendaVersionError(new Error(importError.message))) {
+          await reconcileAfterStaleVersion();
+          return;
+        }
+        throw new Error(
+          mapAgendaRpcError(new Error(importError.message), "Bulk import failed."),
+        );
+      }
+
+      const importedCount =
+        (importResult as Array<{ imported_count: number; new_version: number }> | null)?.[0]
+          ?.imported_count ?? payloads.length;
+      const newVersion = (importResult as Array<{ new_version: number }> | null)?.[0]
+        ?.new_version;
+      if (typeof newVersion === "number") {
+        setAgendaVersion(newVersion);
       }
 
       void refreshAgendaData();
@@ -2225,11 +2369,11 @@ function AdminAgendaPageInner() {
 
       if (importWarnings.length > 0) {
         setImportStatus(
-          `Agenda import completed with warnings. Imported ${payloads.length} rows. Skipped ${importWarnings.length} rows. ${importWarnings.join(" | ")}`,
+          `Agenda import completed with warnings. Imported ${importedCount} rows. Skipped ${importWarnings.length} rows. ${importWarnings.join(" | ")}`,
         );
       } else {
         setImportStatus(
-          `Agenda import complete for ${activeEvent.name}. ${payloads.length} rows imported or updated.`,
+          `Agenda import complete for ${activeEvent.name}. ${importedCount} rows imported or updated.`,
         );
       }
     } catch (err) {
@@ -2244,8 +2388,20 @@ function AdminAgendaPageInner() {
     }
   }
 
-  const assignedTemplateName =
-    templates.find((t) => t.id === assignedTemplateId)?.name || "None";
+  if (hasAgendaAccess === false) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>
+          No Agenda access for this event
+        </div>
+        <div style={{ color: "#555" }}>
+          {status ||
+            "You do not have Agenda view or manage authority for the current admin working event."}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <ConfirmDialog
@@ -2391,8 +2547,8 @@ function AdminAgendaPageInner() {
         <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
           {loading ? "Loading agenda data..." : status}
         </div>
-        <div style={{ fontSize: 13, color: "#666", marginTop: 6 }}>
-          Assigned Template: {assignedTemplateName}
+        <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
+          Agenda version: {agendaVersion}
         </div>
       </div>
       <AgendaImportPanel
@@ -2408,18 +2564,47 @@ function AdminAgendaPageInner() {
         itemCount={items.length}
         templates={templates}
         selectedTemplateId={selectedTemplateId}
-        assignedTemplateName={assignedTemplateName}
         newTemplateName={newTemplateName}
         newTemplateDescription={newTemplateDescription}
         savingTemplate={savingTemplate}
+        applyingTemplate={applyingTemplate}
+        replacingFromTemplate={replacingFromTemplate}
         setSelectedTemplateId={setSelectedTemplateId}
         setNewTemplateName={setNewTemplateName}
         setNewTemplateDescription={setNewTemplateDescription}
         onSaveTemplate={saveCurrentAgendaAsTemplate}
-        onAssignTemplate={assignTemplate}
-        onCopyTemplate={copyTemplateToEvent}
+        onApplyTemplate={applyTemplateToEvent}
         onReplaceFromTemplate={replaceEventFromTemplate}
       />
+
+      {applicationHistory.length > 0 && (
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            background: "white",
+            padding: 14,
+            marginBottom: 20,
+            fontSize: 12,
+            color: "#555",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6, color: "#333" }}>
+            Recent template activity
+          </div>
+          {applicationHistory.map((entry) => (
+            <div key={entry.application_id} style={{ marginTop: 4 }}>
+              {entry.operation === "replace" ? "Replaced" : "Applied"} agenda (
+              {entry.copied_item_count} item
+              {entry.copied_item_count === 1 ? "" : "s"}
+              {entry.operation === "replace"
+                ? `, ${entry.replaced_item_count} removed`
+                : ""}
+              ) &mdash; {new Date(entry.applied_at).toLocaleString()}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div
         style={{
@@ -3620,8 +3805,14 @@ function AdminAgendaPageInner() {
 }
 
 export default function AdminAgendaPage() {
+  // AdminRouteGuard with no requiredPermission still enforces the
+  // baseline "must be an authenticated, linked admin" check (redirects
+  // to login otherwise) -- only the legacy can_manage_agenda permission
+  // gate is removed. Actual page-content access is now decided inside
+  // AdminAgendaPageInner via the governed event.agenda.view/manage
+  // Task Authority check (hasAgendaAccess), not a role-name permission.
   return (
-    <AdminRouteGuard requiredPermission="can_manage_agenda">
+    <AdminRouteGuard>
       <AdminAgendaPageInner />
     </AdminRouteGuard>
   );

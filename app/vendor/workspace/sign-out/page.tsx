@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import VendorWorkspaceShell from "@/components/vendor/VendorWorkspaceShell";
-import { supabase } from "@/lib/supabase";
+import { signOutOfVendorWorkspace } from "@/lib/vendorSession";
 
 export default function VendorWorkspaceSignOutPage() {
   const router = useRouter();
@@ -16,12 +16,7 @@ export default function VendorWorkspaceSignOutPage() {
       setBusy(true);
       setStatus("Signing out...");
 
-      await fetch("/api/vendor/session", {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      await supabase.auth.signOut();
+      await signOutOfVendorWorkspace();
 
       setStatus("Signed out.");
       router.replace("/vendor/login");

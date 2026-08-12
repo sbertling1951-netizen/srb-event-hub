@@ -3,12 +3,13 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
-import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 
@@ -50,23 +51,12 @@ function withCacheBust(url: string | null | undefined) {
   return `${url}${joiner}t=${Date.now()}`;
 }
 
-function formatDateRange(
-  startDate: string | null | undefined,
-  endDate: string | null | undefined,
-) {
-  if (!startDate && !endDate) {
-    return "";
-  }
-  if (startDate && endDate) {
-    return `${startDate} – ${endDate}`;
-  }
-  return startDate || endDate || "";
-}
-
 export default function AdminPrintSettingsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_print_settings">
-      <AdminPrintSettingsPageInner />
+      <AdminShellAdapter pageTitle="Print Settings">
+        <AdminPrintSettingsPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
@@ -350,7 +340,6 @@ function AdminPrintSettingsPageInner() {
     }
   }
 
-  const dateRange = formatDateRange(event?.start_date, event?.end_date);
   const nameTagPreviewUrl = useMemo(
     () => withCacheBust(settings?.name_tag_bg_url) || null,
     [settings?.name_tag_bg_url],
@@ -361,26 +350,27 @@ function AdminPrintSettingsPageInner() {
   );
 
   return (
-    <div style={{ display: "grid", gap: 18 }}>
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Print Settings</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          {event?.name || "No event selected"}
-          {event?.location ? ` • ${event.location}` : ""}
-          {dateRange ? ` • ${dateRange}` : ""}
-        </div>
-        <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
-        {error ? <div style={errorBoxStyle}>{error}</div> : null}
+    <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
+      <div role="status" style={{ fontSize: 14 }}>
+        {status}
       </div>
+
+      {error ? (
+        <div role="alert" style={errorBoxStyle}>
+          {error}
+        </div>
+      ) : null}
 
       <div
         style={{
           display: "grid",
           gap: 18,
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
+          minWidth: 0,
         }}
       >
-        <div className="card" style={{ padding: 18 }}>
+        <div className="card" style={{ padding: 18, minWidth: 0 }}>
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>
             Name Tag Background
           </h2>
@@ -391,6 +381,7 @@ function AdminPrintSettingsPageInner() {
             accept="image/*"
             disabled={loading || !event?.id}
             onChange={(e) => setNameTagFile(e.target.files?.[0] || null)}
+            style={{ maxWidth: "100%" }}
           />
 
           <div
@@ -419,7 +410,14 @@ function AdminPrintSettingsPageInner() {
             </button>
           </div>
 
-          <div style={{ marginTop: 12, fontSize: 13, color: "#555" }}>
+          <div
+            style={{
+              marginTop: 12,
+              fontSize: 13,
+              color: "#555",
+              overflowWrap: "anywhere",
+            }}
+          >
             {nameTagFile
               ? `Selected: ${nameTagFile.name}`
               : "No new file selected."}
@@ -458,7 +456,7 @@ function AdminPrintSettingsPageInner() {
           )}
         </div>
 
-        <div className="card" style={{ padding: 18 }}>
+        <div className="card" style={{ padding: 18, minWidth: 0 }}>
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>
             Coach Plate Background
           </h2>
@@ -469,6 +467,7 @@ function AdminPrintSettingsPageInner() {
             accept="image/*"
             disabled={loading || !event?.id}
             onChange={(e) => setCoachPlateFile(e.target.files?.[0] || null)}
+            style={{ maxWidth: "100%" }}
           />
 
           <div
@@ -499,7 +498,14 @@ function AdminPrintSettingsPageInner() {
             </button>
           </div>
 
-          <div style={{ marginTop: 12, fontSize: 13, color: "#555" }}>
+          <div
+            style={{
+              marginTop: 12,
+              fontSize: 13,
+              color: "#555",
+              overflowWrap: "anywhere",
+            }}
+          >
             {coachPlateFile
               ? `Selected: ${coachPlateFile.name}`
               : "No new file selected."}
@@ -543,6 +549,7 @@ function AdminPrintSettingsPageInner() {
 }
 
 const primaryButtonStyle: CSSProperties = {
+  maxWidth: "100%",
   padding: "10px 14px",
   borderRadius: 10,
   border: "none",
@@ -553,6 +560,7 @@ const primaryButtonStyle: CSSProperties = {
 };
 
 const secondaryButtonStyle: CSSProperties = {
+  maxWidth: "100%",
   padding: "10px 14px",
   borderRadius: 10,
   border: "1px solid #ccc",

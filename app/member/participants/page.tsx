@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import ParticipantIdentityEditor from "@/components/participants/ParticipantIdentityEditor";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
@@ -187,12 +188,7 @@ function ParticipantsPageInner() {
   );
 
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-4">
-      <div>
-        <h1>Participants</h1>{" "}
-        <p>Manage the people associated with your registration.</p>
-      </div>
-
+    <div className="space-y-4">
       <div className="card">
         <div className="app-section-title">Participant Accounts</div>
 
@@ -277,7 +273,7 @@ function ParticipantsPageInner() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
             gap: "0.75rem",
             marginTop: "0.75rem",
           }}
@@ -318,7 +314,7 @@ function ParticipantsPageInner() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 220px",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                   gap: "1rem",
                   alignItems: "center",
                 }}
@@ -410,7 +406,12 @@ function ParticipantsPageInner() {
 export default function ParticipantsPage() {
   return (
     <MemberRouteGuard>
-      <ParticipantsPageInner />
+      <MemberShellAdapter
+        pageTitle="Participants"
+        pageSubtitle="Manage the people associated with your registration."
+      >
+        <ParticipantsPageInner />
+      </MemberShellAdapter>
     </MemberRouteGuard>
   );
 }

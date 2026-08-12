@@ -2,9 +2,36 @@
 
 import { useEffect, useState } from "react";
 
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
-export default function AgendaCategoriesPage() {
+// Agenda Categories Governance Stage 2: page access is gated by the
+// canonical Platform capability (admin.isSuperAdmin mirrors the DB-side
+// public.has_platform_admin_authority check -- both resolve to
+// privilege_group === "super_admin"), not the legacy can_manage_agenda
+// permission string. Actual mutation authority is still enforced
+// server-side by the governed RPCs regardless of what this flag shows.
+function mapCategoryRpcError(err: unknown, fallback: string): string {
+  const message = err instanceof Error ? err.message : "";
+  switch (message) {
+    case "unauthorized":
+      return "You do not have Platform authority to manage the Agenda category vocabulary.";
+    case "duplicate_category_name":
+      return "A category with that name already exists.";
+    case "category_not_found":
+      return "That category no longer exists. Reload and try again.";
+    case "invalid_name":
+      return "Category name cannot be empty.";
+    default:
+      return message || fallback;
+  }
+}
+
+function AgendaCategoriesPageInner() {
+  const { admin } = useAdmin();
+  const isSuperAdmin = !!admin?.isSuperAdmin;
+
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<any[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -40,33 +67,18 @@ export default function AgendaCategoriesPage() {
     setSaving(true);
     setErrorMessage("");
     try {
-      if (formDefault) {
-        const { error: updateError } = await supabase
-          .from("agenda_categories")
-          .update({ is_default: false })
-          .eq("is_default", true);
-        if (updateError) {
-          setErrorMessage(updateError.message);
-          setSaving(false);
-          return;
-        }
-      }
-
       if (editingCategoryId) {
-        // Update existing category
-        const { error: updateError } = await supabase
-          .from("agenda_categories")
-          .update({
-            name: formName,
-            color: formColor,
-            sort_order: formSortOrder,
-            is_active: formActive,
-            is_default: formDefault,
-          })
-          .eq("id", editingCategoryId);
+        const { error } = await supabase.rpc("update_agenda_category", {
+          p_id: editingCategoryId,
+          p_name: formName,
+          p_color: formColor,
+          p_sort_order: formSortOrder,
+          p_is_default: formDefault,
+          p_is_active: formActive,
+        });
 
-        if (updateError) {
-          setErrorMessage(updateError.message);
+        if (error) {
+          setErrorMessage(mapCategoryRpcError(error, "Could not update category."));
         } else {
           setShowDialog(false);
           setEditingCategoryId(null);
@@ -78,19 +90,16 @@ export default function AgendaCategoriesPage() {
           await loadCategories();
         }
       } else {
-        // Insert new category
-        const { error: insertError } = await supabase.from("agenda_categories").insert([
-          {
-            name: formName,
-            color: formColor,
-            sort_order: formSortOrder,
-            is_active: formActive,
-            is_default: formDefault,
-          },
-        ]);
+        const { error } = await supabase.rpc("create_agenda_category", {
+          p_name: formName,
+          p_color: formColor,
+          p_sort_order: formSortOrder,
+          p_is_default: formDefault,
+          p_is_active: formActive,
+        });
 
-        if (insertError) {
-          setErrorMessage(insertError.message);
+        if (error) {
+          setErrorMessage(mapCategoryRpcError(error, "Could not create category."));
         } else {
           setShowDialog(false);
           setFormName("");
@@ -102,7 +111,7 @@ export default function AgendaCategoriesPage() {
         }
       }
     } catch (err: any) {
-      setErrorMessage(err.message || "An error occurred");
+      setErrorMessage(mapCategoryRpcError(err, "An error occurred"));
     } finally {
       setSaving(false);
     }
@@ -126,34 +135,41 @@ export default function AgendaCategoriesPage() {
     <div style={{ padding: 24 }}>
       <h1>Agenda Categories</h1>
       <p>Manage agenda categories used throughout the event.</p>
+      {!isSuperAdmin && (
+        <p style={{ color: "#92400e", background: "#fef3c7", padding: "8px 12px", borderRadius: 6, marginBottom: 16 }}>
+          You can view the Agenda category vocabulary, but only a Platform admin can create, edit, or deactivate categories.
+        </p>
+      )}
       {errorMessage && (
         <p style={{ color: "red", marginBottom: 16 }}>{errorMessage}</p>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <button
-          onClick={() => {
-            setEditingCategoryId(null);
-            setFormName("");
-            setFormColor("#4f46e5");
-            setFormSortOrder(100);
-            setFormActive(true);
-            setFormDefault(false);
-            setShowDialog(true);
-          }}
-          style={{
-            backgroundColor: "#64748b",
-            color: "white",
-            border: "none",
-            borderRadius: 6,
-            padding: "8px 16px",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          + New Category
-        </button>
-      </div>
+      {isSuperAdmin && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+          <button
+            onClick={() => {
+              setEditingCategoryId(null);
+              setFormName("");
+              setFormColor("#4f46e5");
+              setFormSortOrder(100);
+              setFormActive(true);
+              setFormDefault(false);
+              setShowDialog(true);
+            }}
+            style={{
+              backgroundColor: "#64748b",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              padding: "8px 16px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            + New Category
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <p>Loading...</p>
@@ -165,7 +181,7 @@ export default function AgendaCategoriesPage() {
               <th align="left">Color</th>
               <th align="left">Active</th>
               <th align="left">Default</th>
-              <th align="left">Actions</th>
+              {isSuperAdmin && <th align="left">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -228,22 +244,24 @@ export default function AgendaCategoriesPage() {
                   )}
                 </td>
                 <td>{category.is_default ? "⭐ Default" : ""}</td>
-                <td>
-                  <button
-                    onClick={() => openEditDialog(category)}
-                    style={{
-                      backgroundColor: "#64748b",
-                      color: "white",
-                      border: "none",
-                      borderRadius: 6,
-                      padding: "6px 12px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Edit
-                  </button>
-                </td>
+                {isSuperAdmin && (
+                  <td>
+                    <button
+                      onClick={() => openEditDialog(category)}
+                      style={{
+                        backgroundColor: "#64748b",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 6,
+                        padding: "6px 12px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Edit
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -358,5 +376,13 @@ export default function AgendaCategoriesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AgendaCategoriesPage() {
+  return (
+    <AdminRouteGuard>
+      <AgendaCategoriesPageInner />
+    </AdminRouteGuard>
   );
 }

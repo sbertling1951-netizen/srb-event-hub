@@ -15,11 +15,6 @@ import {
 import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
-type AdminEventContext = {
-  id?: string | null;
-  name?: string | null;
-};
-
 type EventRow = {
   id: string;
   name: string | null;
@@ -39,21 +34,45 @@ type AdminUserRow = {
   privilege_group: PrivilegeGroup | null;
 };
 
-type EventAccessRole = "event_admin" | "content_admin" | "checkin" | "parking" | "read_only";
+// Canonical Event profile vocabulary owned by admin_event_profiles. No
+// coercion mapping exists anywhere in this file -- these five values are
+// sent to governed RPCs unchanged.
+type CanonicalProfile = "event_admin" | "content" | "checkin" | "parking" | "view_only";
 
-type AdminEventAccessRow = {
-  id: string;
-  admin_user_id: string;
-  event_id: string;
-  role: EventAccessRole | null;
-  created_at?: string | null;
+type EventTaskMeta = {
+  task_key: string;
+  scope: string;
+  task_kind: string;
+  description: string;
 };
 
-type AdminEventPermissionRow = {
-  id: string;
-  admin_event_access_id: string;
-  permission_key: string;
-  is_enabled: boolean;
+type ProfileCatalogEntry = {
+  profile_key: CanonicalProfile;
+  display_name: string;
+  description: string;
+  profile_default_task_keys: string[];
+  event_task_catalog: EventTaskMeta[];
+};
+
+type ExplicitGrant = {
+  task_key: string;
+  granted_at: string;
+  grant_source: string;
+  source_profile_key: string | null;
+  granted_by_admin_user_id: string | null;
+};
+
+type AssignmentRow = {
+  assignment_id: string;
+  event_id: string;
+  tenant_id: string;
+  target_admin_user_id: string;
+  target_display_name: string | null;
+  target_email: string | null;
+  canonical_profile: CanonicalProfile;
+  assignment_created_at: string;
+  explicit_grants: ExplicitGrant[];
+  can_govern: boolean;
 };
 
 type StaffRow = {
@@ -63,46 +82,19 @@ type StaffRow = {
   email: string;
   displayName: string;
   privilegeGroup: string | null;
-  role: EventAccessRole;
-  permissions: Record<string, boolean>;
+  canonicalProfile: CanonicalProfile;
+  canGovern: boolean;
+  explicitGrantKeys: Set<string>;
+  pendingProfileChoice: CanonicalProfile;
 };
 
-type PermissionKey =
-  | "can_view_admin_dashboard"
-  | "can_manage_events"
-  | "can_manage_checkin"
-  | "can_manage_parking"
-  | "can_manage_agenda"
-  | "can_manage_announcements"
-  | "can_manage_nearby"
-  | "can_manage_locations"
-  | "can_manage_reports"
-  | "can_manage_imports"
-  | "can_manage_event_staff";
-
-const EVENT_ROLE_OPTIONS: Array<{ value: EventAccessRole; label: string }> = [
+const EVENT_ROLE_OPTIONS: Array<{ value: CanonicalProfile; label: string }> = [
   { value: "event_admin", label: "Event Admin" },
-  { value: "content_admin", label: "Content Admin" },
+  { value: "content", label: "Content" },
   { value: "checkin", label: "Check-In" },
   { value: "parking", label: "Parking" },
-  { value: "read_only", label: "Read Only" },
+  { value: "view_only", label: "View Only" },
 ];
-
-const PERMISSION_LABELS: Record<PermissionKey, string> = {
-  can_view_admin_dashboard: "View Admin Dashboard",
-  can_manage_events: "Manage Events",
-  can_manage_checkin: "Manage Check-In",
-  can_manage_parking: "Manage Parking",
-  can_manage_agenda: "Manage Agenda",
-  can_manage_announcements: "Manage Announcements",
-  can_manage_nearby: "Manage Nearby",
-  can_manage_locations: "Manage Locations",
-  can_manage_reports: "Manage Reports",
-  can_manage_imports: "Manage Imports",
-  can_manage_event_staff: "Manage Event Staff",
-};
-
-const ALL_PERMISSION_KEYS = Object.keys(PERMISSION_LABELS) as PermissionKey[];
 
 function formatDateRange(startDate: string | null | undefined, endDate: string | null | undefined) {
   if (!startDate && !endDate) { return ""; }
@@ -123,25 +115,21 @@ function formatPrivilegeGroup(value?: string | null) {
   }
 }
 
-function buildPermissionMap(role: EventAccessRole, explicitKeys?: string[], hasExplicitPermissions = false): Record<string, boolean> {
-  const map: Record<string, boolean> = {};
-  ALL_PERMISSION_KEYS.forEach((key) => { map[key] = false; });
-
-  const roleDefaults: Record<EventAccessRole, PermissionKey[]> = {
-    event_admin: ["can_view_admin_dashboard", "can_manage_events", "can_manage_checkin", "can_manage_parking", "can_manage_agenda", "can_manage_announcements", "can_manage_nearby", "can_manage_locations", "can_manage_reports", "can_manage_imports", "can_manage_event_staff"],
-    content_admin: ["can_view_admin_dashboard", "can_manage_agenda", "can_manage_announcements", "can_manage_nearby", "can_manage_locations"],
-    checkin: ["can_view_admin_dashboard", "can_manage_checkin"],
-    parking: ["can_view_admin_dashboard", "can_manage_parking"],
-    read_only: ["can_view_admin_dashboard"],
-  };
-
-  roleDefaults[role].forEach((key) => { map[key] = true; });
-
-  if (hasExplicitPermissions) {
-    ALL_PERMISSION_KEYS.forEach((key) => { map[key] = !!explicitKeys?.includes(key); });
-  }
-
-  return map;
+// Maps a governed-RPC failure (a raised database exception, surfaced by
+// PostgREST as error.message) to an explicit, human-readable reason. Never
+// falls back to a direct-table mutation on any of these -- the RPC is the
+// only write path, so a failure here always means "not applied."
+function describeRpcError(err: any): string {
+  const msg: string = err?.message || String(err || "Unknown error");
+  if (/not an active (super_admin|admin)|caller is not/i.test(msg)) return "You are not authorized to govern this Event's assignments.";
+  if (/lacks Event governance authority/i.test(msg)) return "You do not have Platform or Tenant authority over this Event.";
+  if (/event or tenant not found/i.test(msg)) return "This Event (or its Tenant) could not be found.";
+  if (/self-elevation is forbidden/i.test(msg)) return "You cannot change your own assignment.";
+  if (/unknown profile|invalid profile change/i.test(msg)) return "That is not a recognized canonical profile.";
+  if (/task is not Event-grantable|invalid final task/i.test(msg)) return "That is not a recognized Event task.";
+  if (/assignment not found/i.test(msg)) return "This assignment no longer exists -- it may have been removed by someone else. Refreshing.";
+  if (/target is not active admin/i.test(msg)) return "That administrator is not active.";
+  return `Request failed: ${msg}`;
 }
 
 function EventStaffPageInner() {
@@ -151,14 +139,16 @@ function EventStaffPageInner() {
   const [selectedEventId, setSelectedEventId] = useState("");
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [availableAdmins, setAvailableAdmins] = useState<AdminUserRow[]>([]);
+  const [profileCatalog, setProfileCatalog] = useState<ProfileCatalogEntry[]>([]);
+  const [taskCatalog, setTaskCatalog] = useState<EventTaskMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading event staff...");
-  const [savingAccessId, setSavingAccessId] = useState<string | null>(null);
-  const [removingAccessId, setRemovingAccessId] = useState<string | null>(null);
+  const [busyAccessId, setBusyAccessId] = useState<string | null>(null);
+  const [busyTaskKey, setBusyTaskKey] = useState<string | null>(null);
 
   const [newAdminUserId, setNewAdminUserId] = useState("");
-  const [newRole, setNewRole] = useState<EventAccessRole>("read_only");
+  const [newProfile, setNewProfile] = useState<CanonicalProfile>("view_only");
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
@@ -204,6 +194,11 @@ function EventStaffPageInner() {
     return unsubscribe;
   }, [admin]);
 
+  // Pure read: lists Events/admin users (unrelated to Event authority
+  // state, legitimate under existing RLS) plus the two governed
+  // authority-management reads. No write of any kind happens here --
+  // opening this page never creates an assignment, a grant, or an audit
+  // row.
   async function loadPage(eventId: string) {
     try {
       setLoading(true);
@@ -214,56 +209,46 @@ function EventStaffPageInner() {
         { data: eventData, error: eventError },
         { data: eventsData, error: eventsError },
         { data: adminUsersData, error: adminUsersError },
-        { data: accessData, error: accessError },
+        { data: assignmentsData, error: assignmentsError },
+        { data: catalogData, error: catalogError },
       ] = await Promise.all([
         supabase.from("events").select("id,name,location,start_date,end_date").eq("id", eventId).single(),
         supabase.from("events").select("id,name,location,start_date,end_date,visible_to_members").order("start_date", { ascending: false }).order("name", { ascending: true }),
         supabase.from("admin_users").select("id,email,display_name,is_active,privilege_group").eq("is_active", true).order("email", { ascending: true }),
-        supabase.from("admin_event_access").select("id,admin_user_id,event_id,role,created_at").eq("event_id", eventId).order("created_at", { ascending: true }),
+        supabase.rpc("list_event_authority_assignments", { p_event_id: eventId }),
+        supabase.rpc("list_event_authority_profile_catalog", { p_event_id: eventId }),
       ]);
 
       if (eventError) { throw eventError; }
       if (eventsError) { throw eventsError; }
       if (adminUsersError) { throw adminUsersError; }
-      if (accessError) { throw accessError; }
+      if (assignmentsError) { throw new Error(describeRpcError(assignmentsError)); }
+      if (catalogError) { throw new Error(describeRpcError(catalogError)); }
 
       const eventRow = eventData as EventRow;
       const allEvents = (eventsData || []) as EventRow[];
       const adminUsers = (adminUsersData || []) as AdminUserRow[];
-      const accessRows = (accessData || []) as AdminEventAccessRow[];
-      const accessIds = accessRows.map((row) => row.id);
+      const assignmentRows = (assignmentsData || []) as AssignmentRow[];
+      const catalogRows = (catalogData || []) as ProfileCatalogEntry[];
 
-      let permissionRows: AdminEventPermissionRow[] = [];
-      if (accessIds.length > 0) {
-        const { data, error } = await supabase.from("admin_event_permissions").select("id,admin_event_access_id,permission_key,is_enabled").in("admin_event_access_id", accessIds);
-        if (error) { throw error; }
-        permissionRows = (data || []) as AdminEventPermissionRow[];
-      }
-
-      const permissionsByAccessId = new Map<string, string[]>();
-      permissionRows.forEach((row) => {
-        if (!row.is_enabled) { return; }
-        const existing = permissionsByAccessId.get(row.admin_event_access_id) || [];
-        existing.push(row.permission_key);
-        permissionsByAccessId.set(row.admin_event_access_id, existing);
-      });
-
-      const explicitPermissionAccessIds = new Set(permissionRows.map((row) => row.admin_event_access_id));
       const adminById = new Map(adminUsers.map((row) => [row.id, row]));
 
-      const mergedRows: StaffRow[] = accessRows.map((access) => {
-        const adminUser = adminById.get(access.admin_user_id);
-        const role = (access.role || "read_only") as EventAccessRole;
-        const explicitKeys = permissionsByAccessId.get(access.id) || [];
+      const mergedRows: StaffRow[] = assignmentRows.map((a) => {
+        const adminUser = adminById.get(a.target_admin_user_id);
         return {
-          accessId: access.id,
-          adminUserId: access.admin_user_id,
-          eventId: access.event_id,
-          email: adminUser?.email || "Unknown admin",
-          displayName: adminUser?.display_name || "",
+          accessId: a.assignment_id,
+          adminUserId: a.target_admin_user_id,
+          eventId: a.event_id,
+          email: a.target_email || adminUser?.email || "Unknown admin",
+          displayName: a.target_display_name || adminUser?.display_name || "",
           privilegeGroup: adminUser?.privilege_group || null,
-          role,
-          permissions: buildPermissionMap(role, explicitKeys, explicitPermissionAccessIds.has(access.id)),
+          canonicalProfile: a.canonical_profile,
+          canGovern: a.can_govern,
+          // Explicit grants are the authoritative current state -- never
+          // synthesized from the profile's defaults. Zero grants means the
+          // set below is empty, and it is displayed as exactly that.
+          explicitGrantKeys: new Set(a.explicit_grants.map((g) => g.task_key)),
+          pendingProfileChoice: a.canonical_profile,
         };
       });
 
@@ -275,11 +260,14 @@ function EventStaffPageInner() {
       setSelectedEventId(eventRow.id);
       setRows(mergedRows);
       setAvailableAdmins(available);
+      setProfileCatalog(catalogRows);
+      setTaskCatalog(catalogRows[0]?.event_task_catalog || []);
       setStatus(`Loaded ${mergedRows.length} staff assignments.`);
     } catch (err: any) {
       console.error("loadPage error:", err);
-      setError(err?.message || "Failed to load event staff.");
-      setStatus(err?.message || "Failed to load event staff.");
+      const message = err?.message || "Failed to load event staff.";
+      setError(message);
+      setStatus(message);
     } finally {
       setLoading(false);
     }
@@ -300,13 +288,6 @@ function EventStaffPageInner() {
     await loadPage(nextEventId);
   }
 
-  async function createPermissionRows(adminEventAccessId: string, role: EventAccessRole) {
-    const defaults = buildPermissionMap(role);
-    const permissionRows = ALL_PERMISSION_KEYS.map((key) => ({ admin_event_access_id: adminEventAccessId, permission_key: key, is_enabled: !!defaults[key] }));
-    const { error } = await supabase.from("admin_event_permissions").insert(permissionRows);
-    if (error) { throw error; }
-  }
-
   async function handleAddStaff() {
     if (!event?.id) { setStatus("No working event selected."); return; }
     if (!newAdminUserId) { setStatus("Choose an admin user to add."); return; }
@@ -314,73 +295,107 @@ function EventStaffPageInner() {
       setAdding(true);
       setError(null);
       setStatus("Adding event staff...");
-      const { data: insertedAccess, error: accessError } = await supabase.from("admin_event_access").insert({ admin_user_id: newAdminUserId, event_id: event.id, role: newRole }).select("id").single();
-      if (accessError || !insertedAccess?.id) { throw accessError || new Error("Could not create event access."); }
-      await createPermissionRows(insertedAccess.id, newRole);
-      setNewAdminUserId(""); setNewRole("read_only");
+      const { error: rpcError } = await supabase.rpc("create_event_authority_assignment", {
+        p_target_admin_user_id: newAdminUserId,
+        p_event_id: event.id,
+        p_profile_key: newProfile,
+      });
+      if (rpcError) { throw new Error(describeRpcError(rpcError)); }
+      setNewAdminUserId(""); setNewProfile("view_only");
       await loadPage(event.id);
       setStatus("Event staff added.");
     } catch (err: any) {
       console.error("handleAddStaff error:", err);
-      setError(err?.message || "Could not add event staff.");
-      setStatus(err?.message || "Could not add event staff.");
+      const message = err?.message || "Could not add event staff.";
+      setError(message);
+      setStatus(message);
     } finally {
       setAdding(false);
     }
   }
 
-  function updateLocalRole(accessId: string, role: EventAccessRole) {
-    setRows((prev) => prev.map((row) => row.accessId === accessId ? { ...row, role, permissions: buildPermissionMap(role) } : row));
+  function updatePendingProfileChoice(accessId: string, profile: CanonicalProfile) {
+    setRows((prev) => prev.map((row) => row.accessId === accessId ? { ...row, pendingProfileChoice: profile } : row));
   }
 
-  function updateLocalPermission(accessId: string, permissionKey: PermissionKey, isEnabled: boolean) {
-    setRows((prev) => prev.map((row) => row.accessId === accessId ? { ...row, permissions: { ...row.permissions, [permissionKey]: isEnabled } } : row));
-  }
-
-  async function handleSaveRow(row: StaffRow) {
-    if (!event?.id) { return; }
+  // Profile changes always require an explicit disposition -- there is no
+  // silent default. reset_to_defaults replaces explicit grants with the
+  // new profile's DB-owned bundle; preserve_exceptions keeps the current
+  // explicit grant set exactly, only relabeling the profile.
+  async function handleChangeProfile(row: StaffRow, disposition: "reset_to_defaults" | "preserve_exceptions") {
+    if (!event?.id || !row.canGovern) { return; }
     try {
-      setSavingAccessId(row.accessId);
+      setBusyAccessId(row.accessId);
       setError(null);
-      setStatus(`Saving ${row.displayName || row.email}...`);
-      const { error: roleError } = await supabase.from("admin_event_access").update({ role: row.role }).eq("id", row.accessId);
-      if (roleError) { throw roleError; }
-      const { error: deleteError } = await supabase.from("admin_event_permissions").delete().eq("admin_event_access_id", row.accessId);
-      if (deleteError) { throw deleteError; }
-      const permissionRows = ALL_PERMISSION_KEYS.map((key) => ({ admin_event_access_id: row.accessId, permission_key: key, is_enabled: !!row.permissions[key] }));
-      const { error: insertError } = await supabase.from("admin_event_permissions").insert(permissionRows);
-      if (insertError) { throw insertError; }
+      setStatus(`Changing profile for ${row.displayName || row.email}...`);
+      const { error: rpcError } = await supabase.rpc("change_event_authority_profile", {
+        p_assignment_id: row.accessId,
+        p_profile_key: row.pendingProfileChoice,
+        p_disposition: disposition,
+        p_final_task_keys: disposition === "preserve_exceptions" ? Array.from(row.explicitGrantKeys) : null,
+      });
+      if (rpcError) { throw new Error(describeRpcError(rpcError)); }
       await loadPage(event.id);
-      setStatus(`${row.displayName || row.email} saved.`);
+      setStatus(`Profile updated for ${row.displayName || row.email}.`);
     } catch (err: any) {
-      console.error("handleSaveRow error:", err);
-      setError(err?.message || "Could not save event staff row.");
-      setStatus(err?.message || "Could not save event staff row.");
+      console.error("handleChangeProfile error:", err);
+      const message = err?.message || "Could not change profile.";
+      setError(message);
+      setStatus(message);
+      if (event?.id) { await loadPage(event.id); }
     } finally {
-      setSavingAccessId(null);
+      setBusyAccessId(null);
+    }
+  }
+
+  // Each checkbox toggle is its own atomic governed call -- grant or
+  // revoke exactly one canonical task, immediately. No bulk "Save" button
+  // and no implicit diff-and-replace, so there is never a moment where the
+  // UI's local state and the database's explicit-grant state can silently
+  // diverge.
+  async function handleToggleTask(row: StaffRow, taskKey: string, nextEnabled: boolean) {
+    if (!event?.id || !row.canGovern) { return; }
+    try {
+      setBusyAccessId(row.accessId);
+      setBusyTaskKey(taskKey);
+      setError(null);
+      const { error: rpcError } = nextEnabled
+        ? await supabase.rpc("grant_event_authority_task", { p_assignment_id: row.accessId, p_task_key: taskKey })
+        : await supabase.rpc("revoke_event_authority_task", { p_assignment_id: row.accessId, p_task_key: taskKey });
+      if (rpcError) { throw new Error(describeRpcError(rpcError)); }
+      await loadPage(event.id);
+    } catch (err: any) {
+      console.error("handleToggleTask error:", err);
+      const message = err?.message || "Could not update task grant.";
+      setError(message);
+      setStatus(message);
+      if (event?.id) { await loadPage(event.id); }
+    } finally {
+      setBusyAccessId(null);
+      setBusyTaskKey(null);
     }
   }
 
   async function handleRemoveRow(row: StaffRow) {
-    if (!event?.id) { return; }
+    if (!event?.id || !row.canGovern) { return; }
     const confirmed = window.confirm(`Remove ${row.displayName || row.email} from this event staff list?`);
     if (!confirmed) { return; }
     try {
-      setRemovingAccessId(row.accessId);
+      setBusyAccessId(row.accessId);
       setError(null);
       setStatus(`Removing ${row.displayName || row.email}...`);
-      const { error: deletePermissionsError } = await supabase.from("admin_event_permissions").delete().eq("admin_event_access_id", row.accessId);
-      if (deletePermissionsError) { throw deletePermissionsError; }
-      const { error: deleteAccessError } = await supabase.from("admin_event_access").delete().eq("id", row.accessId);
-      if (deleteAccessError) { throw deleteAccessError; }
+      const { error: rpcError } = await supabase.rpc("remove_event_authority_assignment", { p_assignment_id: row.accessId });
+      if (rpcError) { throw new Error(describeRpcError(rpcError)); }
       await loadPage(event.id);
       setStatus(`${row.displayName || row.email} removed from event staff.`);
     } catch (err: any) {
       console.error("handleRemoveRow error:", err);
-      setError(err?.message || "Could not remove event staff.");
-      setStatus(err?.message || "Could not remove event staff.");
+      const message = err?.message || "Could not remove event staff.";
+      setError(message);
+      setStatus(message);
+      if (event?.id) { await loadPage(event.id); }
     } finally {
-      setRemovingAccessId(null);
+      setBusyAccessId(null);
     }
   }
 
@@ -410,26 +425,6 @@ function EventStaffPageInner() {
       {error ? <div style={errorBoxStyle}>{error}</div> : null}
 
       <div style={cardStyle}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Selected Event Staff List</h2>
-        <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>Choose an event above to view its assigned staff. Super Admins are not listed here because they automatically have access to all events.</div>
-        {!event ? (
-          <div style={{ opacity: 0.8 }}>Select an event to view staff.</div>
-        ) : rows.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No staff assigned to {event.name || "this event"}.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 8 }}>
-            {rows.map((person) => (
-              <div key={person.accessId} style={{ border: "1px solid #eee", borderRadius: 10, padding: 12, background: "#fafafa" }}>
-                <div style={{ fontWeight: 700 }}>{person.displayName || person.email}</div>
-                <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>{person.email}</div>
-                <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>Event Role: {formatPrivilegeGroup(person.role)} • Base Group: {formatPrivilegeGroup(person.privilegeGroup)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div style={cardStyle}>
         <h2 style={{ marginTop: 0, marginBottom: 12 }}>Add Existing Admin</h2>
         <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "end" }}>
           <div>
@@ -445,8 +440,8 @@ function EventStaffPageInner() {
             {availableAdmins.length === 0 ? <div style={{ marginTop: 8, fontSize: 13, color: "#666" }}>No available existing admin users to add for this event.</div> : null}
           </div>
           <div>
-            <label style={labelStyle}>Event Role</label>
-            <select value={newRole} onChange={(e) => setNewRole(e.target.value as EventAccessRole)} style={inputStyle} disabled={adding}>
+            <label style={labelStyle}>Canonical Profile</label>
+            <select value={newProfile} onChange={(e) => setNewProfile(e.target.value as CanonicalProfile)} style={inputStyle} disabled={adding}>
               {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
             </select>
           </div>
@@ -459,50 +454,88 @@ function EventStaffPageInner() {
       <div style={cardStyle}>
         <div style={{ marginBottom: 12 }}>
           <h2 style={{ marginTop: 0, marginBottom: 6 }}>Assigned Event Staff</h2>
-          <div style={{ fontSize: 13, color: "#666" }}>{rows.length} assignment{rows.length === 1 ? "" : "s"} for this event.</div>
+          <div style={{ fontSize: 13, color: "#666" }}>{rows.length} assignment{rows.length === 1 ? "" : "s"} for this event. Super Admins are not listed here because they automatically have access to all events.</div>
         </div>
         {loading ? (
           <div>Loading...</div>
+        ) : !event ? (
+          <div style={{ opacity: 0.8 }}>Select an event to view staff.</div>
         ) : rows.length === 0 ? (
           <div style={{ opacity: 0.8 }}>No event staff assigned yet.</div>
         ) : (
           <div style={{ display: "grid", gap: 14 }}>
-            {rows.map((row) => (
-              <div key={row.accessId} style={staffCardStyle}>
-                <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "end", width: "100%" }}>
-                  <div>
-                    <div style={{ fontWeight: 700 }}>{row.displayName || row.email}</div>
-                    <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>{row.email}</div>
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>Base group: {formatPrivilegeGroup(row.privilegeGroup)}</div>
+            {rows.map((row) => {
+              const profileEntry = profileCatalog.find((p) => p.profile_key === row.pendingProfileChoice);
+              const profileDefaultKeys = new Set(profileEntry?.profile_default_task_keys || []);
+              const rowBusy = busyAccessId === row.accessId;
+              return (
+                <div key={row.accessId} style={staffCardStyle}>
+                  <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "end", width: "100%" }}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{row.displayName || row.email}</div>
+                      <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>{row.email}</div>
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>Base group: {formatPrivilegeGroup(row.privilegeGroup)}</div>
+                      {!row.canGovern ? <div style={{ fontSize: 12, color: "#8a1f1f", marginTop: 4 }}>This is your own assignment -- self-elevation is not permitted.</div> : null}
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Canonical Profile</label>
+                      <div style={{ fontSize: 13, marginBottom: 6 }}>Current: <strong>{EVENT_ROLE_OPTIONS.find((o) => o.value === row.canonicalProfile)?.label || row.canonicalProfile}</strong></div>
+                      <select value={row.pendingProfileChoice} onChange={(e) => updatePendingProfileChoice(row.accessId, e.target.value as CanonicalProfile)} style={inputStyle} disabled={rowBusy || !row.canGovern}>
+                        {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                      </select>
+                      {row.pendingProfileChoice !== row.canonicalProfile ? (
+                        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                          <button type="button" onClick={() => void handleChangeProfile(row, "reset_to_defaults")} disabled={rowBusy || !row.canGovern} style={secondaryButtonStyle}>
+                            {rowBusy ? "Working..." : "Apply: Reset to Defaults"}
+                          </button>
+                          <button type="button" onClick={() => void handleChangeProfile(row, "preserve_exceptions")} disabled={rowBusy || !row.canGovern} style={secondaryButtonStyle}>
+                            {rowBusy ? "Working..." : "Apply: Preserve Current Grants"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
+                      <button type="button" onClick={() => void handleRemoveRow(row)} disabled={rowBusy || !row.canGovern} style={secondaryButtonStyle}>
+                        {rowBusy && busyTaskKey === null ? "Removing..." : "Remove"}
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label style={labelStyle}>Event Role</label>
-                    <select value={row.role} onChange={(e) => updateLocalRole(row.accessId, e.target.value as EventAccessRole)} style={inputStyle} disabled={savingAccessId === row.accessId}>
-                      {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-                    </select>
+
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>Current Explicit Grants</div>
+                    <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
+                      These are the tasks this assignment actually has authority for right now. An unchecked task is not granted, even if the profile below would normally include it as a default.
+                    </div>
+                    <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+                      {taskCatalog.map((task) => {
+                        const checked = row.explicitGrantKeys.has(task.task_key);
+                        const isDefaultForPendingProfile = profileDefaultKeys.has(task.task_key);
+                        return (
+                          <label key={task.task_key} style={permissionLabelStyle}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={rowBusy || !row.canGovern}
+                              onChange={(e) => void handleToggleTask(row, task.task_key, e.target.checked)}
+                            />
+                            <span>
+                              {task.description}
+                              {isDefaultForPendingProfile ? <span style={{ color: "#888" }}> (profile default)</span> : null}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
-                    <button type="button" onClick={() => void handleSaveRow(row)} disabled={savingAccessId === row.accessId} style={primaryButtonStyle}>
-                      {savingAccessId === row.accessId ? "Saving..." : "Save"}
-                    </button>
-                    <button type="button" onClick={() => void handleRemoveRow(row)} disabled={removingAccessId === row.accessId} style={secondaryButtonStyle}>
-                      {removingAccessId === row.accessId ? "Removing..." : "Remove"}
-                    </button>
-                  </div>
+
+                  {profileEntry ? (
+                    <div style={{ marginTop: 12, fontSize: 12, color: "#666" }}>
+                      <strong>{profileEntry.display_name}</strong> profile defaults (reference only, not current authority): {profileEntry.profile_default_task_keys.length === 0 ? "none" : profileEntry.profile_default_task_keys.join(", ")}
+                    </div>
+                  ) : null}
                 </div>
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 8 }}>Event Permissions</div>
-                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                    {ALL_PERMISSION_KEYS.map((key) => (
-                      <label key={key} style={permissionLabelStyle}>
-                        <input type="checkbox" checked={!!row.permissions[key]} onChange={(e) => updateLocalPermission(row.accessId, key, e.target.checked)} />
-                        <span>{PERMISSION_LABELS[key]}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

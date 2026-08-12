@@ -1,13 +1,16 @@
 "use client";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 import { supabase } from "@/lib/supabase";
 
 export default function ExportPage() {
   return (
     <AdminRouteGuard requiredPermission="can_export_reports">
-      <ExportPageInner />
+      <AdminShellAdapter pageTitle="Export">
+        <ExportPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
@@ -74,8 +77,7 @@ function ExportPageInner() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1>Export</h1>
+    <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
       <button type="button" onClick={exportAttendees}>
         Export Attendees
       </button>

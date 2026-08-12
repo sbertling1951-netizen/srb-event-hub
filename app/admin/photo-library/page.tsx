@@ -1,10 +1,12 @@
 "use client";
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useCallback,useEffect, useMemo, useState } from "react";
+
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
-
 import { supabase } from "@/lib/supabase";
 
 // TODO: Update this interface if photo table shape changes
@@ -16,6 +18,7 @@ interface Photo {
   admin_caption: string | null;
   show_caption: boolean;
   is_featured: boolean;
+  featured_level: number;
   uploaded_at: string;
   thumbnailUrl?: string;
   fullUrl?: string;
@@ -46,6 +49,16 @@ function getFeaturedCount(photos: Photo[]) {
 }
 
 export default function PhotoLibraryPage() {
+  return (
+    <AdminRouteGuard>
+      <AdminShellAdapter pageTitle="Photo Library">
+        <PhotoLibraryPageInner />
+      </AdminShellAdapter>
+    </AdminRouteGuard>
+  );
+}
+
+function PhotoLibraryPageInner() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +82,7 @@ export default function PhotoLibraryPage() {
     const { data, error } = await supabase
       .from("event_photos")
       .select(
-        "id,storage_path,photo_status,member_caption,admin_caption,show_caption,is_featured,uploaded_at",
+        "id,storage_path,photo_status,member_caption,admin_caption,show_caption,is_featured,featured_level,uploaded_at",
       )
       .eq("event_id", currentEvent.id)
       .order("uploaded_at", { ascending: false });
@@ -153,7 +166,7 @@ export default function PhotoLibraryPage() {
       member_caption: photo.member_caption,
       admin_caption: photo.admin_caption,
       show_caption: photo.show_caption,
-      is_featured: photo.is_featured,
+      featured_level: photo.featured_level ?? 0,
     });
   }
   function closeModal() {
@@ -169,30 +182,44 @@ export default function PhotoLibraryPage() {
       return;
     }
     setSaving(true);
-    const updates: Partial<Photo> = {
-      photo_status: modalEdits.photo_status,
-      member_caption: modalEdits.member_caption,
-      admin_caption: modalEdits.admin_caption,
-      show_caption: modalEdits.show_caption,
-      is_featured: modalEdits.is_featured,
-    };
 
-    if (updates.is_featured && updates.photo_status !== "approved") {
-      updates.photo_status = "approved";
+    let nextStatus = modalEdits.photo_status ?? modalPhoto.photo_status;
+    const nextFeaturedLevel = modalEdits.featured_level ?? 0;
+
+    // Preserve existing "Featured requires Approved" UX, now keyed off
+    // featured_level (the governed RPC derives is_featured from this).
+    if (nextFeaturedLevel > 0 && nextStatus !== "approved") {
+      nextStatus = "approved";
     }
 
-    const { error } = await supabase
-      .from("event_photos")
-      .update(updates)
-      .eq("id", modalPhoto.id);
+    const { data, error } = await supabase.rpc("manage_event_photo", {
+      p_photo_id: modalPhoto.id,
+      p_photo_status: nextStatus,
+      p_member_caption: modalEdits.member_caption ?? null,
+      p_admin_caption: modalEdits.admin_caption ?? null,
+      p_show_caption: modalEdits.show_caption ?? false,
+      p_featured_level: nextFeaturedLevel,
+    });
     if (error) {
       alert(`Failed to save changes: ${error.message}`);
       setSaving(false);
       return;
     }
-    // Refresh local state for the updated photo
+    // Refresh local state for the updated photo from the RPC's returned row.
     setPhotos((prev) =>
-      prev.map((p) => (p.id === modalPhoto.id ? { ...p, ...updates } : p)),
+      prev.map((p) =>
+        p.id === modalPhoto.id
+          ? {
+              ...p,
+              photo_status: data.photo_status,
+              member_caption: data.member_caption,
+              admin_caption: data.admin_caption,
+              show_caption: data.show_caption,
+              is_featured: data.is_featured,
+              featured_level: data.featured_level,
+            }
+          : p,
+      ),
     );
     closeModal();
   }
@@ -200,9 +227,10 @@ export default function PhotoLibraryPage() {
   // Responsive grid styles
   const gridStyle: React.CSSProperties = {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
     gap: 16,
     marginTop: 24,
+    minWidth: 0,
   };
 
   // Card style
@@ -214,16 +242,15 @@ export default function PhotoLibraryPage() {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    minWidth: 120,
+    flex: "1 1 min(180px, 100%)",
+    minWidth: 0,
+    overflowWrap: "anywhere",
   };
 
   // Modal overlay styles
   const modalOverlayStyle: React.CSSProperties = {
     position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100vw",
-    height: "100vh",
+    inset: 0,
     background: "rgba(0,0,0,0.4)",
     display: "flex",
     alignItems: "center",
@@ -235,14 +262,17 @@ export default function PhotoLibraryPage() {
     borderRadius: 8,
     padding: 24,
     maxWidth: 500,
-    width: "100%",
+    width: "calc(100% - 32px)",
+    maxHeight: "calc(100dvh - 32px)",
+    overflowY: "auto",
+    boxSizing: "border-box",
+    minWidth: 0,
     boxShadow: "0 2px 16px rgba(0,0,0,0.15)",
     position: "relative",
   };
 
   return (
-    <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
-      <h1 style={{ marginBottom: 8 }}>Photo Library</h1>
+    <div style={{ minWidth: 0 }}>
       <div
         style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}
       >
@@ -275,6 +305,7 @@ export default function PhotoLibraryPage() {
           gap: 16,
           marginBottom: 16,
           flexWrap: "wrap",
+          minWidth: 0,
         }}
       >
         <input
@@ -286,10 +317,12 @@ export default function PhotoLibraryPage() {
             padding: "8px 12px",
             borderRadius: 4,
             border: "1px solid #bbb",
-            minWidth: 220,
+            width: "min(100%, 320px)",
+            minWidth: 0,
+            boxSizing: "border-box",
           }}
         />
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, minWidth: 0 }}>
           {FILTERS.map((filter) => (
             <button
               key={filter.key}
@@ -342,6 +375,7 @@ export default function PhotoLibraryPage() {
                   : "1px solid #e3e3e3",
                 position: "relative",
                 transition: "border-color 0.2s",
+                minWidth: 0,
               }}
               onClick={() => openModal(photo)}
               tabIndex={0}
@@ -424,8 +458,16 @@ export default function PhotoLibraryPage() {
 
       {modalPhoto && (
         <div style={modalOverlayStyle} onClick={closeModal}>
-          <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginTop: 0, marginBottom: 12 }}>Photo Details</h2>
+          <div
+            style={modalContentStyle}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="photo-library-details-title"
+          >
+            <h2 id="photo-library-details-title" style={{ marginTop: 0, marginBottom: 12 }}>
+              Photo Details
+            </h2>
             <div
               style={{
                 marginBottom: 12,
@@ -435,11 +477,11 @@ export default function PhotoLibraryPage() {
                 fontSize: 12,
               }}
             >
-              <div>
+              <div style={{ overflowWrap: "anywhere" }}>
                 <strong>Photo ID:</strong> {modalPhoto.id}
               </div>
               <div>
-                <strong>Featured Level:</strong> {(modalPhoto as any).featured_level ?? 0}
+                <strong>Featured Level:</strong> {modalPhoto.featured_level ?? 0}
               </div>
             </div>
             {modalPhoto.fullUrl || modalPhoto.thumbnailUrl ? (
@@ -470,8 +512,8 @@ export default function PhotoLibraryPage() {
                   setModalEdits((prev) => ({
                     ...prev,
                     photo_status: newStatus,
-                    is_featured:
-                      newStatus === "approved" ? prev.is_featured : false,
+                    featured_level:
+                      newStatus === "approved" ? prev.featured_level : 0,
                   }));
                 }}
                 style={{
@@ -497,6 +539,7 @@ export default function PhotoLibraryPage() {
                 onChange={(e) =>
                   updateModalEdits("member_caption", e.target.value)
                 }
+                style={{ width: "100%", boxSizing: "border-box" }}
               />
             </div>
             <div style={{ marginBottom: 12 }}>
@@ -518,10 +561,11 @@ export default function PhotoLibraryPage() {
                   padding: 6,
                   resize: "vertical",
                   fontFamily: "inherit",
+                  boxSizing: "border-box",
                 }}
               />
             </div>
-            <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 16 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <input
                   type="checkbox"
@@ -535,13 +579,18 @@ export default function PhotoLibraryPage() {
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <input
                   type="checkbox"
-                  checked={!!modalEdits.is_featured}
+                  checked={(modalEdits.featured_level ?? 0) > 0}
                   onChange={(e) => {
                     const checked = e.target.checked;
 
+                    // Compatibility mapping for this single checkbox:
+                    // unchecked -> featured_level 0, checked -> featured_level 1.
+                    // Levels 2/3 remain reachable only from Admin Photos'
+                    // dropdown; this preserves Photo Library's existing
+                    // single-checkbox UX unchanged.
                     setModalEdits((prev) => ({
                       ...prev,
-                      is_featured: checked,
+                      featured_level: checked ? 1 : 0,
                       photo_status: checked
                         ? "approved"
                         : (prev.photo_status as Photo["photo_status"]),
@@ -557,6 +606,7 @@ export default function PhotoLibraryPage() {
                 gap: 12,
                 marginTop: 12,
                 justifyContent: "flex-end",
+                flexWrap: "wrap",
               }}
             >
               <button
@@ -568,6 +618,7 @@ export default function PhotoLibraryPage() {
                   background: "#fafbfc",
                   fontWeight: 500,
                   cursor: "pointer",
+                  flex: "1 1 120px",
                 }}
                 disabled={saving}
               >
@@ -584,6 +635,7 @@ export default function PhotoLibraryPage() {
                   fontWeight: 600,
                   cursor: saving ? "not-allowed" : "pointer",
                   opacity: saving ? 0.7 : 1,
+                  flex: "1 1 120px",
                 }}
                 disabled={saving}
               >

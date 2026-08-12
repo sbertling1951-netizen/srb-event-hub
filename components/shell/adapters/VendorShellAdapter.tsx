@@ -9,6 +9,7 @@ import { buildVendorNavSections } from "@/components/shell/navigation/vendorNav"
 import type { ShellAccountAction, ShellBackTarget, ShellContentMode } from "@/components/shell/types";
 import { useVendorWorkspace } from "@/components/vendor/useVendorWorkspace";
 import { useTenant } from "@/lib/providers/TenantProvider";
+import { signOutOfVendorWorkspace } from "@/lib/vendorSession";
 
 function contactDisplayName(
   contact: { firstName: string | null; lastName: string | null; email: string | null } | null,
@@ -54,6 +55,8 @@ export function VendorShellAdapter({ pageTitle, pageSubtitle, backTarget, conten
   const [pendingVendorId, setPendingVendorId] = useState("");
   const [selectError, setSelectError] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   const selectedVendor = context?.selectedVendor || null;
 
@@ -72,6 +75,18 @@ export function VendorShellAdapter({ pageTitle, pageSubtitle, backTarget, conten
       setSelectError(err instanceof Error ? err.message : "Could not select vendor.");
     } finally {
       setSelecting(false);
+    }
+  }
+
+  async function signOut() {
+    setSignOutError(null);
+    try {
+      setSigningOut(true);
+      await signOutOfVendorWorkspace();
+      window.location.assign("/vendor/login");
+    } catch (err) {
+      setSigningOut(false);
+      setSignOutError(err instanceof Error ? err.message : "Could not sign out. Please try again.");
     }
   }
 
@@ -163,7 +178,15 @@ export function VendorShellAdapter({ pageTitle, pageSubtitle, backTarget, conten
   }
 
   const accountActions: ShellAccountAction[] = [
-    { id: "sign-out", label: "Sign Out", href: "/vendor/workspace/sign-out", variant: "danger" },
+    {
+      id: "sign-out",
+      label: signingOut ? "Signing out..." : "Sign Out",
+      onClick: () => {
+        void signOut();
+      },
+      disabled: signingOut,
+      variant: "danger",
+    },
   ];
 
   const statusContent = (
@@ -178,6 +201,27 @@ export function VendorShellAdapter({ pageTitle, pageSubtitle, backTarget, conten
       <div>
         Access role: <strong>{selectedVendor?.role || "vendor_member"}</strong>
       </div>
+      {signOutError ? (
+        // Visible regardless of drawer state (§A.5): the mobile nav
+        // drawer already closes as soon as Sign Out is tapped, but this
+        // status area is not part of the drawer, so a failure surfaces
+        // here whether the attempt was made from the desktop header or
+        // the mobile drawer. Clears on the next attempt (`signOut()`
+        // resets it first), on success (redirect away), or on navigating
+        // to a different page (a fresh VendorShellAdapter instance).
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#991b1b", fontWeight: 600 }}>
+          <span>{signOutError}</span>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            disabled={signingOut}
+            className="app-button app-button-muted"
+            style={{ padding: "2px 10px", fontSize: 12, fontWeight: 600 }}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 

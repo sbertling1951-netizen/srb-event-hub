@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
-import { supabase } from "@/lib/supabase";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
+import { supabase } from "@/lib/supabase";
 
 type MemberEvent = {
   id: string;
@@ -104,7 +105,9 @@ function badgeStyle(priority?: string | null) {
 export default function Page() {
   return (
     <MemberRouteGuard>
-      <MemberAnnouncementsPageInner />
+      <MemberShellAdapter pageTitle="Announcements">
+        <MemberAnnouncementsPageInner />
+      </MemberShellAdapter>
     </MemberRouteGuard>
   );
 }
@@ -183,7 +186,7 @@ function MemberAnnouncementsPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [isReady, workspaceEvent]);
+  }, [workspaceEvent]);
 
   useEffect(() => {
     if (!isReady) {
@@ -224,14 +227,6 @@ function MemberAnnouncementsPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Announcements</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          {event?.name || "Current Event"}
-          {event?.location ? ` • ${event.location}` : ""}
-        </div>
-      </div>
-
       {status ? (
         <div className="card" style={{ padding: 18 }}>
           {status}

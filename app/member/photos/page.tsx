@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 
+import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
@@ -508,10 +509,10 @@ export default function MemberPhotosPage() {
   const canSharePhoto =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
   return (
-    <div className="card" style={{ padding: 16 }}>
-      <h1>EpicentraX Photos</h1>
+    <MemberShellAdapter pageTitle="EpicentraX Photos">
+      <div style={{ display: "grid", gap: 16, maxWidth: 1000, minWidth: 0 }}>
 
-      <div style={{ marginTop: 12 }}>
+      <div>
         <p>
           Share your favorite event photos. Photos are reviewed before appearing
           in the event gallery or slideshow.
@@ -537,6 +538,7 @@ export default function MemberPhotosPage() {
             rows={3}
             style={{
               width: "100%",
+              minWidth: 0,
               padding: 8,
               borderRadius: 8,
               border: "1px solid #d1d5db",
@@ -646,12 +648,6 @@ export default function MemberPhotosPage() {
         )}
 
         {error && <div style={{ marginTop: 8, color: "red" }}>{error}</div>}
-        <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>
-          Event: {workspaceEvent?.name || "No Event"}
-          <br />
-          Attendee: {attendeeId || "Unknown"}
-        </div>
-
         <div style={{ marginTop: 20 }}>
           <div
             style={{
@@ -703,6 +699,7 @@ export default function MemberPhotosPage() {
                     borderRadius: 8,
                     padding: 12,
                     marginBottom: 8,
+                    minWidth: 0,
                   }}
                 >
                   <div>
@@ -723,6 +720,7 @@ export default function MemberPhotosPage() {
                         marginTop: 8,
                         display: "flex",
                         gap: 8,
+                        flexWrap: "wrap",
                       }}
                     >
                       <button
@@ -774,6 +772,7 @@ export default function MemberPhotosPage() {
                               border: "1px solid #cbd5e1",
                               borderRadius: 8,
                               color: "#334155",
+                              overflowWrap: "anywhere",
                             }}
                           >
                             {photo.member_caption?.trim() ||
@@ -801,7 +800,8 @@ export default function MemberPhotosPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+                gridTemplateColumns:
+                  "repeat(auto-fill, minmax(min(140px, 100%), 1fr))",
                 gap: 12,
               }}
             >
@@ -822,6 +822,7 @@ export default function MemberPhotosPage() {
                     overflow: "hidden",
                     background: "#f8fafc",
                     cursor: "pointer",
+                    minWidth: 0,
                   }}
                 >
                   <img
@@ -977,6 +978,7 @@ export default function MemberPhotosPage() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </MemberShellAdapter>
   );
 }

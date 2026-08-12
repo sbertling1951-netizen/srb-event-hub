@@ -87,14 +87,49 @@ const PREFIX_EXCEPTION_ROUTES: readonly string[] = [
 const CANONICAL_VENDOR_PREFIXES: readonly string[] = ["/vendor/workspace"];
 
 /**
- * EPICENTRAX UI STAGE 3: exactly the three pilot routes, and no others,
- * are registered canonical. Every other Member/Admin route remains
+ * Unified Shell Stages 2 through 10: the approved Member cohorts, in addition to
+ * the pre-existing Nearby canonical route, are registered canonical. Every
+ * other Member/Admin route remains
  * "legacy" until its own, separately authorized future migration --
  * adding a route here is what actually moves it off legacy chrome, so
  * this list must never grow beyond what a given stage explicitly
  * authorizes.
  */
-const CANONICAL_MEMBER_PREFIXES: readonly string[] = ["/member/nearby"];
+const EXACT_CANONICAL_MEMBER_ROUTES: readonly string[] = [
+  "/member",
+  "/member/agenda",
+];
+
+const CANONICAL_MEMBER_PREFIXES: readonly string[] = [
+  "/member/nearby",
+  "/member/announcements",
+  "/member/attendees",
+  "/member/checkin",
+  "/member/evaluation",
+  "/member/events",
+  "/member/my-requests",
+  "/member/my-assignments",
+  "/member/participants",
+  "/member/photos",
+  "/member/vendor-signup",
+];
+const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
+  "/admin/attendees",
+  "/admin/checklist",
+  "/admin/checkin",
+  "/admin/dashboard",
+  "/admin/export",
+  "/admin/events/new",
+  "/admin/evaluations",
+  "/admin/photo-library",
+  "/admin/photos",
+  "/admin/print-settings",
+  "/admin/reports",
+  "/admin/slideshow",
+  "/admin/vendor-requests",
+  "/admin/vendors/access",
+  "/admin/vendors",
+];
 const CANONICAL_ADMIN_PREFIXES: readonly string[] = ["/admin/announcements"];
 
 function matchesExact(pathname: string, routes: readonly string[]): boolean {
@@ -118,11 +153,17 @@ export function resolveShellMode(pathname: string | null | undefined): ShellPres
     return "canonical-vendor";
   }
 
-  if (matchesPrefix(pathname, CANONICAL_MEMBER_PREFIXES)) {
+  if (
+    matchesExact(pathname, EXACT_CANONICAL_MEMBER_ROUTES) ||
+    matchesPrefix(pathname, CANONICAL_MEMBER_PREFIXES)
+  ) {
     return "canonical-member";
   }
 
-  if (matchesPrefix(pathname, CANONICAL_ADMIN_PREFIXES)) {
+  if (
+    matchesExact(pathname, EXACT_CANONICAL_ADMIN_ROUTES) ||
+    matchesPrefix(pathname, CANONICAL_ADMIN_PREFIXES)
+  ) {
     return "canonical-admin";
   }
 

@@ -1,8 +1,44 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
+
+// Poll interval for the audience-safe authoritative read contract
+// (Stage 6 Part 6). Durable database state remains authoritative; this
+// is a short-interval refetch, not a second command/state model --
+// anonymous Realtime/broadcast infrastructure is not yet tracked in
+// this repository (see Stage 4/5 reports), and ~1s command latency is
+// acceptable for v1.
+const POLL_INTERVAL_MS = 1000;
+
+// Signed URLs are re-created only when the resolved storage_path
+// actually changes (see the effects below, keyed on that path) rather
+// than on every poll tick. The TTL only matters if a single slide
+// stays current for longer than a realistic live-show pause; it is not
+// a substitute for re-signing on change.
+const SIGNED_URL_TTL_SECONDS = 60 * 60 * 6;
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type PublicSessionRow = {
+  session_active: boolean;
+  event_id: string | null;
+  playback_state: "playing" | "paused" | null;
+  state_version: number | null;
+  item_count: number | null;
+  sequence_number: number | null;
+  current_content_type: "photo" | "blank" | null;
+  current_content_ref_id: string | null;
+  current_storage_path: string | null;
+  current_duration_ms: number | null;
+  next_content_type: "photo" | "blank" | null;
+  next_content_ref_id: string | null;
+  next_storage_path: string | null;
+  next_duration_ms: number | null;
+};
 
 export default function SlideshowViewPage() {
   type FullscreenCapableElement = HTMLDivElement & {
@@ -14,118 +50,34 @@ export default function SlideshowViewPage() {
     webkitFullscreenElement?: Element | null;
   };
 
-  const [eventName, setEventName] = useState("No Event Selected");
-  const [eventId, setEventId] = useState<string | null>(null);
-  const [status, setStatus] = useState("Ready to load approved photos");
+  const searchParams = useSearchParams();
+  const sessionIdParam = searchParams.get("session");
+  const sessionId =
+    sessionIdParam && UUID_PATTERN.test(sessionIdParam) ? sessionIdParam : null;
+  const invalidSessionFormat = Boolean(sessionIdParam) && !sessionId;
 
-  type SlidePhoto = {
-    id: string;
-    url: string;
-    member_caption: string | null;
-    admin_caption: string | null;
-    photographer_name_snapshot: string | null;
-    show_caption: boolean;
-    featured_level: number;
-  };
+  // The public session response is the single authoritative source for
+  // everything about the show: whether it is live, playback state,
+  // current position, and which content item is current/next. There is
+  // deliberately no local currentIndex, no local selection logic, and
+  // no local advance timer -- the viewer never decides slide order.
+  const [publicState, setPublicState] = useState<PublicSessionRow | null>(
+    null,
+  );
+  const [pollError, setPollError] = useState<string | null>(null);
 
-  const [photos, setPhotos] = useState<SlidePhoto[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const [currentCaption, setCurrentCaption] = useState<string | null>(null);
+  const [photographerName, setPhotographerName] = useState<string | null>(
+    null,
+  );
+  const [nextUrl, setNextUrl] = useState<string | null>(null);
 
-  // Publishes the current and next photo/caption state to epix-presentation-state
-  const publishViewerState = (currentIdx: number) => {
-    try {
-      const current = photos[currentIdx];
-
-      const nextIdx =
-        photos.length > 1 ? (currentIdx + 1) % photos.length : currentIdx;
-
-      const next = photos[nextIdx];
-
-      const raw = localStorage.getItem("epix-presentation-state");
-      const existing = raw ? JSON.parse(raw) : {};
-
-      localStorage.setItem(
-        "epix-presentation-state",
-        JSON.stringify({
-          ...existing,
-          currentIndex: currentIdx,
-          currentPhotoUrl: current?.url ?? null,
-          currentCaption:
-            current?.admin_caption?.trim() ||
-            current?.member_caption?.trim() ||
-            "",
-          nextIndex: nextIdx,
-          nextPhotoUrl: next?.url ?? null,
-          nextCaption:
-            next?.admin_caption?.trim() || next?.member_caption?.trim() || "",
-          totalSlides: photos.length,
-          paused: pausedRef.current,
-          historyMode: historyModeRef.current,
-          slidesShown: slidesShownRef.current,
-        }),
-      );
-    } catch (error) {
-      console.error("Publish viewer state failed", error);
-    }
-  };
-
-  const showSlide = (index: number) => {
-    setCurrentIndex(index);
-
-    slidesShownRef.current += 1;
-    setSlidesShown(slidesShownRef.current);
-
-    const history = slideHistoryRef.current;
-
-    if (historyPositionRef.current < history.length - 1) {
-      history.splice(historyPositionRef.current + 1);
-    }
-
-    history.push(index);
-    historyPositionRef.current = history.length - 1;
-
-    // Track featured slide show counts
-    const currentPhoto = photos[index];
-    if (currentPhoto && currentPhoto.featured_level > 0) {
-      featuredCooldownRef.current = slideHistoryRef.current.length;
-
-      featuredShownCountRef.current[index] =
-        (featuredShownCountRef.current[index] ?? 0) + 1;
-    }
-
-    const photoId = currentPhoto?.id;
-
-    if (photoId) {
-      void supabase
-        .rpc("record_photo_display", {
-          p_photo_id: photoId,
-        })
-        .then((result) => {
-          console.log("DISPLAY RPC", result);
-        });
-    }
-  };
-
-  const [imagesReady, setImagesReady] = useState(false);
-  const [preloadedCount, setPreloadedCount] = useState(0);
-  const [totalSlides, setTotalSlides] = useState(0);
-  const [slidesShown, setSlidesShown] = useState(0);
-  const slidesShownRef = useRef(0);
-  const recentSlidesRef = useRef<number[]>([]);
-  const featuredCooldownRef = useRef(-9999);
-  const featuredShownCountRef = useRef<Record<number, number>>({});
   const [showCursor, setShowCursor] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const cursorTimerRef = useRef<number | null>(null);
   const wakeLockRef = useRef<any>(null);
   const slideshowRootRef = useRef<FullscreenCapableElement | null>(null);
-
-  const lastCommandAtRef = useRef<number>(0);
-  const pausedRef = useRef(false);
-  const slideHistoryRef = useRef<number[]>([]);
-  const historyPositionRef = useRef(-1);
-  const historyModeRef = useRef(false);
-  const livePositionRef = useRef(0);
 
   useLayoutEffect(() => {
     document.body.classList.add("slideshow-view-mode");
@@ -194,145 +146,204 @@ export default function SlideshowViewPage() {
     };
   }, []);
 
+  // Authoritative state: poll the public, anon-safe read contract by
+  // session id from the URL. No Admin Event context is ever read here
+  // -- the session id is the only input, exactly as
+  // read_public_presentation_session itself requires (Stage 4 Part 5:
+  // "knowing an Event ID alone must not resolve an active
+  // presentation"). Not-found and ended sessions are intentionally
+  // indistinguishable at the RPC layer (session_active = false for
+  // both) -- the viewer honors that rather than trying to infer which
+  // case it is.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("fcoc-admin-event-context");
-
-      if (!raw) {
-        setStatus("No admin event context found");
-        return;
-      }
-
-      const event = JSON.parse(raw);
-
-      setEventName(event?.name ?? "Unknown Event");
-      setEventId(event?.id ?? null);
-
-      setStatus("Admin event found. Photo loading is next.");
-    } catch (error) {
-      console.error(error);
-      setStatus("Unable to read admin event context");
+    if (!sessionId) {
+      setPublicState(null);
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    async function loadPhotos() {
-      if (!eventId) {
+    let cancelled = false;
+
+    async function poll() {
+      const { data, error } = await supabase.rpc(
+        "read_public_presentation_session",
+        { p_session_id: sessionId },
+      );
+
+      if (cancelled) {
         return;
       }
 
-      setStatus("Loading approved photos...");
-      console.log("LOADING PHOTOS FOR EVENT:", eventId);
+      if (error) {
+        console.error("Failed to read presentation session", error);
+        setPollError("Unable to reach the presentation right now.");
+        return;
+      }
 
+      const row = (Array.isArray(data) ? data[0] : null) as
+        | PublicSessionRow
+        | null;
+
+      setPollError(null);
+      setPublicState(row ?? null);
+    }
+
+    void poll();
+    const timer = window.setInterval(poll, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [sessionId]);
+
+  // Caption/photographer supplement. read_public_presentation_session
+  // does not carry these fields (they are not needed to determine
+  // session state or eligibility); this reuses the pre-existing
+  // anon-safe event_photos RLS policy (photo_status = 'approved') the
+  // legacy viewer already read directly -- not a new grant, and not a
+  // private Presentation table. The RPC remains the sole authority for
+  // WHICH photo is current and WHETHER it is currently eligible
+  // (current_storage_path is null when it is not); this lookup only
+  // supplements display text for a photo the RPC has already vouched
+  // for as presently approved.
+  useEffect(() => {
+    const photoId =
+      publicState?.current_content_type === "photo"
+        ? publicState.current_content_ref_id
+        : null;
+
+    if (!photoId) {
+      setCurrentCaption(null);
+      setPhotographerName(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function resolveCaption() {
       const { data, error } = await supabase
         .from("event_photos")
         .select(
-          "id, storage_path, member_caption, admin_caption, photographer_name_snapshot, show_caption, featured_level",
+          "member_caption, admin_caption, show_caption, photographer_name_snapshot",
         )
-        .eq("event_id", eventId)
+        .eq("id", photoId as string)
         .eq("photo_status", "approved")
-        .order("uploaded_at", { ascending: true })
-        .range(0, 999);
-      console.log("QUERY RETURNED");
-      console.log("ERROR:", error);
-      console.log("ROWS:", data?.length);
+        .maybeSingle();
 
-      if (error) {
-        console.error(error);
-        setStatus("Photo query failed");
+      if (cancelled) {
         return;
       }
 
-      if (!data || data.length === 0) {
-        setStatus("No approved photos found");
+      if (error || !data) {
+        setCurrentCaption(null);
+        setPhotographerName(null);
         return;
       }
 
-      const slides: SlidePhoto[] = [];
-
-      for (const photo of data) {
-        const { data: signed } = await supabase.storage
-          .from("event-photos")
-          .createSignedUrl(photo.storage_path, 60 * 60 * 24);
-
-        if (signed?.signedUrl) {
-          slides.push({
-            id: photo.id,
-            url: signed.signedUrl,
-            member_caption: photo.member_caption,
-            admin_caption: photo.admin_caption,
-            photographer_name_snapshot: photo.photographer_name_snapshot,
-            show_caption: photo.show_caption ?? false,
-            featured_level: photo.featured_level ?? 0,
-          });
-        } else {
-          console.log("FAILED SIGN URL:", photo.storage_path);
-        }
-      }
-
-      setTotalSlides(slides.length);
-      setStatus(`Preloading ${slides.length} images...`);
-      console.log("SLIDES:", slides.length);
-
-      await Promise.all(
-        slides.map(
-          (slide) =>
-            new Promise<void>((resolve) => {
-              const img = new Image();
-
-              img.onload = () => {
-                setPreloadedCount((prev) => prev + 1);
-                resolve();
-              };
-
-              img.onerror = () => {
-                setPreloadedCount((prev) => prev + 1);
-                resolve();
-              };
-
-              img.src = slide.url;
-            }),
-        ),
+      setCurrentCaption(
+        data.show_caption
+          ? data.admin_caption?.trim() || data.member_caption?.trim() || null
+          : null,
       );
-
-      setPhotos(slides);
-
-      slidesShownRef.current = 1;
-      setSlidesShown(1);
-
-      slideHistoryRef.current = [0];
-      historyPositionRef.current = 0;
-      setCurrentIndex(0);
-      setTimeout(() => publishViewerState(0), 100);
-      livePositionRef.current = 0;
-      historyModeRef.current = false;
-      pausedRef.current = false;
-      setImagesReady(true);
-      setStatus(`Loaded and preloaded ${slides.length} approved photos`);
+      setPhotographerName(data.photographer_name_snapshot?.trim() || null);
     }
 
-    void loadPhotos();
-  }, [eventId]);
+    void resolveCaption();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicState?.current_content_type, publicState?.current_content_ref_id]);
+
+  // Signed URL resolution, current + next. Re-signs only when the
+  // resolved storage_path itself changes (React's dependency
+  // comparison), not on every ~1s poll tick -- and correctly clears to
+  // null the instant a previously-eligible photo's storage_path goes
+  // null (ineligible), rather than continuing to display a stale
+  // signed URL for content that is no longer approved (Stage 4 Part
+  // 11 / Stage 6 Part 12).
+  useEffect(() => {
+    const path =
+      publicState?.current_content_type === "photo"
+        ? publicState.current_storage_path
+        : null;
+
+    if (!path) {
+      setCurrentUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void supabase.storage
+      .from("event-photos")
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS)
+      .then(({ data }) => {
+        if (!cancelled) {
+          setCurrentUrl(data?.signedUrl ?? null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicState?.current_content_type, publicState?.current_storage_path]);
+
+  useEffect(() => {
+    const path =
+      publicState?.next_content_type === "photo"
+        ? publicState.next_storage_path
+        : null;
+
+    if (!path) {
+      setNextUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void supabase.storage
+      .from("event-photos")
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS)
+      .then(({ data }) => {
+        if (!cancelled) {
+          setNextUrl(data?.signedUrl ?? null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicState?.next_content_type, publicState?.next_storage_path]);
+
+  // Display logging (record_photo_display) is deliberately not called.
+  // Stage 1 found it untracked, PUBLIC-executable, unscoped, and
+  // unvalidated; Stage 4 deferred its governed replacement. Display
+  // analytics are temporarily deferred until session-scoped governed
+  // logging is implemented -- that gap affects analytics only, not
+  // presentation correctness.
+
+  const isLive = publicState?.session_active === true;
 
   useEffect(() => {
     let isMounted = true;
 
     async function requestWakeLock() {
       try {
-        if (imagesReady && photos.length > 0 && "wakeLock" in navigator) {
+        if (isLive && "wakeLock" in navigator) {
           wakeLockRef.current = await (navigator as any).wakeLock.request(
             "screen",
           );
 
           wakeLockRef.current?.addEventListener?.("release", () => {
-            console.log("Wake Lock released");
+            console.warn("Wake Lock released");
           });
 
-          console.log("Wake Lock active");
+          console.warn("Wake Lock active");
         }
       } catch (error: any) {
         if (error?.name === "NotAllowedError") {
-          console.log("Wake Lock unavailable in this browser");
+          console.warn("Wake Lock unavailable in this browser");
         } else {
           console.error("Wake Lock failed:", error);
         }
@@ -342,12 +353,7 @@ export default function SlideshowViewPage() {
     void requestWakeLock();
 
     const handleVisibilityChange = () => {
-      if (
-        document.visibilityState === "visible" &&
-        isMounted &&
-        imagesReady &&
-        photos.length > 0
-      ) {
+      if (document.visibilityState === "visible" && isMounted && isLive) {
         void requestWakeLock();
       }
     };
@@ -363,301 +369,7 @@ export default function SlideshowViewPage() {
         wakeLockRef.current = null;
       }
     };
-  }, [imagesReady, photos.length]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      try {
-        const raw = localStorage.getItem("epix-presentation-state");
-        if (!raw) {
-          return;
-        }
-
-        const state = JSON.parse(raw);
-        const commandAt = Number(state.commandAt ?? 0);
-
-        if (!commandAt || commandAt <= lastCommandAtRef.current) {
-          return;
-        }
-
-        lastCommandAtRef.current = commandAt;
-
-        // Update paused and historyMode refs from state
-        pausedRef.current = state.paused === true;
-        historyModeRef.current = state.historyMode === true;
-
-        switch (state.command) {
-          case "previous": {
-            const history = slideHistoryRef.current;
-
-            if (!historyModeRef.current) {
-              historyModeRef.current = true;
-              pausedRef.current = true;
-              // Publish back updated state
-              localStorage.setItem(
-                "epix-presentation-state",
-                JSON.stringify({
-                  ...state,
-                  paused: true,
-                  historyMode: true,
-                  commandAt: Date.now(),
-                }),
-              );
-            }
-
-            if (history.length > 1 && historyPositionRef.current > 0) {
-              historyPositionRef.current -= 1;
-              setCurrentIndex(history[historyPositionRef.current]);
-            }
-
-            break;
-          }
-
-          case "next": {
-            const history = slideHistoryRef.current;
-
-            if (historyModeRef.current) {
-              if (historyPositionRef.current < history.length - 1) {
-                historyPositionRef.current += 1;
-                setCurrentIndex(history[historyPositionRef.current]);
-              }
-
-              break;
-            }
-
-            const recent = recentSlidesRef.current;
-            const cooldownSize = Math.min(
-              30,
-              Math.max(15, Math.floor(photos.length / 4)),
-            );
-
-            const candidates = photos
-              .map((photo, index) => ({ photo, index }))
-              .filter(({ index }) => !recent.includes(index));
-
-            const usable =
-              candidates.length > 0
-                ? candidates
-                : photos.map((photo, index) => ({ photo, index }));
-
-            const weightedPool: number[] = [];
-
-            usable.forEach(({ photo, index }) => {
-              const featuredCooldownSize = Math.max(
-                12,
-                Math.min(25, Math.floor(photos.length / 8)),
-              );
-
-              const slidesSinceFeatured =
-                slideHistoryRef.current.length - featuredCooldownRef.current;
-
-              let weight = 1;
-
-              if (
-                photo.featured_level > 0 &&
-                slidesSinceFeatured < featuredCooldownSize
-              ) {
-                weight = 0;
-              } else if (photo.featured_level === 3) {
-                weight = 8;
-              } else if (photo.featured_level === 2) {
-                weight = 4;
-              } else if (photo.featured_level === 1) {
-                weight = 2;
-              }
-
-              weight = Math.max(weight, photo.featured_level === 0 ? 1 : 0);
-
-              for (let i = 0; i < weight; i++) {
-                weightedPool.push(index);
-              }
-            });
-
-            // Safety fallback: if all featured are on cooldown, use all usable
-            if (weightedPool.length === 0) {
-              usable.forEach(({ index }) => weightedPool.push(index));
-            }
-
-            const nextIndex =
-              weightedPool[Math.floor(Math.random() * weightedPool.length)];
-
-            recent.push(nextIndex);
-
-            while (recent.length > cooldownSize) {
-              recent.shift();
-            }
-
-            showSlide(nextIndex);
-
-            break;
-          }
-
-          case "restart": {
-            recentSlidesRef.current = [];
-            featuredCooldownRef.current = -9999;
-            featuredShownCountRef.current = {};
-
-            slidesShownRef.current = 1;
-            setSlidesShown(1);
-
-            slideHistoryRef.current = [0];
-            historyPositionRef.current = 0;
-
-            livePositionRef.current = 0;
-            historyModeRef.current = false;
-            pausedRef.current = false;
-
-            setCurrentIndex(0);
-
-            setTimeout(() => publishViewerState(0), 100);
-
-            localStorage.setItem(
-              "epix-presentation-state",
-              JSON.stringify({
-                ...state,
-                paused: false,
-                historyMode: false,
-                commandAt: Date.now(),
-              }),
-            );
-
-            break;
-          }
-
-          case "pause":
-            pausedRef.current = true;
-            break;
-
-          case "resume":
-            historyModeRef.current = false;
-            pausedRef.current = false;
-
-            // Publish back updated state
-            localStorage.setItem(
-              "epix-presentation-state",
-              JSON.stringify({
-                ...state,
-                paused: false,
-                historyMode: false,
-                commandAt: Date.now(),
-              }),
-            );
-
-            if (slideHistoryRef.current.length > 0) {
-              historyPositionRef.current = slideHistoryRef.current.length - 1;
-              setCurrentIndex(
-                slideHistoryRef.current[historyPositionRef.current],
-              );
-            }
-
-            break;
-        }
-      } catch (error) {
-        console.error("Presentation command error", error);
-      }
-    }, 500);
-
-    return () => window.clearInterval(timer);
-  }, [photos.length]);
-
-  useEffect(() => {
-    if (!imagesReady || photos.length <= 1) {
-      return;
-    }
-
-    const pickNextSlide = () => {
-      if (pausedRef.current) {
-        return;
-      }
-
-      const recent = recentSlidesRef.current;
-      const cooldownSize = Math.min(
-        30,
-        Math.max(15, Math.floor(photos.length / 4)),
-      );
-
-      const candidates = photos
-        .map((photo, index) => ({ photo, index }))
-        .filter(({ index }) => !recent.includes(index));
-
-      const usable =
-        candidates.length > 0
-          ? candidates
-          : photos.map((photo, index) => ({ photo, index }));
-
-      const weightedPool: number[] = [];
-
-      usable.forEach(({ photo, index }) => {
-        const featuredCooldownSize = Math.max(
-          12,
-          Math.min(25, Math.floor(photos.length / 8)),
-        );
-
-        const slidesSinceFeatured =
-          slideHistoryRef.current.length - featuredCooldownRef.current;
-
-        let weight = 1;
-
-        if (
-          photo.featured_level > 0 &&
-          slidesSinceFeatured < featuredCooldownSize
-        ) {
-          weight = 0;
-        } else if (photo.featured_level === 3) {
-          weight = 8;
-        } else if (photo.featured_level === 2) {
-          weight = 4;
-        } else if (photo.featured_level === 1) {
-          weight = 2;
-        }
-
-        weight = Math.max(weight, photo.featured_level === 0 ? 1 : 0);
-
-        for (let i = 0; i < weight; i++) {
-          weightedPool.push(index);
-        }
-      });
-
-      // Safety fallback: if all featured are on cooldown, use all usable
-      if (weightedPool.length === 0) {
-        usable.forEach(({ index }) => weightedPool.push(index));
-      }
-
-      const nextIndex =
-        weightedPool[Math.floor(Math.random() * weightedPool.length)];
-
-      recent.push(nextIndex);
-
-      while (recent.length > cooldownSize) {
-        recent.shift();
-      }
-
-      showSlide(nextIndex);
-      livePositionRef.current = nextIndex;
-    };
-
-    const timer = window.setInterval(pickNextSlide, 8000);
-
-    return () => window.clearInterval(timer);
-  }, [imagesReady, photos]);
-
-  const currentPhoto = photos[currentIndex] ?? null;
-
-  useEffect(() => {
-    if (photos.length === 0) {
-      return;
-    }
-    publishViewerState(currentIndex);
-  }, [currentIndex, photos]);
-
-  const currentCaption = currentPhoto
-    ? currentPhoto.admin_caption?.trim() ||
-      currentPhoto.member_caption?.trim() ||
-      ""
-    : "";
-
-  const photographerName =
-    currentPhoto?.photographer_name_snapshot?.trim() || "";
+  }, [isLive]);
 
   const toggleFullscreen = async () => {
     const slideshowRoot = slideshowRootRef.current;
@@ -694,6 +406,41 @@ export default function SlideshowViewPage() {
       console.error("Fullscreen toggle failed", error);
     }
   };
+
+  // Audience-safe status text. Never exposes internal IDs, raw
+  // Postgres errors, or Task Authority/deck-configuration internals --
+  // only these fixed, generic messages (Stage 6 Part 18).
+  function statusMessage(): string {
+    if (!sessionIdParam) {
+      return "No presentation is currently available.";
+    }
+    if (invalidSessionFormat) {
+      return "This presentation link is invalid.";
+    }
+    if (pollError) {
+      return "Unable to reach the presentation right now.";
+    }
+    if (!publicState) {
+      return "Loading presentation...";
+    }
+    if (!publicState.session_active) {
+      return "This presentation is not currently live.";
+    }
+    if (publicState.current_content_type === "blank") {
+      return "";
+    }
+    if (publicState.current_content_type === "photo" && !publicState.current_storage_path) {
+      return "Waiting for the next slide...";
+    }
+    if (publicState.current_content_type === "photo" && !currentUrl) {
+      return "Loading slide...";
+    }
+    return "";
+  }
+
+  const message = statusMessage();
+  const showPhoto =
+    isLive && publicState?.current_content_type === "photo" && !!currentUrl;
 
   return (
     <div
@@ -758,7 +505,7 @@ export default function SlideshowViewPage() {
             gap: 16,
           }}
         >
-          {currentPhoto ? (
+          {showPhoto ? (
             <div
               style={{
                 position: "relative",
@@ -770,7 +517,7 @@ export default function SlideshowViewPage() {
               }}
             >
               <img
-                src={currentPhoto.url}
+                src={currentUrl as string}
                 alt="Slideshow"
                 style={{
                   maxWidth: "100vw",
@@ -779,7 +526,7 @@ export default function SlideshowViewPage() {
                 }}
               />
 
-              {currentPhoto.show_caption && currentCaption ? (
+              {currentCaption ? (
                 <div
                   style={{
                     position: "absolute",
@@ -813,20 +560,16 @@ export default function SlideshowViewPage() {
                 </div>
               ) : null}
             </div>
-          ) : (
-            <>
-              <div>Loading Slideshow...</div>
-              <div style={{ fontSize: 14 }}>Event ID: {eventId ?? "none"}</div>
-              <div style={{ fontSize: 18 }}>{status}</div>
-              <div style={{ fontSize: 14 }}>Photos Loaded: {photos.length}</div>
-              <div style={{ fontSize: 14 }}>Approved Photos: {totalSlides}</div>
-              <div style={{ fontSize: 14 }}>
-                Preloaded: {preloadedCount} of {totalSlides}
-              </div>
-            </>
-          )}
+          ) : message ? (
+            <div style={{ fontSize: 24 }}>{message}</div>
+          ) : null}
         </div>
       </main>
+
+      {/* Preload only the next item, not the whole Event gallery. */}
+      {nextUrl ? (
+        <img src={nextUrl} alt="" style={{ display: "none" }} />
+      ) : null}
     </div>
   );
 }

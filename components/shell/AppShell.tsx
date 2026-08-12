@@ -6,7 +6,7 @@ import { type ReactNode,useRef, useState } from "react";
 import { ShellHeader } from "@/components/shell/ShellHeader";
 import { ShellNav } from "@/components/shell/ShellNav";
 import type { ShellConfig } from "@/components/shell/types";
-import { useShellViewport } from "@/components/shell/useShellViewport";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 
 export type AppShellProps = {
   config: ShellConfig;
@@ -34,7 +34,7 @@ export type AppShellProps = {
  */
 export function AppShell({ config, children }: AppShellProps) {
   const pathname = usePathname();
-  const { isCompact } = useShellViewport();
+  const capabilities = useShellInterfaceCapabilities();
   const [navOpen, setNavOpen] = useState(false);
   const navTriggerRef = useRef<HTMLButtonElement>(null);
 
@@ -44,8 +44,9 @@ export function AppShell({ config, children }: AppShellProps) {
     <div className={`shell-root shell-role-${config.role}`}>
       <ShellNav
         sections={config.navSections}
+        accountActions={capabilities.isCompact ? config.accountActions : undefined}
         activeHref={activeHref}
-        isCompact={isCompact}
+        isCompact={capabilities.isCompact}
         open={navOpen}
         onClose={() => setNavOpen(false)}
         triggerRef={navTriggerRef}
@@ -54,7 +55,7 @@ export function AppShell({ config, children }: AppShellProps) {
       <div className="shell-body">
         <ShellHeader
           config={config}
-          isCompact={isCompact}
+          isCompact={capabilities.isCompact}
           navOpen={navOpen}
           onToggleNav={() => setNavOpen((value) => !value)}
           navTriggerRef={navTriggerRef}

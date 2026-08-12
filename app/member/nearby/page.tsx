@@ -12,11 +12,12 @@ import { Page } from "@/components/ui/Page";
 import { calculateDistanceMiles } from "@/lib/calculateDistanceMiles";
 import { copyTextToClipboard } from "@/lib/copyTextToClipboard";
 import { logEngagement } from "@/lib/engagement";
+import type { MapObject } from "@/lib/mapSurface/contract";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
 import { supabase } from "@/lib/supabase";
-const NearbyPlacesMap = dynamic(
-  () => import("@/components/map/NearbyPlacesMap"),
+const EpicentraxMapSurface = dynamic(
+  () => import("@/components/map/surface/EpicentraxMapSurface"),
   { ssr: false },
 );
 
@@ -82,57 +83,6 @@ function getNearbyCardColor(category: string | null | undefined) {
   return colorMap[normalized] || "#f8fafc";
 }
 
-function nearbyCategoryIcon(category: string) {
-  const normalized = category.trim().toLowerCase();
-  if (normalized === "all") {
-    return "•";
-  }
-  if (
-    normalized.includes("fuel") ||
-    normalized.includes("gas") ||
-    normalized.includes("diesel")
-  ) {
-    return "⛽";
-  }
-  if (
-    normalized.includes("food") ||
-    normalized.includes("restaurant") ||
-    normalized.includes("dining")
-  ) {
-    return "🍔";
-  }
-  if (
-    normalized.includes("grocery") ||
-    normalized.includes("groceries") ||
-    normalized.includes("shopping")
-  ) {
-    return "🛒";
-  }
-  if (
-    normalized.includes("pharmacy") ||
-    normalized.includes("medical") ||
-    normalized.includes("urgent") ||
-    normalized.includes("hospital")
-  ) {
-    return "💊";
-  }
-  if (
-    normalized.includes("rv") ||
-    normalized.includes("service") ||
-    normalized.includes("parts")
-  ) {
-    return "🔧";
-  }
-  if (
-    normalized.includes("attraction") ||
-    normalized.includes("entertainment") ||
-    normalized.includes("park")
-  ) {
-    return "⭐";
-  }
-  return "🧭";
-}
-
 function formatPhoneNumber(phone: string) {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 11 && digits.startsWith("1")) {
@@ -155,7 +105,9 @@ function NearbyPageInner() {
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState<"default" | "distance">("default");
   const [showMapChooser, setShowMapChooser] = useState(false);
-  const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const [viewMode, setViewMode] = useState<"list" | "map" | null>(null);
+  const [quickFind, setQuickFind] = useState("");
+  const [selectedMapObjectId, setSelectedMapObjectId] = useState<string | null>(null);
 
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
 
@@ -172,6 +124,19 @@ function NearbyPageInner() {
     if (stored === "apple" || stored === "google") {
       setSavedMapPreference(stored);
     }
+  }, []);
+
+  // A saved List/Map choice is explicit page preference. The unresolved
+  // state keeps server and first client markup identical; in its absence the
+  // effect selects Map and never writes, so the default cannot overwrite a
+  // person's choice.
+  useEffect(() => {
+    const stored = localStorage.getItem("nearby-view-preference");
+    if (stored === "list" || stored === "map") {
+      setViewMode(stored);
+      return;
+    }
+    setViewMode("map");
   }, []);
 
   // Object panel: the "understand and act" view for a single Nearby place.
@@ -245,21 +210,27 @@ function NearbyPageInner() {
 
       setEvent(eventInfo);
 
-      const { data, error } = await supabase
-        .from("event_nearby_places")
-        .select(
-          "id,name,address,phone,website,category,notes,distance_miles,location_code,is_hidden,lat,lng,sort_order",
-        )
-        .eq("event_id", eventId)
-        .or("is_hidden.is.null,is_hidden.eq.false")
-        .order("sort_order", { ascending: true })
-        .order("name", { ascending: true });
+      // Effective Nearby resolution (Nearby Knowledge + Tenant Curation
+      // Foundation): combines this event's own curated
+      // event_nearby_places rows with effectively-visible central/Tenant
+      // place knowledge (Tenant category overrides > Tenant-type defaults
+      // > platform baseline). One governed server-side path -- this page
+      // does not filter/union place sources itself. See
+      // docs/architecture/EPICENTRAX_NEARBY_KNOWLEDGE_AND_TENANT_CURATION_ARCHITECTURE.md.
+      const { data, error } = await supabase.rpc("resolve_effective_nearby_places", {
+        p_event_id: eventId,
+      });
 
       if (error) {
         throw error;
       }
 
-      const rows = (data || []) as Place[];
+      const rows = ((data || []) as Place[])
+        .filter((place) => !place.is_hidden)
+        .sort((a, b) => {
+          const sortDiff = (a.sort_order ?? 0) - (b.sort_order ?? 0);
+          return sortDiff !== 0 ? sortDiff : a.name.localeCompare(b.name);
+        });
 
       const rowsWithDistance = rows.map((place) => {
         if (
@@ -460,6 +431,44 @@ function NearbyPageInner() {
     return sorted;
   }, [places, selectedCategory, favoriteIds, sortMode, search]);
 
+  // The EpicentraX map surface only ever sees `MapObject`s -- Nearby owns
+  // translating its own `Place` domain data into that renderer-neutral
+  // shape (lib/mapSurface/contract.ts) and back again (via `id` lookups
+  // in `filteredPlaces`) on the way out. Places without coordinates are
+  // simply not mappable, so they're excluded here rather than pushed onto
+  // the renderer as a defensive filter.
+  const mapObjects = useMemo<MapObject[]>(
+    () =>
+      filteredPlaces
+        .filter(
+          (place): place is Place & { lat: number; lng: number } =>
+            typeof place.lat === "number" && typeof place.lng === "number",
+        )
+        .map((place) => ({
+          id: place.id,
+          coordinate: { latitude: place.lat, longitude: place.lng },
+          title: place.name,
+          category: place.category,
+          subtitle:
+            [
+              place.category,
+              place.distance_miles !== null ? `${place.distance_miles} mi` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined,
+        })),
+    [filteredPlaces],
+  );
+
+  useEffect(() => {
+    if (
+      selectedMapObjectId &&
+      !mapObjects.some((object) => object.id === selectedMapObjectId)
+    ) {
+      setSelectedMapObjectId(null);
+    }
+  }, [mapObjects, selectedMapObjectId]);
+
   // Previous/next navigation for the object panel follows whatever order
   // is currently visible in the list/map (the same filtered, sorted set),
   // so it stays consistent whichever surface the panel was opened from.
@@ -484,19 +493,28 @@ function NearbyPageInner() {
     });
   }
 
-  function jumpToCategory(category: string) {
+  function selectQuickFind(category: string) {
+    setQuickFind(category);
     setSelectedCategory(category);
+  }
 
-    requestAnimationFrame(() => {
-      const target = document.querySelector(`[data-category="${category}"]`);
+  function selectViewMode(nextViewMode: "list" | "map") {
+    setViewMode(nextViewMode);
+    localStorage.setItem("nearby-view-preference", nextViewMode);
+  }
 
-      if (target) {
-        target.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }
-    });
+  // Same persistent preference `handleDirections`/`handlePreferredMapSelect`/
+  // `PreferredMapChooser` already read and write (the
+  // "nearby-navigation-preference" key, mirrored in `savedMapPreference`
+  // state) -- this is the compact inline toggle (Stage 4C §D) that sets it
+  // directly, in the normal control surface, in one tap. It does not
+  // replace the modal: `handleDirections` still falls back to it (and the
+  // ObjectPanel's own "Change preferred map" action still opens it)
+  // whenever no preference has been set yet, preserving the existing
+  // "ask when needed" behavior for anyone who never touches this toggle.
+  function selectMapPreference(preference: MapPreference) {
+    localStorage.setItem("nearby-navigation-preference", preference);
+    setSavedMapPreference(preference);
   }
 
   // `overridePreference`, when provided, is used instead of the persisted
@@ -592,10 +610,7 @@ function NearbyPageInner() {
             Nearby List Ready
           </span>
         ) : null}
-        <div
-          className="nearby-search-row"
-          style={{ display: "flex", alignItems: "center", gap: 8 }}
-        >
+        <div className="nearby-search-row">
           <input
             type="text"
             value={search}
@@ -603,108 +618,119 @@ function NearbyPageInner() {
             placeholder="Search nearby places..."
             className="nearby-search-input"
           />
-          <button
-            type="button"
-            onClick={() =>
-              setSortMode((prev) =>
-                prev === "default" ? "distance" : "default",
-              )
-            }
-            className={`nearby-sort-button ${sortMode === "distance" ? "active" : ""}`}
-          >
-            {sortMode === "distance" ? "📍 Nearest" : "↕ Default"}
-          </button>
-          {/* Preferred Map button */}
-          <button
-            type="button"
-            style={{
-              background: "none",
-              border: "none",
-              color: "#2563eb",
-              padding: "0 8px",
-              fontSize: 13,
-              textDecoration: "underline",
-              cursor: "pointer",
-              marginLeft: 8,
-            }}
-            onClick={openPreferredMapChooser}
-          >
-            Preferred Map...
-          </button>
         </div>
-        {/* Category chips */}
-        <div className="btn-row nearby-chip-row">
-          {categoryOptions.map((category) => (
-            <button
-              key={category}
-              type="button"
-              className={`nearby-chip ${selectedCategory === category ? "active" : ""}`}
-              onClick={() => setSelectedCategory(category)}
-              style={
-                {
-                  "--chip-bg": sanitizeCardColor(
-                    getNearbyCardColor(category === "All" ? null : category),
-                  ),
-                } as React.CSSProperties
+        <div className="nearby-filter-controls">
+          <label>
+            <span>Category</span>
+            <select
+              value={selectedCategory}
+              onChange={(event) => {
+                setSelectedCategory(event.target.value);
+                setQuickFind("");
+              }}
+            >
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Quick Find</span>
+            <select
+              value={quickFind}
+              onChange={(event) => {
+                const category = event.target.value;
+                if (!category) {
+                  setQuickFind("");
+                  return;
+                }
+                selectQuickFind(category);
+              }}
+            >
+              <option value="">Choose nearest service</option>
+              {closestPlaces.map((item) => (
+                <option key={item.label} value={item.category}>
+                  {item.icon} Closest {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Sort</span>
+            <select
+              value={sortMode}
+              onChange={(event) =>
+                setSortMode(event.target.value as "default" | "distance")
               }
             >
-              <span aria-hidden="true" style={{ marginRight: 4 }}>
-                {nearbyCategoryIcon(category)}
-              </span>
-              {category}
-            </button>
-          ))}
+              <option value="default">Default order</option>
+              <option value="distance">Nearest first</option>
+            </select>
+          </label>
         </div>
-        {/* Quick Actions */}
-        {closestPlaces.length > 0 ? (
-          <div className="nearby-quick-actions">
-            {closestPlaces.map((item) => (
+        <div className="nearby-toggle-row">
+          {/* One labeled segmented choice (Stage 4C §C), not two separate
+              buttons -- same `nearby-view-preference` persistence key and
+              `selectViewMode` write path as before; only the presentation
+              is compacted. */}
+          <div className="nearby-segmented" role="group" aria-label="View">
+            <span className="nearby-segmented-label">View</span>
+            <div className="nearby-segmented-buttons">
               <button
-                key={item.label}
                 type="button"
-                onClick={() => jumpToCategory(item.category)}
-                className="nearby-quick-chip"
+                aria-pressed={viewMode === "list"}
+                className={"nearby-segmented-option" + (viewMode === "list" ? " active" : "")}
+                onClick={() => selectViewMode("list")}
               >
-                {item.icon} Closest {item.label}
+                List
               </button>
-            ))}
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedCategory("All");
-                setSearch("");
-                setSortMode("default");
-              }}
-              className="nearby-reset-chip"
-            >
-              🔎 Reset Filters
-            </button>
+              <button
+                type="button"
+                aria-pressed={viewMode === "map"}
+                className={"nearby-segmented-option" + (viewMode === "map" ? " active" : "")}
+                onClick={() => selectViewMode("map")}
+              >
+                Map
+              </button>
+            </div>
           </div>
-        ) : null}
+          {/* Compact persistent Directions preference (Stage 4C §D). Governs
+              only the external Directions destination -- never the embedded
+              map surface above. Same "nearby-navigation-preference" storage
+              and `savedMapPreference` state `handleDirections`/
+              `PreferredMapChooser`/ObjectPanel's "Change preferred map"
+              already use; the modal remains the fallback whenever neither
+              option here has ever been chosen. */}
+          <div className="nearby-segmented" role="group" aria-label="Directions preference">
+            <span className="nearby-segmented-label">Directions</span>
+            <div className="nearby-segmented-buttons">
+              <button
+                type="button"
+                aria-pressed={savedMapPreference === "apple"}
+                className={"nearby-segmented-option" + (savedMapPreference === "apple" ? " active" : "")}
+                onClick={() => selectMapPreference("apple")}
+              >
+                Apple
+              </button>
+              <button
+                type="button"
+                aria-pressed={savedMapPreference === "google"}
+                className={"nearby-segmented-option" + (savedMapPreference === "google" ? " active" : "")}
+                onClick={() => selectMapPreference("google")}
+              >
+                Google
+              </button>
+            </div>
+          </div>
+        </div>
         {status ? <div className="nearby-status-text">{status}</div> : null}
         {error ? (
           <div role="alert" className="nearby-error-banner">
             {error}
           </div>
         ) : null}
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button
-            type="button"
-            className={viewMode === "list" ? "btn" : "btn secondary"}
-            onClick={() => setViewMode("list")}
-          >
-            List
-          </button>
-
-          <button
-            type="button"
-            className={viewMode === "map" ? "btn" : "btn secondary"}
-            onClick={() => setViewMode("map")}
-          >
-            Map
-          </button>
-        </div>
       </div>
       {/* Preferred map chooser: reachable from the top "Preferred Map..."
           control above and from the Object Panel's "Change preferred map"
@@ -725,16 +751,26 @@ function NearbyPageInner() {
         }}
       />
       {viewMode === "map" ? (
-        <NearbyPlacesMap
-          places={filteredPlaces}
-          eventLat={event?.lat ?? null}
-          eventLng={event?.lng ?? null}
-          onSelectPlace={(place) => {
-            // NearbyPlacesMap's own Place type only declares the fields it
-            // needs for rendering; the object it hands back is always one
-            // of the full Place records we passed in via `places` above.
-            openPlacePanel(place as Place);
+        <EpicentraxMapSurface
+          objects={mapObjects}
+          selectedObjectId={selectedMapObjectId}
+          viewportIntent={
+            event?.lat !== null &&
+            event?.lat !== undefined &&
+            event?.lng !== null &&
+            event?.lng !== undefined
+              ? { center: { latitude: event.lat, longitude: event.lng } }
+              : undefined
+          }
+          onObjectSelect={(objectId) => setSelectedMapObjectId(objectId)}
+          onObjectActivate={(objectId) => {
+            const place = filteredPlaces.find((p) => p.id === objectId);
+            setSelectedMapObjectId(null);
+            if (place) {
+              openPlacePanel(place);
+            }
           }}
+          onMapBackgroundActivate={() => setSelectedMapObjectId(null)}
         />
       ) : null}
       {viewMode === "list" && (
@@ -1197,7 +1233,7 @@ export default function NearbyPage() {
   return (
     <MemberRouteGuard>
       <MemberShellAdapter
-        pageTitle="Nearby"
+        pageTitle="Nearby Places"
         pageSubtitle="Fuel, urgent care, pharmacy, groceries, and local stops."
       >
         <NearbyPageInner />
