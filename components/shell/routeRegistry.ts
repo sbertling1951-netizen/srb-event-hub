@@ -135,6 +135,7 @@ const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
   "/admin/permissions",
   "/admin/imports",
   "/admin/locations",
+  "/admin/map-admin",
   "/admin/reports",
   "/admin/slideshow",
   "/admin/validation-rules",

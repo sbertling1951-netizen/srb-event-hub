@@ -119,6 +119,17 @@ test("Admin shell Cohort 3 routes use the canonical Admin shell", () => {
   }
 });
 
+test("Admin shell final safe cohort keeps Map Admin canonical without moving map workspaces", () => {
+  assert.equal(resolveShellMode("/admin/map-admin"), "canonical-admin");
+  assert.equal(resolveShellMode("/admin/map-test"), "legacy");
+  assert.equal(resolveShellMode("/admin/master-maps"), "legacy");
+  assert.equal(resolveShellMode("/admin/master-maps/new"), "legacy");
+  assert.equal(resolveShellMode("/admin/master-maps/example"), "legacy");
+  assert.equal(resolveShellMode("/admin/nearby"), "legacy");
+  assert.equal(resolveShellMode("/admin/nearby-settings"), "legacy");
+  assert.equal(resolveShellMode("/admin/parking"), "legacy");
+});
+
 test("Admin Print Settings uses the canonical Admin shell", () => {
   assert.equal(resolveShellMode("/admin/print-settings"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/print"), "exception");

@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 
 const headerCardStyle: CSSProperties = {
   padding: 18,
@@ -187,7 +188,9 @@ function MapAdminPageInner() {
 export default function MapAdminPage() {
   return (
     <AdminRouteGuard>
-      <MapAdminPageInner />
+      <AdminShellAdapter pageTitle="Map Admin">
+        <MapAdminPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
