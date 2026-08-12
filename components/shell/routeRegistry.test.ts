@@ -61,7 +61,7 @@ test("Admin shell Cohort A routes use the canonical Admin shell", () => {
   assert.equal(resolveShellMode("/admin/login"), "exception");
   assert.equal(resolveShellMode("/admin/print"), "exception");
   assert.equal(resolveShellMode("/admin/reports/coach-plates/print"), "exception");
-  assert.equal(resolveShellMode("/admin/events"), "legacy");
+  assert.equal(resolveShellMode("/admin/events"), "canonical-admin");
   // /admin/vendors itself was migrated by a later cohort (still legacy
   // when this Cohort A test was written); /admin/vendors/access/history
   // remains legacy since only the exact /admin/vendors/access path is
@@ -75,7 +75,7 @@ test("Admin shell Cohort B1 routes use the canonical Admin shell", () => {
     assert.equal(resolveShellMode(pathname), "canonical-admin");
   }
 
-  assert.equal(resolveShellMode("/admin/events"), "legacy");
+  assert.equal(resolveShellMode("/admin/events"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/vendor-requests/history"), "legacy");
   assert.equal(resolveShellMode("/admin/login"), "exception");
   assert.equal(resolveShellMode("/admin/print"), "exception");
@@ -108,6 +108,17 @@ test("Admin shell Cohort 2 routes use the canonical Admin shell", () => {
   }
 });
 
+test("Admin shell Cohort 3 routes use the canonical Admin shell", () => {
+  for (const pathname of [
+    "/admin/events",
+    "/admin/agenda",
+    "/admin/agenda/categories",
+    "/admin/locations",
+  ]) {
+    assert.equal(resolveShellMode(pathname), "canonical-admin");
+  }
+});
+
 test("Admin Print Settings uses the canonical Admin shell", () => {
   assert.equal(resolveShellMode("/admin/print-settings"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/print"), "exception");
@@ -119,7 +130,7 @@ test("Admin Print Settings uses the canonical Admin shell", () => {
     resolveShellMode("/admin/reports/name-tags/print"),
     "exception",
   );
-  assert.equal(resolveShellMode("/admin/events"), "legacy");
+  assert.equal(resolveShellMode("/admin/events"), "canonical-admin");
 });
 
 test("Admin shell Cohort B2 routes use the canonical Admin shell", () => {
@@ -129,7 +140,7 @@ test("Admin shell Cohort B2 routes use the canonical Admin shell", () => {
 
   assert.equal(resolveShellMode("/admin/vendors/access"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/vendors/access/history"), "legacy");
-  assert.equal(resolveShellMode("/admin/events"), "legacy");
+  assert.equal(resolveShellMode("/admin/events"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/login"), "exception");
   assert.equal(resolveShellMode("/admin/print"), "exception");
   assert.equal(
@@ -169,7 +180,7 @@ test("Admin Dashboard uses the canonical Admin shell", () => {
     assert.equal(resolveShellMode(pathname), "canonical-admin");
   }
 
-  assert.equal(resolveShellMode("/admin/events"), "legacy");
+  assert.equal(resolveShellMode("/admin/events"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/login"), "exception");
   assert.equal(resolveShellMode("/admin/print"), "exception");
   assert.equal(

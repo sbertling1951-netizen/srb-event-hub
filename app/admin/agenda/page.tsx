@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 import AgendaImportPanel from "@/components/admin/agenda/AgendaImportPanel";
 import AgendaTemplatePanel from "@/components/admin/agenda/AgendaTemplatePanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useAdmin } from "@/lib/adminContext";
 import {
@@ -3813,7 +3814,9 @@ export default function AdminAgendaPage() {
   // Task Authority check (hasAgendaAccess), not a role-name permission.
   return (
     <AdminRouteGuard>
-      <AdminAgendaPageInner />
+      <AdminShellAdapter pageTitle="Admin Agenda">
+        <AdminAgendaPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

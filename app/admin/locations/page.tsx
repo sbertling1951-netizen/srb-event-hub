@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
@@ -810,7 +811,9 @@ function AdminLocationsPageInner() {
 export default function AdminLocationsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_locations">
-      <AdminLocationsPageInner />
+      <AdminShellAdapter pageTitle="Map Locations" contentMode="full-bleed">
+        <AdminLocationsPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

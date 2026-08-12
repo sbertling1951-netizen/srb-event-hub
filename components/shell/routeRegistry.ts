@@ -116,6 +116,8 @@ const CANONICAL_MEMBER_PREFIXES: readonly string[] = [
 ];
 const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
   "/admin/admin-users",
+  "/admin/agenda",
+  "/admin/agenda/categories",
   "/admin/attendees",
   "/admin/checklist",
   "/admin/checkin",
@@ -123,6 +125,7 @@ const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
   "/admin/dashboard",
   "/admin/engagement",
   "/admin/event-staff",
+  "/admin/events",
   "/admin/export",
   "/admin/events/new",
   "/admin/evaluations",
@@ -131,6 +134,7 @@ const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
   "/admin/print-settings",
   "/admin/permissions",
   "/admin/imports",
+  "/admin/locations",
   "/admin/reports",
   "/admin/slideshow",
   "/admin/validation-rules",

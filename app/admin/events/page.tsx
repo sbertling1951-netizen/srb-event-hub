@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -1376,7 +1377,9 @@ const gridButtonStyle: React.CSSProperties = {
 export default function EventAdminPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_events">
-      <EventAdminPageInner />
+      <AdminShellAdapter pageTitle="Event Admin">
+        <EventAdminPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

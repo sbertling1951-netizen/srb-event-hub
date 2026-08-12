@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
@@ -382,7 +383,9 @@ function AgendaCategoriesPageInner() {
 export default function AgendaCategoriesPage() {
   return (
     <AdminRouteGuard>
-      <AgendaCategoriesPageInner />
+      <AdminShellAdapter pageTitle="Agenda Categories">
+        <AgendaCategoriesPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
