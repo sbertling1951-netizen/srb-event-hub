@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { useAdmin } from "@/lib/adminContext";
 import {
@@ -724,7 +725,9 @@ function AdminValidationRulesPageInner() {
 function AdminValidationRulesPageContent() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_validation_rules">
-      <AdminValidationRulesPageInner />
+      <AdminShellAdapter pageTitle="Validation Rules">
+        <AdminValidationRulesPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

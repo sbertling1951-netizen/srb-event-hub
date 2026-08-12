@@ -45,8 +45,8 @@ test("Admin Reports uses the canonical shell without moving print exceptions", (
   assert.equal(resolveShellMode("/admin/reports"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/reports/coach-plates/print"), "exception");
   assert.equal(resolveShellMode("/admin/reports/name-tags/print"), "exception");
-  assert.equal(resolveShellMode("/admin/imports"), "legacy");
-  assert.equal(resolveShellMode("/admin/validation-rules"), "legacy");
+  assert.equal(resolveShellMode("/admin/imports"), "canonical-admin");
+  assert.equal(resolveShellMode("/admin/validation-rules"), "canonical-admin");
 });
 
 test("Admin shell Cohort A routes use the canonical Admin shell", () => {
@@ -92,9 +92,20 @@ test("Admin Check-In uses the canonical Admin shell", () => {
 test("Admin Attendees uses the exact canonical Admin route without moving adjacent legacy routes", () => {
   assert.equal(resolveShellMode("/admin/attendees"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/attendees/history"), "legacy");
-  assert.equal(resolveShellMode("/admin/engagement"), "legacy");
-  assert.equal(resolveShellMode("/admin/imports"), "legacy");
-  assert.equal(resolveShellMode("/admin/validation-rules"), "legacy");
+  assert.equal(resolveShellMode("/admin/engagement"), "canonical-admin");
+  assert.equal(resolveShellMode("/admin/imports"), "canonical-admin");
+  assert.equal(resolveShellMode("/admin/validation-rules"), "canonical-admin");
+});
+
+test("Admin shell Cohort 2 routes use the canonical Admin shell", () => {
+  for (const pathname of [
+    "/admin/data-review",
+    "/admin/engagement",
+    "/admin/imports",
+    "/admin/validation-rules",
+  ]) {
+    assert.equal(resolveShellMode(pathname), "canonical-admin");
+  }
 });
 
 test("Admin Print Settings uses the canonical Admin shell", () => {

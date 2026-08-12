@@ -2,6 +2,7 @@
 "use client";
 import React, { useCallback, useEffect, useState } from "react";
 
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -40,7 +41,7 @@ function formatActivityLabel(activityType: string): string {
     .join(" ");
 }
 
-export default function EngagementPage() {
+function EngagementPageInner() {
   const [stats, setStats] = useState({
     registered: 0,
     loggedIn: 0,
@@ -407,5 +408,13 @@ export default function EngagementPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+export default function EngagementPage() {
+  return (
+    <AdminShellAdapter pageTitle="Attendee Engagement">
+      <EngagementPageInner />
+    </AdminShellAdapter>
   );
 }

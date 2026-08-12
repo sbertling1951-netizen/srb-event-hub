@@ -4,6 +4,7 @@ import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { useAdmin } from "@/lib/adminContext";
 import {
@@ -643,7 +644,9 @@ function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
 export default function AdminAttendeeImportsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_imports">
-      <AdminAttendeeImportsPageInner />
+      <AdminShellAdapter pageTitle="Attendee Imports">
+        <AdminAttendeeImportsPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
