@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { bumpAdminPermissionsVersion } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -99,7 +100,9 @@ const PERMISSION_GROUPS: Record<string, string[]> = {
 export default function PermissionsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_admins">
-      <PermissionsInner />
+      <AdminShellAdapter pageTitle="Permissions">
+        <PermissionsInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

@@ -3,6 +3,7 @@
 import { type CSSProperties, useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import {
   getCurrentAdminEvent,
   setCurrentAdminEvent,
@@ -555,7 +556,9 @@ const permissionLabelStyle: CSSProperties = { display: "flex", gap: 8, alignItem
 export default function EventStaffPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_event_staff">
-      <EventStaffPageInner />
+      <AdminShellAdapter pageTitle="Event Staff">
+        <EventStaffPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

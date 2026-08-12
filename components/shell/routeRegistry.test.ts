@@ -131,6 +131,16 @@ test("Admin shell Cohort B2 routes use the canonical Admin shell", () => {
   );
 });
 
+test("Admin shell Cohort 1 authority routes use the canonical Admin shell", () => {
+  for (const pathname of [
+    "/admin/admin-users",
+    "/admin/event-staff",
+    "/admin/permissions",
+  ]) {
+    assert.equal(resolveShellMode(pathname), "canonical-admin");
+  }
+});
+
 test("Admin Dashboard uses the canonical Admin shell", () => {
   assert.equal(resolveShellMode("/admin/dashboard"), "canonical-admin");
 

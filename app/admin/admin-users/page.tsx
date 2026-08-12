@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import {
   canAccessEvent,
 } from "@/lib/getCurrentAdminAccess";
@@ -124,7 +125,9 @@ const defaultGroup: PrivilegeGroup = "event_admin";
 export default function AdminUsersPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_admins">
-      <AdminUsersPageInner />
+      <AdminShellAdapter pageTitle="Admin Users">
+        <AdminUsersPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
