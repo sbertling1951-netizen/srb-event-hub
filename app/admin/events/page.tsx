@@ -7,6 +7,7 @@ import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
+  resolveAdminWorkingEvent,
   setCurrentAdminEvent,
 } from "@/lib/adminEventContext";
 import { subscribeToAdminWorkspace } from "@/lib/adminWorkspaceContext";
@@ -299,36 +300,61 @@ function EventAdminPageInner() {
       setMasterMaps(loadedMaps);
       setNearbyLists(loadedNearby);
 
+      // ADR-006 §2/§4: the shared Admin working Event is resolved against
+      // `accessibleEvents` (the full authorized set), never against
+      // `loadedEvents` (which this page additionally filters by
+      // `eventStatusFilter` for its own list/picker display -- a
+      // lifecycle-status filter must not gate context validity).
+      const adminEvent = getCurrentAdminEvent();
+      const activeAccessibleEvents = accessibleEvents.filter((event) =>
+        isActiveEventStatus(event.status),
+      );
+      const { event: contextEvent, invalidStoredContext } =
+        resolveAdminWorkingEvent(
+          accessibleEvents,
+          adminEvent,
+          activeAccessibleEvents[0] || accessibleEvents[0] || null,
+        );
+
+      if (!adminEvent?.id && contextEvent) {
+        // Initial establishment only. A restore of an already-persisted
+        // Event ID must not re-trigger a write here.
+        setWorkspaceEvent(contextEvent);
+      } else if (invalidStoredContext) {
+        setWorkspaceEvent(null);
+      }
+
       if (loadedEvents.length === 0) {
         setSelectedEventId("");
         setForm(emptyForm);
         setSelectedMasterMapId("");
         setSelectedNearbyListId("");
-        setWorkspaceEvent(null);
-        setStatus("No events match this filter.");
+        setStatus(
+          invalidStoredContext
+            ? "Your previously selected event is no longer available. Choose one above."
+            : "No events match this filter.",
+        );
         return;
       }
 
-      const adminEvent = getCurrentAdminEvent();
-      const storedAccessibleEvent = adminEvent?.id
-        ? loadedEvents.find((e) => e.id === adminEvent.id) || null
+      // This page's own list/edit-form selection is necessarily scoped to
+      // the currently filtered list -- a display/editing choice, distinct
+      // from (and never a mutation of) the shared context resolved above.
+      const visibleContextEvent = contextEvent
+        ? loadedEvents.find((e) => e.id === contextEvent.id) || null
         : null;
-
       const preferredEventId =
-        storedAccessibleEvent?.id || loadedEvents[0]?.id || "";
+        visibleContextEvent?.id || loadedEvents[0]?.id || "";
 
       setSelectedEventId(preferredEventId);
 
-      const preferredEvent =
-        loadedEvents.find((e) => e.id === preferredEventId) || null;
-
-      if (preferredEvent) {
-        if (!storedAccessibleEvent) {
-          setWorkspaceEvent(preferredEvent);
-        }
-        setStatus("Event admin ready.");
+      if (preferredEventId) {
+        setStatus(
+          invalidStoredContext
+            ? "Your previously selected event is no longer available. Choose one above."
+            : "Event admin ready.",
+        );
       } else {
-        setWorkspaceEvent(null);
         setStatus("No accessible events available.");
       }
     } catch (err: any) {
@@ -549,11 +575,11 @@ function EventAdminPageInner() {
         setEventStatusFilter(nextFilter);
         setEvents([updatedEvent]);
 
-        if (isActiveEventStatus(updatedEvent.status)) {
-          setWorkspaceEvent(updatedEvent);
-        } else {
-          setWorkspaceEvent(null);
-        }
+        // ADR-006 §2.1/§2.3: saving this event's fields (including its
+        // status) is not a lifecycle-status decision about the shared
+        // Admin working Event -- inactive is not invalid, so this must
+        // never be gated on isActiveEventStatus.
+        setWorkspaceEvent(updatedEvent);
 
         setStatus(
           `Updated event "${payload.name}" to ${updatedEvent.status || "Draft"}.`,
@@ -576,11 +602,9 @@ function EventAdminPageInner() {
         setEventStatusFilter(filterForStatus(createdEvent.status));
         localStorage.removeItem("fcoc-event-draft");
         setEvents([createdEvent]);
-        if (isActiveEventStatus(createdEvent.status)) {
-          setWorkspaceEvent(createdEvent);
-        } else {
-          setWorkspaceEvent(null);
-        }
+        // ADR-006 §2.1/§2.3: same as the update branch above -- lifecycle
+        // status must never gate this.
+        setWorkspaceEvent(createdEvent);
         setStatus(`Created event "${payload.name}".`);
       }
     } catch (err: any) {
@@ -733,13 +757,18 @@ function EventAdminPageInner() {
             value={eventStatusFilter}
             onChange={(e) => {
               const nextFilter = e.target.value as EventStatusFilter;
+              // ADR-006 §4: this filter is presentation/discovery logic
+              // for this page's own list -- it must never touch the
+              // shared Admin working Event. loadPage() re-runs on this
+              // dependency change and re-derives selectedEventId from
+              // the (unchanged) shared context against the new filtered
+              // list.
               setEventStatusFilter(nextFilter);
               setEvents([]);
               setSelectedEventId("");
               setForm(emptyForm);
               setSelectedMasterMapId("");
               setSelectedNearbyListId("");
-              setWorkspaceEvent(null);
               setStatus("Loading filtered events...");
             }}
             style={{
@@ -805,13 +834,15 @@ function EventAdminPageInner() {
         <button
           type="button"
           onClick={() => {
+            // ADR-006 §2.3: opening a blank creation form is page-local
+            // editing state, not an Event selection -- it must not clear
+            // the shared Admin working Event.
             setSelectedEventId("");
             setForm(emptyForm);
             setSelectedMasterMapId("");
             setSelectedNearbyListId("");
             setError(null);
-            setWorkspaceEvent(null);
-            setStatus("Creating a new event. No working event selected.");
+            setStatus("Creating a new event.");
           }}
           style={{ width: "fit-content" }}
         >

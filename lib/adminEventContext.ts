@@ -60,6 +60,50 @@ export function clearCurrentAdminEvent(): void {
   setCurrentAdminEvent(null);
 }
 
+export type AdminEventCandidate = {
+  id: string;
+  [key: string]: unknown;
+};
+
+export type AdminWorkingEventResolution<T extends AdminEventCandidate> = {
+  event: T | null;
+  // true only when a persisted Event ID exists but is absent from
+  // `accessibleEvents` (deleted or no longer authorized) -- ADR-006 §2.2
+  // requires this to surface an explicit Event-choice state, never an
+  // automatic substitute.
+  invalidStoredContext: boolean;
+};
+
+/**
+ * Resolves the Admin working Event per the Event Context Invariant
+ * (docs/architecture/ADR-006 Event Context Architecture.md §2). A stored
+ * Event ID is restored unchanged whenever it is still present in
+ * `accessibleEvents`, regardless of that Event's lifecycle status --
+ * inactive is not invalid (ADR-006 §2.1). `accessibleEvents` must
+ * therefore be the caller's full authorized set, not a lifecycle-status-
+ * filtered display/discovery list (ADR-006 §4).
+ *
+ * When no Event has ever been stored, `initialEstablishmentDefault` is
+ * used as-is -- callers own that default policy (e.g. "prefer the first
+ * active Event"), documented at the call site (ADR-006 §2.3).
+ */
+export function resolveAdminWorkingEvent<T extends AdminEventCandidate>(
+  accessibleEvents: T[],
+  storedEvent: { id?: string | null } | null | undefined,
+  initialEstablishmentDefault: T | null,
+): AdminWorkingEventResolution<T> {
+  if (storedEvent?.id) {
+    const restored =
+      accessibleEvents.find((e) => e.id === storedEvent.id) || null;
+
+    return restored
+      ? { event: restored, invalidStoredContext: false }
+      : { event: null, invalidStoredContext: true };
+  }
+
+  return { event: initialEstablishmentDefault, invalidStoredContext: false };
+}
+
 
 export function subscribeToAdminEvent(
   callback: () => void,

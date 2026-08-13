@@ -396,6 +396,39 @@ test("loadSessionItems retains its own generation checkpoints for photo/caption 
   );
 });
 
+// Event Context Invariant (docs/architecture/ADR-006 Event Context
+// Architecture.md): this page must remain a pure consumer of the shared
+// Admin working Event -- it must never gate, filter, or re-resolve
+// getCurrentAdminEvent()'s result by lifecycle status, and it must never
+// write to the shared context itself. Regression coverage for "Amana
+// selected + inactive -> navigate Photos -> Slideshow -> Amana remains
+// current" at this page's boundary (the reported failure's landing
+// page).
+
+test("the presenter never gates or filters the current Event by lifecycle status", () => {
+  assert.equal(/isActiveEventStatus/.test(PAGE_SOURCE), false);
+  assert.equal(/\.status\s*===\s*["']active["']/i.test(PAGE_SOURCE), false);
+});
+
+test("the presenter never writes to the shared Admin working Event", () => {
+  assert.equal(/setCurrentAdminEvent/.test(PAGE_SOURCE), false);
+});
+
+test("checkSlideshowAccess reads the current Event only through the canonical getCurrentAdminEvent(), with no fallback/default selection", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{[^}]*getCurrentAdminEvent[^}]*\}\s*from\s*["']@\/lib\/adminWorkspaceContext["']/,
+  );
+
+  const fnIdx = PAGE_SOURCE.indexOf("const checkSlideshowAccess = useCallback(");
+  assert.notEqual(fnIdx, -1);
+  const fnBody = PAGE_SOURCE.slice(fnIdx, fnIdx + 700);
+
+  assert.match(fnBody, /const adminEvent = getCurrentAdminEvent\(\);/);
+  assert.equal(/events\[0\]/.test(fnBody), false);
+  assert.equal(/\.from\(\s*["']events["']\s*\)/.test(fnBody), false);
+});
+
 test("no call site invokes loadSessionItems without a generation argument", () => {
   const calls = [...PAGE_SOURCE.matchAll(/loadSessionItems\(([^)]*)\)/g)];
   assert.ok(calls.length >= 3, `expected at least 3 loadSessionItems call sites, found ${calls.length}`);

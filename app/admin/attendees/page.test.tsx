@@ -538,3 +538,74 @@ test("no parking_sites write was introduced by this pass", () => {
 
   assert.ok(!source.includes("parking_sites"));
 });
+
+// --- 7. Event Context Invariant --------------------------------------------
+// (docs/architecture/ADR-006 Event Context Architecture.md), written
+// against the Amana -> Branson production defect: loadEventAndData used
+// to silently discard an inactive stored Event and substitute
+// activeEvents[0]. It must now resolve through the shared
+// resolveAdminWorkingEvent() instead of reimplementing that fallback.
+
+test("loadEventAndData resolves the working Event through the shared resolveAdminWorkingEvent(), not a page-local fallback", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /import\s*\{[^}]*resolveAdminWorkingEvent[^}]*\}\s*from\s*["']@\/lib\/adminWorkspaceContext["']/,
+  );
+
+  const callIdx = source.indexOf("resolveAdminWorkingEvent(");
+  assert.notEqual(callIdx, -1, "expected a resolveAdminWorkingEvent(...) call");
+  const storedEventArgIdx = source.indexOf("storedEvent,", callIdx);
+  assert.notEqual(storedEventArgIdx, -1);
+  const firstArg = source.slice(
+    callIdx + "resolveAdminWorkingEvent(".length,
+    storedEventArgIdx,
+  );
+
+  assert.equal(
+    /\beventsData\b/.test(firstArg),
+    true,
+    "resolveAdminWorkingEvent must be given the full queried Event set (eventsData), not activeEvents",
+  );
+  assert.equal(
+    /^\s*activeEvents\s*,?\s*$/.test(firstArg),
+    false,
+    "resolveAdminWorkingEvent must not be given the active-only list as its candidate set",
+  );
+});
+
+test("the retired 'stored Event only counts if it is active' branch is gone", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.equal(
+    /matched\s*&&\s*isActiveEventStatus\(matched\.status\)/.test(source),
+    false,
+    "found the retired inactive-is-invalid gate this page used to reimplement",
+  );
+  assert.equal(
+    /if \(!eventToUse && activeEvents\.length > 0\)/.test(source),
+    false,
+    "found the retired unconditional activeEvents[0] fallback",
+  );
+});
+
+test("an invalid stored context (Event no longer exists) surfaces its own explicit message distinct from 'no active event'", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /invalidStoredContext/);
+  assert.match(source, /no longer available/i);
+});
+
+test("authorization (canAccessEvent) remains a separate gate after Event-context resolution, unaffected by the resolver", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /if \(!canAccessEvent\(adminRef\.current!, eventToUse\.id!\)\)/,
+  );
+});

@@ -48,8 +48,6 @@ function buildAdmin(
       privilege_group: "event_admin",
       user_id: "user-1",
     },
-    currentEventId: "event-1",
-    currentEventAccess: null,
     eventAccessRows: [],
     permissionKeys: [],
     permissionMap: {},
@@ -169,4 +167,64 @@ test("the page still queries only the events table directly -- no attendees tabl
 
   assert.ok(source.includes('.from("events")'));
   assert.ok(!source.includes('.from("attendees")'));
+});
+
+// Event Context Invariant regression coverage
+// (docs/architecture/ADR-006 Event Context Architecture.md), written
+// against the Amana -> Branson production defect: this page's mount
+// effect used to silently discard an inactive stored/current Event and
+// substitute `activeEvents[0]`. It must now resolve through the shared
+// resolveAdminWorkingEvent() instead of reimplementing that fallback.
+
+test("loadPage resolves the working Event through the shared resolveAdminWorkingEvent(), not a page-local fallback", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /import\s*\{[^}]*resolveAdminWorkingEvent[^}]*\}\s*from\s*["']@\/lib\/adminWorkspaceContext["']/,
+  );
+
+  const callMatch = source.match(
+    /resolveAdminWorkingEvent\(\s*\n?\s*([a-zA-Z0-9_]+)\s*,/,
+  );
+  assert.ok(callMatch, "expected a resolveAdminWorkingEvent(...) call");
+  assert.equal(
+    callMatch![1],
+    "loadedEvents",
+    "resolveAdminWorkingEvent must be given the full loaded Event set, not a status-filtered list",
+  );
+});
+
+test("the retired 'fall back to the first active event when the current one is not active' pattern is gone", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.equal(
+    /isActiveEventStatus\(\s*(currentEvent|storedEvent)\?\.status\s*\)/.test(
+      source,
+    ),
+    false,
+    "found the retired inactive-is-invalid branch this page used to reimplement",
+  );
+});
+
+test("an invalid stored context (Event no longer exists) surfaces its own explicit message distinct from 'no events at all'", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /invalidStoredContext/);
+  assert.match(source, /no longer available/i);
+});
+
+test("explicit user selection (handleSwitchEvent) is unconditional and unaffected by the resolver", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const fnIdx = source.indexOf("async function handleSwitchEvent(");
+  assert.notEqual(fnIdx, -1);
+  const fnBody = source.slice(fnIdx, fnIdx + 700);
+
+  assert.match(fnBody, /setCurrentAdminEvent\(\{/);
+  assert.equal(/resolveAdminWorkingEvent/.test(fnBody), false);
 });

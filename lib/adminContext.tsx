@@ -32,10 +32,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       const result = await getCurrentAdminAccess();
 
       setAdmin((prev) => {
-        if (
-          prev?.adminUser?.id === result?.adminUser?.id &&
-          prev?.currentEventId === result?.currentEventId
-        ) {
+        if (prev?.adminUser?.id === result?.adminUser?.id) {
           return prev;
         }
 

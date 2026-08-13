@@ -14,6 +14,7 @@ import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
+  resolveAdminWorkingEvent,
   setCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
@@ -2530,40 +2531,44 @@ created_at
       isActiveEventStatus(e.status),
     );
 
+    // ADR-006 §2: a stored Event ID is restored unchanged if it still
+    // exists in the full event set, regardless of lifecycle status. Only
+    // when no Event has ever been stored does this page fall back to a
+    // default policy (prefer the first active Event).
+    const { event: matched, invalidStoredContext } = resolveAdminWorkingEvent(
+      (eventsData || []) as { id: string; [key: string]: unknown }[],
+      storedEvent,
+      activeEvents[0] || (eventsData || [])[0] || null,
+    );
+
     let eventToUse: EventContext | null = null;
 
-    if (storedEvent?.id) {
-      const matched = (eventsData || []).find(
-        (e: any) => e.id === storedEvent.id,
-      );
-
-      if (matched && isActiveEventStatus(matched.status)) {
-        eventToUse = {
-          ...storedEvent,
-          id: matched.id,
-          name:
-            matched.name || storedEvent.name || storedEvent.eventName || null,
-          eventName:
-            matched.name || storedEvent.eventName || storedEvent.name || null,
-          location: matched.location || storedEvent.location || null,
-          venue_name: storedEvent.venue_name || matched.location || null,
-          start_date: matched.start_date || storedEvent.start_date || null,
-          end_date: matched.end_date || storedEvent.end_date || null,
-        };
-      }
-    }
-
-    if (!eventToUse && activeEvents.length > 0) {
-      const fallback = activeEvents[0];
-
+    if (matched) {
       eventToUse = {
-        id: fallback.id,
-        name: fallback.name || "Selected Event",
-        eventName: fallback.name || "Selected Event",
-        location: fallback.location || null,
-        venue_name: fallback.location || null,
-        start_date: fallback.start_date || null,
-        end_date: fallback.end_date || null,
+        ...storedEvent,
+        id: matched.id as string,
+        name:
+          (matched.name as string | null) ||
+          storedEvent?.name ||
+          storedEvent?.eventName ||
+          null,
+        eventName:
+          (matched.name as string | null) ||
+          storedEvent?.eventName ||
+          storedEvent?.name ||
+          null,
+        location:
+          (matched.location as string | null) ||
+          storedEvent?.location ||
+          null,
+        venue_name:
+          storedEvent?.venue_name || (matched.location as string | null) || null,
+        start_date:
+          (matched.start_date as string | null) ||
+          storedEvent?.start_date ||
+          null,
+        end_date:
+          (matched.end_date as string | null) || storedEvent?.end_date || null,
       };
     }
 
@@ -2571,7 +2576,11 @@ created_at
       setCurrentEvent(null);
       setAttendees([]);
       setRules([]);
-      setStatus("No active event available.");
+      setStatus(
+        invalidStoredContext
+          ? "Your previously selected event is no longer available. Choose one above."
+          : "No active event available.",
+      );
       setLoading(false);
       return;
     }

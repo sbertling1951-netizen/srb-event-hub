@@ -39,3 +39,28 @@ test("shell wrapper and AdminRouteGuard remain in place", () => {
   assert.match(PAGE_SOURCE, /AdminRouteGuard/);
   assert.match(PAGE_SOURCE, /AdminShellAdapter/);
 });
+
+// Event Context Invariant (docs/architecture/ADR-006 Event Context
+// Architecture.md): this page must remain a pure consumer of the shared
+// Admin working Event -- it must never gate, filter, or re-resolve
+// getCurrentAdminEvent()'s result by lifecycle status, and it must never
+// write to the shared context itself. Regression coverage for "Amana
+// selected + inactive -> navigate to this page -> Amana remains
+// current" at this page's boundary.
+
+test("the page never gates or filters the current Event by lifecycle status", () => {
+  assert.equal(/isActiveEventStatus/.test(PAGE_SOURCE), false);
+  assert.equal(/\.status\s*===\s*["']active["']/i.test(PAGE_SOURCE), false);
+});
+
+test("the page never writes to the shared Admin working Event", () => {
+  assert.equal(/setCurrentAdminEvent/.test(PAGE_SOURCE), false);
+});
+
+test("the page reads the current Event only through the canonical getCurrentAdminEvent()", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{[^}]*getCurrentAdminEvent[^}]*\}\s*from\s*["']@\/lib\/adminWorkspaceContext["']/,
+  );
+  assert.match(PAGE_SOURCE, /const currentEvent = getCurrentAdminEvent\(\);/);
+});

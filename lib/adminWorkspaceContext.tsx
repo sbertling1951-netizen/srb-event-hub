@@ -1,19 +1,26 @@
 import {
   createContext,
+  type ReactNode,
   useContext,
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
+
 import {
   ADMIN_EVENT_UPDATED,
   clearCurrentAdminEvent,
   getCurrentAdminEvent,
+  resolveAdminWorkingEvent,
   setCurrentAdminEvent,
 } from "@/lib/adminEventContext";
 
-export { clearCurrentAdminEvent, getCurrentAdminEvent, setCurrentAdminEvent };
+export {
+  clearCurrentAdminEvent,
+  getCurrentAdminEvent,
+  resolveAdminWorkingEvent,
+  setCurrentAdminEvent,
+};
 
 export type AdminWorkspaceStatus = "loading" | "ready" | "unavailable";
 

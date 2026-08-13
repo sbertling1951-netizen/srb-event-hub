@@ -28,8 +28,6 @@ export type AdminEventPermissionRow = {
 
 export type AdminAccessResult = {
   adminUser: AdminUserAccessRow;
-  currentEventId: string | null;
-  currentEventAccess: AdminEventAccessRow | null;
   eventAccessRows: AdminEventAccessRow[];
   permissionKeys: string[];
   permissionMap: Record<string, boolean>;
@@ -259,16 +257,6 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
 
       const eventIds = unique((accessRows || []).map((r: any) => r.event_id));
 
-      let currentEventId: string | null = null;
-
-      if (adminUser.privilege_group === "super_admin") {
-        currentEventId = null;
-      } else if (eventIds.length === 1) {
-        currentEventId = eventIds[0];
-      } else if (eventIds.length > 1) {
-        currentEventId = eventIds[0];
-      }
-
       const privilegeGroup = adminUser.privilege_group || "read_only";
 
       // 🔥 BASE PRESETS (guaranteed baseline)
@@ -365,10 +353,6 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
 
       const result: AdminAccessResult = {
         adminUser,
-        currentEventId,
-        currentEventAccess:
-          (accessRows || []).find((r: any) => r.event_id === currentEventId) ||
-          null,
         eventAccessRows: accessRows || [],
         permissionKeys,
         permissionMap,

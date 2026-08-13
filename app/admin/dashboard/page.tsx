@@ -9,6 +9,7 @@ import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
+  resolveAdminWorkingEvent,
   setCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
@@ -234,7 +235,6 @@ function AdminDashboardPageInner() {
   const [selectedEventId, setSelectedEventId] = useState(
     initialEvent?.id || "",
   );
-  const [activeEvent, setActiveEvent] = useState<EventRow | null>(initialEvent);
   const [status, setStatus] = useState(
     initialEvent ? "" : "Loading dashboard...",
   );
@@ -273,7 +273,6 @@ function AdminDashboardPageInner() {
       setLoading(true);
       if (!adminAccess) {
         setSelectedEventId("");
-        setActiveEvent(null);
         setStatus("No admin access.");
         setLoading(false);
         return;
@@ -284,7 +283,6 @@ function AdminDashboardPageInner() {
 
       if (loadedEvents.length === 0) {
         setSelectedEventId("");
-        setActiveEvent(null);
         setStatus("No events found.");
         return;
       }
@@ -293,36 +291,38 @@ function AdminDashboardPageInner() {
       const activeEvents = loadedEvents.filter((e) =>
         isActiveEventStatus(e.status),
       );
-      const storedEvent = loadedEvents.find((e) => e.id === stored?.id) || null;
-      const currentEvent =
-        loadedEvents.find((e) => e.id === activeEvent?.id) || null;
 
-      const preferred =
-        activeEvents.length > 0
-          ? isActiveEventStatus(currentEvent?.status)
-            ? currentEvent
-            : isActiveEventStatus(storedEvent?.status)
-              ? storedEvent
-              : activeEvents[0]
-          : storedEvent || currentEvent || loadedEvents[0];
+      // ADR-006 §2: a stored Event ID is restored unchanged if it still
+      // exists in the admin's full accessible set, regardless of
+      // lifecycle status. Only when no Event has ever been stored does
+      // this page apply its own default policy (prefer the first active
+      // Event, else the first accessible Event).
+      const { event: resolved, invalidStoredContext } =
+        resolveAdminWorkingEvent(
+          loadedEvents,
+          stored,
+          activeEvents[0] || loadedEvents[0] || null,
+        );
 
-      if (!preferred) {
+      if (!resolved) {
         setSelectedEventId("");
-        setActiveEvent(null);
-        setStatus("No event selected. Choose one above.");
+        setStatus(
+          invalidStoredContext
+            ? "Your previously selected event is no longer available. Choose one above."
+            : "No event selected. Choose one above.",
+        );
         return;
       }
 
-      setSelectedEventId(preferred.id);
-      setActiveEvent(preferred);
+      setSelectedEventId(resolved.id);
       setStatus("");
       setCurrentAdminEvent({
-        id: preferred.id,
-        name: preferred.name || "Selected Event",
-        eventName: preferred.name || "Selected Event",
-        location: preferred.location || null,
-        start_date: preferred.start_date || null,
-        end_date: preferred.end_date || null,
+        id: resolved.id,
+        name: resolved.name || "Selected Event",
+        eventName: resolved.name || "Selected Event",
+        location: resolved.location || null,
+        start_date: resolved.start_date || null,
+        end_date: resolved.end_date || null,
       });
     } catch (err: any) {
       console.error("loadDashboard error:", err);
@@ -330,7 +330,7 @@ function AdminDashboardPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [activeEvent, adminAccess]);
+  }, [adminAccess]);
 
   useEffect(() => {
     if (didInitialLoad.current) {
@@ -360,7 +360,6 @@ function AdminDashboardPageInner() {
     try {
       setSwitching(true);
       setSelectedEventId(nextEventId);
-      setActiveEvent(nextEvent);
       setCurrentAdminEvent({
         id: nextEvent.id,
         name: nextEvent.name || "Selected Event",

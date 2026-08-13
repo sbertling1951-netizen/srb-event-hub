@@ -6,7 +6,8 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useAdmin } from "@/lib/adminContext";
-import { type AdminEventContext, getAdminEvent } from "@/lib/getAdminEvent";
+import type { AdminWorkspaceContext } from "@/lib/adminEventContext";
+import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -135,7 +136,7 @@ export default function AdminAnnouncementsPage() {
 }
 
 function AdminAnnouncementsPageInner() {
-  const [currentEvent, setCurrentEvent] = useState<AdminEventContext | null>(
+  const [currentEvent, setCurrentEvent] = useState<AdminWorkspaceContext | null>(
     null,
   );
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -239,7 +240,7 @@ function AdminAnnouncementsPageInner() {
       setLoadingEvent(true);
       setError(null);
 
-      const stored = getAdminEvent();
+      const stored = getCurrentAdminEvent();
 
       if (stored?.id) {
         if (!canAccessEvent(admin!, stored.id)) {
