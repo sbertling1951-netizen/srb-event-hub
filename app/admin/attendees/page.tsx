@@ -18,6 +18,7 @@ import {
   setCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { isActiveEventStatus } from "@/lib/eventStatus";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -510,40 +511,6 @@ export function buildHouseholdRemovalConfirmMessage(
     `this attendee record, because their information was cleared from the ` +
     `form. This cannot be undone from here.\n\n` +
     `Continue and remove ${pronoun}?`
-  );
-}
-
-// Normalized event-status helpers
-function normalizeEventStatus(status?: string | null) {
-  return String(status || "")
-    .trim()
-    .toLowerCase();
-}
-
-function isActiveEventStatus(status?: string | null) {
-  const normalized = normalizeEventStatus(status);
-
-  if (!normalized) {
-    return false;
-  }
-
-  if (
-    normalized === "inactive" ||
-    normalized === "complete" ||
-    normalized === "completed" ||
-    normalized === "closed" ||
-    normalized === "archived" ||
-    normalized === "draft"
-  ) {
-    return false;
-  }
-
-  return (
-    normalized === "active" ||
-    normalized === "live" ||
-    normalized === "open" ||
-    normalized === "current" ||
-    normalized.includes("active")
   );
 }
 

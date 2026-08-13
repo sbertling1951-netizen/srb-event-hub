@@ -3,11 +3,12 @@ import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
+import { isMemberVisibleEventStatus } from "@/lib/eventStatus";
 import {
   getIdentityClaimPublicMessage,
+  type IdentityClaimPublicResult,
   parseIdentityClaimInput,
   takeIdentityClaimRateLimitSlot,
-  type IdentityClaimPublicResult,
 } from "@/lib/identityClaim";
 
 function getSupabaseAdmin() {
@@ -41,21 +42,6 @@ function getRequestIp(req: NextRequest) {
   }
 
   return req.headers.get("x-real-ip")?.trim() || null;
-}
-
-function isMemberVisibleEventStatus(status: string | null) {
-  const normalized = String(status || "")
-    .trim()
-    .toLowerCase();
-
-  return ![
-    "inactive",
-    "archived",
-    "complete",
-    "completed",
-    "closed",
-    "draft",
-  ].includes(normalized);
 }
 
 export async function POST(req: NextRequest) {

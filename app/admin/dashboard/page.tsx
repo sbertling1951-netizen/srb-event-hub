@@ -13,6 +13,7 @@ import {
   setCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { isActiveEventStatus, normalizeEventStatus } from "@/lib/eventStatus";
 import {
   type AdminAccessResult,
   canAccessEvent,
@@ -69,38 +70,6 @@ function formatEventLabel(evt: EventRow) {
   const loc = evt.location || "";
   const statusIcon = isActiveEventStatus(evt.status) ? "🟢" : "🟡";
   return [statusIcon, name, dates, loc].filter(Boolean).join(" — ");
-}
-
-function normalizeEventStatus(status?: string | null) {
-  return String(status || "")
-    .trim()
-    .toLowerCase();
-}
-
-function isActiveEventStatus(status?: string | null) {
-  const normalized = normalizeEventStatus(status);
-
-  if (!normalized) {
-    return false;
-  }
-
-  if (
-    normalized === "inactive" ||
-    normalized === "complete" ||
-    normalized === "completed" ||
-    normalized === "closed" ||
-    normalized === "archived"
-  ) {
-    return false;
-  }
-
-  return (
-    normalized === "active" ||
-    normalized === "live" ||
-    normalized === "open" ||
-    normalized === "current" ||
-    normalized.includes("active")
-  );
 }
 
 function getInitialAdminEvent(): EventRow | null {

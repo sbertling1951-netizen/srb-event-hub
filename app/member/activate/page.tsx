@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { isMemberVisibleEvent } from "@/lib/eventStatus";
 import {
   getIdentityClaimPublicMessage,
   type IdentityClaimPublicResult,
@@ -44,33 +45,6 @@ function formatDateRange(startDate: string | null, endDate: string | null) {
   }
 
   return startDate || endDate || "";
-}
-
-function normalizeEventStatus(status?: string | null) {
-  return String(status || "")
-    .trim()
-    .toLowerCase();
-}
-
-function isMemberVisibleEvent(event: EventRow) {
-  if (event.visible_to_members === false) {
-    return false;
-  }
-
-  if (event.is_active === false) {
-    return false;
-  }
-
-  const normalizedStatus = normalizeEventStatus(event.status);
-
-  return ![
-    "inactive",
-    "archived",
-    "complete",
-    "completed",
-    "closed",
-    "draft",
-  ].includes(normalizedStatus);
 }
 
 export default function MemberActivatePage() {

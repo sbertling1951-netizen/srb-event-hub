@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import LoginActionButton from "@/components/auth/LoginActionButton";
 import { logEngagement } from "@/lib/engagement";
+import { isMemberVisibleEvent } from "@/lib/eventStatus";
 import {
   enterResolvedRegistration,
   type ResolvedRegistration,
@@ -53,36 +54,6 @@ function formatDateRange(startDate: string | null, endDate: string | null) {
     return `${startDate} – ${endDate}`;
   }
   return startDate || endDate || "";
-}
-
-function normalizeEventStatus(status?: string | null) {
-  return String(status || "")
-    .trim()
-    .toLowerCase();
-}
-
-function isMemberVisibleEvent(event: EventRow) {
-  if (event.visible_to_members === false) {
-    return false;
-  }
-
-  if (event.is_active === false) {
-    return false;
-  }
-
-  const normalizedStatus = normalizeEventStatus(event.status);
-  if (
-    normalizedStatus === "inactive" ||
-    normalizedStatus === "archived" ||
-    normalizedStatus === "complete" ||
-    normalizedStatus === "completed" ||
-    normalizedStatus === "closed" ||
-    normalizedStatus === "draft"
-  ) {
-    return false;
-  }
-
-  return true;
 }
 
 const inputStyle: React.CSSProperties = {

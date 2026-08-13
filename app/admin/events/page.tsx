@@ -11,6 +11,7 @@ import {
   setCurrentAdminEvent,
 } from "@/lib/adminEventContext";
 import { subscribeToAdminWorkspace } from "@/lib/adminWorkspaceContext";
+import { isActiveEventStatus, normalizeEventStatus } from "@/lib/eventStatus";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -71,39 +72,6 @@ const emptyForm: EventFormState = {
 
 const NEW_EVENT_CREATION_UNAVAILABLE =
   "New event creation is temporarily unavailable while secure tenant ownership is being completed. Existing events may still be edited.";
-
-function normalizeEventStatus(status?: string | null) {
-  return String(status || "")
-    .trim()
-    .toLowerCase();
-}
-
-function isActiveEventStatus(status?: string | null) {
-  const normalized = normalizeEventStatus(status);
-
-  if (!normalized) {
-    return false;
-  }
-
-  if (
-    normalized === "inactive" ||
-    normalized === "complete" ||
-    normalized === "completed" ||
-    normalized === "closed" ||
-    normalized === "archived" ||
-    normalized === "draft"
-  ) {
-    return false;
-  }
-
-  return (
-    normalized === "active" ||
-    normalized === "live" ||
-    normalized === "open" ||
-    normalized === "current" ||
-    normalized.includes("active")
-  );
-}
 
 function formatEventLabel(evt: EventRow) {
   const name = evt.name || "Untitled event";
