@@ -1,6 +1,6 @@
 # ADR-013 — Event Lifecycle and Historical Preservation Architecture
 
-**Status:** Accepted — architecture and product decisions only. No schema, migration, RPC, UI, or lifecycle behavior has been implemented; no implementation stage (§12 of the governing audit report) may begin without its own separate review. The one prerequisite this ADR identified (the `app/admin/events/page.tsx` Authority/Lifecycle coupling defect, §10) has been repaired ahead of and independent of any Lifecycle schema work.
+**Status:** Accepted — architecture and product decisions only. No schema, migration, RPC, UI, or lifecycle behavior has been implemented; no implementation stage (§12 below) may begin without its own separate review. The one prerequisite this ADR identified (the `app/admin/events/page.tsx` Authority/Lifecycle coupling defect, §10) has been repaired ahead of and independent of any Lifecycle schema work.
 **Version:** 1.0 (accepted — incorporates the accepted product decisions on the post-Event editing window and its Event→Tenant→Platform policy hierarchy, conditional early-archive/reopen semantics, scheduler-independent enforcement, the legacy-backfill dry-run gate, the Member participation deferment, the attendee historical-photo invariant, and the Event Admin historical-authority invariant)
 **Governs:** applies `EPICENTRAX_DOMAIN_MODEL.md` v2.1's Event, Event Lifecycle, Authority, Entitlement, and History concepts to a concrete post-Event freeze and historical-preservation design. Does not alter `ADR-006 Event Context Architecture.md` or `EPICENTRAX_ADMINISTRATIVE_AUTHORITY_FOUNDATION_ARCHITECTURE.md` — it depends on both and cross-references them throughout.
 
@@ -208,4 +208,23 @@ One pre-existing defect and one pre-existing coupling were surfaced by this audi
 
 ## 11. Relationship to other architecture
 
-This ADR depends on and does not alter: `ADR-000` (Constitution, Article VII: one authoritative source of truth, applied here to Lifecycle as a newly-recognized governed fact distinct from the legacy `status` field), `ADR-006` (Context — cited throughout §3.3), `EPICENTRAX_ADMINISTRATIVE_AUTHORITY_FOUNDATION_ARCHITECTURE.md` (Authority — cited throughout §3.2), and `EPICENTRAX_DOMAIN_MODEL.md` v2.1, which now carries the accepted Event Lifecycle and Entitlement concept definitions this ADR applies (see that document's Amendment History and the superseded standalone proposal it records). This ADR's architecture and product decisions are accepted; no implementation stage (schema, RPCs, RLS, UI) may begin without its own separate review, per §12 of the governing audit report.
+This ADR depends on and does not alter: `ADR-000` (Constitution, Article VII: one authoritative source of truth, applied here to Lifecycle as a newly-recognized governed fact distinct from the legacy `status` field), `ADR-006` (Context — cited throughout §3.3), `EPICENTRAX_ADMINISTRATIVE_AUTHORITY_FOUNDATION_ARCHITECTURE.md` (Authority — cited throughout §3.2), and `EPICENTRAX_DOMAIN_MODEL.md` v2.1, which now carries the accepted Event Lifecycle and Entitlement concept definitions this ADR applies (see that document's Amendment History and the superseded standalone proposal it records). This ADR's architecture and product decisions are accepted; no implementation stage (schema, RPCs, RLS, UI) may begin without its own separate review, per §12 below.
+
+---
+
+## 12. Implementation sequence
+
+This ADR's decisions are accepted; none of the following stages have begun. This sequence is the durable record of implementation order — self-contained within this document, not dependent on any prior audit report or conversational context. Each stage requires its own separate review before starting; this list establishes order and dependency, not authorization to proceed.
+
+1. **Prerequisite authority repairs.** Any remaining Authority/Lifecycle coupling defects of the class §10 item 1 already closed — audited and fixed independently of, and ahead of, any schema work below.
+2. **Domain Model / architecture acceptance.** Confirm `EPICENTRAX_DOMAIN_MODEL.md`'s Event Lifecycle and Entitlement amendment (§11) and this ADR are both accepted before any schema is written.
+3. **Lifecycle foundation schema.** `events.lifecycle_state` and the transition/policy columns sketched in §5, with the legacy `status`/`is_active`/`visible_to_members` columns left untouched per ADR-006 §4.
+4. **Centralized lifecycle resolver.** `event_effective_lifecycle_state()` (§6.1), built and tested in isolation before any consumer calls it.
+5. **Consolidation of duplicate lifecycle/status helpers.** The seven independent `isActiveEventStatus`/`normalizeEventStatus`/`isMemberVisibleEvent(Status)` implementations (§2) merged into one shared helper, so mutation enforcement (stage 6) is built on a single, consistent status reading rather than propagating the existing drift.
+6. **Domain-by-domain mutation enforcement.** Applied in order of blast-radius/governance maturity found by the audit: Announcements, Agenda, Photos, Slideshow, Event staff (already RPC-choke-pointed, cheapest to gate) before Attendees, Household, Check-in, Parking, Vendor, Nearby, Maps, Imports (direct, multi-table writes needing per-call-site gates or table-level triggers, matching the `participant_capacity_adjustments` precedent).
+7. **Governed archive/reopen operations.** `archive_event`/`reopen_event` (§6.2), including the deadline-gated reopen test and its audit trail (§5).
+8. **Historical Correction foundation.** The `event_historical_correction` table and owner-only apply function (§9), matching the `master_site_identity_correction` precedent — boundary only; no UI, no broad reachability.
+9. **Read-only lifecycle UI/presentation.** Post-Event/Archived banners, disabled edit controls, historical-record badges, across each domain touched in stage 6.
+10. **Attendee-photo lifecycle regression protection.** Extend `app/member/photos/page.test.ts`'s structural assertions (already present, §3.4) into behavioral coverage once real lifecycle state exists, proving photo access continues to ignore it.
+11. **Legacy Event dry-run/backfill.** The dry-run gate (§8) executed and reviewed before any enforcement migration touches existing rows.
+12. **Optional scheduler crystallization.** Only if dedicated scheduling infrastructure (e.g. `pg_cron`) is separately justified for other reasons (§6.3) — never a dependency of stages 1-11, all of which are scheduler-independent by design (§6.1).

@@ -148,6 +148,7 @@ These numbers are historical context, not permission to reuse them as current pr
 - Both application domains need coherent login, SSL, redirect, cookie, and Supabase redirect support.
 - Identity migrations and RLS policies require especially narrow review because recursive policy logic and attribution errors can affect many workflows.
 - Project context can become fragmented across multiple agents; this package is intended to give all agents the same starting rules.
+- `app/api/vendor/workspace/profile/route.ts` writes to `public.vendors` through the service-role admin client (`getSupabaseAdminClient()`), bypassing RLS entirely; authorization is enforced only by an application-layer check (`selectedVendor.role !== "vendor_admin"`), not by governed database authority. Identified during the Event Lifecycle architecture audit (2026-08-13); not fixed. Requires its own governance/security review before remediation — do not fix opportunistically as part of an unrelated task.
 
 Update this section only with verified current facts. Move resolved items to project history rather than letting this become an unbounded diary.
 
