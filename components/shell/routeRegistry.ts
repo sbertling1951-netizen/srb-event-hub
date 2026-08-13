@@ -136,6 +136,11 @@ const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
   "/admin/imports",
   "/admin/locations",
   "/admin/map-admin",
+  "/admin/map-test",
+  "/admin/nearby",
+  "/admin/nearby-google",
+  "/admin/nearby-settings",
+  "/admin/parking",
   "/admin/reports",
   "/admin/slideshow",
   "/admin/validation-rules",
@@ -143,7 +148,30 @@ const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
   "/admin/vendors/access",
   "/admin/vendors",
 ];
-const CANONICAL_ADMIN_PREFIXES: readonly string[] = ["/admin/announcements"];
+
+/**
+ * `/admin/master-maps` covers the list page plus its `/new` and `/[id]`
+ * children (the editor for a specific map) -- all three already share the
+ * identical `AdminRouteGuard -> AdminShellAdapter -> ...Inner` mechanical
+ * wrap as every other Admin shell cohort, verified route-by-route in the
+ * Admin Shell Migration Remaining Cluster Audit. `/admin/map-test`,
+ * `/admin/nearby`, `/admin/nearby-google`, `/admin/nearby-settings`, and
+ * `/admin/parking` above complete that same audit's slice: none of the
+ * six remaining legacy Admin route families carried a documented chrome-
+ * hiding or exit-control dependency analogous to `/coach-map`'s -- the
+ * `admin-map-workspace` body class those pages (and the already-canonical
+ * `/admin/locations`) use only removes a width constraint on legacy
+ * `.app-inner`, which the canonical shell's `contentMode="full-bleed"`
+ * (already proven by `/admin/locations`) replaces exactly.
+ * `/admin/nearby-google` is a five-line unconditional
+ * `redirect("/admin/nearby")` with no rendered chrome of its own to wrap;
+ * it is registered canonical here purely so no Admin route remains
+ * unclassified, with zero corresponding page-level change.
+ */
+const CANONICAL_ADMIN_PREFIXES: readonly string[] = [
+  "/admin/announcements",
+  "/admin/master-maps",
+];
 
 function matchesExact(pathname: string, routes: readonly string[]): boolean {
   return routes.includes(pathname);

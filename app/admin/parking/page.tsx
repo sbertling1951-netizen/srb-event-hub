@@ -6,6 +6,7 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -1766,7 +1767,9 @@ Move ${
 export default function ParkingAdminPage() {
   return (
     <AdminRouteGuard>
-      <ParkingAdminPageInner />
+      <AdminShellAdapter pageTitle="Parking Admin" contentMode="full-bleed">
+        <ParkingAdminPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

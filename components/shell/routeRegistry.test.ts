@@ -84,7 +84,7 @@ test("Admin shell Cohort B1 routes use the canonical Admin shell", () => {
 test("Admin Check-In uses the canonical Admin shell", () => {
   assert.equal(resolveShellMode("/admin/checkin"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/attendees"), "canonical-admin");
-  assert.equal(resolveShellMode("/admin/parking"), "legacy");
+  assert.equal(resolveShellMode("/admin/parking"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/login"), "exception");
   assert.equal(resolveShellMode("/admin/print"), "exception");
 });
@@ -119,15 +119,27 @@ test("Admin shell Cohort 3 routes use the canonical Admin shell", () => {
   }
 });
 
-test("Admin shell final safe cohort keeps Map Admin canonical without moving map workspaces", () => {
+test("Admin shell final safe cohort keeps Map Admin canonical", () => {
   assert.equal(resolveShellMode("/admin/map-admin"), "canonical-admin");
-  assert.equal(resolveShellMode("/admin/map-test"), "legacy");
-  assert.equal(resolveShellMode("/admin/master-maps"), "legacy");
-  assert.equal(resolveShellMode("/admin/master-maps/new"), "legacy");
-  assert.equal(resolveShellMode("/admin/master-maps/example"), "legacy");
-  assert.equal(resolveShellMode("/admin/nearby"), "legacy");
-  assert.equal(resolveShellMode("/admin/nearby-settings"), "legacy");
-  assert.equal(resolveShellMode("/admin/parking"), "legacy");
+});
+
+test("Admin Shell Migration Remaining Cluster slice moves the last legacy Admin map/nearby workspaces to the canonical Admin shell", () => {
+  for (const pathname of [
+    "/admin/map-test",
+    "/admin/master-maps",
+    "/admin/master-maps/new",
+    "/admin/master-maps/example",
+    "/admin/nearby",
+    "/admin/nearby-google",
+    "/admin/nearby-settings",
+    "/admin/parking",
+  ]) {
+    assert.equal(resolveShellMode(pathname), "canonical-admin");
+  }
+
+  // /admin/master-maps is a prefix match; unrelated adjacent paths must
+  // not be swept in by accident.
+  assert.equal(resolveShellMode("/admin/master-mapsx"), "legacy");
 });
 
 test("Admin Print Settings uses the canonical Admin shell", () => {

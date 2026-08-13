@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -1240,7 +1241,9 @@ function MasterMapsPageInner() {
 export default function MasterMapsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_master_maps">
-      <MasterMapsPageInner />
+      <AdminShellAdapter pageTitle="Master Maps" contentMode="full-bleed">
+        <MasterMapsPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

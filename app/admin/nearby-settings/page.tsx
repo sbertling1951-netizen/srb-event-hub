@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { AppButton } from "@/components/ui/AppButton";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -495,7 +496,9 @@ function NearbySettingsPageInner() {
 export default function NearbySettingsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_nearby">
-      <NearbySettingsPageInner />
+      <AdminShellAdapter pageTitle="Nearby Settings">
+        <NearbySettingsPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

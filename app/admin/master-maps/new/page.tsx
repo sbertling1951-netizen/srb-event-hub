@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { hasPermission } from "@/lib/getCurrentAdminAccess";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
+import { hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 function NewMasterMapPageInner() {
@@ -222,7 +223,9 @@ function NewMasterMapPageInner() {
 export default function NewMasterMapPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_master_maps">
-      <NewMasterMapPageInner />
+      <AdminShellAdapter pageTitle="Create New Master Map">
+        <NewMasterMapPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

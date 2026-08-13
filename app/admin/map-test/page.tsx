@@ -27,6 +27,7 @@ import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import GestureMapViewportV2, {
   type GestureMapViewportHandle,
 } from "@/components/map/GestureMapViewportV2";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 
 type MapMarker = {
   id: string;
@@ -387,7 +388,9 @@ function MapTestInner() {
 export default function MapTestPage() {
   return (
     <AdminRouteGuard>
-      <MapTestInner />
+      <AdminShellAdapter pageTitle="Map Parity Test">
+        <MapTestInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

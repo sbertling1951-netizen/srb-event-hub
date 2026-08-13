@@ -18,6 +18,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
@@ -414,7 +415,9 @@ function StoredPlaceCard(props: {
 export default function AdminNearbyPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_nearby">
-      <AdminNearbyPageInner />
+      <AdminShellAdapter pageTitle="Nearby Admin">
+        <AdminNearbyPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }

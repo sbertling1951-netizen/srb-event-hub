@@ -11,6 +11,7 @@ import type {
   MarkerPositionUpdate,
   Selection,
 } from "@/components/map/canvas/types";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
@@ -1809,7 +1810,9 @@ function MasterMapEditorPageInner() {
 export default function MasterMapEditorPage() {
   return (
     <AdminRouteGuard>
-      <MasterMapEditorPageInner />
+      <AdminShellAdapter pageTitle="Master Map Editor" contentMode="full-bleed">
+        <MasterMapEditorPageInner />
+      </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
