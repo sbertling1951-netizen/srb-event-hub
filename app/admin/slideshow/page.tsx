@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
@@ -179,6 +179,78 @@ function AdminSlideshowPageInner() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Presentation-diagnostic fix, revised after a semantic-ordering review.
+  // session/items/currentPhoto/nextPhoto are populated by independent
+  // async calls from four call sites (loadLiveSession's 5s interval +
+  // initial load, handleStart, and runControl's five RPCs), and
+  // loadSessionItems itself performs two SEQUENTIAL awaited network
+  // round-trips -- by far the slowest path of the four.
+  //
+  // Two distinct problems, two distinct mechanisms:
+  //
+  // 1. A REQUEST can be superseded by a newer one before it resolves
+  //    (e.g. a slow poll's photo-resolution completing after a manual
+  //    Next already moved on). `stateGenerationRef` is a monotonic
+  //    request-liveness stamp for this: claimed before async work,
+  //    checked before applying a result, discarded if stale. This is
+  //    the same discipline app/slideshow/view/page.tsx already uses
+  //    (its `cancelled` closure flags per effect), generalized to a
+  //    single ref because the guard spans multiple call sites, not one
+  //    effect's own cleanup. It is a REQUEST-ordering tool only.
+  //
+  // 2. Request order is NOT the same thing as server-state order.
+  //    Concretely: runControl claims its generation AFTER its mutation
+  //    RPC already resolved, so a slower poll that both claimed an
+  //    EARLIER generation and started its read earlier can still have
+  //    its (correctly-not-yet-stale-by-generation) response describe
+  //    OLDER server state than a mutation that resolves later. Freshness
+  //    must be decided by the durable, already-authoritative
+  //    `presentation_sessions.state_version` (strictly monotonic for a
+  //    session's lifetime; every governed mutation and the Stage 6A
+  //    timed-advance increment it by exactly one; a boundary no-op
+  //    correctly leaves it unchanged) -- never by which request merely
+  //    started or finished more recently. `acceptedSessionRef` is the
+  //    high-water mark for this: every candidate row, regardless of
+  //    origin, is checked against it before being applied.
+  const stateGenerationRef = useRef(0);
+  const acceptedSessionRef = useRef<{ id: string; version: number } | null>(
+    null,
+  );
+
+  // The single gate every session row -- from a poll, Start, or any
+  // control RPC -- must pass through before it is allowed to update
+  // `session`. Returns whether the row was applied. A different session
+  // id (a fresh Start, or reconnect after the previous one ended) is
+  // always accepted, since state_version only orders rows WITHIN one
+  // session's lifetime, not across different sessions. A `null` (no
+  // live session) is always accepted here -- callers are responsible
+  // for only reaching this point with a null they still trust (the
+  // generation guard already ensures that), since a lifecycle
+  // transition to "ended"/"not found" carries no version of its own to
+  // compare. An equal version is accepted (a same-position refresh),
+  // never treated as regression; only a STRICTLY older version for the
+  // SAME session id is rejected.
+  function acceptSessionRow(row: PresentationSession | null): boolean {
+    if (row === null) {
+      acceptedSessionRef.current = null;
+      setSession(null);
+      return true;
+    }
+
+    const accepted = acceptedSessionRef.current;
+    if (
+      accepted &&
+      accepted.id === row.id &&
+      row.state_version < accepted.version
+    ) {
+      return false;
+    }
+
+    acceptedSessionRef.current = { id: row.id, version: row.state_version };
+    setSession(row);
+    return true;
+  }
 
   function showStatus(message: string) {
     setError("");
@@ -409,12 +481,16 @@ function AdminSlideshowPageInner() {
   );
 
   const loadSessionItems = useCallback(
-    async (sessionId: string, currentIndex: number) => {
+    async (sessionId: string, currentIndex: number, generation: number) => {
       const { data, error: itemsError } = await supabase
         .from("presentation_session_items")
         .select("id, content_type, content_ref_id, sequence_number, duration_ms")
         .eq("session_id", sessionId)
         .order("sequence_number", { ascending: true });
+
+      if (generation !== stateGenerationRef.current) {
+        return;
+      }
 
       if (itemsError) {
         console.error("Failed to load session items", itemsError);
@@ -430,16 +506,23 @@ function AdminSlideshowPageInner() {
       const current = rows.find((i) => i.sequence_number === currentIndex);
       const next = rows.find((i) => i.sequence_number === currentIndex + 1);
 
-      setCurrentPhoto(
+      const resolvedCurrent =
         current?.content_type === "photo"
           ? await resolvePhoto(current.content_ref_id)
-          : null,
-      );
-      setNextPhoto(
+          : null;
+      if (generation !== stateGenerationRef.current) {
+        return;
+      }
+      setCurrentPhoto(resolvedCurrent);
+
+      const resolvedNext =
         next?.content_type === "photo"
           ? await resolvePhoto(next.content_ref_id)
-          : null,
-      );
+          : null;
+      if (generation !== stateGenerationRef.current) {
+        return;
+      }
+      setNextPhoto(resolvedNext);
     },
     [resolvePhoto],
   );
@@ -451,6 +534,8 @@ function AdminSlideshowPageInner() {
   // state to lose.
   const loadLiveSession = useCallback(
     async (currentEventId: string) => {
+      const generation = ++stateGenerationRef.current;
+
       const { data, error: sessionError } = await supabase
         .from("presentation_sessions")
         .select("*")
@@ -458,16 +543,34 @@ function AdminSlideshowPageInner() {
         .eq("status", "live")
         .maybeSingle();
 
+      if (generation !== stateGenerationRef.current) {
+        // A newer state-changing call (manual action or a later refresh)
+        // already started while this select was in flight -- discard
+        // this now-stale request outright, before it can even reach the
+        // version check below.
+        return;
+      }
+
       if (sessionError) {
         console.error("Failed to load presentation session", sessionError);
         return;
       }
 
       const row = (data as PresentationSession | null) ?? null;
-      setSession(row);
+
+      // Even though this request is still the most recent one to have
+      // started, its read may describe OLDER server state than a
+      // mutation that resolved more recently (request order and
+      // server-state order are not the same thing -- see the
+      // acceptSessionRow comment above). acceptSessionRow is the actual
+      // correctness gate; a stale row is discarded here regardless of
+      // generation.
+      if (!acceptSessionRow(row)) {
+        return;
+      }
 
       if (row) {
-        await loadSessionItems(row.id, row.current_index);
+        await loadSessionItems(row.id, row.current_index, generation);
       } else {
         setItems([]);
         setCurrentPhoto(null);
@@ -545,9 +648,15 @@ function AdminSlideshowPageInner() {
       return;
     }
 
+    const generation = ++stateGenerationRef.current;
     const row = data as PresentationSession;
-    setSession(row);
-    await loadSessionItems(row.id, row.current_index);
+    // A brand-new session always carries a different id from whatever
+    // was previously accepted (or none), so acceptSessionRow always
+    // applies it -- the version check only ever rejects an older row
+    // for the SAME session id.
+    if (acceptSessionRow(row)) {
+      await loadSessionItems(row.id, row.current_index, generation);
+    }
     showStatus("Presentation started.");
     setBusy(false);
   }
@@ -598,7 +707,12 @@ function AdminSlideshowPageInner() {
     }
 
     if (rpcName === "end_presentation_session") {
-      setSession(null);
+      // Bump the generation even though nothing here awaits further --
+      // this is what invalidates any still-in-flight loadLiveSession
+      // (e.g. from the 5s interval) so a late-arriving stale response
+      // cannot resurrect session/items/photo state after End.
+      ++stateGenerationRef.current;
+      acceptSessionRow(null);
       setItems([]);
       setCurrentPhoto(null);
       setNextPhoto(null);
@@ -611,9 +725,17 @@ function AdminSlideshowPageInner() {
       return;
     }
 
+    const generation = ++stateGenerationRef.current;
     const row = data as PresentationSession;
-    setSession(row);
-    await loadSessionItems(row.id, row.current_index);
+    // This response is this session's own current_index/state_version
+    // moving forward by exactly one from what THIS call itself sent as
+    // p_expected_version, so it is only ever rejected here in the
+    // pathological case where an even newer mutation (e.g. from a
+    // second presenter) already advanced further before this response
+    // arrived -- correctly keeping the newer state on screen instead.
+    if (acceptSessionRow(row)) {
+      await loadSessionItems(row.id, row.current_index, generation);
+    }
     if (successMessage) {
       showStatus(successMessage);
     } else {

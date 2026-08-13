@@ -261,3 +261,146 @@ test("all six presenter session-control RPC routes and the deck RPC routes coexi
     assert.match(PAGE_SOURCE, new RegExp(`"${rpc}"`), `expected a call to ${rpc}`);
   }
 });
+
+// Presentation next-photo synchronization diagnostic, revised after a
+// semantic-ordering review. Two distinct mechanisms, tested separately:
+//
+// 1. stateGenerationRef -- a request-liveness stamp. Guards against a
+//    superseded request's derived work (loadSessionItems' photo/caption
+//    resolution) landing after a newer request already started.
+//
+// 2. acceptSessionRow / acceptedSessionRef -- the actual correctness
+//    gate for `session` itself. Request order is not server-state
+//    order (runControl claims its generation AFTER its mutation RPC
+//    already resolved, so a request that started earlier and claimed
+//    an earlier generation can still, correctly by generation rules,
+//    describe OLDER server state than one that resolves later). Only a
+//    direct comparison against the durable, authoritative
+//    `state_version` can guarantee an older version never supersedes a
+//    newer one, regardless of which request started or finished more
+//    recently -- so every row, from every source, must pass through
+//    this one gate before it can update `session`.
+//
+// This repo's test convention has no component-rendering/async-
+// simulation capability (every *.page.test.ts file is static
+// source-text assertion only, with no React-testing-library/jsdom
+// anywhere in the project) -- these tests verify both mechanisms are
+// structurally present and wired into every call site, which is the
+// strongest regression coverage this architecture supports, rather
+// than a dynamic race simulation.
+
+test("a generation ref (request liveness) and an accepted-session ref (version high-water mark) both exist", () => {
+  assert.match(PAGE_SOURCE, /stateGenerationRef\s*=\s*useRef\(0\)/);
+  assert.match(
+    PAGE_SOURCE,
+    /acceptedSessionRef\s*=\s*useRef<\{\s*id:\s*string;\s*version:\s*number\s*\}\s*\|\s*null>\(\s*\n?\s*null,?\s*\n?\s*\)/,
+  );
+});
+
+test("acceptSessionRow rejects a row only when it is a strictly older version of the SAME session id", () => {
+  const fnIdx = PAGE_SOURCE.indexOf("function acceptSessionRow(");
+  assert.notEqual(fnIdx, -1, "expected an acceptSessionRow gate function");
+  const fnBody = PAGE_SOURCE.slice(fnIdx, fnIdx + 900);
+
+  // Same-session, strictly-older-version rejection.
+  assert.match(fnBody, /accepted\.id === row\.id/);
+  assert.match(fnBody, /row\.state_version < accepted\.version/);
+  assert.match(fnBody, /return false/);
+
+  // A null (session ended/not found) is always accepted -- it carries
+  // no version of its own to compare, and callers only reach this gate
+  // with a null once the generation check has already confirmed it is
+  // still the most recent request.
+  assert.match(fnBody, /if \(row === null\)/);
+
+  // Equal versions must NOT be rejected (a same-position refresh is
+  // legitimate, never treated as regression) -- the reject condition
+  // must be strict "<", not "<=".
+  assert.equal(/row\.state_version <= accepted\.version/.test(fnBody), false);
+});
+
+test("session is only ever set from inside acceptSessionRow, never directly by a call site", () => {
+  const fnIdx = PAGE_SOURCE.indexOf("function acceptSessionRow(");
+  const fnEndIdx = PAGE_SOURCE.indexOf("\n  }\n", fnIdx);
+  assert.notEqual(fnIdx, -1);
+  assert.notEqual(fnEndIdx, -1);
+
+  const beforeFn = PAGE_SOURCE.slice(0, fnIdx);
+  const fnBody = PAGE_SOURCE.slice(fnIdx, fnEndIdx);
+  const afterFn = PAGE_SOURCE.slice(fnEndIdx);
+
+  // setSession itself must appear exactly inside acceptSessionRow's own
+  // body (twice: the null branch and the accepted branch) and nowhere
+  // else in the component -- every other call site must go through the
+  // gate instead of setting session directly.
+  assert.equal(/setSession\(/.test(beforeFn), false, "no setSession call before acceptSessionRow's definition");
+  assert.equal(/setSession\(/.test(afterFn), false, "no setSession call after acceptSessionRow's definition");
+  assert.ok((fnBody.match(/setSession\(/g) || []).length >= 2);
+});
+
+test("loadLiveSession, handleStart, and runControl all route their session row through acceptSessionRow", () => {
+  const loadLiveSessionIdx = PAGE_SOURCE.indexOf("const loadLiveSession = useCallback");
+  const handleStartIdx = PAGE_SOURCE.indexOf("async function handleStart()");
+  const runControlIdx = PAGE_SOURCE.indexOf("async function runControl(");
+  assert.notEqual(loadLiveSessionIdx, -1);
+  assert.notEqual(handleStartIdx, -1);
+  assert.notEqual(runControlIdx, -1);
+
+  const loadLiveSessionBody = PAGE_SOURCE.slice(loadLiveSessionIdx, handleStartIdx);
+  assert.match(loadLiveSessionBody, /const generation = \+\+stateGenerationRef\.current/);
+  assert.match(loadLiveSessionBody, /generation !== stateGenerationRef\.current/);
+  assert.match(loadLiveSessionBody, /acceptSessionRow\(row\)/);
+
+  const handleStartBody = PAGE_SOURCE.slice(handleStartIdx, runControlIdx);
+  assert.match(handleStartBody, /const generation = \+\+stateGenerationRef\.current/);
+  assert.match(handleStartBody, /acceptSessionRow\(row\)/);
+  assert.match(handleStartBody, /loadSessionItems\(row\.id, row\.current_index, generation\)/);
+
+  const runControlBody = PAGE_SOURCE.slice(runControlIdx, runControlIdx + 2400);
+  const bumpCount = (runControlBody.match(/\+\+stateGenerationRef\.current/g) || []).length;
+  assert.ok(bumpCount >= 2, `expected runControl to bump the generation in both its branches, found ${bumpCount}`);
+  assert.match(runControlBody, /acceptSessionRow\(null\)/, "the end-session branch must sync acceptedSessionRef too");
+  assert.match(runControlBody, /acceptSessionRow\(row\)/);
+  assert.match(runControlBody, /loadSessionItems\(row\.id, row\.current_index, generation\)/);
+});
+
+test("loadSessionItems is only called once its row has been accepted (guarded by acceptSessionRow's return value)", () => {
+  // handleStart and runControl's non-end branch must both gate the
+  // loadSessionItems call behind acceptSessionRow's boolean result --
+  // an unconditional call right after acceptSessionRow would mean a
+  // rejected (stale) row's index could still be used to fetch/display
+  // photos.
+  const guardedCallPattern = /if \(acceptSessionRow\(row\)\) \{\s*\n\s*await loadSessionItems\(row\.id, row\.current_index, generation\);/g;
+  const guardedCallCount = (PAGE_SOURCE.match(guardedCallPattern) || []).length;
+  assert.ok(
+    guardedCallCount >= 2,
+    `expected at least 2 call sites to gate loadSessionItems behind acceptSessionRow(row), found ${guardedCallCount}`,
+  );
+});
+
+test("loadSessionItems retains its own generation checkpoints for photo/caption resolution cancellation", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /const loadSessionItems = useCallback\(\s*\n?\s*async \(sessionId: string, currentIndex: number, generation: number\)/,
+  );
+  const guardPattern = /generation !== stateGenerationRef\.current/g;
+  const guardCount = (PAGE_SOURCE.match(guardPattern) || []).length;
+  // loadSessionItems needs three checkpoints of its own (after the
+  // items select, after resolving the current photo, after resolving
+  // the next photo); loadLiveSession needs one more (after its own
+  // session select) -- four total is the minimum for both mechanisms
+  // to be intact.
+  assert.ok(
+    guardCount >= 4,
+    `expected at least 4 generation-guard checks across the file, found ${guardCount}`,
+  );
+});
+
+test("no call site invokes loadSessionItems without a generation argument", () => {
+  const calls = [...PAGE_SOURCE.matchAll(/loadSessionItems\(([^)]*)\)/g)];
+  assert.ok(calls.length >= 3, `expected at least 3 loadSessionItems call sites, found ${calls.length}`);
+  for (const call of calls) {
+    const args = call[1].split(",").map((a) => a.trim()).filter(Boolean);
+    assert.equal(args.length, 3, `expected loadSessionItems(sessionId, currentIndex, generation), got: loadSessionItems(${call[1]})`);
+  }
+});
