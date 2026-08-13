@@ -2,9 +2,11 @@
 
 **Status:** Accepted architectural standard
 
-**Version:** 2.0
+**Version:** 2.1
 
 **Accepted:** August 4, 2026
+
+**Last Amended:** August 13, 2026 — see Amendment History
 
 ---
 
@@ -173,6 +175,7 @@ EpicentraX recognizes the following primary domain concepts.
 - Responsibility
 - Assignment
 - Authority
+- Entitlement
 - Workspace
 - Evidence
 - History
@@ -192,6 +195,11 @@ independent primary concepts in their own right:
   independent source of governed state or Authority.
 - Platform Administrator is a specialized platform-Authority concept,
   distinct from Tenant-scoped Authority.
+
+Event Lifecycle is a facet of Event's own governed meaning, defined
+within the Event section below. It is not a fifth specialized concept
+and not an independent primary concept — it governs mutation permission
+only and confers neither Authority, Context, nor Entitlement.
 
 These concepts are intentionally independent.
 
@@ -233,6 +241,13 @@ Accordingly:
 - Browser state establishes no governed fact.
 - Navigation establishes no Authority.
 - Role labels establish no Authority.
+- Event Lifecycle does not establish Authority.
+- Event Lifecycle does not establish Event Context.
+- Event Lifecycle does not establish Entitlement.
+- Event Lifecycle does not revoke Authority.
+- Authority does not establish Event Context.
+- Event Context does not establish Authority.
+- Entitlement does not establish Authority.
 
 Each concept is governed according to its own meaning.
 
@@ -1031,6 +1046,8 @@ Authority is not:
 - a navigation menu;
 - a page;
 - a role label;
+- Event Lifecycle;
+- Entitlement;
 - Workspace.
 
 Displaying a screen does not create Authority.
@@ -1039,12 +1056,77 @@ Possessing a title does not create Authority.
 
 Logging in does not create Authority.
 
+An Event's Lifecycle state does not create, expand, narrow, or revoke
+Authority. An actor's Authority over an Event persists across every
+Lifecycle transition until explicitly revoked or expired under Authority's
+own governed rules.
+
 ## Governing Principle
 
 Authority shall always be resolved rather than assumed.
 
 Whenever sufficient governed evidence is unavailable, EpicentraX shall deny
 the requested authority until governed resolution succeeds.
+
+---
+
+# Entitlement
+
+## Definition
+
+Entitlement is governed continuing permission for a Person to access a
+specific retained service or content item.
+
+Entitlement is independent of ordinary operational Authority and
+independent of Event Lifecycle. An actor may retain Entitlement to
+content associated with an Event regardless of that Event's current
+Lifecycle state, and may lack Entitlement to content despite holding
+unrelated operational Authority.
+
+Entitlement answers a narrower question than Authority: not "what may
+this Person do," but "does this Person's access to this specific
+retained item continue."
+
+## Stewardship
+
+Entitlement is stewarded by the platform according to whatever governed
+policy establishes it (for example, a future storage or retention
+offering). Absent such a governed policy, no Entitlement restriction
+exists, and access is governed solely by Participation and Authority as
+already defined.
+
+## Characteristics
+
+Entitlement:
+
+- may exist without ever being exercised;
+- may expire on its own governed terms;
+- does not depend upon an Event's Lifecycle state;
+- does not depend upon ordinary Authority;
+- governs continuation of access, not initial grant — initial access is
+  established by Participation, Authority, or another governed pathway;
+  Entitlement only ever narrows continuing access, never independently
+  grants it.
+
+## Entitlement is not
+
+Entitlement is not:
+
+- Authority;
+- Participation;
+- Event Lifecycle;
+- Workspace;
+- a subscription-billing implementation detail — Entitlement is the
+  governed access conclusion; how it is purchased, billed, or
+  administered is a separate, narrower concern.
+
+## Governing Principle
+
+No implementation may terminate a Person's access to retained content by
+means of Event Lifecycle status, Authority revocation, or any other
+concept's side effect. If continuing access is ever bounded, that
+boundary shall be expressed as an explicit, independently governed
+Entitlement.
 
 ---
 
@@ -1883,6 +1965,38 @@ cleanup, reconciliation, or other legitimate exceptions.
 Authority remains governed by accepted resolution rules rather than brittle
 assumptions about the clock alone.
 
+## Event Lifecycle
+
+Event Lifecycle is a governed conclusion about what ordinary mutation of
+an Event's data is currently permitted.
+
+Lifecycle is not Authority: it does not determine which actors may
+access an Event.
+
+Lifecycle is not Workspace or Event Context: an Event's Lifecycle state
+does not determine whether it remains a valid operational context for an
+actor who is otherwise authorized to it.
+
+Lifecycle is not Entitlement: a change in what may be mutated does not,
+by itself, change continuing access to retained content or services
+associated with the Event.
+
+An Event's history endures through every Lifecycle state. Lifecycle
+governs mutation of current operational data; it does not govern the
+historical record itself, which remains subject to the History concept's
+own governing principles, including Historical Correction.
+
+### Event Lifecycle is not
+
+Event Lifecycle is not:
+
+- Authority;
+- Workspace;
+- Event Context;
+- Entitlement;
+- Participation;
+- deletion.
+
 ## Event Selection
 
 Selecting an Event establishes operational context.
@@ -2332,6 +2446,7 @@ security, policy, and applicable law.
 | Responsibility | Tenant | Describes work, not the assigned Person |
 | Assignment | Tenant | Does not independently create Authority |
 | Authority | Platform-governed resolution | Must be resolved, scoped, and fail closed |
+| Entitlement | Platform-governed policy (absent a policy, no restriction exists) | Narrows continuing access only; never independently grants it; independent of Lifecycle and Authority |
 | Workspace | Platform presentation | Reflects Authority; never creates it |
 | Evidence | Context-dependent governance | Must retain provenance and uncertainty |
 | History | Context-dependent and jointly governed | Correction does not erase the record |
@@ -2340,6 +2455,7 @@ security, policy, and applicable law.
 | Account | Platform | Access mechanism, not a Person |
 | Authentication | Platform | Establishes control of an access method only |
 | Event | Tenant | Governed subtype of Experience; not an Authority source |
+| Event Lifecycle | Tenant, within platform-governed transition rules | Governs mutation permission only; does not establish Authority, Context, or Entitlement |
 | Organization | Descriptive only; governed according to whatever context represents it (Tenant, or a narrower context) | Not an independent source of governed state or Authority |
 | Platform Administrator | Platform | Separate from all Tenant-derived Authority |
 
@@ -2481,6 +2597,50 @@ Those matters belong to appropriate ADRs, architecture documents,
 implementation plans, standards, and policies.
 
 Such documents must remain consistent with this Domain Model.
+
+---
+
+# Amendment History
+
+## v2.1 — August 13, 2026
+
+**Governed decision:** accepted, per this document's own Change Governance
+process.
+
+**Existing meaning:** Event's only lifecycle-adjacent meaning was "Event
+Status and Time," which correctly disclaimed Authority but did not name a
+Lifecycle concept, define what dates/status govern, or distinguish it
+from Context. No concept governed continuing access to a retained
+service or content item independent of Authority.
+
+**Identified insufficiency:** `ADR-013 Event Lifecycle and Historical
+Preservation Architecture.md` required stating, durably, that an Event's
+mutability can change over time in a governed way that is neither
+Authority nor Context nor a data-erasing event, and that attendee photo
+access (and any future retained-service access) must remain governed
+independently of that change. Without named concepts for both, either
+risked being implemented by overloading Authority or Lifecycle — the
+exact collapse this Model's Fundamental Principles exist to prevent.
+
+**Corrected meaning:** added **Event Lifecycle** as a facet of Event's
+own governed meaning (not a new independent or specialized concept), and
+**Entitlement** as a new primary domain concept, both defined in their
+respective sections above, with explicit non-establishment boundaries
+recorded in Dependency Principles and the Stewardship Matrix.
+
+**Affected architecture:** `ADR-013 Event Lifecycle and Historical
+Preservation Architecture.md` (depended on this amendment for its own
+acceptance); no change required to `ADR-006 Event Context Architecture.md`
+or `EPICENTRAX_ADMINISTRATIVE_AUTHORITY_FOUNDATION_ARCHITECTURE.md`, both
+of which this amendment confirms remain independent of Lifecycle.
+
+**Historical interpretation preserved:** this amendment adds two
+concepts; it redefines no existing concept's meaning. No prior
+architectural decision, ADR, or implementation is reinterpreted.
+
+**Superseded proposal:** `EPICENTRAX_DOMAIN_MODEL_AMENDMENT_PROPOSAL_EVENT_LIFECYCLE_AND_ENTITLEMENT.md`,
+which originated this text and is retained as historical record of the
+proposal and review, not as an ongoing second source of this meaning.
 
 ---
 

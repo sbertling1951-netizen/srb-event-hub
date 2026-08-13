@@ -147,3 +147,82 @@ test("the explicit Select Event picker and Clone action remain genuine explicit-
   assert.match(PAGE_SOURCE, /const evt = events\.find\(\(row\) => row\.id === newId\) \|\| null;\s*\n\s*setWorkspaceEvent\(evt\);/);
   assert.match(PAGE_SOURCE, /setWorkspaceEvent\(clonedEvent\);/);
 });
+
+// ADR-013 §10 / prerequisite Authority repair: the Events query used to
+// apply `.eq("is_active", true)` for non-super-admins before
+// canAccessEvent() ever ran, so an Event Admin with a real, unrevoked
+// admin_event_access grant to an inactive Event got zero rows back for
+// it -- on the one page built to manage Events. The complete Event set
+// an actor is authorized to access must never be narrowed by lifecycle
+// status; lifecycle/status filtering may remain only as a downstream UI
+// display filter.
+
+test("1. an Event Admin retains visibility into an inactive Event they hold authority over -- the events query no longer excludes inactive rows for non-super-admins", () => {
+  const loadPageIdx = PAGE_SOURCE.indexOf("const loadPage = useCallback(");
+  const promiseAllIdx = PAGE_SOURCE.indexOf("Promise.all([", loadPageIdx);
+  assert.notEqual(loadPageIdx, -1);
+  assert.notEqual(promiseAllIdx, -1);
+  const queryBuildBlock = PAGE_SOURCE.slice(loadPageIdx, promiseAllIdx);
+
+  assert.equal(
+    /\.eq\(\s*["']is_active["']\s*,\s*true\s*\)/.test(queryBuildBlock),
+    false,
+    "found the retired is_active=true filter on the authority-listing events query",
+  );
+  assert.equal(
+    /if \(!admin\.isSuperAdmin\)/.test(queryBuildBlock),
+    false,
+    "found a retired non-super-admin special case narrowing the events query itself",
+  );
+  assert.match(queryBuildBlock, /const eventsQuery = supabase/);
+});
+
+test("2. Event Admins without authority over a given Event still cannot see it -- accessibleEvents is derived from canAccessEvent against the complete, unfiltered fetch", () => {
+  const accessibleIdx = PAGE_SOURCE.indexOf("const accessibleEvents =");
+  assert.notEqual(accessibleIdx, -1);
+  const accessibleBlock = PAGE_SOURCE.slice(accessibleIdx, accessibleIdx + 200);
+
+  assert.match(
+    accessibleBlock,
+    /\(\(eventsResult\.data \|\| \[\]\) as EventRow\[\]\)\.filter\(\s*\n?\s*\(event\) => !!event\.id && canAccessEvent\(admin, event\.id\)/,
+  );
+});
+
+test("3. Super Admin / Tenant Admin inheritance is unchanged -- canAccessEvent (not a page-local admin.isSuperAdmin branch) remains the sole authority gate on the fetched Event set", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{[^}]*canAccessEvent[^}]*\}\s*from\s*["']@\/lib\/getCurrentAdminAccess["']/s,
+  );
+  // The retired defect special-cased non-super-admins directly in this
+  // page (test 1). With that gone, every admin -- super, tenant-inherited,
+  // or event-scoped -- takes the identical unfiltered-fetch-then-
+  // canAccessEvent path, so inheritance behavior lives entirely in
+  // canAccessEvent/has_event_admin_authority (covered by their own
+  // tests), not duplicated or special-cased here.
+  const loadPageIdx = PAGE_SOURCE.indexOf("const loadPage = useCallback(");
+  const accessibleIdx = PAGE_SOURCE.indexOf("const accessibleEvents =", loadPageIdx);
+  const betweenBlock = PAGE_SOURCE.slice(loadPageIdx, accessibleIdx);
+  assert.equal(
+    /admin\.isSuperAdmin/.test(betweenBlock),
+    false,
+    "no super-admin special case should exist between fetching and authority-filtering the Event set",
+  );
+});
+
+test("4. lifecycle/status UI filtering (eventStatusFilter) is applied only after, and never narrows, accessibleEvents", () => {
+  const accessibleIdx = PAGE_SOURCE.indexOf("const accessibleEvents =");
+  const loadedIdx = PAGE_SOURCE.indexOf("const loadedEvents = accessibleEvents.filter(");
+  assert.notEqual(accessibleIdx, -1);
+  assert.notEqual(loadedIdx, -1);
+  assert.ok(
+    accessibleIdx < loadedIdx,
+    "accessibleEvents (the full authority set) must be computed before loadedEvents (the display-filtered subset)",
+  );
+
+  const loadedBlock = PAGE_SOURCE.slice(loadedIdx, loadedIdx + 400);
+  assert.match(loadedBlock, /eventStatusFilter === "all"/);
+  assert.match(loadedBlock, /isActiveEventStatus\(event\.status\)/);
+  // loadedEvents filters the already-authorized accessibleEvents array; it
+  // never re-queries or re-derives authority.
+  assert.match(loadedBlock, /accessibleEvents\.filter\(/);
+});

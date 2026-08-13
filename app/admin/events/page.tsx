@@ -237,19 +237,20 @@ function EventAdminPageInner() {
         return;
       }
 
-      // Prepare the events query with filtering for event admins
-      let eventsQuery = supabase
+      // ADR-013 §10 / ADR-006: fetch the complete Event set. Authority
+      // filtering (canAccessEvent, below) determines which rows this actor
+      // may access -- lifecycle status must never narrow this query, or an
+      // Event Admin with real, unrevoked authority over an inactive/
+      // historical Event would silently lose access to it here. Lifecycle/
+      // status filtering is applied afterward, only for eventStatusFilter's
+      // display purposes (see loadedEvents below).
+      const eventsQuery = supabase
         .from("events")
         .select(
           "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
         )
         .order("start_date", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false });
-
-      // 🔒 Event Admins only see active events
-      if (!admin.isSuperAdmin) {
-        eventsQuery = eventsQuery.eq("is_active", true);
-      }
 
       const [eventsResult, mapsResult, nearbyResult] = await Promise.all([
         eventsQuery,
