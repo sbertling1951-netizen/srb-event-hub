@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { resolveShellMode } from "@/components/shell/routeRegistry";
+
 // Focused tests for the Presentation/Slideshow Stage 5 presenter-console
 // cutover: the presenter now drives the durable, governed
 // presentation_sessions foundation (Stages 2-4) instead of the legacy
@@ -187,4 +189,75 @@ test("audience viewer page remains ungated and carries no Admin authority", () =
 test("photo governance surfaces are untouched by this stage", () => {
   assert.equal(/manage_event_photo/.test(PAGE_SOURCE), false);
   assert.equal(/event\.photos\.(manage|delete)/.test(PAGE_SOURCE), false);
+});
+
+// Stage 6B: deck authoring, additive to the existing presenter console.
+// Every assertion below targets the same governed RPC surface Stage 3
+// already exposed -- no new Presentation table write, no new authority
+// model.
+
+test("deck creation routes through create_presentation_deck with the current working Event", () => {
+  assert.match(PAGE_SOURCE, /rpc\(\s*\n?\s*"create_presentation_deck"/);
+  assert.match(PAGE_SOURCE, /p_event_id:\s*eventId/);
+});
+
+test("deck edit routes through update_presentation_deck", () => {
+  assert.match(PAGE_SOURCE, /"update_presentation_deck"/);
+});
+
+test("deck archive routes through archive_presentation_deck", () => {
+  assert.match(PAGE_SOURCE, /"archive_presentation_deck"/);
+});
+
+test("creating an all_approved deck never creates deck items or calls add_presentation_deck_photo", () => {
+  assert.equal(/add_presentation_deck_photo/.test(PAGE_SOURCE), false);
+  assert.equal(
+    /\.from\(\s*["']presentation_deck_items["']\s*\)\s*\.\s*insert/.test(PAGE_SOURCE),
+    false,
+  );
+});
+
+test("presenter still performs no direct write to any presentation_decks/presentation_deck_items row", () => {
+  const prohibited: RegExp[] = [
+    /\.from\(\s*["']presentation_decks["']\s*\)\s*\.\s*(update|insert|delete|upsert)/,
+    /\.from\(\s*["']presentation_deck_items["']\s*\)\s*\.\s*(update|insert|delete|upsert)/,
+  ];
+  for (const pattern of prohibited) {
+    assert.equal(pattern.test(PAGE_SOURCE), false, `found prohibited direct-write pattern: ${pattern}`);
+  }
+});
+
+test("successful deck creation refreshes the deck list and selects the new deck", () => {
+  const createIdx = PAGE_SOURCE.indexOf('"create_presentation_deck"');
+  const loadDecksCallIdx = PAGE_SOURCE.indexOf("await loadDecks(eventId)", createIdx);
+  const selectIdx = PAGE_SOURCE.indexOf("setSelectedDeckId(created.id)", createIdx);
+  assert.notEqual(createIdx, -1);
+  assert.notEqual(loadDecksCallIdx, -1, "expected the deck list to be refreshed after creation");
+  assert.notEqual(selectIdx, -1, "expected the newly created deck to be selected");
+  assert.ok(loadDecksCallIdx > createIdx && selectIdx > loadDecksCallIdx);
+});
+
+test("no client-side duplicate-deck-name check was invented (duplicate names are allowed by Stage 3 design)", () => {
+  assert.equal(/duplicate.*name/i.test(PAGE_SOURCE_NO_COMMENTS), false);
+});
+
+test("shell classification is unchanged by deck authoring: /admin/slideshow canonical-admin, /slideshow/view exception", () => {
+  assert.equal(resolveShellMode("/admin/slideshow"), "canonical-admin");
+  assert.equal(resolveShellMode("/slideshow/view"), "exception");
+});
+
+test("all six presenter session-control RPC routes and the deck RPC routes coexist unchanged", () => {
+  for (const rpc of [
+    "start_presentation_session",
+    "pause_presentation_session",
+    "resume_presentation_session",
+    "next_presentation_slide",
+    "previous_presentation_slide",
+    "end_presentation_session",
+    "create_presentation_deck",
+    "update_presentation_deck",
+    "archive_presentation_deck",
+  ]) {
+    assert.match(PAGE_SOURCE, new RegExp(`"${rpc}"`), `expected a call to ${rpc}`);
+  }
 });

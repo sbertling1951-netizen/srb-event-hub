@@ -71,6 +71,11 @@ const PRESENTATION_ERROR_MESSAGES: Record<string, string> = {
     "A presentation is already live for this event. End it before starting another.",
   session_not_found: "That presentation session no longer exists.",
   session_not_live: "This presentation has already ended.",
+  invalid_name: "Please enter a deck name.",
+  invalid_default_duration_ms: "Slide duration must be between 1 and 300 seconds.",
+  invalid_selection_mode: "Please choose a valid selection mode.",
+  deck_has_items:
+    "Remove this deck's manual items before switching it to All Approved Photos.",
 };
 
 export function mapPresentationRpcError(
@@ -142,6 +147,29 @@ function AdminSlideshowPageInner() {
 
   const [decks, setDecks] = useState<PresentationDeck[] | null>(null);
   const [selectedDeckId, setSelectedDeckId] = useState<string>("");
+
+  // Deck authoring (Stage 6B). Additive to the existing deck-selection
+  // surface -- creation/edit/archive all route through the same
+  // governed RPCs Stage 3 already built (create_presentation_deck,
+  // update_presentation_deck, archive_presentation_deck). No new
+  // Presentation table write, no new authority model: every call below
+  // is gated server-side by the same event.slideshow.manage check the
+  // session RPCs already use.
+  const [showCreateDeckForm, setShowCreateDeckForm] = useState(false);
+  const [newDeckName, setNewDeckName] = useState("");
+  const [newDeckDescription, setNewDeckDescription] = useState("");
+  const [newDeckSelectionMode, setNewDeckSelectionMode] = useState<
+    "all_approved" | "manual"
+  >("all_approved");
+  const [newDeckDurationSeconds, setNewDeckDurationSeconds] = useState(8);
+  const [deckActionBusy, setDeckActionBusy] = useState(false);
+  const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
+  const [editDeckName, setEditDeckName] = useState("");
+  const [editDeckDescription, setEditDeckDescription] = useState("");
+  const [editDeckSelectionMode, setEditDeckSelectionMode] = useState<
+    "all_approved" | "manual"
+  >("all_approved");
+  const [editDeckDurationSeconds, setEditDeckDurationSeconds] = useState(8);
   const [session, setSession] = useState<PresentationSession | null>(null);
   const [items, setItems] = useState<PresentationSessionItem[]>([]);
   const [currentPhoto, setCurrentPhoto] = useState<ResolvedPhoto | null>(
@@ -166,8 +194,9 @@ function AdminSlideshowPageInner() {
   // through Stage 3's established direct-RLS admin read boundary
   // (has_event_task_authority-gated SELECT policy) -- the same
   // governed/direct-read contract Stage 3 built, not a new one. Active
-  // decks only; deck authoring/editing is a separate future UI surface
-  // and is deliberately not built here.
+  // decks only -- archived decks (Stage 6B's Archive action) drop out
+  // of this list automatically since it's the same query used to
+  // populate it initially.
   const loadDecks = useCallback(async (currentEventId: string) => {
     const { data, error: loadError } = await supabase
       .from("presentation_decks")
@@ -197,6 +226,153 @@ function AdminSlideshowPageInner() {
 
     setDecks(normalized);
   }, []);
+
+  // Deck authoring handlers (Stage 6B). Each calls the exact governed
+  // RPC Stage 3 already exposes -- no direct presentation_decks write
+  // exists or is added here. Server bounds (name non-blank, duration
+  // 1000-300000ms, selection_mode validity, deck_has_items on an
+  // unsafe manual->all_approved switch) are treated as authoritative:
+  // this UI does not re-implement them, only surfaces the RPC's own
+  // error via mapPresentationRpcError.
+  async function handleCreateDeck() {
+    if (!eventId || deckActionBusy) {
+      return;
+    }
+    if (!newDeckName.trim()) {
+      showError("Please enter a deck name.");
+      return;
+    }
+
+    setDeckActionBusy(true);
+    showStatus("Creating deck...");
+
+    const { data, error: createError } = await supabase.rpc(
+      "create_presentation_deck",
+      {
+        p_event_id: eventId,
+        p_name: newDeckName.trim(),
+        p_description: newDeckDescription.trim() || null,
+        p_default_duration_ms: Math.round(newDeckDurationSeconds * 1000),
+        p_selection_mode: newDeckSelectionMode,
+      },
+    );
+
+    if (createError) {
+      showError(
+        mapPresentationRpcError(
+          new Error(createError.message),
+          "Could not create the deck.",
+        ),
+      );
+      setDeckActionBusy(false);
+      return;
+    }
+
+    const created = data as { id: string; name: string };
+    await loadDecks(eventId);
+    setSelectedDeckId(created.id);
+    setNewDeckName("");
+    setNewDeckDescription("");
+    setNewDeckSelectionMode("all_approved");
+    setNewDeckDurationSeconds(8);
+    setShowCreateDeckForm(false);
+    showStatus(`Deck "${created.name}" created and selected.`);
+    setDeckActionBusy(false);
+  }
+
+  function startEditDeck(deck: PresentationDeck) {
+    setEditingDeckId(deck.id);
+    setEditDeckName(deck.name);
+    setEditDeckDescription("");
+    setEditDeckSelectionMode(deck.selection_mode);
+    setEditDeckDurationSeconds(Math.round(deck.default_duration_ms / 1000));
+  }
+
+  function cancelEditDeck() {
+    setEditingDeckId(null);
+  }
+
+  async function handleSaveEditDeck() {
+    if (!editingDeckId || !eventId || deckActionBusy) {
+      return;
+    }
+    if (!editDeckName.trim()) {
+      showError("Please enter a deck name.");
+      return;
+    }
+
+    setDeckActionBusy(true);
+    showStatus("Saving deck...");
+
+    const { error: updateError } = await supabase.rpc(
+      "update_presentation_deck",
+      {
+        p_deck_id: editingDeckId,
+        p_name: editDeckName.trim(),
+        p_description: editDeckDescription.trim() || null,
+        p_default_duration_ms: Math.round(editDeckDurationSeconds * 1000),
+        p_selection_mode: editDeckSelectionMode,
+      },
+    );
+
+    if (updateError) {
+      showError(
+        mapPresentationRpcError(
+          new Error(updateError.message),
+          "Could not update the deck.",
+        ),
+      );
+      setDeckActionBusy(false);
+      return;
+    }
+
+    await loadDecks(eventId);
+    setEditingDeckId(null);
+    showStatus("Deck updated.");
+    setDeckActionBusy(false);
+  }
+
+  async function handleArchiveDeck(deck: PresentationDeck) {
+    if (!eventId || deckActionBusy) {
+      return;
+    }
+    if (
+      !window.confirm(
+        `Archive "${deck.name}"? It will no longer be available to start a presentation.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeckActionBusy(true);
+    showStatus("Archiving deck...");
+
+    const { error: archiveError } = await supabase.rpc(
+      "archive_presentation_deck",
+      { p_deck_id: deck.id },
+    );
+
+    if (archiveError) {
+      showError(
+        mapPresentationRpcError(
+          new Error(archiveError.message),
+          "Could not archive the deck.",
+        ),
+      );
+      setDeckActionBusy(false);
+      return;
+    }
+
+    if (selectedDeckId === deck.id) {
+      setSelectedDeckId("");
+    }
+    if (editingDeckId === deck.id) {
+      setEditingDeckId(null);
+    }
+    await loadDecks(eventId);
+    showStatus(`Deck "${deck.name}" archived.`);
+    setDeckActionBusy(false);
+  }
 
   // Resolves a photo slide's presentation-safe URL/caption the same way
   // app/slideshow/view/page.tsx already does (signed storage URL +
@@ -538,49 +714,293 @@ function AdminSlideshowPageInner() {
 
           {decks === null ? (
             <div style={{ opacity: 0.7 }}>Loading presentation decks...</div>
-          ) : decks.length === 0 ? (
-            <div style={{ opacity: 0.8 }}>
-              No presentation deck exists for this event yet. Create a
-              presentation deck before starting the audience screen.
-            </div>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                gap: 16,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <select
-                value={selectedDeckId}
-                onChange={(e) => setSelectedDeckId(e.target.value)}
+            <>
+              {decks.length === 0 ? (
+                <div style={{ opacity: 0.8, marginBottom: 16 }}>
+                  No presentation deck exists for this event yet. Create a
+                  presentation deck before starting the audience screen.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    marginBottom: 16,
+                  }}
+                >
+                  {decks.map((deck) =>
+                    editingDeckId === deck.id ? (
+                      <div
+                        key={deck.id}
+                        style={{
+                          border: "1px solid #4ade80",
+                          borderRadius: 8,
+                          padding: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 8,
+                          }}
+                        >
+                          <input
+                            value={editDeckName}
+                            onChange={(e) => setEditDeckName(e.target.value)}
+                            placeholder="Deck name"
+                            style={{ padding: 8 }}
+                          />
+                          <input
+                            value={editDeckDescription}
+                            onChange={(e) =>
+                              setEditDeckDescription(e.target.value)
+                            }
+                            placeholder="Description (optional)"
+                            style={{ padding: 8 }}
+                          />
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 16,
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                            }}
+                          >
+                            <select
+                              value={editDeckSelectionMode}
+                              onChange={(e) =>
+                                setEditDeckSelectionMode(
+                                  e.target.value as "all_approved" | "manual",
+                                )
+                              }
+                              style={{ padding: 8 }}
+                            >
+                              <option value="all_approved">
+                                All Approved Photos
+                              </option>
+                              <option value="manual">Manual Selection</option>
+                            </select>
+                            <label
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              Duration:
+                              <input
+                                type="number"
+                                min={1}
+                                value={editDeckDurationSeconds}
+                                onChange={(e) =>
+                                  setEditDeckDurationSeconds(
+                                    Number(e.target.value) || 1,
+                                  )
+                                }
+                                style={{ width: 70, padding: 8 }}
+                              />
+                              sec/slide
+                            </label>
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <AppButton
+                              variant="start"
+                              onClick={handleSaveEditDeck}
+                              disabled={deckActionBusy || !editDeckName.trim()}
+                            >
+                              Save
+                            </AppButton>
+                            <AppButton
+                              variant="muted"
+                              onClick={cancelEditDeck}
+                              disabled={deckActionBusy}
+                            >
+                              Cancel
+                            </AppButton>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        key={deck.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          flexWrap: "wrap",
+                          border:
+                            selectedDeckId === deck.id
+                              ? "1px solid #4ade80"
+                              : "1px solid #333",
+                          borderRadius: 8,
+                          padding: 12,
+                        }}
+                      >
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            flex: "1 1 240px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="deck-select"
+                            checked={selectedDeckId === deck.id}
+                            onChange={() => setSelectedDeckId(deck.id)}
+                          />
+                          <span style={{ wordBreak: "break-word" }}>
+                            <strong>{deck.name}</strong>
+                            <div style={{ fontSize: 12, opacity: 0.7 }}>
+                              {deck.selection_mode === "all_approved"
+                                ? "All approved photos"
+                                : `Manual, ${deck.item_count} item${deck.item_count === 1 ? "" : "s"}`}
+                              {" · "}
+                              {Math.round(deck.default_duration_ms / 1000)}
+                              s/slide
+                            </div>
+                          </span>
+                        </label>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <AppButton
+                            variant="muted"
+                            onClick={() => startEditDeck(deck)}
+                            disabled={deckActionBusy}
+                          >
+                            Edit
+                          </AppButton>
+                          <AppButton
+                            variant="danger"
+                            onClick={() => handleArchiveDeck(deck)}
+                            disabled={deckActionBusy}
+                          >
+                            Archive
+                          </AppButton>
+                        </div>
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+
+              <div
                 style={{
-                  padding: 8,
-                  minWidth: 260,
-                  maxWidth: "100%",
-                  wordBreak: "break-word",
+                  display: "flex",
+                  gap: 16,
+                  alignItems: "center",
+                  flexWrap: "wrap",
                 }}
               >
-                <option value="">Select a deck...</option>
-                {decks.map((deck) => (
-                  <option key={deck.id} value={deck.id}>
-                    {deck.name} ({deck.selection_mode === "all_approved"
-                      ? "all approved photos"
-                      : `manual, ${deck.item_count} item${deck.item_count === 1 ? "" : "s"}`}
-                    , {Math.round(deck.default_duration_ms / 1000)}s/slide)
-                  </option>
-                ))}
-              </select>
+                <AppButton
+                  variant="start"
+                  onClick={handleStart}
+                  disabled={!selectedDeckId || busy}
+                >
+                  Start Presentation
+                </AppButton>
+                <AppButton
+                  variant="muted"
+                  onClick={() => setShowCreateDeckForm((v) => !v)}
+                  disabled={deckActionBusy}
+                >
+                  {showCreateDeckForm ? "Cancel" : "+ Create New Deck"}
+                </AppButton>
+              </div>
 
-              <AppButton
-                variant="start"
-                onClick={handleStart}
-                disabled={!selectedDeckId || busy}
-              >
-                Start Presentation
-              </AppButton>
-            </div>
+              {showCreateDeckForm ? (
+                <div
+                  style={{
+                    marginTop: 16,
+                    border: "1px solid #444",
+                    borderRadius: 8,
+                    padding: 16,
+                    background: "#111",
+                  }}
+                >
+                  <h4 style={{ marginTop: 0 }}>Create Deck</h4>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                  >
+                    <input
+                      value={newDeckName}
+                      onChange={(e) => setNewDeckName(e.target.value)}
+                      placeholder="Deck name (e.g. Amana26 Slideshow)"
+                      style={{ padding: 8 }}
+                    />
+                    <input
+                      value={newDeckDescription}
+                      onChange={(e) => setNewDeckDescription(e.target.value)}
+                      placeholder="Description (optional)"
+                      style={{ padding: 8 }}
+                    />
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 16,
+                        flexWrap: "wrap",
+                        alignItems: "flex-end",
+                      }}
+                    >
+                      <label
+                        style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                      >
+                        Selection
+                        <select
+                          value={newDeckSelectionMode}
+                          onChange={(e) =>
+                            setNewDeckSelectionMode(
+                              e.target.value as "all_approved" | "manual",
+                            )
+                          }
+                          style={{ padding: 8 }}
+                        >
+                          <option value="all_approved">
+                            All Approved Photos
+                          </option>
+                          <option value="manual">Manual Selection</option>
+                        </select>
+                      </label>
+                      <label
+                        style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                      >
+                        Duration (seconds/slide)
+                        <input
+                          type="number"
+                          min={1}
+                          value={newDeckDurationSeconds}
+                          onChange={(e) =>
+                            setNewDeckDurationSeconds(
+                              Number(e.target.value) || 1,
+                            )
+                          }
+                          style={{ width: 100, padding: 8 }}
+                        />
+                      </label>
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>
+                      {newDeckSelectionMode === "all_approved"
+                        ? "All currently approved Event photos are included when the presentation starts."
+                        : "This deck will start with 0 items. Add photos to it before starting a presentation."}
+                    </div>
+                    <div>
+                      <AppButton
+                        variant="start"
+                        onClick={handleCreateDeck}
+                        disabled={deckActionBusy || !newDeckName.trim()}
+                      >
+                        Create Deck
+                      </AppButton>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       ) : null}
