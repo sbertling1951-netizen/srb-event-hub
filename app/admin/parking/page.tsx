@@ -15,6 +15,36 @@ import {
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
+const SITE_PLACEMENT_ERROR_MESSAGES: Record<string, string> = {
+  unauthorized: "You do not have parking management authority for this event.",
+  authorization_denied:
+    "You do not have parking management authority for this event.",
+  attendee_not_found: "Attendee not found.",
+  attendee_unplaced: "Attendee is not currently assigned to a site.",
+  attendee_already_placed: "Attendee is already assigned to a site.",
+  site_not_found: "Selected site was not found for this event.",
+  site_occupied: "Site is already assigned to another attendee.",
+  override_not_permitted:
+    "You do not have permission to reassign an occupied site.",
+  action_state_invalid:
+    "That action is not valid for the current assignment state.",
+  idempotency_key_reused_conflict:
+    "This request could not be completed. Please try again.",
+  placement_state_unstable:
+    "Site assignment is changing rapidly. Please try again.",
+};
+
+function mapSitePlacementError(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : "";
+  return SITE_PLACEMENT_ERROR_MESSAGES[raw] || raw || fallback;
+}
+
+function newSitePlacementIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 type ActiveEvent = {
   id: string;
@@ -861,64 +891,96 @@ Move ${
         showStatus("Site assignment cancelled.");
         return false;
       }
-
-      const { error: clearPreviousAttendeeError } = await supabase
-        .from("attendees")
-        .update({ assigned_site: null })
-        .eq("id", occupiedAttendeeId);
-
-      if (clearPreviousAttendeeError) {
-        showError(
-          `Could not clear previous attendee: ${clearPreviousAttendeeError.message}`,
-        );
-        return false;
-      }
     }
 
     const currentSiteKey = siteMatchKey(
       attendee.assigned_site || siteLabelByAttendeeId.get(attendee.id) || "",
     );
 
-    if (currentSiteKey && currentSiteKey !== siteKey) {
-      const oldSite = sites.find(
-        (s) =>
-          siteMatchKey(s.site_number) === currentSiteKey ||
-          siteMatchKey(s.display_label) === currentSiteKey,
+    if (site.id) {
+      // Governed placement: authority, then one-current-placement/history
+      // invariants, then the mutation, all inside record_site_placement.
+      // The action mirrors the same three cases this function already
+      // distinguished locally (no prior site, a different prior site, or
+      // this same site already) -- assign / reassign / confirm.
+      const action = !currentSiteKey
+        ? "assign"
+        : currentSiteKey === siteKey
+          ? "confirm"
+          : "reassign";
+
+      const { data, error: rpcError } = await supabase.rpc(
+        "record_site_placement",
+        {
+          p_attendee_id: attendee.id,
+          p_action: action,
+          p_idempotency_key: newSitePlacementIdempotencyKey(),
+          p_site_id: site.id,
+          p_evidence_source: "parking_staff",
+          p_override_occupied_site: Boolean(
+            occupiedAttendeeId && occupiedAttendeeId !== attendee.id,
+          ),
+        },
       );
 
-      if (oldSite?.id) {
-        const { error: clearOldSiteError } = await supabase
-          .from("parking_sites")
-          .update({ assigned_attendee_id: null })
-          .eq("id", oldSite.id);
+      if (rpcError) {
+        showError(mapSitePlacementError(new Error(rpcError.message), "Could not assign site."));
+        return false;
+      }
 
-        if (clearOldSiteError) {
-          showError(`Could not clear old site: ${clearOldSiteError.message}`);
-          return false;
+      const result = data?.[0];
+      if (!result || result.outcome === "rejected") {
+        showError(
+          mapSitePlacementError(
+            new Error(result?.rejection_code || "unknown"),
+            "Could not assign site.",
+          ),
+        );
+        return false;
+      }
+
+      if (result.displaced_attendee_id) {
+        await supabase
+          .from("attendees")
+          .update({ assigned_site: null })
+          .eq("id", result.displaced_attendee_id);
+      }
+    } else {
+      // Site has no materialized parking_sites row yet -- inventory
+      // materialization is a deferred prerequisite (Site Placement
+      // Governed Mutation Foundation report, Phase 1) that
+      // record_site_placement cannot itself perform. This direct write
+      // is retained until that lands; see the consumer-migration report.
+      if (currentSiteKey && currentSiteKey !== siteKey) {
+        const oldSite = sites.find(
+          (s) =>
+            siteMatchKey(s.site_number) === currentSiteKey ||
+            siteMatchKey(s.display_label) === currentSiteKey,
+        );
+
+        if (oldSite?.id) {
+          const { error: clearOldSiteError } = await supabase
+            .from("parking_sites")
+            .update({ assigned_attendee_id: null })
+            .eq("id", oldSite.id);
+
+          if (clearOldSiteError) {
+            showError(`Could not clear old site: ${clearOldSiteError.message}`);
+            return false;
+          }
         }
       }
-    }
 
-    let parkingError: { message: string } | null = null;
-
-    if (site.id) {
-      const result = await supabase
-        .from("parking_sites")
-        .update({ assigned_attendee_id: attendee.id })
-        .eq("id", site.id);
-      parkingError = result.error;
-    } else {
-      const result = await supabase.from("parking_sites").insert({
+      const { error: insertError } = await supabase.from("parking_sites").insert({
         event_id: event.id,
         master_site_id: site.master_site_id,
         assigned_attendee_id: attendee.id,
       });
-      parkingError = result.error;
-    }
 
-    if (parkingError) {
-      showError(`Could not assign site: ${parkingError.message}`);
-      return false;
+      if (insertError) {
+        showError(`Could not assign site: ${insertError.message}`);
+        return false;
+      }
     }
 
     const nextArrivalStatus = markParked
@@ -996,13 +1058,29 @@ Move ${
       return;
     }
 
-    const { error: parkingError } = await supabase
-      .from("parking_sites")
-      .update({ assigned_attendee_id: null })
-      .eq("id", site.id);
+    const { data, error: rpcError } = await supabase.rpc(
+      "record_site_placement",
+      {
+        p_attendee_id: site.assigned_attendee_id,
+        p_action: "clear",
+        p_idempotency_key: newSitePlacementIdempotencyKey(),
+        p_evidence_source: "parking_staff",
+      },
+    );
 
-    if (parkingError) {
-      showError(`Could not clear site: ${parkingError.message}`);
+    if (rpcError) {
+      showError(mapSitePlacementError(new Error(rpcError.message), "Could not clear site."));
+      return;
+    }
+
+    const result = data?.[0];
+    if (!result || result.outcome === "rejected") {
+      showError(
+        mapSitePlacementError(
+          new Error(result?.rejection_code || "unknown"),
+          "Could not clear site.",
+        ),
+      );
       return;
     }
 
