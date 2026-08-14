@@ -381,21 +381,43 @@ function AdminVendorsPageInner() {
     }
   }
 
-  // Stage 3 (Vendor Admission Lifecycle): direct event_vendors DML is no
-  // longer permitted, and Stage 2 has no governed operation yet for these
-  // metadata-only fields (is_featured/is_visible_to_members/action_type/
-  // signup_url/display_order/event_note -- none are admission-lifecycle
-  // state). Rather than reopening direct table writes for convenience,
-  // this path is stopped and reported as a gap for a future governed
-  // "update event vendor metadata" operation; the inline controls below
-  // are disabled accordingly.
+  // Metadata Governance Bridge: direct event_vendors DML remains
+  // permanently closed (Stage 3). This now calls the governed
+  // update_event_vendor_metadata RPC, which accepts only this same
+  // metadata allowlist (is_featured/is_visible_to_members/action_type/
+  // signup_url/display_order/event_note) and is structurally incapable
+  // of touching admission-lifecycle state.
   async function updateEventVendor(
-    _row: EventVendor,
-    _patch: Partial<EventVendor>,
+    row: EventVendor,
+    patch: Partial<EventVendor>,
   ) {
-    setError(
-      "Editing event vendor display settings is temporarily unavailable -- a governed operation for this has not been built yet.",
-    );
+    if (!adminEvent?.id) {
+      setError("Select an admin event first.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      const { error } = await supabase.rpc("update_event_vendor_metadata", {
+        p_vendor_id: row.vendor_id,
+        p_event_id: adminEvent.id,
+        p_updates: patch,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setStatus("Event vendor settings updated.");
+      await loadPage();
+    } catch (err: any) {
+      console.error("update event vendor metadata error:", err);
+      setError(err?.message || "Could not update event vendor settings.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -741,17 +763,10 @@ function AdminVendorsPageInner() {
                         gap: 8,
                       }}
                     >
-                      <div style={{ fontSize: 12, color: "#8a6d1f" }}>
-                        Display settings are temporarily read-only -- a
-                        governed operation for editing them has not been
-                        built yet.
-                      </div>
-
                       <label style={{ display: "flex", gap: 8 }}>
                         <input
                           type="checkbox"
                           checked={!!eventVendor.is_featured}
-                          disabled
                           onChange={(e) =>
                             void updateEventVendor(eventVendor, {
                               is_featured: e.target.checked,
@@ -765,7 +780,6 @@ function AdminVendorsPageInner() {
                         <input
                           type="checkbox"
                           checked={eventVendor.is_visible_to_members !== false}
-                          disabled
                           onChange={(e) =>
                             void updateEventVendor(eventVendor, {
                               is_visible_to_members: e.target.checked,
@@ -781,7 +795,6 @@ function AdminVendorsPageInner() {
                         </div>
                         <select
                           value={eventVendor.action_type || "service_request"}
-                          disabled
                           onChange={(e) =>
                             void updateEventVendor(eventVendor, {
                               action_type: e.target
@@ -803,7 +816,6 @@ function AdminVendorsPageInner() {
                       <input
                         defaultValue={eventVendor.signup_url || ""}
                         placeholder="Event signup/contact URL"
-                        disabled
                         onBlur={(e) =>
                           void updateEventVendor(eventVendor, {
                             signup_url: e.target.value.trim() || null,
@@ -815,7 +827,6 @@ function AdminVendorsPageInner() {
                       <input
                         defaultValue={String(eventVendor.display_order ?? 100)}
                         placeholder="Display order"
-                        disabled
                         onBlur={(e) =>
                           void updateEventVendor(eventVendor, {
                             display_order: Number(e.target.value) || 100,
@@ -828,7 +839,6 @@ function AdminVendorsPageInner() {
                         defaultValue={eventVendor.event_note || ""}
                         placeholder="Event-specific vendor note"
                         rows={3}
-                        disabled
                         onBlur={(e) =>
                           void updateEventVendor(eventVendor, {
                             event_note: e.target.value.trim() || null,

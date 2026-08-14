@@ -1420,17 +1420,17 @@ function AdminAttendeeImportsPageInner() {
     }
   }
 
-  // Stage 3 (Vendor Admission Lifecycle): direct event_vendors DML is no
-  // longer permitted, and Stage 2 has no governed operation yet for these
-  // metadata-only fields (booth_location/show_on_member_dashboard/
-  // allow_service_requests/notes -- none are admission-lifecycle state).
-  // Rather than reopening direct table writes for convenience, this path
-  // is stopped and reported as a gap for a future governed "update event
-  // vendor metadata" operation; the inline controls below are disabled
-  // accordingly.
+  // Metadata Governance Bridge: direct event_vendors DML remains
+  // permanently closed (Stage 3). This now calls the governed
+  // update_event_vendor_metadata RPC, which accepts only this same
+  // metadata allowlist (booth_location/show_on_member_dashboard/
+  // allow_service_requests/notes) and is structurally incapable of
+  // touching admission-lifecycle state. Takes vendor_id rather than the
+  // assignment row id -- the RPC identifies the event_vendors
+  // relationship by (vendor_id, event_id) server-side.
   async function updateEventVendorSetting(
-    _assignmentId: string,
-    _updates: Partial<
+    vendorId: string,
+    updates: Partial<
       Pick<
         EventVendorRow,
         | "booth_location"
@@ -1440,9 +1440,34 @@ function AdminAttendeeImportsPageInner() {
       >
     >,
   ) {
-    setVendorError(
-      "Editing event vendor details is temporarily unavailable -- a governed operation for this has not been built yet.",
-    );
+    if (!selectedImportEventId) {
+      return;
+    }
+
+    try {
+      setVendorSaving(true);
+      setVendorError(null);
+      setVendorStatus("Updating event vendor...");
+
+      const { error } = await supabase.rpc("update_event_vendor_metadata", {
+        p_vendor_id: vendorId,
+        p_event_id: selectedImportEventId,
+        p_updates: updates,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setVendorStatus("Event vendor updated.");
+      await loadVendors(selectedImportEventId);
+    } catch (err: any) {
+      console.error("update event vendor metadata error:", err);
+      setVendorError(err?.message || "Could not update event vendor.");
+      setVendorStatus("");
+    } finally {
+      setVendorSaving(false);
+    }
   }
 
   const selectedImportEvent =
@@ -2197,18 +2222,10 @@ function AdminAttendeeImportsPageInner() {
                           {vendor.services}
                         </div>
                       ) : null}
-                      <div
-                        style={{ fontSize: 12, color: "#8a6d1f", marginBottom: 8 }}
-                      >
-                        Event vendor details are temporarily read-only -- a
-                        governed operation for editing them has not been
-                        built yet.
-                      </div>
                       <input
                         defaultValue={assignment.booth_location || ""}
-                        disabled
                         onBlur={(e) =>
-                          void updateEventVendorSetting(assignment.id, {
+                          void updateEventVendorSetting(assignment.vendor_id, {
                             booth_location: e.target.value.trim() || null,
                           })
                         }
@@ -2225,9 +2242,8 @@ function AdminAttendeeImportsPageInner() {
                         <input
                           type="checkbox"
                           checked={assignment.show_on_member_dashboard}
-                          disabled
                           onChange={(e) =>
-                            void updateEventVendorSetting(assignment.id, {
+                            void updateEventVendorSetting(assignment.vendor_id, {
                               show_on_member_dashboard: e.target.checked,
                             })
                           }
@@ -2244,9 +2260,8 @@ function AdminAttendeeImportsPageInner() {
                         <input
                           type="checkbox"
                           checked={assignment.allow_service_requests}
-                          disabled
                           onChange={(e) =>
-                            void updateEventVendorSetting(assignment.id, {
+                            void updateEventVendorSetting(assignment.vendor_id, {
                               allow_service_requests: e.target.checked,
                             })
                           }
