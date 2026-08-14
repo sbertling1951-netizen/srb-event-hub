@@ -897,90 +897,90 @@ Move ${
       attendee.assigned_site || siteLabelByAttendeeId.get(attendee.id) || "",
     );
 
-    if (site.id) {
-      // Governed placement: authority, then one-current-placement/history
-      // invariants, then the mutation, all inside record_site_placement.
-      // The action mirrors the same three cases this function already
-      // distinguished locally (no prior site, a different prior site, or
-      // this same site already) -- assign / reassign / confirm.
-      const action = !currentSiteKey
-        ? "assign"
-        : currentSiteKey === siteKey
-          ? "confirm"
-          : "reassign";
+    let resolvedSiteId = site.id;
 
-      const { data, error: rpcError } = await supabase.rpc(
-        "record_site_placement",
-        {
-          p_attendee_id: attendee.id,
-          p_action: action,
-          p_idempotency_key: newSitePlacementIdempotencyKey(),
-          p_site_id: site.id,
-          p_evidence_source: "parking_staff",
-          p_override_occupied_site: Boolean(
-            occupiedAttendeeId && occupiedAttendeeId !== attendee.id,
-          ),
-        },
-      );
+    if (!resolvedSiteId) {
+      // Site has no materialized parking_sites row yet -- governed
+      // materialization creates a vacant inventory row from the
+      // master-map template, then the same record_site_placement call
+      // below places the attendee into it. No direct parking_sites
+      // write remains on this path.
+      const { data: materializeData, error: materializeError } =
+        await supabase.rpc("materialize_event_parking_site", {
+          p_event_id: event.id,
+          p_master_site_id: site.master_site_id,
+        });
 
-      if (rpcError) {
-        showError(mapSitePlacementError(new Error(rpcError.message), "Could not assign site."));
-        return false;
-      }
-
-      const result = data?.[0];
-      if (!result || result.outcome === "rejected") {
+      if (materializeError) {
         showError(
           mapSitePlacementError(
-            new Error(result?.rejection_code || "unknown"),
-            "Could not assign site.",
+            new Error(materializeError.message),
+            "Could not prepare site for assignment.",
           ),
         );
         return false;
       }
 
-      if (result.displaced_attendee_id) {
-        await supabase
-          .from("attendees")
-          .update({ assigned_site: null })
-          .eq("id", result.displaced_attendee_id);
-      }
-    } else {
-      // Site has no materialized parking_sites row yet -- inventory
-      // materialization is a deferred prerequisite (Site Placement
-      // Governed Mutation Foundation report, Phase 1) that
-      // record_site_placement cannot itself perform. This direct write
-      // is retained until that lands; see the consumer-migration report.
-      if (currentSiteKey && currentSiteKey !== siteKey) {
-        const oldSite = sites.find(
-          (s) =>
-            siteMatchKey(s.site_number) === currentSiteKey ||
-            siteMatchKey(s.display_label) === currentSiteKey,
+      const materializeResult = materializeData?.[0];
+      if (!materializeResult || materializeResult.outcome === "rejected") {
+        showError(
+          mapSitePlacementError(
+            new Error(materializeResult?.rejection_code || "unknown"),
+            "Could not prepare site for assignment.",
+          ),
         );
-
-        if (oldSite?.id) {
-          const { error: clearOldSiteError } = await supabase
-            .from("parking_sites")
-            .update({ assigned_attendee_id: null })
-            .eq("id", oldSite.id);
-
-          if (clearOldSiteError) {
-            showError(`Could not clear old site: ${clearOldSiteError.message}`);
-            return false;
-          }
-        }
-      }
-
-      const { error: insertError } = await supabase.from("parking_sites").insert({
-        event_id: event.id,
-        master_site_id: site.master_site_id,
-        assigned_attendee_id: attendee.id,
-      });
-
-      if (insertError) {
-        showError(`Could not assign site: ${insertError.message}`);
         return false;
       }
+
+      resolvedSiteId = materializeResult.parking_site_id;
+    }
+
+    // Governed placement: authority, then one-current-placement/history
+    // invariants, then the mutation, all inside record_site_placement.
+    // The action mirrors the same three cases this function already
+    // distinguished locally (no prior site, a different prior site, or
+    // this same site already) -- assign / reassign / confirm.
+    const action = !currentSiteKey
+      ? "assign"
+      : currentSiteKey === siteKey
+        ? "confirm"
+        : "reassign";
+
+    const { data, error: rpcError } = await supabase.rpc(
+      "record_site_placement",
+      {
+        p_attendee_id: attendee.id,
+        p_action: action,
+        p_idempotency_key: newSitePlacementIdempotencyKey(),
+        p_site_id: resolvedSiteId,
+        p_evidence_source: "parking_staff",
+        p_override_occupied_site: Boolean(
+          occupiedAttendeeId && occupiedAttendeeId !== attendee.id,
+        ),
+      },
+    );
+
+    if (rpcError) {
+      showError(mapSitePlacementError(new Error(rpcError.message), "Could not assign site."));
+      return false;
+    }
+
+    const result = data?.[0];
+    if (!result || result.outcome === "rejected") {
+      showError(
+        mapSitePlacementError(
+          new Error(result?.rejection_code || "unknown"),
+          "Could not assign site.",
+        ),
+      );
+      return false;
+    }
+
+    if (result.displaced_attendee_id) {
+      await supabase
+        .from("attendees")
+        .update({ assigned_site: null })
+        .eq("id", result.displaced_attendee_id);
     }
 
     const nextArrivalStatus = markParked

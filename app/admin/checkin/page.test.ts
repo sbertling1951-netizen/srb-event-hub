@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-// Source-level assertions for the Site Placement Consumer Migration:
-// the Admin Check-In page's ordinary placement writes inside
-// saveCheckin now go through public.record_site_placement rather than
-// direct parking_sites mutation. The one deliberately-retained
-// direct-write branch (a site with no materialized parking_sites row
-// yet -- inventory materialization is a separately-scoped prerequisite,
-// per the Site Placement Governed Mutation Foundation report) is
-// asserted to exist only inside its documented else-branch.
+// Source-level assertions for Site Placement Inventory Materialization
+// Governance on the Admin Check-In page: the last direct parking_sites
+// INSERT (materializing inventory from a master-map template site)
+// inside saveCheckin now goes through
+// public.materialize_event_parking_site, and its returned id feeds the
+// same public.record_site_placement call already used for
+// already-materialized sites -- a single shared code path, not a
+// parallel branch.
 //
 // Run with:
 //   npx tsx --test app/admin/checkin/page.test.ts
@@ -26,9 +26,31 @@ function extractSaveCheckin(): string {
   return match![0];
 }
 
-test("saveCheckin calls record_site_placement when the matched site is already materialized", () => {
+test("no direct parking_sites INSERT or occupancy UPDATE remains in saveCheckin's placement path -- materialization and placement are both governed RPC calls", () => {
   const fn = extractSaveCheckin();
-  assert.match(fn, /if \(matchedSite\?\.id\) \{[\s\S]*?supabase\.rpc\(\s*\n\s*"record_site_placement",/);
+  const placementBranch = fn.match(/if \(matchedSite\?\.id \|\| matchedSite\?\.master_site_id\) \{[\s\S]*?\n      \} else if \(!normalizedSite/);
+  assert.ok(placementBranch, "expected the unified placement branch");
+  assert.equal(/\.from\("parking_sites"\)/.test(placementBranch![0]), false);
+});
+
+test("an unmaterialized site (matchedSite.id falsy) is materialized via materialize_event_parking_site before record_site_placement is called", () => {
+  const fn = extractSaveCheckin();
+  assert.match(fn, /let resolvedSiteId = matchedSite\.id;\s*\n\s*\n\s*if \(!resolvedSiteId\) \{[\s\S]*?supabase\.rpc\("materialize_event_parking_site", \{/);
+  const iMaterializeCall = fn.indexOf('supabase.rpc("materialize_event_parking_site"');
+  const iPlacementCall = fn.indexOf('supabase.rpc(\n          "record_site_placement",');
+  assert.ok(iMaterializeCall >= 0 && iPlacementCall > iMaterializeCall);
+});
+
+test("materialize_event_parking_site's rejection throws (surfaced by the enclosing try/catch) and short-circuits before record_site_placement is ever called", () => {
+  const fn = extractSaveCheckin();
+  const materializeBlock = fn.slice(fn.indexOf("if (!resolvedSiteId)"), fn.indexOf('supabase.rpc(\n          "record_site_placement",'));
+  assert.match(materializeBlock, /materializeResult\.outcome === "rejected"/);
+  assert.match(materializeBlock, /throw new Error\(/);
+});
+
+test("record_site_placement always receives resolvedSiteId -- the same variable regardless of whether the site was already materialized or just materialized", () => {
+  const fn = extractSaveCheckin();
+  assert.match(fn, /p_site_id: resolvedSiteId,/);
 });
 
 test("saveCheckin maps to assign/confirm/reassign based on the attendee's prior site, never a fixed action", () => {
@@ -41,10 +63,7 @@ test("saveCheckin calls record_site_placement with action 'clear' when the site 
   const clearBranch = fn.match(/\} else if \(!normalizedSite && oldAssignedSite\) \{[\s\S]*?\n      \}\n/);
   assert.ok(clearBranch, "expected the explicit-clear branch");
   assert.match(clearBranch![0], /p_action: "clear",/);
-  assert.equal(
-    /\.from\("parking_sites"\)\s*\n\s*\.update\(\{ assigned_attendee_id: null \}\)/.test(clearBranch![0]),
-    false,
-  );
+  assert.equal(/\.from\("parking_sites"\)/.test(clearBranch![0]), false);
 });
 
 test("evidence_source is 'checkin_staff' for every record_site_placement call on this page", () => {
@@ -61,18 +80,6 @@ test("every record_site_placement call supplies a fresh idempotency key, never a
   for (const call of calls) {
     assert.equal(call, "p_idempotency_key: newSitePlacementIdempotencyKey()");
   }
-});
-
-test("the only remaining direct parking_sites INSERT/UPDATE for placement is inside the documented unmaterialized-site branch", () => {
-  const fn = extractSaveCheckin();
-  const elseBranch = fn.match(/\} else if \(matchedSite\?\.master_site_id\) \{[\s\S]*?\n      \}\n/);
-  assert.ok(elseBranch, "expected the unmaterialized-site else-if branch");
-  assert.match(elseBranch![0], /inventory\s*\n\s*\/\/ materialization is a deferred prerequisite/);
-  assert.match(elseBranch![0], /\.from\("parking_sites"\)\s*\n\s*\.insert\(\{/);
-
-  const rest = fn.replace(elseBranch![0], "");
-  assert.equal(/\.update\(\{ assigned_attendee_id: attendee\.id \}\)/.test(rest), false);
-  assert.equal(/\.from\("parking_sites"\)\s*\n\s*\.insert\(\{/.test(rest), false);
 });
 
 test("a returned displaced_attendee_id clears that attendee's display projection after the attendees-table save, not before", () => {

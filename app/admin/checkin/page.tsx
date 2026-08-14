@@ -587,7 +587,7 @@ function AdminCheckinPageInner() {
 
       let placementDisplacedAttendeeId: string | null = null;
 
-      if (matchedSite?.id) {
+      if (matchedSite?.id || matchedSite?.master_site_id) {
         // Governed placement: authority, then one-current-placement/
         // history invariants, then the mutation, all inside
         // record_site_placement. The confirm dialog stays a UI-only
@@ -626,6 +626,42 @@ function AdminCheckinPageInner() {
           }
         }
 
+        let resolvedSiteId = matchedSite.id;
+
+        if (!resolvedSiteId) {
+          // Site has no materialized parking_sites row yet -- governed
+          // materialization creates a vacant inventory row from the
+          // master-map template, then the same record_site_placement
+          // call below places the attendee into it. No direct
+          // parking_sites write remains on this path.
+          const { data: materializeData, error: materializeError } =
+            await supabase.rpc("materialize_event_parking_site", {
+              p_event_id: event.id,
+              p_master_site_id: matchedSite.master_site_id,
+            });
+
+          if (materializeError) {
+            throw new Error(
+              mapSitePlacementError(
+                new Error(materializeError.message),
+                "Could not prepare site for assignment.",
+              ),
+            );
+          }
+
+          const materializeResult = materializeData?.[0];
+          if (!materializeResult || materializeResult.outcome === "rejected") {
+            throw new Error(
+              mapSitePlacementError(
+                new Error(materializeResult?.rejection_code || "unknown"),
+                "Could not prepare site for assignment.",
+              ),
+            );
+          }
+
+          resolvedSiteId = materializeResult.parking_site_id;
+        }
+
         const action = !oldAssignedSite
           ? "assign"
           : oldSiteKey === newSiteKey
@@ -638,7 +674,7 @@ function AdminCheckinPageInner() {
             p_attendee_id: attendee.id,
             p_action: action,
             p_idempotency_key: newSitePlacementIdempotencyKey(),
-            p_site_id: matchedSite.id,
+            p_site_id: resolvedSiteId,
             p_evidence_source: "checkin_staff",
             p_override_occupied_site: occupiedByOther,
           },
@@ -664,44 +700,6 @@ function AdminCheckinPageInner() {
         }
 
         placementDisplacedAttendeeId = result.displaced_attendee_id || null;
-      } else if (matchedSite?.master_site_id) {
-        // Site has no materialized parking_sites row yet -- inventory
-        // materialization is a deferred prerequisite (Site Placement
-        // Governed Mutation Foundation report, Phase 1) that
-        // record_site_placement cannot itself perform. This direct
-        // write is retained until that lands; see the consumer-
-        // migration report.
-        if (oldAssignedSite && oldSiteKey !== newSiteKey) {
-          const oldSite =
-            parkingSites.find(
-              (site) =>
-                siteMatchKey(site.site_number) === oldSiteKey ||
-                siteMatchKey(site.display_label) === oldSiteKey,
-            ) || null;
-
-          if (oldSite?.id) {
-            const { error: clearOldSiteError } = await supabase
-              .from("parking_sites")
-              .update({ assigned_attendee_id: null })
-              .eq("id", oldSite.id);
-
-            if (clearOldSiteError) {
-              throw clearOldSiteError;
-            }
-          }
-        }
-
-        const { error: insertSiteError } = await supabase
-          .from("parking_sites")
-          .insert({
-            event_id: event.id,
-            master_site_id: matchedSite.master_site_id,
-            assigned_attendee_id: attendee.id,
-          });
-
-        if (insertSiteError) {
-          throw insertSiteError;
-        }
       } else if (!normalizedSite && oldAssignedSite) {
         const oldSite =
           parkingSites.find(
