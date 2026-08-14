@@ -327,6 +327,28 @@ function AdminAnnouncementsPageInner() {
     setEditingId(null);
   }
 
+  function updateAnnouncement(
+    id: string,
+    fields: {
+      title: string;
+      body: string;
+      priority: string;
+      is_pinned: boolean;
+      is_published: boolean;
+      expire_at: string | null;
+    },
+  ) {
+    return supabase.rpc("update_event_announcement", {
+      p_announcement_id: id,
+      p_title: fields.title,
+      p_body: fields.body,
+      p_priority: fields.priority,
+      p_is_pinned: fields.is_pinned,
+      p_is_published: fields.is_published,
+      p_expire_at: fields.expire_at,
+    });
+  }
+
   function startEdit(item: Announcement) {
     setEditingId(item.id);
     setForm({
@@ -375,10 +397,14 @@ function AdminAnnouncementsPageInner() {
       };
 
       if (editingId) {
-        const { error } = await supabase
-          .from("announcements")
-          .update(payload)
-          .eq("id", editingId);
+        const { error } = await updateAnnouncement(editingId, {
+          title: payload.title,
+          body: payload.body,
+          priority: payload.priority,
+          is_pinned: payload.is_pinned,
+          is_published: payload.is_published,
+          expire_at: payload.expire_at,
+        });
 
         if (error) {
           showError(error.message || "Update failed.");
@@ -388,7 +414,15 @@ function AdminAnnouncementsPageInner() {
         setStatus("Announcement updated.");
         setEditingId(null);
       } else {
-        const { error } = await supabase.from("announcements").insert(payload);
+        const { error } = await supabase.rpc("create_event_announcement", {
+          p_event_id: payload.event_id,
+          p_title: payload.title,
+          p_body: payload.body,
+          p_priority: payload.priority,
+          p_is_pinned: payload.is_pinned,
+          p_is_published: payload.is_published,
+          p_expire_at: payload.expire_at,
+        });
 
         if (error) {
           showError(error.message || "Create failed.");
@@ -421,10 +455,9 @@ function AdminAnnouncementsPageInner() {
     showStatus("Deleting announcement...");
 
     try {
-      const { error } = await supabase
-        .from("announcements")
-        .delete()
-        .eq("id", id);
+      const { error } = await supabase.rpc("delete_event_announcement", {
+        p_announcement_id: id,
+      });
 
       if (error) {
         showError(error.message || "Delete failed.");
@@ -447,10 +480,14 @@ function AdminAnnouncementsPageInner() {
     showStatus(item.is_published ? "Unpublishing..." : "Publishing...");
 
     try {
-      const { error } = await supabase
-        .from("announcements")
-        .update({ is_published: !item.is_published })
-        .eq("id", item.id);
+      const { error } = await updateAnnouncement(item.id, {
+        title: item.title,
+        body: item.body,
+        priority: item.priority ?? "normal",
+        is_pinned: item.is_pinned,
+        is_published: !item.is_published,
+        expire_at: item.expire_at,
+      });
 
       if (error) {
         showError(error.message || "Publish update failed.");
@@ -474,10 +511,14 @@ function AdminAnnouncementsPageInner() {
     showStatus(item.is_pinned ? "Removing pin..." : "Pinning announcement...");
 
     try {
-      const { error } = await supabase
-        .from("announcements")
-        .update({ is_pinned: !item.is_pinned })
-        .eq("id", item.id);
+      const { error } = await updateAnnouncement(item.id, {
+        title: item.title,
+        body: item.body,
+        priority: item.priority ?? "normal",
+        is_pinned: !item.is_pinned,
+        is_published: item.is_published,
+        expire_at: item.expire_at,
+      });
 
       if (error) {
         showError(error.message || "Pin update failed.");
