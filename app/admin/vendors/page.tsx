@@ -315,72 +315,87 @@ function AdminVendorsPageInner() {
       }
     }
 
-    try {
-      setSaving(true);
-      setError(null);
+    if (existing) {
+      const reason = window.prompt(
+        `Remove ${vendor.business_name} from ${adminEvent.name || "this event"}? This only removes the assignment to this event -- the vendor record is not deleted and can be added back at any time.\n\nReason for removal (required):`,
+      );
+      if (reason === null) {
+        return;
+      }
+      const trimmedReason = reason.trim();
+      if (!trimmedReason) {
+        setError("A reason is required to remove a vendor from this event.");
+        return;
+      }
 
-      if (existing) {
-        const { error } = await supabase
-          .from("event_vendors")
-          .delete()
-          .eq("id", existing.id);
+      try {
+        setSaving(true);
+        setError(null);
 
-        if (error) {
-          throw error;
-        }
-        setStatus(`${vendor.business_name} removed from this event.`);
-      } else {
-        const { error } = await supabase.from("event_vendors").insert({
-          event_id: adminEvent.id,
-          vendor_id: vendor.id,
-          is_featured: false,
-          display_order: 100,
-          signup_url: null,
-          event_note: null,
-          is_visible_to_members: true,
-          action_type: "service_request",
+        // Governed revocation (Stage 3): direct event_vendors DML is no
+        // longer permitted -- admit_vendor_for_event/revoke_vendor_admission
+        // are the only write path. This quick-toggle UI has no structured
+        // reason picker yet, so it supplies the admin's own typed reason as
+        // reason_text under the non-quality-implying "other_administrative"
+        // code rather than guessing a more specific classification.
+        const { error } = await supabase.rpc("revoke_vendor_admission", {
+          p_vendor_id: vendor.id,
+          p_event_id: adminEvent.id,
+          p_reason_code: "other_administrative",
+          p_reason_text: trimmedReason,
         });
 
         if (error) {
           throw error;
         }
-        setStatus(`${vendor.business_name} assigned to this event.`);
+        setStatus(`${vendor.business_name} removed from this event.`);
+        await loadPage();
+      } catch (err: any) {
+        console.error("revoke vendor admission error:", err);
+        setError(err?.message || "Could not remove vendor from event.");
+      } finally {
+        setSaving(false);
       }
+      return;
+    }
 
+    try {
+      setSaving(true);
+      setError(null);
+
+      const { error } = await supabase.rpc("admit_vendor_for_event", {
+        p_vendor_id: vendor.id,
+        p_event_id: adminEvent.id,
+      });
+
+      if (error) {
+        throw error;
+      }
+      setStatus(`${vendor.business_name} assigned to this event.`);
       await loadPage();
     } catch (err: any) {
-      console.error("toggle event vendor error:", err);
+      console.error("admit vendor for event error:", err);
       setError(err?.message || "Could not update event vendor.");
     } finally {
       setSaving(false);
     }
   }
 
+  // Stage 3 (Vendor Admission Lifecycle): direct event_vendors DML is no
+  // longer permitted, and Stage 2 has no governed operation yet for these
+  // metadata-only fields (is_featured/is_visible_to_members/action_type/
+  // signup_url/display_order/event_note -- none are admission-lifecycle
+  // state). Rather than reopening direct table writes for convenience,
+  // this path is stopped and reported as a gap for a future governed
+  // "update event vendor metadata" operation; the inline controls below
+  // are disabled accordingly.
   async function updateEventVendor(
-    row: EventVendor,
-    patch: Partial<EventVendor>,
+    _row: EventVendor,
+    _patch: Partial<EventVendor>,
   ) {
-    try {
-      setSaving(true);
-      setError(null);
-
-      const { error } = await supabase
-        .from("event_vendors")
-        .update(patch)
-        .eq("id", row.id);
-
-      if (error) {
-        throw error;
-      }
-
-      setStatus("Event vendor settings updated.");
-      await loadPage();
-    } catch (err: any) {
-      console.error("update event vendor error:", err);
-      setError(err?.message || "Could not update event vendor settings.");
-    } finally {
-      setSaving(false);
-    }
+    setError(
+      "Editing event vendor display settings is temporarily unavailable -- a governed operation for this has not been built yet.",
+    );
   }
 
   return (
@@ -726,10 +741,17 @@ function AdminVendorsPageInner() {
                         gap: 8,
                       }}
                     >
+                      <div style={{ fontSize: 12, color: "#8a6d1f" }}>
+                        Display settings are temporarily read-only -- a
+                        governed operation for editing them has not been
+                        built yet.
+                      </div>
+
                       <label style={{ display: "flex", gap: 8 }}>
                         <input
                           type="checkbox"
                           checked={!!eventVendor.is_featured}
+                          disabled
                           onChange={(e) =>
                             void updateEventVendor(eventVendor, {
                               is_featured: e.target.checked,
@@ -743,6 +765,7 @@ function AdminVendorsPageInner() {
                         <input
                           type="checkbox"
                           checked={eventVendor.is_visible_to_members !== false}
+                          disabled
                           onChange={(e) =>
                             void updateEventVendor(eventVendor, {
                               is_visible_to_members: e.target.checked,
@@ -758,6 +781,7 @@ function AdminVendorsPageInner() {
                         </div>
                         <select
                           value={eventVendor.action_type || "service_request"}
+                          disabled
                           onChange={(e) =>
                             void updateEventVendor(eventVendor, {
                               action_type: e.target
@@ -779,6 +803,7 @@ function AdminVendorsPageInner() {
                       <input
                         defaultValue={eventVendor.signup_url || ""}
                         placeholder="Event signup/contact URL"
+                        disabled
                         onBlur={(e) =>
                           void updateEventVendor(eventVendor, {
                             signup_url: e.target.value.trim() || null,
@@ -790,6 +815,7 @@ function AdminVendorsPageInner() {
                       <input
                         defaultValue={String(eventVendor.display_order ?? 100)}
                         placeholder="Display order"
+                        disabled
                         onBlur={(e) =>
                           void updateEventVendor(eventVendor, {
                             display_order: Number(e.target.value) || 100,
@@ -802,6 +828,7 @@ function AdminVendorsPageInner() {
                         defaultValue={eventVendor.event_note || ""}
                         placeholder="Event-specific vendor note"
                         rows={3}
+                        disabled
                         onBlur={(e) =>
                           void updateEventVendor(eventVendor, {
                             event_note: e.target.value.trim() || null,
@@ -827,7 +854,13 @@ function AdminVendorsPageInner() {
 
 export default function AdminVendorsPage() {
   return (
-    <AdminRouteGuard>
+    // requiredPermission is a UI-alignment convenience only -- it is the
+    // existing, coarser can_manage_vendors permission key, not the
+    // canonical per-Event event.vendors.manage/view task authority (no
+    // client-side adapter for that exists yet). The RPCs' own
+    // has_event_task_authority checks remain the authoritative boundary
+    // regardless of what this guard shows.
+    <AdminRouteGuard requiredPermission="can_manage_vendors">
       <AdminShellAdapter pageTitle="Vendor Admin">
         <AdminVendorsPageInner />
       </AdminShellAdapter>

@@ -4,14 +4,14 @@ import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import PageNavigation from "@/components/layout/PageNavigation";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
-import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type EventContext = {
@@ -1343,21 +1343,19 @@ function AdminAttendeeImportsPageInner() {
       setVendorError(null);
       setVendorStatus("Assigning vendor to event...");
 
-      const { error: upsertError } = await supabase
-        .from("event_vendors")
-        .upsert(
-          {
-            event_id: selectedImportEventId,
-            vendor_id: vendorId,
-            show_on_member_dashboard: true,
-            allow_service_requests: false,
-            status: "assigned",
-          },
-          { onConflict: "event_id,vendor_id" },
-        );
+      // Governed admission (Stage 3): direct event_vendors DML is no longer
+      // permitted. admit_vendor_for_event's table defaults
+      // (show_on_member_dashboard=true, allow_service_requests=false,
+      // status='assigned') reproduce exactly what this upsert used to set
+      // explicitly, and the RPC is idempotent if the vendor is already
+      // admitted.
+      const { error: admitError } = await supabase.rpc("admit_vendor_for_event", {
+        p_vendor_id: vendorId,
+        p_event_id: selectedImportEventId,
+      });
 
-      if (upsertError) {
-        throw upsertError;
+      if (admitError) {
+        throw admitError;
       }
 
       setVendorStatus("Vendor assigned to this event.");
@@ -1371,8 +1369,20 @@ function AdminAttendeeImportsPageInner() {
     }
   }
 
-  async function unassignVendorFromEvent(assignmentId: string) {
+  async function unassignVendorFromEvent(vendorId: string) {
     if (!selectedImportEventId) {
+      return;
+    }
+
+    const reason = window.prompt(
+      "Reason for removing this vendor from the event (required):",
+    );
+    if (reason === null) {
+      return;
+    }
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      setVendorError("A reason is required to remove a vendor from this event.");
       return;
     }
 
@@ -1381,13 +1391,20 @@ function AdminAttendeeImportsPageInner() {
       setVendorError(null);
       setVendorStatus("Removing vendor from this event...");
 
-      const { error: deleteError } = await supabase
-        .from("event_vendors")
-        .delete()
-        .eq("id", assignmentId);
+      // Governed revocation (Stage 3): direct event_vendors DML is no
+      // longer permitted. This quick-action UI has no structured reason
+      // picker yet, so it supplies the admin's own typed reason as
+      // reason_text under the non-quality-implying "other_administrative"
+      // code rather than guessing a more specific classification.
+      const { error: revokeError } = await supabase.rpc("revoke_vendor_admission", {
+        p_vendor_id: vendorId,
+        p_event_id: selectedImportEventId,
+        p_reason_code: "other_administrative",
+        p_reason_text: trimmedReason,
+      });
 
-      if (deleteError) {
-        throw deleteError;
+      if (revokeError) {
+        throw revokeError;
       }
 
       setVendorStatus(
@@ -1403,9 +1420,17 @@ function AdminAttendeeImportsPageInner() {
     }
   }
 
+  // Stage 3 (Vendor Admission Lifecycle): direct event_vendors DML is no
+  // longer permitted, and Stage 2 has no governed operation yet for these
+  // metadata-only fields (booth_location/show_on_member_dashboard/
+  // allow_service_requests/notes -- none are admission-lifecycle state).
+  // Rather than reopening direct table writes for convenience, this path
+  // is stopped and reported as a gap for a future governed "update event
+  // vendor metadata" operation; the inline controls below are disabled
+  // accordingly.
   async function updateEventVendorSetting(
-    assignmentId: string,
-    updates: Partial<
+    _assignmentId: string,
+    _updates: Partial<
       Pick<
         EventVendorRow,
         | "booth_location"
@@ -1415,33 +1440,9 @@ function AdminAttendeeImportsPageInner() {
       >
     >,
   ) {
-    if (!selectedImportEventId) {
-      return;
-    }
-
-    try {
-      setVendorSaving(true);
-      setVendorError(null);
-      setVendorStatus("Updating event vendor...");
-
-      const { error: updateError } = await supabase
-        .from("event_vendors")
-        .update(updates)
-        .eq("id", assignmentId);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      setVendorStatus("Event vendor updated.");
-      await loadVendors(selectedImportEventId);
-    } catch (err: any) {
-      console.error("updateEventVendorSetting error:", err);
-      setVendorError(err?.message || "Could not update event vendor.");
-      setVendorStatus("");
-    } finally {
-      setVendorSaving(false);
-    }
+    setVendorError(
+      "Editing event vendor details is temporarily unavailable -- a governed operation for this has not been built yet.",
+    );
   }
 
   const selectedImportEvent =
@@ -2196,8 +2197,16 @@ function AdminAttendeeImportsPageInner() {
                           {vendor.services}
                         </div>
                       ) : null}
+                      <div
+                        style={{ fontSize: 12, color: "#8a6d1f", marginBottom: 8 }}
+                      >
+                        Event vendor details are temporarily read-only -- a
+                        governed operation for editing them has not been
+                        built yet.
+                      </div>
                       <input
                         defaultValue={assignment.booth_location || ""}
+                        disabled
                         onBlur={(e) =>
                           void updateEventVendorSetting(assignment.id, {
                             booth_location: e.target.value.trim() || null,
@@ -2216,6 +2225,7 @@ function AdminAttendeeImportsPageInner() {
                         <input
                           type="checkbox"
                           checked={assignment.show_on_member_dashboard}
+                          disabled
                           onChange={(e) =>
                             void updateEventVendorSetting(assignment.id, {
                               show_on_member_dashboard: e.target.checked,
@@ -2234,6 +2244,7 @@ function AdminAttendeeImportsPageInner() {
                         <input
                           type="checkbox"
                           checked={assignment.allow_service_requests}
+                          disabled
                           onChange={(e) =>
                             void updateEventVendorSetting(assignment.id, {
                               allow_service_requests: e.target.checked,
@@ -2245,9 +2256,13 @@ function AdminAttendeeImportsPageInner() {
                       <button
                         type="button"
                         onClick={() =>
-                          void unassignVendorFromEvent(assignment.id)
+                          void unassignVendorFromEvent(assignment.vendor_id)
                         }
-                        disabled={vendorSaving}
+                        // UI-alignment only, not the security boundary --
+                        // see the Assign button above for rationale.
+                        disabled={
+                          vendorSaving || !hasPermission(admin, "can_manage_vendors")
+                        }
                         style={{
                           padding: "8px 12px",
                           borderRadius: 10,
@@ -2431,7 +2446,19 @@ function AdminAttendeeImportsPageInner() {
                           <button
                             type="button"
                             onClick={() => void assignVendorToEvent(vendor.id)}
-                            disabled={!selectedImportEventId || vendorSaving}
+                            // UI-alignment only, not the security boundary
+                            // (admit_vendor_for_event's own
+                            // has_event_task_authority check is
+                            // authoritative) -- can_manage_vendors is the
+                            // existing, coarser permission key; no
+                            // client-side adapter for the canonical
+                            // per-Event event.vendors.manage task exists
+                            // yet.
+                            disabled={
+                              !selectedImportEventId ||
+                              vendorSaving ||
+                              !hasPermission(admin, "can_manage_vendors")
+                            }
                             style={darkButtonStyle}
                           >
                             Assign to Selected Event
