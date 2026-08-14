@@ -2,7 +2,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { resolveVendorAccessFromCookies } from "@/lib/server/vendorAccess";
+import {
+  createVendorTokenBoundClient,
+  resolveVendorAccessFromCookies,
+  VENDOR_AUTH_COOKIE,
+} from "@/lib/server/vendorAccess";
 
 type ProfilePatchBody = {
   business_name?: string;
@@ -107,6 +111,9 @@ export async function PATCH(req: Request) {
     );
   }
 
+  // Fast-fail UX check only. public.vendors_update_policy (RLS, keyed off
+  // auth.uid() via vendor_org_access) is the authoritative boundary below --
+  // this just avoids a round trip for the common case.
   if (selectedVendor.role !== "vendor_admin") {
     return NextResponse.json(
       { ok: false, error: "Only vendor_admin can update organization profile." },
@@ -140,27 +147,51 @@ export async function PATCH(req: Request) {
     preferred_contact_method: preferredContactMethod,
   };
 
-  const supabaseAdmin = getSupabaseAdminClient();
-  if (!supabaseAdmin) {
+  const accessToken = cookieStore.get(VENDOR_AUTH_COOKIE)?.value;
+  if (!accessToken) {
+    return NextResponse.json(
+      { ok: false, error: "Vendor authentication is required.", reason: "missing_vendor_session" },
+      { status: 401 },
+    );
+  }
+
+  const supabaseVendor = createVendorTokenBoundClient(accessToken);
+  if (!supabaseVendor) {
     return NextResponse.json(
       { ok: false, error: "Vendor workspace service is not configured." },
       { status: 500 },
     );
   }
 
-  const { data: vendor, error } = await supabaseAdmin
+  // Mutation runs as the caller's own auth.uid() (not service-role), so
+  // public.vendors_update_policy is the real, database-enforced authority
+  // check here -- the role check above is only a fast-fail UX shortcut.
+  const { data: vendor, error } = await supabaseVendor
     .from("vendors")
     .update(updatePayload)
     .eq("id", selectedVendor.vendorId)
     .select(
       "id,business_name,contact_name,email,phone,website,logo_url,business_description,preferred_contact_method,is_active",
     )
-    .single();
+    .maybeSingle();
 
   if (error) {
     return NextResponse.json(
       { ok: false, error: error.message },
       { status: 500 },
+    );
+  }
+
+  // Zero rows means RLS denied the write (or the vendor no longer exists) --
+  // never treat that as a successful update.
+  if (!vendor) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Vendor profile update was not permitted.",
+        reason: "vendor_update_denied",
+      },
+      { status: 403 },
     );
   }
 
