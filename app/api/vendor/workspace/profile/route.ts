@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import {
   createVendorTokenBoundClient,
   resolveVendorAccessFromCookies,
@@ -47,15 +46,26 @@ export async function GET() {
     );
   }
 
-  const supabaseAdmin = getSupabaseAdminClient();
-  if (!supabaseAdmin) {
+  const accessToken = cookieStore.get(VENDOR_AUTH_COOKIE)?.value;
+  if (!accessToken) {
+    return NextResponse.json(
+      { ok: false, error: "Vendor authentication is required.", reason: "missing_vendor_session" },
+      { status: 401 },
+    );
+  }
+
+  const supabaseVendor = createVendorTokenBoundClient(accessToken);
+  if (!supabaseVendor) {
     return NextResponse.json(
       { ok: false, error: "Vendor workspace service is not configured." },
       { status: 500 },
     );
   }
 
-  const { data: vendor, error } = await supabaseAdmin
+  // Read runs as the caller's own auth.uid() (not service-role), so
+  // public.vendors_select_policy is the real, database-enforced authority
+  // check here -- matches the PATCH handler's governance pattern below.
+  const { data: vendor, error } = await supabaseVendor
     .from("vendors")
     .select(
       "id,business_name,contact_name,email,phone,website,logo_url,business_description,preferred_contact_method,is_active",
