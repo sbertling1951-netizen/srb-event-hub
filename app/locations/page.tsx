@@ -105,12 +105,11 @@ export default function PublicLocationsPage() {
   const loadPage = useCallback(async () => {
     setStatus({ type: "loading", text: "Loading..." });
 
+    // Active-event bootstrap read (ADR-006 §3.2): no known Event id exists
+    // yet on this page, so get_current_active_event applies the same
+    // is_active-only predicate this direct read used, unchanged.
     const { data: activeEvent, error: eventError } = await supabase
-      .from("events")
-      .select(
-        "id,name,location,map_image_url,master_map_id,locations_map_open_scale",
-      )
-      .eq("is_active", true)
+      .rpc("get_current_active_event")
       .limit(1)
       .maybeSingle();
 

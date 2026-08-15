@@ -60,14 +60,18 @@ export function MemberShellAdapter({
       return;
     }
 
+    // Known-context continuity read (ADR-006 §4): this Event's session is
+    // already established, so it must remain readable even when it is not
+    // publicly discoverable -- get_event_continuity_context applies no
+    // visibility/lifecycle predicate, matching Nearby's and coach-map's own
+    // reads of the same RPC.
     void supabase
-      .from("events")
-      .select("short_name")
-      .eq("id", event.id)
+      .rpc("get_event_continuity_context", { p_event_id: event.id })
       .maybeSingle()
       .then(({ data }) => {
         if (!cancelled) {
-          setCompactEventName((data?.short_name as string | null) ?? null);
+          const row = data as { short_name?: string | null } | null;
+          setCompactEventName(row?.short_name ?? null);
         }
       });
 

@@ -31,15 +31,14 @@ export async function getActiveEvent(): Promise<ActiveEvent | null> {
     return data as ActiveEvent | null;
   }
 
-  // Active-event fallback branch: intentionally left on its existing
-  // is_active-only direct read for this stage. This predicate differs
-  // from the canonical public-discovery rule (visible_to_members +
+  // Active-event fallback branch (ADR-006 §3.2): no known Event id exists
+  // here, so get_current_active_event applies the same is_active-only
+  // predicate this direct read used, unchanged. That predicate still
+  // differs from the canonical public-discovery rule (visible_to_members +
   // is_active + status) and whether to reconcile the two is an
   // unresolved, separate product decision -- not made here.
   const { data, error } = await supabase
-    .from("events")
-    .select("id,name,location,start_date,end_date,map_image_url,master_map_id")
-    .eq("is_active", true)
+    .rpc("get_current_active_event")
     .limit(1)
     .maybeSingle();
 
@@ -48,5 +47,5 @@ export async function getActiveEvent(): Promise<ActiveEvent | null> {
     return null;
   }
 
-  return data;
+  return data as ActiveEvent | null;
 }
