@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
@@ -124,6 +124,10 @@ function EventAdminPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [eventStatusFilter, setEventStatusFilter] =
     useState<EventStatusFilter>("active");
+  // The status-filter change and canonical-context broadcast can begin
+  // overlapping loads with different filter closures. Only the newest load
+  // may commit its result, so a late response cannot restore an obsolete list.
+  const loadGenerationRef = useRef(0);
 
   const { admin } = useAdmin();
 
@@ -188,6 +192,8 @@ function EventAdminPageInner() {
   );
 
   const loadPage = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
+
     try {
       setLoading(true);
       setError(null);
@@ -234,6 +240,12 @@ function EventAdminPageInner() {
           .select("id,name,description")
           .order("name", { ascending: true }),
       ]);
+
+      // A newer load owns the page now. Its filter, selection, loading, and
+      // error state must not be overwritten by this older response.
+      if (generation !== loadGenerationRef.current) {
+        return;
+      }
 
       if (eventsResult.error) {
         throw eventsResult.error;
@@ -327,10 +339,14 @@ function EventAdminPageInner() {
         setStatus("No accessible events available.");
       }
     } catch (err: any) {
-      console.error("loadPage error:", err);
-      setStatus(err?.message || "Failed to load event admin.");
+      if (generation === loadGenerationRef.current) {
+        console.error("loadPage error:", err);
+        setStatus(err?.message || "Failed to load event admin.");
+      }
     } finally {
-      setLoading(false);
+      if (generation === loadGenerationRef.current) {
+        setLoading(false);
+      }
     }
   }, [admin, eventStatusFilter]);
 

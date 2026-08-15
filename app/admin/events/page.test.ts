@@ -226,3 +226,217 @@ test("4. lifecycle/status UI filtering (eventStatusFilter) is applied only after
   // never re-queries or re-derives authority.
   assert.match(loadedBlock, /accessibleEvents\.filter\(/);
 });
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: Error) => void;
+};
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
+
+type LoadResult = {
+  filter: "active" | "inactive";
+  selectedEventId: string;
+  detailsEventId: string;
+  assignmentEventId: string;
+};
+
+// This deterministic harness models the page-local generation protocol used
+// by loadPage: a request may commit success, error, and finally/loading state
+// only while its captured generation remains current.
+function createLatestLoadHarness() {
+  let generation = 0;
+  const state: {
+    filter: "active" | "inactive";
+    selectedEventId: string;
+    detailsEventId: string;
+    assignmentEventId: string;
+    loading: boolean;
+    error: string | null;
+  } = {
+    filter: "active",
+    selectedEventId: "amana",
+    detailsEventId: "amana",
+    assignmentEventId: "amana",
+    loading: false,
+    error: null,
+  };
+
+  async function load(result: Promise<LoadResult>) {
+    const requestGeneration = ++generation;
+    state.loading = true;
+    state.error = null;
+
+    try {
+      const next = await result;
+      if (requestGeneration !== generation) {
+        return;
+      }
+
+      state.filter = next.filter;
+      state.selectedEventId = next.selectedEventId;
+      state.detailsEventId = next.detailsEventId;
+      state.assignmentEventId = next.assignmentEventId;
+    } catch (error: unknown) {
+      if (requestGeneration === generation) {
+        state.error = error instanceof Error ? error.message : String(error);
+      }
+    } finally {
+      if (requestGeneration === generation) {
+        state.loading = false;
+      }
+    }
+  }
+
+  return { state, load };
+}
+
+test("loadPage has a page-local generation guard covering post-await success, error, and finally commits", () => {
+  assert.match(PAGE_SOURCE, /useRef\(0\)/);
+  assert.match(PAGE_SOURCE, /const generation = \+\+loadGenerationRef\.current;/);
+  assert.match(
+    PAGE_SOURCE,
+    /if \(generation !== loadGenerationRef\.current\) \{\s*return;\s*\}/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /catch \(err: any\) \{\s*if \(generation === loadGenerationRef\.current\) \{/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /finally \{\s*if \(generation === loadGenerationRef\.current\) \{\s*setLoading\(false\);/,
+  );
+});
+
+test("exact Amana inactive race: stale Active response cannot replace the newer Inactive result with Saint George", async () => {
+  const active = deferred<LoadResult>();
+  const inactive = deferred<LoadResult>();
+  const { state, load } = createLatestLoadHarness();
+
+  // setWorkspaceEvent(updatedAmana) synchronously starts the old closure.
+  const staleActiveLoad = load(active.promise);
+  // React then commits the Inactive filter and starts the newer closure.
+  const currentInactiveLoad = load(inactive.promise);
+
+  inactive.resolve({
+    filter: "inactive",
+    selectedEventId: "amana",
+    detailsEventId: "amana",
+    assignmentEventId: "amana",
+  });
+  await currentInactiveLoad;
+
+  active.resolve({
+    filter: "active",
+    selectedEventId: "saint-george",
+    detailsEventId: "saint-george",
+    assignmentEventId: "saint-george",
+  });
+  await staleActiveLoad;
+
+  assert.deepEqual(state, {
+    filter: "inactive",
+    selectedEventId: "amana",
+    detailsEventId: "amana",
+    assignmentEventId: "amana",
+    loading: false,
+    error: null,
+  });
+});
+
+test("a single current load commits normally", async () => {
+  const { state, load } = createLatestLoadHarness();
+
+  await load(
+    Promise.resolve({
+      filter: "inactive",
+      selectedEventId: "amana",
+      detailsEventId: "amana",
+      assignmentEventId: "amana",
+    }),
+  );
+
+  assert.equal(state.selectedEventId, "amana");
+  assert.equal(state.loading, false);
+  assert.equal(state.error, null);
+});
+
+test("the newer request commits normally when it finishes last", async () => {
+  const older = deferred<LoadResult>();
+  const newer = deferred<LoadResult>();
+  const { state, load } = createLatestLoadHarness();
+  const oldLoad = load(older.promise);
+  const newLoad = load(newer.promise);
+
+  older.resolve({
+    filter: "active",
+    selectedEventId: "saint-george",
+    detailsEventId: "saint-george",
+    assignmentEventId: "saint-george",
+  });
+  await oldLoad;
+  newer.resolve({
+    filter: "inactive",
+    selectedEventId: "amana",
+    detailsEventId: "amana",
+    assignmentEventId: "amana",
+  });
+  await newLoad;
+
+  assert.equal(state.selectedEventId, "amana");
+  assert.equal(state.filter, "inactive");
+});
+
+test("a stale error and stale finally cannot overwrite the current successful load", async () => {
+  const older = deferred<LoadResult>();
+  const newer = deferred<LoadResult>();
+  const { state, load } = createLatestLoadHarness();
+  const oldLoad = load(older.promise);
+  const newLoad = load(newer.promise);
+
+  newer.resolve({
+    filter: "inactive",
+    selectedEventId: "amana",
+    detailsEventId: "amana",
+    assignmentEventId: "amana",
+  });
+  await newLoad;
+  older.reject(new Error("stale Active request failed"));
+  await oldLoad;
+
+  assert.equal(state.selectedEventId, "amana");
+  assert.equal(state.error, null);
+  assert.equal(state.loading, false);
+});
+
+test("an older finally cannot clear loading while the newer request remains pending, but the current error still surfaces", async () => {
+  const older = deferred<LoadResult>();
+  const newer = deferred<LoadResult>();
+  const { state, load } = createLatestLoadHarness();
+  const oldLoad = load(older.promise);
+  const newLoad = load(newer.promise);
+
+  older.resolve({
+    filter: "active",
+    selectedEventId: "saint-george",
+    detailsEventId: "saint-george",
+    assignmentEventId: "saint-george",
+  });
+  await oldLoad;
+  assert.equal(state.loading, true);
+
+  newer.reject(new Error("current Inactive request failed"));
+  await newLoad;
+  assert.equal(state.error, "current Inactive request failed");
+  assert.equal(state.loading, false);
+});
