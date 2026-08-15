@@ -146,6 +146,11 @@ test("invalid: /auth/ paths are rejected", () => {
   assert.equal(validateTransferDestination("/auth/callback?purpose=recovery"), "/");
 });
 
+test("invalid: a transfer destination pointing at the redemption surface itself is rejected -- prevents a self-referential redirect loop (Stage 3B)", () => {
+  assert.equal(validateTransferDestination("/auth/legacy-transfer"), "/");
+  assert.equal(validateTransferDestination("/auth/legacy-transfer#t=abc"), "/");
+});
+
 test("invalid: /api/ paths are rejected", () => {
   assert.equal(validateTransferDestination("/api/member/workspace-context"), "/");
 });

@@ -2,6 +2,7 @@ import "./globals.css";
 
 import type { Metadata, Viewport } from "next";
 
+import LegacyTransferInitiator from "@/components/auth/LegacyTransferInitiator";
 import { ShellTransition } from "@/components/shell/ShellTransition";
 import { AdminProvider } from "@/lib/adminContext";
 import { AdminWorkspaceProvider } from "@/lib/AdminWorkspaceProvider";
@@ -47,6 +48,7 @@ export default async function RootLayout({
         <TenantProvider tenant={tenantPresentation}>
           <AdminProvider>
             <AdminWorkspaceProvider>
+              <LegacyTransferInitiator />
               <script
                 dangerouslySetInnerHTML={{
                   __html: `
