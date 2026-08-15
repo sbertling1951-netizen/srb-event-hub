@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import LoginActionButton from "@/components/auth/LoginActionButton";
 import { logEngagement } from "@/lib/engagement";
-import { isMemberVisibleEvent } from "@/lib/eventStatus";
 import {
   enterResolvedRegistration,
   type ResolvedRegistration,
@@ -26,9 +25,6 @@ type EventRow = {
   end_date: string | null;
   lat: number | null;
   lng: number | null;
-  visible_to_members?: boolean | null;
-  status?: string | null;
-  is_active?: boolean | null;
 };
 
 type AttendeeRow = {
@@ -144,22 +140,19 @@ export default function MemberLoginPage() {
       setStatus("Loading events...");
       setError(null);
 
+      // Public discovery read: get_public_discoverable_events already
+      // applies the canonical member-visibility predicate server-side
+      // (visible_to_members + is_active + status), so no client-side
+      // re-filtering is needed here.
       const { data, error } = await supabase
-        .from("events")
-        .select(
-          "id,name,venue_name,location,start_date,end_date,lat,lng,visible_to_members,status,is_active",
-        )
-        .eq("visible_to_members", true)
-        .order("start_date", { ascending: true, nullsFirst: false })
+        .rpc("get_public_discoverable_events")
         .limit(25);
 
       if (error) {
         throw error;
       }
 
-      const memberEvents = ((data || []) as EventRow[]).filter((event) =>
-        isMemberVisibleEvent(event),
-      );
+      const memberEvents = (data || []) as EventRow[];
 
       setEvents(memberEvents);
 

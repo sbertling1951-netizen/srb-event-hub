@@ -14,12 +14,8 @@ type EventRow = {
   location: string | null;
   start_date: string | null;
   end_date: string | null;
-  event_code: string | null;
-  participant_capacity: number | null;
   lat: number | null;
   lng: number | null;
-  visible_to_members?: boolean | null;
-  registration_open?: boolean | null;
 };
 
 function formatDateRange(startDate: string | null, endDate: string | null) {
@@ -43,13 +39,12 @@ export default function MemberEventsPage() {
       setStatus("Loading events...");
       setError(null);
 
-      const { data, error } = await supabase
-        .from("events")
-        .select(
-          "id,name,venue_name,location,start_date,end_date,event_code,participant_capacity,lat,lng,visible_to_members,registration_open",
-        )
-        .eq("visible_to_members", true)
-        .order("start_date", { ascending: true, nullsFirst: false });
+      // Public discovery read: get_public_discoverable_events already
+      // applies the canonical member-visibility predicate and ordering
+      // server-side.
+      const { data, error } = await supabase.rpc(
+        "get_public_discoverable_events",
+      );
 
       if (error) {
         throw error;
@@ -72,7 +67,10 @@ export default function MemberEventsPage() {
   }, [loadEvents]);
 
   function handleSelectEvent(event: EventRow) {
-    setCurrentMemberEvent(event);
+    // event_code is not part of the public discovery contract (Stage 1
+    // audit: neither member login nor activation reads it from
+    // discovery -- the member types it, and it's verified server-side).
+    setCurrentMemberEvent({ ...event, event_code: null });
     router.push("/nearby");
   }
 
@@ -143,12 +141,6 @@ export default function MemberEventsPage() {
               <div style={{ fontSize: 13, color: "#666", marginTop: 6, overflowWrap: "anywhere" }}>
                 {formatDateRange(event.start_date, event.end_date)}
               </div>
-
-              {event.event_code ? (
-                <div style={{ fontSize: 13, color: "#666", marginTop: 4, overflowWrap: "anywhere" }}>
-                  Event code: {event.event_code}
-                </div>
-              ) : null}
 
               <div style={{ marginTop: 12 }}>
                 <button

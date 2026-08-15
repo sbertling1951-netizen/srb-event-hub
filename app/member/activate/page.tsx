@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { isMemberVisibleEvent } from "@/lib/eventStatus";
 import {
   getIdentityClaimPublicMessage,
   type IdentityClaimPublicResult,
@@ -17,9 +16,6 @@ type EventRow = {
   name: string | null;
   start_date: string | null;
   end_date: string | null;
-  visible_to_members?: boolean | null;
-  status?: string | null;
-  is_active?: boolean | null;
 };
 
 const inputStyle: React.CSSProperties = {
@@ -111,12 +107,13 @@ export default function MemberActivatePage() {
         setStatus("Loading events...");
         setError(null);
 
+        // Public discovery read: get_public_discoverable_events already
+        // applies the canonical member-visibility predicate server-side,
+        // so no client-side re-filtering is needed here. Ordering is
+        // reversed (most recent first) for activation's own display
+        // purpose only.
         const { data, error } = await supabase
-          .from("events")
-          .select(
-            "id,name,start_date,end_date,visible_to_members,status,is_active",
-          )
-          .eq("visible_to_members", true)
+          .rpc("get_public_discoverable_events")
           .order("start_date", { ascending: false, nullsFirst: false })
           .limit(40);
 
@@ -128,11 +125,7 @@ export default function MemberActivatePage() {
           return;
         }
 
-        const visibleEvents = ((data || []) as EventRow[]).filter(
-          isMemberVisibleEvent,
-        );
-
-        setEvents(visibleEvents);
+        setEvents((data || []) as EventRow[]);
         setStatus(
           "Enter information about yourself. We will check it privately and no account changes will be made yet.",
         );
