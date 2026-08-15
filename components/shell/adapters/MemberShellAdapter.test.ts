@@ -28,7 +28,7 @@ test("compact-name effect uses get_event_continuity_context keyed on event.id, n
 });
 
 test("compact name is still read from the RPC row's short_name field, unchanged", () => {
-  assert.match(SOURCE, /data\?\.short_name as string \| null/);
+  assert.match(SOURCE, /row\?\.short_name \?\? null/);
 });
 
 test("no member-discovery filtering (visible_to_members/status) is introduced", () => {

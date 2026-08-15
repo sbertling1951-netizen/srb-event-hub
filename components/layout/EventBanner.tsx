@@ -28,11 +28,15 @@ export default function EventBanner() {
   const { tenant } = useTenant();
 
   const loadActiveEvent = useCallback(async (canUpdate: () => boolean) => {
+    // Active-event bootstrap read (ADR-006 §3.2): get_current_active_event
+    // applies the same is_active-only predicate this direct read used.
+    // is_master_map is deliberately not reproduced here -- live evidence
+    // (2026-08-14) showed it currently distinguishes zero rows, and no
+    // governed meaning for it exists anywhere in this repository.
+    // start_date DESC NULLS LAST + limit(1) are applied by the caller,
+    // same as get_public_discoverable_events's own callers already do.
     const { data, error } = await supabase
-      .from("events")
-      .select("id,name,location,start_date,end_date")
-      .eq("is_active", true)
-      .eq("is_master_map", false)
+      .rpc("get_current_active_event")
       .order("start_date", { ascending: false, nullsFirst: false })
       .limit(1)
       .maybeSingle();
@@ -43,7 +47,7 @@ export default function EventBanner() {
     }
 
     if (canUpdate()) {
-      setEvent(data || null);
+      setEvent((data as EventRow | null) || null);
     }
   }, []);
 

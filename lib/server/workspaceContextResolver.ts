@@ -272,18 +272,19 @@ export async function resolveWorkspaceContext(
     });
   }
 
-  // The authenticated RPC establishes participation eligibility. This query
-  // only verifies the separately governed Event -> Tenant ownership fact.
+  // The authenticated RPC establishes participation eligibility. This RPC
+  // only verifies the separately governed Event -> Tenant ownership fact --
+  // the same independently-re-derive-ownership model already used by
+  // submit_member_checkin, not a new one.
   const claimedEventHint = eventHint.kind === "claimed" ? eventHint.value : null;
   const validEventHint = isUuid(claimedEventHint) ? claimedEventHint : null;
   const eventIdsToValidate = validEventHint
     ? [...new Set([...participationEventIds, validEventHint])]
     : participationEventIds;
-  const { data: tenantEvents, error: tenantEventsError } = await supabase
-    .from("events")
-    .select("id")
-    .in("id", eventIdsToValidate)
-    .eq("tenant_id", tenant.id);
+  const { data: tenantEvents, error: tenantEventsError } = await supabase.rpc(
+    "get_tenant_owned_event_ids",
+    { p_event_ids: eventIdsToValidate, p_tenant_id: tenant.id },
+  );
 
   if (tenantEventsError || !Array.isArray(tenantEvents)) {
     return unresolvedContext({
