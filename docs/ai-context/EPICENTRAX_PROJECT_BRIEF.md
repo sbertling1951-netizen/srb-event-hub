@@ -148,8 +148,9 @@ These numbers are historical context, not permission to reuse them as current pr
 - Both application domains need coherent login, SSL, redirect, cookie, and Supabase redirect support.
 - Identity migrations and RLS policies require especially narrow review because recursive policy logic and attribution errors can affect many workflows.
 - Project context can become fragmented across multiple agents; this package is intended to give all agents the same starting rules.
-- `app/api/vendor/workspace/profile/route.ts` writes to `public.vendors` through the service-role admin client (`getSupabaseAdminClient()`), bypassing RLS entirely; authorization is enforced only by an application-layer check (`selectedVendor.role !== "vendor_admin"`), not by governed database authority. Identified during the Event Lifecycle architecture audit (2026-08-13); not fixed. Requires its own governance/security review before remediation — do not fix opportunistically as part of an unrelated task.
-- **Public Event Read Surface Split — open design item.** `public.events` SELECT is currently, and remains after the RLS/grant drift reconciliation (`20260813140000_reconcile_events_rls_grant_drift.sql`, ADR-013 §2/§10 item 3), unconditionally open (`USING (true)`) to `anon` and `authenticated` — every column of every Event, across every Tenant, regardless of `visible_to_members`/`is_active`. This was deliberately left unnarrowed in that migration because `app/coach-map/public/page.tsx` reads an already-established workspace Event by id with no visibility filter at all, matching ADR-006's "inactive is not invalid" Context invariant; narrowing the row condition risked breaking that real, working consumer. The design work still needed: distinguish (1) public discovery/listing reads (which should likely be narrowed to `visible_to_members = true` and a public-safe column subset) from (2) known-context reads like coach-map's (which must keep working regardless of visibility/lifecycle flags, per ADR-006/ADR-013). Identified 2026-08-13 during the Events RLS/grant drift audit; not solved. Requires a governed read-surface design (table-policy narrowing vs. RPC split, per ADR-013 §2) before remediation — do not narrow SELECT opportunistically as part of an unrelated task.
+- **RESOLVED — Vendor profile write bypass.** `app/api/vendor/workspace/profile/route.ts` PATCH previously wrote to `public.vendors` through the service-role admin client, bypassing RLS. Identified 2026-08-13 during the Event Lifecycle architecture audit; resolved by commit `68a780a` ("Govern vendor profile updates through RLS"), durable on `origin/main`: PATCH now runs through a vendor token-bound client, and the write is authorized by `vendors_update_policy` (RLS-enforced, keyed off `auth.uid()`), not the application-layer role check alone. That check remains only as a fast-fail UX shortcut. This does not mean the route is free of service-role usage — see the GET residual below.
+- **RESOLVED — Public Event Read Surface Split.** `public.events` SELECT is no longer unconditionally open. As of HEAD `c922a7d`: `anon` has no direct SELECT grant or policy on `public.events`; `authenticated` direct SELECT is restricted to `public.has_event_admin_authority(auth.uid(), id)`, the same canonical predicate already governing UPDATE. All non-admin discovery/continuity reads are served by governed `SECURITY DEFINER` RPCs (`get_public_discoverable_events`, `get_event_continuity_context`, `get_current_active_event`, `get_tenant_owned_event_ids`) added and adopted across `7dd8029`..`c922a7d`. Originally identified 2026-08-13 during the Events RLS/grant drift audit (`20260813140000_reconcile_events_rls_grant_drift.sql`, ADR-013 §2/§10 item 3).
+- **UNRESOLVED, UNSCOPED — Vendor profile GET read path.** `app/api/vendor/workspace/profile/route.ts` GET still reads `public.vendors` through the service-role admin client (`getSupabaseAdminClient()`), not RLS. This is read-only, and access is constrained by the existing cookie-resolved vendor-session check (a vendor must already be selected in context) — it is not the same defect as the write bypass above, which is resolved. Its governance/security implications have not yet been formally scoped, and no remediation decision has been made. Do not remediate opportunistically as part of an unrelated task.
 
 Update this section only with verified current facts. Move resolved items to project history rather than letting this become an unbounded diary.
 
@@ -204,17 +205,26 @@ The handoff is a report, not a second project memory system. Durable decisions b
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-07-30T09:57:28-04:00`
+**Generated at:** `2026-08-15T06:54:26-06:00`
 **Branch:** `main`
-**Commit:** `f98ddc5 Add shared AI project context`
-**Commit date:** `2026-07-30T09:04:59-04:00`
+**Commit:** `c922a7d Narrow authenticated public.events SELECT to canonical Event admin authority`
+**Commit date:** `2026-08-14T21:41:35-06:00`
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `3`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `14`
+**Untracked:** `1`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
+- `2026-08-02_participation_architecture.md`
+- `2026-08-02_progressive_identity_reconnection_architecture.md`
+- `2026-08-02_progressive_identity_stewardship.md`
+- `2026-08-02_progressive_person_lifecycle_and_identity_coalescence_architecture.md`
+- `2026-08-02_relationship_architecture.md`
+- `2026-08-02_relationship_governance_architecture.md`
+- `2026-08-02_server_authentication_boundary_architecture.md`
+- `2026-08-02_unified_person_resolution_architecture.md`
+- `2026-08-02_workspace_resolver_transition_architecture.md`
 - `ADR-000 EpicentraX Constitution.md`
 - `ADR-001 Operational Intelligence Engine.md`
 - `ADR-002 Admin Workspace Architecture.md`
@@ -226,27 +236,53 @@ _Git status above was captured before this script wrote this section; writing th
 - `ADR-008 Operational Permission Framework.md`
 - `ADR-009 Tenant Branding and White Label Architecture.md`
 - `ADR-010 AI Trust and Learning Architecture.md`
+- `ADR-011 Person-Centered Workspace Resolution.md`
+- `ADR-012 Person–Tenant Relationship Architecture.md`
+- `ADR-013 Event Lifecycle and Historical Preservation Architecture.md`
+- `DEVELOPMENT_STANDARDS.md`
+- `EPICENTRAX_ADAPTIVE_UI_ARCHITECTURE.md`
+- `EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md`
+- `EPICENTRAX_ADMIN_TRUST_AND_CONTEXT_ARCHITECTURE.md`
+- `EPICENTRAX_ADMIN_UI_INVENTORY_AUDIT.md`
+- `EPICENTRAX_ADMINISTRATIVE_AUTHORITY_FOUNDATION_ARCHITECTURE.md`
+- `EPICENTRAX_ATTENDEES_MODULE_REFACTOR_AUDIT.md`
+- `EPICENTRAX_CANONICAL_PARKING_READ_MIGRATION_PLAN.md`
+- `EPICENTRAX_DOMAIN_MODEL_AMENDMENT_PROPOSAL_EVENT_LIFECYCLE_AND_ENTITLEMENT.md`
+- `EPICENTRAX_DOMAIN_MODEL.md`
+- `EPICENTRAX_EXPERIENCE_ARCHITECTURE.md`
+- `EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md`
+- `EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_IMPLEMENTATION_PLAN.md`
+- `EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_PLAN.md`
+- `EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md`
+- `EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md`
+- `EPICENTRAX_NEARBY_KNOWLEDGE_AND_TENANT_CURATION_ARCHITECTURE.md`
+- `EPICENTRAX_PARKING_REPAIR_PARTIAL_RECOVERY_ADDENDUM.md`
+- `EPICENTRAX_RENDERER_NEUTRAL_MAPPING_ARCHITECTURE.md`
+- `EPICENTRAX_SHARED_EXPERIENCE_CONTEXT_ARCHITECTURE.md`
+- `EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md`
+- `EPICENTRAX_SITE_PLACEMENT_IMPLEMENTATION_SPECIFICATION.md`
+- `EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md`
 - `epicentrax-user-flow-and-native-interaction.md`
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `17`
-- Latest migration: `20260730130000_fix_vendor_org_access_policy_recursion.sql`
+- Total migration files: `126`
+- Latest migration: `20260814230000_narrow_authenticated_events_select_to_canonical_authority.sql`
 - Latest five:
-  - `20260727120200_stage8b_proof_of_possession_activation.sql`
-  - `20260727120300_vendor_person_specific_access_foundation.sql`
-  - `20260729120000_add_resolve_member_account_rpc.sql`
-  - `20260730120000_add_magic_link_activation_support.sql`
-  - `20260730130000_fix_vendor_org_access_policy_recursion.sql`
+  - `20260814190000_create_current_active_event_context_rpc.sql`
+  - `20260814200000_create_tenant_owned_event_ids_rpc.sql`
+  - `20260814210000_retire_anon_public_events_select.sql`
+  - `20260814220000_harden_tenant_owned_event_ids_rpc_acl.sql`
+  - `20260814230000_narrow_authenticated_events_select_to_canonical_authority.sql`
 
 ### Identity-audit inventory
-- SQL files: `15`
-- Markdown files: `32`
+- SQL files: `14`
+- Markdown files: `24`
 - Latest five:
+  - `baseline-diagnostics/stage7_identity_integrity_verification.md`
+  - `baseline-diagnostics/stage8a_identity_claim_foundation.md`
   - `baseline-diagnostics/tenant_identity_architecture_recommendation.md`
   - `baseline-diagnostics/tenants_rls_reconciliation_plan.md`
-  - `briefings/20260727_vendor_workspace_reset_session_briefing.md`
-  - `briefings/auth_identity_attribution_audit_briefing.md`
   - `briefings/stage8a_development_status_report.md`
 
 ### Current milestone
