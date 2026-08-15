@@ -2,6 +2,9 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
+import VendorDispositionHistory from "@/components/admin/VendorDispositionHistory";
+import VendorEventDecisionModal from "@/components/admin/VendorEventDecisionModal";
+import VendorIntelligenceBadge from "@/components/admin/VendorIntelligenceBadge";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
@@ -11,6 +14,23 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
+import {
+  admitVendorForEvent,
+  deriveVendorEventDisplayStatus,
+  type EventVendorMetadataUpdate,
+  getAvailableVendorEventActions,
+  getVendorIntelligenceSummary,
+  listVendorEventApplications,
+  listVendorEventDispositions,
+  registerVendorEventCandidacy,
+  rejectVendorEventCandidacy,
+  revokeVendorAdmission,
+  updateEventVendorMetadata,
+  type VendorEventApplicationRow,
+  type VendorEventDisplayStatus,
+  type VendorEventDispositionRow,
+  type VendorIntelligenceSummary,
+} from "@/lib/vendorEventLifecycle";
 
 type Vendor = {
   id: string;
@@ -79,16 +99,72 @@ const dashboardLinkStyle: React.CSSProperties = {
   transition: "all 0.2s ease",
 };
 
+export const STATUS_LABELS: Record<VendorEventDisplayStatus, string> = {
+  not_considered: "Not yet considered",
+  pending: "Pending review",
+  admitted: "Admitted -- currently participating",
+  rejected: "Rejected for this Event",
+  withdrawn: "Withdrawn by vendor",
+  revoked: "Admitted historically -- revoked, not currently participating",
+};
+
+export const STATUS_COLORS: Record<VendorEventDisplayStatus, { background: string; border: string; text: string }> = {
+  not_considered: { background: "#f8fafc", border: "#e2e8f0", text: "#64748b" },
+  pending: { background: "#fffbeb", border: "#fde68a", text: "#92400e" },
+  admitted: { background: "#f0fdf4", border: "#bbf7d0", text: "#166534" },
+  rejected: { background: "#fef2f2", border: "#fecaca", text: "#b91c1c" },
+  withdrawn: { background: "#f8fafc", border: "#e2e8f0", text: "#64748b" },
+  revoked: { background: "#fff7ed", border: "#fed7aa", text: "#9a3412" },
+};
+
+export function StatusBadge({ status }: { status: VendorEventDisplayStatus }) {
+  const colors = STATUS_COLORS[status];
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        fontSize: 12,
+        fontWeight: 800,
+        color: colors.text,
+        background: colors.background,
+        border: `1px solid ${colors.border}`,
+        borderRadius: 999,
+        padding: "3px 10px",
+      }}
+    >
+      {STATUS_LABELS[status]}
+    </span>
+  );
+}
+
 function AdminVendorsPageInner() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [eventVendors, setEventVendors] = useState<EventVendor[]>([]);
+  const [applications, setApplications] = useState<VendorEventApplicationRow[]>([]);
   const [form, setForm] = useState<VendorForm>(emptyVendor);
   const [selectedVendorId, setSelectedVendorId] = useState("");
   const [status, setStatus] = useState("Loading vendors...");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const adminEvent = getCurrentAdminEvent();  const { admin } = useAdmin();
+  const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
+  const [intelligenceByVendorId, setIntelligenceByVendorId] = useState<
+    Record<string, VendorIntelligenceSummary>
+  >({});
+  const [dispositionsByVendorId, setDispositionsByVendorId] = useState<
+    Record<string, VendorEventDispositionRow[]>
+  >({});
+  const [loadingReview, setLoadingReview] = useState(false);
+  const [decisionModal, setDecisionModal] = useState<{
+    mode: "reject" | "revoke";
+    vendor: Vendor;
+  } | null>(null);
+
+  // Canonical Admin working-Event context (lib/adminEventContext.ts via
+  // lib/adminWorkspaceContext.tsx's re-export) -- the same mechanism
+  // every other governed Admin page uses. Never reimplemented here.
+  const adminEvent = getCurrentAdminEvent();
+  const { admin } = useAdmin();
 
   async function loadPage() {
     try {
@@ -107,7 +183,7 @@ function AdminVendorsPageInner() {
         return;
       }
 
-      const [{ data: vendorData, error: vendorError }, eventVendorResult] =
+      const [{ data: vendorData, error: vendorError }, eventVendorResult, applicationRows] =
         await Promise.all([
           supabase
             .from("vendors")
@@ -120,6 +196,16 @@ function AdminVendorsPageInner() {
                 .select("*")
                 .eq("event_id", adminEvent.id)
             : Promise.resolve({ data: [], error: null }),
+
+          adminEvent?.id
+            ? listVendorEventApplications(adminEvent.id).catch((err: any) => {
+                // A caller without event.vendors.view for this Event is
+                // correctly denied by the RPC -- fail closed to an empty
+                // queue rather than surfacing a raw RPC error on load.
+                console.error("list_vendor_event_applications denied:", err);
+                return [] as VendorEventApplicationRow[];
+              })
+            : Promise.resolve([] as VendorEventApplicationRow[]),
         ]);
 
       if (vendorError) {
@@ -131,6 +217,10 @@ function AdminVendorsPageInner() {
 
       setVendors((vendorData || []) as Vendor[]);
       setEventVendors((eventVendorResult.data || []) as EventVendor[]);
+      setApplications(applicationRows);
+      setExpandedVendorId(null);
+      setIntelligenceByVendorId({});
+      setDispositionsByVendorId({});
       setStatus(
         `Loaded ${(vendorData || []).length} vendors for ${
           adminEvent?.name || "current event"
@@ -144,7 +234,7 @@ function AdminVendorsPageInner() {
   }
 
   useEffect(() => {
-    if (!admin) return;
+    if (!admin) {return;}
 
     void loadPage();
 
@@ -156,16 +246,22 @@ function AdminVendorsPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
 
-  const _selectedVendor = useMemo(
-    () => vendors.find((v) => v.id === selectedVendorId) || null,
-    [vendors, selectedVendorId],
-  );
-
   const eventVendorByVendorId = useMemo(() => {
     const map = new Map<string, EventVendor>();
     eventVendors.forEach((row) => map.set(row.vendor_id, row));
     return map;
   }, [eventVendors]);
+
+  const applicationByVendorId = useMemo(() => {
+    const map = new Map<string, VendorEventApplicationRow>();
+    applications.forEach((row) => map.set(row.vendor_id, row));
+    return map;
+  }, [applications]);
+
+  const pendingApplications = useMemo(
+    () => applications.filter((row) => row.candidacy_status === "pending"),
+    [applications],
+  );
 
   function startEdit(vendor: Vendor) {
     setSelectedVendorId(vendor.id);
@@ -238,6 +334,10 @@ function AdminVendorsPageInner() {
     }
   }
 
+  // Catalog identity CRUD (public.vendors) -- a separate authority
+  // question from Event admission (has_vendor_catalog_admin_authority,
+  // reconciled in the prior Vendor Catalog Authority stage), unchanged
+  // and unrelated to the admission lifecycle below.
   async function saveVendor() {
     if (!form.business_name.trim()) {
       setError("Business name is required.");
@@ -247,7 +347,7 @@ function AdminVendorsPageInner() {
     try {
       setSaving(true);
       setError(null);
-      setStatus("Saving vendor... payload includes legacy name field");
+      setStatus("Saving vendor...");
 
       const payload = {
         name: form.business_name.trim(),
@@ -261,7 +361,6 @@ function AdminVendorsPageInner() {
         preferred_contact_method: form.preferred_contact_method,
         is_active: form.is_active,
       };
-      console.log("Vendor payload", payload);
 
       if (form.id) {
         const { error } = await supabase
@@ -298,98 +397,118 @@ function AdminVendorsPageInner() {
     }
   }
 
-  async function toggleEventVendor(vendor: Vendor) {
+  async function loadReviewData(vendorId: string) {
+    if (!adminEvent?.id) {
+      return;
+    }
+    setLoadingReview(true);
+    try {
+      const [intel, dispositions] = await Promise.all([
+        getVendorIntelligenceSummary(vendorId, adminEvent.id).catch((err: any) => {
+          console.error("get_vendor_intelligence_summary denied:", err);
+          return null;
+        }),
+        listVendorEventDispositions(adminEvent.id, vendorId).catch((err: any) => {
+          console.error("list_vendor_event_dispositions denied:", err);
+          return [] as VendorEventDispositionRow[];
+        }),
+      ]);
+
+      if (intel) {
+        setIntelligenceByVendorId((prev) => ({ ...prev, [vendorId]: intel }));
+      }
+      setDispositionsByVendorId((prev) => ({ ...prev, [vendorId]: dispositions }));
+    } finally {
+      setLoadingReview(false);
+    }
+  }
+
+  function toggleReview(vendorId: string) {
+    const next = expandedVendorId === vendorId ? null : vendorId;
+    setExpandedVendorId(next);
+    if (next && !dispositionsByVendorId[next]) {
+      void loadReviewData(next);
+    }
+  }
+
+  // --- Governed lifecycle actions. Every one of these is a call to a
+  // SECURITY DEFINER RPC gated by has_event_task_authority -- none
+  // reimplements admission logic or writes event_vendors directly. RPC
+  // denial (e.g. an admin without event.vendors.manage for this Event)
+  // surfaces as a plain error message; there is no client-side per-Event
+  // authority check to short-circuit it with yet (see report).
+
+  async function considerForEvent(vendor: Vendor) {
     if (!adminEvent?.id) {
       setError("Select an admin event first.");
       return;
     }
-
-    const existing = eventVendorByVendorId.get(vendor.id);
-
-    if (existing) {
-      const confirmed = window.confirm(
-        `Remove ${vendor.business_name} from ${adminEvent.name || "this event"}? This only removes the assignment to this event -- the vendor record is not deleted and can be added back at any time.`,
-      );
-      if (!confirmed) {
-        return;
-      }
-    }
-
-    if (existing) {
-      const reason = window.prompt(
-        `Remove ${vendor.business_name} from ${adminEvent.name || "this event"}? This only removes the assignment to this event -- the vendor record is not deleted and can be added back at any time.\n\nReason for removal (required):`,
-      );
-      if (reason === null) {
-        return;
-      }
-      const trimmedReason = reason.trim();
-      if (!trimmedReason) {
-        setError("A reason is required to remove a vendor from this event.");
-        return;
-      }
-
-      try {
-        setSaving(true);
-        setError(null);
-
-        // Governed revocation (Stage 3): direct event_vendors DML is no
-        // longer permitted -- admit_vendor_for_event/revoke_vendor_admission
-        // are the only write path. This quick-toggle UI has no structured
-        // reason picker yet, so it supplies the admin's own typed reason as
-        // reason_text under the non-quality-implying "other_administrative"
-        // code rather than guessing a more specific classification.
-        const { error } = await supabase.rpc("revoke_vendor_admission", {
-          p_vendor_id: vendor.id,
-          p_event_id: adminEvent.id,
-          p_reason_code: "other_administrative",
-          p_reason_text: trimmedReason,
-        });
-
-        if (error) {
-          throw error;
-        }
-        setStatus(`${vendor.business_name} removed from this event.`);
-        await loadPage();
-      } catch (err: any) {
-        console.error("revoke vendor admission error:", err);
-        setError(err?.message || "Could not remove vendor from event.");
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
-
     try {
       setSaving(true);
       setError(null);
-
-      const { error } = await supabase.rpc("admit_vendor_for_event", {
-        p_vendor_id: vendor.id,
-        p_event_id: adminEvent.id,
-      });
-
-      if (error) {
-        throw error;
-      }
-      setStatus(`${vendor.business_name} assigned to this event.`);
+      await registerVendorEventCandidacy(vendor.id, adminEvent.id);
+      setStatus(`${vendor.business_name} is now a candidate for this Event.`);
       await loadPage();
     } catch (err: any) {
-      console.error("admit vendor for event error:", err);
-      setError(err?.message || "Could not update event vendor.");
+      console.error("register vendor event candidacy error:", err);
+      setError(err?.message || "Could not register this vendor as a candidate.");
     } finally {
       setSaving(false);
     }
   }
 
-  // Metadata Governance Bridge: direct event_vendors DML remains
-  // permanently closed (Stage 3). This now calls the governed
-  // update_event_vendor_metadata RPC, which accepts only this same
-  // metadata allowlist (is_featured/is_visible_to_members/action_type/
-  // signup_url/display_order/event_note) and is structurally incapable
-  // of touching admission-lifecycle state.
+  async function admit(vendor: Vendor) {
+    if (!adminEvent?.id) {
+      setError("Select an admin event first.");
+      return;
+    }
+    try {
+      setSaving(true);
+      setError(null);
+      await admitVendorForEvent(vendor.id, adminEvent.id);
+      setStatus(`${vendor.business_name} admitted for this Event.`);
+      await loadPage();
+    } catch (err: any) {
+      console.error("admit vendor for event error:", err);
+      setError(err?.message || "Could not admit this vendor.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDecisionConfirm(reasonCode: string, reasonText: string | null) {
+    if (!adminEvent?.id || !decisionModal) {
+      return;
+    }
+    const { mode, vendor } = decisionModal;
+    try {
+      setSaving(true);
+      setError(null);
+      if (mode === "reject") {
+        await rejectVendorEventCandidacy(vendor.id, adminEvent.id, reasonCode, reasonText);
+        setStatus(`${vendor.business_name} rejected for this Event.`);
+      } else {
+        await revokeVendorAdmission(vendor.id, adminEvent.id, reasonCode, reasonText);
+        setStatus(`${vendor.business_name}'s admission to this Event was revoked.`);
+      }
+      setDecisionModal(null);
+      await loadPage();
+    } catch (err: any) {
+      console.error(`${mode} vendor event error:`, err);
+      setError(err?.message || `Could not ${mode} this vendor.`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Metadata Governance Bridge: presentation/participation-mode fields
+  // only (is_featured/is_visible_to_members/action_type/signup_url/
+  // display_order/event_note). Structurally incapable of touching
+  // admission-lifecycle state -- kept visually separate below from the
+  // lifecycle actions above.
   async function updateEventVendor(
     row: EventVendor,
-    patch: Partial<EventVendor>,
+    patch: EventVendorMetadataUpdate,
   ) {
     if (!adminEvent?.id) {
       setError("Select an admin event first.");
@@ -400,15 +519,7 @@ function AdminVendorsPageInner() {
       setSaving(true);
       setError(null);
 
-      const { error } = await supabase.rpc("update_event_vendor_metadata", {
-        p_vendor_id: row.vendor_id,
-        p_event_id: adminEvent.id,
-        p_updates: patch,
-      });
-
-      if (error) {
-        throw error;
-      }
+      await updateEventVendorMetadata(row.vendor_id, adminEvent.id, patch);
 
       setStatus("Event vendor settings updated.");
       await loadPage();
@@ -451,7 +562,22 @@ function AdminVendorsPageInner() {
           minWidth: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>Vendor Dashboard</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <h2 style={{ margin: 0 }}>Vendor Dashboard</h2>
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 800,
+              color: "#0f172a",
+              background: "#f1f5f9",
+              border: "1px solid #e2e8f0",
+              borderRadius: 999,
+              padding: "4px 12px",
+            }}
+          >
+            Event: {adminEvent?.name || "None selected"}
+          </span>
+        </div>
 
         <div
           style={{
@@ -487,6 +613,55 @@ function AdminVendorsPageInner() {
           </a>
         </div>
       </div>
+
+      {adminEvent?.id && pendingApplications.length > 0 ? (
+        <div className="card" style={{ padding: 18, minWidth: 0 }}>
+          <h2 style={{ marginTop: 0 }}>
+            Applications Awaiting Review -- {adminEvent.name}
+          </h2>
+          <div style={{ display: "grid", gap: 10 }}>
+            {pendingApplications.map((app) => {
+              const vendor = vendors.find((v) => v.id === app.vendor_id);
+              if (!vendor) {return null;}
+              return (
+                <div
+                  key={app.application_id}
+                  style={{
+                    border: "1px solid #fde68a",
+                    background: "#fffbeb",
+                    borderRadius: 10,
+                    padding: 12,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 800 }}>{vendor.business_name}</div>
+                    <div style={{ fontSize: 12, color: "#92400e" }}>
+                      Submitted {new Date(app.submitted_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="button" onClick={() => void admit(vendor)} disabled={saving}>
+                      Admit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDecisionModal({ mode: "reject", vendor })}
+                      disabled={saving}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -667,21 +842,38 @@ function AdminVendorsPageInner() {
         </div>
 
         <div className="card" style={{ padding: 18, minWidth: 0 }}>
-          <h2 style={{ marginTop: 0 }}>Vendors</h2>
+          <h2 style={{ marginTop: 0 }}>
+            Vendor Catalog {adminEvent?.name ? `-- consider for ${adminEvent.name}` : ""}
+          </h2>
+          <p style={{ marginTop: -6, fontSize: 13, color: "#64748b" }}>
+            Every vendor here is a known EpicentraX catalog vendor. Considering or admitting a
+            vendor for this Event never creates a duplicate vendor record and never affects any
+            other Event.
+          </p>
 
           <div style={{ display: "grid", gap: 10 }}>
             {vendors.map((vendor) => {
               const eventVendor = eventVendorByVendorId.get(vendor.id);
-              const assigned = !!eventVendor;
+              const application = applicationByVendorId.get(vendor.id);
+              const displayStatus = deriveVendorEventDisplayStatus(
+                application?.candidacy_status ?? null,
+                application?.current_participation_state ?? null,
+              );
+              const isExpanded = expandedVendorId === vendor.id;
+              const intel = intelligenceByVendorId[vendor.id] || null;
+              const dispositions = dispositionsByVendorId[vendor.id] || [];
 
               return (
                 <div
                   key={vendor.id}
                   style={{
-                    border: "1px solid #ddd",
+                    border:
+                      selectedVendorId === vendor.id
+                        ? "2px solid #2563eb"
+                        : "1px solid #ddd",
                     borderRadius: 10,
                     padding: 12,
-                    background: assigned ? "#f0fdf4" : "white",
+                    background: displayStatus === "admitted" ? "#f0fdf4" : "white",
                     minWidth: 0,
                     overflowWrap: "anywhere",
                   }}
@@ -692,6 +884,7 @@ function AdminVendorsPageInner() {
                       gap: 12,
                       alignItems: "center",
                       minWidth: 0,
+                      flexWrap: "wrap",
                     }}
                   >
                     {vendor.logo_url ? (
@@ -711,7 +904,7 @@ function AdminVendorsPageInner() {
                       />
                     ) : null}
 
-                    <div style={{ minWidth: 0 }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontWeight: 800 }}>
                         {vendor.business_name}
                       </div>
@@ -722,6 +915,8 @@ function AdminVendorsPageInner() {
                         {vendor.preferred_contact_method || "email"}
                       </div>
                     </div>
+
+                    {adminEvent?.id ? <StatusBadge status={displayStatus} /> : null}
                   </div>
 
                   {vendor.business_description ? (
@@ -739,113 +934,198 @@ function AdminVendorsPageInner() {
                     }}
                   >
                     <button type="button" onClick={() => startEdit(vendor)}>
-                      Edit
+                      Edit Catalog Info
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => void toggleEventVendor(vendor)}
-                      disabled={saving}
-                    >
-                      {assigned ? "Remove from Event" : "Add to Event"}
-                    </button>
+                    {adminEvent?.id ? (
+                      <button type="button" onClick={() => toggleReview(vendor.id)}>
+                        {isExpanded ? "Hide Review" : "Review for this Event"}
+                      </button>
+                    ) : null}
+
+                    {adminEvent?.id
+                      ? getAvailableVendorEventActions(displayStatus).map((action) => {
+                          switch (action) {
+                            case "consider":
+                              return (
+                                <button
+                                  key="consider"
+                                  type="button"
+                                  onClick={() => void considerForEvent(vendor)}
+                                  disabled={saving}
+                                >
+                                  Consider for Event
+                                </button>
+                              );
+                            case "admit":
+                              return (
+                                <button
+                                  key="admit"
+                                  type="button"
+                                  onClick={() => void admit(vendor)}
+                                  disabled={saving}
+                                >
+                                  {displayStatus === "not_considered" ? "Admit Directly" : "Admit"}
+                                </button>
+                              );
+                            case "reject":
+                              return (
+                                <button
+                                  key="reject"
+                                  type="button"
+                                  onClick={() => setDecisionModal({ mode: "reject", vendor })}
+                                  disabled={saving}
+                                >
+                                  Reject
+                                </button>
+                              );
+                            case "revoke":
+                              return (
+                                <button
+                                  key="revoke"
+                                  type="button"
+                                  onClick={() => setDecisionModal({ mode: "revoke", vendor })}
+                                  disabled={saving}
+                                >
+                                  Revoke Admission
+                                </button>
+                              );
+                            case "reconsider":
+                              return (
+                                <button
+                                  key="reconsider"
+                                  type="button"
+                                  onClick={() => void admit(vendor)}
+                                  disabled={saving}
+                                >
+                                  {displayStatus === "revoked" ? "Re-Admit" : "Admit Anyway"}
+                                </button>
+                              );
+                            default:
+                              return null;
+                          }
+                        })
+                      : null}
                   </div>
 
-                  {eventVendor ? (
+                  {isExpanded ? (
                     <div
                       style={{
                         marginTop: 12,
-                        padding: 10,
+                        padding: 12,
                         borderRadius: 8,
                         background: "#fafafa",
                         border: "1px solid #eee",
                         display: "grid",
-                        gap: 8,
+                        gap: 14,
                       }}
                     >
-                      <label style={{ display: "flex", gap: 8 }}>
-                        <input
-                          type="checkbox"
-                          checked={!!eventVendor.is_featured}
-                          onChange={(e) =>
-                            void updateEventVendor(eventVendor, {
-                              is_featured: e.target.checked,
-                            })
-                          }
-                        />
-                        Featured on dashboard slideshow
-                      </label>
+                      <VendorIntelligenceBadge summary={intel} loading={loadingReview && !intel} />
 
-                      <label style={{ display: "flex", gap: 8 }}>
-                        <input
-                          type="checkbox"
-                          checked={eventVendor.is_visible_to_members !== false}
-                          onChange={(e) =>
-                            void updateEventVendor(eventVendor, {
-                              is_visible_to_members: e.target.checked,
-                            })
-                          }
-                        />
-                        Visible to members
-                      </label>
+                      {eventVendor ? (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ fontWeight: 800, fontSize: 13 }}>
+                            Event Presentation Settings
+                          </div>
+                          <label style={{ display: "flex", gap: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={!!eventVendor.is_featured}
+                              onChange={(e) =>
+                                void updateEventVendor(eventVendor, {
+                                  is_featured: e.target.checked,
+                                })
+                              }
+                            />
+                            Featured on dashboard slideshow
+                          </label>
 
-                      <label>
-                        <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                          Member action
+                          <label style={{ display: "flex", gap: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={eventVendor.is_visible_to_members !== false}
+                              onChange={(e) =>
+                                void updateEventVendor(eventVendor, {
+                                  is_visible_to_members: e.target.checked,
+                                })
+                              }
+                            />
+                            Visible to members
+                          </label>
+
+                          <label>
+                            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                              Member action
+                            </div>
+                            <select
+                              value={eventVendor.action_type || "service_request"}
+                              onChange={(e) =>
+                                void updateEventVendor(eventVendor, {
+                                  action_type: e.target
+                                    .value as EventVendorMetadataUpdate["action_type"],
+                                })
+                              }
+                              style={{ padding: 8, width: "100%" }}
+                            >
+                              <option value="service_request">
+                                Request Service in app
+                              </option>
+                              <option value="external_signup">
+                                Use signup/contact link
+                              </option>
+                              <option value="info_only">Info only</option>
+                            </select>
+                          </label>
+
+                          <input
+                            defaultValue={eventVendor.signup_url || ""}
+                            placeholder="Event signup/contact URL"
+                            onBlur={(e) =>
+                              void updateEventVendor(eventVendor, {
+                                signup_url: e.target.value.trim() || null,
+                              })
+                            }
+                            style={{ padding: 8 }}
+                          />
+
+                          <input
+                            defaultValue={String(eventVendor.display_order ?? 100)}
+                            placeholder="Display order"
+                            onBlur={(e) =>
+                              void updateEventVendor(eventVendor, {
+                                display_order: Number(e.target.value) || 100,
+                              })
+                            }
+                            style={{ padding: 8 }}
+                          />
+
+                          <textarea
+                            defaultValue={eventVendor.event_note || ""}
+                            placeholder="Event-specific vendor note"
+                            rows={3}
+                            onBlur={(e) =>
+                              void updateEventVendor(eventVendor, {
+                                event_note: e.target.value.trim() || null,
+                              })
+                            }
+                            style={{ padding: 8 }}
+                          />
                         </div>
-                        <select
-                          value={eventVendor.action_type || "service_request"}
-                          onChange={(e) =>
-                            void updateEventVendor(eventVendor, {
-                              action_type: e.target
-                                .value as EventVendor["action_type"],
-                            })
-                          }
-                          style={{ padding: 8, width: "100%" }}
-                        >
-                          <option value="service_request">
-                            Request Service in app
-                          </option>
-                          <option value="external_signup">
-                            Use signup/contact link
-                          </option>
-                          <option value="info_only">Info only</option>
-                        </select>
-                      </label>
+                      ) : (
+                        <div style={{ fontSize: 13, color: "#94a3b8" }}>
+                          Presentation settings become available once this vendor is admitted.
+                        </div>
+                      )}
 
-                      <input
-                        defaultValue={eventVendor.signup_url || ""}
-                        placeholder="Event signup/contact URL"
-                        onBlur={(e) =>
-                          void updateEventVendor(eventVendor, {
-                            signup_url: e.target.value.trim() || null,
-                          })
-                        }
-                        style={{ padding: 8 }}
-                      />
-
-                      <input
-                        defaultValue={String(eventVendor.display_order ?? 100)}
-                        placeholder="Display order"
-                        onBlur={(e) =>
-                          void updateEventVendor(eventVendor, {
-                            display_order: Number(e.target.value) || 100,
-                          })
-                        }
-                        style={{ padding: 8 }}
-                      />
-
-                      <textarea
-                        defaultValue={eventVendor.event_note || ""}
-                        placeholder="Event-specific vendor note"
-                        rows={3}
-                        onBlur={(e) =>
-                          void updateEventVendor(eventVendor, {
-                            event_note: e.target.value.trim() || null,
-                          })
-                        }
-                        style={{ padding: 8 }}
-                      />
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ fontWeight: 800, fontSize: 13 }}>
+                          History for {adminEvent?.name}
+                        </div>
+                        <VendorDispositionHistory
+                          dispositions={dispositions}
+                          loading={loadingReview && dispositions.length === 0}
+                        />
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -858,6 +1138,18 @@ function AdminVendorsPageInner() {
           </div>
         </div>
       </div>
+
+      {decisionModal ? (
+        <VendorEventDecisionModal
+          open
+          mode={decisionModal.mode}
+          vendorName={decisionModal.vendor.business_name}
+          eventName={adminEvent?.name || "this Event"}
+          busy={saving}
+          onCancel={() => setDecisionModal(null)}
+          onConfirm={handleDecisionConfirm}
+        />
+      ) : null}
     </div>
   );
 }
@@ -869,7 +1161,8 @@ export default function AdminVendorsPage() {
     // canonical per-Event event.vendors.manage/view task authority (no
     // client-side adapter for that exists yet). The RPCs' own
     // has_event_task_authority checks remain the authoritative boundary
-    // regardless of what this guard shows.
+    // regardless of what this guard shows; a denied action here surfaces
+    // as a plain RPC error rather than a hidden control.
     <AdminRouteGuard requiredPermission="can_manage_vendors">
       <AdminShellAdapter pageTitle="Vendor Admin">
         <AdminVendorsPageInner />
