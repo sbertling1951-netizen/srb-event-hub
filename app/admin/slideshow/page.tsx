@@ -56,6 +56,19 @@ type ResolvedPhoto = {
   caption: string | null;
 };
 
+type ManualDeckItem = {
+  id: string;
+  content_ref_id: string | null;
+  sort_order: number;
+};
+
+type AvailableApprovedPhoto = {
+  id: string;
+  member_caption: string | null;
+  admin_caption: string | null;
+  uploaded_at: string;
+};
+
 // Maps the governed session RPCs' RAISE EXCEPTION codes (Stage 4) to
 // presenter-facing text. Exported for focused testing, mirroring
 // app/admin/agenda/page.tsx's mapAgendaRpcError/isStaleAgendaVersionError
@@ -76,6 +89,14 @@ const PRESENTATION_ERROR_MESSAGES: Record<string, string> = {
   invalid_selection_mode: "Please choose a valid selection mode.",
   deck_has_items:
     "Remove this deck's manual items before switching it to All Approved Photos.",
+  deck_not_manual: "Only Manual Selection decks can be edited here.",
+  photo_not_found: "That photo is no longer available.",
+  photo_event_mismatch: "That photo belongs to a different event.",
+  photo_not_approved: "Only approved photos can be added to this deck.",
+  photo_already_in_deck: "That photo is already in this deck.",
+  item_not_found: "That deck item no longer exists.",
+  item_set_mismatch:
+    "This deck changed elsewhere. Its current order has been reloaded.",
 };
 
 export function mapPresentationRpcError(
@@ -113,10 +134,12 @@ function AdminSlideshowPageInner() {
     boolean | null
   >(null);
   const [eventId, setEventId] = useState<string | null>(null);
+  const [eventName, setEventName] = useState<string | null>(null);
 
   const checkSlideshowAccess = useCallback(async () => {
     const adminEvent = getCurrentAdminEvent();
     setEventId(adminEvent?.id ?? null);
+    setEventName(adminEvent?.name ?? adminEvent?.eventName ?? null);
 
     if (!adminEvent?.id) {
       setHasSlideshowAccess(null);
@@ -147,6 +170,12 @@ function AdminSlideshowPageInner() {
 
   const [decks, setDecks] = useState<PresentationDeck[] | null>(null);
   const [selectedDeckId, setSelectedDeckId] = useState<string>("");
+  const [manualDeckItems, setManualDeckItems] = useState<ManualDeckItem[]>([]);
+  const [availableApprovedPhotos, setAvailableApprovedPhotos] = useState<
+    AvailableApprovedPhoto[]
+  >([]);
+  const [manualDeckLoading, setManualDeckLoading] = useState(false);
+  const [manualDeckActionBusy, setManualDeckActionBusy] = useState(false);
 
   // Deck authoring (Stage 6B). Additive to the existing deck-selection
   // surface -- creation/edit/archive all route through the same
@@ -298,6 +327,48 @@ function AdminSlideshowPageInner() {
 
     setDecks(normalized);
   }, []);
+
+  // Manual deck authoring reads only the selected deck's ordered items and
+  // this Event's approved-photo pool. The governing RPCs still enforce the
+  // same Event, approved status, duplicate prohibition, and authority at
+  // mutation time; these queries only provide a bounded authoring view.
+  const loadManualDeckAuthoring = useCallback(
+    async (deckId: string, currentEventId: string) => {
+      setManualDeckLoading(true);
+
+      const [itemsResult, photosResult] = await Promise.all([
+        supabase
+          .from("presentation_deck_items")
+          .select("id, content_ref_id, sort_order")
+          .eq("deck_id", deckId)
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("event_photos")
+          .select("id, member_caption, admin_caption, uploaded_at")
+          .eq("event_id", currentEventId)
+          .eq("photo_status", "approved")
+          .order("uploaded_at", { ascending: false }),
+      ]);
+
+      if (itemsResult.error || photosResult.error) {
+        console.error(
+          "Failed to load Manual deck authoring data",
+          itemsResult.error || photosResult.error,
+        );
+        setManualDeckItems([]);
+        setAvailableApprovedPhotos([]);
+        setManualDeckLoading(false);
+        return;
+      }
+
+      setManualDeckItems((itemsResult.data || []) as ManualDeckItem[]);
+      setAvailableApprovedPhotos(
+        (photosResult.data || []) as AvailableApprovedPhoto[],
+      );
+      setManualDeckLoading(false);
+    },
+    [],
+  );
 
   // Deck authoring handlers (Stage 6B). Each calls the exact governed
   // RPC Stage 3 already exposes -- no direct presentation_decks write
@@ -588,6 +659,136 @@ function AdminSlideshowPageInner() {
     void loadLiveSession(eventId);
   }, [hasSlideshowAccess, eventId, loadDecks, loadLiveSession]);
 
+  const selectedDeck = decks?.find((deck) => deck.id === selectedDeckId) ?? null;
+  const selectedManualDeckId =
+    selectedDeck?.selection_mode === "manual" ? selectedDeck.id : null;
+
+  useEffect(() => {
+    setSelectedDeckId("");
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!selectedManualDeckId || !eventId) {
+      setManualDeckItems([]);
+      setAvailableApprovedPhotos([]);
+      setManualDeckLoading(false);
+      return;
+    }
+
+    void loadManualDeckAuthoring(selectedManualDeckId, eventId);
+  }, [eventId, loadManualDeckAuthoring, selectedManualDeckId]);
+
+  async function refreshManualDeckAuthoring(deckId: string) {
+    if (!eventId) {
+      return;
+    }
+    await Promise.all([
+      loadDecks(eventId),
+      loadManualDeckAuthoring(deckId, eventId),
+    ]);
+  }
+
+  async function addManualDeckPhoto(photoId: string) {
+    if (!selectedDeck || selectedDeck.selection_mode !== "manual") {
+      return;
+    }
+
+    setManualDeckActionBusy(true);
+    const { error: addError } = await supabase.rpc(
+      "add_presentation_deck_photo",
+      {
+        p_deck_id: selectedDeck.id,
+        p_photo_id: photoId,
+        p_duration_ms: null,
+      },
+    );
+
+    if (addError) {
+      showError(
+        mapPresentationRpcError(
+          new Error(addError.message),
+          "Could not add that photo to the deck.",
+        ),
+      );
+      setManualDeckActionBusy(false);
+      return;
+    }
+
+    await refreshManualDeckAuthoring(selectedDeck.id);
+    showStatus("Photo added to the deck.");
+    setManualDeckActionBusy(false);
+  }
+
+  async function removeManualDeckItem(itemId: string) {
+    if (!selectedDeck || selectedDeck.selection_mode !== "manual") {
+      return;
+    }
+
+    setManualDeckActionBusy(true);
+    const { error: removeError } = await supabase.rpc(
+      "remove_presentation_deck_item",
+      { p_item_id: itemId },
+    );
+
+    if (removeError) {
+      showError(
+        mapPresentationRpcError(
+          new Error(removeError.message),
+          "Could not remove that photo from the deck.",
+        ),
+      );
+      setManualDeckActionBusy(false);
+      return;
+    }
+
+    await refreshManualDeckAuthoring(selectedDeck.id);
+    showStatus("Photo removed from the deck.");
+    setManualDeckActionBusy(false);
+  }
+
+  async function moveManualDeckItem(itemId: string, direction: -1 | 1) {
+    if (!selectedDeck || selectedDeck.selection_mode !== "manual") {
+      return;
+    }
+
+    const itemIndex = manualDeckItems.findIndex((item) => item.id === itemId);
+    const nextIndex = itemIndex + direction;
+    if (itemIndex < 0 || nextIndex < 0 || nextIndex >= manualDeckItems.length) {
+      return;
+    }
+
+    const orderedItemIds = manualDeckItems.map((item) => item.id);
+    [orderedItemIds[itemIndex], orderedItemIds[nextIndex]] = [
+      orderedItemIds[nextIndex],
+      orderedItemIds[itemIndex],
+    ];
+
+    setManualDeckActionBusy(true);
+    const { error: reorderError } = await supabase.rpc(
+      "reorder_presentation_deck_items",
+      {
+        p_deck_id: selectedDeck.id,
+        p_item_ids: orderedItemIds,
+      },
+    );
+
+    if (reorderError) {
+      showError(
+        mapPresentationRpcError(
+          new Error(reorderError.message),
+          "Could not reorder this deck. Its current order has been reloaded.",
+        ),
+      );
+      await refreshManualDeckAuthoring(selectedDeck.id);
+      setManualDeckActionBusy(false);
+      return;
+    }
+
+    await refreshManualDeckAuthoring(selectedDeck.id);
+    showStatus("Deck order updated.");
+    setManualDeckActionBusy(false);
+  }
+
   useEffect(() => {
     if (!eventId || session?.status !== "live") {
       return;
@@ -814,6 +1015,9 @@ function AdminSlideshowPageInner() {
       <p style={{ opacity: 0.8 }}>
         Governed by the durable Presentation deck/session foundation.
       </p>
+      <p style={{ marginTop: -8, opacity: 0.7 }}>
+        Controlling event: <strong>{eventName || "Unnamed event"}</strong>
+      </p>
 
       {status ? (
         <div style={{ marginTop: 12, color: "#4ade80" }}>{status}</div>
@@ -1022,7 +1226,12 @@ function AdminSlideshowPageInner() {
                 <AppButton
                   variant="start"
                   onClick={handleStart}
-                  disabled={!selectedDeckId || busy}
+                  disabled={
+                    !selectedDeckId ||
+                    busy ||
+                    (selectedDeck?.selection_mode === "manual" &&
+                      (manualDeckLoading || manualDeckItems.length === 0))
+                  }
                 >
                   Start Presentation
                 </AppButton>
@@ -1125,6 +1334,172 @@ function AdminSlideshowPageInner() {
             </>
           )}
         </div>
+      ) : null}
+
+      {!isLive && selectedDeck?.selection_mode === "manual" ? (
+        <section
+          aria-label="Manual deck authoring"
+          style={{
+            marginTop: 24,
+            border: "1px solid #444",
+            borderRadius: 8,
+            padding: 20,
+            background: "#161616",
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Manual Deck: {selectedDeck.name}</h3>
+          <p style={{ marginTop: 0, opacity: 0.75 }}>
+            Arrange the photos exactly as this presentation should play.
+            Changes are saved to this event&apos;s deck before starting.
+          </p>
+
+          {manualDeckLoading ? (
+            <div style={{ opacity: 0.7 }}>Loading deck photos...</div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: 20,
+              }}
+            >
+              <div>
+                <h4 style={{ marginTop: 0 }}>Deck Photos</h4>
+                {manualDeckItems.length === 0 ? (
+                  <div style={{ opacity: 0.75 }}>
+                    This Manual deck is empty. Add approved photos before
+                    starting a presentation.
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {manualDeckItems.map((item, index) => {
+                      const photo = availableApprovedPhotos.find(
+                        (availablePhoto) =>
+                          availablePhoto.id === item.content_ref_id,
+                      );
+                      const photoLabel = photo
+                        ? photo.admin_caption?.trim() ||
+                          photo.member_caption?.trim() ||
+                          `Photo ${photo.id.slice(0, 8)}`
+                        : `Photo ${item.content_ref_id?.slice(0, 8) || "unavailable"}`;
+
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            border: "1px solid #333",
+                            borderRadius: 6,
+                            padding: 10,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <strong style={{ minWidth: 24 }}>{index + 1}</strong>
+                          <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+                            <div style={{ overflowWrap: "anywhere" }}>
+                              {photoLabel}
+                            </div>
+                            {!photo ? (
+                              <div style={{ fontSize: 12, opacity: 0.65 }}>
+                                No longer approved or available. It will be
+                                skipped when a session is started.
+                              </div>
+                            ) : null}
+                          </div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <AppButton
+                              variant="muted"
+                              onClick={() => void moveManualDeckItem(item.id, -1)}
+                              disabled={manualDeckActionBusy || index === 0}
+                            >
+                              Move Up
+                            </AppButton>
+                            <AppButton
+                              variant="muted"
+                              onClick={() => void moveManualDeckItem(item.id, 1)}
+                              disabled={
+                                manualDeckActionBusy ||
+                                index === manualDeckItems.length - 1
+                              }
+                            >
+                              Move Down
+                            </AppButton>
+                            <AppButton
+                              variant="danger"
+                              onClick={() => void removeManualDeckItem(item.id)}
+                              disabled={manualDeckActionBusy}
+                            >
+                              Remove
+                            </AppButton>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h4 style={{ marginTop: 0 }}>Available Approved Photos</h4>
+                {availableApprovedPhotos.filter(
+                  (photo) =>
+                    !manualDeckItems.some(
+                      (item) => item.content_ref_id === photo.id,
+                    ),
+                ).length === 0 ? (
+                  <div style={{ opacity: 0.75 }}>
+                    No additional approved photos are available for this event.
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {availableApprovedPhotos
+                      .filter(
+                        (photo) =>
+                          !manualDeckItems.some(
+                            (item) => item.content_ref_id === photo.id,
+                          ),
+                      )
+                      .map((photo) => (
+                        <div
+                          key={photo.id}
+                          style={{
+                            border: "1px solid #333",
+                            borderRadius: 6,
+                            padding: 10,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+                            <div style={{ overflowWrap: "anywhere" }}>
+                              {photo.admin_caption?.trim() ||
+                                photo.member_caption?.trim() ||
+                                `Photo ${photo.id.slice(0, 8)}`}
+                            </div>
+                            <div style={{ fontSize: 12, opacity: 0.65 }}>
+                              Added {new Date(photo.uploaded_at).toLocaleString()}
+                            </div>
+                          </div>
+                          <AppButton
+                            variant="start"
+                            onClick={() => void addManualDeckPhoto(photo.id)}
+                            disabled={manualDeckActionBusy}
+                          >
+                            Add
+                          </AppButton>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
       ) : null}
 
       <div

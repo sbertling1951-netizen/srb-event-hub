@@ -437,3 +437,68 @@ test("no call site invokes loadSessionItems without a generation argument", () =
     assert.equal(args.length, 3, `expected loadSessionItems(sessionId, currentIndex, generation), got: loadSessionItems(${call[1]})`);
   }
 });
+
+// Manual Deck authoring uses the existing governed deck-item RPC surface.
+// These source-level tests follow the repository's existing focused test
+// convention and ensure the UI does not recreate a browser-side authority.
+
+test("Manual Selection exposes a touch-safe authoring surface while All Approved remains item-free", () => {
+  assert.match(PAGE_SOURCE, /selectedDeck\?\.selection_mode === "manual"/);
+  assert.match(PAGE_SOURCE, /aria-label="Manual deck authoring"/);
+  assert.match(PAGE_SOURCE, />Move Up</);
+  assert.match(PAGE_SOURCE, />Move Down</);
+  assert.match(PAGE_SOURCE, />Remove</);
+  assert.match(PAGE_SOURCE, />Add</);
+  assert.match(PAGE_SOURCE, /All Approved Photos/);
+  assert.equal(
+    /selectedDeck\?\.selection_mode === "all_approved"[\s\S]{0,300}Manual deck authoring/.test(PAGE_SOURCE),
+    false,
+  );
+});
+
+test("Manual authoring reads only the selected deck and approved photos from the current Event", () => {
+  const loadIdx = PAGE_SOURCE.indexOf("const loadManualDeckAuthoring");
+  const loadBody = PAGE_SOURCE.slice(loadIdx, loadIdx + 1800);
+  assert.notEqual(loadIdx, -1);
+  assert.match(loadBody, /\.from\("presentation_deck_items"\)/);
+  assert.match(loadBody, /\.eq\("deck_id", deckId\)/);
+  assert.match(loadBody, /\.order\("sort_order", \{ ascending: true \}\)/);
+  assert.match(loadBody, /\.from\("event_photos"\)/);
+  assert.match(loadBody, /\.eq\("event_id", currentEventId\)/);
+  assert.match(loadBody, /\.eq\("photo_status", "approved"\)/);
+});
+
+test("adding, removing, and reordering use only the established governed RPCs and reconcile afterward", () => {
+  assert.match(PAGE_SOURCE, /"add_presentation_deck_photo"/);
+  assert.match(PAGE_SOURCE, /p_deck_id: selectedDeck\.id/);
+  assert.match(PAGE_SOURCE, /p_photo_id: photoId/);
+  assert.match(PAGE_SOURCE, /"remove_presentation_deck_item"/);
+  assert.match(PAGE_SOURCE, /p_item_id: itemId/);
+  assert.match(PAGE_SOURCE, /"reorder_presentation_deck_items"/);
+  assert.match(PAGE_SOURCE, /p_item_ids: orderedItemIds/);
+  assert.match(PAGE_SOURCE, /await refreshManualDeckAuthoring\(selectedDeck\.id\)/);
+});
+
+test("Manual mutations do not optimistically create or delete deck-item state", () => {
+  const addIdx = PAGE_SOURCE.indexOf("async function addManualDeckPhoto");
+  const removeIdx = PAGE_SOURCE.indexOf("async function removeManualDeckItem");
+  const reorderIdx = PAGE_SOURCE.indexOf("async function moveManualDeckItem");
+  const addBody = PAGE_SOURCE.slice(addIdx, removeIdx);
+  const removeBody = PAGE_SOURCE.slice(removeIdx, reorderIdx);
+  assert.equal(/setManualDeckItems\(/.test(addBody), false);
+  assert.equal(/setManualDeckItems\(/.test(removeBody), false);
+});
+
+test("empty Manual decks explain the required authoring step and disable their doomed Start request", () => {
+  assert.match(PAGE_SOURCE, /This Manual deck is empty\. Add approved photos before/);
+  assert.match(
+    PAGE_SOURCE,
+    /selectedDeck\?\.selection_mode === "manual"[\s\S]{0,180}manualDeckItems\.length === 0/,
+  );
+});
+
+test("presenter visibly identifies the canonical current Admin Event", () => {
+  assert.match(PAGE_SOURCE, /setEventName\(adminEvent\?\.name \?\? adminEvent\?\.eventName \?\? null\)/);
+  assert.match(PAGE_SOURCE, /Controlling event:/);
+  assert.equal(/setCurrentAdminEvent/.test(PAGE_SOURCE), false);
+});
