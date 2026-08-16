@@ -64,3 +64,21 @@ test("the page reads the current Event only through the canonical getCurrentAdmi
   );
   assert.match(PAGE_SOURCE, /const currentEvent = getCurrentAdminEvent\(\);/);
 });
+
+test("photos consume the shared cache, derive counts, and sign review images on demand", () => {
+  assert.match(PAGE_SOURCE, /loadAdminPhotoSnapshot/);
+  assert.match(PAGE_SOURCE, /"moderation-thumbnail-160"/);
+  assert.match(PAGE_SOURCE, /"review-800"/);
+  assert.equal(/createSignedUrl\(/.test(PAGE_SOURCE), false);
+});
+
+test("photos use Next Link for the Photo Library navigation", () => {
+  assert.match(PAGE_SOURCE, /<Link\s+href="\/admin\/photo-library"/);
+  assert.equal(/<a\s+href="\/admin\/photo-library"/.test(PAGE_SOURCE), false);
+});
+
+test("photos reject stale async loads and invalidate the scoped cache after moderation", () => {
+  assert.match(PAGE_SOURCE, /loadGenerationRef/);
+  assert.match(PAGE_SOURCE, /onAuthStateChange/);
+  assert.match(PAGE_SOURCE, /invalidateAdminPhotoCache/);
+});

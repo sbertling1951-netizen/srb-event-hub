@@ -25,13 +25,9 @@ test("photo library page contains no direct event_photos mutation", () => {
   }
 });
 
-test("photo library's only event_photos table access is a read", () => {
-  const matches = [...PAGE_SOURCE.matchAll(/\.from\(["']event_photos["']\)/g)];
-  assert.equal(matches.length, 1, 'expected exactly one .from("event_photos") call');
-
-  const idx = matches[0].index ?? 0;
-  const tail = PAGE_SOURCE.slice(idx, idx + 60);
-  assert.match(tail, /\.select\(/, "the one remaining event_photos access must be a .select()");
+test("photo library consumes the shared scoped photo cache instead of direct table access", () => {
+  assert.match(PAGE_SOURCE, /loadAdminPhotoSnapshot/);
+  assert.equal(/\.from\(["']event_photos["']\)/.test(PAGE_SOURCE), false);
 });
 
 test("photo library calls the same governed manage_event_photo RPC as Admin Photos", () => {
@@ -49,4 +45,17 @@ test("page is gated by AdminRouteGuard", () => {
 
 test("page uses the canonical Admin shell (migrated by a later, separate shell-migration stage)", () => {
   assert.match(PAGE_SOURCE, /AdminShellAdapter/);
+});
+
+test("library thumbnails are transformed, lazy, and review URLs are requested on demand", () => {
+  assert.match(PAGE_SOURCE, /"library-thumbnail-360x240"/);
+  assert.match(PAGE_SOURCE, /loading="lazy"/);
+  assert.match(PAGE_SOURCE, /"review-800"/);
+  assert.equal(/createSignedUrl\(/.test(PAGE_SOURCE), false);
+});
+
+test("library rejects stale async loads and clears prior-user cache on auth change", () => {
+  assert.match(PAGE_SOURCE, /loadGenerationRef/);
+  assert.match(PAGE_SOURCE, /onAuthStateChange/);
+  assert.match(PAGE_SOURCE, /clearAdminPhotoCacheForUser/);
 });

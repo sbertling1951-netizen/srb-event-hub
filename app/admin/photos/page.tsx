@@ -1,9 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import {
+  clearAdminPhotoCacheForUser,
+  getAdminPhotoSignedUrl,
+  invalidateAdminPhotoCache,
+  loadAdminPhotoSnapshot,
+} from "@/lib/adminPhotoCache";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -31,10 +38,10 @@ function AdminPhotosPageInner() {
     storage_path: string;
     photo_status: string;
     uploaded_at: string;
-    attendee_id?: string;
+    attendee_id?: string | null;
     member_name?: string;
-    member_caption?: string;
-    admin_caption?: string;
+    member_caption?: string | null;
+    admin_caption?: string | null;
     show_caption?: boolean;
     featured_level?: number;
     imageUrl?: string;
@@ -58,12 +65,41 @@ function AdminPhotosPageInner() {
     previousMemberCaption: string;
   } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadGenerationRef = useRef(0);
+  const currentUserIdRef = useRef<string | null>(null);
+
+  const isCurrentLoad = (generation: number, eventId: string, userId: string) =>
+    generation === loadGenerationRef.current &&
+    getCurrentAdminEvent()?.id === eventId &&
+    currentUserIdRef.current === userId;
+
+  const getCurrentScope = () => {
+    const eventId = getCurrentAdminEvent()?.id;
+    const userId = currentUserIdRef.current;
+    return eventId && userId ? { eventId, userId } : null;
+  };
 
   function openModeration(photo: PendingPhoto) {
     setSelectedPhoto(photo);
     setCaptionText(photo.admin_caption || photo.member_caption || "");
     setShowCaption(photo.show_caption ?? true);
     setFeaturedLevel(photo.featured_level ?? 0);
+    const scope = getCurrentScope();
+    if (!scope || photo.reviewImageUrl) {return;}
+
+    void getAdminPhotoSignedUrl(scope, photo.storage_path, "review-800")
+      .then((reviewImageUrl) => {
+        if (getCurrentAdminEvent()?.id !== scope.eventId) {return;}
+        setPhotos((current) =>
+          current.map((item) =>
+            item.id === photo.id ? { ...item, reviewImageUrl } : item,
+          ),
+        );
+        setSelectedPhoto((current) =>
+          current?.id === photo.id ? { ...current, reviewImageUrl } : current,
+        );
+      })
+      .catch((error) => console.error("sign moderation review URL error:", error));
   }
 
   async function undoLastAction() {
@@ -85,6 +121,8 @@ function AdminPhotosPageInner() {
       return;
     }
 
+    const scope = getCurrentScope();
+    if (scope) {invalidateAdminPhotoCache(scope);}
     setToastMessage(null);
     setUndoData(null);
     await loadPendingPhotos();
@@ -116,6 +154,9 @@ function AdminPhotosPageInner() {
       console.error("Photo moderation updated 0 rows.");
       return;
     }
+
+    const scope = getCurrentScope();
+    if (scope) {invalidateAdminPhotoCache(scope);}
 
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current);
@@ -149,6 +190,8 @@ function AdminPhotosPageInner() {
 
     setPhotos(remainingPhotos);
     setPendingCount(remainingPhotos.length);
+    setApprovedCount((count) => count + (status === "approved" ? 1 : 0));
+    setRejectedCount((count) => count + (status === "rejected" ? 1 : 0));
 
     if (nextPhoto) {
       openModeration(nextPhoto);
@@ -174,6 +217,7 @@ function AdminPhotosPageInner() {
   }, []);
 
   const loadPendingPhotos = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
     const currentEvent = getCurrentAdminEvent();
     if (!currentEvent?.id) {
       setPhotos([]);
@@ -183,118 +227,70 @@ function AdminPhotosPageInner() {
       setRejectedCount(0);
       return;
     }
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData.session?.user.id;
+    if (!userId) {return;}
+    currentUserIdRef.current = userId;
+    const scope = { userId, eventId: currentEvent.id };
 
-    const { count: totalCount } = await supabase
-      .from("event_photos")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", currentEvent.id);
-
-    setTotalSubmitted(totalCount || 0);
-
-    const { count: approvedTotal } = await supabase
-      .from("event_photos")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", currentEvent.id)
-      .eq("photo_status", "approved");
-
-    const { count: rejectedTotal } = await supabase
-      .from("event_photos")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", currentEvent.id)
-      .eq("photo_status", "rejected");
-
-    setApprovedCount(approvedTotal || 0);
-    setRejectedCount(rejectedTotal || 0);
-
-    const { data, error } = await supabase
-      .from("event_photos")
-      .select(
-        "id, attendee_id, storage_path, photo_status, uploaded_at, member_caption, admin_caption, show_caption, featured_level",
-      )
-      .eq("event_id", currentEvent.id)
-      .eq("photo_status", "pending");
-
-    if (error) {
-      console.error("load pending count error:", error);
-      return;
-    }
-
-    const attendeeIds = Array.from(
-      new Set(
-        ((data || []) as PendingPhoto[])
-          .map((photo) => photo.attendee_id)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    );
-
-    const memberNamesByAttendeeId = new Map<string, string>();
-
-    if (attendeeIds.length > 0) {
-      const { data: attendeeRows, error: attendeeError } = await supabase
-        .from("attendees")
-        .select("id, nickname, pilot_first, pilot_last")
-        .in("id", attendeeIds);
-
-      if (attendeeError) {
-        console.error("load photo member names error:", attendeeError);
-      } else {
-        for (const attendee of attendeeRows || []) {
-          const preferredFirst =
-            attendee.nickname?.trim() || attendee.pilot_first?.trim() || "";
-          const lastName = attendee.pilot_last?.trim() || "";
-          const fullName = [preferredFirst, lastName].filter(Boolean).join(" ");
-
-          if (fullName) {
-            memberNamesByAttendeeId.set(attendee.id, fullName);
-          }
-        }
-      }
-    }
-
-    const photosWithUrls = await Promise.all(
-      ((data || []) as PendingPhoto[]).map(async (photo) => {
-        const { data: thumbnail } = await supabase.storage
-          .from("event-photos")
-          .createSignedUrl(photo.storage_path, 60 * 60, {
-            transform: {
-              width: 160,
-              height: 160,
-              resize: "cover",
-            },
-          });
-
-        const { data: review } = await supabase.storage
-          .from("event-photos")
-          .createSignedUrl(photo.storage_path, 60 * 60, {
-            transform: {
-              width: 800,
-              resize: "contain",
-            },
-          });
-
-        return {
+    try {
+      const snapshot = await loadAdminPhotoSnapshot(scope);
+      const pendingPhotos = snapshot.photos.filter(
+        (photo) => photo.photo_status === "pending",
+      );
+      const photosWithUrls = await Promise.all(
+        pendingPhotos.map(async (photo) => ({
           ...photo,
           member_name: photo.attendee_id
-            ? memberNamesByAttendeeId.get(photo.attendee_id)
+            ? snapshot.memberNamesByAttendeeId.get(photo.attendee_id)
             : undefined,
-          imageUrl: thumbnail?.signedUrl,
-          reviewImageUrl: review?.signedUrl,
-        };
-      }),
-    );
-
-    setPhotos(photosWithUrls);
-    setPendingCount(photosWithUrls.length);
+          imageUrl: await getAdminPhotoSignedUrl(
+            scope,
+            photo.storage_path,
+            "moderation-thumbnail-160",
+          ),
+        })),
+      );
+      if (!isCurrentLoad(generation, scope.eventId, scope.userId)) {return;}
+      setPhotos(photosWithUrls);
+      setTotalSubmitted(snapshot.photos.length);
+      setApprovedCount(
+        snapshot.photos.filter((photo) => photo.photo_status === "approved").length,
+      );
+      setRejectedCount(
+        snapshot.photos.filter((photo) => photo.photo_status === "rejected").length,
+      );
+      setPendingCount(photosWithUrls.length);
+    } catch (error) {
+      if (isCurrentLoad(generation, scope.eventId, scope.userId)) {
+        console.error("load pending photos error:", error);
+      }
+    }
   }, []);
 
   useEffect(() => {
     void loadPendingPhotos();
 
     const unsubscribe = subscribeToAdminWorkspace(() => {
+      loadGenerationRef.current += 1;
       void loadPendingPhotos();
     });
 
-    return unsubscribe;
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const previousUserId = currentUserIdRef.current;
+      if (previousUserId && previousUserId !== session?.user.id) {
+        clearAdminPhotoCacheForUser(previousUserId);
+      }
+      currentUserIdRef.current = session?.user.id ?? null;
+      loadGenerationRef.current += 1;
+      void loadPendingPhotos();
+    });
+
+    return () => {
+      loadGenerationRef.current += 1;
+      authListener.subscription.unsubscribe();
+      unsubscribe();
+    };
   }, [loadPendingPhotos]);
 
   return (
@@ -352,7 +348,7 @@ function AdminPhotosPageInner() {
           >
             Launch Slideshow
           </a>
-          <a
+          <Link
             href="/admin/photo-library"
             style={{
               display: "inline-block",
@@ -365,7 +361,7 @@ function AdminPhotosPageInner() {
             }}
           >
             Photo Library
-          </a>
+          </Link>
         </div>
         <div
           style={{

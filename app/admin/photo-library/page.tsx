@@ -1,8 +1,14 @@
 "use client";
-import React, { useCallback,useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import {
+  clearAdminPhotoCacheForUser,
+  getAdminPhotoSignedUrl,
+  invalidateAdminPhotoCache,
+  loadAdminPhotoSnapshot,
+} from "@/lib/adminPhotoCache";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -67,9 +73,18 @@ function PhotoLibraryPageInner() {
   const [modalPhoto, setModalPhoto] = useState<Photo | null>(null);
   const [saving, setSaving] = useState(false);
   const [modalEdits, setModalEdits] = useState<Partial<Photo>>({});
+  const loadGenerationRef = useRef(0);
+  const currentUserIdRef = useRef<string | null>(null);
+
+  const currentScope = () => {
+    const eventId = getCurrentAdminEvent()?.id;
+    const userId = currentUserIdRef.current;
+    return eventId && userId ? { eventId, userId } : null;
+  };
 
   // Load photos from Supabase, scoped to current admin workspace event
   const fetchPhotos = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
     setLoading(true);
     setError(null);
     const currentEvent = getCurrentAdminEvent();
@@ -78,50 +93,66 @@ function PhotoLibraryPageInner() {
       setLoading(false);
       return;
     }
-    // TODO: Adjust table name if needed; assumed 'photo'
-    const { data, error } = await supabase
-      .from("event_photos")
-      .select(
-        "id,storage_path,photo_status,member_caption,admin_caption,show_caption,is_featured,featured_level,uploaded_at",
-      )
-      .eq("event_id", currentEvent.id)
-      .order("uploaded_at", { ascending: false });
-    if (error) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData.session?.user.id;
+    if (!userId) {
+      if (generation === loadGenerationRef.current) {setLoading(false);}
+      return;
+    }
+    currentUserIdRef.current = userId;
+    const scope = { eventId: currentEvent.id, userId };
+    try {
+      const snapshot = await loadAdminPhotoSnapshot(scope);
+      const photosWithUrls = await Promise.all(
+        snapshot.photos.map(async (photo) => ({
+          ...photo,
+          thumbnailUrl: await getAdminPhotoSignedUrl(
+            scope,
+            photo.storage_path,
+            "library-thumbnail-360x240",
+          ),
+        })),
+      );
+      if (
+        generation !== loadGenerationRef.current ||
+        getCurrentAdminEvent()?.id !== scope.eventId ||
+        currentUserIdRef.current !== scope.userId
+      ) {return;}
+      setPhotos(photosWithUrls);
+    } catch (loadError) {
+      if (
+        generation !== loadGenerationRef.current ||
+        getCurrentAdminEvent()?.id !== scope.eventId ||
+        currentUserIdRef.current !== scope.userId
+      ) {return;}
       setError("Failed to load photos.");
       setPhotos([]);
-    } else {
-      const photosWithUrls = await Promise.all(
-        (data || []).map(async (photo: any) => {
-          const { data: signed } = await supabase.storage
-            .from("event-photos")
-            .createSignedUrl(photo.storage_path, 3600);
-
-          return {
-            ...photo,
-            thumbnailUrl: signed?.signedUrl ?? "",
-            fullUrl: signed?.signedUrl ?? "",
-          };
-        }),
-      );
-
-      setPhotos(photosWithUrls as Photo[]);
+      console.error("load photo library error:", loadError);
     }
-    setLoading(false);
+    if (generation === loadGenerationRef.current) {setLoading(false);}
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
-
     void fetchPhotos();
 
     const unsubscribe = subscribeToAdminWorkspace(() => {
-      if (isMounted) {
-        void fetchPhotos();
+      loadGenerationRef.current += 1;
+      void fetchPhotos();
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const previousUserId = currentUserIdRef.current;
+      if (previousUserId && previousUserId !== session?.user.id) {
+        clearAdminPhotoCacheForUser(previousUserId);
       }
+      currentUserIdRef.current = session?.user.id ?? null;
+      loadGenerationRef.current += 1;
+      void fetchPhotos();
     });
 
     return () => {
-      isMounted = false;
+      loadGenerationRef.current += 1;
+      authListener.subscription.unsubscribe();
       unsubscribe();
     };
   }, [fetchPhotos]);
@@ -168,6 +199,19 @@ function PhotoLibraryPageInner() {
       show_caption: photo.show_caption,
       featured_level: photo.featured_level ?? 0,
     });
+    const scope = currentScope();
+    if (!scope || photo.fullUrl) {return;}
+    void getAdminPhotoSignedUrl(scope, photo.storage_path, "review-800")
+      .then((fullUrl) => {
+        if (getCurrentAdminEvent()?.id !== scope.eventId) {return;}
+        setPhotos((items) =>
+          items.map((item) => (item.id === photo.id ? { ...item, fullUrl } : item)),
+        );
+        setModalPhoto((current) =>
+          current?.id === photo.id ? { ...current, fullUrl } : current,
+        );
+      })
+      .catch((loadError) => console.error("sign photo review URL error:", loadError));
   }
   function closeModal() {
     setModalPhoto(null);
@@ -205,6 +249,8 @@ function PhotoLibraryPageInner() {
       setSaving(false);
       return;
     }
+    const scope = currentScope();
+    if (scope) {invalidateAdminPhotoCache(scope);}
     // Refresh local state for the updated photo from the RPC's returned row.
     setPhotos((prev) =>
       prev.map((p) =>
@@ -383,6 +429,7 @@ function PhotoLibraryPageInner() {
             >
               {photo.thumbnailUrl ? (
                 <img
+                  loading="lazy"
                   src={photo.thumbnailUrl}
                   alt={photo.member_caption || "Photo"}
                   style={{
