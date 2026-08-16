@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -876,6 +877,20 @@ function AdminPrintPageInner() {
       }}
     >
       {" "}
+      <Link
+        href="/admin/dashboard"
+        className="no-print"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontWeight: 700,
+          color: "#111827",
+          textDecoration: "none",
+        }}
+      >
+        ← Back to Dashboard
+      </Link>
       <style>{`
   @media print {
     body * {

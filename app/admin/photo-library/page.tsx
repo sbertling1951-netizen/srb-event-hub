@@ -57,7 +57,10 @@ function getFeaturedCount(photos: Photo[]) {
 export default function PhotoLibraryPage() {
   return (
     <AdminRouteGuard>
-      <AdminShellAdapter pageTitle="Photo Library">
+      <AdminShellAdapter
+        pageTitle="Photo Library"
+        backTarget={{ href: "/admin/photos", label: "Photos" }}
+      >
         <PhotoLibraryPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
