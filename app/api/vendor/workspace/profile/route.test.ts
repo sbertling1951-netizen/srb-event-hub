@@ -3,6 +3,28 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+// --- Vendor Workspace Profile Governance Audit (2026-08-15) -- durability
+// hardening -----------------------------------------------------------
+// The audit found no defect: the route's own public.vendors GET/PATCH is
+// already RLS-governed (proven above). The one remaining service-role
+// table read in this path is resolveVendorAccessFromCookies()'s
+// vendor_org_access lookup (lib/server/vendorAccess.ts), which the audit
+// found safe only because it is scoped to the server-verified caller
+// (auth_user_id = user.id) and to active access (status = "active") --
+// not because of anything the route itself re-checks. The tests below
+// protect exactly that seam so a future refactor cannot silently widen
+// it without failing here.
+//
+// Run with:
+//   npx tsx --test app/api/vendor/workspace/profile/route.test.ts
+
+const VENDOR_ACCESS_SOURCE = readFileSync(
+  fileURLToPath(
+    new URL("../../../../../lib/server/vendorAccess.ts", import.meta.url),
+  ),
+  "utf8",
+);
+
 // Structural/source assertions for the Vendor Profile GET governance
 // repair -- GET's own public.vendors read moves from the service-role
 // admin client to the existing token-bound client, so the read executes
@@ -103,4 +125,50 @@ test("PATCH remains on the token-bound client and vendors_update_policy governan
 test("resolveVendorAccessFromCookies is still the sole session-resolution entry point for both handlers", () => {
   const occurrences = SOURCE.match(/resolveVendorAccessFromCookies\(cookieStore\)/g) || [];
   assert.equal(occurrences.length, 2);
+});
+
+test("resolveVendorAccessFromCookies scopes its service-role vendor_org_access read to the verified auth user and active status", () => {
+  const fnMatch = VENDOR_ACCESS_SOURCE.match(
+    /export async function resolveVendorAccessFromCookies[\s\S]*?\n}/,
+  );
+  assert.ok(fnMatch, "expected to find resolveVendorAccessFromCookies");
+  const fn = fnMatch[0];
+
+  const queryMatch = fn.match(
+    /supabaseAdmin\s*\n\s*\.from\("vendor_org_access"\)[\s\S]*?\.order\(/,
+  );
+  assert.ok(queryMatch, "expected a single chained vendor_org_access query ending in .order(");
+  const queryBlock = queryMatch[0];
+
+  assert.match(
+    queryBlock,
+    /\.eq\("auth_user_id", user\.id\)/,
+    "vendor_org_access lookup must be scoped to the token-verified auth user, not any client-supplied id",
+  );
+  assert.match(
+    queryBlock,
+    /\.eq\("status", "active"\)/,
+    "vendor_org_access lookup must exclude pending/suspended/revoked rows",
+  );
+});
+
+test("no service-role query directly targets public.vendors in the identity-resolution path", () => {
+  assert.equal(
+    /\.from\("vendors"\)/.test(VENDOR_ACCESS_SOURCE),
+    false,
+    "vendors reads/writes must stay behind createVendorTokenBoundClient in the route, not the admin client here",
+  );
+});
+
+test("VENDOR_SELECTED_COOKIE only selects within the already-scoped rows array, never re-queries the database", () => {
+  assert.match(
+    VENDOR_ACCESS_SOURCE,
+    /rows\.find\(\(row\) => row\.vendorId === selectedFromCookie\)/,
+    "the selected-vendor cookie must be matched against the pre-scoped rows array in memory",
+  );
+  assert.equal(
+    /\.eq\([^)]*selectedFromCookie/.test(VENDOR_ACCESS_SOURCE),
+    false,
+    "the client-supplied selected-vendor cookie must never be used as a database query predicate",
+  );
 });
