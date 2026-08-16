@@ -21,3 +21,12 @@ out/
 # Supabase CLI local runtime state
 supabase/.branches/
 supabase/.temp/
+
+# SSH private key material (never commit)
+root@*
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.pem
+*.ppk
