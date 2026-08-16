@@ -64,13 +64,22 @@ test("the shared working-Event write only happens on initial establishment or wh
   assert.match(afterCall, /setWorkspaceEvent\(null\)/);
 });
 
-test("this page's own list/edit-form selection stays scoped to the filtered loadedEvents list, distinct from the shared context resolution above it", () => {
+test("this page's own list/edit-form selection stays scoped to the filtered loadedEvents list, and is left unselected -- never substituted -- when canonical context is not part of it", () => {
   const selectionIdx = PAGE_SOURCE.indexOf("visibleContextEvent");
   assert.notEqual(selectionIdx, -1);
-  const selectionBlock = PAGE_SOURCE.slice(selectionIdx, selectionIdx + 300);
+  const selectionBlock = PAGE_SOURCE.slice(selectionIdx, selectionIdx + 500);
 
   assert.match(selectionBlock, /loadedEvents\.find\(\(e\) => e\.id === contextEvent\.id\)/);
-  assert.match(selectionBlock, /loadedEvents\[0\]\?\.id/);
+  assert.match(
+    selectionBlock,
+    /const preferredEventId = visibleContextEvent\?\.id \|\| "";/,
+  );
+  // The retired fallback silently substituted an unrelated visible row
+  // (loadedEvents[0]) whenever canonical context was excluded by the
+  // current filter -- the root cause of the Amana/Saint George field
+  // defect (CMD: Admin Events Canonical Context + Filter Persistence
+  // Repair). It must not survive anywhere in this block.
+  assert.equal(/loadedEvents\[0\]\?\.id/.test(selectionBlock), false);
 });
 
 test("shell wrapper and AdminRouteGuard remain in place", () => {
@@ -439,4 +448,169 @@ test("an older finally cannot clear loading while the newer request remains pend
   await newLoad;
   assert.equal(state.error, "current Inactive request failed");
   assert.equal(state.loading, false);
+});
+
+// CMD: Admin Events Canonical Context + Filter Persistence Repair.
+// Field defect: canonical context was Amana (archived). Returning to
+// /admin/events reset the Event Filter to Active, whose first result
+// (Saint George) got silently written into this page's own
+// selectedEventId as though it were "selected" -- while canonical
+// context never moved. Navigating to Vendor Management still correctly
+// showed Amana, proving the page's own picker had misrepresented Saint
+// George as canonical when it was not. A later explicit Branson
+// selection worked normally.
+//
+// Root cause: `preferredEventId` used to fall back to
+// `loadedEvents[0]?.id` whenever canonical context was not part of the
+// current filter. That fallback pre-filled the controlled <select> with
+// an unrelated visible row. Because a controlled <select>'s onChange
+// only fires when its value actually changes, a later EXPLICIT pick of
+// that SAME already-shown value silently never fired at all -- which is
+// also what explains the separate field observation "Archived -> select
+// Amana -> Photos still showed Saint George" (Amana was `loadedEvents[0]`
+// under Archived, so re-picking it no-op'd) versus "All -> select Amana
+// -> Photos retained Amana" (the auto-filled value under All differed
+// from Amana, so the picker's value genuinely changed and onChange
+// fired). Same defect, two symptoms.
+//
+// The repair has two independent parts: (1) never substitute an
+// unrelated visible row for canonical context -- leave the picker
+// genuinely unselected instead, with a status message and a persistent
+// "Working event" line naming actual canonical context; (2) persist the
+// admin's last explicitly chosen Event Filter (browser-local display
+// preference, a distinct key from the canonical Admin event-context
+// key) so returning to this page restores it instead of silently
+// resetting to Active.
+
+test("Event Filter initializes from browser-local persisted storage, not a hardcoded default", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /useState<EventStatusFilter>\(readPersistedEventStatusFilter\)/,
+  );
+  assert.match(PAGE_SOURCE, /function readPersistedEventStatusFilter\(\)/);
+  assert.match(
+    PAGE_SOURCE,
+    /window\.localStorage\.getItem\(EVENT_STATUS_FILTER_STORAGE_KEY\)/,
+  );
+});
+
+test("the filter persistence key is a distinct, page-local display preference -- not a second event-context authority", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /const EVENT_STATUS_FILTER_STORAGE_KEY = "fcoc-admin-events-filter";/,
+  );
+  // Never reads or writes the canonical Admin event-context storage key
+  // directly -- canonical context is only ever touched through
+  // setWorkspaceEvent/setCurrentAdminEvent (adminEventContext.ts), never
+  // by name here.
+  assert.equal(
+    /localStorage\.(get|set)Item\(\s*ADMIN_EVENT_KEY/.test(PAGE_SOURCE),
+    false,
+  );
+});
+
+test("the Event Filter picker's onChange persists the explicit choice, and never itself calls setWorkspaceEvent", () => {
+  const filterIdx = PAGE_SOURCE.indexOf("Event Filter");
+  const onChangeIdx = PAGE_SOURCE.indexOf("onChange={(e) => {", filterIdx);
+  const onChangeEndIdx = PAGE_SOURCE.indexOf("}}", onChangeIdx);
+  assert.notEqual(onChangeIdx, -1);
+  const handlerBody = PAGE_SOURCE.slice(onChangeIdx, onChangeEndIdx);
+
+  assert.match(handlerBody, /setEventStatusFilter\(nextFilter\)/);
+  assert.match(handlerBody, /persistEventStatusFilter\(nextFilter\)/);
+  assert.equal(
+    /setWorkspaceEvent\(/.test(handlerBody),
+    false,
+    "the filter control must never mutate canonical event context, not even to re-affirm it",
+  );
+});
+
+test("loadPage never persists a filter -- only an explicit picker choice does", () => {
+  const loadPageIdx = PAGE_SOURCE.indexOf("const loadPage = useCallback(");
+  const loadPageEndIdx = PAGE_SOURCE.indexOf(
+    "}, [admin, eventStatusFilter]);",
+    loadPageIdx,
+  );
+  assert.notEqual(loadPageIdx, -1);
+  assert.notEqual(loadPageEndIdx, -1);
+  const loadPageBody = PAGE_SOURCE.slice(loadPageIdx, loadPageEndIdx);
+
+  assert.equal(
+    /persistEventStatusFilter/.test(loadPageBody),
+    false,
+    "a load/reload must never write the persisted filter preference itself",
+  );
+});
+
+test("saveEvent's own incidental filter adjustments (to keep a just-saved/created Event visible) are not persisted as the admin's chosen filter", () => {
+  const saveFnIdx = PAGE_SOURCE.indexOf("async function saveEvent()");
+  const saveFnEndIdx = PAGE_SOURCE.indexOf(
+    "async function saveAssignments()",
+    saveFnIdx,
+  );
+  assert.notEqual(saveFnIdx, -1);
+  const saveFnBody = PAGE_SOURCE.slice(saveFnIdx, saveFnEndIdx);
+
+  const setFilterCalls = (saveFnBody.match(/setEventStatusFilter\(/g) || [])
+    .length;
+  assert.ok(
+    setFilterCalls >= 2,
+    "expected both the update and create branches to still adjust the in-memory filter",
+  );
+  assert.equal(
+    /persistEventStatusFilter/.test(saveFnBody),
+    false,
+    "saving an event must not overwrite the admin's remembered filter preference",
+  );
+});
+
+test("a persisted filter unavailable to a non-super-admin's picker is clamped in-memory to Active, without overwriting the persisted preference", () => {
+  const clampIdx = PAGE_SOURCE.indexOf(
+    '!admin.isSuperAdmin && eventStatusFilter !== "active"',
+  );
+  assert.notEqual(clampIdx, -1);
+  const clampBlock = PAGE_SOURCE.slice(clampIdx, clampIdx + 200);
+
+  assert.match(clampBlock, /setEventStatusFilter\("active"\)/);
+  assert.equal(
+    /persistEventStatusFilter/.test(clampBlock),
+    false,
+    "the clamp is a session-local display fix, not a rewrite of another admin's saved preference on a shared device",
+  );
+});
+
+test("a persistent 'Working event' line reads canonical context directly, independent of this page's own filtered selection", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /const canonicalWorkingEvent = getCurrentAdminEvent\(\);/,
+  );
+  assert.match(PAGE_SOURCE, /Working event:/);
+  assert.match(
+    PAGE_SOURCE,
+    /canonicalWorkingEvent\?\.name \|\|\s*\n\s*canonicalWorkingEvent\?\.eventName \|\|\s*\n\s*"No working event selected"/,
+  );
+});
+
+test("when canonical context is not part of the current filter, the status names the actual working Event instead of silently reporting 'ready'", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /`Working event "\$\{contextEvent\.name \|\| "Untitled event"\}" is not shown under this filter\. Select a listed event below to change it, or adjust the filter to find it\.`/,
+  );
+  const branchIdx = PAGE_SOURCE.indexOf("} else if (contextEvent) {");
+  assert.notEqual(branchIdx, -1);
+});
+
+test("the explicit Select Event picker still writes canonical context exactly once per change, unaffected by the filter-selection fix", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /const evt = events\.find\(\(row\) => row\.id === newId\) \|\| null;\s*\n\s*setWorkspaceEvent\(evt\);/,
+  );
+  // Exactly one setWorkspaceEvent call in the picker's own onChange body.
+  const selectIdx = PAGE_SOURCE.indexOf('value={selectedEventId}');
+  const onChangeIdx = PAGE_SOURCE.indexOf("onChange={(e) => {", selectIdx);
+  const onChangeEndIdx = PAGE_SOURCE.indexOf("}}", onChangeIdx);
+  const handlerBody = PAGE_SOURCE.slice(onChangeIdx, onChangeEndIdx);
+  const setWorkspaceCalls = (handlerBody.match(/setWorkspaceEvent\(/g) || [])
+    .length;
+  assert.equal(setWorkspaceCalls, 1);
 });

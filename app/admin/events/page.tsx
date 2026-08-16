@@ -91,6 +91,44 @@ function toInputDate(value: string | null | undefined) {
 
 type EventStatusFilter = "active" | "inactive" | "archived" | "draft" | "all";
 
+const EVENT_STATUS_FILTER_VALUES: EventStatusFilter[] = [
+  "active",
+  "inactive",
+  "archived",
+  "draft",
+  "all",
+];
+
+// Browser-local DISPLAY-PREFERENCE persistence only (ADR-006 §4): this
+// remembers which status filter this page's own list/picker last showed
+// on this browser/device, purely so returning to /admin/events restores
+// what the admin was looking at instead of silently resetting to Active
+// and making it look like canonical context changed. A distinct,
+// page-local key -- never read by, written by, or otherwise part of
+// adminEventContext.ts's shared Admin working Event. No canonical event
+// authority is persisted or derived here.
+const EVENT_STATUS_FILTER_STORAGE_KEY = "fcoc-admin-events-filter";
+
+function readPersistedEventStatusFilter(): EventStatusFilter {
+  if (typeof window === "undefined") {
+    return "active";
+  }
+
+  const stored = window.localStorage.getItem(EVENT_STATUS_FILTER_STORAGE_KEY);
+
+  return (EVENT_STATUS_FILTER_VALUES as string[]).includes(stored || "")
+    ? (stored as EventStatusFilter)
+    : "active";
+}
+
+function persistEventStatusFilter(filter: EventStatusFilter) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(EVENT_STATUS_FILTER_STORAGE_KEY, filter);
+}
+
 function filterForStatus(status: string | null | undefined): EventStatusFilter {
   const normalized = normalizeEventStatus(status || "Draft");
 
@@ -123,7 +161,7 @@ function EventAdminPageInner() {
   const [status, setStatus] = useState("Loading event admin...");
   const [error, setError] = useState<string | null>(null);
   const [eventStatusFilter, setEventStatusFilter] =
-    useState<EventStatusFilter>("active");
+    useState<EventStatusFilter>(readPersistedEventStatusFilter);
   // The status-filter change and canonical-context broadcast can begin
   // overlapping loads with different filter closures. Only the newest load
   // may commit its result, so a late response cannot restore an obsolete list.
@@ -139,6 +177,17 @@ function EventAdminPageInner() {
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
+
+  // Read fresh on every render (a synchronous localStorage read, same
+  // cost as the equivalent call inside loadPage) so this always reflects
+  // canonical context accurately and immediately -- including the instant
+  // an explicit selection below writes it, before any further loadPage
+  // round-trip. Distinct from selectedEvent above: selectedEvent is this
+  // page's own filtered-list display/editing choice; this is the actual
+  // shared Admin working Event (ADR-006 §2), shown so the two can never
+  // be mistaken for each other when they diverge (e.g. canonical context
+  // excluded by the current filter).
+  const canonicalWorkingEvent = getCurrentAdminEvent();
 
   const loadAssignmentsForEvent = useCallback(
     async (eventId: string) => {
@@ -321,11 +370,28 @@ function EventAdminPageInner() {
       // This page's own list/edit-form selection is necessarily scoped to
       // the currently filtered list -- a display/editing choice, distinct
       // from (and never a mutation of) the shared context resolved above.
+      //
+      // Root-cause repair (Amana/Saint George field defect): this used to
+      // fall back to `loadedEvents[0]?.id` whenever the canonical working
+      // Event was not part of the current filter, silently pre-filling
+      // the picker with an unrelated visible row (e.g. Saint George)
+      // while canonical context stayed Amana -- misrepresenting it as
+      // selected (violates "loading/filtering alone must not make an
+      // Event look canonical"). Worse, because the picker is a plain
+      // controlled <select>, a later EXPLICIT pick of that same
+      // already-shown value never fires onChange at all, so the admin's
+      // real selection silently no-op'd -- this is what made "Archived ->
+      // select Amana" fail to reach setWorkspaceEvent while "All ->
+      // select Amana" (where the auto-filled value differed from Amana)
+      // worked: both were this one defect. The fix is to never guess: if
+      // canonical context is not visible under this filter, the picker
+      // stays genuinely unselected -- see the "Working event" line above
+      // it and the status text below for what canonical context actually
+      // is.
       const visibleContextEvent = contextEvent
         ? loadedEvents.find((e) => e.id === contextEvent.id) || null
         : null;
-      const preferredEventId =
-        visibleContextEvent?.id || loadedEvents[0]?.id || "";
+      const preferredEventId = visibleContextEvent?.id || "";
 
       setSelectedEventId(preferredEventId);
 
@@ -334,6 +400,10 @@ function EventAdminPageInner() {
           invalidStoredContext
             ? "Your previously selected event is no longer available. Choose one above."
             : "Event admin ready.",
+        );
+      } else if (contextEvent) {
+        setStatus(
+          `Working event "${contextEvent.name || "Untitled event"}" is not shown under this filter. Select a listed event below to change it, or adjust the filter to find it.`,
         );
       } else {
         setStatus("No accessible events available.");
@@ -361,6 +431,19 @@ function EventAdminPageInner() {
     });
     return unsubscribe;
   }, [admin, loadPage]);
+
+  // A non-super-admin's Event Filter picker only ever renders the
+  // "active" option (see the select's options below). A broader filter
+  // persisted on this device by a different admin (e.g. a shared iPad)
+  // would otherwise leave the control showing no matching option at all.
+  // This only clamps the in-memory display value for this session -- it
+  // never overwrites the persisted preference, so a super admin's own
+  // choice on the same device is unaffected next time they sign in.
+  useEffect(() => {
+    if (admin && !admin.isSuperAdmin && eventStatusFilter !== "active") {
+      setEventStatusFilter("active");
+    }
+  }, [admin, eventStatusFilter]);
 
   useEffect(() => {
     if (selectedEventId) {
@@ -735,6 +818,14 @@ function EventAdminPageInner() {
         }}
       >
         <div style={{ fontWeight: 700 }}>Select Event</div>
+        <div style={{ fontSize: 13, color: "#475569" }}>
+          Working event:{" "}
+          <strong>
+            {canonicalWorkingEvent?.name ||
+              canonicalWorkingEvent?.eventName ||
+              "No working event selected"}
+          </strong>
+        </div>
 
         <label style={{ display: "grid", gap: 6, maxWidth: 260 }}>
           Event Filter
@@ -747,8 +838,14 @@ function EventAdminPageInner() {
               // shared Admin working Event. loadPage() re-runs on this
               // dependency change and re-derives selectedEventId from
               // the (unchanged) shared context against the new filtered
-              // list.
+              // list. Persisted here -- an explicit picker choice -- so
+              // it survives navigation/remount; the two programmatic
+              // filter changes inside saveEvent() are NOT persisted,
+              // since flipping the filter to keep a just-saved/created
+              // Event visible is not the admin explicitly choosing a
+              // filter to remember.
               setEventStatusFilter(nextFilter);
+              persistEventStatusFilter(nextFilter);
               setEvents([]);
               setSelectedEventId("");
               setForm(emptyForm);
