@@ -141,12 +141,11 @@ test("a null admin (access not yet resolved) fails closed to no visible links", 
   assert.deepEqual(visibleAdminSummaryLinks(null), []);
 });
 
-test("no local operational statistics, no ad hoc system-status fetch, and no JS breakpoint state remain in the page source", () => {
+test("no local operational statistics or JS breakpoint state remain in the page source", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   for (const forbidden of [
-    "fetch(",
     "registeredCoaches",
     "peopleArrived",
     "parkedPercent",
@@ -159,6 +158,15 @@ test("no local operational statistics, no ad hoc system-status fetch, and no JS 
       `app/admin/dashboard/page.tsx must not contain "${forbidden}" -- the Dashboard no longer recomputes module statistics or polls services directly`,
     );
   }
+});
+
+test("Production Status is isolated to the canonical Super Admin path and existing API", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  assert.match(source, /adminAccess\?\.isSuperAdmin/);
+  assert.match(source, /fetch\("\/api\/admin\/system-status"/);
+  assert.match(source, /Production Status/);
+  assert.match(source, /Production status is currently unavailable/);
+  assert.match(source, /<AdminTrustIndicator \/>/);
 });
 
 test("the page still queries only the events table directly -- no attendees table read remains", () => {

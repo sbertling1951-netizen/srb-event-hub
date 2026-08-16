@@ -64,6 +64,14 @@ type EventRow = {
   status?: string | null;
 };
 
+type SystemStatus = {
+  status: string;
+  commit: string | null;
+  dirty: boolean;
+  environment: string;
+  lastDeployedAt: string;
+};
+
 function formatEventLabel(evt: EventRow) {
   const name = evt.name || "Untitled event";
   const dates = [evt.start_date, evt.end_date].filter(Boolean).join(" – ");
@@ -209,6 +217,10 @@ function AdminDashboardPageInner() {
   );
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+  const [systemStatusState, setSystemStatusState] = useState<
+    "idle" | "loading" | "unavailable"
+  >(adminAccess?.isSuperAdmin ? "loading" : "idle");
 
   const didInitialLoad = useRef(false);
 
@@ -316,6 +328,43 @@ function AdminDashboardPageInner() {
     return unsubscribe;
   }, [loadPage]);
 
+  useEffect(() => {
+    if (!adminAccess?.isSuperAdmin) {
+      setSystemStatus(null);
+      setSystemStatusState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setSystemStatusState("loading");
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => data.session?.access_token || null)
+      .then((accessToken) =>
+        accessToken
+          ? fetch("/api/admin/system-status", {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            })
+          : null,
+      )
+      .then((response) => (response?.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data) {
+          if (!cancelled) setSystemStatusState("unavailable");
+          return;
+        }
+        setSystemStatus(data as SystemStatus);
+        setSystemStatusState("idle");
+      })
+      .catch(() => {
+        if (!cancelled) setSystemStatusState("unavailable");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminAccess?.isSuperAdmin]);
+
   async function handleSwitchEvent(nextEventId: string) {
     if (!nextEventId) {
       return;
@@ -387,6 +436,26 @@ function AdminDashboardPageInner() {
       </div>
 
       <AdminTrustIndicator />
+
+      {adminAccess?.isSuperAdmin && (
+        <div className="card" style={productionStatusStyle}>
+          <div style={{ fontWeight: 700 }}>Production Status</div>
+          {systemStatusState === "loading" ? (
+            <div style={{ color: "#555", fontSize: 14 }}>Checking deployment status…</div>
+          ) : systemStatusState === "unavailable" || !systemStatus ? (
+            <div role="status" style={{ color: "#555", fontSize: 14 }}>
+              Production status is currently unavailable.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 4, fontSize: 14, color: "#444" }}>
+              <div>Service: {systemStatus.status}</div>
+              <div>Environment: {systemStatus.environment}</div>
+              <div>Commit: {systemStatus.commit || "Unavailable"}</div>
+              <div>Working tree: {systemStatus.dirty ? "Dirty" : "Clean"}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* No Context Card: no governed Admin Experience Resolver exists
           yet. An absent card is architecturally correct here (see
@@ -477,6 +546,12 @@ const summaryLinkGridStyle: React.CSSProperties = {
   gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
   gap: 14,
   minWidth: 0,
+};
+
+const productionStatusStyle: React.CSSProperties = {
+  padding: 16,
+  display: "grid",
+  gap: 8,
 };
 
 const emptyCardStyle: React.CSSProperties = {
