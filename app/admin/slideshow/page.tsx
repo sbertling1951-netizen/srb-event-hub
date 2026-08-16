@@ -804,9 +804,25 @@ function AdminSlideshowPageInner() {
       // no audience viewer is currently connected (e.g. rehearsal),
       // and this presenter closing does NOT stop auto-advance as long
       // as an audience screen remains open elsewhere.
-      void supabase.rpc("advance_presentation_session_if_due", {
-        p_session_id: sessionId,
-      });
+      void (async () => {
+        try {
+          const { error: heartbeatError } = await supabase.rpc(
+            "advance_presentation_session_if_due",
+            { p_session_id: sessionId },
+          );
+          if (heartbeatError) {
+            console.error(
+              "Failed to advance presentation session heartbeat",
+              heartbeatError,
+            );
+          }
+        } catch (heartbeatError) {
+          console.error(
+            "Failed to advance presentation session heartbeat",
+            heartbeatError,
+          );
+        }
+      })();
       void loadLiveSession(eventId);
     }, SESSION_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);

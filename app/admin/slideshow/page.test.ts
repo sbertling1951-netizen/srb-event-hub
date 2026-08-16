@@ -114,6 +114,14 @@ test("presenter's periodic refresh also triggers the governed timed-advance hear
   assert.match(PAGE_SOURCE, /p_session_id:\s*sessionId/);
 });
 
+test("presenter reports a failed timed-advance heartbeat", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /Failed to advance presentation session heartbeat/,
+  );
+  assert.match(PAGE_SOURCE, /error:\s*heartbeatError/);
+});
+
 test("every control RPC call supplies the current state_version as p_expected_version", () => {
   assert.match(PAGE_SOURCE, /p_expected_version:\s*session\.state_version/);
   // runControl is the single shared call site for all five post-start
