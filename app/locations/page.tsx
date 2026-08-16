@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
+import { PublicEventChooser } from "@/components/public/PublicEventChooser";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import {
+  loadPublicEventBootstrap,
+  type PublicEventCandidate,
+} from "@/lib/publicEventBootstrap";
 import { supabase } from "@/lib/supabase";
 
 type ActiveEvent = {
@@ -76,6 +82,7 @@ function getMarkerSize(
 
 export default function PublicLocationsPage() {
   const [event, setEvent] = useState<ActiveEvent | null>(null);
+  const [publicChoices, setPublicChoices] = useState<PublicEventCandidate[]>([]);
   const [locations, setLocations] = useState<EventLocation[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [search, setSearch] = useState("");
@@ -102,26 +109,46 @@ export default function PublicLocationsPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const loadPage = useCallback(async () => {
+  const loadPage = useCallback(async (selectedEvent?: PublicEventCandidate) => {
     setStatus({ type: "loading", text: "Loading..." });
-
-    // Active-event bootstrap read (ADR-006 §3.2): no known Event id exists
-    // yet on this page, so get_current_active_event applies the same
-    // is_active-only predicate this direct read used, unchanged.
-    const { data: activeEvent, error: eventError } = await supabase
-      .rpc("get_current_active_event")
-      .limit(1)
-      .maybeSingle();
-
-    if (eventError || !activeEvent) {
-      setStatus({
-        type: "error",
-        text: `Could not load active event: ${eventError?.message || "No active event found."}`,
-      });
-      return;
+    let typedEvent: ActiveEvent;
+    if (selectedEvent) {
+      typedEvent = selectedEvent;
+      setPublicChoices([]);
+    } else {
+      const memberEvent = getCurrentMemberEvent();
+      if (memberEvent?.id) {
+        const { data, error } = await supabase
+          .rpc("get_my_member_event_continuity_context", { p_event_id: memberEvent.id })
+          .maybeSingle();
+        if (error || !data) {
+          setEvent(null);
+          setLocations([]);
+          setStatus({ type: "info", text: "The selected event is not available." });
+          return;
+        }
+        typedEvent = { ...(data as Omit<ActiveEvent, "locations_map_open_scale">), locations_map_open_scale: null };
+      } else {
+      try {
+        const bootstrap = await loadPublicEventBootstrap();
+        if (bootstrap.kind === "none") {
+          setEvent(null);
+          setLocations([]);
+          setStatus({ type: "info", text: "No public events are currently available." });
+          return;
+        }
+        if (bootstrap.kind === "multiple") {
+          setPublicChoices(bootstrap.events);
+          setStatus({ type: "info", text: "Choose an event to view its locations." });
+          return;
+        }
+        typedEvent = bootstrap.event;
+      } catch (error) {
+        setStatus({ type: "error", text: error instanceof Error ? error.message : "Could not load public events." });
+        return;
+      }
+      }
     }
-
-    const typedEvent = activeEvent as ActiveEvent;
     setImageLoaded(false);
 
     let resolvedMapId: string | null = null;
@@ -394,6 +421,10 @@ export default function PublicLocationsPage() {
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
       <h1 style={{ marginTop: 0 }}>Map Locations</h1>
+
+      {publicChoices.length > 0 && (
+        <PublicEventChooser events={publicChoices} onSelect={(selectedEvent) => void loadPage(selectedEvent)} />
+      )}
 
       <div
         style={{

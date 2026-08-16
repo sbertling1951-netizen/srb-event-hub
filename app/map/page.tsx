@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import CampgroundMap from "@/components/map/CampgroundMap";
+import { PublicEventChooser } from "@/components/public/PublicEventChooser";
 import { getActiveEvent } from "@/lib/getActiveEvent";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import {
+  loadPublicEventBootstrap,
+  type PublicEventCandidate,
+} from "@/lib/publicEventBootstrap";
 import { supabase } from "@/lib/supabase";
 
 type ParkingSite = {
@@ -70,6 +76,8 @@ function formatDateRange(startDate: string | null, endDate: string | null) {
 
 export default function CoachMapPage() {
   const [event, setEvent] = useState<ActiveEventRow | null>(null);
+  const [publicEvent, setPublicEvent] = useState<PublicEventCandidate | null>(null);
+  const [publicChoices, setPublicChoices] = useState<PublicEventCandidate[]>([]);
   const [eventId, setEventId] = useState<string | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -119,7 +127,32 @@ export default function CoachMapPage() {
           : "Loading active event...",
       );
 
-      const activeEvent = await getActiveEvent();
+      const memberEvent = getCurrentMemberEvent();
+      let activeEvent = await getActiveEvent();
+
+      if (!activeEvent && !memberEvent?.id) {
+        if (publicEvent) {
+          activeEvent = publicEvent;
+        } else {
+          try {
+            const bootstrap = await loadPublicEventBootstrap();
+            if (bootstrap.kind === "multiple") {
+              setPublicChoices(bootstrap.events);
+              setStatus("Choose an event to view the map.");
+              return;
+            }
+            if (bootstrap.kind === "none") {
+              setStatus("No public events are currently available.");
+              return;
+            }
+            activeEvent = bootstrap.event;
+            setPublicEvent(bootstrap.event);
+          } catch {
+            setStatus("Could not load public events.");
+            return;
+          }
+        }
+      }
 
       if (cancelled) {
         return;
@@ -173,7 +206,7 @@ export default function CoachMapPage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("storage", handleStorage);
     };
-  }, [loadMapData]);
+  }, [loadMapData, publicEvent]);
 
   const attendeeById = useMemo(() => {
     const map = new Map<string, Attendee>();
@@ -296,6 +329,16 @@ export default function CoachMapPage() {
     <div className="app-shell" style={{ padding: 24 }}>
       <h1>Coach Map</h1>
       <p>Attendee-facing map. Only opted-in attendee identity is shown.</p>
+
+      {publicChoices.length > 0 && (
+        <PublicEventChooser
+          events={publicChoices}
+          onSelect={(selectedEvent) => {
+            setPublicEvent(selectedEvent);
+            setPublicChoices([]);
+          }}
+        />
+      )}
 
       <div
         style={{

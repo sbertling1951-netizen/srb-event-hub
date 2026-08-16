@@ -33,18 +33,10 @@ test("known-id branch (memberEvent.id present) uses participation-bound Member c
   assert.doesNotMatch(knownIdBranch, /get_event_continuity_context/);
 });
 
-test("active-event fallback branch uses get_current_active_event(), not a direct table read", () => {
-  // Slice from the closing brace of the known-id branch, not the
-  // preceding explanatory comment (which itself names
-  // "get_public_discoverable_events"/"visible_to_members" only to
-  // describe why they're deliberately absent from the code below).
-  const activeBranch = SOURCE.slice(SOURCE.indexOf('const { data, error } = await supabase\n    .rpc("get_current_active_event")'));
-  assert.match(activeBranch, /\.rpc\("get_current_active_event"\)/);
-  assert.match(activeBranch, /\.limit\(1\)/);
-  assert.match(activeBranch, /\.maybeSingle\(\)/);
-  assert.doesNotMatch(activeBranch, /\.from\("events"\)/);
-  assert.doesNotMatch(activeBranch, /get_public_discoverable_events/);
-  assert.doesNotMatch(activeBranch, /visible_to_members/);
+test("missing Member context returns no Event rather than a global fallback", () => {
+  assert.match(SOURCE, /return null;/);
+  assert.doesNotMatch(SOURCE, /get_current_active_event/);
+  assert.doesNotMatch(SOURCE, /get_public_discoverable_events/);
 });
 
 test("the two branches remain mutually exclusive on memberEvent?.id, matching the pre-Stage-2 control flow", () => {
