@@ -170,6 +170,15 @@ function AdminSlideshowPageInner() {
 
   const [decks, setDecks] = useState<PresentationDeck[] | null>(null);
   const [selectedDeckId, setSelectedDeckId] = useState<string>("");
+  // Presenter Restart State Repair: the deck id of this Event's most
+  // recently ended presentation session, restored on load/reload and set
+  // again by explicit End -- compared against selectedDeckId only to
+  // decide the Start button's label ("Start Again" vs "Start
+  // Presentation"). It never itself gates or starts anything; handleStart
+  // always uses selectedDeckId, exactly as before this repair.
+  const [restartCandidateDeckId, setRestartCandidateDeckId] = useState<
+    string | null
+  >(null);
   const [manualDeckItems, setManualDeckItems] = useState<ManualDeckItem[]>([]);
   const [availableApprovedPhotos, setAvailableApprovedPhotos] = useState<
     AvailableApprovedPhoto[]
@@ -246,6 +255,16 @@ function AdminSlideshowPageInner() {
   const acceptedSessionRef = useRef<{ id: string; version: number } | null>(
     null,
   );
+
+  // Presenter Restart State Repair: canonical-event guard for
+  // loadRestartCandidate's two sequential awaited reads. Kept in sync by
+  // its own effect below (eventId state -> ref) so a restore triggered
+  // for one Event, still in flight when the admin switches to a
+  // different Event, is discarded rather than applied into the newly
+  // selected Event's UI -- the same "compare against the current truth,
+  // not which request started/finished when" discipline acceptSessionRow
+  // already uses for session rows.
+  const eventIdRef = useRef<string | null>(null);
 
   // The single gate every session row -- from a poll, Start, or any
   // control RPC -- must pass through before it is allowed to update
@@ -651,20 +670,82 @@ function AdminSlideshowPageInner() {
     [loadSessionItems],
   );
 
+  // Presenter Restart State Repair (LEM CMD): on load/reload, ask whether
+  // this exact Event's most recently ended presentation session's deck is
+  // still an active, authorized deck for this exact Event, and if so
+  // restore it as the selected/restart candidate. This never creates,
+  // starts, or touches a session -- it only restores presenter UI state
+  // that was always volatile (selectedDeckId lives only in this page's
+  // React state; loadDecks reloading the durable deck list never
+  // restored it, which is what left an ended presentation's deck
+  // unselectable, with every session control disabled, after a refresh).
+  // Both reads go through the same governed, RLS-scoped SELECT boundary
+  // loadDecks/loadLiveSession already use -- no new table, RPC, or
+  // authority path. An archived, missing, or cross-event deck is simply
+  // never restored: the second query's own event_id + lifecycle_status =
+  // 'active' filters (identical to loadDecks') are what enforce that,
+  // not a client-side re-check of loadDecks' already-fetched list.
+  const loadRestartCandidate = useCallback(async (currentEventId: string) => {
+    const { data: endedSession, error: endedError } = await supabase
+      .from("presentation_sessions")
+      .select("deck_id")
+      .eq("event_id", currentEventId)
+      .eq("status", "ended")
+      .order("ended_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (eventIdRef.current !== currentEventId) {
+      return;
+    }
+    if (endedError || !endedSession) {
+      return;
+    }
+
+    const { data: deckRow, error: deckError } = await supabase
+      .from("presentation_decks")
+      .select("id")
+      .eq("id", endedSession.deck_id)
+      .eq("event_id", currentEventId)
+      .eq("lifecycle_status", "active")
+      .maybeSingle();
+
+    if (eventIdRef.current !== currentEventId) {
+      return;
+    }
+    if (deckError || !deckRow) {
+      return;
+    }
+
+    setSelectedDeckId(deckRow.id);
+    setRestartCandidateDeckId(deckRow.id);
+  }, []);
+
   useEffect(() => {
     if (hasSlideshowAccess !== true || !eventId) {
       return;
     }
     void loadDecks(eventId);
     void loadLiveSession(eventId);
-  }, [hasSlideshowAccess, eventId, loadDecks, loadLiveSession]);
+    void loadRestartCandidate(eventId);
+  }, [
+    hasSlideshowAccess,
+    eventId,
+    loadDecks,
+    loadLiveSession,
+    loadRestartCandidate,
+  ]);
 
   const selectedDeck = decks?.find((deck) => deck.id === selectedDeckId) ?? null;
   const selectedManualDeckId =
     selectedDeck?.selection_mode === "manual" ? selectedDeck.id : null;
+  const isRestartCandidate =
+    !!selectedDeckId && selectedDeckId === restartCandidateDeckId;
 
   useEffect(() => {
+    eventIdRef.current = eventId;
     setSelectedDeckId("");
+    setRestartCandidateDeckId(null);
   }, [eventId]);
 
   useEffect(() => {
@@ -929,11 +1010,17 @@ function AdminSlideshowPageInner() {
       // (e.g. from the 5s interval) so a late-arriving stale response
       // cannot resurrect session/items/photo state after End.
       ++stateGenerationRef.current;
+      // Presenter Restart State Repair: the ended session's own deck
+      // stays selected as the restart candidate -- End no longer blanks
+      // selectedDeckId. This is what makes the deck restartable
+      // immediately, in the same console session, without depending on a
+      // reload to run loadRestartCandidate.
+      setSelectedDeckId(session.deck_id);
+      setRestartCandidateDeckId(session.deck_id);
       acceptSessionRow(null);
       setItems([]);
       setCurrentPhoto(null);
       setNextPhoto(null);
-      setSelectedDeckId("");
       showStatus("Presentation ended.");
       setBusy(false);
       if (eventId) {
@@ -1249,7 +1336,7 @@ function AdminSlideshowPageInner() {
                       (manualDeckLoading || manualDeckItems.length === 0))
                   }
                 >
-                  Start Presentation
+                  {isRestartCandidate ? "Start Again" : "Start Presentation"}
                 </AppButton>
                 <AppButton
                   variant="muted"

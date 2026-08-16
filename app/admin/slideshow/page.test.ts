@@ -364,7 +364,7 @@ test("loadLiveSession, handleStart, and runControl all route their session row t
   assert.match(handleStartBody, /acceptSessionRow\(row\)/);
   assert.match(handleStartBody, /loadSessionItems\(row\.id, row\.current_index, generation\)/);
 
-  const runControlBody = PAGE_SOURCE.slice(runControlIdx, runControlIdx + 2400);
+  const runControlBody = PAGE_SOURCE.slice(runControlIdx, runControlIdx + 2800);
   const bumpCount = (runControlBody.match(/\+\+stateGenerationRef\.current/g) || []).length;
   assert.ok(bumpCount >= 2, `expected runControl to bump the generation in both its branches, found ${bumpCount}`);
   assert.match(runControlBody, /acceptSessionRow\(null\)/, "the end-session branch must sync acceptedSessionRef too");
@@ -509,4 +509,152 @@ test("presenter visibly identifies the canonical current Admin Event", () => {
   assert.match(PAGE_SOURCE, /setEventName\(adminEvent\?\.name \?\? adminEvent\?\.eventName \?\? null\)/);
   assert.match(PAGE_SOURCE, /Controlling event:/);
   assert.equal(/setCurrentAdminEvent/.test(PAGE_SOURCE), false);
+});
+
+// Presenter Restart State Repair (LEM CMD). Diagnosed root cause: a
+// completed/ended durable presentation session survives (its deck and
+// its now-ended session row are both still in the database), but
+// selectedDeckId is volatile React state that loadDecks never restores
+// and explicit End used to blank -- so a reload or an End left the
+// presenter's own Start Presentation gate permanently disabled even
+// though the durable deck/session foundation was perfectly healthy.
+// These tests follow this repo's existing static source-text
+// convention (see the file header): no component-rendering harness
+// exists here, so each requirement is proven as a structural assertion
+// against the deployed source rather than a simulated interaction.
+
+test("loadRestartCandidate exists and looks up this exact Event's most recently ended presentation session", () => {
+  const fnIdx = PAGE_SOURCE.indexOf(
+    "const loadRestartCandidate = useCallback(",
+  );
+  assert.notEqual(fnIdx, -1, "expected a loadRestartCandidate function");
+  const fnBody = PAGE_SOURCE.slice(fnIdx, fnIdx + 1400);
+
+  assert.match(fnBody, /\.from\(\s*"presentation_sessions"\s*\)/);
+  assert.match(fnBody, /\.eq\("event_id", currentEventId\)/);
+  assert.match(fnBody, /\.eq\("status", "ended"\)/);
+  assert.match(fnBody, /\.order\("ended_at", \{ ascending: false \}\)/);
+  assert.match(fnBody, /\.limit\(1\)/);
+});
+
+test("restart candidate deck lookup requires the deck to still be active and to belong to the exact same Event -- archived, missing, and cross-event decks are never restored", () => {
+  const fnIdx = PAGE_SOURCE.indexOf(
+    "const loadRestartCandidate = useCallback(",
+  );
+  const fnBody = PAGE_SOURCE.slice(fnIdx, fnIdx + 1400);
+
+  assert.match(fnBody, /\.from\(\s*"presentation_decks"\s*\)/);
+  assert.match(fnBody, /\.eq\("id", endedSession\.deck_id\)/);
+  assert.match(fnBody, /\.eq\("event_id", currentEventId\)/);
+  assert.match(fnBody, /\.eq\("lifecycle_status", "active"\)/);
+  // A missing/archived/cross-event deck row means deckRow is null (the
+  // .eq filters above exclude it) or the read errored -- both must
+  // return without restoring anything.
+  assert.match(fnBody, /if \(deckError \|\| !deckRow\) \{\s*\n\s*return;\s*\n\s*\}/);
+});
+
+test("loadRestartCandidate only restores selectedDeckId/restartCandidateDeckId after both governed reads succeed, never speculatively", () => {
+  const fnIdx = PAGE_SOURCE.indexOf(
+    "const loadRestartCandidate = useCallback(",
+  );
+  const fnBody = PAGE_SOURCE.slice(fnIdx, fnIdx + 1400);
+  const guardIdx = fnBody.indexOf("if (deckError || !deckRow)");
+  const setIdx = fnBody.indexOf("setSelectedDeckId(deckRow.id)");
+  assert.notEqual(guardIdx, -1);
+  assert.notEqual(setIdx, -1);
+  assert.ok(
+    setIdx > guardIdx,
+    "expected the deck-existence guard to precede restoring selectedDeckId",
+  );
+  assert.match(fnBody, /setRestartCandidateDeckId\(deckRow\.id\)/);
+});
+
+test("loadRestartCandidate runs on every presenter load/reload alongside loadDecks and loadLiveSession, for the exact same Event", () => {
+  const effectIdx = PAGE_SOURCE.indexOf(
+    "if (hasSlideshowAccess !== true || !eventId)",
+  );
+  assert.notEqual(effectIdx, -1);
+  const effectBody = PAGE_SOURCE.slice(effectIdx, effectIdx + 400);
+  assert.match(effectBody, /void loadDecks\(eventId\)/);
+  assert.match(effectBody, /void loadLiveSession\(eventId\)/);
+  assert.match(effectBody, /void loadRestartCandidate\(eventId\)/);
+});
+
+test("explicit End retains the ended session's own deck as the restart candidate instead of blanking selectedDeckId", () => {
+  const endBranchIdx = PAGE_SOURCE.indexOf(
+    'if (rpcName === "end_presentation_session")',
+  );
+  assert.notEqual(endBranchIdx, -1);
+  const endBranchBody = PAGE_SOURCE.slice(endBranchIdx, endBranchIdx + 900);
+
+  assert.match(endBranchBody, /setSelectedDeckId\(session\.deck_id\)/);
+  assert.match(endBranchBody, /setRestartCandidateDeckId\(session\.deck_id\)/);
+  // The old behavior blanked selection on every End -- that pattern must
+  // not survive anywhere in this branch.
+  assert.equal(/setSelectedDeckId\(""\)/.test(endBranchBody), false);
+});
+
+test("Start button reads 'Start Again' only when the selected deck is the retained restart candidate, and 'Start Presentation' for a normal first start", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /const isRestartCandidate =\s*\n\s*!!selectedDeckId && selectedDeckId === restartCandidateDeckId;/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /\{isRestartCandidate \? "Start Again" : "Start Presentation"\}/,
+  );
+});
+
+test("restart execution reuses the existing start_presentation_session RPC/handleStart path -- no separate restart RPC or deck mutation was invented", () => {
+  assert.equal(/restart_presentation_session/.test(PAGE_SOURCE), false);
+  // The Start/Restart button has exactly one onClick handler regardless
+  // of its label, and it is the existing handleStart.
+  assert.match(
+    PAGE_SOURCE,
+    /onClick=\{handleStart\}[\s\S]{0,360}\{isRestartCandidate \? "Start Again" : "Start Presentation"\}/,
+  );
+});
+
+test("restart receives a NEW session rather than mutating or reusing the ended one (handleStart always adopts the RPC's freshly-returned row)", () => {
+  const handleStartIdx = PAGE_SOURCE.indexOf("async function handleStart()");
+  const runControlIdx = PAGE_SOURCE.indexOf("async function runControl(");
+  const handleStartBody = PAGE_SOURCE.slice(handleStartIdx, runControlIdx);
+  assert.match(handleStartBody, /rpc\(\s*\n?\s*"start_presentation_session"/);
+  assert.match(handleStartBody, /p_deck_id:\s*selectedDeckId/);
+  assert.match(handleStartBody, /const row = data as PresentationSession;/);
+  assert.match(handleStartBody, /acceptSessionRow\(row\)/);
+});
+
+test("Event-context isolation: an eventId ref stays synced so a restore in flight for a previous Event is discarded, not applied to a newly-selected Event", () => {
+  assert.match(PAGE_SOURCE, /const eventIdRef = useRef<string \| null>\(null\);/);
+  assert.match(
+    PAGE_SOURCE,
+    /useEffect\(\(\) => \{\s*\n\s*eventIdRef\.current = eventId;/,
+  );
+
+  const fnIdx = PAGE_SOURCE.indexOf(
+    "const loadRestartCandidate = useCallback(",
+  );
+  const fnBody = PAGE_SOURCE.slice(fnIdx, fnIdx + 1400);
+  const guardPattern = /if \(eventIdRef\.current !== currentEventId\) \{\s*\n\s*return;\s*\n\s*\}/g;
+  const guardCount = (fnBody.match(guardPattern) || []).length;
+  assert.ok(
+    guardCount >= 2,
+    `expected loadRestartCandidate to re-check the canonical Event after each of its two awaited reads, found ${guardCount}`,
+  );
+});
+
+test("an Event change resets both selectedDeckId and the restart candidate marker before any new restoration can apply", () => {
+  const resetIdx = PAGE_SOURCE.indexOf("eventIdRef.current = eventId;");
+  assert.notEqual(resetIdx, -1);
+  const resetBody = PAGE_SOURCE.slice(resetIdx, resetIdx + 200);
+  assert.match(resetBody, /setSelectedDeckId\(""\)/);
+  assert.match(resetBody, /setRestartCandidateDeckId\(null\)/);
+});
+
+test("Live-session exclusivity is unchanged: session_already_active still maps to a clear presenter-facing message, and start_presentation_session remains the single Start/Restart entry point", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /session_already_active:\s*\n\s*"A presentation is already live for this event\. End it before starting another\."/,
+  );
 });
