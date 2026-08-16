@@ -3,15 +3,9 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-// Structural/source assertions for Stage 2's migration of public Coach
-// Map's known-Event-ID read to the governed Known-Context Event
-// Continuity RPC. Proves the ADR-006 §4 continuity invariant (an
-// already-established Event stays readable regardless of
-// visibility/lifecycle state) is preserved by construction: the
-// continuity RPC applies no such predicate (proved directly in
-// supabase/migrations/20260814160000_create_public_event_read_surfaces.test.ts),
-// so preserving the call site here is sufficient, not a re-proof of the
-// RPC's own body.
+// Structural/source assertions for Coach Map's Member-workspace-bound,
+// participation-authorized continuity read. Route naming does not make this
+// an anonymous public-continuity consumer.
 //
 // Run with:
 //   npx tsx --test app/coach-map/public/page.test.ts
@@ -21,21 +15,22 @@ const SOURCE = readFileSync(
   "utf8",
 );
 
-test("Event read uses the continuity RPC by known id, not a direct events table read", () => {
+test("Event read uses Member continuity by known id, not a direct/public events read", () => {
   assert.match(
     SOURCE,
-    /supabase\s*\n?\s*\.rpc\("get_event_continuity_context",\s*\{\s*p_event_id:\s*memberEvent\.id\s*\}\)/,
+    /supabase\s*\n?\s*\.rpc\("get_my_member_event_continuity_context",\s*\{\s*p_event_id:\s*memberEvent\.id\s*\}\)/,
   );
   assert.doesNotMatch(SOURCE, /\.from\("events"\)/);
 });
 
 test("no visibility/lifecycle predicate is applied client-side to the continuity result", () => {
-  const rpcCallStart = SOURCE.indexOf('.rpc("get_event_continuity_context"');
+  const rpcCallStart = SOURCE.indexOf('.rpc("get_my_member_event_continuity_context"');
   const rpcCallEnd = SOURCE.indexOf(";", rpcCallStart);
   const rpcCall = SOURCE.slice(rpcCallStart, rpcCallEnd);
   assert.doesNotMatch(rpcCall, /visible_to_members/);
   assert.doesNotMatch(rpcCall, /is_active/);
   assert.doesNotMatch(rpcCall, /\.eq\(/);
+  assert.doesNotMatch(SOURCE, /get_event_continuity_context/);
 });
 
 test("map fields/scaling behavior are preserved: map_image_url/master_map_id resolution and coach_map_open_scale still flow from the loaded row", () => {

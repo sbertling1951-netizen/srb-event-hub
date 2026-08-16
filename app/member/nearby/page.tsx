@@ -185,11 +185,10 @@ function NearbyPageInner() {
 
       const eventId = workspaceEvent.id;
 
-      // Known-context continuity read (ADR-006 §4): this Event's session is
-      // already established, so it must remain readable even when it is not
-      // publicly discoverable -- no visibility/lifecycle predicate applies.
+      // Established Member continuity is authorized from canonical
+      // Participation, not from public discovery or Event lifecycle state.
       const { data: eventRow, error: eventError } = await supabase
-        .rpc("get_event_continuity_context", { p_event_id: eventId })
+        .rpc("get_my_member_event_continuity_context", { p_event_id: eventId })
         .maybeSingle();
 
       if (eventError) {

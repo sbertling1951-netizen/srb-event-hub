@@ -20,16 +20,17 @@ const SOURCE = readFileSync(
   "utf8",
 );
 
-test("known-id branch (memberEvent.id present) uses the continuity RPC", () => {
+test("known-id branch (memberEvent.id present) uses participation-bound Member continuity", () => {
   const knownIdBranch = SOURCE.slice(
     SOURCE.indexOf("if (memberEvent?.id)"),
     SOURCE.indexOf("// Active-event fallback branch"),
   );
   assert.match(
     knownIdBranch,
-    /supabase\s*\n?\s*\.rpc\("get_event_continuity_context",\s*\{\s*p_event_id:\s*memberEvent\.id\s*\}\)/,
+    /supabase\s*\n?\s*\.rpc\("get_my_member_event_continuity_context",\s*\{\s*p_event_id:\s*memberEvent\.id\s*\}\)/,
   );
   assert.doesNotMatch(knownIdBranch, /\.from\("events"\)/);
+  assert.doesNotMatch(knownIdBranch, /get_event_continuity_context/);
 });
 
 test("active-event fallback branch uses get_current_active_event(), not a direct table read", () => {

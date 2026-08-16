@@ -202,12 +202,10 @@ function CoachMapPublicPageInner() {
 
       const memberEvent = workspaceEvent;
 
-      // Known-context continuity read (ADR-006 §4): this Event's session is
-      // already established, so it must remain readable even when it is not
-      // publicly discoverable -- get_event_continuity_context applies no
-      // visibility/lifecycle predicate, unlike the public discovery RPC.
+      // Despite this route name, this read is Member-workspace-bound and is
+      // authorized by canonical Participation rather than public discovery.
       const { data: eventRow, error: eventError } = await supabase
-        .rpc("get_event_continuity_context", { p_event_id: memberEvent.id })
+        .rpc("get_my_member_event_continuity_context", { p_event_id: memberEvent.id })
         .maybeSingle();
       if (eventError) {
         throw eventError;

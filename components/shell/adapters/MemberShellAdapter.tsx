@@ -60,13 +60,11 @@ export function MemberShellAdapter({
       return;
     }
 
-    // Known-context continuity read (ADR-006 §4): this Event's session is
-    // already established, so it must remain readable even when it is not
-    // publicly discoverable -- get_event_continuity_context applies no
-    // visibility/lifecycle predicate, matching Nearby's and coach-map's own
-    // reads of the same RPC.
+    // Established Member continuity is authorized server-side from the
+    // authenticated Person's canonical Participation, so historical Event
+    // context remains available without falling back to public discovery.
     void supabase
-      .rpc("get_event_continuity_context", { p_event_id: event.id })
+      .rpc("get_my_member_event_continuity_context", { p_event_id: event.id })
       .maybeSingle()
       .then(({ data }) => {
         if (!cancelled) {

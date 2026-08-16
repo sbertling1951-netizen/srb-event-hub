@@ -14,13 +14,12 @@ export type ActiveEvent = {
 export async function getActiveEvent(): Promise<ActiveEvent | null> {
   const memberEvent = getCurrentMemberEvent();
 
-  // Known-context continuity branch (ADR-006 §4): a session-established
-  // Event must remain readable regardless of visibility/lifecycle state,
-  // so this branch uses the continuity RPC, which applies no such
-  // predicate.
+  // An established Member Event is read through the authenticated Person's
+  // canonical Participation, preserving historical context without using
+  // anonymous public continuity.
   if (memberEvent?.id) {
     const { data, error } = await supabase
-      .rpc("get_event_continuity_context", { p_event_id: memberEvent.id })
+      .rpc("get_my_member_event_continuity_context", { p_event_id: memberEvent.id })
       .maybeSingle();
 
     if (error) {
