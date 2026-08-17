@@ -165,59 +165,48 @@ function PermissionsInner() {
     });
   }
 
+  // Stage 2 D6: every permission-row write below goes through the single
+  // governed RPC (set_admin_privilege_group_permission,
+  // 20260816120000_create_admin_permission_mutation_governance.sql),
+  // which writes the permission row and its admin_permission_audit row
+  // inside one transaction -- a privileged permission mutation can no
+  // longer durably succeed while its audit record fails or is skipped.
+  // Direct table INSERT/UPDATE/DELETE is revoked for every client-facing
+  // role by that same migration, so this is not merely the preferred
+  // path -- the old direct-write path no longer functions at all. The
+  // RPC itself derives old_value from the row it locks (never a
+  // client-side guess) and only writes an audit row on an actual change,
+  // so no separate "wasEnabled" pre-check is needed here anymore.
+  async function setPermission(
+    group: string,
+    key: string,
+    enabled: boolean,
+    actionId: string,
+  ) {
+    const { error } = await supabase.rpc(
+      "set_admin_privilege_group_permission",
+      {
+        p_privilege_group: group,
+        p_permission_key: key,
+        p_is_enabled: enabled,
+        p_action_id: actionId,
+      },
+    );
+
+    if (error) {
+      throw error;
+    }
+  }
+
   async function toggle(group: string, key: string) {
     try {
       const actionId = crypto.randomUUID();
       const existing = rows.find(
         (r) => r.privilege_group === group && r.permission_key === key,
       );
-      const oldValue = existing ? existing.is_enabled : false;
+      const nextEnabled = existing ? !existing.is_enabled : true;
 
-      let nextEnabled = true;
-
-      if (existing) {
-        nextEnabled = !existing.is_enabled;
-
-        const { error } = await supabase
-          .from("admin_privilege_group_permissions")
-          .update({ is_enabled: nextEnabled })
-          .eq("id", existing.id);
-
-        if (error) {
-          throw error;
-        }
-      } else {
-        const { error } = await supabase
-          .from("admin_privilege_group_permissions")
-          .insert({
-            privilege_group: group,
-            permission_key: key,
-            is_enabled: true,
-          });
-
-        if (error) {
-          throw error;
-        }
-      }
-
-      // 🔥 audit log
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        await supabase.from("admin_permission_audit").insert({
-          admin_user_id: user?.id || null,
-          admin_email: user?.email || "unknown",
-          privilege_group: group,
-          permission_key: key,
-          old_value: oldValue,
-          new_value: nextEnabled,
-          action_id: actionId,
-        });
-      } catch (auditErr) {
-        console.error("Audit log failed:", auditErr);
-      }
+      await setPermission(group, key, nextEnabled, actionId);
 
       // 🔥 enforce simple dependency rules
       const REQUIRED_RELATIONS: Record<string, string[]> = {
@@ -227,37 +216,7 @@ function PermissionsInner() {
 
       if (nextEnabled && REQUIRED_RELATIONS[key]) {
         for (const dep of REQUIRED_RELATIONS[key]) {
-          const wasEnabled = isEnabled(group, dep);
-
-          await supabase.from("admin_privilege_group_permissions").upsert(
-            {
-              privilege_group: group,
-              permission_key: dep,
-              is_enabled: true,
-            },
-            { onConflict: "privilege_group,permission_key" },
-          );
-
-          // 🔥 audit dependency auto-enable
-          if (!wasEnabled) {
-            try {
-              const {
-                data: { user },
-              } = await supabase.auth.getUser();
-
-              await supabase.from("admin_permission_audit").insert({
-                admin_user_id: user?.id || null,
-                admin_email: user?.email || "unknown",
-                privilege_group: group,
-                permission_key: dep,
-                old_value: false,
-                new_value: true,
-                action_id: actionId,
-              });
-            } catch (err) {
-              console.error("Toggle error:", err);
-            }
-          }
+          await setPermission(group, dep, true, actionId);
         }
       }
 
@@ -270,37 +229,7 @@ function PermissionsInner() {
         const children = REVERSE_RELATIONS[key] || [];
 
         for (const child of children) {
-          const wasEnabled = isEnabled(group, child);
-
-          await supabase.from("admin_privilege_group_permissions").upsert(
-            {
-              privilege_group: group,
-              permission_key: child,
-              is_enabled: false,
-            },
-            { onConflict: "privilege_group,permission_key" },
-          );
-
-          // 🔥 audit reverse cleanup
-          if (wasEnabled) {
-            try {
-              const {
-                data: { user },
-              } = await supabase.auth.getUser();
-
-              await supabase.from("admin_permission_audit").insert({
-                admin_user_id: user?.id || null,
-                admin_email: user?.email || "unknown",
-                privilege_group: group,
-                permission_key: child,
-                old_value: true,
-                new_value: false,
-                action_id: actionId,
-              });
-            } catch (err) {
-              console.error("Audit reverse cleanup failed:", err);
-            }
-          }
+          await setPermission(group, child, false, actionId);
         }
       }
 
@@ -352,33 +281,21 @@ function PermissionsInner() {
         });
       }
 
-      for (const row of actionGroup) {
-        await supabase.from("admin_privilege_group_permissions").upsert(
-          {
-            privilege_group: row.privilege_group,
-            permission_key: row.permission_key,
-            is_enabled: row.old_value,
-          },
-          { onConflict: "privilege_group,permission_key" },
-        );
-      }
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      // Stage 2 D6: reverting a row and recording that reversal's own
+      // audit entry now happen atomically per row, inside the same
+      // governed RPC toggle() uses -- the separate manual audit-insert
+      // loop this used to run afterward is gone; the RPC's own audit
+      // insert *is* the undo's audit trail, with old_value/new_value
+      // derived from the row it locks, not asserted here.
       const undoActionId = crypto.randomUUID();
 
       for (const row of actionGroup) {
-        await supabase.from("admin_permission_audit").insert({
-          admin_user_id: user?.id || null,
-          admin_email: user?.email || "unknown",
-          privilege_group: row.privilege_group,
-          permission_key: row.permission_key,
-          old_value: !row.old_value,
-          new_value: row.old_value,
-          action_id: undoActionId,
-        });
+        await setPermission(
+          row.privilege_group,
+          row.permission_key,
+          row.old_value,
+          undoActionId,
+        );
       }
 
       bumpAdminPermissionsVersion();
@@ -413,34 +330,15 @@ function PermissionsInner() {
 
     const actionId = crypto.randomUUID();
 
+    // Stage 2 D6: each row's write and its audit entry are now atomic
+    // (setPermission -> the governed RPC), and old_value is the row's
+    // actual prior state, not the previous code's assumption that it was
+    // simply the opposite of the new value.
     for (const group of GROUPS) {
       const enabledSet = new Set(config[group] || []);
 
       for (const perm of ALL_PERMISSIONS) {
-        const shouldEnable = enabledSet.has(perm);
-
-        await supabase.from("admin_privilege_group_permissions").upsert(
-          {
-            privilege_group: group,
-            permission_key: perm,
-            is_enabled: shouldEnable,
-          },
-          { onConflict: "privilege_group,permission_key" },
-        );
-
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        await supabase.from("admin_permission_audit").insert({
-          admin_user_id: user?.id || null,
-          admin_email: user?.email || "unknown",
-          privilege_group: group,
-          permission_key: perm,
-          old_value: !shouldEnable,
-          new_value: shouldEnable,
-          action_id: actionId,
-        });
+        await setPermission(group, perm, enabledSet.has(perm), actionId);
       }
     }
 
