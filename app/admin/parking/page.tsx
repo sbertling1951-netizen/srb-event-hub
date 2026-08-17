@@ -118,6 +118,18 @@ type Attendee = {
   has_arrived: boolean | null;
 };
 
+// Member-reported-site evidence (Stage B). Read-only: staff use this only
+// as evidence for their own separate record_site_placement decision -- it
+// is never an alternate placement writer and never displayed as though it
+// were confirmed/canonical.
+type MemberSiteReport = {
+  id: string;
+  attendee_id: string;
+  raw_reported_value: string;
+  matched_site_label: string | null;
+  reported_at: string;
+};
+
 function ParkingAdminPageInner() {
   const { admin } = useAdmin();
   const { isCompact: isNarrow } = useShellInterfaceCapabilities();
@@ -135,6 +147,8 @@ function ParkingAdminPageInner() {
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
+  const [latestMemberReportByAttendee, setLatestMemberReportByAttendee] =
+    useState<Record<string, MemberSiteReport>>({});
   const [selectedAttendeeId, setSelectedAttendeeId] = useState("");
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [search, setSearch] = useState("");
@@ -230,6 +244,7 @@ function ParkingAdminPageInner() {
       setEvent(null);
       setSites([]);
       setAttendees([]);
+      setLatestMemberReportByAttendee({});
       setSelectedAttendeeId("");
       setSelectedSiteId("");
       showStatus(
@@ -253,6 +268,7 @@ function ParkingAdminPageInner() {
       setEvent(null);
       setSites([]);
       setAttendees([]);
+      setLatestMemberReportByAttendee({});
       setSelectedAttendeeId("");
       setSelectedSiteId("");
       showError(
@@ -325,7 +341,7 @@ function ParkingAdminPageInner() {
       ? 0.6
       : clampZoom(openingScale);
 
-    const [masterSitesResult, assignmentResult, attendeeResult] =
+    const [masterSitesResult, assignmentResult, attendeeResult, memberReportsResult] =
       await Promise.all([
         mapSettings?.selected_master_map_id
           ? supabase
@@ -345,6 +361,13 @@ function ParkingAdminPageInner() {
           )
           .eq("event_id", typedEvent.id)
           .order("pilot_last"),
+        // Member-reported-site evidence (Stage B). Read-only staff
+        // reference, not required for the map/assignment workflow itself
+        // -- a failure here (e.g. the caller lacks event.parking.manage)
+        // does not block Parking from loading.
+        supabase.rpc("get_member_site_reports_for_event", {
+          p_event_id: typedEvent.id,
+        }),
       ]);
 
     if (!canApply()) {
@@ -376,6 +399,18 @@ function ParkingAdminPageInner() {
     const masterSites = (masterSitesResult.data || []) as MasterMapSite[];
     const assignments = (assignmentResult.data || []) as ParkingAssignmentRow[];
     const attendeeRows = (attendeeResult.data || []) as Attendee[];
+
+    // Latest Member-reported site per attendee, evidence only. Rows are
+    // already ordered most-recent-first by the RPC; keep only the first
+    // (newest) one seen per attendee.
+    const nextLatestMemberReportByAttendee: Record<string, MemberSiteReport> = {};
+    if (!memberReportsResult.error) {
+      ((memberReportsResult.data || []) as MemberSiteReport[]).forEach((row) => {
+        if (!nextLatestMemberReportByAttendee[row.attendee_id]) {
+          nextLatestMemberReportByAttendee[row.attendee_id] = row;
+        }
+      });
+    }
 
     const canonicalSnapshot = buildCanonicalParkingSnapshot({
       eventId: typedEvent.id,
@@ -418,6 +453,7 @@ function ParkingAdminPageInner() {
 
     setSites(mergedSites);
     setAttendees(attendeeRows);
+    setLatestMemberReportByAttendee(nextLatestMemberReportByAttendee);
 
     const focusSiteNumber = localStorage.getItem("fcoc-parking-focus-site");
 
@@ -474,6 +510,7 @@ function ParkingAdminPageInner() {
       setEvent(null);
       setSites([]);
       setAttendees([]);
+      setLatestMemberReportByAttendee({});
       setSelectedAttendeeId("");
       setSelectedSiteId("");
       setStatus("No admin working event selected.");
@@ -485,6 +522,7 @@ function ParkingAdminPageInner() {
       setEvent(null);
       setSites([]);
       setAttendees([]);
+      setLatestMemberReportByAttendee({});
       setSelectedAttendeeId("");
       setSelectedSiteId("");
       showError("You do not have access to this event.");
@@ -1413,6 +1451,16 @@ function ParkingAdminPageInner() {
                 <div style={{ fontSize: 13 }}>
                   Arrival: {selectedAttendee.arrival_status || "not_arrived"}
                 </div>
+                {latestMemberReportByAttendee[selectedAttendee.id] ? (
+                  <div style={{ fontSize: 12, color: "#78716c", marginTop: 6 }}>
+                    Member-reported site (evidence only):{" "}
+                    {latestMemberReportByAttendee[selectedAttendee.id].raw_reported_value}
+                    {latestMemberReportByAttendee[selectedAttendee.id]
+                      .matched_site_label
+                      ? ` (matches ${latestMemberReportByAttendee[selectedAttendee.id].matched_site_label})`
+                      : " (no inventory match)"}
+                  </div>
+                ) : null}
               </>
             ) : (
               <div style={{ fontSize: 13, color: "#666" }}>

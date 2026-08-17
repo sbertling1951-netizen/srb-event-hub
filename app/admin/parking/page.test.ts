@@ -127,3 +127,42 @@ test("no second Authority definition is introduced -- client-side permission che
   assert.equal(/hasPermission\(/.test(fn), false);
   assert.equal(/privilege_group/.test(fn), false);
 });
+
+// --- Stage B: Member-reported-site evidence surface ---
+
+test("Parking reads Member-reported-site evidence through the governed get_member_site_reports_for_event RPC, not a direct table read", () => {
+  assert.match(
+    SOURCE,
+    /supabase\.rpc\(\s*"get_member_site_reports_for_event"/,
+  );
+  assert.equal(/\.from\("member_site_reports"\)/.test(SOURCE), false);
+});
+
+test("a failed member-report read does not block the rest of Parking from loading -- it is supplementary, not required", () => {
+  const loadStart = SOURCE.indexOf("const [masterSitesResult, assignmentResult, attendeeResult, memberReportsResult]");
+  assert.ok(loadStart >= 0, "expected memberReportsResult in the parallel load");
+  const afterLoad = SOURCE.slice(loadStart, SOURCE.indexOf("setLatestMemberReportByAttendee(nextLatestMemberReportByAttendee)"));
+  assert.equal(/memberReportsResult\.error\.message/.test(afterLoad), false);
+  assert.match(afterLoad, /if \(!memberReportsResult\.error\)/);
+});
+
+test("the evidence panel is clearly labeled distinct from confirmed placement and never drives a placement mutation", () => {
+  const block = SOURCE.match(
+    /latestMemberReportByAttendee\[selectedAttendee\.id\] \? \([\s\S]*?\) : null/,
+  )?.[0];
+  assert.ok(block, "expected the Member-reported-site evidence block");
+  assert.match(block!, /Member-reported site \(evidence only\)/);
+  assert.equal(/record_site_placement/.test(block!), false);
+  assert.equal(/setSelectedSiteId/.test(block!), false);
+  assert.equal(/onClick/.test(block!), false);
+});
+
+test("staff canonical placement still requires the ordinary record_site_placement call -- the evidence panel is read-only", () => {
+  assert.match(SOURCE, /supabase\.rpc\(\s*\n?\s*"record_site_placement"/);
+  const evidenceBlockStart = SOURCE.indexOf("Member-reported site (evidence only)");
+  const nearbySlice = SOURCE.slice(
+    Math.max(0, evidenceBlockStart - 400),
+    evidenceBlockStart + 400,
+  );
+  assert.equal(/record_site_placement/.test(nearbySlice), false);
+});

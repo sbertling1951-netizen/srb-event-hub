@@ -41,3 +41,52 @@ test("the boolean share checkbox maps to the full approved optional-field set or
     /p_shared_field_keys: shareWithAttendees\s*\n\s*\? MEMBER_SHARE_ALL_FIELD_KEYS\s*\n\s*: \[\],/,
   );
 });
+
+test("the site field uses reporting terminology -- the primary prompt is the question, not assignment language", () => {
+  assert.match(source, /What site are you parked in\?/);
+  assert.equal(/Site Number/.test(source), false);
+  assert.equal(/Enter your assigned site/.test(source), false);
+});
+
+test("supporting text tells the member blank is fine and that this is not an assignment", () => {
+  const labelBlock = source.match(
+    /What site are you parked in\?[\s\S]*?<\/label>/,
+  )?.[0];
+  assert.ok(labelBlock, "expected the site-report label block");
+  assert.match(labelBlock!, /blank/i);
+  assert.match(labelBlock!, /does\s+not assign or reserve a site/i);
+});
+
+test("Confirmed site is a visually and textually distinct line from the report input, sourced from canonical Parking state", () => {
+  assert.match(source, /Confirmed site:/);
+  assert.match(
+    source,
+    /supabase\.rpc\(\s*\n?\s*"get_my_confirmed_site_placement"/,
+  );
+  const confirmedBlock = source.match(/Confirmed site:[\s\S]*?<\/div>/)?.[0];
+  assert.ok(confirmedBlock, "expected the Confirmed site display block");
+  assert.equal(/attendee\.assigned_site/.test(confirmedBlock!), false);
+  assert.match(confirmedBlock!, /confirmedSite\./);
+});
+
+test("the report input never displays a stored value -- it always starts blank and is cleared after a successful submit, so it can never be mistaken for a confirmed or previously-reported site", () => {
+  assert.match(source, /const \[siteReport, setSiteReport\] = useState\(""\)/);
+  assert.equal(/setSiteReport\(attendeeRow/.test(source), false);
+  assert.equal(/setSiteReport\(.*assigned_site/.test(source), false);
+  const saveStart = source.indexOf("async function saveCheckin(");
+  const saveBody = source.slice(saveStart, source.indexOf("\n  const participantCapacity"));
+  assert.match(saveBody, /setSiteReport\(""\)/);
+});
+
+test("a successful check-in response is never used to populate assigned_site into local attendee state -- that field is not confirmed placement", () => {
+  const saveStart = source.indexOf("async function saveCheckin(");
+  const saveBody = source.slice(saveStart, source.indexOf("\n  const participantCapacity"));
+  const setAttendeeBlock = saveBody.match(/setAttendee\(\(prev\) =>[\s\S]*?\);/)?.[0];
+  assert.ok(setAttendeeBlock, "expected the post-checkin setAttendee call");
+  assert.equal(/assigned_site/.test(setAttendeeBlock!), false);
+});
+
+test("the report is still submitted through the existing governed /api/member/checkin boundary -- no new client-side write path", () => {
+  assert.match(source, /assignedSite: siteReport/);
+  assert.match(source, /fetch\("\/api\/member\/checkin"/);
+});

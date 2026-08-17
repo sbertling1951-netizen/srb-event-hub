@@ -24,6 +24,17 @@ type AttendeeRow = {
   has_arrived: boolean | null;
 };
 
+// Confirmed site comes only from canonical Parking occupancy (Site
+// Assignment Governance Architecture §7; Site Placement Implementation
+// Specification §9.2 item 9) -- never from attendees.assigned_site and
+// never from what the member types into the report field below.
+type ConfirmedSitePlacement = {
+  parking_site_id: string;
+  master_site_id: string;
+  site_number: string | null;
+  display_label: string | null;
+};
+
 type HouseholdMember = {
   id: string;
   attendee_id: string;
@@ -74,9 +85,15 @@ function MemberCheckinPageInner() {
   const { event, attendeeId, isReady, session } = useMemberWorkspace();
   const [attendee, setAttendee] = useState<AttendeeRow | null>(null);
   const [household, setHousehold] = useState<HouseholdMember[]>([]);
+  const [confirmedSite, setConfirmedSite] = useState<ConfirmedSitePlacement | null>(
+    null,
+  );
   const [shareWithAttendees, setShareWithAttendees] = useState(false);
   const [hasArrived, setHasArrived] = useState(false);
-  const [siteNumber, setSiteNumber] = useState("");
+  // Always starts blank -- this is a forward-looking report prompt, never
+  // a display of stored state, so it can never be confused with a
+  // previously confirmed or previously reported value.
+  const [siteReport, setSiteReport] = useState("");
   const [requiresTemporaryCredentials, setRequiresTemporaryCredentials] =
     useState<boolean | null>(null);
   const [temporaryEventCode, setTemporaryEventCode] = useState("");
@@ -99,6 +116,7 @@ function MemberCheckinPageInner() {
       if (!event?.id || !attendeeId) {
         setAttendee(null);
         setHousehold([]);
+        setConfirmedSite(null);
         setStatus("Loading check-in...");
         return;
       }
@@ -122,6 +140,7 @@ function MemberCheckinPageInner() {
       if (!attendeeRow) {
         setAttendee(null);
         setHousehold([]);
+        setConfirmedSite(null);
         setStatus(
           "No member identity found for self check-in yet. Member login needs to store attendee identity.",
         );
@@ -145,7 +164,27 @@ function MemberCheckinPageInner() {
         );
       }
 
-      setSiteNumber(attendeeRow.assigned_site || "");
+      // Confirmed site is read separately from canonical Parking occupancy
+      // -- never from attendeeRow.assigned_site, which is only a legacy
+      // compatibility projection and must not be presented as authority.
+      const { data: placementRows, error: placementError } = await supabase.rpc(
+        "get_my_confirmed_site_placement",
+        {
+          p_event_id: event.id,
+          p_event_code: session?.event_code || null,
+          p_registration_identifier:
+            session?.attendee_email || session?.attendee_phone || null,
+        },
+      );
+
+      if (placementError) {
+        throw placementError;
+      }
+
+      setConfirmedSite(
+        (Array.isArray(placementRows) ? placementRows[0] : null) ||
+          (null as ConfirmedSitePlacement | null),
+      );
 
       const { data: memberRows, error: memberError } = await supabase.rpc(
         "get_my_household_members",
@@ -255,7 +294,7 @@ function MemberCheckinPageInner() {
           expectedAttendeeId: attendee.id,
           hasArrived,
           shareWithAttendees,
-          assignedSite: siteNumber,
+          assignedSite: siteReport,
           eventCode: temporaryAccess ? temporaryEventCode.trim() : null,
           registrationIdentifier: temporaryAccess
             ? temporaryRegistrationIdentifier.trim()
@@ -283,16 +322,23 @@ function MemberCheckinPageInner() {
         );
       }
 
+      // assigned_site is deliberately not read from updatedAttendee here --
+      // this response reflects submit_member_checkin's own Arrival/sharing
+      // update, and assigned_site is only a legacy compatibility
+      // projection this page must never present as confirmed placement.
+      // The site report just submitted is evidence only, recorded
+      // separately; it is cleared below rather than echoed back as if it
+      // were now a stored, confirmed value.
       setAttendee((prev) =>
         prev
           ? {
               ...prev,
-              assigned_site: updatedAttendee.assigned_site,
               share_with_attendees: updatedAttendee.share_with_attendees,
               has_arrived: updatedAttendee.has_arrived,
             }
           : prev,
       );
+      setSiteReport("");
 
       // Check-in itself has already been governedly recorded above. The
       // sharing-preference write is a separate governed call against a
@@ -453,16 +499,32 @@ function MemberCheckinPageInner() {
           <div
             style={{ display: "grid", gap: 10, width: "100%", maxWidth: 360, minWidth: 0 }}
           >
+            <div style={{ fontSize: 13, color: "#334155" }}>
+              Confirmed site:{" "}
+              <strong>
+                {confirmedSite
+                  ? confirmedSite.display_label ||
+                    confirmedSite.site_number ||
+                    "Assigned"
+                  : "Not yet confirmed by Parking"}
+              </strong>
+            </div>
+
             <label>
               <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
-                Site Number
+                What site are you parked in?
               </div>
               <input
-                value={siteNumber}
-                onChange={(e) => setSiteNumber(e.target.value.toUpperCase())}
-                placeholder="Enter your assigned site"
+                value={siteReport}
+                onChange={(e) => setSiteReport(e.target.value.toUpperCase())}
+                placeholder="e.g. A12"
                 style={{ width: "100%", padding: 10 }}
               />
+              <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                Leave this blank if you don&apos;t know your site yet or
+                haven&apos;t parked. This tells us where you are -- it does
+                not assign or reserve a site.
+              </div>
             </label>
 
             <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
