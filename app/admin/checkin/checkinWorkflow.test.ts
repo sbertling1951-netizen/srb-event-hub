@@ -58,19 +58,21 @@ test("arrived attendees remain reachable by filter and search", () => {
     ["waiting", "arrived"],
   );
   assert.deepEqual(
-    filterCheckinBrowseAttendees(attendees, "arrived@example.com", false).map((row) => row.id),
+    filterCheckinBrowseAttendees(attendees, "arrived@example.com", false).map(
+      (row) => row.id,
+    ),
     ["arrived"],
   );
 });
 
 test("unrelated server changes update while the selected dirty edit is preserved", () => {
   const current = {
-    selected: { siteNumber: "LOCAL", sharedFields: ["email"] },
-    other: { siteNumber: "OLD", sharedFields: [] },
+    selected: { sharedFields: ["email"] },
+    other: { sharedFields: [] },
   };
   const server = {
-    selected: { siteNumber: "SERVER", sharedFields: [] },
-    other: { siteNumber: "NEW", sharedFields: ["phone"] },
+    selected: { sharedFields: [] },
+    other: { sharedFields: ["phone"] },
   };
 
   assert.deepEqual(
@@ -84,18 +86,23 @@ test("unrelated server changes update while the selected dirty edit is preserved
 
 test("remote change to the actively edited attendee is an explicit conflict", () => {
   assert.equal(selectedAttendeeChangedRemotely("before", "after", true), true);
-  assert.equal(selectedAttendeeChangedRemotely("before", "after", false), false);
+  assert.equal(
+    selectedAttendeeChangedRemotely("before", "after", false),
+    false,
+  );
   assert.equal(selectedAttendeeChangedRemotely("same", "same", true), false);
 });
 
-test("server fingerprint covers arrival, placement, and governed sharing state", () => {
+test("server fingerprint covers arrival and governed sharing state, but never placement -- Check-In no longer owns or edits assigned_site", () => {
   const row = attendee("selected", false, "Selected");
   const initial = checkinServerFingerprint(row, ["phone", "email"]);
 
   assert.equal(initial, checkinServerFingerprint(row, ["email", "phone"]));
-  assert.notEqual(
+  const withSite: CheckinBrowseAttendee = { ...row, assigned_site: "A1" };
+  assert.equal(
     initial,
-    checkinServerFingerprint({ ...row, assigned_site: "A1" }, ["email", "phone"]),
+    checkinServerFingerprint(withSite, ["email", "phone"]),
+    "a Parking-originated site change must not trip Check-In's own dirty-conflict fingerprint",
   );
   assert.notEqual(
     initial,

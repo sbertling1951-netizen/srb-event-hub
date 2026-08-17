@@ -13,7 +13,6 @@ export type CheckinBrowseAttendee = {
 };
 
 export type CheckinEditState<TSharingField extends string = string> = {
-  siteNumber: string;
   sharedFields: TSharingField[];
 };
 
@@ -28,8 +27,12 @@ export function sortCheckinBrowseAttendees<T extends CheckinBrowseAttendee>(
   attendees: T[],
 ): T[] {
   return [...attendees].sort((left, right) => {
-    const arrivalOrder = Number(!!left.has_arrived) - Number(!!right.has_arrived);
-    return arrivalOrder || attendeeSortName(left).localeCompare(attendeeSortName(right));
+    const arrivalOrder =
+      Number(!!left.has_arrived) - Number(!!right.has_arrived);
+    return (
+      arrivalOrder ||
+      attendeeSortName(left).localeCompare(attendeeSortName(right))
+    );
   });
 }
 
@@ -73,7 +76,11 @@ export function reconcileCheckinEditState<T extends CheckinEditState>(
   selectedAttendeeId: string | null,
   selectedIsDirty: boolean,
 ): Record<string, T> {
-  if (!selectedAttendeeId || !selectedIsDirty || !currentState[selectedAttendeeId]) {
+  if (
+    !selectedAttendeeId ||
+    !selectedIsDirty ||
+    !currentState[selectedAttendeeId]
+  ) {
     return serverState;
   }
 
@@ -96,16 +103,16 @@ export function selectedAttendeeChangedRemotely(
   );
 }
 
+// Deliberately excludes assigned_site -- Check-In no longer owns or edits
+// placement (Admin Check-In / Parking ownership cutover, Stage A), so a
+// Parking-originated site change must never trip Check-In's own "changed at
+// another Check-In station" conflict banner.
 export function checkinServerFingerprint(
-  attendee: Pick<
-    CheckinBrowseAttendee,
-    "id" | "assigned_site" | "has_arrived" | "arrival_status"
-  >,
+  attendee: Pick<CheckinBrowseAttendee, "id" | "has_arrived" | "arrival_status">,
   sharedFields: string[],
 ): string {
   return JSON.stringify({
     id: attendee.id,
-    assignedSite: attendee.assigned_site || null,
     hasArrived: !!attendee.has_arrived,
     arrivalStatus: attendee.arrival_status || null,
     sharedFields: [...sharedFields].sort(),

@@ -80,7 +80,11 @@ test("existing direct Check-In navigation (no target param) still no-ops through
   assert.match(fn, /if \(!attendeeTarget \|\| loading\) \{\s*return;\s*\}/);
 });
 
-test("the existing Check-In -> Parking site-focus handoff (fcoc-parking-focus-site) is untouched -- a separate, legitimate, site-number-based mechanism this task does not migrate", () => {
-  assert.match(SOURCE, /localStorage\.setItem\(\s*"fcoc-parking-focus-site"/);
-  assert.match(SOURCE, /window\.dispatchEvent\(new Event\("fcoc-parking-focus-site"\)\)/);
+test("the legacy fcoc-parking-focus-site write side is retired from Check-In -- it was driven by the site-assignment input Stage A removes; Check-In now only offers the canonical attendee-target handoff to Parking", () => {
+  assert.equal(/localStorage\.setItem\(\s*"fcoc-parking-focus-site"/.test(SOURCE), false);
+  assert.equal(/window\.dispatchEvent\(new Event\("fcoc-parking-focus-site"\)\)/.test(SOURCE), false);
+  assert.match(
+    SOURCE,
+    /buildAdminAttendeeTargetHref\(\s*"\/admin\/parking",\s*attendee\.id,?\s*\)/,
+  );
 });

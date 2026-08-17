@@ -12,8 +12,9 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
-import { AppButton } from "@/components/ui/AppButton";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { buildAdminAttendeeTargetHref } from "@/lib/adminAttendeeTarget";
 import {
   readAdminAttendeeTarget,
   resolveAdminAttendeeTarget,
@@ -27,38 +28,25 @@ import { fullName, preferredDisplayLine } from "@/lib/formatters";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
-const SITE_PLACEMENT_ERROR_MESSAGES: Record<string, string> = {
+// Check-In owns Arrival only (Admin Check-In / Parking ownership cutover,
+// Stage A). complete_admin_checkin no longer accepts or performs any
+// placement action -- these are the codes it, and the Event lifecycle guard
+// it now enforces, can actually return.
+const CHECKIN_ERROR_MESSAGES: Record<string, string> = {
   unauthorized: "You do not have check-in authority for this event.",
   authorization_denied: "You do not have check-in authority for this event.",
   attendee_not_found: "Attendee not found.",
-  attendee_unplaced: "Attendee is not currently assigned to a site.",
-  attendee_already_placed: "Attendee is already assigned to a site.",
-  site_not_found: "Selected site was not found for this event.",
-  site_occupied: "Site is already assigned to another attendee.",
-  override_not_permitted:
-    "You do not have permission to reassign an occupied site.",
-  action_state_invalid:
-    "That action is not valid for the current assignment state.",
-  idempotency_key_reused_conflict:
-    "This request could not be completed. Please try again.",
-  placement_state_unstable:
-    "Site assignment is changing rapidly. Please try again.",
-  event_scope_mismatch:
-    "Your admin working event changed. Reload and try again.",
+  event_scope_mismatch: "Your admin working event changed. Reload and try again.",
+  event_archived: "This Event is archived and can no longer be modified.",
+  event_lifecycle_indeterminate:
+    "This Event's lifecycle state could not be determined. Contact an administrator.",
   unknown_share_field:
     "One of the sharing choices was not recognized. Please try again.",
 };
 
-function mapSitePlacementError(err: unknown, fallback: string): string {
+function mapCheckinError(err: unknown, fallback: string): string {
   const raw = err instanceof Error ? err.message : "";
-  return SITE_PLACEMENT_ERROR_MESSAGES[raw] || raw || fallback;
-}
-
-function newSitePlacementIdempotencyKey(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return CHECKIN_ERROR_MESSAGES[raw] || raw || fallback;
 }
 
 type AttendeeRow = {
@@ -113,32 +101,6 @@ type HouseholdMember = {
   raw_text: string | null;
 };
 
-type ParkingSiteRow = {
-  id: string | null;
-  event_id: string;
-  master_site_id: string | null;
-  site_number: string | null;
-  display_label: string | null;
-  assigned_attendee_id: string | null;
-};
-
-type EventMapSettingsRow = {
-  selected_master_map_id: string | null;
-};
-
-type MasterMapSiteRow = {
-  id: string;
-  site_number: string | null;
-  display_label: string | null;
-};
-
-type ParkingAssignmentRow = {
-  id: string;
-  event_id: string;
-  master_site_id: string | null;
-  assigned_attendee_id: string | null;
-};
-
 type AdminEventRow = {
   id: string;
   name: string;
@@ -148,14 +110,12 @@ type AdminEventRow = {
 };
 
 type EditState = {
-  siteNumber: string;
   sharedFields: SharingFieldKey[];
 };
 
 type CheckinFailureCategory =
-  | "validation"
-  | "placement"
   | "authority"
+  | "lifecycle"
   | "connectivity"
   | "conflict";
 
@@ -164,17 +124,6 @@ type CheckinOperationFailure = {
   message: string;
   retry: { attendeeId: string; nextHasArrived: boolean } | null;
 };
-
-function normalizeSite(value: string) {
-  return value.trim().toUpperCase();
-}
-
-function siteMatchKey(value: string | null | undefined) {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
-}
 
 function householdLine(member: HouseholdMember) {
   return preferredDisplayLine(member);
@@ -186,14 +135,14 @@ function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
 
 function classifyCheckinFailure(error: unknown): CheckinOperationFailure {
   const message = error instanceof Error ? error.message : "Check-In failed.";
+  if (/archived|lifecycle/i.test(message)) {
+    return { category: "lifecycle", message, retry: null };
+  }
   if (/authority|authorized|permission/i.test(message)) {
     return { category: "authority", message, retry: null };
   }
-  if (/changed|scope|unstable|idempotency|another station/i.test(message)) {
+  if (/changed|scope|another station/i.test(message)) {
     return { category: "conflict", message, retry: null };
-  }
-  if (/site|placement|assigned|occupied/i.test(message)) {
-    return { category: "placement", message, retry: null };
   }
   if (/network|fetch|offline|connection|timeout/i.test(message)) {
     return { category: "connectivity", message, retry: null };
@@ -217,7 +166,6 @@ function AdminCheckinPageInner() {
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
     [],
   );
-  const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
   const [sharingByAttendee, setSharingByAttendee] = useState<
     Record<string, SharingFieldKey[]>
   >({});
@@ -232,11 +180,6 @@ function AdminCheckinPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [undoAttendee, setUndoAttendee] = useState<AttendeeRow | null>(null);
-  const [placementConfirmation, setPlacementConfirmation] = useState<{
-    attendee: AttendeeRow;
-    siteLabel: string;
-    occupantName: string;
-  } | null>(null);
   const [sharingRetry, setSharingRetry] = useState<{
     attendeeId: string;
     sharedFields: SharingFieldKey[];
@@ -256,7 +199,6 @@ function AdminCheckinPageInner() {
   const selectedBaselineRef = useRef<string | null>(null);
   const editStateRef = useRef<Record<string, EditState>>({});
   const loadGenerationRef = useRef(0);
-  const placementAttemptKeysRef = useRef<Record<string, string>>({});
   // Guards the canonical attendee-target handoff (lib/adminAttendeeTarget)
   // so it is consumed exactly once per raw target value -- never re-run on
   // every realtime-triggered loadPage() reload, which would otherwise
@@ -287,7 +229,6 @@ function AdminCheckinPageInner() {
       setEvent(null);
       setAttendees([]);
       setHouseholdMembers([]);
-      setParkingSites([]);
       setSharingByAttendee({});
       showError("You do not have permission to manage check-in.");
       setLoading(false);
@@ -300,7 +241,6 @@ function AdminCheckinPageInner() {
       setEvent(null);
       setAttendees([]);
       setHouseholdMembers([]);
-      setParkingSites([]);
       setSharingByAttendee({});
       showStatus("No admin working event selected.");
       setLoading(false);
@@ -311,7 +251,6 @@ function AdminCheckinPageInner() {
       setEvent(null);
       setAttendees([]);
       setHouseholdMembers([]);
-      setParkingSites([]);
       setSharingByAttendee({});
       showError("You do not have access to this event.");
       setLoading(false);
@@ -332,22 +271,10 @@ function AdminCheckinPageInner() {
       return;
     }
 
-    const parkingChannel = supabase
-      .channel(`admin-checkin-parking-${event.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "parking_sites",
-          filter: `event_id=eq.${event.id}`,
-        },
-        async () => {
-          await loadPage({ preserveSelectedEdit: true, silent: true });
-        },
-      )
-      .subscribe();
-
+    // Placement lives in Parking's own domain now (Stage A); Check-In only
+    // needs to reconcile when the attendees roster itself changes -- which
+    // already covers a Parking-originated assigned_site projection update,
+    // since record_site_placement writes that projection on the same row.
     const attendeesChannel = supabase
       .channel(`admin-checkin-attendees-${event.id}`)
       .on(
@@ -365,7 +292,6 @@ function AdminCheckinPageInner() {
       .subscribe();
 
     return () => {
-      void supabase.removeChannel(parkingChannel);
       void supabase.removeChannel(attendeesChannel);
     };
     // loadPage is intentionally omitted to avoid resubscribing on every reload.
@@ -387,7 +313,6 @@ function AdminCheckinPageInner() {
         setEvent(null);
         setAttendees([]);
         setHouseholdMembers([]);
-        setParkingSites([]);
         setSharingByAttendee({});
         showStatus("No admin working event selected.");
         setLoading(false);
@@ -407,25 +332,7 @@ function AdminCheckinPageInner() {
       const loadedEvent = eventRow as AdminEventRow;
       setEvent(loadedEvent);
 
-      const { data: mapSettingsRows, error: mapSettingsError } = await supabase
-        .from("event_map_settings")
-        .select("selected_master_map_id")
-        .eq("event_id", loadedEvent.id)
-        .limit(1);
-
-      if (mapSettingsError) {
-        throw mapSettingsError;
-      }
-
-      const mapSettings = (mapSettingsRows?.[0] ||
-        null) as EventMapSettingsRow | null;
-
-      const [
-        attendeeResult,
-        masterSiteResult,
-        assignmentResult,
-        sharingResult,
-      ] = await Promise.all([
+      const [attendeeResult, sharingResult] = await Promise.all([
         supabase
           .from("attendees")
           .select(
@@ -451,17 +358,6 @@ function AdminCheckinPageInner() {
           .eq("event_id", loadedEvent.id)
           .order("pilot_last", { ascending: true, nullsFirst: false })
           .order("pilot_first", { ascending: true, nullsFirst: false }),
-        mapSettings?.selected_master_map_id
-          ? supabase
-              .from("master_map_sites")
-              .select("id,site_number,display_label")
-              .eq("master_map_id", mapSettings.selected_master_map_id)
-              .order("site_number", { ascending: true, nullsFirst: false })
-          : Promise.resolve({ data: [], error: null }),
-        supabase
-          .from("parking_sites")
-          .select("id,event_id,master_site_id,assigned_attendee_id")
-          .eq("event_id", loadedEvent.id),
         supabase.rpc("get_admin_attendee_sharing_preferences", {
           p_event_id: loadedEvent.id,
         }),
@@ -470,21 +366,11 @@ function AdminCheckinPageInner() {
       if (attendeeResult.error) {
         throw attendeeResult.error;
       }
-      if (masterSiteResult.error) {
-        throw masterSiteResult.error;
-      }
-      if (assignmentResult.error) {
-        throw assignmentResult.error;
-      }
       if (sharingResult.error) {
         throw sharingResult.error;
       }
 
       const attendeeList = (attendeeResult.data || []) as AttendeeRow[];
-      const masterSiteRows = (masterSiteResult.data ||
-        []) as MasterMapSiteRow[];
-      const assignmentRows = (assignmentResult.data ||
-        []) as ParkingAssignmentRow[];
       const sharingRows = (sharingResult.data || []) as SharingPreferenceRow[];
 
       const optionalFieldKeys = new Set<string>(
@@ -498,20 +384,6 @@ function AdminCheckinPageInner() {
         const existing = nextSharingByAttendee[row.attendee_id] || [];
         existing.push(row.field_key as SharingFieldKey);
         nextSharingByAttendee[row.attendee_id] = existing;
-      });
-
-      const siteRows: ParkingSiteRow[] = masterSiteRows.map((site) => {
-        const assignment =
-          assignmentRows.find((row) => row.master_site_id === site.id) || null;
-
-        return {
-          id: assignment?.id || null,
-          event_id: loadedEvent.id,
-          master_site_id: site.id,
-          site_number: site.site_number,
-          display_label: site.display_label,
-          assigned_attendee_id: assignment?.assigned_attendee_id || null,
-        };
       });
 
       const attendeeIds = attendeeList.map((a) => a.id);
@@ -538,14 +410,12 @@ function AdminCheckinPageInner() {
       }
 
       setAttendees(attendeeList);
-      setParkingSites(siteRows);
       setSharingByAttendee(nextSharingByAttendee);
       setHouseholdMembers(nextHouseholdMembers);
 
       const nextEditState: Record<string, EditState> = {};
       attendeeList.forEach((attendee) => {
         nextEditState[attendee.id] = {
-          siteNumber: attendee.assigned_site || "",
           sharedFields: nextSharingByAttendee[attendee.id] || [],
         };
       });
@@ -608,19 +478,6 @@ function AdminCheckinPageInner() {
     });
     return map;
   }, [householdMembers]);
-
-  const siteSuggestions = useMemo(() => {
-    const unique = new Set<string>();
-
-    parkingSites.forEach((site) => {
-      const label = site.display_label || site.site_number;
-      if (label) {
-        unique.add(label.toUpperCase());
-      }
-    });
-
-    return Array.from(unique).sort();
-  }, [parkingSites]);
 
   const filteredAttendees = useMemo(
     () =>
@@ -748,37 +605,6 @@ function AdminCheckinPageInner() {
     });
   }
 
-  function handleSiteNumberTyping(attendeeId: string, nextValue: string) {
-    const nextSite = nextValue.toUpperCase();
-    updateEditState(attendeeId, { siteNumber: nextSite });
-
-    const nextKey = siteMatchKey(nextSite);
-    if (!nextKey) {
-      return;
-    }
-
-    const matchedSite = parkingSites.find((site) => {
-      const siteNumberMatch = siteMatchKey(site.site_number) === nextKey;
-      const displayMatch = siteMatchKey(site.display_label) === nextKey;
-      return siteNumberMatch || displayMatch;
-    });
-
-    if (!matchedSite) {
-      return;
-    }
-
-    const canonicalSite = normalizeSite(
-      matchedSite.display_label || matchedSite.site_number || nextSite,
-    );
-
-    updateEditState(attendeeId, { siteNumber: canonicalSite });
-    localStorage.setItem("fcoc-parking-focus-site", canonicalSite);
-    window.dispatchEvent(new Event("fcoc-parking-focus-site"));
-    showStatus(
-      `Matched site ${canonicalSite}. Open Parking Admin to see it highlighted on the map.`,
-    );
-  }
-
   async function saveSharingPreferences(
     attendee: AttendeeRow,
     sharedFields: SharingFieldKey[],
@@ -797,7 +623,7 @@ function AdminCheckinPageInner() {
     );
     const result = data?.[0];
     if (sharingError || !result || result.outcome === "rejected") {
-      return mapSitePlacementError(
+      return mapCheckinError(
         new Error(sharingError?.message || result?.rejection_code || "unknown"),
         "an unknown error",
       );
@@ -832,11 +658,7 @@ function AdminCheckinPageInner() {
     }
   }
 
-  async function saveCheckin(
-    attendee: AttendeeRow,
-    nextHasArrived: boolean,
-    occupiedSiteConfirmed = false,
-  ) {
+  async function saveCheckin(attendee: AttendeeRow, nextHasArrived: boolean) {
     if (!event?.id) {
       showError("No working event selected.");
       return;
@@ -847,167 +669,14 @@ function AdminCheckinPageInner() {
       return;
     }
 
-    let normalizedSite = nextHasArrived
-      ? normalizeSite(current.siteNumber)
-      : normalizeSite(attendee.assigned_site || "");
-    const enteredSiteKey = siteMatchKey(normalizedSite);
-    let placementAttemptSignature: string | null = null;
-
-    if (current.siteNumber !== normalizedSite) {
-      updateEditState(attendee.id, { siteNumber: normalizedSite });
-    }
-
     try {
       setSavingId(attendee.id);
       setOperationFailure(null);
       showStatus("Saving check-in changes...");
 
-      let matchedSite: ParkingSiteRow | null = null;
-
-      if (nextHasArrived && normalizedSite) {
-        matchedSite =
-          parkingSites.find((site) => {
-            const siteNumberMatch =
-              siteMatchKey(site.site_number) === enteredSiteKey;
-            const displayMatch =
-              siteMatchKey(site.display_label) === enteredSiteKey;
-            return siteNumberMatch || displayMatch;
-          }) || null;
-
-        if (!matchedSite) {
-          showError(
-            `Site "${normalizedSite}" was not found in the event parking map.`,
-          );
-          setSavingId(null);
-          return;
-        }
-
-        const canonicalSite = normalizeSite(
-          matchedSite.display_label ||
-            matchedSite.site_number ||
-            normalizedSite,
-        );
-        normalizedSite = canonicalSite;
-        updateEditState(attendee.id, { siteNumber: canonicalSite });
-      }
-
-      const oldAssignedSite = attendee.assigned_site || "";
       const oldHasArrived = !!attendee.has_arrived;
       const oldSharedFields = sharingByAttendee[attendee.id] || [];
       const oldParticipates = oldSharedFields.length > 0;
-      const oldSiteKey = siteMatchKey(oldAssignedSite);
-      const newSiteKey = siteMatchKey(normalizedSite);
-
-      let placementAction: "assign" | "reassign" | "confirm" | "clear" | null =
-        null;
-      let placementSiteId: string | null = null;
-      let placementOverride = false;
-
-      if (matchedSite?.id || matchedSite?.master_site_id) {
-        // Governed placement: authority, then one-current-placement/
-        // history invariants, then the mutation, all inside
-        // record_site_placement. The confirm dialog stays a UI-only
-        // decision (whether to ask permission to override) -- the same
-        // roster-or-parking occupant signal the page already computed
-        // decides both whether to prompt and whether to pass override;
-        // the RPC independently re-verifies real occupancy under lock
-        // regardless of what this heuristic guessed.
-        const existingByRoster = attendees.find(
-          (a) =>
-            a.id !== attendee.id &&
-            siteMatchKey(a.assigned_site) === newSiteKey,
-        );
-        const existingByParking = matchedSite.assigned_attendee_id
-          ? attendees.find((a) => a.id === matchedSite!.assigned_attendee_id) ||
-            null
-          : null;
-        const existing = existingByRoster || existingByParking;
-        const occupiedByOther = !!(existing?.id && existing.id !== attendee.id);
-
-        if (occupiedByOther && !occupiedSiteConfirmed) {
-          const existingName =
-            fullName(existing!.pilot_first, existing!.pilot_last) ||
-            "another attendee";
-          setPlacementConfirmation({
-            attendee,
-            siteLabel: normalizedSite,
-            occupantName: existingName,
-          });
-          setSavingId(null);
-          return;
-        }
-
-        let resolvedSiteId = matchedSite.id;
-
-        if (!resolvedSiteId) {
-          // Site has no materialized parking_sites row yet -- governed
-          // materialization creates a vacant inventory row from the
-          // master-map template, then the same record_site_placement
-          // call below places the attendee into it. No direct
-          // parking_sites write remains on this path.
-          const { data: materializeData, error: materializeError } =
-            await supabase.rpc("materialize_event_parking_site", {
-              p_event_id: event.id,
-              p_master_site_id: matchedSite.master_site_id,
-            });
-
-          if (materializeError) {
-            throw new Error(
-              mapSitePlacementError(
-                new Error(materializeError.message),
-                "Could not prepare site for assignment.",
-              ),
-            );
-          }
-
-          const materializeResult = materializeData?.[0];
-          if (!materializeResult || materializeResult.outcome === "rejected") {
-            throw new Error(
-              mapSitePlacementError(
-                new Error(materializeResult?.rejection_code || "unknown"),
-                "Could not prepare site for assignment.",
-              ),
-            );
-          }
-
-          resolvedSiteId = materializeResult.parking_site_id;
-        }
-
-        const action = !oldAssignedSite
-          ? "assign"
-          : oldSiteKey === newSiteKey
-            ? "confirm"
-            : "reassign";
-
-        placementAction = action;
-        placementSiteId = resolvedSiteId;
-        placementOverride = occupiedByOther;
-      } else if (nextHasArrived && !normalizedSite && oldAssignedSite) {
-        const oldSite =
-          parkingSites.find(
-            (site) =>
-              siteMatchKey(site.site_number) === oldSiteKey ||
-              siteMatchKey(site.display_label) === oldSiteKey,
-          ) || null;
-
-        if (oldSite?.id) {
-          placementAction = "clear";
-        }
-      }
-
-      placementAttemptSignature = placementAction
-        ? [
-            attendee.id,
-            placementAction,
-            placementSiteId || "none",
-            placementOverride ? "override" : "normal",
-          ].join(":")
-        : null;
-      const placementIdempotencyKey = placementAttemptSignature
-        ? placementAttemptKeysRef.current[placementAttemptSignature] ||
-          (placementAttemptKeysRef.current[placementAttemptSignature] =
-            newSitePlacementIdempotencyKey())
-        : null;
 
       const { data: checkinData, error: checkinError } = await supabase.rpc(
         "complete_admin_checkin",
@@ -1016,46 +685,36 @@ function AdminCheckinPageInner() {
           p_expected_event_id: event.id,
           p_has_arrived: nextHasArrived,
           p_share_with_attendees: current.sharedFields.length > 0,
-          p_placement_action: placementAction,
-          p_site_id: placementSiteId,
-          p_placement_idempotency_key: placementIdempotencyKey,
-          p_override_occupied_site: placementOverride,
         },
       );
 
       if (checkinError) {
         throw new Error(
-          mapSitePlacementError(
-            new Error(checkinError.message),
-            "Could not save check-in.",
-          ),
+          mapCheckinError(new Error(checkinError.message), "Could not save check-in."),
         );
       }
       const checkinResult = checkinData?.[0];
       if (!checkinResult || checkinResult.outcome === "rejected") {
         throw new Error(
-          mapSitePlacementError(
+          mapCheckinError(
             new Error(checkinResult?.rejection_code || "unknown"),
             "Could not save check-in.",
           ),
         );
       }
-      if (placementAttemptSignature) {
-        delete placementAttemptKeysRef.current[placementAttemptSignature];
-      }
 
       const attendeeName =
         fullName(attendee.pilot_first, attendee.pilot_last) || "Attendee";
 
-      // Arrival/placement and sharing preferences are two separate
-      // governed domain concepts (an operational fact vs. a Person's own
-      // consent) written by two separate RPC calls on purpose -- see the
-      // top-of-function note. complete_admin_checkin has already
-      // committed by this point, so a failure here must always read as
-      // "check-in saved, sharing preferences were not" and never as
-      // "check-in failed," regardless of which specific rejection code
-      // fired. The page is reloaded so the card reflects the true
-      // persisted state rather than the operator's stale local edit.
+      // Arrival and sharing preferences are two separate governed domain
+      // concepts (an operational fact vs. a Person's own consent) written by
+      // two separate RPC calls on purpose -- see the top-of-function note.
+      // complete_admin_checkin has already committed by this point, so a
+      // failure here must always read as "check-in saved, sharing
+      // preferences were not" and never as "check-in failed," regardless of
+      // which specific rejection code fired. The page is reloaded so the
+      // card reflects the true persisted state rather than the operator's
+      // stale local edit.
       const sharingFailure = await saveSharingPreferences(
         attendee,
         current.sharedFields,
@@ -1076,27 +735,13 @@ function AdminCheckinPageInner() {
           message: "Check-In saved. Sharing still needs attention.",
         });
         showError(
-          `${attendeeName}: check-in (arrival/site) was saved, but sharing preferences were not saved -- ${sharingFailure}`,
+          `${attendeeName}: check-in (arrival) was saved, but sharing preferences were not saved -- ${sharingFailure}`,
         );
         return;
       }
       setSharingRetry(null);
 
       const changes: string[] = [];
-
-      if (!oldAssignedSite && normalizedSite) {
-        changes.push(`site assigned to ${normalizedSite}`);
-      } else if (oldAssignedSite && !normalizedSite) {
-        changes.push(`site cleared from ${oldAssignedSite}`);
-      } else if (
-        oldAssignedSite &&
-        normalizedSite &&
-        oldAssignedSite.toLowerCase() !== normalizedSite.toLowerCase()
-      ) {
-        changes.push(
-          `site changed from ${oldAssignedSite} to ${normalizedSite}`,
-        );
-      }
 
       if (!oldHasArrived && nextHasArrived) {
         changes.push("marked arrived");
@@ -1147,9 +792,6 @@ function AdminCheckinPageInner() {
         ...failure,
         retry: retryable ? { attendeeId: attendee.id, nextHasArrived } : null,
       });
-      if (!retryable && placementAttemptSignature) {
-        delete placementAttemptKeysRef.current[placementAttemptSignature];
-      }
       showError(`${failure.category}: ${failure.message}`);
     } finally {
       setSavingId(null);
@@ -1161,7 +803,7 @@ function AdminCheckinPageInner() {
       <ConfirmDialog
         open={!!undoAttendee}
         title="Undo Check-In"
-        message={`Mark ${undoAttendee ? fullName(undoAttendee.pilot_first, undoAttendee.pilot_last) || "this attendee" : "this attendee"} as not arrived? Their current site assignment will remain in place.`}
+        message={`Mark ${undoAttendee ? fullName(undoAttendee.pilot_first, undoAttendee.pilot_last) || "this attendee" : "this attendee"} as not arrived? Any current parking placement is unaffected.`}
         confirmLabel="Undo Check-In"
         danger
         busy={!!undoAttendee && savingId === undoAttendee.id}
@@ -1173,30 +815,6 @@ function AdminCheckinPageInner() {
           const attendee = undoAttendee;
           await saveCheckin(attendee, false);
           setUndoAttendee(null);
-        }}
-      />
-      <ConfirmDialog
-        open={!!placementConfirmation}
-        title="Resolve Site Conflict"
-        message={
-          placementConfirmation
-            ? `Site ${placementConfirmation.siteLabel} is assigned to ${placementConfirmation.occupantName}. Move ${fullName(placementConfirmation.attendee.pilot_first, placementConfirmation.attendee.pilot_last) || "the selected attendee"} into this site and clear the previous assignment?`
-            : "Resolve this site conflict?"
-        }
-        confirmLabel="Move and Check In"
-        danger
-        busy={
-          !!placementConfirmation &&
-          savingId === placementConfirmation.attendee.id
-        }
-        onCancel={() => setPlacementConfirmation(null)}
-        onConfirm={async () => {
-          if (!placementConfirmation) {
-            return;
-          }
-          const attendee = placementConfirmation.attendee;
-          setPlacementConfirmation(null);
-          await saveCheckin(attendee, true, true);
         }}
       />
       <div
@@ -1397,24 +1015,8 @@ function AdminCheckinPageInner() {
           );
 
           const current = editState[attendee.id] || {
-            siteNumber: attendee.assigned_site || "",
             sharedFields: sharingByAttendee[attendee.id] || [],
           };
-          const enteredSiteKey = siteMatchKey(current.siteNumber);
-          const matchedSite = enteredSiteKey
-            ? parkingSites.find(
-                (site) =>
-                  siteMatchKey(site.site_number) === enteredSiteKey ||
-                  siteMatchKey(site.display_label) === enteredSiteKey,
-              ) || null
-            : null;
-          const conflictingAttendee =
-            matchedSite?.assigned_attendee_id &&
-            matchedSite.assigned_attendee_id !== attendee.id
-              ? attendees.find(
-                  (row) => row.id === matchedSite.assigned_attendee_id,
-                ) || null
-              : null;
 
           return (
             <div
@@ -1549,7 +1151,7 @@ function AdminCheckinPageInner() {
                   display: "grid",
                   gridTemplateColumns: isCompact
                     ? "minmax(0, 1fr)"
-                    : "minmax(220px, 1.2fr) auto auto auto",
+                    : "minmax(220px, 1.2fr) auto",
                   gap: 12,
                   alignItems: isCompact ? "stretch" : "center",
                   minWidth: 0,
@@ -1557,78 +1159,28 @@ function AdminCheckinPageInner() {
               >
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                    Confirm site
+                    Placement
                   </div>
                   <div
                     style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}
                   >
-                    Current:{" "}
-                    {attendee.assigned_site?.toUpperCase() ||
-                      "No site assigned"}
+                    {attendee.assigned_site
+                      ? `Site ${attendee.assigned_site.toUpperCase()}`
+                      : "Not yet placed"}
                     {attendee.handicap_parking
                       ? " · Handicap parking needed"
                       : ""}
                   </div>
-                  <datalist id="parking-site-suggestions">
-                    {siteSuggestions.map((site) => (
-                      <option key={site} value={site} />
-                    ))}
-                  </datalist>
-                  <input
-                    list="parking-site-suggestions"
-                    value={current.siteNumber}
-                    onChange={(e) =>
-                      handleSiteNumberTyping(attendee.id, e.target.value)
-                    }
-                    placeholder="Site"
-                    style={{
-                      width: "100%",
-                      padding: 10,
-                      boxSizing: "border-box",
-                      fontSize: 16,
-                    }}
-                  />
-                  {current.siteNumber && !matchedSite ? (
-                    <div
-                      role="alert"
-                      style={{ color: "#b91c1c", fontSize: 13, marginTop: 6 }}
+                  {attendee.has_arrived && !attendee.assigned_site ? (
+                    <AppLinkButton
+                      variant="muted"
+                      href={buildAdminAttendeeTargetHref(
+                        "/admin/parking",
+                        attendee.id,
+                      )}
                     >
-                      This site was not found on the Event parking map.
-                    </div>
-                  ) : null}
-                  {conflictingAttendee ? (
-                    <div
-                      role="alert"
-                      style={{ color: "#b45309", fontSize: 13, marginTop: 6 }}
-                    >
-                      Site conflict: assigned to{" "}
-                      {fullName(
-                        conflictingAttendee.pilot_first,
-                        conflictingAttendee.pilot_last,
-                      ) || "another attendee"}
-                      . Check-In will ask before overriding it.
-                    </div>
-                  ) : null}
-                  {matchedSite ? (
-                    <details style={{ marginTop: 8 }}>
-                      <summary style={{ cursor: "pointer", fontWeight: 700 }}>
-                        Need to verify placement?
-                      </summary>
-                      <AppButton
-                        variant="muted"
-                        style={{ marginTop: 8 }}
-                        onClick={() => {
-                          const siteToFocus = normalizeSite(current.siteNumber);
-                          localStorage.setItem(
-                            "fcoc-parking-focus-site",
-                            siteToFocus,
-                          );
-                          window.location.href = "/admin/parking";
-                        }}
-                      >
-                        Show site on map
-                      </AppButton>
-                    </details>
+                      Place in Parking
+                    </AppLinkButton>
                   ) : null}
                 </div>
                 {attendee.has_arrived ? (
@@ -1647,11 +1199,7 @@ function AdminCheckinPageInner() {
                   <AppButton
                     variant="success"
                     onClick={() => void saveCheckin(attendee, true)}
-                    disabled={
-                      savingId === attendee.id ||
-                      !!selectedConflict ||
-                      (!!current.siteNumber && !matchedSite)
-                    }
+                    disabled={savingId === attendee.id || !!selectedConflict}
                     style={{
                       minHeight: 52,
                       minWidth: 150,
