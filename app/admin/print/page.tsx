@@ -876,21 +876,28 @@ function AdminPrintPageInner() {
         minWidth: 0,
       }}
     >
-      {" "}
-      <Link
-        href="/admin/dashboard"
+      <nav
+        aria-label="Print Center navigation"
         className="no-print"
         style={{
-          display: "inline-flex",
+          display: "flex",
           alignItems: "center",
-          gap: 6,
-          fontWeight: 700,
-          color: "#111827",
-          textDecoration: "none",
+          gap: 16,
+          flexWrap: "wrap",
         }}
       >
-        ← Back to Dashboard
-      </Link>
+        <Link href="/admin/dashboard" style={navigationLinkStyle}>
+          ← Dashboard
+        </Link>
+        <Link href="/admin/reports" style={navigationLinkStyle}>
+          Reports
+        </Link>
+        {hasPermission(admin, "can_manage_print_settings") ? (
+          <Link href="/admin/print-settings" style={navigationLinkStyle}>
+            Print Settings
+          </Link>
+        ) : null}
+      </nav>
       <style>{`
   @media print {
     body * {
@@ -2013,6 +2020,12 @@ const labelStyle: CSSProperties = {
   display: "block",
   marginBottom: 6,
   fontWeight: 600,
+};
+
+const navigationLinkStyle: CSSProperties = {
+  color: "#111827",
+  fontWeight: 700,
+  textDecoration: "none",
 };
 
 const inputStyle: CSSProperties = {

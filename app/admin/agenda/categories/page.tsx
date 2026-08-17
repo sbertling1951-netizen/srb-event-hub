@@ -134,8 +134,7 @@ function AgendaCategoriesPageInner() {
 
   return (
     <div style={{ padding: 24 }}>
-      <h1>Agenda Categories</h1>
-      <p>Manage agenda categories used throughout the event.</p>
+      <p style={{ marginTop: 0 }}>Manage agenda categories used throughout the event.</p>
       {!isSuperAdmin && (
         <p style={{ color: "#92400e", background: "#fef3c7", padding: "8px 12px", borderRadius: 6, marginBottom: 16 }}>
           You can view the Agenda category vocabulary, but only a Platform admin can create, edit, or deactivate categories.
@@ -383,7 +382,10 @@ function AgendaCategoriesPageInner() {
 export default function AgendaCategoriesPage() {
   return (
     <AdminRouteGuard>
-      <AdminShellAdapter pageTitle="Agenda Categories">
+      <AdminShellAdapter
+        pageTitle="Agenda Categories"
+        backTarget={{ href: "/admin/agenda", label: "Agenda" }}
+      >
         <AgendaCategoriesPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

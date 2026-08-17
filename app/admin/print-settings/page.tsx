@@ -54,7 +54,10 @@ function withCacheBust(url: string | null | undefined) {
 export default function AdminPrintSettingsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_print_settings">
-      <AdminShellAdapter pageTitle="Print Settings">
+      <AdminShellAdapter
+        pageTitle="Print Settings"
+        backTarget={{ href: "/admin/print", label: "Print Center" }}
+      >
         <AdminPrintSettingsPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

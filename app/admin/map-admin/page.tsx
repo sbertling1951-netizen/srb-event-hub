@@ -149,8 +149,6 @@ function MapAdminPageInner() {
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={headerCardStyle}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Map Admin</h1>
-
         <div style={{ fontSize: 14, opacity: 0.8 }}>
           Manage park maps, map markers, locations, and nearby places from one
           workspace.
