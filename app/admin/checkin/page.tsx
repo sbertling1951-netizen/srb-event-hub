@@ -585,7 +585,9 @@ function AdminCheckinPageInner() {
       const oldSiteKey = siteMatchKey(oldAssignedSite);
       const newSiteKey = siteMatchKey(normalizedSite);
 
-      let placementDisplacedAttendeeId: string | null = null;
+      let placementAction: "assign" | "reassign" | "confirm" | "clear" | null = null;
+      let placementSiteId: string | null = null;
+      let placementOverride = false;
 
       if (matchedSite?.id || matchedSite?.master_site_id) {
         // Governed placement: authority, then one-current-placement/
@@ -668,38 +670,9 @@ function AdminCheckinPageInner() {
             ? "confirm"
             : "reassign";
 
-        const { data, error: rpcError } = await supabase.rpc(
-          "record_site_placement",
-          {
-            p_attendee_id: attendee.id,
-            p_action: action,
-            p_idempotency_key: newSitePlacementIdempotencyKey(),
-            p_site_id: resolvedSiteId,
-            p_evidence_source: "checkin_staff",
-            p_override_occupied_site: occupiedByOther,
-          },
-        );
-
-        if (rpcError) {
-          throw new Error(
-            mapSitePlacementError(
-              new Error(rpcError.message),
-              "Could not save site assignment.",
-            ),
-          );
-        }
-
-        const result = data?.[0];
-        if (!result || result.outcome === "rejected") {
-          throw new Error(
-            mapSitePlacementError(
-              new Error(result?.rejection_code || "unknown"),
-              "Could not save site assignment.",
-            ),
-          );
-        }
-
-        placementDisplacedAttendeeId = result.displaced_attendee_id || null;
+        placementAction = action;
+        placementSiteId = resolvedSiteId;
+        placementOverride = occupiedByOther;
       } else if (!normalizedSite && oldAssignedSite) {
         const oldSite =
           parkingSites.find(
@@ -709,62 +682,32 @@ function AdminCheckinPageInner() {
           ) || null;
 
         if (oldSite?.id) {
-          const { data, error: rpcError } = await supabase.rpc(
-            "record_site_placement",
-            {
-              p_attendee_id: attendee.id,
-              p_action: "clear",
-              p_idempotency_key: newSitePlacementIdempotencyKey(),
-              p_evidence_source: "checkin_staff",
-            },
-          );
-
-          if (rpcError) {
-            throw new Error(
-              mapSitePlacementError(
-                new Error(rpcError.message),
-                "Could not clear site assignment.",
-              ),
-            );
-          }
-
-          const result = data?.[0];
-          if (!result || result.outcome === "rejected") {
-            throw new Error(
-              mapSitePlacementError(
-                new Error(result?.rejection_code || "unknown"),
-                "Could not clear site assignment.",
-              ),
-            );
-          }
+          placementAction = "clear";
         }
       }
 
-      const nextArrivalStatus = current.hasArrived
-        ? attendee.arrival_status === "parked"
-          ? "parked"
-          : "arrived"
-        : "not_arrived";
+      const { data: checkinData, error: checkinError } = await supabase.rpc(
+        "complete_admin_checkin",
+        {
+          p_attendee_id: attendee.id,
+          p_expected_event_id: event.id,
+          p_has_arrived: current.hasArrived,
+          p_share_with_attendees: current.shareWithAttendees,
+          p_placement_action: placementAction,
+          p_site_id: placementSiteId,
+          p_placement_idempotency_key: placementAction
+            ? newSitePlacementIdempotencyKey()
+            : null,
+          p_override_occupied_site: placementOverride,
+        },
+      );
 
-      const { error: attendeeUpdateError } = await supabase
-        .from("attendees")
-        .update({
-          assigned_site: normalizedSite || null,
-          share_with_attendees: current.shareWithAttendees,
-          has_arrived: current.hasArrived,
-          arrival_status: nextArrivalStatus,
-        })
-        .eq("id", attendee.id);
-
-      if (attendeeUpdateError) {
-        throw attendeeUpdateError;
+      if (checkinError) {
+        throw new Error(mapSitePlacementError(new Error(checkinError.message), "Could not save check-in."));
       }
-
-      if (placementDisplacedAttendeeId) {
-        await supabase
-          .from("attendees")
-          .update({ assigned_site: null })
-          .eq("id", placementDisplacedAttendeeId);
+      const checkinResult = checkinData?.[0];
+      if (!checkinResult || checkinResult.outcome === "rejected") {
+        throw new Error(mapSitePlacementError(new Error(checkinResult?.rejection_code || "unknown"), "Could not save check-in."));
       }
 
       const changes: string[] = [];
