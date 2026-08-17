@@ -10,6 +10,11 @@ import {
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 
+import {
+  answersForEvaluationIds,
+  evaluationsForEvent,
+} from "./scopeEvaluationData";
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -96,9 +101,18 @@ function AdminEvaluationsPageInner() {
       return;
     }
     try {
+      // Stage 2 D2: event_evaluations carries its own event_id column
+      // (confirmed against app/member/evaluation/page.tsx's own
+      // .eq("event_id", event.id) submission path) -- this admin summary
+      // must be scoped to it exactly the same way, never read
+      // unfiltered. RLS (is_event_scoped_admin) already bounds results to
+      // Events this admin is authorized for; that is a *ceiling*, not a
+      // substitute for scoping to the one working Event this page is
+      // titled and gated for.
       const { data, error } = await supabase
         .from("event_evaluations")
-        .select("id,is_complete,submitted_at")
+        .select("id,event_id,is_complete,submitted_at")
+        .eq("event_id", currentEvent.id)
         .order("submitted_at", { ascending: false });
 
       if (error) {
@@ -106,7 +120,11 @@ function AdminEvaluationsPageInner() {
         return;
       }
 
-      const rows = data ?? [];
+      // Defensive re-filter (see scopeEvaluationData.ts): the query above
+      // already scopes server-side; this is a second, independently
+      // testable guarantee that no other Event's evaluation ever reaches
+      // aggregation, even if the server-side filter were ever weakened.
+      const rows = evaluationsForEvent(data ?? [], currentEvent.id);
       const completedCount = rows.filter((r) => r.is_complete).length;
 
       setStarted(rows.length);
@@ -118,11 +136,28 @@ function AdminEvaluationsPageInner() {
         );
       }
 
-      const { data: answers } = await supabase
-        .from("event_evaluation_answers")
-        .select("question_id, answer_text, comment_text");
+      // event_evaluation_answers has no event_id column of its own -- it
+      // is scoped to an Event only transitively, through evaluation_id ->
+      // event_evaluations.id. Filtering by the already-Event-scoped
+      // evaluation IDs above is what actually closes the cross-Event
+      // leak; querying this table unfiltered (as before) pulled every
+      // answer from every Event this admin can access into one blended
+      // set. No evaluations for this Event means no answers query is
+      // needed at all.
+      const evaluationIds = rows.map((r) => r.id);
 
-      const answerRows = answers ?? [];
+      const fetchedAnswers =
+        evaluationIds.length === 0
+          ? []
+          : ((
+              await supabase
+                .from("event_evaluation_answers")
+                .select("question_id, answer_text, comment_text, evaluation_id")
+                .in("evaluation_id", evaluationIds)
+            ).data ?? []);
+
+      // Same defense-in-depth guarantee as evaluationsForEvent above.
+      const answerRows = answersForEvaluationIds(fetchedAnswers, evaluationIds);
 
       const overallQuestionId =
         "5bbb3f53-11fe-46e6-87a4-5aa7ff2737f3";
