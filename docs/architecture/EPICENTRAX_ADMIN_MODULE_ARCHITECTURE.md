@@ -52,6 +52,149 @@ document proposes module *concepts* and groups *existing* routes under
 them. It does not name final route paths, URLs, or component names —
 those are implementation, for Stage 3.
 
+## Canonical Event Operational Summary Read Contract
+
+**Status:** Accepted architecture amendment — August 17, 2026
+
+### Purpose and boundary
+
+The Admin workspace needs one Event-scoped, governed **operational summary
+read contract** for cross-owner facts that multiple surfaces reasonably expect
+to agree on. It is a read boundary only. It consumes authoritative facts from
+their owning domains; it neither owns nor authorizes any mutation, lifecycle
+transition, identity resolution, Arrival operation, or Site Placement
+operation.
+
+This contract resolves the formerly tentative requirement for a single
+attendee-summary source in this document. It supersedes any implication that
+Attendees, Reporting, Print, Engagement, or the Dashboard may independently
+recompute an identically labelled operational fact from whichever local rows a
+page happened to load.
+
+The contract is deliberately narrower than a roster export, a print queue, or
+a Person/participation model. It returns Event-level aggregates only.
+
+### Layered read architecture
+
+1. A governed database read operation is authoritative for fixed,
+   cross-domain Event aggregates.
+2. A small shared TypeScript presentation layer may turn those aggregate
+   values into page-specific labels or combine them with already-loaded detail
+   rows for a page-specific grouping.
+3. Presentation code must not redefine a canonical operational fact. A detail
+   list, export, print queue, or validation view may retain its own explicitly
+   scoped calculation when it is not claiming to be the Event aggregate.
+
+The database operation must be explicitly parameterized by Event ID. It must
+use the existing database-owned Event task-authority primitive,
+`has_event_task_authority`, through the applicable existing read capability;
+it must not rely on a client permission cache, `canAccessEvent`, a local role
+check, a caller-supplied role, or the browser's stored working Event as an
+authority input. The implementation must fail closed for an unknown or
+unauthorized Event and must not change, establish, or replace Admin Event
+context. ADR-006 remains the sole owner of working-Event resolution.
+
+An implementation may provide narrowly governed read entry points for the
+existing authorized consumers, but it must reuse the existing Event-scoped
+task authority vocabulary (for example the established Attendees, Check-In,
+Parking, or Reports read capability), rather than inventing a parallel
+admin-role test or silently broadening a task's audience.
+
+### Settled initial aggregates
+
+The first contract is intentionally limited to the following facts. Every
+value is scoped to the requested Event.
+
+| Aggregate | Canonical definition | Authoritative source |
+| --- | --- | --- |
+| Total Registrations | Count of Event-scoped `attendees` registration rows. It is not a Person or headcount metric. | Attendees roster |
+| Active Registrations | `registration_status != 'cancelled' AND is_active = true`. | Attendees roster |
+| Cancelled Registrations | Registration rows with `registration_status = 'cancelled'`. | Attendees roster |
+| Inactive Registrations | Non-cancelled registration rows with `is_active = false`; cancelled and inactive are separately reportable categories. | Attendees roster |
+| Active Arrived Registrations | Active registrations with `has_arrived = true`. | Check-In-owned Arrival fact on `attendees` |
+| Active Not Arrived Registrations | Active registrations with `has_arrived = false`. | Check-In-owned Arrival fact on `attendees` |
+| Current Placements | Current Event-scoped canonical parking occupancy: non-null `parking_sites.assigned_attendee_id`. | Parking Site Placement |
+| Active Needs-Parking / Unplaced Registrations | Active registrations with `needs_parking = true` and no canonical current Parking occupancy. | Attendees need fact plus Parking occupancy |
+
+Cancelled and inactive registrations remain historical and reportable, but are
+excluded from ordinary current operational workload aggregates by default.
+Historical or inactive-inclusive reporting may intentionally request a
+different, clearly labelled view; it must not relabel that view as the current
+operational aggregate.
+
+Arrival is a registration/coach-level operational fact in the current product.
+`attendees.has_arrived` is the canonical aggregate input. Parking state is
+additional operational information: a parked coach remains arrived when its
+active registration has `has_arrived = true`. An `arrival_status = 'parked'`
+display state must never replace the canonical Arrival boolean in an aggregate
+Arrival calculation.
+
+Current placement and unplacement are derived only from canonical
+`parking_sites.assigned_attendee_id` occupancy. `attendees.assigned_site` is a
+compatibility projection and is never a source for a canonical placement,
+unplacement, conflict, queue, or aggregate determination. This follows the
+accepted Site Assignment Governance Architecture and Site Placement
+Implementation Specification.
+
+### Deliberate exclusions
+
+This contract does **not** define a global Participant Count, People Count,
+Pilot Count, Co-Pilot Count, Additional Participant Count, household size, or
+headcount. Registration rows, household-role records, authorized participant
+capacity, canonical People, and `person_event_participations` are distinct
+concepts. Historical Person reconciliation may be incomplete. In particular,
+`person_event_participations` must not be counted alone and presented as Event
+attendance, and a registration-row count must not be presented as a people
+count.
+
+The contract also excludes Attendees' governed data-quality/validation facts
+(`Flagged`, `Fully Valid`, `Corrected`, and validation-rule results) unless a
+later proven cross-surface consumer requires the exact same definition.
+Attendees retains ownership of those computations. First-timer, volunteer,
+and registration-type buckets likewise remain outside the initial contract
+until a cross-surface need and their current-versus-historical lifecycle
+semantics are explicitly established.
+
+### Consumer implications
+
+- **Attendees** may display the canonical registration and Arrival aggregates,
+  while retaining its own Review Queue and validation-state calculations.
+- **Check-In** remains the owner of Arrival mutation and its interactive
+  queue. Its `X of Y` summary, when shown as an Event aggregate, consumes the
+  canonical active Arrival values rather than a page-local queue filter.
+- **Parking** remains the owner of Site Placement. Its map and workflow queue
+  retain their own detail state; any Event-level placement/unplacement metric
+  consumes canonical occupancy through this contract.
+- **Reports** consumes the contract for equivalent aggregate cards and must
+  migrate its legacy `needs_parking && !attendees.assigned_site` calculation.
+  A grouping of registration rows by `participant_type` is a **Registration
+  Type Breakdown**, not a Participant/people headcount.
+- **Print** remains an artifact/workflow owner. Manually entered print rows
+  and name-tag expansion do not enter this contract. If Print calls a queue
+  “Active,” it must use the canonical active-registration definition; otherwise
+  its intentionally different queue policy must be labelled accurately.
+- **Engagement** retains logged-in, started, and submitted metrics. If it
+  presents an identically labelled Registered or Active Registration value, it
+  consumes the canonical registration definition rather than independently
+  counting attendee rows.
+- **Dashboard** owns no operational statistic. It may assemble links to the
+  modules that surface these facts, but must not recompute them.
+
+### Required implementation verification
+
+The future implementation must prove the contract with fixtures for active,
+inactive, and cancelled registrations; active arrived and not-arrived
+registrations; a parked-and-arrived registration; needs-Parking registrations
+with and without canonical placement; and a deliberately stale
+`attendees.assigned_site` projection while canonical occupancy is correct. It
+must also prove wrong-Event isolation, unauthorized Event denial, Event-switch
+stale-response isolation, and that household/partially reconciled identity
+data does not change operational registration counts.
+
+This read foundation precedes broad Admin UI/UX consolidation, or is its first
+data-foundation stage. Visual consistency must not standardize labels and
+cards around calculations that disagree.
+
 ## The Module Catalog
 
 Each module: Mission, Responsibilities, Information it owns, Information
@@ -118,8 +261,10 @@ functions to eliminate, and shared primitives required.
 5. **Primary workflow** — Search and edit an attendee record.
 6. **Secondary workflows** — Resolve a flagged record; import a roster
    file; author/edit a validation rule.
-7. **Candidate Summary Link** — "Attendees": registered/arrived counts +
-   "N need review" when greater than zero.
+7. **Candidate Summary Link** — "Attendees": canonical active-registration
+   and Arrival aggregates, plus "N need review" when greater than zero. The
+   review value remains Attendees-owned; the cross-domain aggregates use the
+   Canonical Event Operational Summary Read Contract above.
 8. **Candidate Context contribution** — `attention`-class signal when
    the review-queue count is non-zero close to the event.
 9. **Candidate Trust inputs** — Last-successful-import timestamp is a
@@ -133,16 +278,17 @@ functions to eliminate, and shared primitives required.
     completed consolidation) and needs no further change conceptually.
     *Eliminated:* `/admin/export` (dead, superseded by Reporting's own
     export — Module 5).
-11. **Duplicates to eliminate** — Attendee summary statistics
-    independently computed in four places (Attendees itself, Reporting,
-    Print, and the Dashboard — Audit C3); `validateField`/
+11. **Duplicates to eliminate** — Any independently computed operational
+    registration/Arrival/placement statistic now covered by the Canonical Event
+    Operational Summary Read Contract (including prior Attendees, Reporting,
+    Print, and Dashboard duplication — Audit C3); `validateField`/
     `ruleAppliesToEvent` duplicated between Attendees and Validation
     Rules instead of shared (Audit, Attendees table); the three dead
     embed panels (`ReportsEmbedPanel`, `ImportsEmbedPanel`,
     `ValidationRulesEmbedPanel`) and their `?embedded=1` counterparts.
-12. **Shared primitives required** — One attendee-summary-stat source
-    that every other module/surface consuming these numbers reads
-    rather than recomputes; one attendee-record edit control, reusable
+12. **Shared primitives required** — The governed Canonical Event Operational
+    Summary Read Contract and its presentation adapter for every surface that
+    consumes those covered facts; one attendee-record edit control, reusable
     from the roster table, the Review Queue, and Imports' own
     review-issue deep-links; one shared validation-rule evaluator; one
     governed tabular-import primitive (see Module 6 — the same shape of
@@ -166,7 +312,8 @@ functions to eliminate, and shared primitives required.
    optional, explicit **Place in Parking** handoff described below; Arrival
    never depends on accepting that handoff.
 6. **Secondary workflows** — Correct/undo an arrival; look up a site number.
-7. **Candidate Summary Link** — "Check-In": X of Y arrived.
+7. **Candidate Summary Link** — "Check-In": canonical active Arrived of
+   active Registrations; the interactive queue itself remains Check-In-owned.
 8. **Candidate Context contribution** — Ordinarily none; a
    `personal_reminder`-class "check-in not yet opened" signal is
    plausible in the hours immediately before an event, not a standing
@@ -246,8 +393,10 @@ functions to eliminate, and shared primitives required.
     name-tags/print` (both dead, fully superseded by `/admin/print`'s
     live renderer).
 11. **Duplicates to eliminate** — Reporting's own summary cards
-    recomputing Attendees' statistics independently (must consume
-    Attendees' governed numbers instead — Audit C3); Print currently has
+    recomputing covered operational facts independently (must consume the
+    Canonical Event Operational Summary Read Contract instead — Audit C3),
+    including any placement calculation based on `attendees.assigned_site`;
+    Print currently has
     zero navigational awareness of Print Settings, its own configuration
     screen, and must link to it.
 12. **Shared primitives required** — One export control (CSV/XLSX),
