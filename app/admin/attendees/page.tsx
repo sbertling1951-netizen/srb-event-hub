@@ -12,7 +12,6 @@ import {
 import {
   type AttendeeRow,
   type AttendeeSortMode,
-  cityState,
   computeReviewItems,
   DATA_STATUS_OPTIONS,
   type DataStatusFilter,
@@ -28,6 +27,7 @@ import {
   PARTICIPANT_TYPE_OPTIONS,
   type ParticipantTypeFilter,
   participantTypeLabel,
+  type ReviewFieldIssue,
   reviewFieldLabel,
   type ReviewItem,
   sortAttendees,
@@ -36,6 +36,7 @@ import {
   type ViewMode,
 } from "@/app/admin/attendees/attendeesWorkflow";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { ObjectPanel } from "@/components/ObjectPanel";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { buildAdminAttendeeTargetHref } from "@/lib/adminAttendeeTarget";
 import { useAdmin } from "@/lib/adminContext";
@@ -227,11 +228,11 @@ function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
       attendee.participant_capacity === null ||
       attendee.participant_capacity === undefined,
     registration_capacity_original: attendee.participant_capacity ?? null,
-    // Overwritten immediately after this call in openEditAttendeeEditor,
+    // Overwritten immediately after this call in selectAttendee,
     // once the actual attendee_household_members rows are known.
     had_copilot_at_load: false,
     had_additional_at_load: false,
-    // Overwritten immediately after this call in openEditAttendeeEditor,
+    // Overwritten immediately after this call in selectAttendee,
     // alongside had_copilot_at_load/had_additional_at_load above.
     copilot_name_at_load: "",
     additional_name_at_load: "",
@@ -666,8 +667,7 @@ export function AttendeeActionRow(props: {
   attendee: AttendeeRow;
   canEdit: boolean;
   showBackToPending: boolean;
-  viewToggle?: { isExpanded: boolean; onToggle: () => void };
-  onOpenEdit: (attendee: AttendeeRow) => void;
+  onSelect: (attendee: AttendeeRow) => void;
   onUpdateDataStatus: (
     attendeeId: string,
     nextStatus: string,
@@ -678,30 +678,22 @@ export function AttendeeActionRow(props: {
     attendee,
     canEdit,
     showBackToPending,
-    viewToggle,
-    onOpenEdit,
+    onSelect,
     onUpdateDataStatus,
     onCancelRegistration,
   } = props;
 
   return (
     <div style={actionRowStyle}>
-      {viewToggle ? (
-        <button
-          type="button"
-          onClick={viewToggle.onToggle}
-          style={secondaryButtonStyle}
-        >
-          {viewToggle.isExpanded ? "Hide Details" : "View Details"}
-        </button>
-      ) : null}
-
+      {/* Selecting only opens the record for viewing (Understand) --
+          entering edit mode is always a separate, explicit action inside
+          the workspace itself (Stage C). */}
       <button
         type="button"
-        onClick={() => onOpenEdit(attendee)}
+        onClick={() => onSelect(attendee)}
         style={secondaryButtonStyle}
       >
-        Edit Record
+        View Record
       </button>
 
       <button
@@ -756,7 +748,7 @@ function ReviewQueue(props: {
   participantTypeFilter: ParticipantTypeFilter;
   onDraftChange: (attendeeId: string, value: string) => void;
   onSaveMembership: (item: ReviewItem) => Promise<void>;
-  onOpenEdit: (attendee: AttendeeRow) => void;
+  onSelect: (attendee: AttendeeRow) => void;
   onUpdateDataStatus: (attendeeId: string, nextStatus: string) => Promise<void>;
   onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
 }) {
@@ -771,7 +763,7 @@ function ReviewQueue(props: {
     participantTypeFilter,
     onDraftChange,
     onSaveMembership,
-    onOpenEdit,
+    onSelect,
     onUpdateDataStatus,
     onCancelRegistration,
   } = props;
@@ -964,7 +956,7 @@ function ReviewQueue(props: {
                   attendee={attendee}
                   canEdit={canEdit}
                   showBackToPending
-                  onOpenEdit={onOpenEdit}
+                  onSelect={onSelect}
                   onUpdateDataStatus={onUpdateDataStatus}
                   onCancelRegistration={onCancelRegistration}
                 />
@@ -977,6 +969,12 @@ function ReviewQueue(props: {
   );
 }
 
+// Stage C: the browse row itself is now purely a discovery surface (per
+// docs/architecture/epicentrax-user-flow-and-native-interaction.md Article
+// II) -- it scans and selects, but no longer tries to also be the "Understand"
+// step. Selecting (row click or "View Record") always opens the one
+// AttendeeRecordWorkspace in view mode; there is no separate inline expand
+// panel to keep in sync with it.
 function AttendeeList(props: {
   loading: boolean;
   canEdit: boolean;
@@ -984,9 +982,8 @@ function AttendeeList(props: {
   visibleAttendees: AttendeeRow[];
   reviewItems: ReviewItem[];
   attendeeSortMode: AttendeeSortMode;
-  expandedAttendeeId: string | null;
-  onToggleExpanded: (attendeeId: string) => void;
-  onOpenEdit: (attendee: AttendeeRow) => void;
+  selectedAttendeeId: string | null;
+  onSelect: (attendee: AttendeeRow) => void;
   onUpdateDataStatus: (attendeeId: string, nextStatus: string) => Promise<void>;
   onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
 }) {
@@ -997,27 +994,11 @@ function AttendeeList(props: {
     visibleAttendees,
     reviewItems,
     attendeeSortMode,
-    expandedAttendeeId,
-    onToggleExpanded,
-    onOpenEdit,
+    selectedAttendeeId,
+    onSelect,
     onUpdateDataStatus,
     onCancelRegistration,
   } = props;
-
-  const expandedCardRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!expandedAttendeeId || !expandedCardRef.current) {
-      return;
-    }
-
-    window.requestAnimationFrame(() => {
-      expandedCardRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    });
-  }, [expandedAttendeeId]);
 
   return (
     <div className="card" style={{ padding: 18 }}>
@@ -1042,7 +1023,7 @@ function AttendeeList(props: {
             const attendeeIssues = reviewItems.find(
               (item) => item.attendee.id === attendee.id,
             );
-            const isExpanded = expandedAttendeeId === attendee.id;
+            const isSelected = selectedAttendeeId === attendee.id;
             const currentSite =
               String(attendee.assigned_site || "Unassigned").trim() ||
               "Unassigned";
@@ -1054,7 +1035,7 @@ function AttendeeList(props: {
               : null;
             const showSiteHeader =
               attendeeSortMode === "site" && currentSite !== previousSite;
-            const toggleAttendeeDetails = () => onToggleExpanded(attendee.id);
+            const selectThisAttendee = () => onSelect(attendee);
 
             return (
               <div key={attendee.id} style={{ display: "contents" }}>
@@ -1081,10 +1062,10 @@ function AttendeeList(props: {
 
                 <div
                   key={attendee.id}
-                  ref={isExpanded ? expandedCardRef : undefined}
                   style={{
-                    border:
-                      attendee.registration_status === "cancelled"
+                    border: isSelected
+                      ? "1px solid #2563eb"
+                      : attendee.registration_status === "cancelled"
                         ? "1px solid #d1d5db"
                         : "1px solid #ddd",
                     borderRadius: 12,
@@ -1101,18 +1082,14 @@ function AttendeeList(props: {
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={toggleAttendeeDetails}
+                    onClick={selectThisAttendee}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        toggleAttendeeDetails();
+                        selectThisAttendee();
                       }
                     }}
-                    title={
-                      isExpanded
-                        ? "Hide attendee details"
-                        : "View attendee details"
-                    }
+                    title="View attendee record"
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
@@ -1194,178 +1171,11 @@ function AttendeeList(props: {
                       attendee={attendee}
                       canEdit={canEdit}
                       showBackToPending={false}
-                      viewToggle={{
-                        isExpanded,
-                        onToggle: toggleAttendeeDetails,
-                      }}
-                      onOpenEdit={onOpenEdit}
+                      onSelect={onSelect}
                       onUpdateDataStatus={onUpdateDataStatus}
                       onCancelRegistration={onCancelRegistration}
                     />
                   </div>
-
-                  {isExpanded ? (
-                    <div
-                      style={{
-                        marginTop: 12,
-                        padding: "12px 14px",
-                        borderRadius: 12,
-                        background: "#f8fafc",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "grid",
-                          gap: 10,
-                          gridTemplateColumns:
-                            "repeat(auto-fit, minmax(180px, 1fr))",
-                          fontSize: 13,
-                        }}
-                      >
-                        <div>
-                          <strong>Membership #</strong>
-                          <div>{attendee.membership_number || "—"}</div>
-                        </div>
-                        <div>
-                          <strong>Entry ID</strong>
-                          <div>{attendee.entry_id || "—"}</div>
-                        </div>
-                        <div>
-                          <strong>Site</strong>
-                          <div>{attendee.assigned_site || "Unassigned"}</div>
-                        </div>
-                        <div>
-                          <strong>City / State</strong>
-                          <div>{cityState(attendee) || "—"}</div>
-                        </div>
-                        <div>
-                          <strong>Primary Phone</strong>
-                          <div>{attendee.primary_phone || "—"}</div>
-                        </div>
-                        <div>
-                          <strong>Cell Phone</strong>
-                          <div>{attendee.cell_phone || "—"}</div>
-                        </div>
-                        <div>
-                          <strong>Coach</strong>
-                          <div>
-                            {[attendee.coach_manufacturer, attendee.coach_model]
-                              .filter(Boolean)
-                              .join(" ") || "—"}
-                          </div>
-                        </div>
-                        <div>
-                          <strong>Source</strong>
-                          <div>{attendee.source_type || "—"}</div>
-                        </div>
-                        <div>
-                          <strong>Headcount</strong>
-                          <div>
-                            {attendee.include_in_headcount
-                              ? "Included"
-                              : "Not included"}
-                          </div>
-                        </div>
-                        <div>
-                          <strong>Name Tag</strong>
-                          <div>
-                            {attendee.needs_name_tag ? "Needed" : "Not needed"}
-                          </div>
-                        </div>
-                        <div>
-                          <strong>Coach Plate</strong>
-                          <div>
-                            {attendee.needs_coach_plate
-                              ? "Needed"
-                              : "Not needed"}
-                          </div>
-                        </div>
-                        <div>
-                          <strong>Parking</strong>
-                          <div>
-                            {attendee.needs_parking ? "Needed" : "Not needed"}
-                          </div>
-                        </div>
-                        <div>
-                          <strong>First Timer</strong>
-                          <div>{attendee.is_first_timer ? "Yes" : "No"}</div>
-                        </div>
-                        <div>
-                          <strong>Volunteer</strong>
-                          <div>
-                            {attendee.wants_to_volunteer ? "Yes" : "No"}
-                          </div>
-                        </div>
-                        <div>
-                          <strong>Arrived</strong>
-                          <div>{attendee.has_arrived ? "Yes" : "No"}</div>
-                        </div>
-                        <div>
-                          <strong>Shared With Attendees</strong>
-                          <div>
-                            {attendee.share_with_attendees ? "Yes" : "No"}
-                          </div>
-                        </div>
-                      </div>
-
-                      {attendee.special_events_raw ? (
-                        <div style={{ marginTop: 12, fontSize: 13 }}>
-                          <strong>Special Events</strong>
-                          <div style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>
-                            {attendee.special_events_raw}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {attendee.notes ? (
-                        <div style={{ marginTop: 12, fontSize: 13 }}>
-                          <strong>Notes</strong>
-                          <div style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>
-                            {attendee.notes}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {formatCancellationDetail(attendee) ? (
-                        <div
-                          style={{
-                            marginTop: 12,
-                            padding: "10px 12px",
-                            borderRadius: 10,
-                            background: "#fef2f2",
-                            border: "1px solid #fecaca",
-                            fontSize: 13,
-                          }}
-                        >
-                          <strong>Cancellation Details</strong>
-                          <div style={{ marginTop: 4 }}>
-                            {formatCancellationDetail(attendee)}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  {attendeeIssues ? (
-                    <div
-                      style={{
-                        marginTop: 12,
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                        background: "#fff7ed",
-                        border: "1px solid #fed7aa",
-                        fontSize: 13,
-                      }}
-                    >
-                      {attendeeIssues.issues.map((issue, index) => (
-                        <div key={`${attendee.id}-${issue.field}-${index}`}>
-                          <strong>{reviewFieldLabel(issue.field)}:</strong>{" "}
-                          {issue.issue}
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
               </div>
             );
@@ -1376,10 +1186,31 @@ function AttendeeList(props: {
   );
 }
 
-export function AttendeeEditorModal(props: {
+// Stage C (Attendees Admin Workflow: Selected Record Workspace). One
+// coherent selected-record model, replacing the former split between
+// AttendeeList's inline "expand card" and a separately-triggered
+// full-screen AttendeeEditorModal. Selecting a record always opens this in
+// view mode first (Understand); editing requires the operator to
+// explicitly choose Edit (Act) -- viewing never implies mutability.
+//
+// Built on the platform's one authoritative "Understand and Act" surface
+// (components/ObjectPanel.tsx, per docs/architecture/
+// epicentrax-user-flow-and-native-interaction.md Article II) rather than a
+// bespoke modal, so dialog semantics, focus handling, Escape/backdrop/Back
+// dismissal, and responsive presentation are inherited rather than
+// reimplemented.
+export function AttendeeRecordWorkspace(props: {
   open: boolean;
-  mode: "create" | "edit";
+  // Whether this session is creating a brand-new record or working with an
+  // existing one -- distinct from viewState below.
+  editorMode: "create" | "edit";
+  // Whether the record is currently being looked at (read-only,
+  // Understand) or actively being changed (mutable, Act). Create sessions
+  // are always "edit" -- there is nothing yet to view.
+  viewState: "view" | "edit";
+  attendee: AttendeeRow | null;
   state: AttendeeEditorState;
+  reviewIssues: ReviewFieldIssue[];
   saving: boolean;
   canEdit: boolean;
   onClose: () => void;
@@ -1387,11 +1218,39 @@ export function AttendeeEditorModal(props: {
     key: K,
     value: AttendeeEditorState[K],
   ) => void;
+  onEnterEdit: () => void;
+  onCancelEdit: () => void;
   onSave: () => Promise<void>;
+  onUpdateDataStatus: (
+    attendeeId: string,
+    nextStatus: string,
+  ) => Promise<void>;
+  onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
+  onPrevious?: () => void;
+  onNext?: () => void;
   operationalStatus?: CanonicalAttendeePlacementResult | null;
 }) {
-  const { open, mode, state, saving, canEdit, onClose, onChange, onSave, operationalStatus } =
-    props;
+  const {
+    open,
+    editorMode,
+    viewState,
+    attendee,
+    state,
+    reviewIssues,
+    saving,
+    canEdit,
+    onClose,
+    onChange,
+    onEnterEdit,
+    onCancelEdit,
+    onSave,
+    onUpdateDataStatus,
+    onCancelRegistration,
+    onPrevious,
+    onNext,
+    operationalStatus,
+  } = props;
+  const mode = editorMode;
   const [showAdditionalParticipant, setShowAdditionalParticipant] =
     useState(false);
 
@@ -1452,23 +1311,6 @@ export function AttendeeEditorModal(props: {
     state.additional_email,
     state.additional_cell_phone,
   ]);
-  // Prevent body scroll when modal is open
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [open]);
-  if (!open) {
-    return null;
-  }
-
   // Insert membership_number after copilot_email if not already present there
   // Remove assigned_site from the main textFields array
   const textFields: Array<{ key: keyof AttendeeEditorState; label: string }> =
@@ -1496,486 +1338,670 @@ export function AttendeeEditorModal(props: {
       return fields;
     })();
 
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "stretch",
-        justifyContent: "center",
-        padding: 0,
-        zIndex: 2000,
-        overflow: "hidden",
-        touchAction: "none",
-      }}
-    >
+  const operationalStatusBlock =
+    mode === "edit" && state.id ? (
       <div
-        className="card"
         style={{
-          width: "min(1120px, 100%)",
-          height: "100%",
-          maxHeight: "100%",
-          overflow: "hidden",
-          overscrollBehavior: "contain",
-          WebkitOverflowScrolling: "touch",
-          padding: 0,
-          background: "white",
-          borderRadius: 14,
-          display: "flex",
-          flexDirection: "column",
+          border: "1px solid #bfdbfe",
+          borderRadius: 10,
+          padding: 12,
+          background: "#eff6ff",
         }}
       >
-        {mode === "edit" && state.id ? (
-          <div style={{ border: "1px solid #bfdbfe", borderRadius: 10, padding: 12, background: "#eff6ff", marginBottom: 14 }}>
-            <strong>Operational Status</strong>
-            <div>Arrival: {state.has_arrived ? "Arrived" : "Not arrived"}</div>
-            <div>Placement: {operationalStatus?.ok ? operationalStatus.site?.label || "Unassigned" : operationalStatus ? "Unavailable" : "Loading..."}</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-              <a href={buildAdminAttendeeTargetHref("/admin/checkin", state.id)}>View in Check-In</a>
-              <a href={buildAdminAttendeeTargetHref("/admin/parking", state.id)}>View in Parking</a>
-            </div>
-          </div>
+        <strong>Operational Status</strong>
+        <div>Arrival: {state.has_arrived ? "Arrived" : "Not arrived"}</div>
+        <div>
+          Placement:{" "}
+          {operationalStatus?.ok
+            ? operationalStatus.site?.label || "Unassigned"
+            : operationalStatus
+              ? "Unavailable"
+              : "Loading..."}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+          <a href={buildAdminAttendeeTargetHref("/admin/checkin", state.id)}>
+            View in Check-In
+          </a>
+          <a href={buildAdminAttendeeTargetHref("/admin/parking", state.id)}>
+            View in Parking
+          </a>
+        </div>
+      </div>
+    ) : null;
+
+  const titleText =
+    mode === "create"
+      ? "Add Attendee Record"
+      : displayPilotName(attendee ?? { pilot_first: state.pilot_first, pilot_last: state.pilot_last } as AttendeeRow);
+
+  const subtitleText =
+    mode === "create" ? (
+      "Create a new attendee manually."
+    ) : (
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={participantTypeBadgeStyle(state.participant_type)}>
+          {participantTypeLabel(state.participant_type)}
+        </span>
+        <span style={secondaryBadgeStyle}>{dataStatusLabel(state.data_status)}</span>
+        {attendee?.registration_status === "cancelled" ? (
+          <span style={badgeVariant("#fee2e2", "#991b1b")}>Cancelled</span>
         ) : null}
+      </div>
+    );
+
+  // View mode: read-only Understand step. Selecting a record never implies
+  // mutability -- Edit is a deliberate, separate action below.
+  const viewBody = (
+    <div style={{ display: "grid", gap: 16 }}>
+      {reviewIssues.length > 0 ? (
         <div
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "center",
-            padding: 18,
-            borderBottom: "1px solid #eee",
+            padding: 12,
+            borderRadius: 10,
+            background: "#fff7ed",
+            border: "1px solid #fed7aa",
+            fontSize: 13,
+          }}
+        >
+          <strong>
+            {reviewIssues.length} data-quality issue
+            {reviewIssues.length === 1 ? "" : "s"}
+          </strong>
+          <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+            {reviewIssues.map((issue, index) => (
+              <div key={`${issue.field}-${index}`}>
+                <strong>{reviewFieldLabel(issue.field)}:</strong> {issue.issue}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div>
+        <strong>Contact</strong>
+        <div style={{ marginTop: 6, fontSize: 14, display: "grid", gap: 4 }}>
+          <div>Email: {state.email || "Not provided"}</div>
+          <div>Phone: {state.primary_phone || state.cell_phone || "Not provided"}</div>
+          <div>
+            Coach: {[state.coach_manufacturer, state.coach_model].filter(Boolean).join(" ") || "Not provided"}
+          </div>
+        </div>
+      </div>
+
+      {operationalStatusBlock}
+
+      <div>
+        <strong>Household</strong>
+        <div style={{ marginTop: 6, display: "grid", gap: 10, fontSize: 14 }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>Pilot</div>
+            <div>
+              {fullName(state.pilot_first, state.pilot_last) || "Unnamed"}
+              {state.nickname ? ` "${state.nickname}"` : ""}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontWeight: 700 }}>Co-Pilot</div>
+            <div>
+              {fullName(state.copilot_first, state.copilot_last) || "None on record"}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontWeight: 700 }}>Additional Participant</div>
+            <div>
+              {fullName(state.additional_first_name, state.additional_last_name) ||
+                "None on record"}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <details>
+        <summary style={{ cursor: "pointer", fontWeight: 700 }}>More details</summary>
+        <div
+          style={{
+            marginTop: 10,
+            display: "grid",
+            gap: 8,
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            fontSize: 13,
           }}
         >
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-              {mode === "create"
-                ? "Add Attendee Record"
-                : "Edit Attendee Record"}
-            </h2>
-            <div style={{ fontSize: 14, opacity: 0.8 }}>
-              {mode === "create"
-                ? "Create a new attendee manually."
-                : "Update this attendee record."}
-            </div>
+            <strong>Membership #</strong>
+            <div>{state.membership_number || "—"}</div>
           </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            style={secondaryButtonStyle}
-            disabled={saving}
-          >
-            Close
-          </button>
+          <div>
+            <strong>Entry ID</strong>
+            <div>{state.entry_id || "—"}</div>
+          </div>
+          <div>
+            <strong>City / State</strong>
+            <div>{[state.city, state.state].filter(Boolean).join(", ") || "—"}</div>
+          </div>
+          <div>
+            <strong>Headcount</strong>
+            <div>{state.include_in_headcount ? "Included" : "Not included"}</div>
+          </div>
+          <div>
+            <strong>Name Tag</strong>
+            <div>{state.needs_name_tag ? "Needed" : "Not needed"}</div>
+          </div>
+          <div>
+            <strong>Coach Plate</strong>
+            <div>{state.needs_coach_plate ? "Needed" : "Not needed"}</div>
+          </div>
+          <div>
+            <strong>Parking</strong>
+            <div>{state.needs_parking ? "Needed" : "Not needed"}</div>
+          </div>
+          <div>
+            <strong>First Timer</strong>
+            <div>{state.is_first_timer ? "Yes" : "No"}</div>
+          </div>
+          <div>
+            <strong>Volunteer</strong>
+            <div>{state.wants_to_volunteer ? "Yes" : "No"}</div>
+          </div>
+          <div>
+            <strong>Active Record</strong>
+            <div>{state.is_active ? "Yes" : "No"}</div>
+          </div>
         </div>
 
-        <div
-          style={{
-            padding: 18,
-            flex: 1,
-            minHeight: 0,
-            overflowY: "auto",
-            WebkitOverflowScrolling: "touch",
-            overscrollBehavior: "contain",
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gap: 14,
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            }}
-          >
-            {/* Render attendee text fields */}
-            {(() => {
-              const rows = [];
-              for (let i = 0; i < textFields.length; ++i) {
-                const field = textFields[i];
-                rows.push(
-                  <div key={String(field.key)}>
-                    <label style={labelStyle}>{field.label}</label>
-                    <input
-                      value={String(state[field.key] ?? "")}
-                      onChange={(e) =>
-                        onChange(
-                          field.key,
-                          field.key === "membership_number"
-                            ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
-                            : (e.target
-                                .value as AttendeeEditorState[typeof field.key]),
-                        )
-                      }
-                      style={inputStyle}
-                    />
-                  </div>,
-                );
-              }
-              return rows;
-            })()}
-            {/* Single full-width Add Additional Participant button row */}
-            <div style={{ display: "flex", alignItems: "end" }}>
-              <button
-                type="button"
-                style={{
-                  ...secondaryButtonStyle,
-                  width: "100%",
-                  minWidth: "340px",
-                  whiteSpace: "nowrap",
-                }}
-                onClick={() =>
-                  setShowAdditionalParticipant((current) => !current)
-                }
-              >
-                {showAdditionalParticipant
-                  ? "− Hide Additional Participant"
-                  : "+ Add Additional Participant"}
-              </button>
+        {state.special_events_raw ? (
+          <div style={{ marginTop: 12, fontSize: 13 }}>
+            <strong>Special Events</strong>
+            <div style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>
+              {state.special_events_raw}
             </div>
           </div>
+        ) : null}
 
-          {/* Additional Participant fields UI */}
-          {showAdditionalParticipant ? (
-            <>
-              <div
-                style={{
-                  marginTop: 14,
-                  display: "grid",
-                  gap: 14,
-                  gridTemplateColumns: "repeat(5, minmax(180px, 1fr))",
-                  alignItems: "end",
-                }}
-              >
-                <div>
-                  <label style={labelStyle}>Participant First Name</label>
-                  <input
-                    style={inputStyle}
-                    placeholder="First name"
-                    value={state.additional_first_name}
-                    onChange={(e) =>
-                      onChange("additional_first_name", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Participant Last Name</label>
-                  <input
-                    style={inputStyle}
-                    placeholder="Last name"
-                    value={state.additional_last_name}
-                    onChange={(e) =>
-                      onChange("additional_last_name", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Participant Nickname</label>
-                  <input
-                    style={inputStyle}
-                    placeholder="Nickname"
-                    value={state.additional_nickname}
-                    onChange={(e) =>
-                      onChange("additional_nickname", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Participant Email</label>
-                  <input
-                    style={inputStyle}
-                    placeholder="Email address"
-                    value={state.additional_email}
-                    onChange={(e) =>
-                      onChange("additional_email", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Participant Cell Phone</label>
-                  <input
-                    style={inputStyle}
-                    placeholder="Cell phone (optional)"
-                    value={state.additional_cell_phone}
-                    onChange={(e) =>
-                      onChange("additional_cell_phone", e.target.value)
-                    }
-                  />
-                </div>
-              </div>
-            </>
-          ) : null}
-          <div style={{ marginTop: 14 }}>
-            <label style={labelStyle}>Special Events Raw</label>
-            <textarea
-              value={state.special_events_raw}
-              onChange={(e) => onChange("special_events_raw", e.target.value)}
-              style={textareaStyle}
-              rows={3}
-            />
+        {state.notes ? (
+          <div style={{ marginTop: 12, fontSize: 13 }}>
+            <strong>Notes</strong>
+            <div style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>{state.notes}</div>
           </div>
+        ) : null}
 
+        {attendee && formatCancellationDetail(attendee) ? (
           <div
             style={{
-              marginTop: 14,
-              display: "grid",
-              gap: 8,
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              marginTop: 12,
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              fontSize: 13,
             }}
           >
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
-                checked={state.wants_to_volunteer}
-                onChange={(e) =>
-                  onChange("wants_to_volunteer", e.target.checked)
-                }
-              />
-              Volunteer
-            </label>
-
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
-                checked={state.is_first_timer}
-                onChange={(e) => onChange("is_first_timer", e.target.checked)}
-              />
-              First Timer
-            </label>
-
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
-                checked={state.share_with_attendees}
-                onChange={(e) =>
-                  onChange("share_with_attendees", e.target.checked)
-                }
-              />
-              Share With Attendees
-            </label>
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
-                checked={state.include_in_headcount}
-                onChange={(e) =>
-                  onChange("include_in_headcount", e.target.checked)
-                }
-              />
-              Include In Headcount
-            </label>
-
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
-                checked={state.needs_name_tag}
-                onChange={(e) => onChange("needs_name_tag", e.target.checked)}
-              />
-              Needs Name Tag
-            </label>
-
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
-                checked={state.needs_coach_plate}
-                onChange={(e) =>
-                  onChange("needs_coach_plate", e.target.checked)
-                }
-              />
-              Needs Coach Plate
-            </label>
-
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
-                checked={state.needs_parking}
-                onChange={(e) => onChange("needs_parking", e.target.checked)}
-              />
-              Needs Parking
-            </label>
-
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
-                checked={state.is_active}
-                onChange={(e) => onChange("is_active", e.target.checked)}
-              />
-              Active Record
-            </label>
+            <strong>Cancellation Details</strong>
+            <div style={{ marginTop: 4 }}>{formatCancellationDetail(attendee)}</div>
           </div>
+        ) : null}
+      </details>
+    </div>
+  );
 
-          <div style={{ marginTop: 14 }}>
-            <label style={labelStyle}>Notes</label>
-            <textarea
-              value={state.notes}
-              onChange={(e) => onChange("notes", e.target.value)}
-              style={textareaStyle}
-              rows={4}
-            />
-          </div>
-          {/* Registration Capacity, Assigned Site, Participant Type, Data Status row (moved near bottom) */}
-          <div
-            style={{
-              marginTop: 14,
-              display: "grid",
-              gap: 14,
-              gridTemplateColumns: "1fr 2fr 1fr 1fr",
-              alignItems: "end",
-            }}
-          >
-            <div>
-              <label style={labelStyle}>Registration Capacity</label>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <button
-                  type="button"
-                  style={secondaryButtonStyle}
-                  onClick={() => {
-                    onChange(
-                      "registration_capacity",
-                      Math.max(1, state.registration_capacity - 1) as any,
-                    );
-                    onChange("registration_capacity_was_unset", false);
-                  }}
-                >
-                  −
-                </button>
+  const editBody = (
+    <div>
+      <div
+        style={{
+          display: "grid",
+          gap: 14,
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        }}
+      >
+        {/* Render attendee text fields */}
+        {(() => {
+          const rows = [];
+          for (let i = 0; i < textFields.length; ++i) {
+            const field = textFields[i];
+            rows.push(
+              <div key={String(field.key)}>
+                <label style={labelStyle}>{field.label}</label>
                 <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={state.registration_capacity}
-                  onChange={(e) => {
-                    onChange(
-                      "registration_capacity",
-                      Math.max(1, Number(e.target.value) || 1) as any,
-                    );
-                    onChange("registration_capacity_was_unset", false);
-                  }}
-                  style={{
-                    ...inputStyle,
-                    width: 70,
-                    textAlign: "center",
-                  }}
-                />
-                <button
-                  type="button"
-                  style={secondaryButtonStyle}
-                  onClick={() => {
-                    onChange(
-                      "registration_capacity",
-                      (state.registration_capacity + 1) as any,
-                    );
-                    onChange("registration_capacity_was_unset", false);
-                  }}
-                >
-                  +
-                </button>
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>Participant Type</label>
-              <select
-                value={state.participant_type}
-                onChange={(e) => onChange("participant_type", e.target.value)}
-                style={inputStyle}
-              >
-                {PARTICIPANT_TYPE_OPTIONS.filter(
-                  (option) => option !== "all",
-                ).map((option) => (
-                  <option key={option} value={option}>
-                    {participantTypeLabel(option)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Data Status</label>
-              <select
-                value={state.data_status}
-                onChange={(e) => onChange("data_status", e.target.value)}
-                style={inputStyle}
-              >
-                {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
-                  (option) => (
-                    <option key={option} value={option}>
-                      {dataStatusOptionLabel(option)}
-                    </option>
-                  ),
-                )}
-              </select>
-            </div>
-          </div>
-
-          {isCapacityIncrease && (
-            <div
-              style={{
-                marginTop: 14,
-                padding: 14,
-                border: "1px solid #bfdbfe",
-                background: "#eff6ff",
-                borderRadius: 8,
-              }}
-            >
-              <div style={{ fontSize: 14, color: "#1e3a8a" }}>
-                {isAddingNewParticipant
-                  ? "Adding this participant will also authorize one additional participant slot."
-                  : `This will authorize ${targetCapacity} total participant ${targetCapacity === 1 ? "slot" : "slots"}.`}{" "}
-                Participant Capacity will be set to {targetCapacity} (from{" "}
-                {state.registration_capacity_original ?? "unset"}).
-              </div>
-              <div style={{ marginTop: 10 }}>
-                <label style={labelStyle}>Note (optional)</label>
-                <input
-                  value={state.capacity_increase_note}
+                  value={String(state[field.key] ?? "")}
                   onChange={(e) =>
-                    onChange("capacity_increase_note", e.target.value)
+                    onChange(
+                      field.key,
+                      field.key === "membership_number"
+                        ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
+                        : (e.target
+                            .value as AttendeeEditorState[typeof field.key]),
+                    )
                   }
                   style={inputStyle}
                 />
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div
-          style={{
-            position: "sticky",
-            bottom: 0,
-            zIndex: 5,
-            padding: 18,
-            borderTop: "1px solid #eee",
-            background: "white",
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-            alignItems: "center",
-            justifyContent: "flex-end",
-          }}
-        >
+              </div>,
+            );
+          }
+          return rows;
+        })()}
+        {/* Single full-width Add Additional Participant button row */}
+        <div style={{ display: "flex", alignItems: "end" }}>
           <button
             type="button"
-            onClick={() => void onSave()}
-            style={primaryButtonStyle}
-            disabled={saving || !canEdit}
+            style={{
+              ...secondaryButtonStyle,
+              width: "100%",
+              minWidth: "340px",
+              whiteSpace: "nowrap",
+            }}
+            onClick={() =>
+              setShowAdditionalParticipant((current) => !current)
+            }
           >
-            {saving
-              ? "Saving..."
-              : mode === "create"
-                ? "Create Attendee"
-                : "Save Changes"}
+            {showAdditionalParticipant
+              ? "− Hide Additional Participant"
+              : "+ Add Additional Participant"}
           </button>
         </div>
       </div>
+
+      {/* Additional Participant fields UI. Responsive auto-fit grid, not a
+          fixed 5-column layout, so it never forces horizontal overflow on
+          phone/tablet widths (Refactor Audit E.1). */}
+      {showAdditionalParticipant ? (
+        <div
+          style={{
+            marginTop: 14,
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            alignItems: "end",
+          }}
+        >
+          <div>
+            <label style={labelStyle}>Participant First Name</label>
+            <input
+              style={inputStyle}
+              placeholder="First name"
+              value={state.additional_first_name}
+              onChange={(e) =>
+                onChange("additional_first_name", e.target.value)
+              }
+            />
+          </div>
+
+          <div>
+            <label style={labelStyle}>Participant Last Name</label>
+            <input
+              style={inputStyle}
+              placeholder="Last name"
+              value={state.additional_last_name}
+              onChange={(e) =>
+                onChange("additional_last_name", e.target.value)
+              }
+            />
+          </div>
+
+          <div>
+            <label style={labelStyle}>Participant Nickname</label>
+            <input
+              style={inputStyle}
+              placeholder="Nickname"
+              value={state.additional_nickname}
+              onChange={(e) =>
+                onChange("additional_nickname", e.target.value)
+              }
+            />
+          </div>
+
+          <div>
+            <label style={labelStyle}>Participant Email</label>
+            <input
+              style={inputStyle}
+              placeholder="Email address"
+              value={state.additional_email}
+              onChange={(e) =>
+                onChange("additional_email", e.target.value)
+              }
+            />
+          </div>
+
+          <div>
+            <label style={labelStyle}>Participant Cell Phone</label>
+            <input
+              style={inputStyle}
+              placeholder="Cell phone (optional)"
+              value={state.additional_cell_phone}
+              onChange={(e) =>
+                onChange("additional_cell_phone", e.target.value)
+              }
+            />
+          </div>
+        </div>
+      ) : null}
+      <div style={{ marginTop: 14 }}>
+        <label style={labelStyle}>Special Events Raw</label>
+        <textarea
+          value={state.special_events_raw}
+          onChange={(e) => onChange("special_events_raw", e.target.value)}
+          style={textareaStyle}
+          rows={3}
+        />
+      </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          display: "grid",
+          gap: 8,
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        }}
+      >
+        <label style={checkLabelStyle}>
+          <input
+            type="checkbox"
+            checked={state.wants_to_volunteer}
+            onChange={(e) =>
+              onChange("wants_to_volunteer", e.target.checked)
+            }
+          />
+          Volunteer
+        </label>
+
+        <label style={checkLabelStyle}>
+          <input
+            type="checkbox"
+            checked={state.is_first_timer}
+            onChange={(e) => onChange("is_first_timer", e.target.checked)}
+          />
+          First Timer
+        </label>
+
+        <label style={checkLabelStyle}>
+          <input
+            type="checkbox"
+            checked={state.share_with_attendees}
+            onChange={(e) =>
+              onChange("share_with_attendees", e.target.checked)
+            }
+          />
+          Share With Attendees
+        </label>
+        <label style={checkLabelStyle}>
+          <input
+            type="checkbox"
+            checked={state.include_in_headcount}
+            onChange={(e) =>
+              onChange("include_in_headcount", e.target.checked)
+            }
+          />
+          Include In Headcount
+        </label>
+
+        <label style={checkLabelStyle}>
+          <input
+            type="checkbox"
+            checked={state.needs_name_tag}
+            onChange={(e) => onChange("needs_name_tag", e.target.checked)}
+          />
+          Needs Name Tag
+        </label>
+
+        <label style={checkLabelStyle}>
+          <input
+            type="checkbox"
+            checked={state.needs_coach_plate}
+            onChange={(e) =>
+              onChange("needs_coach_plate", e.target.checked)
+            }
+          />
+          Needs Coach Plate
+        </label>
+
+        <label style={checkLabelStyle}>
+          <input
+            type="checkbox"
+            checked={state.needs_parking}
+            onChange={(e) => onChange("needs_parking", e.target.checked)}
+          />
+          Needs Parking
+        </label>
+
+        <label style={checkLabelStyle}>
+          <input
+            type="checkbox"
+            checked={state.is_active}
+            onChange={(e) => onChange("is_active", e.target.checked)}
+          />
+          Active Record
+        </label>
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <label style={labelStyle}>Notes</label>
+        <textarea
+          value={state.notes}
+          onChange={(e) => onChange("notes", e.target.value)}
+          style={textareaStyle}
+          rows={4}
+        />
+      </div>
+      {/* Registration Capacity, Participant Type, Data Status row */}
+      <div
+        style={{
+          marginTop: 14,
+          display: "grid",
+          gap: 14,
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          alignItems: "end",
+        }}
+      >
+        <div>
+          <label style={labelStyle}>Registration Capacity</label>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <button
+              type="button"
+              style={secondaryButtonStyle}
+              onClick={() => {
+                onChange(
+                  "registration_capacity",
+                  Math.max(1, state.registration_capacity - 1) as any,
+                );
+                onChange("registration_capacity_was_unset", false);
+              }}
+            >
+              −
+            </button>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={state.registration_capacity}
+              onChange={(e) => {
+                onChange(
+                  "registration_capacity",
+                  Math.max(1, Number(e.target.value) || 1) as any,
+                );
+                onChange("registration_capacity_was_unset", false);
+              }}
+              style={{
+                ...inputStyle,
+                width: 70,
+                textAlign: "center",
+              }}
+            />
+            <button
+              type="button"
+              style={secondaryButtonStyle}
+              onClick={() => {
+                onChange(
+                  "registration_capacity",
+                  (state.registration_capacity + 1) as any,
+                );
+                onChange("registration_capacity_was_unset", false);
+              }}
+            >
+              +
+            </button>
+          </div>
+        </div>
+        <div>
+          <label style={labelStyle}>Participant Type</label>
+          <select
+            value={state.participant_type}
+            onChange={(e) => onChange("participant_type", e.target.value)}
+            style={inputStyle}
+          >
+            {PARTICIPANT_TYPE_OPTIONS.filter(
+              (option) => option !== "all",
+            ).map((option) => (
+              <option key={option} value={option}>
+                {participantTypeLabel(option)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Data Status</label>
+          <select
+            value={state.data_status}
+            onChange={(e) => onChange("data_status", e.target.value)}
+            style={inputStyle}
+          >
+            {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
+              (option) => (
+                <option key={option} value={option}>
+                  {dataStatusOptionLabel(option)}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
+      </div>
+
+      {isCapacityIncrease && (
+        <div
+          style={{
+            marginTop: 14,
+            padding: 14,
+            border: "1px solid #bfdbfe",
+            background: "#eff6ff",
+            borderRadius: 8,
+          }}
+        >
+          <div style={{ fontSize: 14, color: "#1e3a8a" }}>
+            {isAddingNewParticipant
+              ? "Adding this participant will also authorize one additional participant slot."
+              : `This will authorize ${targetCapacity} total participant ${targetCapacity === 1 ? "slot" : "slots"}.`}{" "}
+            Participant Capacity will be set to {targetCapacity} (from{" "}
+            {state.registration_capacity_original ?? "unset"}).
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <label style={labelStyle}>Note (optional)</label>
+            <input
+              value={state.capacity_increase_note}
+              onChange={(e) =>
+                onChange("capacity_increase_note", e.target.value)
+              }
+              style={inputStyle}
+            />
+          </div>
+        </div>
+      )}
     </div>
+  );
+
+  const primaryActions =
+    viewState === "view" ? (
+      <>
+        <button
+          type="button"
+          onClick={onEnterEdit}
+          style={primaryButtonStyle}
+          disabled={!canEdit}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          disabled={!canEdit || !attendee}
+          onClick={() => attendee && void onUpdateDataStatus(attendee.id, "reviewed")}
+          style={secondaryButtonStyle}
+        >
+          Mark Reviewed
+        </button>
+        <button
+          type="button"
+          disabled={!canEdit || !attendee}
+          onClick={() => attendee && void onCancelRegistration(attendee)}
+          style={secondaryButtonStyle}
+        >
+          Cancel Registration
+        </button>
+      </>
+    ) : (
+      <>
+        <button
+          type="button"
+          onClick={() => void onSave()}
+          style={primaryButtonStyle}
+          disabled={saving || !canEdit}
+        >
+          {saving
+            ? "Saving..."
+            : mode === "create"
+              ? "Create Attendee"
+              : "Save Changes"}
+        </button>
+        {mode === "edit" ? (
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            style={secondaryButtonStyle}
+            disabled={saving}
+          >
+            Cancel Edit
+          </button>
+        ) : null}
+      </>
+    );
+
+  const secondaryActions =
+    viewState === "view" && mode === "edit" && attendee ? (
+      <>
+        <button
+          type="button"
+          disabled={!canEdit}
+          onClick={() => void onUpdateDataStatus(attendee.id, "locked")}
+          style={secondaryButtonStyle}
+        >
+          Lock Record
+        </button>
+        <button
+          type="button"
+          disabled={!canEdit}
+          onClick={() => void onUpdateDataStatus(attendee.id, "pending")}
+          style={secondaryButtonStyle}
+        >
+          Back To Pending
+        </button>
+      </>
+    ) : null;
+
+  return (
+    <ObjectPanel
+      open={open}
+      onClose={onClose}
+      title={titleText}
+      subtitle={subtitleText}
+      primaryActions={primaryActions}
+      secondaryActions={secondaryActions}
+      onPrevious={viewState === "view" ? onPrevious : undefined}
+      onNext={viewState === "view" ? onNext : undefined}
+    >
+      {viewState === "view" ? viewBody : editBody}
+    </ObjectPanel>
   );
 }
 
@@ -2024,23 +2050,26 @@ function AdminAttendeesPageInner() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
+  // Stage C: exactly one focused record workspace owns the selected
+  // attendee. editorOpen/editorMode track whether the workspace is open and
+  // whether it is creating a brand-new record vs working with an existing
+  // one; viewState tracks the separate Understand/Act distinction --
+  // selecting a record always starts at "view", never "edit".
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
+  const [viewState, setViewState] = useState<"view" | "edit">("view");
   const [editorState, setEditorState] = useState<AttendeeEditorState>(
     emptyAttendeeEditorState(),
   );
   const [editorSaving, setEditorSaving] = useState(false);
   const [operationalStatus, setOperationalStatus] = useState<CanonicalAttendeePlacementResult | null>(null);
+  // Which flagged/browse list the workspace was opened from, so Next/
+  // Previous inside it continue through the same order the operator was
+  // already browsing rather than a second, re-derived order.
+  const [workspaceListContext, setWorkspaceListContext] = useState<
+    "review" | "browse"
+  >("browse");
 
-  const [expandedAttendeeId, setExpandedAttendeeId] = useState<string | null>(
-    null,
-  );
-
-  function toggleExpandedAttendee(attendeeId: string) {
-    setExpandedAttendeeId((current) =>
-      current === attendeeId ? null : attendeeId,
-    );
-  }
   const [showReviewQueue, setShowReviewQueue] = useState(false);
 
   const loadQueue = useCallback(async (eventId: string) => {
@@ -2398,9 +2427,8 @@ created_at
     }
 
     localStorage.removeItem("fcoc-attendee-open-edit-id");
-    setExpandedAttendeeId(attendee.id);
-    openEditAttendeeEditor(attendee);
-    // openEditAttendeeEditor is intentionally omitted because it is declared later in this component.
+    void selectAttendeeForEdit(attendee);
+    // selectAttendeeForEdit is intentionally omitted because it is declared later in this component.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attendees, editorOpen]);
   const correctedCount = useMemo(() => {
@@ -2522,8 +2550,6 @@ created_at
         `${displayPilotName(item.attendee)} corrected and removed from review queue.`,
       );
 
-      setExpandedAttendeeId(item.attendee.id);
-
       showFlash(`${displayPilotName(item.attendee)} corrected successfully.`);
     } catch (err: any) {
       console.error("saveMembershipNumber error:", err);
@@ -2532,11 +2558,6 @@ created_at
     } finally {
       setSavingRowId(null);
     }
-    window.setTimeout(() => {
-      setExpandedAttendeeId((current) =>
-        current === item.attendee.id ? null : current,
-      );
-    }, 1800);
   }
 
   async function updateDataStatus(attendeeId: string, nextStatus: string) {
@@ -2776,69 +2797,118 @@ created_at
   function openCreateAttendeeEditor() {
     setEditorMode("create");
     setEditorState(emptyAttendeeEditorState());
+    // Create has nothing yet to view -- it legitimately starts in edit
+    // mode. Stage C's "selecting never implies edit mode" rule governs
+    // *existing* records; there is no existing record here to browse first.
+    setViewState("edit");
     setEditorOpen(true);
   }
 
-  const openEditAttendeeEditor = useCallback(async (attendee: AttendeeRow) => {
-    setEditorMode("edit");
+  // Stage C: the single entry point for selecting an existing attendee.
+  // Always opens the one focused record workspace in VIEW mode -- entering
+  // edit mode is always a separate, deliberate follow-up action
+  // (enterEditMode below), never automatic.
+  const selectAttendee = useCallback(
+    async (
+      attendee: AttendeeRow,
+      options: { listContext?: "review" | "browse" } = {},
+    ) => {
+      setEditorMode("edit");
+      setViewState("view");
+      setWorkspaceListContext(options.listContext ?? "browse");
 
-    const nextState = attendeeToEditorState(attendee);
-    setOperationalStatus(null);
-    if (currentEvent?.id) {
-      void fetchCanonicalAttendeePlacement(currentEvent.id, attendee.id).then(setOperationalStatus);
+      const nextState = attendeeToEditorState(attendee);
+      setOperationalStatus(null);
+      if (currentEvent?.id) {
+        void fetchCanonicalAttendeePlacement(currentEvent.id, attendee.id).then(
+          setOperationalStatus,
+        );
+      }
+
+      const { data: participantRows } = await supabase
+        .from("attendee_household_members")
+        .select("person_role,email,first_name,last_name,nickname,cell_phone")
+        .eq("attendee_id", attendee.id);
+
+      const pilot = participantRows?.find((row) => row.person_role === "pilot");
+
+      const copilot = participantRows?.find(
+        (row) => row.person_role === "copilot",
+      );
+
+      if (pilot?.email) {
+        nextState.email = pilot.email;
+      }
+
+      if (copilot?.email) {
+        nextState.copilot_email = copilot.email;
+      }
+
+      const additional = participantRows?.find(
+        (row) => row.person_role === "additional",
+      );
+
+      if (additional) {
+        nextState.additional_first_name = additional.first_name || "";
+        nextState.additional_last_name = additional.last_name || "";
+        nextState.additional_nickname = additional.nickname || "";
+        nextState.additional_email = additional.email || "";
+        nextState.additional_cell_phone = additional.cell_phone || "";
+      }
+
+      nextState.had_copilot_at_load = !!copilot;
+      nextState.had_additional_at_load = !!additional;
+      nextState.copilot_name_at_load =
+        fullName(attendee.copilot_first, attendee.copilot_last) ||
+        copilot?.email ||
+        "";
+      nextState.additional_name_at_load = additional
+        ? fullName(additional.first_name, additional.last_name) ||
+          additional.email ||
+          ""
+        : "";
+
+      setEditorState(nextState);
+      setEditorOpen(true);
+    },
+    [currentEvent?.id],
+  );
+
+  // Deep-link handoff from other modules (Imports) that intentionally
+  // requests edit mode directly, distinct from ordinary browse selection.
+  const selectAttendeeForEdit = useCallback(
+    async (attendee: AttendeeRow) => {
+      await selectAttendee(attendee);
+      setViewState("edit");
+    },
+    [selectAttendee],
+  );
+
+  function enterEditMode() {
+    setViewState("edit");
+  }
+
+  // Discards any in-progress edits and returns to the read-only view of
+  // the same record (Stage D adds a dirty-aware confirmation ahead of
+  // this; Stage C's contract is simply that editing and viewing remain
+  // distinct, reversible states).
+  function cancelEditToView() {
+    if (editorMode === "create") {
+      closeAttendeeEditor();
+      return;
     }
-
-    const { data: participantRows } = await supabase
-      .from("attendee_household_members")
-      .select("person_role,email,first_name,last_name,nickname,cell_phone")
-      .eq("attendee_id", attendee.id);
-
-    const pilot = participantRows?.find((row) => row.person_role === "pilot");
-
-    const copilot = participantRows?.find(
-      (row) => row.person_role === "copilot",
-    );
-
-    if (pilot?.email) {
-      nextState.email = pilot.email;
+    const attendee = attendees.find((row) => row.id === editorState.id);
+    if (attendee) {
+      void selectAttendee(attendee, { listContext: workspaceListContext });
+    } else {
+      closeAttendeeEditor();
     }
-
-    if (copilot?.email) {
-      nextState.copilot_email = copilot.email;
-    }
-
-    const additional = participantRows?.find(
-      (row) => row.person_role === "additional",
-    );
-
-    if (additional) {
-      nextState.additional_first_name = additional.first_name || "";
-      nextState.additional_last_name = additional.last_name || "";
-      nextState.additional_nickname = additional.nickname || "";
-      nextState.additional_email = additional.email || "";
-      nextState.additional_cell_phone = additional.cell_phone || "";
-    }
-
-    nextState.had_copilot_at_load = !!copilot;
-    nextState.had_additional_at_load = !!additional;
-    nextState.copilot_name_at_load =
-      fullName(attendee.copilot_first, attendee.copilot_last) ||
-      copilot?.email ||
-      "";
-    nextState.additional_name_at_load = additional
-      ? fullName(additional.first_name, additional.last_name) ||
-        additional.email ||
-        ""
-      : "";
-
-    setEditorState(nextState);
-    setEditorOpen(true);
-
-  }, []);
+  }
 
   function closeAttendeeEditor() {
     setEditorOpen(false);
     setEditorMode("create");
+    setViewState("view");
     setEditorState(emptyAttendeeEditorState());
   }
 
@@ -2851,6 +2921,37 @@ created_at
       [key]: value,
     }));
   }
+
+  // Continuous operation (Stage C requirement 8): Next/Previous inside the
+  // workspace move through whichever list the operator was already
+  // browsing -- the filtered Review Queue when reviewing, the filtered/
+  // sorted Attendee List otherwise -- rather than resetting their place.
+  const workspaceOrder = useMemo(
+    () =>
+      workspaceListContext === "review"
+        ? filteredReviewItems.map((item) => item.attendee)
+        : filteredAttendees,
+    [workspaceListContext, filteredReviewItems, filteredAttendees],
+  );
+
+  function goToWorkspaceOffset(delta: number) {
+    const currentId = editorState.id;
+    const index = workspaceOrder.findIndex((row) => row.id === currentId);
+    if (index === -1) {
+      return;
+    }
+    const next = workspaceOrder[index + delta];
+    if (next) {
+      void selectAttendee(next, { listContext: workspaceListContext });
+    }
+  }
+
+  const workspaceOrderIndex = workspaceOrder.findIndex(
+    (row) => row.id === editorState.id,
+  );
+  const canGoPrevious = workspaceOrderIndex > 0;
+  const canGoNext =
+    workspaceOrderIndex > -1 && workspaceOrderIndex < workspaceOrder.length - 1;
 
   async function handleSaveAttendeeRecord() {
     if (!currentEvent?.id) {
@@ -3197,17 +3298,35 @@ created_at
         const nextReviewItem = remainingReviewItems[0];
 
         if (nextReviewItem) {
-          await openEditAttendeeEditor(nextReviewItem.attendee);
+          // Continuous review operation (Stage C requirement 8): advance to
+          // the next flagged record automatically, but -- per Stage C's own
+          // "selecting never implies edit mode" rule -- in VIEW mode, not
+          // edit. (This corrects a pre-existing defect where the previous
+          // implementation opened the next item and then unconditionally
+          // closed the editor again immediately afterward, silently
+          // discarding the auto-advance the code around it described.)
+          await selectAttendee(nextReviewItem.attendee, {
+            listContext: "review",
+          });
           showFlash("Saved. Next review record loaded.");
         } else {
           closeAttendeeEditor();
           showFlash("Saved. Review queue is clear.");
         }
+      } else if (editorMode === "edit") {
+        // Non-review edit saves: return to the read-only view of the same
+        // record so the persisted truth is visible and browse context is
+        // retained, rather than forcing a full close/reopen (Stage D
+        // continuous-operation requirement).
+        setViewState("view");
+      } else {
+        // Create: nothing existed to "view" before this save: close back
+        // to browse, as before.
+        closeAttendeeEditor();
       }
-      // Close immediately on successful save
-      closeAttendeeEditor();
 
-      // Then refresh data in background
+      // Refresh data in the background so the workspace and list reflect
+      // the persisted record.
       await loadQueue(currentEvent.id);
     } catch (err: any) {
       console.error("handleSaveAttendeeRecord error:", err);
@@ -3275,7 +3394,9 @@ created_at
             if (nextViewMode === "review") {
               const firstReviewItem = filteredReviewItems[0];
               if (firstReviewItem) {
-                openEditAttendeeEditor(firstReviewItem.attendee);
+                void selectAttendee(firstReviewItem.attendee, {
+                  listContext: "review",
+                });
               } else {
                 showFlash("No attendee records need review.");
               }
@@ -3371,7 +3492,9 @@ created_at
             participantTypeFilter={participantTypeFilter}
             onDraftChange={updateDraft}
             onSaveMembership={saveMembershipNumber}
-            onOpenEdit={openEditAttendeeEditor}
+            onSelect={(attendee) =>
+              void selectAttendee(attendee, { listContext: "review" })
+            }
             onUpdateDataStatus={updateDataStatus}
             onCancelRegistration={onCancelRegistration}
           />
@@ -3384,23 +3507,40 @@ created_at
           visibleAttendees={visibleAttendees}
           reviewItems={reviewItems}
           attendeeSortMode={attendeeSortMode}
-          expandedAttendeeId={expandedAttendeeId}
-          onToggleExpanded={toggleExpandedAttendee}
-          onOpenEdit={openEditAttendeeEditor}
+          selectedAttendeeId={editorOpen ? editorState.id : null}
+          onSelect={(attendee) =>
+            void selectAttendee(attendee, { listContext: "browse" })
+          }
           onUpdateDataStatus={updateDataStatus}
           onCancelRegistration={onCancelRegistration}
         />
       </>
 
-      <AttendeeEditorModal
+      <AttendeeRecordWorkspace
         open={editorOpen}
-        mode={editorMode}
+        editorMode={editorMode}
+        viewState={viewState}
+        attendee={
+          editorMode === "edit"
+            ? attendees.find((row) => row.id === editorState.id) ?? null
+            : null
+        }
         state={editorState}
+        reviewIssues={
+          reviewItems.find((item) => item.attendee.id === editorState.id)
+            ?.issues ?? []
+        }
         saving={editorSaving}
         canEdit={canEditAttendees}
         onClose={closeAttendeeEditor}
         onChange={updateEditorField}
+        onEnterEdit={enterEditMode}
+        onCancelEdit={cancelEditToView}
         onSave={handleSaveAttendeeRecord}
+        onUpdateDataStatus={updateDataStatus}
+        onCancelRegistration={onCancelRegistration}
+        onPrevious={canGoPrevious ? () => goToWorkspaceOffset(-1) : undefined}
+        onNext={canGoNext ? () => goToWorkspaceOffset(1) : undefined}
         operationalStatus={operationalStatus}
       />
     </div>

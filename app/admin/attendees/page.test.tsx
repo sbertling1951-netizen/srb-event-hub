@@ -11,7 +11,6 @@ import {
 } from "@/app/admin/attendees/attendeesWorkflow";
 import {
   AttendeeActionRow,
-  AttendeeEditorModal,
   type AttendeeEditorState,
   buildHouseholdRemovalConfirmMessage,
   computeHouseholdRemovalWarnings,
@@ -209,7 +208,7 @@ test("AttendeeActionRow: without can_edit_attendees, every mutating button is di
       attendee={baseAttendee()}
       canEdit={false}
       showBackToPending
-      onOpenEdit={noop}
+      onSelect={noop}
       onUpdateDataStatus={asyncNoop}
       onCancelRegistration={asyncNoop}
     />,
@@ -239,7 +238,7 @@ test("AttendeeActionRow: with can_edit_attendees, the legitimate mutating button
       attendee={baseAttendee()}
       canEdit
       showBackToPending
-      onOpenEdit={noop}
+      onSelect={noop}
       onUpdateDataStatus={asyncNoop}
       onCancelRegistration={asyncNoop}
     />,
@@ -260,23 +259,23 @@ test("AttendeeActionRow: with can_edit_attendees, the legitimate mutating button
   }
 });
 
-test("AttendeeActionRow: Edit Record stays enabled even without edit permission -- viewing remains available", () => {
+test("AttendeeActionRow: View Record stays enabled even without edit permission -- viewing remains available", () => {
   const html = renderToStaticMarkup(
     <AttendeeActionRow
       attendee={baseAttendee()}
       canEdit={false}
       showBackToPending={false}
-      onOpenEdit={noop}
+      onSelect={noop}
       onUpdateDataStatus={asyncNoop}
       onCancelRegistration={asyncNoop}
     />,
   );
 
-  const buttonStart = html.lastIndexOf("<button", html.indexOf("Edit Record"));
-  const fragment = html.slice(buttonStart, html.indexOf("Edit Record"));
+  const buttonStart = html.lastIndexOf("<button", html.indexOf("View Record"));
+  const fragment = html.slice(buttonStart, html.indexOf("View Record"));
   assert.ok(
     !fragment.includes("disabled"),
-    "Edit Record must remain enabled -- it only opens the record for viewing",
+    "View Record must remain enabled -- it only opens the record for viewing, never mutates",
   );
 });
 
@@ -424,52 +423,124 @@ test("City/State no longer appears in the collapsed Review Queue / Attendee List
   assert.match(source, />City \/ State</);
 });
 
-test("AttendeeEditorModal: Save/Create is disabled without can_edit_attendees, enabled with it", () => {
-  const state = emptyAttendeeEditorState();
+// AttendeeRecordWorkspace is built on ObjectPanel (components/ObjectPanel.tsx),
+// which intentionally renders nothing until it has mounted in a real browser
+// (it portals into document.body): "Portals require a browser document;
+// only render one after mount." renderToStaticMarkup runs no effects, so it
+// cannot exercise ObjectPanel's content -- consistent with this codebase's
+// established convention of no RTL/jsdom harness (see e.g.
+// components/auth/LegacyTransferInitiator.test.tsx). These contracts are
+// therefore verified structurally against the component's own source,
+// exactly like this file's other structural tests already do.
 
-  const disabledHtml = renderToStaticMarkup(
-    <AttendeeEditorModal
-      open
-      mode="create"
-      state={state}
-      saving={false}
-      canEdit={false}
-      onClose={noop}
-      onChange={noop}
-      onSave={asyncNoop}
-    />,
-  );
-  const enabledHtml = renderToStaticMarkup(
-    <AttendeeEditorModal
-      open
-      mode="create"
-      state={state}
-      saving={false}
-      canEdit
-      onClose={noop}
-      onChange={noop}
-      onSave={asyncNoop}
-    />,
+test("AttendeeRecordWorkspace: Save/Create respects canEdit in both editor modes", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const primaryActionsSource = source.slice(
+    source.indexOf("const primaryActions ="),
+    source.indexOf("const secondaryActions ="),
   );
 
-  const disabledStart = disabledHtml.lastIndexOf(
-    "<button",
-    disabledHtml.indexOf("Create Attendee"),
-  );
-  const enabledStart = enabledHtml.lastIndexOf(
-    "<button",
-    enabledHtml.indexOf("Create Attendee"),
+  assert.match(primaryActionsSource, /disabled=\{saving \|\| !canEdit\}/);
+});
+
+// --- Stage C: viewing and editing are distinct states -----------------------
+// (Attendees Admin Workflow Stages B-D, Test Expectations B/C.)
+
+test("AttendeeRecordWorkspace: the view body renders no <input>/<textarea> form fields -- nothing is mutable until Edit is deliberately chosen", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const viewBodySource = source.slice(
+    source.indexOf("const viewBody = ("),
+    source.indexOf("const editBody = ("),
   );
 
-  assert.ok(
-    disabledHtml
-      .slice(disabledStart, disabledHtml.indexOf("Create Attendee"))
-      .includes("disabled"),
+  assert.ok(!viewBodySource.includes("<input"));
+  assert.ok(!viewBodySource.includes("<textarea"));
+});
+
+test("AttendeeRecordWorkspace: view mode's primary action is an explicit Edit control, not an already-open form", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const primaryActionsSource = source.slice(
+    source.indexOf("const primaryActions ="),
+    source.indexOf("const secondaryActions ="),
   );
-  assert.ok(
-    !enabledHtml
-      .slice(enabledStart, enabledHtml.indexOf("Create Attendee"))
-      .includes("disabled"),
+  const viewBranch = primaryActionsSource.slice(
+    0,
+    primaryActionsSource.indexOf(") : ("),
+  );
+
+  assert.match(viewBranch, /onClick=\{onEnterEdit\}/);
+  assert.match(viewBranch, />\s*Edit\s*</);
+});
+
+test("AttendeeRecordWorkspace: edit mode renders the mutable form (editBody) and a Save control", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const editBodySource = source.slice(
+    source.indexOf("const editBody = ("),
+    source.indexOf("const primaryActions ="),
+  );
+
+  assert.ok(editBodySource.includes("<input"));
+
+  const primaryActionsSource = source.slice(
+    source.indexOf("const primaryActions ="),
+    source.indexOf("const secondaryActions ="),
+  );
+  assert.match(primaryActionsSource, /"Save Changes"/);
+});
+
+test("openCreateAttendeeEditor: creating a new record has nothing to view yet and starts directly in edit mode", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const fnSource = source.slice(
+    source.indexOf("function openCreateAttendeeEditor()"),
+    source.indexOf("function openCreateAttendeeEditor()") + 400,
+  );
+
+  assert.match(fnSource, /setViewState\("edit"\)/);
+});
+
+test("selectAttendee -- the one entry point for choosing an existing attendee -- always sets viewState to 'view', never 'edit'", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const fnSource = source.slice(
+    source.indexOf("const selectAttendee = useCallback("),
+    source.indexOf("const selectAttendeeForEdit"),
+  );
+
+  assert.match(fnSource, /setViewState\("view"\)/);
+  assert.ok(!fnSource.includes('setViewState("edit")'));
+});
+
+test("exactly one AttendeeRecordWorkspace instance is mounted, owning the selected attendee for the whole page", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.equal(
+    (source.match(/<AttendeeRecordWorkspace/g) || []).length,
+    1,
+  );
+});
+
+// --- Test Expectation M: responsive structure ------------------------------
+
+test("Additional Participant fields use a responsive auto-fit grid, not the former fixed 5-column layout", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.ok(!source.includes("repeat(5, minmax"));
+  assert.match(
+    source,
+    /Participant First Name[\s\S]{0,400}?repeat\(auto-fit, minmax\(180px, 1fr\)\)|repeat\(auto-fit, minmax\(180px, 1fr\)\)[\s\S]{0,400}?Participant First Name/,
   );
 });
 
@@ -544,7 +615,7 @@ test("AttendeeActionRow: showBackToPending governs exactly the one legitimate di
       attendee={baseAttendee()}
       canEdit
       showBackToPending
-      onOpenEdit={noop}
+      onSelect={noop}
       onUpdateDataStatus={asyncNoop}
       onCancelRegistration={asyncNoop}
     />,
@@ -554,7 +625,7 @@ test("AttendeeActionRow: showBackToPending governs exactly the one legitimate di
       attendee={baseAttendee()}
       canEdit
       showBackToPending={false}
-      onOpenEdit={noop}
+      onSelect={noop}
       onUpdateDataStatus={asyncNoop}
       onCancelRegistration={asyncNoop}
     />,
@@ -564,7 +635,7 @@ test("AttendeeActionRow: showBackToPending governs exactly the one legitimate di
   assert.ok(!withoutBackToPending.includes("Back To Pending"));
 
   for (const label of [
-    "Edit Record",
+    "View Record",
     "Mark Reviewed",
     "Cancel Registration",
     "Lock Record",
@@ -580,7 +651,7 @@ test("AttendeeActionRow: never depends on horizontal scrolling for the primary a
       attendee={baseAttendee()}
       canEdit
       showBackToPending
-      onOpenEdit={noop}
+      onSelect={noop}
       onUpdateDataStatus={asyncNoop}
       onCancelRegistration={asyncNoop}
     />,
@@ -626,11 +697,11 @@ test("formatCancellationDetail: still identifies the record as cancelled even if
   assert.equal(formatCancellationDetail(cancelled), "Cancelled");
 });
 
-test("cancellation details are rendered only inside the AttendeeList expanded panel, conditioned on formatCancellationDetail", () => {
+test("cancellation details are rendered only inside the selected-record workspace's 'More details' disclosure, conditioned on formatCancellationDetail", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
-  assert.ok(source.includes("formatCancellationDetail(attendee) ? ("));
+  assert.ok(source.includes("attendee && formatCancellationDetail(attendee) ? ("));
   assert.ok(source.includes("Cancellation Details"));
 });
 
