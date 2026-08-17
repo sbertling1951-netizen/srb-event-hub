@@ -31,6 +31,13 @@ test("presenter page is gated by AdminRouteGuard", () => {
   assert.match(PAGE_SOURCE, /AdminRouteGuard/);
 });
 
+test("presenter returns to the owning Photos module through the canonical shell", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /backTarget=\{\{ href: "\/admin\/photos", label: "Photos" \}\}/,
+  );
+});
+
 test("presenter page resolves event.slideshow.manage via the canonical Task Authority resolver", () => {
   assert.match(PAGE_SOURCE, /has_event_task_authority/);
   assert.match(PAGE_SOURCE, /event\.slideshow\.manage/);

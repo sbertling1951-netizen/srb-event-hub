@@ -229,6 +229,7 @@ function PhotoLibraryPageInner() {
       return;
     }
     setSaving(true);
+    setError(null);
 
     let nextStatus = modalEdits.photo_status ?? modalPhoto.photo_status;
     const nextFeaturedLevel = modalEdits.featured_level ?? 0;
@@ -248,7 +249,7 @@ function PhotoLibraryPageInner() {
       p_featured_level: nextFeaturedLevel,
     });
     if (error) {
-      alert(`Failed to save changes: ${error.message}`);
+      setError(`Failed to save changes: ${error.message}`);
       setSaving(false);
       return;
     }
@@ -410,6 +411,9 @@ function PhotoLibraryPageInner() {
           {filteredPhotos.map((photo) => (
             <div
               key={photo.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`View or edit photo: ${photo.admin_caption || photo.member_caption || photo.id}`}
               style={{
                 background: "#fafbfc",
                 borderRadius: 8,
@@ -427,7 +431,12 @@ function PhotoLibraryPageInner() {
                 minWidth: 0,
               }}
               onClick={() => openModal(photo)}
-              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openModal(photo);
+                }
+              }}
               title="View / Edit"
             >
               {photo.thumbnailUrl ? (

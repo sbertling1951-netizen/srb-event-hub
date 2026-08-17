@@ -114,7 +114,10 @@ export function isStalePresentationVersionError(err: unknown): boolean {
 export default function AdminSlideshowPage() {
   return (
     <AdminRouteGuard>
-      <AdminShellAdapter pageTitle="Slideshow Presenter">
+      <AdminShellAdapter
+        pageTitle="Slideshow Presenter"
+        backTarget={{ href: "/admin/photos", label: "Photos" }}
+      >
         <AdminSlideshowPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

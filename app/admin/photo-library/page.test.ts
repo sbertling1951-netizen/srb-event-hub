@@ -59,3 +59,15 @@ test("library rejects stale async loads and clears prior-user cache on auth chan
   assert.match(PAGE_SOURCE, /onAuthStateChange/);
   assert.match(PAGE_SOURCE, /clearAdminPhotoCacheForUser/);
 });
+
+test("photo cards expose button semantics and activate with Enter or Space", () => {
+  assert.match(PAGE_SOURCE, /role="button"/);
+  assert.match(PAGE_SOURCE, /tabIndex=\{0\}/);
+  assert.match(PAGE_SOURCE, /event\.key === "Enter" \|\| event\.key === " "/);
+  assert.match(PAGE_SOURCE, /event\.preventDefault\(\);\s*openModal\(photo\);/);
+});
+
+test("photo save failures use the page error channel instead of a browser alert", () => {
+  assert.match(PAGE_SOURCE, /setError\(`Failed to save changes:/);
+  assert.equal(/\balert\(/.test(PAGE_SOURCE), false);
+});
