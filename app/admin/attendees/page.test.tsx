@@ -6,14 +6,16 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  type AttendeeRow,
+  formatCancellationDetail,
+} from "@/app/admin/attendees/attendeesWorkflow";
+import {
   AttendeeActionRow,
   AttendeeEditorModal,
   type AttendeeEditorState,
-  type AttendeeRow,
   buildHouseholdRemovalConfirmMessage,
   computeHouseholdRemovalWarnings,
   emptyAttendeeEditorState,
-  formatCancellationDetail,
   QuickActionBar,
 } from "@/app/admin/attendees/page";
 
@@ -280,22 +282,10 @@ test("AttendeeActionRow: Edit Record stays enabled even without edit permission 
 
 test("QuickActionBar: + Add Attendee is disabled without can_edit_attendees, enabled with it", () => {
   const disabledHtml = renderToStaticMarkup(
-    <QuickActionBar
-      canEdit={false}
-      onAddAttendee={noop}
-      onSetReviewMode={noop}
-      onSetAllMode={noop}
-      onRefresh={noop}
-    />,
+    <QuickActionBar canEdit={false} onAddAttendee={noop} onRefresh={noop} />,
   );
   const enabledHtml = renderToStaticMarkup(
-    <QuickActionBar
-      canEdit
-      onAddAttendee={noop}
-      onSetReviewMode={noop}
-      onSetAllMode={noop}
-      onRefresh={noop}
-    />,
+    <QuickActionBar canEdit onAddAttendee={noop} onRefresh={noop} />,
   );
 
   const disabledStart = disabledHtml.lastIndexOf(
@@ -317,6 +307,121 @@ test("QuickActionBar: + Add Attendee is disabled without can_edit_attendees, ena
       .slice(enabledStart, enabledHtml.indexOf("+ Add Attendee"))
       .includes("disabled"),
   );
+});
+
+// --- Stage B: one owner for the View decision ------------------------------
+// (Attendees Admin Workflow Stages B-D, Test Expectation A).
+
+test("QuickActionBar: the duplicate 'Flagged Active' / 'All Registrations' quick-mode buttons are gone", () => {
+  const html = renderToStaticMarkup(
+    <QuickActionBar canEdit onAddAttendee={noop} onRefresh={noop} />,
+  );
+
+  assert.ok(!html.includes("Flagged Active"));
+  assert.ok(!html.includes("All Registrations"));
+  assert.ok(html.includes("+ Add Attendee"));
+  assert.ok(html.includes("Refresh"));
+});
+
+test("QuickActionBar no longer accepts onSetReviewMode/onSetAllMode -- the View select in FilterBar is the one owner of that decision", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.ok(!source.includes("onSetReviewMode"));
+  assert.ok(!source.includes("onSetAllMode"));
+  // FilterBar's View select still owns "review" mode's auto-open-first-item
+  // behavior -- exactly once, not duplicated by a second control.
+  assert.equal(
+    (source.match(/if \(nextViewMode === "review"\)/g) || []).length,
+    1,
+  );
+});
+
+test("secondary filters (Rows to Show, Sort, Data Status, Participant Type) are progressively disclosed, not competing with Search/View", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const filterBarSource = source.slice(
+    source.indexOf("function FilterBar("),
+    source.indexOf("export function QuickActionBar"),
+  );
+
+  assert.match(filterBarSource, /<details/);
+  assert.match(filterBarSource, /More filters/);
+
+  const detailsIndex = filterBarSource.indexOf("<details");
+  const rowsToShowIndex = filterBarSource.indexOf("Rows to Show");
+  const dataStatusIndex = filterBarSource.indexOf(">Data Status<");
+  const participantTypeIndex = filterBarSource.indexOf("Participant Type");
+  const searchIndex = filterBarSource.indexOf(">Search<");
+  const viewIndex = filterBarSource.indexOf(">View<");
+
+  assert.ok(searchIndex > -1 && searchIndex < detailsIndex);
+  assert.ok(viewIndex > -1 && viewIndex < detailsIndex);
+  assert.ok(rowsToShowIndex > detailsIndex);
+  assert.ok(dataStatusIndex > detailsIndex);
+  assert.ok(participantTypeIndex > detailsIndex);
+});
+
+// --- Stage B: consolidated summary hierarchy --------------------------------
+
+test("the former duplicate 'Attendee Management' and 'Data Review' summary cards are gone -- one Roster Summary card remains", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.ok(!source.includes(">Attendee Management<"));
+  assert.ok(!source.includes(">Data Review<"));
+  assert.ok(source.includes("Roster Summary"));
+});
+
+test("secondary roster stats (Vendors, First Timers, Volunteers, Membership Corrected, Fully Valid) are progressively disclosed under 'More stats'", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /More stats/);
+  const moreStatsIndex = source.indexOf("More stats");
+  const rosterSummaryIndex = source.indexOf("Roster Summary");
+  const secondaryItemsIndex = source.indexOf("secondarySummaryItems");
+
+  assert.ok(rosterSummaryIndex > -1 && rosterSummaryIndex < moreStatsIndex);
+  assert.ok(secondaryItemsIndex > -1);
+});
+
+test("Review Queue's own data-status breakdown replaces the old always-visible Data Review tiles, only rendering while expanded", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const reviewQueueHeaderIndex = source.indexOf(">Review Queue<");
+  const breakdownIndex = source.indexOf(
+    "DATA_STATUS_OPTIONS.filter",
+    reviewQueueHeaderIndex,
+  );
+
+  assert.ok(reviewQueueHeaderIndex > -1);
+  assert.ok(breakdownIndex > reviewQueueHeaderIndex);
+  assert.match(source, /showReviewQueue \? \(\s*<div/);
+});
+
+// --- Stage B: City/State moved out of the collapsed browse row -------------
+
+test("City/State no longer appears in the collapsed Review Queue / Attendee List header rows", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const reviewQueueSource = source.slice(
+    source.indexOf("function ReviewQueue("),
+    source.indexOf("function AttendeeList("),
+  );
+  const attendeeListHeaderSource = source.slice(
+    source.indexOf("function AttendeeList("),
+    source.indexOf("isExpanded ? ("),
+  );
+
+  assert.ok(!reviewQueueSource.includes("cityState(attendee)"));
+  assert.ok(!attendeeListHeaderSource.includes("cityState(attendee)"));
+
+  // Still available one governed step away, in the expanded detail panel.
+  assert.match(source, />City \/ State</);
 });
 
 test("AttendeeEditorModal: Save/Create is disabled without can_edit_attendees, enabled with it", () => {

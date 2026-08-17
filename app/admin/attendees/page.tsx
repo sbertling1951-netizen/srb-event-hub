@@ -9,17 +9,43 @@ import {
   useState,
 } from "react";
 
+import {
+  type AttendeeRow,
+  type AttendeeSortMode,
+  cityState,
+  computeReviewItems,
+  DATA_STATUS_OPTIONS,
+  type DataStatusFilter,
+  dataStatusLabel,
+  dataStatusOptionLabel,
+  displayCopilotName,
+  displayPilotName,
+  filterAttendees,
+  formatCancellationDetail,
+  fullName,
+  normalizeMemberNumber,
+  type PageSize,
+  PARTICIPANT_TYPE_OPTIONS,
+  type ParticipantTypeFilter,
+  participantTypeLabel,
+  reviewFieldLabel,
+  type ReviewItem,
+  sortAttendees,
+  sortReviewItems,
+  type ValidationRule,
+  type ViewMode,
+} from "@/app/admin/attendees/attendeesWorkflow";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
-import { useAdmin } from "@/lib/adminContext";
 import { buildAdminAttendeeTargetHref } from "@/lib/adminAttendeeTarget";
-import { fetchCanonicalAttendeePlacement, type CanonicalAttendeePlacementResult } from "@/lib/canonicalAttendeePlacement";
+import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
   resolveAdminWorkingEvent,
   setCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { type CanonicalAttendeePlacementResult,fetchCanonicalAttendeePlacement } from "@/lib/canonicalAttendeePlacement";
 import { isActiveEventStatus } from "@/lib/eventStatus";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -32,76 +58,6 @@ type EventContext = {
   location?: string | null;
   start_date?: string | null;
   end_date?: string | null;
-};
-
-type ReviewSeverity = "error" | "warning";
-
-export type AttendeeRow = {
-  id: string;
-  event_id: string;
-  entry_id: string | null;
-  email: string | null;
-  pilot_first: string | null;
-  pilot_last: string | null;
-  copilot_first: string | null;
-  copilot_last: string | null;
-  copilot_email?: string | null;
-  copilot_cell_phone?: string | null;
-  primary_phone?: string | null;
-  cell_phone?: string | null;
-  nickname: string | null;
-  copilot_nickname: string | null;
-  membership_number: string | null;
-  city: string | null;
-  state: string | null;
-  assigned_site: string | null;
-  participant_capacity?: number | null;
-  has_arrived: boolean | null;
-  is_first_timer: boolean | null;
-  wants_to_volunteer: boolean | null;
-  share_with_attendees?: boolean | null;
-  participant_type?: string | null;
-  coach_manufacturer?: string | null;
-  coach_model?: string | null;
-  special_events_raw?: string | null;
-  include_in_headcount?: boolean | null;
-  needs_name_tag?: boolean | null;
-  needs_coach_plate?: boolean | null;
-  needs_parking?: boolean | null;
-  notes?: string | null;
-  source_type?: string | null;
-  is_active: boolean;
-  data_status?: string | null;
-  created_at?: string | null;
-  registration_status?: string | null;
-  cancelled_at?: string | null;
-  cancelled_by?: string | null;
-  cancellation_reason?: string | null;
-};
-
-type ReviewFieldIssue = {
-  field: string;
-  issue: string;
-  severity: ReviewSeverity;
-};
-
-type ReviewItem = {
-  id: string;
-  attendee: AttendeeRow;
-  issues: ReviewFieldIssue[];
-  severity: ReviewSeverity;
-};
-
-type ValidationRule = {
-  id: string;
-  field_name: string;
-  rule_type: string;
-  rule_value: string | null;
-  message: string;
-  severity: ReviewSeverity;
-  is_active: boolean;
-  priority: number;
-  applies_to_event_id: string | null;
 };
 
 export type AttendeeEditorState = {
@@ -177,19 +133,6 @@ export type AttendeeEditorState = {
   notes: string;
 };
 
-type PageSize = "10" | "25" | "50" | "100" | "all";
-type DataStatusFilter = "all" | "pending" | "corrected" | "reviewed" | "locked";
-type ParticipantTypeFilter =
-  | "all"
-  | "attendee"
-  | "vendor"
-  | "staff"
-  | "speaker"
-  | "volunteer"
-  | "event_host";
-type ViewMode = "active" | "review" | "cancelled" | "all";
-type AttendeeSortMode = "last_name" | "site";
-
 type SummaryCardItem = {
   label: string;
   value: number;
@@ -206,133 +149,6 @@ type AttendeeCommandCenterPrefs = {
 };
 
 const ATTENDEE_COMMAND_CENTER_PREFS_KEY = "fcoc-attendee-command-center-prefs";
-
-const REVIEW_FIELDS: Array<keyof AttendeeRow> = [
-  "membership_number",
-  "email",
-  "assigned_site",
-  "pilot_first",
-  "pilot_last",
-  "city",
-  "state",
-];
-
-const DATA_STATUS_OPTIONS: DataStatusFilter[] = [
-  "all",
-  "pending",
-  "corrected",
-  "reviewed",
-  "locked",
-];
-
-const PARTICIPANT_TYPE_OPTIONS: ParticipantTypeFilter[] = [
-  "all",
-  "attendee",
-  "vendor",
-  "staff",
-  "speaker",
-  "volunteer",
-  "event_host",
-];
-
-const STATUS_LABELS: Record<Exclude<DataStatusFilter, "all">, string> = {
-  pending: "Pending",
-  corrected: "Corrected",
-  reviewed: "Reviewed",
-  locked: "Locked",
-};
-
-function dataStatusOptionLabel(value: Exclude<DataStatusFilter, "all">) {
-  return STATUS_LABELS[value];
-}
-
-function ruleAppliesToEvent(rule: ValidationRule, eventId?: string | null) {
-  if (!rule.is_active) {
-    return false;
-  }
-  if (!rule.applies_to_event_id) {
-    return true;
-  }
-  return rule.applies_to_event_id === eventId;
-}
-
-function validateField(
-  fieldName: string,
-  value: string | null | undefined,
-  rules: ValidationRule[],
-  eventId?: string | null,
-): { issue: string; severity: ReviewSeverity } | null {
-  const normalizedValue = String(value || "").trim();
-  const activeRules = rules
-    .filter((rule) => rule.field_name === fieldName)
-    .filter((rule) => ruleAppliesToEvent(rule, eventId))
-    .sort((a, b) => a.priority - b.priority);
-
-  for (const rule of activeRules) {
-    const ruleValue = String(rule.rule_value || "").trim();
-
-    if (rule.rule_type === "required" && !normalizedValue) {
-      return { issue: rule.message, severity: rule.severity };
-    }
-
-    if (rule.rule_type === "starts_with") {
-      if (
-        fieldName === "membership_number" &&
-        ruleValue.toUpperCase() === "F"
-      ) {
-        const upperValue = normalizedValue.toUpperCase();
-        if (!upperValue.startsWith("F") && !upperValue.startsWith("C")) {
-          return {
-            issue: rule.message.replace("F", "F or C"),
-            severity: rule.severity,
-          };
-        }
-      } else if (!normalizedValue.startsWith(ruleValue)) {
-        return { issue: rule.message, severity: rule.severity };
-      }
-    }
-
-    if (rule.rule_type === "starts_with_any") {
-      const allowed = ruleValue
-        .split(",")
-        .map((v) => v.trim())
-        .filter(Boolean);
-
-      const allowedForField =
-        fieldName === "membership_number" && allowed.includes("F")
-          ? Array.from(new Set([...allowed, "C"]))
-          : allowed;
-
-      const upperValue = normalizedValue.toUpperCase();
-      if (
-        !allowedForField.some((prefix) =>
-          upperValue.startsWith(prefix.toUpperCase()),
-        )
-      ) {
-        return {
-          issue:
-            fieldName === "membership_number"
-              ? rule.message.replace("F", "F or C")
-              : rule.message,
-          severity: rule.severity,
-        };
-      }
-    }
-
-    if (rule.rule_type === "contains" && !normalizedValue.includes(ruleValue)) {
-      return { issue: rule.message, severity: rule.severity };
-    }
-
-    if (rule.rule_type === "min_length") {
-      const minLength = Number(ruleValue);
-      if (Number.isFinite(minLength) && normalizedValue.length < minLength) {
-        return { issue: rule.message, severity: rule.severity };
-      }
-    }
-  }
-
-  return null;
-}
 
 export function emptyAttendeeEditorState(): AttendeeEditorState {
   return {
@@ -547,96 +363,6 @@ function saveAttendeeCommandCenterPrefs(prefs: AttendeeCommandCenterPrefs) {
   }
 }
 
-function fullName(first?: string | null, last?: string | null) {
-  return [first, last].filter(Boolean).join(" ").trim();
-}
-
-function displayPilotName(row: AttendeeRow) {
-  return fullName(row.pilot_first, row.pilot_last) || "Unnamed";
-}
-
-function displayCopilotName(row: AttendeeRow) {
-  return fullName(row.copilot_first, row.copilot_last);
-}
-
-function cityState(row: AttendeeRow) {
-  return [row.city, row.state].filter(Boolean).join(", ");
-}
-
-function normalizeMemberNumber(value?: string | null) {
-  return String(value || "")
-    .trim()
-    .toUpperCase();
-}
-
-function attendeeMatchesSearch(row: AttendeeRow, term: string) {
-  if (!term) {
-    return true;
-  }
-
-  const haystack = [
-    row.pilot_first,
-    row.pilot_last,
-    row.copilot_first,
-    row.copilot_last,
-    row.email,
-    row.membership_number,
-    row.assigned_site,
-    row.city,
-    row.state,
-    row.entry_id,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(term);
-}
-
-// Surfaces cancellation metadata the record already stores but the UI
-// previously fetched and never displayed. Returns null for a non-cancelled
-// record so this never appears outside the one context where it is
-// relevant (Know More / Show Less).
-export function formatCancellationDetail(
-  attendee: Pick<
-    AttendeeRow,
-    "registration_status" | "cancelled_at" | "cancellation_reason"
-  >,
-): string | null {
-  if (attendee.registration_status !== "cancelled") {
-    return null;
-  }
-
-  const when = attendee.cancelled_at
-    ? new Date(attendee.cancelled_at).toLocaleString()
-    : null;
-
-  const parts = [when ? `Cancelled ${when}` : "Cancelled"];
-
-  if (attendee.cancellation_reason) {
-    parts.push(attendee.cancellation_reason);
-  }
-
-  return parts.join(" — ");
-}
-
-function participantTypeLabel(value?: string | null) {
-  if (!value) {
-    return "Attendee";
-  }
-
-  const map: Record<string, string> = {
-    attendee: "Attendee",
-    vendor: "Vendor",
-    staff: "Staff",
-    speaker: "Speaker",
-    volunteer: "Volunteer",
-    event_host: "Event Host",
-  };
-
-  return map[value] || value.replace(/_/g, " ");
-}
-
 function participantTypeBadgeStyle(value?: string | null): CSSProperties {
   switch (value) {
     case "vendor":
@@ -652,66 +378,6 @@ function participantTypeBadgeStyle(value?: string | null): CSSProperties {
     default:
       return badgeVariant("#e5e7eb", "#374151");
   }
-}
-
-function dataStatusLabel(value?: string | null) {
-  if (!value) {
-    return "pending";
-  }
-  if (value === "pending") {
-    return "pending";
-  }
-  if (value === "reviewed") {
-    return "reviewed";
-  }
-  if (value === "corrected") {
-    return "corrected";
-  }
-  if (value === "locked") {
-    return "locked";
-  }
-  return value;
-}
-
-function reviewFieldLabel(field: string) {
-  const map: Record<string, string> = {
-    membership_number: "Membership Number",
-    email: "Email",
-    assigned_site: "Assigned Site",
-    pilot_first: "Pilot First",
-    pilot_last: "Pilot Last",
-    city: "City",
-    state: "State",
-  };
-
-  return map[field] || field.replace(/_/g, " ");
-}
-
-function sortReviewItems(items: ReviewItem[]) {
-  return [...items].sort((a, b) => {
-    const aLast = String(a.attendee.pilot_last || "")
-      .trim()
-      .toLowerCase();
-    const bLast = String(b.attendee.pilot_last || "")
-      .trim()
-      .toLowerCase();
-    const aFirst = String(a.attendee.pilot_first || "")
-      .trim()
-      .toLowerCase();
-    const bFirst = String(b.attendee.pilot_first || "")
-      .trim()
-      .toLowerCase();
-
-    return (
-      aLast.localeCompare(bLast, undefined, { sensitivity: "base" }) ||
-      aFirst.localeCompare(bFirst, undefined, { sensitivity: "base" }) ||
-      String(a.issues[0]?.issue || "").localeCompare(
-        String(b.issues[0]?.issue || ""),
-        undefined,
-        { sensitivity: "base" },
-      )
-    );
-  });
 }
 
 function badgeVariant(background: string, color: string): CSSProperties {
@@ -800,6 +466,10 @@ function FilterBar(props: {
         boxShadow: "0 2px 10px rgba(15, 23, 42, 0.06)",
       }}
     >
+      {/* Search and View are the two primary, always-visible browse
+          decisions (Refactor Audit Section F). Every other filter here is
+          secondary/low-frequency and lives behind the "More filters"
+          disclosure below so it never competes with them for attention. */}
       <div
         style={{
           display: "grid",
@@ -831,107 +501,128 @@ function FilterBar(props: {
             <option value="all">All Registrations</option>
           </select>
         </div>
-        <div>
-          <label style={labelStyle}>Rows to Show</label>
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(e.target.value as PageSize)}
-            style={inputStyle}
-          >
-            <option value="10">10</option>
-            <option value="25">25</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-            <option value="all">Entire List</option>
-          </select>
-        </div>
-        <div>
-          <label style={labelStyle}>Sort</label>
-          <select
-            value={attendeeSortMode}
-            onChange={(e) =>
-              setAttendeeSortMode(e.target.value as AttendeeSortMode)
-            }
-            style={inputStyle}
-          >
-            <option value="last_name">A–Z by Last Name</option>
-            <option value="site">Group by Site</option>
-          </select>
-        </div>
+      </div>
 
-        <div>
-          <label style={labelStyle}>Data Status</label>
-          <select
-            value={dataStatusFilter}
-            onChange={(e) =>
-              setDataStatusFilter(e.target.value as DataStatusFilter)
-            }
-            style={inputStyle}
-          >
-            <option value="all">All Statuses</option>
-            {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
-              (option) => (
-                <option key={option} value={option}>
-                  {dataStatusOptionLabel(option)}
-                </option>
-              ),
-            )}
-          </select>
-        </div>
+      <details style={{ marginTop: 14 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+          More filters
+        </summary>
+        <div
+          style={{
+            marginTop: 14,
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            alignItems: "end",
+          }}
+        >
+          <div>
+            <label style={labelStyle}>Rows to Show</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(e.target.value as PageSize)}
+              style={inputStyle}
+            >
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">Entire List</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Sort</label>
+            <select
+              value={attendeeSortMode}
+              onChange={(e) =>
+                setAttendeeSortMode(e.target.value as AttendeeSortMode)
+              }
+              style={inputStyle}
+            >
+              <option value="last_name">A–Z by Last Name</option>
+              <option value="site">Group by Site</option>
+            </select>
+          </div>
 
-        <div>
-          <label style={labelStyle}>Participant Type</label>
-          <select
-            value={participantTypeFilter}
-            onChange={(e) =>
-              setParticipantTypeFilter(e.target.value as ParticipantTypeFilter)
-            }
-            style={inputStyle}
-          >
-            <option value="all">All Types</option>
-            {PARTICIPANT_TYPE_OPTIONS.filter((option) => option !== "all").map(
-              (option) => (
+          <div>
+            <label style={labelStyle}>Data Status</label>
+            <select
+              value={dataStatusFilter}
+              onChange={(e) =>
+                setDataStatusFilter(e.target.value as DataStatusFilter)
+              }
+              style={inputStyle}
+            >
+              <option value="all">All Statuses</option>
+              {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
+                (option) => (
+                  <option key={option} value={option}>
+                    {dataStatusOptionLabel(option)}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Participant Type</label>
+            <select
+              value={participantTypeFilter}
+              onChange={(e) =>
+                setParticipantTypeFilter(
+                  e.target.value as ParticipantTypeFilter,
+                )
+              }
+              style={inputStyle}
+            >
+              <option value="all">All Types</option>
+              {PARTICIPANT_TYPE_OPTIONS.filter(
+                (option) => option !== "all",
+              ).map((option) => (
                 <option key={option} value={option}>
                   {participantTypeLabel(option)}
                 </option>
-              ),
-            )}
-          </select>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={showResolvedInfo}
+                onChange={(e) => setShowResolvedInfo(e.target.checked)}
+              />
+              Show auto-resolve note
+            </label>
+          </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={showResolvedInfo}
-              onChange={(e) => setShowResolvedInfo(e.target.checked)}
-            />
-            Show auto-resolve note
-          </label>
-        </div>
-      </div>
-
-      {showResolvedInfo ? (
-        <div style={infoBoxStyle}>
-          Once a membership number is corrected so it begins with{" "}
-          <strong>F or C</strong>, the membership-number issue clears
-          automatically. Records stay in the queue until all remaining flagged
-          issues are resolved.
-        </div>
-      ) : null}
+        {showResolvedInfo ? (
+          <div style={infoBoxStyle}>
+            Once a membership number is corrected so it begins with{" "}
+            <strong>F or C</strong>, the membership-number issue clears
+            automatically. Records stay in the queue until all remaining
+            flagged issues are resolved.
+          </div>
+        ) : null}
+      </details>
     </div>
   );
 }
 
+// Stage B (docs/architecture/EPICENTRAX_ATTENDEES_MODULE_REFACTOR_AUDIT.md,
+// Section F): "Flagged Active" and "All Registrations" used to duplicate
+// the View select below (FilterBar) as a second control for the same
+// decision. Removed here -- View is now the one owner of that decision.
+// No capability is lost: every value either button set is still reachable
+// through View.
 export function QuickActionBar(props: {
   canEdit: boolean;
   onAddAttendee: () => void;
-  onSetReviewMode: () => void;
-  onSetAllMode: () => void;
   onRefresh: () => void;
 }) {
-  const { canEdit, onAddAttendee, onSetReviewMode, onSetAllMode, onRefresh } =
-    props;
+  const { canEdit, onAddAttendee, onRefresh } = props;
 
   return (
     <div
@@ -954,22 +645,6 @@ export function QuickActionBar(props: {
           disabled={!canEdit}
         >
           + Add Attendee
-        </button>
-
-        <button
-          type="button"
-          onClick={onSetReviewMode}
-          style={secondaryButtonStyle}
-        >
-          Flagged Active
-        </button>
-
-        <button
-          type="button"
-          onClick={onSetAllMode}
-          style={secondaryButtonStyle}
-        >
-          All Registrations
         </button>
 
         <button type="button" onClick={onRefresh} style={secondaryButtonStyle}>
@@ -1188,9 +863,6 @@ function ReviewQueue(props: {
                       {attendee.email ? <span>{attendee.email}</span> : null}
                       {attendee.assigned_site ? (
                         <span>{`Site ${attendee.assigned_site}`}</span>
-                      ) : null}
-                      {cityState(attendee) ? (
-                        <span>{cityState(attendee)}</span>
                       ) : null}
                     </div>
                   </div>
@@ -1483,9 +1155,6 @@ function AttendeeList(props: {
                         {attendee.email ? <span>{attendee.email}</span> : null}
                         {attendee.assigned_site ? (
                           <span>{`Site ${attendee.assigned_site}`}</span>
-                        ) : null}
-                        {cityState(attendee) ? (
-                          <span>{cityState(attendee)}</span>
                         ) : null}
                       </div>
                     </div>
@@ -2659,90 +2328,24 @@ created_at
     }));
   }
 
-  const reviewItems = useMemo(() => {
-    return attendees.flatMap((attendee) => {
-      const issues = REVIEW_FIELDS.flatMap((field) => {
-        const result = validateField(
-          field,
-          attendee[field] as string | null | undefined,
-          rules,
-          currentEvent?.id || null,
-        );
-        if (!result) {
-          return [];
-        }
-
-        return [
-          {
-            field,
-            issue: result.issue,
-            severity: result.severity,
-          } satisfies ReviewFieldIssue,
-        ];
-      });
-
-      if (!issues.length) {
-        return [];
-      }
-
-      const severity: ReviewSeverity = issues.some(
-        (issue) => issue.severity === "error",
-      )
-        ? "error"
-        : "warning";
-
-      return [
-        {
-          id: attendee.id,
-          attendee,
-          issues,
-          severity,
-        } satisfies ReviewItem,
-      ];
-    });
-  }, [attendees, rules, currentEvent?.id]);
+  // Single owner of "what is flagged" (Refactor Audit Q13/C):
+  // computeReviewItems is the one governed computation both the Review
+  // Queue and fullyValidCount below derive from -- neither recomputes it
+  // independently.
+  const reviewItems = useMemo(
+    () => computeReviewItems(attendees, rules, currentEvent?.id || null),
+    [attendees, rules, currentEvent?.id],
+  );
 
   const filteredReviewItems = useMemo(() => {
-    const term = search.trim().toLowerCase();
-
+    const flaggedFiltered = filterAttendees(
+      reviewItems.map((item) => item.attendee),
+      reviewItems,
+      { search, dataStatusFilter, participantTypeFilter, viewMode },
+    );
+    const flaggedIds = new Set(flaggedFiltered.map((row) => row.id));
     return sortReviewItems(
-      reviewItems.filter((item) => {
-        const matchesSearch = attendeeMatchesSearch(item.attendee, term);
-
-        const statusValue = dataStatusLabel(item.attendee.data_status);
-        const matchesStatus =
-          dataStatusFilter === "all" ? true : statusValue === dataStatusFilter;
-
-        const participantType = (item.attendee.participant_type ||
-          "attendee") as ParticipantTypeFilter;
-
-        const matchesParticipantType =
-          participantTypeFilter === "all"
-            ? true
-            : participantType === participantTypeFilter;
-
-        // NEW
-        const registrationStatus =
-          item.attendee.registration_status ?? "active";
-
-        const matchesView =
-          viewMode === "all"
-            ? true
-            : viewMode === "active"
-              ? registrationStatus !== "cancelled"
-              : viewMode === "cancelled"
-                ? registrationStatus === "cancelled"
-                : viewMode === "review"
-                  ? registrationStatus !== "cancelled"
-                  : true;
-
-        return (
-          matchesSearch &&
-          matchesStatus &&
-          matchesParticipantType &&
-          matchesView
-        );
-      }),
+      reviewItems.filter((item) => flaggedIds.has(item.attendee.id)),
     );
   }, [reviewItems, search, dataStatusFilter, participantTypeFilter, viewMode]);
 
@@ -2754,92 +2357,14 @@ created_at
   }, [filteredReviewItems, pageSize]);
 
   const filteredAttendees = useMemo(() => {
-    const term = search.trim().toLowerCase();
-
-    const rows = attendees.filter((row) => {
-      const matchesSearch = attendeeMatchesSearch(row, term);
-
-      const statusValue = dataStatusLabel(row.data_status);
-      const matchesStatus =
-        dataStatusFilter === "all" ? true : statusValue === dataStatusFilter;
-
-      const participantType = (row.participant_type ||
-        "attendee") as ParticipantTypeFilter;
-
-      const matchesParticipantType =
-        participantTypeFilter === "all"
-          ? true
-          : participantType === participantTypeFilter;
-
-      // Registration View filter
-      const registrationStatus = row.registration_status ?? "active";
-
-      const matchesView =
-        viewMode === "all"
-          ? true
-          : viewMode === "active"
-            ? registrationStatus !== "cancelled"
-            : viewMode === "cancelled"
-              ? registrationStatus === "cancelled"
-              : viewMode === "review"
-                ? registrationStatus !== "cancelled" &&
-                  reviewItems.some((item) => item.attendee.id === row.id)
-                : true;
-
-      return (
-        matchesSearch && matchesStatus && matchesParticipantType && matchesView
-      );
+    const rows = filterAttendees(attendees, reviewItems, {
+      search,
+      dataStatusFilter,
+      participantTypeFilter,
+      viewMode,
     });
 
-    return [...rows].sort((a, b) => {
-      if (attendeeSortMode === "site") {
-        const siteA = a.assigned_site?.trim();
-        const siteB = b.assigned_site?.trim();
-
-        // push unassigned to bottom
-        if (!siteA && !siteB) {
-          return 0;
-        }
-        if (!siteA) {
-          return 1;
-        }
-        if (!siteB) {
-          return -1;
-        }
-
-        return (
-          siteA.localeCompare(siteB, undefined, { numeric: true }) ||
-          String(a.pilot_last || "").localeCompare(
-            String(b.pilot_last || ""),
-            undefined,
-            { sensitivity: "base" },
-          ) ||
-          String(a.pilot_first || "").localeCompare(
-            String(b.pilot_first || ""),
-            undefined,
-            { sensitivity: "base" },
-          )
-        );
-      }
-
-      return (
-        String(a.pilot_last || "").localeCompare(
-          String(b.pilot_last || ""),
-          undefined,
-          { sensitivity: "base" },
-        ) ||
-        String(a.pilot_first || "").localeCompare(
-          String(b.pilot_first || ""),
-          undefined,
-          { sensitivity: "base" },
-        ) ||
-        String(a.assigned_site || "").localeCompare(
-          String(b.assigned_site || ""),
-          undefined,
-          { numeric: true },
-        )
-      );
-    });
+    return sortAttendees(rows, attendeeSortMode);
   }, [
     attendees,
     search,
@@ -2884,64 +2409,62 @@ created_at
     ).length;
   }, [attendees]);
 
-  const fullyValidCount = useMemo(() => {
-    return attendees.filter((row) =>
-      REVIEW_FIELDS.every(
-        (field) =>
-          !validateField(
-            field,
-            row[field] as string | null | undefined,
-            rules,
-            currentEvent?.id || null,
-          ),
-      ),
-    ).length;
-  }, [attendees, rules, currentEvent?.id]);
+  // Derived from the same reviewItems computeReviewItems already produced
+  // above -- not a second, independently re-run validation pass (Refactor
+  // Audit Section C: this previously duplicated the Review Queue's own
+  // flagging logic).
+  const fullyValidCount = useMemo(
+    () => attendees.length - reviewItems.length,
+    [attendees.length, reviewItems.length],
+  );
 
-  const summaryItems = useMemo<SummaryCardItem[]>(() => {
-    return [
-      {
-        label: "Total Registrations",
-        value: attendees.length,
-      },
+  // Stage B (Refactor Audit Section F): one consolidated Roster Summary
+  // replaces the former "Attendee Management" tiles, "Data Review" tiles,
+  // and Review Queue status, which previously showed overlapping counts
+  // in three places. Primary tiles stay always visible; the rest live
+  // behind progressive disclosure so the browse surface stays operational,
+  // not a dashboard.
+  const primarySummaryItems = useMemo<SummaryCardItem[]>(
+    () => [
+      { label: "Total Registrations", value: attendees.length },
       {
         label: "Active",
         value: attendees.filter(
           (row) => row.registration_status !== "cancelled" && row.is_active,
         ).length,
       },
+      { label: "Flagged", value: reviewItems.length },
       {
         label: "Arrived",
         value: attendees.filter(
           (row) => row.registration_status !== "cancelled" && !!row.has_arrived,
         ).length,
       },
+    ],
+    [attendees, reviewItems.length],
+  );
+
+  const secondarySummaryItems = useMemo<SummaryCardItem[]>(
+    () => [
       {
         label: "Vendors",
-        value: filteredAttendees.filter(
+        value: attendees.filter(
           (row) => (row.participant_type || "attendee") === "vendor",
         ).length,
       },
       {
         label: "First Timers",
-        value: filteredAttendees.filter((row) => !!row.is_first_timer).length,
+        value: attendees.filter((row) => !!row.is_first_timer).length,
       },
       {
         label: "Volunteers",
-        value: filteredAttendees.filter((row) => !!row.wants_to_volunteer)
-          .length,
+        value: attendees.filter((row) => !!row.wants_to_volunteer).length,
       },
-      { label: "Flagged", value: filteredReviewItems.length },
       { label: "Membership Corrected", value: correctedCount },
       { label: "Fully Valid", value: fullyValidCount },
-    ];
-  }, [
-    attendees,
-    filteredAttendees,
-    filteredReviewItems,
-    correctedCount,
-    fullyValidCount,
-  ]);
+    ],
+    [attendees, correctedCount, fullyValidCount],
+  );
 
   async function saveMembershipNumber(item: ReviewItem) {
     const draftValue = normalizeMemberNumber(
@@ -3668,46 +3191,7 @@ created_at
         );
 
         const remainingReviewItems = sortReviewItems(
-          updatedAttendees.flatMap((attendee) => {
-            const issues = REVIEW_FIELDS.flatMap((field) => {
-              const result = validateField(
-                field,
-                attendee[field] as string | null | undefined,
-                rules,
-                currentEvent.id,
-              );
-              if (!result) {
-                return [];
-              }
-
-              return [
-                {
-                  field,
-                  issue: result.issue,
-                  severity: result.severity,
-                } satisfies ReviewFieldIssue,
-              ];
-            });
-
-            if (!issues.length) {
-              return [];
-            }
-
-            const severity: ReviewSeverity = issues.some(
-              (issue) => issue.severity === "error",
-            )
-              ? "error"
-              : "warning";
-
-            return [
-              {
-                id: attendee.id,
-                attendee,
-                issues,
-                severity,
-              } satisfies ReviewItem,
-            ];
-          }),
+          computeReviewItems(updatedAttendees, rules, currentEvent.id),
         ).filter((item) => item.attendee.id !== savedAttendeeId);
 
         const nextReviewItem = remainingReviewItems[0];
@@ -3752,123 +3236,34 @@ created_at
         <QuickActionBar
           canEdit={canEditAttendees}
           onAddAttendee={openCreateAttendeeEditor}
-          onSetReviewMode={() => {
-            setViewMode("review");
-            const firstReviewItem = filteredReviewItems[0];
-            if (firstReviewItem) {
-              openEditAttendeeEditor(firstReviewItem.attendee);
-            } else {
-              showFlash("No attendee records need review.");
-            }
-          }}
-          onSetAllMode={() => setViewMode("all")}
           onRefresh={() => {
             if (currentEvent?.id) {
               void loadQueue(currentEvent.id);
             }
           }}
         />
+
         <div
-          style={{
-            display: "grid",
-            gap: 18,
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-            alignItems: "start",
-          }}
+          className="card"
+          style={{ padding: 18, display: "grid", gap: 14 }}
         >
-          <div
-            className="card"
-            style={{ padding: 18, display: "grid", gap: 14 }}
-          >
-            <div>
-              <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-                Attendee Management
-              </h2>
-              <div style={{ fontSize: 14, opacity: 0.8 }}>
-                One-stop attendee management for the selected event.
-              </div>
-            </div>
-
-            <SummaryCards items={summaryItems.slice(0, 6)} />
-          </div>
-
-          <div
-            className="card"
-            style={{ padding: 18, display: "grid", gap: 14 }}
-          >
-            <div>
-              <h2 style={{ marginTop: 0, marginBottom: 6 }}>Data Review</h2>
-              <div style={{ fontSize: 14, opacity: 0.8 }}>
-                Review queue status and quick correction workflow for attendee
-                data.
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gap: 12,
-                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-              }}
-            >
-              <div className="card" style={summaryCardStyle}>
-                <strong>Visible Flagged</strong>
-                <div style={summaryValueStyle}>
-                  {filteredReviewItems.length}
-                </div>
-              </div>
-              <div className="card" style={summaryCardStyle}>
-                <strong>Pending</strong>
-                <div style={summaryValueStyle}>
-                  {
-                    attendees.filter(
-                      (row) => dataStatusLabel(row.data_status) === "pending",
-                    ).length
-                  }
-                </div>
-              </div>
-              <div className="card" style={summaryCardStyle}>
-                <strong>Corrected</strong>
-                <div style={summaryValueStyle}>
-                  {
-                    attendees.filter(
-                      (row) => dataStatusLabel(row.data_status) === "corrected",
-                    ).length
-                  }
-                </div>
-              </div>
-              <div className="card" style={summaryCardStyle}>
-                <strong>Reviewed</strong>
-                <div style={summaryValueStyle}>
-                  {
-                    attendees.filter(
-                      (row) => dataStatusLabel(row.data_status) === "reviewed",
-                    ).length
-                  }
-                </div>
-              </div>
-              <div className="card" style={summaryCardStyle}>
-                <strong>Locked</strong>
-                <div style={summaryValueStyle}>
-                  {
-                    attendees.filter(
-                      (row) => dataStatusLabel(row.data_status) === "locked",
-                    ).length
-                  }
-                </div>
-              </div>
-              <div className="card" style={summaryCardStyle}>
-                <strong>Fully Valid</strong>
-                <div style={summaryValueStyle}>{fullyValidCount}</div>
-              </div>
-            </div>
-
-            <div style={{ fontSize: 13, color: "#555" }}>
-              {viewMode === "review"
-                ? "Review focus is on. The attendee list remains visible below while the review queue stays available on the same page."
-                : "The attendee list stays visible below, with the review queue available on the same page."}
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Roster Summary</h2>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>
+              Operational counts for the selected event.
             </div>
           </div>
+
+          <SummaryCards items={primarySummaryItems} />
+
+          <details>
+            <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+              More stats
+            </summary>
+            <div style={{ marginTop: 14 }}>
+              <SummaryCards items={secondarySummaryItems} />
+            </div>
+          </details>
         </div>
 
         <FilterBar
@@ -3928,6 +3323,40 @@ created_at
               {showReviewQueue ? "Hide Review Queue" : "Show Review Queue"}
             </button>
           </div>
+
+          {/* Stage B: the former standalone "Data Review" card's status
+              breakdown now lives here, inside the one Review Queue toggle
+              it always described, rather than as a second always-visible
+              surface showing the same counts. */}
+          {showReviewQueue ? (
+            <div
+              style={{
+                marginTop: 14,
+                display: "grid",
+                gap: 10,
+                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+              }}
+            >
+              {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
+                (option) => (
+                  <div key={option} className="card" style={summaryCardStyle}>
+                    <strong>{dataStatusOptionLabel(option)}</strong>
+                    <div style={summaryValueStyle}>
+                      {
+                        attendees.filter(
+                          (row) => dataStatusLabel(row.data_status) === option,
+                        ).length
+                      }
+                    </div>
+                  </div>
+                ),
+              )}
+              <div className="card" style={summaryCardStyle}>
+                <strong>Fully Valid</strong>
+                <div style={summaryValueStyle}>{fullyValidCount}</div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {showReviewQueue ? (
