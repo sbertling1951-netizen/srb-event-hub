@@ -15,6 +15,13 @@ import {
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
+import {
+  buildCanonicalParkingSnapshot,
+  mayApplyParkingLoad,
+  type ParkingSelectionFingerprint,
+  selectionChangedRemotely,
+} from "./parkingReconciliation";
+
 const SITE_PLACEMENT_ERROR_MESSAGES: Record<string, string> = {
   unauthorized: "You do not have parking management authority for this event.",
   authorization_denied:
@@ -107,6 +114,9 @@ function ParkingAdminPageInner() {
   const { admin } = useAdmin();
   const mapViewportRef = useRef<MapCanvasHandle | null>(null);
   const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const loadGenerationRef = useRef(0);
+  const selectionFingerprintRef = useRef<ParkingSelectionFingerprint | null>(null);
+  const selectedIdsRef = useRef({ attendeeId: "", siteId: "" });
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -117,6 +127,7 @@ function ParkingAdminPageInner() {
   const [status, setStatus] = useState("Loading...");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectionStale, setSelectionStale] = useState<string | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
   const [isNarrow, setIsNarrow] = useState(false);
@@ -125,6 +136,13 @@ function ParkingAdminPageInner() {
   const [showParked, setShowParked] = useState(false);
   const [showArrivedOnly, setShowArrivedOnly] = useState(false);
   const [defaultZoom, setDefaultZoom] = useState(0.6);
+
+  useEffect(() => {
+    selectedIdsRef.current = {
+      attendeeId: selectedAttendeeId,
+      siteId: selectedSiteId,
+    };
+  }, [selectedAttendeeId, selectedSiteId]);
 
   function showStatus(message: string) {
     setError(null);
@@ -172,12 +190,22 @@ function ParkingAdminPageInner() {
   // ─── Data loading ────────────────────────────────────────────────────────────
 
   const loadPage = useCallback(async () => {
+    const requestGeneration = ++loadGenerationRef.current;
     setLoading(true);
     showStatus("Loading...");
 
     const adminEvent = getCurrentAdminEvent();
+    const requestedEventId = adminEvent?.id || null;
+    const canApply = () =>
+      !!requestedEventId &&
+      mayApplyParkingLoad({
+        requestGeneration,
+        latestGeneration: loadGenerationRef.current,
+        requestedEventId,
+        currentEventId: getCurrentAdminEvent()?.id,
+      });
 
-    if (!adminEvent?.id) {
+    if (!requestedEventId) {
       setEvent(null);
       setSites([]);
       setAttendees([]);
@@ -193,8 +221,12 @@ function ParkingAdminPageInner() {
     const { data: eventRow, error: eventError } = await supabase
       .from("events")
       .select("id,name,location,map_image_url,parking_map_open_scale")
-      .eq("id", adminEvent.id)
+      .eq("id", requestedEventId)
       .single();
+
+    if (!canApply()) {
+      return;
+    }
 
     if (eventError || !eventRow) {
       setEvent(null);
@@ -212,8 +244,12 @@ function ParkingAdminPageInner() {
     const { data: mapSettingsRows, error: mapSettingsError } = await supabase
       .from("event_map_settings")
       .select("event_id,selected_master_map_id")
-      .eq("event_id", adminEvent.id)
+      .eq("event_id", requestedEventId)
       .limit(1);
+
+    if (!canApply()) {
+      return;
+    }
 
     if (mapSettingsError) {
       showError(
@@ -235,6 +271,10 @@ function ParkingAdminPageInner() {
         .eq("id", mapSettings.selected_master_map_id)
         .limit(1);
 
+      if (!canApply()) {
+        return;
+      }
+
       if (masterMapError) {
         showError(
           `Could not load selected master map: ${masterMapError.message}`,
@@ -250,7 +290,7 @@ function ParkingAdminPageInner() {
 
     const typedEvent: ActiveEvent = {
       id: String(eventRow.id),
-      name: String(eventRow.name || adminEvent.name || "Selected Event"),
+      name: String(eventRow.name || adminEvent?.name || "Selected Event"),
       location: eventRow.location || null,
       map_image_url: mapImageUrl,
       parking_map_open_scale:
@@ -259,18 +299,10 @@ function ParkingAdminPageInner() {
           : null,
     };
 
-    setEvent(typedEvent);
-
     const openingScale = Number(typedEvent.parking_map_open_scale ?? 0.6);
     const safeOpeningScale = Number.isNaN(openingScale)
       ? 0.6
       : clampZoom(openingScale);
-    setDefaultZoom(safeOpeningScale);
-    console.log(
-      "PARKING SCALE",
-      typedEvent.parking_map_open_scale,
-      safeOpeningScale,
-    );
 
     const [masterSitesResult, assignmentResult, attendeeResult] =
       await Promise.all([
@@ -293,6 +325,10 @@ function ParkingAdminPageInner() {
           .eq("event_id", typedEvent.id)
           .order("pilot_last"),
       ]);
+
+    if (!canApply()) {
+      return;
+    }
 
     if (masterSitesResult.error) {
       showError(
@@ -320,34 +356,44 @@ function ParkingAdminPageInner() {
     const assignments = (assignmentResult.data || []) as ParkingAssignmentRow[];
     const attendeeRows = (attendeeResult.data || []) as Attendee[];
 
-    const attendeeByAssignedSite = new Map<string, Attendee>();
-    attendeeRows.forEach((attendee) => {
-      const assignedSite = siteMatchKey(attendee.assigned_site);
-      if (assignedSite) {
-        attendeeByAssignedSite.set(assignedSite, attendee);
-      }
+    const canonicalSnapshot = buildCanonicalParkingSnapshot({
+      eventId: typedEvent.id,
+      masterSites,
+      assignments,
+      attendees: attendeeRows,
     });
 
-    const mergedSites: ParkingSite[] = masterSites.map((site) => {
-      const assignment =
-        assignments.find((a) => a.master_site_id === site.id) || null;
-      const attendeeFromRoster =
-        attendeeByAssignedSite.get(siteMatchKey(site.site_number)) ||
-        attendeeByAssignedSite.get(siteMatchKey(site.display_label)) ||
-        null;
+    if (!canonicalSnapshot.ok) {
+      showError(`Parking data is unavailable: ${canonicalSnapshot.error}`);
+      setLoading(false);
+      return;
+    }
 
-      return {
-        id: assignment?.id || null,
-        event_id: typedEvent.id,
-        master_site_id: site.id,
-        site_number: site.site_number,
-        display_label: site.display_label,
-        map_x: site.map_x,
-        map_y: site.map_y,
-        assigned_attendee_id:
-          attendeeFromRoster?.id || assignment?.assigned_attendee_id || null,
-      };
-    });
+    const mergedSites = canonicalSnapshot.sites as ParkingSite[];
+    const nextSelectedAttendee = attendeeRows.find(
+      (attendee) => attendee.id === selectedIdsRef.current.attendeeId,
+    );
+    const nextSelectedSite = mergedSites.find(
+      (site) => (site.id || site.master_site_id) === selectedIdsRef.current.siteId,
+    );
+    const nextFingerprint: ParkingSelectionFingerprint = {
+      eventId: typedEvent.id,
+      attendeeId: nextSelectedAttendee?.id || null,
+      attendeeSite: nextSelectedAttendee
+        ? canonicalSnapshot.siteLabelByAttendeeId.get(nextSelectedAttendee.id) || null
+        : null,
+      siteId: nextSelectedSite ? nextSelectedSite.id || nextSelectedSite.master_site_id : null,
+      siteOccupantId: nextSelectedSite?.assigned_attendee_id || null,
+    };
+    if (selectionChangedRemotely(selectionFingerprintRef.current, nextFingerprint)) {
+      setSelectionStale(
+        "The selected attendee or site changed at another station. Review current parking state before making a change.",
+      );
+    }
+    selectionFingerprintRef.current = nextFingerprint;
+
+    setEvent(typedEvent);
+    setDefaultZoom(safeOpeningScale);
 
     setSites(mergedSites);
     setAttendees(attendeeRows);
@@ -584,8 +630,7 @@ function ParkingAdminPageInner() {
       const name = `${a.pilot_first || ""} ${a.pilot_last || ""}`.toLowerCase();
       const coach =
         `${a.coach_make || ""} ${a.coach_model || ""}`.toLowerCase();
-      const effectiveSite =
-        a.assigned_site || siteLabelByAttendeeId.get(a.id) || "";
+      const effectiveSite = siteLabelByAttendeeId.get(a.id) || "";
       const site = `${effectiveSite}`.toLowerCase();
       const siteKey = siteMatchKey(effectiveSite);
       const arrival = `${a.arrival_status || ""}`.toLowerCase();
@@ -607,7 +652,7 @@ function ParkingAdminPageInner() {
         }
         if (
           unassignedOnly &&
-          (a.assigned_site || siteLabelByAttendeeId.get(a.id))
+          siteLabelByAttendeeId.get(a.id)
         ) {
           return false;
         }
@@ -624,10 +669,10 @@ function ParkingAdminPageInner() {
     const sorted = [...filtered].sort((a, b) => {
       if (searchLooksLikeSite) {
         const aSite = siteMatchKey(
-          a.assigned_site || siteLabelByAttendeeId.get(a.id) || "",
+          siteLabelByAttendeeId.get(a.id) || "",
         );
         const bSite = siteMatchKey(
-          b.assigned_site || siteLabelByAttendeeId.get(b.id) || "",
+          siteLabelByAttendeeId.get(b.id) || "",
         );
         const aExact = aSite === siteQ ? 0 : 1;
         const bExact = bSite === siteQ ? 0 : 1;
@@ -664,6 +709,22 @@ function ParkingAdminPageInner() {
     attendees.find((a) => a.id === selectedAttendeeId) || null;
   const selectedSite =
     sites.find((s) => (s.id || s.master_site_id) === selectedSiteId) || null;
+
+  useEffect(() => {
+    if (!event?.id) {
+      selectionFingerprintRef.current = null;
+      return;
+    }
+    selectionFingerprintRef.current = {
+      eventId: event.id,
+      attendeeId: selectedAttendee?.id || null,
+      attendeeSite: selectedAttendee
+        ? siteLabelByAttendeeId.get(selectedAttendee.id) || null
+        : null,
+      siteId: selectedSite ? selectedSite.id || selectedSite.master_site_id : null,
+      siteOccupantId: selectedSite?.assigned_attendee_id || null,
+    };
+  }, [event?.id, selectedAttendee, selectedSite, siteLabelByAttendeeId]);
 
   const searchedSite = useMemo(() => {
     const searchKey = siteMatchKey(debouncedSearch);
@@ -814,9 +875,14 @@ function ParkingAdminPageInner() {
       focusSite(selectedSite);
       return;
     }
-    if (selectedAttendee?.assigned_site) {
+    const selectedAttendeeSite = selectedAttendee
+      ? siteLabelByAttendeeId.get(selectedAttendee.id)
+      : null;
+    if (selectedAttendeeSite) {
       const assignedSite = sites.find(
-        (site) => site.site_number === selectedAttendee.assigned_site,
+        (site) =>
+          siteMatchKey(site.site_number) === siteMatchKey(selectedAttendeeSite) ||
+          siteMatchKey(site.display_label) === siteMatchKey(selectedAttendeeSite),
       );
       if (assignedSite) {
         focusSite(assignedSite);
@@ -827,29 +893,40 @@ function ParkingAdminPageInner() {
   }
 
   useEffect(() => {
-    if (!selectedAttendee || !selectedAttendee.assigned_site) {
+    const selectedAttendeeSite = selectedAttendee
+      ? siteLabelByAttendeeId.get(selectedAttendee.id)
+      : null;
+    if (!selectedAttendee || !selectedAttendeeSite) {
       return;
     }
     const site = sites.find(
-      (s) => s.site_number === selectedAttendee.assigned_site,
+      (s) =>
+        siteMatchKey(s.site_number) === siteMatchKey(selectedAttendeeSite) ||
+        siteMatchKey(s.display_label) === siteMatchKey(selectedAttendeeSite),
     );
     if (!site) {
       return;
     }
     focusSite(site);
-  }, [selectedAttendee, sites, focusSite]);
+  }, [selectedAttendee, siteLabelByAttendeeId, sites, focusSite]);
 
   async function assignAttendeeToSite({
     attendee,
     site,
-    markParked = false,
     allowOverride = true,
   }: {
     attendee: Attendee;
     site: ParkingSite;
-    markParked?: boolean;
     allowOverride?: boolean;
   }) {
+    if (selectionStale) {
+      showError(selectionStale);
+      return false;
+    }
+    if (event?.id !== getCurrentAdminEvent()?.id) {
+      showError("The working event changed. Review the current parking state before making a change.");
+      return false;
+    }
     if (!event?.id) {
       showError("No active event selected.");
       return false;
@@ -893,9 +970,7 @@ Move ${
       }
     }
 
-    const currentSiteKey = siteMatchKey(
-      attendee.assigned_site || siteLabelByAttendeeId.get(attendee.id) || "",
-    );
+    const currentSiteKey = siteMatchKey(siteLabelByAttendeeId.get(attendee.id));
 
     let resolvedSiteId = site.id;
 
@@ -976,45 +1051,17 @@ Move ${
       return false;
     }
 
-    if (result.displaced_attendee_id) {
-      await supabase
-        .from("attendees")
-        .update({ assigned_site: null })
-        .eq("id", result.displaced_attendee_id);
-    }
-
-    const nextArrivalStatus = markParked
-      ? "parked"
-      : attendee.arrival_status === "parked"
-        ? "parked"
-        : "arrived";
-
-    const { error: attendeeError } = await supabase
-      .from("attendees")
-      .update({
-        assigned_site: siteLabel,
-        arrival_status: nextArrivalStatus,
-        has_arrived:
-          nextArrivalStatus === "arrived" || nextArrivalStatus === "parked",
-      })
-      .eq("id", attendee.id);
-
-    if (attendeeError) {
-      showError(
-        `Site assigned, but attendee update failed: ${attendeeError.message}`,
-      );
-      return false;
-    }
-
     setSelectedSiteId(site.id || site.master_site_id);
     focusSite(site);
     showStatus(
-      `${markParked ? "Parked" : "Assigned"} ${
+      `Assigned ${
         `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim() ||
         "attendee"
       } at site ${siteLabel}.`,
     );
 
+    selectionFingerprintRef.current = null;
+    setSelectionStale(null);
     await loadPage();
     return true;
   }
@@ -1027,7 +1074,6 @@ Move ${
     await assignAttendeeToSite({
       attendee: selectedAttendee,
       site,
-      markParked: true,
       allowOverride: true,
     });
   }
@@ -1044,12 +1090,19 @@ Move ${
     await assignAttendeeToSite({
       attendee: selectedAttendee,
       site: selectedSite,
-      markParked: true,
       allowOverride: true,
     });
   }
 
   async function clearSite(site: ParkingSite) {
+    if (selectionStale) {
+      showError(selectionStale);
+      return;
+    }
+    if (event?.id !== getCurrentAdminEvent()?.id) {
+      showError("The working event changed. Review the current parking state before making a change.");
+      return;
+    }
     if (!site.assigned_attendee_id || !site.id) {
       return;
     }
@@ -1084,62 +1137,18 @@ Move ${
       return;
     }
 
-    const { error: attendeeError } = await supabase
-      .from("attendees")
-      .update({
-        assigned_site: null,
-        arrival_status: "arrived",
-        has_arrived: true,
-      })
-      .eq("id", site.assigned_attendee_id);
-
-    if (attendeeError) {
-      showError(
-        `Site cleared, but attendee update failed: ${attendeeError.message}`,
-      );
-      return;
-    }
-
     showStatus(`Cleared site ${site.site_number}.`);
-    await loadPage();
-  }
-
-  async function setArrivalStatus(attendeeId: string, nextStatus: string) {
-    const { error } = await supabase
-      .from("attendees")
-      .update({
-        arrival_status: nextStatus,
-        has_arrived: nextStatus === "arrived" || nextStatus === "parked",
-      })
-      .eq("id", attendeeId);
-
-    if (error) {
-      showError(`Could not update arrival status: ${error.message}`);
-      return;
-    }
-
-    showStatus(`Arrival status updated to ${nextStatus}.`);
-
-    const updatedAttendee = attendees.find((a) => a.id === attendeeId);
-    if (updatedAttendee?.assigned_site) {
-      const siteKey = siteMatchKey(updatedAttendee.assigned_site);
-      const site = sites.find(
-        (s) =>
-          siteMatchKey(s.site_number) === siteKey ||
-          siteMatchKey(s.display_label) === siteKey,
-      );
-      if (site) {
-        setSelectedSiteId(site.id || site.master_site_id);
-        setTimeout(() => {
-          focusSite(site);
-        }, 100);
-      }
-    }
-
+    selectionFingerprintRef.current = null;
+    setSelectionStale(null);
     await loadPage();
   }
 
   function handleSiteClick(site: ParkingSite) {
+    if (selectionStale) {
+      setSelectionStale(null);
+      showStatus("Parking state refreshed. Review the selected attendee and site before assigning.");
+      return;
+    }
     const selectedId = site.id || site.master_site_id;
 
     setSelectedSiteId(selectedId);
@@ -1329,7 +1338,7 @@ Move ${
                   {selectedAttendee.coach_model || ""}
                 </div>
                 <div style={{ fontSize: 13, marginTop: 4 }}>
-                  Current site: {selectedAttendee.assigned_site || "Unassigned"}
+                  Current site: {siteLabelByAttendeeId.get(selectedAttendee.id) || "Unassigned"}
                 </div>
                 <div style={{ fontSize: 13 }}>
                   Arrival: {selectedAttendee.arrival_status || "not_arrived"}
@@ -1344,37 +1353,9 @@ Move ${
                 >
                   <button
                     type="button"
-                    onClick={() => {
-                      const nextStatus =
-                        selectedAttendee.arrival_status === "arrived"
-                          ? "not_arrived"
-                          : "arrived";
-                      void setArrivalStatus(selectedAttendee.id, nextStatus);
-                    }}
-                  >
-                    {selectedAttendee.arrival_status === "arrived"
-                      ? "Undo Arrived"
-                      : "Mark Arrived"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextStatus =
-                        selectedAttendee.arrival_status === "parked"
-                          ? "arrived"
-                          : "parked";
-
-                      void setArrivalStatus(selectedAttendee.id, nextStatus);
-                    }}
-                  >
-                    {selectedAttendee.arrival_status === "parked"
-                      ? "Undo Parked"
-                      : "Mark Parked"}
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => void quickParkSelected()}
                     disabled={
+                      !!selectionStale ||
                       !selectedSite ||
                       (!!selectedSite.assigned_attendee_id &&
                         selectedSite.assigned_attendee_id !==
@@ -1423,7 +1404,7 @@ Move ${
                   <button
                     type="button"
                     style={{ marginTop: 10 }}
-                    disabled={!selectedAttendee}
+                    disabled={!selectedAttendee || !!selectionStale}
                     onClick={() => {
                       if (selectedAttendee) {
                         void assignSelectedToSite(selectedSite);
@@ -1494,9 +1475,11 @@ Move ${
             role="button"
             tabIndex={0}
             onClick={() => {
+              setSelectionStale(null);
               setSelectedAttendeeId(attendee.id);
-              if (attendee.assigned_site) {
-                const assignedSiteKey = siteMatchKey(attendee.assigned_site);
+              const canonicalSite = siteLabelByAttendeeId.get(attendee.id);
+              if (canonicalSite) {
+                const assignedSiteKey = siteMatchKey(canonicalSite);
                 const site = sites.find(
                   (s) =>
                     siteMatchKey(s.site_number) === assignedSiteKey ||
@@ -1510,7 +1493,7 @@ Move ${
                   );
                 } else {
                   showError(
-                    `Could not find site ${attendee.assigned_site} on the map.`,
+                    `Could not find canonical site ${canonicalSite} on the map.`,
                   );
                 }
               }
@@ -1537,8 +1520,8 @@ Move ${
               {attendee.coach_make || ""} {attendee.coach_model || ""}
             </div>
             <div style={{ fontSize: 12, marginTop: 4 }}>
-              {attendee.assigned_site
-                ? `Site ${attendee.assigned_site}`
+              {siteLabelByAttendeeId.get(attendee.id)
+                ? `Site ${siteLabelByAttendeeId.get(attendee.id)}`
                 : "Unassigned"}{" "}
               ·{" "}
               <span
@@ -1563,40 +1546,6 @@ Move ${
               >
                 {attendee.arrival_status || "not_arrived"}
               </span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                marginTop: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-
-                  const nextStatus =
-                    attendee.arrival_status === "parked" ? "arrived" : "parked";
-
-                  void setArrivalStatus(attendee.id, nextStatus);
-                }}
-                style={{
-                  padding: "5px 8px",
-                  borderRadius: 6,
-                  border: "1px solid #ccc",
-                  background:
-                    attendee.arrival_status === "parked" ? "#f3f4f6" : "white",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 700,
-                }}
-              >
-                {attendee.arrival_status === "parked"
-                  ? "Undo Parked"
-                  : "Mark Parked"}
-              </button>
             </div>
           </div>
         );
@@ -1655,6 +1604,11 @@ Move ${
             Error: {error}
           </div>
         ) : null}
+        {selectionStale ? (
+          <div style={{ fontSize: 13, marginTop: 6, color: "#8a1f1f" }}>
+            Review required: {selectionStale}
+          </div>
+        ) : null}
       </div>
 
       {isNarrow && (
@@ -1692,7 +1646,7 @@ Move ${
             {`${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""}`.trim()}
           </div>
           <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>
-            Current: {selectedAttendee.assigned_site || "Unassigned"}
+            Current: {siteLabelByAttendeeId.get(selectedAttendee.id) || "Unassigned"}
           </div>
           <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
             Selected:{" "}
@@ -1710,37 +1664,9 @@ Move ${
           >
             <button
               type="button"
-              onClick={() => {
-                const nextStatus =
-                  selectedAttendee.arrival_status === "arrived"
-                    ? "not_arrived"
-                    : "arrived";
-                void setArrivalStatus(selectedAttendee.id, nextStatus);
-              }}
-            >
-              {selectedAttendee.arrival_status === "arrived"
-                ? "Undo Arrived"
-                : "Mark Arrived"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const nextStatus =
-                  selectedAttendee.arrival_status === "parked"
-                    ? "arrived"
-                    : "parked";
-
-                void setArrivalStatus(selectedAttendee.id, nextStatus);
-              }}
-            >
-              {selectedAttendee.arrival_status === "parked"
-                ? "Undo Parked"
-                : "Mark Parked"}
-            </button>
-            <button
-              type="button"
               onClick={() => void quickParkSelected()}
               disabled={
+                !!selectionStale ||
                 !selectedSite ||
                 (!!selectedSite.assigned_attendee_id &&
                   selectedSite.assigned_attendee_id !== selectedAttendee.id)
@@ -1754,7 +1680,7 @@ Move ${
               <button
                 type="button"
                 style={{ marginTop: 10 }}
-                disabled={!selectedAttendee}
+                disabled={!selectedAttendee || !!selectionStale}
                 onClick={() => {
                   if (selectedAttendee) {
                     void assignSelectedToSite(selectedSite);

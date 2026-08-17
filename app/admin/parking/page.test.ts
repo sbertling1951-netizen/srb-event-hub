@@ -78,11 +78,31 @@ test("every record_site_placement call supplies a fresh idempotency key, never a
   }
 });
 
-test("a returned displaced_attendee_id clears that attendee's display projection after the placement RPC call, not before", () => {
+test("placement results are not followed by a client-side attendee projection or Arrival write", () => {
   const fn = extractAssignAttendeeToSite();
-  const iRpc = fn.indexOf('supabase.rpc(\n      "record_site_placement",');
-  const iDisplacedClear = fn.indexOf("if (result.displaced_attendee_id)");
-  assert.ok(iRpc >= 0 && iDisplacedClear > iRpc);
+  assert.equal(/\.from\("attendees"\)/.test(fn), false);
+  assert.equal(/assigned_site/.test(fn), false);
+  assert.equal(/arrival_status/.test(fn), false);
+  assert.equal(/has_arrived/.test(fn), false);
+});
+
+test("Parking has no independent attendee or Arrival mutation path", () => {
+  assert.equal(/\.from\("attendees"\)\s*\.update/.test(SOURCE), false);
+  assert.equal(/setArrivalStatus/.test(SOURCE), false);
+  assert.equal(/Mark Arrived|Undo Arrived|Mark Parked|Undo Parked/.test(SOURCE), false);
+});
+
+test("Parking reads canonical occupancy through the local canonical snapshot builder and never promotes attendee.assigned_site", () => {
+  assert.match(SOURCE, /buildCanonicalParkingSnapshot\(\{/);
+  assert.equal(/attendeeFromRoster|attendeeByAssignedSite/.test(SOURCE), false);
+  assert.equal(/assigned_attendee_id:\s*attendeeFromRoster/.test(SOURCE), false);
+});
+
+test("Parking rejects stale context and realtime responses before applying them", () => {
+  assert.match(SOURCE, /mayApplyParkingLoad\(\{/);
+  assert.match(SOURCE, /if \(!canApply\(\)\) \{\s*return;/);
+  assert.match(SOURCE, /selectionChangedRemotely\(/);
+  assert.match(SOURCE, /setSelectionStale\(/);
 });
 
 test("no second Authority definition is introduced -- client-side permission checks are not duplicated as a security boundary in these functions", () => {
