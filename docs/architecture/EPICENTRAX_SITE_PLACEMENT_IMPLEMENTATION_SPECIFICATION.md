@@ -20,8 +20,10 @@ writes both after member identity and Tenant verification.
 The canonical current placement is the occupied relationship in
 `parking_sites(event_id, master_site_id, assigned_attendee_id)`. The Event map
 and master-site identify the physical site; a null attendee means vacant.
-`attendees.assigned_site` is only a display projection written by the governed
-operation. Readers must not use it to resolve occupancy or conflicts.
+`attendees.assigned_site` is only a display projection, maintained atomically
+by `record_site_placement` for assign, reassign, clear, and displacement while
+the field has consumers. Readers must not use it to resolve occupancy or
+conflicts.
 
 ## 3. `record_site_placement` Contract
 
@@ -36,7 +38,7 @@ derived server-side.
 | `attendee_id` | Required. Derives Event and Tenant. |
 | `action` | Required: `assign`, `reassign`, `correct`, `clear`, or `confirm`. |
 | `site_id` | Required for every authoritative action except `clear`; identifies an Event parking-site row. |
-| `evidence_source` | Required: `parking_staff`, `checkin_staff`, `event_admin`, `member_reported`, `park_provided`, or `field_qr_verification`. |
+| `evidence_source` | Required: `parking_staff`, `event_admin`, `member_reported`, `park_provided`, or `field_qr_verification`. Historical `checkin_staff` evidence remains historical evidence; new Check-In flows do not invoke authoritative placement. |
 | `note` | Optional normalized operational rationale. |
 | `override_occupied_site` | True only for an explicit full-authority displacement request. |
 | `idempotency_key` | Required opaque UUID for one logical authoritative request; retries reuse it. |
@@ -97,15 +99,16 @@ are not authority inputs.
 
 `can_assign_parking` is a legacy permission name and current Admin Parking
 page access is guarded only by `AdminRouteGuard`; neither establishes mutation
-authority for this design. `record_site_placement` must independently derive
-Event-scoped `can_manage_parking` or `can_manage_checkin` authority from the
-current privilege-group model. A caller who can reach a Parking page but lacks
-that derived authority is rejected.
+authority for this design. `record_site_placement` and placement inventory
+materialization must independently derive `event.parking.manage` through the
+current Event-scoped authority model. A caller who can reach a Parking page but
+lacks that derived authority is rejected. `event.checkin.manage` is never an
+independent placement authorization.
 
 | Actor | Server-derived authority | Capability |
 | --- | --- | --- |
-| Parking staff or Event administrator | Explicit Event scope plus `can_manage_parking` | Every authoritative action and explicit override. |
-| Check-In staff | Event scope plus `can_manage_checkin` | Assign, reassign, correct, clear, and confirm only without displacement. |
+| Parking staff or Event administrator | Explicit Event scope plus `event.parking.manage` (directly or canonically inherited) | Every authoritative action and explicit override. |
+| Check-In staff | Event scope plus `event.checkin.manage` | Arrival and Check-In-owned sharing only; no authoritative placement action. |
 | Member or driver | Verified Member Check-In identity | `report` only. |
 | Park information or QR code | No authority | Evidence relayed by an authorized actor. |
 
@@ -324,9 +327,9 @@ not returned as governed placement outcomes.
 | Consumer | Replace with | Remove / preserve |
 | --- | --- | --- |
 | Admin Attendees | Placement display only; any future control calls the operation. | Remove `assigned_site` from create/edit payload; new attendee is unplaced. |
-| Admin Check-In | Operation call using Check-In authority. | Keep Arrival action separate; remove placement conflict, clear, and displacement logic. |
+| Admin Check-In | Arrival-only governed operation under `event.checkin.manage`, plus an optional canonical attendee-target handoff to Parking after successful Arrival. | Remove every site, occupancy, override, materialization, idempotency, and placement-action control. Arrival succeeds with no site. |
 | Admin Parking | Operation call for every placement action. | Keep Arrival controls separate; UI confirmation merely requests override. |
-| Member Check-In | Nonblank site becomes `report`; retain verified Arrival/share processing. | Blank site does not clear placement. Retire placement mutation from `submit_member_checkin`. |
+| Member Check-In (Stage B) | Nonblank site becomes `report`; retain verified Arrival/share processing. | Blank site does not clear placement. Retire placement mutation from `submit_member_checkin`. This is separate from the Admin Stage A cutover. |
 | Future QR | Authorized `confirm` or `correct` with QR evidence. | QR never writes placement directly. |
 | Map publication and synchronization | Governed inventory materialization. | It may create/reconcile unoccupied inventory only; it cannot delete or alter occupied placement. |
 | Master-site deletion or identity edit | Reject while related Event inventory is occupied. | A future governed map transition is required before delete, replacement, rename-as-identity, or detachment. |
@@ -352,6 +355,37 @@ occupancy with the projection and emits an operational discrepancy record. It
 never chooses one value as a fallback or repairs either value. Any drift blocks
 projection retirement and requires governed investigation.
 
+### 9.1 Admin Check-In / Parking ownership cutover — Stage A
+
+Stage A is a forward repair of the Admin boundary, not a new placement model:
+
+1. Replace the Admin Check-In composition so Arrival never requests or performs
+   placement. Preserve only Arrival and Check-In-owned sharing state.
+2. Enforce Event mutability for Arrival after server-side actor authority and
+   attendee-derived Event scope are established. A frozen Event rejects Arrival;
+   lifecycle is never used to substitute another Event context.
+3. Remove placement/site/override/materialization/idempotency UI and client
+   decisions from Check-In. It must not use `attendees.assigned_site` as
+   placement authority.
+4. After successful Arrival, optionally offer **Place in Parking** using
+   `buildAdminAttendeeTargetHref('/admin/parking', attendeeId)`. The target
+   carries no Event; Parking resolves it only in its current Event-scoped
+   roster, so the handoff cannot change Event context or select a cross-Event
+   attendee.
+5. Restrict `record_site_placement` and placement inventory materialization to
+   `event.parking.manage` (including its existing canonical inherited
+   authority). Remove `event.checkin.manage` as an independent placement basis.
+6. Keep `record_site_placement` as the sole spatial operation and make its
+   transaction update the `attendees.assigned_site` compatibility projection
+   consistently for assign, reassign, clear, and displacement. Parking-originated
+   changes must therefore never leave Check-In with a separately maintained
+   stale projection.
+
+Stage A does not change Person identity, Attendees ownership, the Parking
+experience beyond its governed call boundary, the placement algorithm, RLS/task
+semantics, or the Member Check-In placement redesign. It does not authorize a
+direct projection write or any duplicate occupancy algorithm.
+
 ## 10. Implementation Sequence and Rollback
 
 1. Run production-equivalent, read-only preflight. Check duplicate occupancy,
@@ -367,14 +401,18 @@ projection retirement and requires governed investigation.
    of possible state, not proof of current production state.
 2. Reconcile and materialize unambiguous selected-map inventory under §6.1.
 3. Add history, immutable access controls, and valid constraints.
-4. Add authorization predicate and canonical operation, including the trusted
-   Member Check-In report handoff.
+4. Add authorization predicate and canonical operation.
 5. Validate authority, locking, retry, rollback, and per-attendee replay in
    isolation.
-6. Migrate all consumers together, including map workflows and member-report
-   conversion; remove all legacy placement mutations.
-7. Enable direct-write guards and prove legacy REST/RPC/map paths fail.
-8. Validate production-equivalent replay before removing unused legacy code.
+6. Apply the Admin Check-In / Parking Stage A cutover in §9.1. The legacy
+   Member Check-In direct placement mutation is the separately scoped Stage B:
+   preserve reporting only through the trusted evidence path in §3.1 if needed,
+   then retire the direct mutation without inventing new reporting semantics.
+7. Migrate remaining consumers, including map workflows and the separately
+   authorized Stage B member-report conversion; remove all legacy placement
+   mutations.
+8. Enable direct-write guards and prove legacy REST/RPC/map paths fail.
+9. Validate production-equivalent replay before removing unused legacy code.
 
 Consumer cutover is feature-gated and all-or-nothing per deployed release. If
 only some consumers are migrated, legacy consumers fail closed against the new
@@ -392,6 +430,9 @@ reactivate a legacy placement write path.
 | Initial, reassignment, clear | Correct occupancy/projection; reassignment atomic; clear preserves Arrival. |
 | Correction and confirmation | Correction reassigns; confirmation changes no occupancy and appends history. |
 | Arrival independence | Arrival-before-placement and placement-before-Arrival have no cross-mutation. |
+| Admin Check-In Stage A | Arrival succeeds without placement; Check-In-only authority is denied placement; a dual-authority actor may perform each module's distinct operation; frozen Event Arrival is denied. |
+| Targeted Admin handoff | Check-In's Parking handoff preserves the Event context and target attendee; a stale or cross-Event target fails closed in Parking's current Event roster. |
+| Projection synchronization | Assign, reassign, clear, and displacement atomically synchronize `attendees.assigned_site` from canonical occupancy; no Check-In-maintained projection is consulted as authority. |
 | Member report and QR | Report preserves evidence only; QR uses authorized confirm/correct only. |
 | Two attendees/one site and one attendee/two sites | Constraints and locks prevent conflict and split placement. |
 | Simultaneous/stale writes | No deadlock, lost update, or stale overwrite. |

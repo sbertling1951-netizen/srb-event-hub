@@ -66,6 +66,29 @@ the attendee is placed. Neither establishes, implies, or clears the other.
 An experience may present Arrival and Site Placement together, but their
 separate state, authority, evidence, and audit meaning must remain intact.
 
+### 4.1 Administrative ownership and handoff
+
+Check-In owns Arrival. `event.checkin.manage` authorizes only the
+Event-scoped Arrival and Check-In-owned sharing operations; it is not an
+independent authorization for canonical Site Placement. Arrival mutations are
+operational mutations and must pass the same governed Event lifecycle/freeze
+check as other mutable Event operations, after their authority and Event scope
+are established.
+
+Parking owns spatial Site Placement. `event.parking.manage`, including any
+existing higher-level authority that canonically inherits that task, is required
+for `record_site_placement` and related placement inventory materialization. A
+user may hold both task authorities, but each operation is still governed by
+its own task boundary.
+
+After a successful Arrival, Check-In may offer an optional **Place in Parking**
+handoff for an attendee who still needs placement. The handoff uses only the
+canonical attendee-target contract in `lib/adminAttendeeTarget.ts`: it carries
+an attendee target, never an Event identifier; it never changes the working
+Event; and Parking resolves the target only against its own already-loaded,
+Event-scoped roster. Arrival succeeds whether or not placement is known or the
+handoff is taken.
+
 ## 5. Single Governed Operation
 
 `record_site_placement` is the sole governed operation that may establish,
@@ -99,15 +122,15 @@ within the Event's scope, establishes whether that actor may invoke
 
 | Actor or source | Architectural role |
 | --- | --- |
-| Parking staff and Event Admin | Authorized actors for governed placement decisions, including an authorized override or displacement. |
-| Check-In staff | Authorized only within the adopted Event permission boundary; any narrower scope must be enforced by the governed operation, not inferred from a UI. |
+| Parking staff and Event Admin | Authorized actors for governed placement decisions when they hold `event.parking.manage` through the canonical Event-scoped authority model, including an authorized override or displacement. |
+| Check-In staff | Authorized for Arrival only when they hold `event.checkin.manage`; that permission does not authorize a placement determination. A Check-In actor who separately holds Parking authority may use Parking under that separate authority. |
 | Member or driver | Reporter of placement evidence. They do not directly establish authoritative placement. |
 | RV park staff or park information | External evidence source, relayed through an authorized EpicentraX actor. |
 | QR scan or QR identifier | Evidence-acquisition mechanism; never an actor and never a source of authoritative placement. |
 
-The exact permission names and implementation mechanism are outside this
-architecture. Every privileged determination, including a staff override,
-must be authorized in Event scope and auditable.
+Every privileged determination, including a staff override, must be authorized
+in Event scope and auditable. UI visibility or a handoff never substitutes for
+the server-side task determination.
 
 ## 7. Evidence Model
 

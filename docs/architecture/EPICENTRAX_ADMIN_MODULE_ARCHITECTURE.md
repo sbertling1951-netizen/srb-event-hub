@@ -155,15 +155,17 @@ functions to eliminate, and shared primitives required.
 1. **Mission** — Support the day-of arrival process: confirming an
    attendee has physically arrived.
 2. **Responsibilities** — Search/find an attendee at the point of entry;
-   mark arrived; as part of that single motion, assign or confirm a
+   record and correct Arrival and its Check-In-owned sharing state. Check-In
+   does not assign, confirm, clear, override, displace, or otherwise manage a
    parking site.
 3. **Information it owns** — Arrival status and timestamp.
 4. **Stays inside except via CC/SL/TI** — The full check-in search/queue
    list.
-5. **Primary workflow** — Check an attendee in (search → mark arrived,
-   optionally assigning a site in the same motion).
-6. **Secondary workflows** — Correct/undo an arrival; look up a site
-   number.
+5. **Primary workflow** — Check an attendee in (search → record Arrival).
+   When an arrived attendee still needs a site, Check-In may offer the
+   optional, explicit **Place in Parking** handoff described below; Arrival
+   never depends on accepting that handoff.
+6. **Secondary workflows** — Correct/undo an arrival; look up a site number.
 7. **Candidate Summary Link** — "Check-In": X of Y arrived.
 8. **Candidate Context contribution** — Ordinarily none; a
    `personal_reminder`-class "check-in not yet opened" signal is
@@ -171,15 +173,13 @@ functions to eliminate, and shared primitives required.
    one.
 9. **Candidate Trust inputs** — None.
 10. **Routes** — `/admin/checkin`.
-11. **Duplicates to eliminate** — See the open boundary question below
-    (§ Open Questions) — Check-In and Parking currently each
-    independently write `attendees.assigned_site` /
-    `parking_sites.assigned_attendee_id` / arrival fields through two
-    unrelated implementations, coordinated only by a `localStorage`
-    handoff (Audit, Check-In and Parking tables).
+11. **Duplicates to eliminate** — Any Check-In placement, occupancy,
+    override, displacement, materialization, or idempotency workflow. Those
+    are Parking's governed responsibility, not a secondary Check-In path.
 12. **Shared primitives required** — One attendee search/lookup control
-    (shared with Attendees and Parking); one site-assignment control
-    (shared with Parking, not reimplemented).
+    (shared with Attendees and Parking); the canonical attendee-target handoff
+    (`lib/adminAttendeeTarget.ts`) for the optional Parking handoff. Check-In
+    does not share or reimplement a site-assignment control.
 
 ---
 
@@ -204,12 +204,12 @@ functions to eliminate, and shared primitives required.
    genuine operational-bottleneck signal, distinct from Trust.
 9. **Candidate Trust inputs** — None.
 10. **Routes** — `/admin/parking`.
-11. **Duplicates to eliminate** — Shared with Check-In (above); the
+11. **Duplicates to eliminate** — Any non-Parking placement writer; the
     map-opening-scale setting this module implicitly depends on is also
     independently edited by Maps & Locations (Module 10) — Parking must
     consume that module's governed setting, never re-derive it.
-12. **Shared primitives required** — Site-assignment control (shared
-    with Check-In); the map canvas/marker-rendering primitive already
+12. **Shared primitives required** — The governed placement operation and
+    its canonical occupancy read model; the map canvas/marker-rendering primitive already
     shared at the component level per the audit's Map Test findings —
     this document formalizes it as a required, single primitive for
     Parking and Maps & Locations both, not a pattern either module may
@@ -594,17 +594,19 @@ Slideshow (under Media) are all second-level within their module.
 
 These are named, not resolved, per this stage's own scope:
 
-- **Check-In vs. Parking site-assignment ownership.** Both modules
-  currently write the same underlying facts (`attendees.assigned_site`,
-  `parking_sites.assigned_attendee_id`, arrival state) through two
-  independent implementations. This document deliberately does **not**
-  merge the two modules — their missions are genuinely distinct (arrival
-  confirmation vs. spatial assignment), consistent with keeping each
-  module "one coherent operational responsibility." But it also does not
-  resolve whether Check-In's site-assignment action should call into a
-  shared service Parking owns, or whether Check-In should only confirm
-  arrival and leave all site logic to Parking exclusively. This is a
-  genuine architectural decision for Stage 3, not a naming exercise.
+- **Check-In / Parking ownership (resolved).** The modules remain separate:
+  Check-In owns Arrival; Parking owns spatial Site Placement. Arrival does
+  not establish or require placement. Parking alone invokes the governed
+  placement operation and owns occupancy, assignment, override, displacement,
+  clearing, confirmation, inventory materialization, and placement
+  idempotency. Check-In may hand an arrived attendee to Parking only through
+  the canonical attendee-target URL contract: it carries no Event identifier,
+  never changes the working Event, and Parking re-resolves the attendee in its
+  own already Event-scoped roster. `event.checkin.manage` authorizes Arrival,
+  not canonical placement; `event.parking.manage` (including its existing
+  inherited authority) authorizes placement. A user may hold both. The
+  accepted Site Assignment Governance Architecture and Implementation
+  Specification govern the database contract.
 - **Print-asset upload's home.** Imports currently also hosts print-
   background upload, which this document assigns to Reporting/Print
   Settings (Module 5) rather than Attendees (Module 2) — flagged for
@@ -619,9 +621,8 @@ These are named, not resolved, per this stage's own scope:
 
 This document is architecture only. It authorizes no code change, no
 route move, no schema change, no permission change, and no removal of
-any page. It does not implement any shared primitive it names, does not
-decide the exact navigation presentation, and does not resolve the two
-open boundary questions above. Each of those remains a separate,
+any page. It does not implement any shared primitive it names or decide
+the exact navigation presentation. Each implementation remains a separate,
 explicitly authorized task — Stage 3 or later — consistent with
 `EPICENTRAX_ADAPTIVE_UI_ARCHITECTURE.md`'s own Scope Boundary and this
 document's own governing instructions.
