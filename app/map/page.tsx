@@ -6,33 +6,51 @@ import CampgroundMap from "@/components/map/CampgroundMap";
 import { PublicEventChooser } from "@/components/public/PublicEventChooser";
 import { getActiveEvent } from "@/lib/getActiveEvent";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { getMemberSession } from "@/lib/memberSession";
 import {
   loadPublicEventBootstrap,
   type PublicEventCandidate,
 } from "@/lib/publicEventBootstrap";
 import { supabase } from "@/lib/supabase";
 
+// Anonymous-safe site geometry (get_event_public_map_sites): no
+// Person-linked column is ever returned here. is_occupied is a derived
+// boolean, not the underlying assigned_attendee_id foreign key -- there
+// is no attendee identity to look up from this alone.
 type ParkingSite = {
   id: string;
-  event_id: string | null;
   site_number: string | null;
   display_label: string | null;
   map_x: number | null;
   map_y: number | null;
-  assigned_attendee_id: string | null;
+  is_occupied: boolean;
 };
 
-// Governed attendee-sharing contract output (get_event_public_roster):
-// pilot_first/pilot_last and coach_make/coach_model are each masked
-// server-side per the occupant's own choice, so presence of a name is
-// itself the "did they opt in" signal -- there is no separate flag to
-// check client-side.
+function normalizeSiteKey(value: string | null | undefined) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+// Governed, reciprocal attendee-sharing contract output
+// (get_event_participant_map_roster): the server resolves the caller's
+// own legitimate Event participation and reciprocal sharing status --
+// an anonymous caller, or a participant who has not shared their own
+// Name, receives zero rows here, not a masked row. pilot_first/
+// pilot_last, coach_make/coach_model, and campsite_location are each
+// masked server-side per the target occupant's own choice; presence of
+// a name is itself the "did they opt in" signal. campsite_location
+// resolves through governed parking_sites occupancy and is matched
+// against site_number/display_label client-side -- the raw
+// assigned_attendee_id foreign key is never sent to this page.
 type Attendee = {
   id: string;
   pilot_first: string | null;
   pilot_last: string | null;
   coach_make: string | null;
   coach_model: string | null;
+  campsite_location: string | null;
 };
 
 type ActiveEventRow = {
@@ -92,25 +110,35 @@ export default function CoachMapPage() {
   const [lastChecked, setLastChecked] = useState<string>("");
 
   const loadMapData = useCallback(async (activeEventId: string) => {
-    const { data: attendeeData, error: attendeeError } = await supabase
-      .rpc("get_event_public_roster", { p_event_id: activeEventId })
-      .order("pilot_last");
-
-    if (attendeeError) {
-      setStatus(`Could not load attendees: ${attendeeError.message}`);
-      return;
-    }
+    // Best-effort legitimate-Event-participant identity from the local
+    // member session, if any. A caller with no session (a true anonymous
+    // internet visitor) passes all-null identifiers here: the RPC's own
+    // identity resolver then finds no legitimate attendee and returns
+    // zero rows -- there is no separate anonymous/member branch to keep
+    // in sync, the server contract degrades safely on its own.
+    const memberSession = getMemberSession();
+    const memberEvent = getCurrentMemberEvent();
 
     const { data: siteData, error: siteError } = await supabase
-      .from("parking_sites")
-      .select(
-        "id,event_id,site_number,display_label,map_x,map_y,assigned_attendee_id",
-      )
-      .eq("event_id", activeEventId)
+      .rpc("get_event_public_map_sites", { p_event_id: activeEventId })
       .order("site_number");
 
     if (siteError) {
       setStatus(`Could not load parking sites: ${siteError.message}`);
+      return;
+    }
+
+    const { data: attendeeData, error: attendeeError } = await supabase
+      .rpc("get_event_participant_map_roster", {
+        p_event_id: activeEventId,
+        p_event_code: memberEvent?.event_code || null,
+        p_registration_identifier:
+          memberSession?.attendee_email || memberSession?.attendee_phone || null,
+      })
+      .order("pilot_last");
+
+    if (attendeeError) {
+      setStatus(`Could not load attendees: ${attendeeError.message}`);
       return;
     }
 
@@ -211,11 +239,34 @@ export default function CoachMapPage() {
     };
   }, [loadMapData, publicEvent]);
 
-  const attendeeById = useMemo(() => {
+  // Attendee identity never travels with a site-linking foreign key on
+  // this page (see get_event_public_map_sites / get_event_participant_map_
+  // roster above) -- a shared attendee's own campsite_location is matched
+  // against site_number/display_label instead, the same governed linkage
+  // /coach-map/public uses.
+  const attendeeBySiteKey = useMemo(() => {
     const map = new Map<string, Attendee>();
-    attendees.forEach((a) => map.set(a.id, a));
+    attendees.forEach((a) => {
+      const key = normalizeSiteKey(a.campsite_location);
+      if (key) {
+        map.set(key, a);
+      }
+    });
     return map;
   }, [attendees]);
+
+  const attendeeForSite = useCallback(
+    (site: ParkingSite): Attendee | undefined => {
+      if (!site.is_occupied) {
+        return undefined;
+      }
+      return (
+        attendeeBySiteKey.get(normalizeSiteKey(site.site_number)) ||
+        attendeeBySiteKey.get(normalizeSiteKey(site.display_label))
+      );
+    },
+    [attendeeBySiteKey],
+  );
 
   const matchedSitesForLocator = useMemo(() => {
     const q = attendeeSearch.trim().toLowerCase();
@@ -224,29 +275,24 @@ export default function CoachMapPage() {
     }
 
     return sites.filter((site) => {
-      if (!site.assigned_attendee_id) {
-        return false;
-      }
-      const assigned = attendeeById.get(site.assigned_attendee_id);
+      const assigned = attendeeForSite(site);
       if (!assigned?.pilot_first && !assigned?.pilot_last) {
         return false;
       }
       return attendeeName(assigned).toLowerCase().includes(q);
     });
-  }, [sites, attendeeById, attendeeSearch]);
+  }, [sites, attendeeForSite, attendeeSearch]);
 
   const filteredSites = useMemo(() => {
     const attendeeQuery = attendeeSearch.trim().toLowerCase();
     const siteQuery = siteSearch.trim().toLowerCase();
 
     return sites.filter((site) => {
-      if (occupiedOnly && !site.assigned_attendee_id) {
+      if (occupiedOnly && !site.is_occupied) {
         return false;
       }
 
-      const assignedAttendee = site.assigned_attendee_id
-        ? attendeeById.get(site.assigned_attendee_id)
-        : undefined;
+      const assignedAttendee = attendeeForSite(site);
 
       const visibleName =
         assignedAttendee?.pilot_first || assignedAttendee?.pilot_last
@@ -266,26 +312,28 @@ export default function CoachMapPage() {
 
       return attendeeMatches && siteMatches;
     });
-  }, [sites, attendeeById, attendeeSearch, siteSearch, occupiedOnly]);
+  }, [sites, attendeeForSite, attendeeSearch, siteSearch, occupiedOnly]);
 
   const mapSites = useMemo(() => {
     return filteredSites.map((site) => {
-      const assignedAttendee = site.assigned_attendee_id
-        ? attendeeById.get(site.assigned_attendee_id)
-        : undefined;
+      const assignedAttendee = attendeeForSite(site);
 
       return {
-        ...site,
-        popupText: visibleOccupantLabel(
-          assignedAttendee,
-          !!site.assigned_attendee_id,
-        ),
+        id: site.id,
+        site_number: site.site_number,
+        display_label: site.display_label,
+        map_x: site.map_x,
+        map_y: site.map_y,
+        // A synthetic occupancy signal for CampgroundMap's marker
+        // coloring only -- never a real attendee id.
+        assigned_attendee_id: site.is_occupied ? "occupied" : null,
+        popupText: visibleOccupantLabel(assignedAttendee, site.is_occupied),
       };
     });
-  }, [filteredSites, attendeeById]);
+  }, [filteredSites, attendeeForSite]);
 
   const totalSites = sites.length;
-  const occupiedCount = sites.filter((s) => !!s.assigned_attendee_id).length;
+  const occupiedCount = sites.filter((s) => s.is_occupied).length;
   const openCount = totalSites - occupiedCount;
   const dateRange = formatDateRange(
     event?.start_date || null,
@@ -299,11 +347,8 @@ export default function CoachMapPage() {
   );
 
   const selectedAttendee = useMemo(
-    () =>
-      selectedSite?.assigned_attendee_id
-        ? attendeeById.get(selectedSite.assigned_attendee_id)
-        : undefined,
-    [selectedSite, attendeeById],
+    () => (selectedSite ? attendeeForSite(selectedSite) : undefined),
+    [selectedSite, attendeeForSite],
   );
 
   function locateFirstMatch() {
@@ -327,7 +372,7 @@ export default function CoachMapPage() {
 
   const selectedOccupantText = visibleOccupantLabel(
     selectedAttendee,
-    !!selectedSite?.assigned_attendee_id,
+    !!selectedSite?.is_occupied,
   );
 
   return (
@@ -504,9 +549,7 @@ export default function CoachMapPage() {
           {matchedSitesForLocator.length > 0 && (
             <div style={{ display: "grid", gap: 6 }}>
               {matchedSitesForLocator.slice(0, 10).map((site) => {
-                const assigned = site.assigned_attendee_id
-                  ? attendeeById.get(site.assigned_attendee_id)
-                  : undefined;
+                const assigned = attendeeForSite(site);
 
                 return (
                   <button

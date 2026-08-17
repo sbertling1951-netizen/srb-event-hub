@@ -69,11 +69,17 @@ type MasterMapLocation = {
   map_y: number | null;
 };
 
-type ParkingAssignmentRow = {
+// Anonymous-safe site geometry (get_event_public_map_sites): no
+// Person-linked column is ever returned here. is_occupied is a derived
+// boolean, not the underlying assigned_attendee_id foreign key.
+type MapSiteGeometryRow = {
   id: string;
-  event_id: string;
   master_site_id: string | null;
-  assigned_attendee_id: string | null;
+  site_number: string;
+  display_label: string | null;
+  map_x: number | null;
+  map_y: number | null;
+  is_occupied: boolean;
 };
 
 type MapSite = {
@@ -83,14 +89,23 @@ type MapSite = {
   display_label: string | null;
   map_x: number | null;
   map_y: number | null;
+  is_occupied: boolean;
   assigned_attendee_id: string | null;
 };
 
-// Governed attendee-sharing contract output (get_event_public_roster):
-// name/coach are masked together server-side per the target's own choice;
-// campsite_location resolves through governed parking_sites occupancy, not
-// the legacy free-text assigned_site column. Arrival stays independent of
-// sharing under the Site Placement architecture and is returned unmasked.
+// Governed, reciprocal attendee-sharing contract output
+// (get_event_participant_map_roster): the server resolves the caller's
+// own legitimate Event participation and reciprocal sharing status --
+// a viewer who has not shared their own Name receives zero rows here,
+// not a masked row over a fully-populated response. name/coach are each
+// masked server-side per the target's own choice; campsite_location
+// resolves through governed parking_sites occupancy, not the legacy
+// free-text assigned_site column, and is itself masked per the target's
+// own campsite_location preference -- it is the only site-linking signal
+// this page uses, so a target who shares Name but declines to share
+// their location is never pinpointed on the map. Arrival stays
+// independent of sharing under the Site Placement architecture and is
+// returned unmasked.
 type Attendee = {
   id: string;
   pilot_first: string | null;
@@ -108,6 +123,7 @@ type RenderedSite = {
   display_label: string | null;
   map_x: number | null;
   map_y: number | null;
+  is_occupied: boolean;
   assigned_attendee_id: string | null;
 };
 
@@ -144,7 +160,7 @@ function getStoredViewerAttendeeId() {
 }
 
 function CoachMapPublicPageInner() {
-  const { event: workspaceEvent, attendeeId, isReady } = useMemberWorkspace();
+  const { event: workspaceEvent, attendeeId, isReady, session } = useMemberWorkspace();
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [sites, setSites] = useState<MapSite[]>([]);
@@ -258,7 +274,7 @@ function CoachMapPublicPageInner() {
       const [
         masterSitesResult,
         masterLocationsResult,
-        assignmentResult,
+        siteGeometryResult,
         attendeeRowsResult,
       ] = await Promise.all([
         resolvedMapId
@@ -275,12 +291,14 @@ function CoachMapPublicPageInner() {
               .eq("master_map_id", resolvedMapId)
               .order("name")
           : Promise.resolve({ data: [], error: null }),
-        supabase
-          .from("parking_sites")
-          .select("id,event_id,master_site_id,assigned_attendee_id")
-          .eq("event_id", memberEvent.id),
-        supabase.rpc("get_event_public_roster", {
+        supabase.rpc("get_event_public_map_sites", {
           p_event_id: memberEvent.id,
+        }),
+        supabase.rpc("get_event_participant_map_roster", {
+          p_event_id: memberEvent.id,
+          p_event_code: session?.event_code || null,
+          p_registration_identifier:
+            session?.attendee_email || session?.attendee_phone || null,
         }),
       ]);
 
@@ -290,22 +308,30 @@ function CoachMapPublicPageInner() {
       if (masterLocationsResult.error) {
         throw masterLocationsResult.error;
       }
-      if (assignmentResult.error) {
-        throw assignmentResult.error;
+      if (siteGeometryResult.error) {
+        throw siteGeometryResult.error;
       }
       if (attendeeRowsResult.error) {
         throw attendeeRowsResult.error;
       }
 
       const masterSites = (masterSitesResult.data || []) as MasterMapSite[];
-      const assignments = (assignmentResult.data ||
-        []) as ParkingAssignmentRow[];
+      const siteGeometry = (siteGeometryResult.data ||
+        []) as MapSiteGeometryRow[];
       const attendeeList = (attendeeRowsResult.data || []) as Attendee[];
 
       const mergedSites: MapSite[] = masterSites.map((site) => {
-        const directAssignment =
-          assignments.find((a) => a.master_site_id === site.id) || null;
-        const fallbackAttendee = attendeeList.find((attendee) => {
+        // Ground-truth occupancy (is this site taken at all) comes from
+        // the anonymous-safe geometry contract, matched by the real
+        // master_site_id foreign key -- never a Person-linked column.
+        // Which attendee, if any, is shown for that site is a separate
+        // question, answered only by the target's own governed
+        // campsite_location preference (below): a site can be truthfully
+        // occupied while showing no attendee at all, if its occupant
+        // declined to share their location.
+        const geometryMatch =
+          siteGeometry.find((s) => s.master_site_id === site.id) || null;
+        const sharedOccupant = attendeeList.find((attendee) => {
           const n = normalizeSiteKey(attendee.campsite_location);
           return (
             n &&
@@ -314,16 +340,14 @@ function CoachMapPublicPageInner() {
           );
         });
         return {
-          id: directAssignment?.id || site.id,
+          id: geometryMatch?.id || site.id,
           master_site_id: site.id,
           site_number: site.site_number,
           display_label: site.display_label,
           map_x: site.map_x,
           map_y: site.map_y,
-          assigned_attendee_id:
-            directAssignment?.assigned_attendee_id ||
-            fallbackAttendee?.id ||
-            null,
+          is_occupied: geometryMatch?.is_occupied ?? false,
+          assigned_attendee_id: sharedOccupant?.id || null,
         };
       });
 
@@ -340,7 +364,7 @@ function CoachMapPublicPageInner() {
       setAttendees([]);
       setStatus(err?.message || "Failed to load coach map.");
     }
-  }, [attendeeId, isReady, workspaceEvent]);
+  }, [attendeeId, isReady, session, workspaceEvent]);
 
   // ─── Effects ──────────────────────────────────────────────────────────────────
 
@@ -422,6 +446,7 @@ function CoachMapPublicPageInner() {
       display_label: site.display_label || site.site_number,
       map_x: site.map_x,
       map_y: site.map_y,
+      is_occupied: site.is_occupied,
       assigned_attendee_id: site.assigned_attendee_id,
     }));
   }, [sites]);
@@ -469,21 +494,19 @@ function CoachMapPublicPageInner() {
     );
   }, [viewerAttendee, renderedSites]);
 
-  // Presence of the masked name field is the participation signal (both
-  // pilot_first and pilot_last are populated together only when the
-  // attendee shares -- see get_event_public_roster).
-  const viewerHasOptedIn = !!viewerAttendee?.pilot_first;
   const selectedSite =
     renderedSites.find((s) => s.key === selectedSiteKey) || null;
+  // Reciprocal share-to-see is enforced server-side by
+  // get_event_participant_map_roster: attendees is empty unless this
+  // viewer has shared their own Name, and a given target only appears
+  // here at all if that target shared Name and campsite_location. This
+  // is display logic over an already-governed result, not the security
+  // boundary -- a non-participating viewer cannot reach this branch
+  // regardless of what the client does with it.
   const selectedAttendee = selectedSite?.assigned_attendee_id
     ? attendeeLookup.get(selectedSite.assigned_attendee_id) || null
     : null;
-  const occupantHasOptedIn = !!selectedAttendee?.pilot_first;
-  const canShowPrivateDetails =
-    !!selectedAttendee &&
-    viewerAttendeeId !== null &&
-    viewerHasOptedIn &&
-    occupantHasOptedIn;
+  const canShowPrivateDetails = !!selectedAttendee;
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
   // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -589,12 +612,9 @@ function CoachMapPublicPageInner() {
       }
 
       const site = data.site;
-      const assigned = site.assigned_attendee_id
-        ? attendeeLookup.get(site.assigned_attendee_id)
-        : null;
       const isSelected = selectedSiteKey === site.key;
       const isViewerSite = viewerAssignedSiteKey === site.key;
-      const isOccupied = !!assigned;
+      const isOccupied = site.is_occupied;
 
       return (
         <>
@@ -673,7 +693,7 @@ function CoachMapPublicPageInner() {
         </>
       );
     },
-    [selectedSiteKey, viewerAssignedSiteKey, attendeeLookup, showLabels],
+    [selectedSiteKey, viewerAssignedSiteKey, showLabels],
   );
 
   const handleMarkerTap = useCallback(
