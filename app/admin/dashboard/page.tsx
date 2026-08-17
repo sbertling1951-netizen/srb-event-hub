@@ -224,6 +224,15 @@ function AdminDashboardPageInner() {
 
   const didInitialLoad = useRef(false);
 
+  // ADR-006 §2.1/§3.1/§4: this is the admin's full *accessible* Event set
+  // -- authorization-filtered only. Lifecycle status (including
+  // "archived") must never gate the set Event-context resolution
+  // validates a stored Event ID against ("inactive is not invalid", and
+  // the ADR names "archived" as an explicit example). Archived-exclusion
+  // for the picker's own display list is computed separately, below, from
+  // this same full set -- exactly the accessibleEvents/loadedEvents split
+  // app/admin/events/page.tsx already established for this identical
+  // defect class.
   async function loadEvents(admin: AdminAccessResult | null) {
     const { data, error } = await supabase
       .from("events")
@@ -235,9 +244,7 @@ function AdminDashboardPageInner() {
       throw error;
     }
 
-    const allEvents = ((data || []) as EventRow[]).filter(
-      (evt) => normalizeEventStatus(evt.status) !== "archived",
-    );
+    const allEvents = (data || []) as EventRow[];
 
     if (!admin) {
       return [];
@@ -397,6 +404,21 @@ function AdminDashboardPageInner() {
     }
   }
 
+  const selectedEvent = events.find((e) => e.id === selectedEventId) || null;
+
+  // ADR-006 §4: archived-exclusion here is presentation/discovery logic
+  // only -- it governs the switcher's own option list, never the set
+  // loadPage() resolves the working Event against (loadEvents, above).
+  // The current working Event always remains selectable, and always
+  // renders in the "Working Event" line below, even when archived --
+  // an authorized archived Event stays a valid, visible working context,
+  // never silently dropped from view.
+  const pickerEvents = events.filter(
+    (evt) =>
+      evt.id === selectedEventId ||
+      normalizeEventStatus(evt.status) !== "archived",
+  );
+
   const visibleLinks = visibleAdminSummaryLinks(adminAccess);
 
   return (
@@ -415,12 +437,17 @@ function AdminDashboardPageInner() {
               style={selectStyle}
             >
               <option value="">Select an event</option>
-              {events.map((evt) => (
+              {pickerEvents.map((evt) => (
                 <option key={evt.id} value={evt.id}>
                   {formatEventLabel(evt)}
                 </option>
               ))}
             </select>
+            {selectedEvent ? (
+              <div style={workingEventLineStyle}>
+                Working Event: {formatEventLabel(selectedEvent)}
+              </div>
+            ) : null}
           </div>
 
           {(switching || loading || status) && (
@@ -523,6 +550,12 @@ const selectStyle: React.CSSProperties = {
   background: "#fff",
   fontSize: 14,
   minHeight: 44,
+};
+
+const workingEventLineStyle: React.CSSProperties = {
+  marginTop: 6,
+  fontSize: 13,
+  color: "#555",
 };
 
 const statusBoxStyle: React.CSSProperties = {

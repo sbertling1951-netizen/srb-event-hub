@@ -236,3 +236,83 @@ test("explicit user selection (handleSwitchEvent) is unconditional and unaffecte
   assert.match(fnBody, /setCurrentAdminEvent\(\{/);
   assert.equal(/resolveAdminWorkingEvent/.test(fnBody), false);
 });
+
+// Archived-Event continuity regression coverage (Stage 2 D1: the
+// Dashboard's own loadEvents() used to exclude archived Events from the
+// set before that set ever reached resolveAdminWorkingEvent -- an
+// authorized-but-archived stored working Event was therefore reported as
+// "no longer available" even though it still existed and the admin was
+// still authorized for it. ADR-006 §2.1 names "archived" explicitly as
+// an example of lifecycle status that must never gate context validity.
+// app/admin/events/page.tsx already carries the correct pattern
+// (accessibleEvents, authorization-only, passed to
+// resolveAdminWorkingEvent; a separately-filtered list for display only)
+// -- these tests hold the Dashboard to the same standard.
+
+test("loadEvents (the accessible-Event source for context resolution) does not filter by lifecycle status", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const fnIdx = source.indexOf("async function loadEvents(");
+  assert.notEqual(fnIdx, -1, "expected an async function loadEvents(...) definition");
+
+  const fnEndIdx = source.indexOf("\n  const loadPage = useCallback", fnIdx);
+  assert.notEqual(fnEndIdx, -1);
+
+  const fnBody = source.slice(fnIdx, fnEndIdx);
+
+  assert.equal(
+    /archived/i.test(fnBody),
+    false,
+    "loadEvents must return the admin's full accessible Event set -- lifecycle-status filtering (including archived) must never happen inside the function that produces resolveAdminWorkingEvent's input (ADR-006 §2.1/§4)",
+  );
+  assert.equal(
+    /normalizeEventStatus/.test(fnBody),
+    false,
+    "loadEvents must not reference lifecycle status at all -- it is an authorization-only accessible-Event source",
+  );
+});
+
+test("archived-status filtering exists only as a separate, display-only picker list, never as resolveAdminWorkingEvent's input", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const resolveCallMatch = source.match(
+    /resolveAdminWorkingEvent\(\s*\n?\s*([a-zA-Z0-9_]+)\s*,/,
+  );
+  assert.ok(resolveCallMatch, "expected a resolveAdminWorkingEvent(...) call");
+  const resolutionInputName = resolveCallMatch![1];
+
+  const pickerDeclMatch = source.match(
+    /const\s+(pickerEvents)\s*=\s*events\.filter\(/,
+  );
+  assert.ok(
+    pickerDeclMatch,
+    "expected a pickerEvents list derived from the full events state, for the switcher's own display only",
+  );
+  assert.notEqual(
+    pickerDeclMatch![1],
+    resolutionInputName,
+    "the archived-filtered picker list must never be the same variable resolveAdminWorkingEvent is called with",
+  );
+
+  const pickerIdx = source.indexOf("const pickerEvents = events.filter(");
+  const pickerBody = source.slice(pickerIdx, pickerIdx + 300);
+  assert.match(
+    pickerBody,
+    /evt\.id === selectedEventId/,
+    "the current working Event must always remain in the picker's own option list, even when archived, so an archived selection is never invisible in the UI",
+  );
+});
+
+test("the working Event always renders visibly, even when archived, independent of the picker's own filtered list", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /Working Event:/);
+  assert.match(
+    source,
+    /const selectedEvent = events\.find\(/,
+    "the Working Event line must read from the full accessible events state, not the archived-filtered picker list",
+  );
+});
