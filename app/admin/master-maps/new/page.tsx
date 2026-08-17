@@ -138,8 +138,7 @@ function NewMasterMapPageInner() {
 
   return (
     <div style={{ padding: 24, maxWidth: 700 }}>
-      <h1>Create New Master Map</h1>
-      <p>
+      <p style={{ marginTop: 0 }}>
         Upload the base PNG map first, then place site markers in the editor.
       </p>
 
@@ -223,7 +222,10 @@ function NewMasterMapPageInner() {
 export default function NewMasterMapPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_master_maps">
-      <AdminShellAdapter pageTitle="Create New Master Map">
+      <AdminShellAdapter
+        pageTitle="Create New Master Map"
+        backTarget={{ href: "/admin/master-maps", label: "Master Maps" }}
+      >
         <NewMasterMapPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

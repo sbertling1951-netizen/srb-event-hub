@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
-import PageNavigation from "@/components/layout/PageNavigation";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -508,17 +507,6 @@ function AdminLocationsPageInner() {
 
   return (
     <div style={{ padding: isNarrow ? 12 : 24 }}>
-      <PageNavigation
-        homeHref="/admin/dashboard"
-        homeLabel="Dashboard"
-        parentHref="/admin/map-admin"
-        parentLabel="Map Admin"
-      />
-
-      <h1 style={{ marginTop: 0, fontSize: isNarrow ? 30 : 40 }}>
-        Map Locations
-      </h1>
-
       {error ? (
         <div
           style={{
@@ -811,7 +799,11 @@ function AdminLocationsPageInner() {
 export default function AdminLocationsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_locations">
-      <AdminShellAdapter pageTitle="Map Locations" contentMode="full-bleed">
+      <AdminShellAdapter
+        pageTitle="Map Locations"
+        backTarget={{ href: "/admin/map-admin", label: "Map Admin" }}
+        contentMode="full-bleed"
+      >
         <AdminLocationsPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

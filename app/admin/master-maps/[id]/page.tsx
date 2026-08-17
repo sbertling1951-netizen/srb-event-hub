@@ -1276,8 +1276,6 @@ function MasterMapEditorPageInner() {
 
   return (
     <div style={{ padding: 12 }}>
-      <h1>Master Map Editor</h1>
-
       {error && (
         <div
           style={{
@@ -1810,7 +1808,11 @@ function MasterMapEditorPageInner() {
 export default function MasterMapEditorPage() {
   return (
     <AdminRouteGuard>
-      <AdminShellAdapter pageTitle="Master Map Editor" contentMode="full-bleed">
+      <AdminShellAdapter
+        pageTitle="Master Map Editor"
+        backTarget={{ href: "/admin/master-maps", label: "Master Maps" }}
+        contentMode="full-bleed"
+      >
         <MasterMapEditorPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
