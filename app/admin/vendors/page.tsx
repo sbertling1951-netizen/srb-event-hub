@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import VendorDispositionHistory from "@/components/admin/VendorDispositionHistory";
 import VendorEventDecisionModal from "@/components/admin/VendorEventDecisionModal";
@@ -159,6 +159,8 @@ function AdminVendorsPageInner() {
     mode: "reject" | "revoke";
     vendor: Vendor;
   } | null>(null);
+  const loadGenerationRef = useRef(0);
+  const reviewGenerationRef = useRef(0);
 
   // Canonical Admin working-Event context (lib/adminEventContext.ts via
   // lib/adminWorkspaceContext.tsx's re-export) -- the same mechanism
@@ -166,46 +168,67 @@ function AdminVendorsPageInner() {
   const adminEvent = getCurrentAdminEvent();
   const { admin } = useAdmin();
 
-  async function loadPage() {
+  const loadPage = useCallback(async () => {
+    // Resolve context when this load begins. The workspace listener must not
+    // retain the Event from the render in which it was first registered.
+    const scopedEvent = getCurrentAdminEvent();
+    const generation = ++loadGenerationRef.current;
+    ++reviewGenerationRef.current;
+    const isCurrentLoad = () =>
+      generation === loadGenerationRef.current &&
+      getCurrentAdminEvent()?.id === scopedEvent?.id;
+
     try {
       setStatus("Loading vendors...");
       setError(null);
+      // Do not leave prior Event assignments or applications actionable
+      // while the new Event's governed reads are in flight.
+      setEventVendors([]);
+      setApplications([]);
+      setExpandedVendorId(null);
+      setIntelligenceByVendorId({});
+      setDispositionsByVendorId({});
+      setDecisionModal(null);
 
       if (!admin) {
+        if (!isCurrentLoad()) {return;}
         setError("No admin access.");
         setStatus("Access denied.");
         return;
       }
 
-      if (adminEvent?.id && !canAccessEvent(admin, adminEvent.id)) {
+      if (scopedEvent?.id && !canAccessEvent(admin, scopedEvent.id)) {
+        if (!isCurrentLoad()) {return;}
         setError("You do not have access to this event.");
         setStatus("Access denied.");
         return;
       }
 
-      const [{ data: vendorData, error: vendorError }, eventVendorResult, applicationRows] =
+      const [{ data: vendorData, error: vendorError }, eventVendorResult, applicationResult] =
         await Promise.all([
           supabase
             .from("vendors")
             .select("*")
             .order("business_name", { ascending: true }),
 
-          adminEvent?.id
+          scopedEvent?.id
             ? supabase
                 .from("event_vendors")
                 .select("*")
-                .eq("event_id", adminEvent.id)
+                .eq("event_id", scopedEvent.id)
             : Promise.resolve({ data: [], error: null }),
 
-          adminEvent?.id
-            ? listVendorEventApplications(adminEvent.id).catch((err: any) => {
-                // A caller without event.vendors.view for this Event is
-                // correctly denied by the RPC -- fail closed to an empty
-                // queue rather than surfacing a raw RPC error on load.
-                console.error("list_vendor_event_applications denied:", err);
-                return [] as VendorEventApplicationRow[];
-              })
-            : Promise.resolve([] as VendorEventApplicationRow[]),
+          scopedEvent?.id
+            ? listVendorEventApplications(scopedEvent.id)
+                .then((rows) => ({ rows, error: null as unknown }))
+                .catch((error: unknown) => ({
+                  rows: [] as VendorEventApplicationRow[],
+                  error,
+                }))
+            : Promise.resolve({
+                rows: [] as VendorEventApplicationRow[],
+                error: null as unknown,
+              }),
         ]);
 
       if (vendorError) {
@@ -214,24 +237,35 @@ function AdminVendorsPageInner() {
       if (eventVendorResult.error) {
         throw eventVendorResult.error;
       }
+      if (!isCurrentLoad()) {return;}
 
       setVendors((vendorData || []) as Vendor[]);
       setEventVendors((eventVendorResult.data || []) as EventVendor[]);
-      setApplications(applicationRows);
+      setApplications(applicationResult.rows);
       setExpandedVendorId(null);
       setIntelligenceByVendorId({});
       setDispositionsByVendorId({});
+      if (applicationResult.error) {
+        console.error(
+          "list_vendor_event_applications failed:",
+          applicationResult.error,
+        );
+        setError("Vendor applications could not be loaded for this Event.");
+        setStatus("Vendor catalog loaded; application review is unavailable.");
+        return;
+      }
       setStatus(
         `Loaded ${(vendorData || []).length} vendors for ${
-          adminEvent?.name || "current event"
+          scopedEvent?.name || "current event"
         }.`,
       );
     } catch (err: any) {
+      if (!isCurrentLoad()) {return;}
       console.error("load vendors error:", err);
       setError(err?.message || "Could not load vendors.");
       setStatus("Could not load vendors.");
     }
-  }
+  }, [admin]);
 
   useEffect(() => {
     if (!admin) {return;}
@@ -243,8 +277,7 @@ function AdminVendorsPageInner() {
     });
 
     return unsubscribe;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [admin]);
+  }, [admin, loadPage]);
 
   const eventVendorByVendorId = useMemo(() => {
     const map = new Map<string, EventVendor>();
@@ -398,28 +431,39 @@ function AdminVendorsPageInner() {
   }
 
   async function loadReviewData(vendorId: string) {
-    if (!adminEvent?.id) {
+    const scopedEvent = getCurrentAdminEvent();
+    if (!scopedEvent?.id) {
       return;
     }
+    const generation = ++reviewGenerationRef.current;
     setLoadingReview(true);
     try {
       const [intel, dispositions] = await Promise.all([
-        getVendorIntelligenceSummary(vendorId, adminEvent.id).catch((err: any) => {
+        getVendorIntelligenceSummary(vendorId, scopedEvent.id).catch((err: any) => {
           console.error("get_vendor_intelligence_summary denied:", err);
           return null;
         }),
-        listVendorEventDispositions(adminEvent.id, vendorId).catch((err: any) => {
+        listVendorEventDispositions(scopedEvent.id, vendorId).catch((err: any) => {
           console.error("list_vendor_event_dispositions denied:", err);
           return [] as VendorEventDispositionRow[];
         }),
       ]);
+
+      if (
+        generation !== reviewGenerationRef.current ||
+        getCurrentAdminEvent()?.id !== scopedEvent.id
+      ) {
+        return;
+      }
 
       if (intel) {
         setIntelligenceByVendorId((prev) => ({ ...prev, [vendorId]: intel }));
       }
       setDispositionsByVendorId((prev) => ({ ...prev, [vendorId]: dispositions }));
     } finally {
-      setLoadingReview(false);
+      if (generation === reviewGenerationRef.current) {
+        setLoadingReview(false);
+      }
     }
   }
 

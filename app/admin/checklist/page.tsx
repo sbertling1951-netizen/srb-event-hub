@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import {
+  getCurrentAdminEvent,
+  subscribeToAdminWorkspace,
+} from "@/lib/adminWorkspaceContext";
 
 type ChecklistSection = {
   title: string;
@@ -60,6 +64,10 @@ const CHECKLIST_SECTIONS: ChecklistSection[] = [
 
 const STORAGE_KEY_BASE = "fcoc-pre-rally-checklist";
 
+export function checklistStorageKeyForEvent(eventId: string | null | undefined) {
+  return eventId ? `${STORAGE_KEY_BASE}-${eventId}` : STORAGE_KEY_BASE;
+}
+
 export default function AdminChecklistPage() {
   return (
     <AdminRouteGuard requiredPermission="can_view_admin_dashboard">
@@ -73,21 +81,15 @@ export default function AdminChecklistPage() {
 function AdminChecklistPageInner() {
   const [storageKey, setStorageKey] = useState(STORAGE_KEY_BASE);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [loadedStorageKey, setLoadedStorageKey] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("fcoc-admin-event-context");
-      if (!raw) {return;}
+    const syncStorageKey = () => {
+      setStorageKey(checklistStorageKeyForEvent(getCurrentAdminEvent()?.id));
+    };
 
-      const parsed = JSON.parse(raw);
-      const eventId = parsed?.id;
-
-      if (eventId) {
-        setStorageKey(`${STORAGE_KEY_BASE}-${eventId}`);
-      }
-    } catch (err) {
-      console.error("Could not determine event context for checklist", err);
-    }
+    syncStorageKey();
+    return subscribeToAdminWorkspace(syncStorageKey);
   }, []);
 
   useEffect(() => {
@@ -101,16 +103,24 @@ function AdminChecklistPageInner() {
     } catch (err) {
       console.error("Could not load checklist state", err);
       setChecked({});
+    } finally {
+      // Do not persist the prior Event's in-memory state under this new key
+      // until the new Event's device-local state has been read.
+      setLoadedStorageKey(storageKey);
     }
   }, [storageKey]);
 
   useEffect(() => {
+    if (loadedStorageKey !== storageKey) {
+      return;
+    }
+
     try {
       localStorage.setItem(storageKey, JSON.stringify(checked));
     } catch (err) {
       console.error("Could not save checklist state", err);
     }
-  }, [checked, storageKey]);
+  }, [checked, loadedStorageKey, storageKey]);
 
   const totalItems = useMemo(
     () =>

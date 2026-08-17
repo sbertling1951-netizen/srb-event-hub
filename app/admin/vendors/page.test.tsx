@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -18,6 +20,11 @@ const ALL_STATUSES: VendorEventDisplayStatus[] = [
   "withdrawn",
   "revoked",
 ];
+
+const PAGE_SOURCE = readFileSync(
+  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  "utf8",
+);
 
 test("StatusBadge renders every display status's own label, with no crossover", () => {
   for (const status of ALL_STATUSES) {
@@ -42,4 +49,24 @@ test("the revoked label is distinct from the admitted label -- the admitted-vs-r
   assert.notEqual(admittedMarkup, revokedMarkup);
   assert.match(revokedMarkup, /revoked/i);
   assert.match(admittedMarkup, /currently participating/i);
+});
+
+test("an Admin Event switch starts a fresh Vendor load and rejects late prior-Event responses", () => {
+  assert.match(PAGE_SOURCE, /const scopedEvent = getCurrentAdminEvent\(\);/);
+  assert.match(PAGE_SOURCE, /const generation = \+\+loadGenerationRef\.current;/);
+  assert.match(
+    PAGE_SOURCE,
+    /getCurrentAdminEvent\(\)\?\.id === scopedEvent\?\.id/,
+  );
+  assert.match(PAGE_SOURCE, /\.eq\("event_id", scopedEvent\.id\)/);
+  assert.match(PAGE_SOURCE, /listVendorEventApplications\(scopedEvent\.id\)/);
+  assert.match(PAGE_SOURCE, /if \(!isCurrentLoad\(\)\) \{return;\}/);
+  assert.match(PAGE_SOURCE, /setEventVendors\(\[\]\);/);
+  assert.match(PAGE_SOURCE, /setApplications\(\[\]\);/);
+});
+
+test("a denied Vendor application read is visible instead of being presented as an empty queue", () => {
+  assert.match(PAGE_SOURCE, /Vendor applications could not be loaded for this Event\./);
+  assert.match(PAGE_SOURCE, /application review is unavailable\./);
+  assert.doesNotMatch(PAGE_SOURCE, /denied by the RPC -- fail closed to an empty/);
 });
