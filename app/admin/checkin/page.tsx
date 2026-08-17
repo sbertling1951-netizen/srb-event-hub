@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { filterCheckinBrowseAttendees } from "@/app/admin/checkin/checkinWorkflow";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { AppButton } from "@/components/ui/AppButton";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -180,11 +182,14 @@ function AdminCheckinPageInner() {
     Record<string, SharingFieldKey[]>
   >({});
   const [search, setSearch] = useState("");
+  const [showArrived, setShowArrived] = useState(false);
+  const [selectedAttendeeId, setSelectedAttendeeId] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading check-in...");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<Record<string, EditState>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { admin } = useAdmin();
   const { isCompact } = useShellInterfaceCapabilities();
@@ -490,52 +495,44 @@ function AdminCheckinPageInner() {
     return Array.from(unique).sort();
   }, [parkingSites]);
 
-  const filteredAttendees = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) {
-      return attendees;
-    }
+  const filteredAttendees = useMemo(
+    () =>
+      filterCheckinBrowseAttendees(
+        attendees,
+        search,
+        showArrived,
+        (attendee) =>
+          (householdByAttendee.get(attendee.id) || [])
+            .map((member) =>
+              [
+                member.display_name,
+                member.first_name,
+                member.last_name,
+                member.nickname,
+                member.raw_text,
+              ]
+                .filter(Boolean)
+                .join(" "),
+            )
+            .join(" "),
+      ),
+    [attendees, householdByAttendee, search, showArrived],
+  );
 
-    return attendees.filter((attendee) => {
-      const pilot = fullName(
-        attendee.pilot_first,
-        attendee.pilot_last,
-      ).toLowerCase();
-      const copilot = fullName(
-        attendee.copilot_first,
-        attendee.copilot_last,
-      ).toLowerCase();
-      const email = (attendee.email || "").toLowerCase();
-      const site = (attendee.assigned_site || "").toLowerCase();
-      const coach = [attendee.coach_make, attendee.coach_model]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+  const selectedAttendee = useMemo(
+    () => attendees.find((attendee) => attendee.id === selectedAttendeeId) || null,
+    [attendees, selectedAttendeeId],
+  );
 
-      const members = (householdByAttendee.get(attendee.id) || [])
-        .map((m) =>
-          [
-            m.display_name || "",
-            m.first_name || "",
-            m.last_name || "",
-            m.nickname || "",
-            m.raw_text || "",
-          ]
-            .join(" ")
-            .toLowerCase(),
-        )
-        .join(" ");
+  function selectAttendee(attendeeId: string) {
+    setSelectedAttendeeId(attendeeId);
+    setError(null);
+  }
 
-      return (
-        pilot.includes(q) ||
-        copilot.includes(q) ||
-        email.includes(q) ||
-        site.includes(q) ||
-        coach.includes(q) ||
-        members.includes(q)
-      );
-    });
-  }, [attendees, householdByAttendee, search]);
+  function closeSelectedAttendee() {
+    setSelectedAttendeeId(null);
+    window.requestAnimationFrame(() => searchInputRef.current?.focus());
+  }
 
   function updateEditState(attendeeId: string, patch: Partial<EditState>) {
     setEditState((prev) => ({
@@ -906,35 +903,91 @@ function AdminCheckinPageInner() {
 
       <div
         style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
           border: "1px solid #ddd",
           borderRadius: 10,
           background: "white",
           padding: 12,
-          maxWidth: 460,
           minWidth: 0,
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>Search arrivals</div>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Find attendee</div>
         <input
+          ref={searchInputRef}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          disabled={loading}
           placeholder="Name, nickname, email, coach, or site"
           style={{
             width: "100%",
             minWidth: 0,
             boxSizing: "border-box",
             padding: 10,
+            minHeight: 44,
+            fontSize: 16,
           }}
         />
+        <label style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 44, marginTop: 8 }}>
+          <input
+            type="checkbox"
+            checked={showArrived}
+            onChange={(event) => setShowArrived(event.target.checked)}
+          />
+          Show already checked-in attendees
+        </label>
       </div>
 
       <div style={{ fontSize: 13, color: "#555" }}>
-        Showing {filteredAttendees.length} attendee
-        {filteredAttendees.length === 1 ? "" : "s"}.
+        {search.trim() || showArrived
+          ? `Showing ${filteredAttendees.length} matching attendee${filteredAttendees.length === 1 ? "" : "s"}.`
+          : `${filteredAttendees.length} attendee${filteredAttendees.length === 1 ? "" : "s"} waiting to check in.`}
       </div>
 
+      {!selectedAttendee ? (
+        <div aria-label="Check-In attendee results" style={{ display: "grid", gap: 8, minWidth: 0 }}>
+          {filteredAttendees.map((attendee) => {
+            const pilotName = fullName(attendee.pilot_first, attendee.pilot_last) || "Unnamed attendee";
+            const copilotName = fullName(attendee.copilot_first, attendee.copilot_last);
+            return (
+              <button
+                key={attendee.id}
+                type="button"
+                onClick={() => selectAttendee(attendee.id)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "minmax(0, 1fr) auto",
+                  gap: 8,
+                  textAlign: "left",
+                  padding: 14,
+                  minHeight: 64,
+                  borderRadius: 10,
+                  border: attendee.has_arrived ? "1px solid #bbf7d0" : "1px solid #cbd5e1",
+                  background: attendee.has_arrived ? "#f0fdf4" : "white",
+                  color: "#0f172a",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ minWidth: 0 }}>
+                  <strong>{pilotName}</strong>
+                  {copilotName ? <span> + {copilotName}</span> : null}
+                  <span style={{ display: "block", marginTop: 4, fontSize: 13, color: "#64748b", overflowWrap: "anywhere" }}>
+                    {attendee.email || "No email"}
+                    {attendee.assigned_site ? ` · Site ${attendee.assigned_site}` : " · No site confirmed"}
+                  </span>
+                </span>
+                <span style={{ fontWeight: 700, color: attendee.has_arrived ? "#166534" : "#92400e" }}>
+                  {attendee.has_arrived ? "Checked in" : "Waiting"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
-        {filteredAttendees.map((attendee) => {
+        {(selectedAttendee ? [selectedAttendee] : []).map((attendee) => {
           const members = householdByAttendee.get(attendee.id) || [];
           const pilotMember = getRoleMember(members, "pilot");
           const copilotMember = getRoleMember(members, "copilot");
@@ -959,6 +1012,12 @@ function AdminCheckinPageInner() {
                 overflowWrap: "anywhere",
               }}
             >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <strong>Selected attendee</strong>
+                <AppButton variant="muted" onClick={closeSelectedAttendee}>
+                  Back to results
+                </AppButton>
+              </div>
               <div
                 style={{
                   display: "grid",
@@ -1220,7 +1279,7 @@ function AdminCheckinPageInner() {
           );
         })}
 
-        {filteredAttendees.length === 0 ? (
+        {!selectedAttendee && filteredAttendees.length === 0 ? (
           <div
             style={{
               border: "1px solid #ddd",

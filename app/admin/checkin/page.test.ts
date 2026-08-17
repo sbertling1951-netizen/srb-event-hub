@@ -114,3 +114,23 @@ test("Select all resolves to the explicit set of registered optional keys, never
   assert.ok(fnBody, "expected a selectAllSharedFields function");
   assert.match(fnBody!, /SHARING_OPTIONAL_FIELDS\.map\(\(field\) => field\.key\)/);
 });
+
+test("the browse surface delegates waiting-first filtering to the tested workflow helper", () => {
+  assert.match(source, /filterCheckinBrowseAttendees\(/);
+  assert.match(source, /showArrived/);
+  assert.match(source, /Show already checked-in attendees/);
+});
+
+test("only the selected attendee owns the expanded action workspace", () => {
+  assert.match(source, /const \[selectedAttendeeId, setSelectedAttendeeId\]/);
+  assert.match(source, /\(selectedAttendee \? \[selectedAttendee\] : \[\]\)\.map/);
+  assert.match(source, /Selected attendee/);
+  assert.match(source, /Back to results/);
+});
+
+test("compact browse results remain keyboard-native buttons with identity confirmation", () => {
+  assert.match(source, /aria-label="Check-In attendee results"/);
+  assert.match(source, /<button[\s\S]*?type="button"[\s\S]*?onClick=\{\(\) => selectAttendee\(attendee\.id\)\}/);
+  assert.match(source, /attendee\.email \|\| "No email"/);
+  assert.match(source, /attendee\.has_arrived \? "Checked in" : "Waiting"/);
+});
