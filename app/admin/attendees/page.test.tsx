@@ -50,6 +50,16 @@ function baseAttendee(overrides: Partial<AttendeeRow> = {}): AttendeeRow {
 function noop() {}
 async function asyncNoop() {}
 
+test("Stage A: generic attendee payload excludes operational Arrival and placement fields and presents governed handoffs", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const payload = source.slice(source.indexOf("const payload = {"), source.indexOf("if (editorMode === \"create\")"));
+  assert.equal(/assigned_site:/.test(payload), false);
+  assert.equal(/has_arrived:/.test(payload), false);
+  assert.match(source, /fetchCanonicalAttendeePlacement/);
+  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/checkin", state\.id\)/);
+  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
+});
+
 // --- 1. Household-member deletion requires explicit confirmation ---------
 
 test("computeHouseholdRemovalWarnings: create mode never warns, regardless of state", () => {
@@ -521,14 +531,12 @@ test("cancellation details are rendered only inside the AttendeeList expanded pa
 
 // --- 6. Deferred areas were not touched -----------------------------------
 
-test("Assigned Site / Has Arrived payload fields and the capacity-increase RPC are unchanged", () => {
+test("Stage A removes Assigned Site / Has Arrived from the generic payload while retaining the capacity-increase RPC", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
-  assert.ok(
-    source.includes("assigned_site: editorState.assigned_site.trim() || null,"),
-  );
-  assert.ok(source.includes("has_arrived: editorState.has_arrived,"));
+  assert.ok(!source.includes("assigned_site: editorState.assigned_site.trim() || null,"));
+  assert.ok(!source.includes("has_arrived: editorState.has_arrived,"));
   assert.ok(source.includes("record_participant_capacity_increase"));
 });
 

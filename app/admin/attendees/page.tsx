@@ -12,6 +12,8 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
+import { buildAdminAttendeeTargetHref } from "@/lib/adminAttendeeTarget";
+import { fetchCanonicalAttendeePlacement, type CanonicalAttendeePlacementResult } from "@/lib/canonicalAttendeePlacement";
 import {
   getCurrentAdminEvent,
   resolveAdminWorkingEvent,
@@ -1717,8 +1719,9 @@ export function AttendeeEditorModal(props: {
     value: AttendeeEditorState[K],
   ) => void;
   onSave: () => Promise<void>;
+  operationalStatus?: CanonicalAttendeePlacementResult | null;
 }) {
-  const { open, mode, state, saving, canEdit, onClose, onChange, onSave } =
+  const { open, mode, state, saving, canEdit, onClose, onChange, onSave, operationalStatus } =
     props;
   const [showAdditionalParticipant, setShowAdditionalParticipant] =
     useState(false);
@@ -1855,6 +1858,17 @@ export function AttendeeEditorModal(props: {
           flexDirection: "column",
         }}
       >
+        {mode === "edit" && state.id ? (
+          <div style={{ border: "1px solid #bfdbfe", borderRadius: 10, padding: 12, background: "#eff6ff", marginBottom: 14 }}>
+            <strong>Operational Status</strong>
+            <div>Arrival: {state.has_arrived ? "Arrived" : "Not arrived"}</div>
+            <div>Placement: {operationalStatus?.ok ? operationalStatus.site?.label || "Unassigned" : operationalStatus ? "Unavailable" : "Loading..."}</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+              <a href={buildAdminAttendeeTargetHref("/admin/checkin", state.id)}>View in Check-In</a>
+              <a href={buildAdminAttendeeTargetHref("/admin/parking", state.id)}>View in Parking</a>
+            </div>
+          </div>
+        ) : null}
         <div
           style={{
             display: "flex",
@@ -2067,15 +2081,6 @@ export function AttendeeEditorModal(props: {
             <label style={checkLabelStyle}>
               <input
                 type="checkbox"
-                checked={state.has_arrived}
-                onChange={(e) => onChange("has_arrived", e.target.checked)}
-              />
-              Has Arrived
-            </label>
-
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
                 checked={state.share_with_attendees}
                 onChange={(e) =>
                   onChange("share_with_attendees", e.target.checked)
@@ -2206,14 +2211,6 @@ export function AttendeeEditorModal(props: {
                   +
                 </button>
               </div>
-            </div>
-            <div>
-              <label style={labelStyle}>Assigned Site</label>
-              <input
-                value={state.assigned_site}
-                onChange={(e) => onChange("assigned_site", e.target.value)}
-                style={inputStyle}
-              />
             </div>
             <div>
               <label style={labelStyle}>Participant Type</label>
@@ -2364,6 +2361,7 @@ function AdminAttendeesPageInner() {
     emptyAttendeeEditorState(),
   );
   const [editorSaving, setEditorSaving] = useState(false);
+  const [operationalStatus, setOperationalStatus] = useState<CanonicalAttendeePlacementResult | null>(null);
 
   const [expandedAttendeeId, setExpandedAttendeeId] = useState<string | null>(
     null,
@@ -3262,6 +3260,10 @@ created_at
     setEditorMode("edit");
 
     const nextState = attendeeToEditorState(attendee);
+    setOperationalStatus(null);
+    if (currentEvent?.id) {
+      void fetchCanonicalAttendeePlacement(currentEvent.id, attendee.id).then(setOperationalStatus);
+    }
 
     const { data: participantRows } = await supabase
       .from("attendee_household_members")
@@ -3478,7 +3480,6 @@ created_at
         membership_number: membershipNumber || null,
         city: editorState.city.trim() || null,
         state: editorState.state.trim() || null,
-        assigned_site: editorState.assigned_site.trim() || null,
         participant_type: editorState.participant_type.trim() || "attendee",
         primary_phone: editorState.primary_phone.trim() || null,
         cell_phone: editorState.cell_phone.trim() || null,
@@ -3487,7 +3488,6 @@ created_at
         special_events_raw: editorState.special_events_raw.trim() || null,
         wants_to_volunteer: editorState.wants_to_volunteer,
         is_first_timer: editorState.is_first_timer,
-        has_arrived: editorState.has_arrived,
         share_with_attendees: editorState.share_with_attendees,
         is_active: editorState.is_active,
         include_in_headcount: editorState.include_in_headcount,
@@ -3647,7 +3647,6 @@ created_at
                 membership_number: payload.membership_number,
                 city: payload.city,
                 state: payload.state,
-                assigned_site: payload.assigned_site,
                 participant_type: payload.participant_type,
                 primary_phone: payload.primary_phone,
                 cell_phone: payload.cell_phone,
@@ -3656,7 +3655,6 @@ created_at
                 special_events_raw: payload.special_events_raw,
                 wants_to_volunteer: payload.wants_to_volunteer,
                 is_first_timer: payload.is_first_timer,
-                has_arrived: payload.has_arrived,
                 share_with_attendees: payload.share_with_attendees,
                 is_active: payload.is_active,
                 include_in_headcount: payload.include_in_headcount,
@@ -3974,6 +3972,7 @@ created_at
         onClose={closeAttendeeEditor}
         onChange={updateEditorField}
         onSave={handleSaveAttendeeRecord}
+        operationalStatus={operationalStatus}
       />
     </div>
   );
