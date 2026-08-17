@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   type CSSProperties,
   useEffect,
@@ -9,10 +10,10 @@ import {
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useAdmin } from "@/lib/adminContext";
 import {
   canAccessEvent,
 } from "@/lib/getCurrentAdminAccess";
-import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type AdminUserRow = {
@@ -407,8 +408,17 @@ function AdminUsersPageInner() {
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Users</h1>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>Default privilege groups with independent permission switches and event access.</div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div>
+            <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Users</h1>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>Default privilege groups with independent permission switches and event access.</div>
+          </div>
+          {admin?.isSuperAdmin ? (
+            <Link href="/admin/tenant-admins" style={tenantAdminLinkStyle}>
+              Tenant Admin Access
+            </Link>
+          ) : null}
+        </div>
       </div>
       {status ? <div className="card" style={{ padding: 18 }}>{status}</div> : null}
       {error ? <div style={errorBoxStyle}>{error}</div> : null}
@@ -539,3 +549,4 @@ const errorBoxStyle: CSSProperties = { padding: "10px 12px", borderRadius: 10, b
 const listButtonStyle: CSSProperties = { textAlign: "left", width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", background: "white", cursor: "pointer" };
 const checkLabelStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", minHeight: 42 };
 const permissionLabelStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", border: "1px solid #eee", borderRadius: 10 };
+const tenantAdminLinkStyle: CSSProperties = { ...secondaryButtonStyle, textDecoration: "none" };

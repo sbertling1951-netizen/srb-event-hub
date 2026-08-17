@@ -181,6 +181,7 @@ test("Admin shell Cohort 1 authority routes use the canonical Admin shell", () =
     "/admin/admin-users",
     "/admin/event-staff",
     "/admin/permissions",
+    "/admin/tenant-admins",
   ]) {
     assert.equal(resolveShellMode(pathname), "canonical-admin");
   }
