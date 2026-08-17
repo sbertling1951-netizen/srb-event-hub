@@ -95,3 +95,19 @@ export function selectedAttendeeChangedRemotely(
     baselineFingerprint !== serverFingerprint
   );
 }
+
+export function checkinServerFingerprint(
+  attendee: Pick<
+    CheckinBrowseAttendee,
+    "id" | "assigned_site" | "has_arrived" | "arrival_status"
+  >,
+  sharedFields: string[],
+): string {
+  return JSON.stringify({
+    id: attendee.id,
+    assignedSite: attendee.assigned_site || null,
+    hasArrived: !!attendee.has_arrived,
+    arrivalStatus: attendee.arrival_status || null,
+    sharedFields: [...sharedFields].sort(),
+  });
+}

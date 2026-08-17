@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { filterCheckinBrowseAttendees } from "@/app/admin/checkin/checkinWorkflow";
+import {
+  checkinServerFingerprint,
+  filterCheckinBrowseAttendees,
+  reconcileCheckinEditState,
+  selectedAttendeeChangedRemotely,
+} from "@/app/admin/checkin/checkinWorkflow";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
@@ -142,6 +147,19 @@ type EditState = {
   sharedFields: SharingFieldKey[];
 };
 
+type CheckinFailureCategory =
+  | "validation"
+  | "placement"
+  | "authority"
+  | "connectivity"
+  | "conflict";
+
+type CheckinOperationFailure = {
+  category: CheckinFailureCategory;
+  message: string;
+  retry: { attendeeId: string; nextHasArrived: boolean } | null;
+};
+
 function normalizeSite(value: string) {
   return value.trim().toUpperCase();
 }
@@ -159,6 +177,23 @@ function householdLine(member: HouseholdMember) {
 
 function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
   return members.find((m) => m.person_role === role) || null;
+}
+
+function classifyCheckinFailure(error: unknown): CheckinOperationFailure {
+  const message = error instanceof Error ? error.message : "Check-In failed.";
+  if (/authority|authorized|permission/i.test(message)) {
+    return { category: "authority", message, retry: null };
+  }
+  if (/changed|scope|unstable|idempotency|another station/i.test(message)) {
+    return { category: "conflict", message, retry: null };
+  }
+  if (/site|placement|assigned|occupied/i.test(message)) {
+    return { category: "placement", message, retry: null };
+  }
+  if (/network|fetch|offline|connection|timeout/i.test(message)) {
+    return { category: "connectivity", message, retry: null };
+  }
+  return { category: "connectivity", message, retry: null };
 }
 
 export default function AdminCheckinPage() {
@@ -190,11 +225,30 @@ function AdminCheckinPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [undoAttendee, setUndoAttendee] = useState<AttendeeRow | null>(null);
+  const [placementConfirmation, setPlacementConfirmation] = useState<{
+    attendee: AttendeeRow;
+    siteLabel: string;
+    occupantName: string;
+  } | null>(null);
   const [sharingRetry, setSharingRetry] = useState<{
     attendeeId: string;
     sharedFields: SharingFieldKey[];
   } | null>(null);
+  const [selectedIsDirty, setSelectedIsDirty] = useState(false);
+  const [selectedConflict, setSelectedConflict] = useState<string | null>(null);
+  const [recentCompletion, setRecentCompletion] = useState<{
+    attendeeId: string;
+    attendeeName: string;
+    message: string;
+  } | null>(null);
+  const [operationFailure, setOperationFailure] = useState<CheckinOperationFailure | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const selectedAttendeeIdRef = useRef<string | null>(null);
+  const selectedIsDirtyRef = useRef(false);
+  const selectedBaselineRef = useRef<string | null>(null);
+  const editStateRef = useRef<Record<string, EditState>>({});
+  const loadGenerationRef = useRef(0);
+  const placementAttemptKeysRef = useRef<Record<string, string>>({});
 
   const { admin } = useAdmin();
   const { isCompact } = useShellInterfaceCapabilities();
@@ -210,7 +264,9 @@ function AdminCheckinPageInner() {
   }
 
   useEffect(() => {
-    if (!admin) return;
+    if (!admin) {
+      return;
+    }
 
     if (!hasPermission(admin, "can_mark_arrived")) {
       setEvent(null);
@@ -272,7 +328,7 @@ function AdminCheckinPageInner() {
           filter: `event_id=eq.${event.id}`,
         },
         async () => {
-          await loadPage();
+          await loadPage({ preserveSelectedEdit: true, silent: true });
         },
       )
       .subscribe();
@@ -288,7 +344,7 @@ function AdminCheckinPageInner() {
           filter: `event_id=eq.${event.id}`,
         },
         async () => {
-          await loadPage();
+          await loadPage({ preserveSelectedEdit: true, silent: true });
         },
       )
       .subscribe();
@@ -301,10 +357,15 @@ function AdminCheckinPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id]);
 
-  async function loadPage() {
+  async function loadPage(
+    options: { preserveSelectedEdit?: boolean; silent?: boolean } = {},
+  ) {
+    const generation = ++loadGenerationRef.current;
     try {
-      setLoading(true);
-      showStatus("Loading check-in...");
+      if (!options.silent) {
+        setLoading(true);
+        showStatus("Loading check-in...");
+      }
 
       const adminEvent = getCurrentAdminEvent();
       if (!adminEvent?.id) {
@@ -419,7 +480,6 @@ function AdminCheckinPageInner() {
         existing.push(row.field_key as SharingFieldKey);
         nextSharingByAttendee[row.attendee_id] = existing;
       });
-      setSharingByAttendee(nextSharingByAttendee);
 
       const siteRows: ParkingSiteRow[] = masterSiteRows.map((site) => {
         const assignment =
@@ -435,10 +495,8 @@ function AdminCheckinPageInner() {
         };
       });
 
-      setAttendees(attendeeList);
-      setParkingSites(siteRows);
-
       const attendeeIds = attendeeList.map((a) => a.id);
+      let nextHouseholdMembers: HouseholdMember[] = [];
 
       if (attendeeIds.length > 0) {
         const { data: memberRows, error: memberError } = await supabase
@@ -453,10 +511,17 @@ function AdminCheckinPageInner() {
           throw memberError;
         }
 
-        setHouseholdMembers((memberRows || []) as HouseholdMember[]);
-      } else {
-        setHouseholdMembers([]);
+        nextHouseholdMembers = (memberRows || []) as HouseholdMember[];
       }
+
+      if (generation !== loadGenerationRef.current) {
+        return;
+      }
+
+      setAttendees(attendeeList);
+      setParkingSites(siteRows);
+      setSharingByAttendee(nextSharingByAttendee);
+      setHouseholdMembers(nextHouseholdMembers);
 
       const nextEditState: Record<string, EditState> = {};
       attendeeList.forEach((attendee) => {
@@ -465,14 +530,53 @@ function AdminCheckinPageInner() {
           sharedFields: nextSharingByAttendee[attendee.id] || [],
         };
       });
-      setEditState(nextEditState);
+      const selectedId = selectedAttendeeIdRef.current;
+      const selectedServerAttendee = selectedId
+        ? attendeeList.find((attendee) => attendee.id === selectedId) || null
+        : null;
+      const selectedServerFingerprint = selectedServerAttendee
+        ? checkinServerFingerprint(
+            selectedServerAttendee,
+            nextSharingByAttendee[selectedServerAttendee.id] || [],
+          )
+        : null;
 
-      showStatus(`Loaded ${attendeeList.length} attendees for check-in.`);
+      if (
+        options.preserveSelectedEdit &&
+        selectedAttendeeChangedRemotely(
+          selectedBaselineRef.current,
+          selectedServerFingerprint,
+          selectedIsDirtyRef.current,
+        )
+      ) {
+        setSelectedConflict(
+          "This attendee changed at another Check-In station. Reload their current record before continuing.",
+        );
+      }
+
+      const reconciledEditState = reconcileCheckinEditState(
+        nextEditState,
+        editStateRef.current,
+        selectedId,
+        !!options.preserveSelectedEdit && selectedIsDirtyRef.current,
+      );
+      editStateRef.current = reconciledEditState;
+      setEditState(reconciledEditState);
+
+      if (selectedId && !selectedIsDirtyRef.current) {
+        selectedBaselineRef.current = selectedServerFingerprint;
+      }
+
+      if (!options.silent) {
+        showStatus(`Loaded ${attendeeList.length} attendees for check-in.`);
+      }
     } catch (err: any) {
       console.error("loadPage error:", err);
       showError(err?.message || "Failed to load admin check-in.");
     } finally {
-      setLoading(false);
+      if (!options.silent && generation === loadGenerationRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -529,23 +633,54 @@ function AdminCheckinPageInner() {
   );
 
   function selectAttendee(attendeeId: string) {
+    const attendee = attendees.find((row) => row.id === attendeeId) || null;
+    selectedAttendeeIdRef.current = attendeeId;
+    selectedIsDirtyRef.current = false;
+    selectedBaselineRef.current = attendee
+      ? checkinServerFingerprint(
+          attendee,
+          sharingByAttendee[attendeeId] || [],
+        )
+      : null;
     setSelectedAttendeeId(attendeeId);
+    setSelectedIsDirty(false);
+    setSelectedConflict(null);
     setError(null);
   }
 
   function closeSelectedAttendee() {
+    selectedAttendeeIdRef.current = null;
+    selectedIsDirtyRef.current = false;
+    selectedBaselineRef.current = null;
     setSelectedAttendeeId(null);
+    setSelectedIsDirty(false);
+    setSelectedConflict(null);
     window.requestAnimationFrame(() => searchInputRef.current?.focus());
   }
 
+  async function reloadSelectedAttendee() {
+    selectedIsDirtyRef.current = false;
+    setSelectedIsDirty(false);
+    setSelectedConflict(null);
+    await loadPage();
+  }
+
   function updateEditState(attendeeId: string, patch: Partial<EditState>) {
-    setEditState((prev) => ({
-      ...prev,
-      [attendeeId]: {
-        ...prev[attendeeId],
-        ...patch,
-      },
-    }));
+    setEditState((prev) => {
+      const next = {
+        ...prev,
+        [attendeeId]: {
+          ...prev[attendeeId],
+          ...patch,
+        },
+      };
+      editStateRef.current = next;
+      return next;
+    });
+    if (selectedAttendeeIdRef.current === attendeeId) {
+      selectedIsDirtyRef.current = true;
+      setSelectedIsDirty(true);
+    }
   }
 
   function toggleSharedField(attendeeId: string, fieldKey: SharingFieldKey) {
@@ -648,7 +783,11 @@ function AdminCheckinPageInner() {
     }
   }
 
-  async function saveCheckin(attendee: AttendeeRow, nextHasArrived: boolean) {
+  async function saveCheckin(
+    attendee: AttendeeRow,
+    nextHasArrived: boolean,
+    occupiedSiteConfirmed = false,
+  ) {
     if (!event?.id) {
       showError("No working event selected.");
       return;
@@ -663,6 +802,7 @@ function AdminCheckinPageInner() {
       ? normalizeSite(current.siteNumber)
       : normalizeSite(attendee.assigned_site || "");
     const enteredSiteKey = siteMatchKey(normalizedSite);
+    let placementAttemptSignature: string | null = null;
 
     if (current.siteNumber !== normalizedSite) {
       updateEditState(attendee.id, { siteNumber: normalizedSite });
@@ -670,6 +810,7 @@ function AdminCheckinPageInner() {
 
     try {
       setSavingId(attendee.id);
+      setOperationFailure(null);
       showStatus("Saving check-in changes...");
 
       let matchedSite: ParkingSiteRow | null = null;
@@ -733,22 +874,17 @@ function AdminCheckinPageInner() {
         const existing = existingByRoster || existingByParking;
         const occupiedByOther = !!(existing?.id && existing.id !== attendee.id);
 
-        if (occupiedByOther) {
+        if (occupiedByOther && !occupiedSiteConfirmed) {
           const existingName =
             fullName(existing!.pilot_first, existing!.pilot_last) ||
             "another attendee";
-
-          const confirmMove = window.confirm(
-            `Site "${normalizedSite}" is currently assigned to ${existingName}.\n\nDo you want to move ${fullName(
-              attendee.pilot_first,
-              attendee.pilot_last,
-            )} into this site and clear the previous assignment?`,
-          );
-
-          if (!confirmMove) {
-            setSavingId(null);
-            return;
-          }
+          setPlacementConfirmation({
+            attendee,
+            siteLabel: normalizedSite,
+            occupantName: existingName,
+          });
+          setSavingId(null);
+          return;
         }
 
         let resolvedSiteId = matchedSite.id;
@@ -809,6 +945,20 @@ function AdminCheckinPageInner() {
         }
       }
 
+      placementAttemptSignature = placementAction
+        ? [
+            attendee.id,
+            placementAction,
+            placementSiteId || "none",
+            placementOverride ? "override" : "normal",
+          ].join(":")
+        : null;
+      const placementIdempotencyKey = placementAttemptSignature
+        ? placementAttemptKeysRef.current[placementAttemptSignature] ||
+          (placementAttemptKeysRef.current[placementAttemptSignature] =
+            newSitePlacementIdempotencyKey())
+        : null;
+
       const { data: checkinData, error: checkinError } = await supabase.rpc(
         "complete_admin_checkin",
         {
@@ -818,9 +968,7 @@ function AdminCheckinPageInner() {
           p_share_with_attendees: current.sharedFields.length > 0,
           p_placement_action: placementAction,
           p_site_id: placementSiteId,
-          p_placement_idempotency_key: placementAction
-            ? newSitePlacementIdempotencyKey()
-            : null,
+          p_placement_idempotency_key: placementIdempotencyKey,
           p_override_occupied_site: placementOverride,
         },
       );
@@ -831,6 +979,9 @@ function AdminCheckinPageInner() {
       const checkinResult = checkinData?.[0];
       if (!checkinResult || checkinResult.outcome === "rejected") {
         throw new Error(mapSitePlacementError(new Error(checkinResult?.rejection_code || "unknown"), "Could not save check-in."));
+      }
+      if (placementAttemptSignature) {
+        delete placementAttemptKeysRef.current[placementAttemptSignature];
       }
 
       const attendeeName =
@@ -855,7 +1006,14 @@ function AdminCheckinPageInner() {
           attendeeId: attendee.id,
           sharedFields: current.sharedFields,
         });
+        selectedIsDirtyRef.current = false;
+        setSelectedIsDirty(false);
         await loadPage();
+        setRecentCompletion({
+          attendeeId: attendee.id,
+          attendeeName,
+          message: "Check-In saved. Sharing still needs attention.",
+        });
         showError(
           `${attendeeName}: check-in (arrival/site) was saved, but sharing preferences were not saved -- ${sharingFailure}`,
         );
@@ -905,11 +1063,31 @@ function AdminCheckinPageInner() {
           ? `${attendeeName} saved. No visible changes were made.`
           : `${attendeeName}: ${changes.join(" · ")}.`;
 
+          selectedIsDirtyRef.current = false;
+          setSelectedIsDirty(false);
+          setOperationFailure(null);
       await loadPage();
+      setRecentCompletion({
+        attendeeId: attendee.id,
+        attendeeName,
+        message: nextHasArrived ? "Checked in successfully." : "Check-In was undone.",
+      });
       showStatus(feedback);
+      setSearch("");
+      setShowArrived(false);
+      closeSelectedAttendee();
     } catch (err: any) {
       console.error("saveCheckin error:", err);
-      showError(err?.message || "Failed to save check-in.");
+      const failure = classifyCheckinFailure(err);
+      const retryable = failure.category === "connectivity";
+      setOperationFailure({
+        ...failure,
+        retry: retryable ? { attendeeId: attendee.id, nextHasArrived } : null,
+      });
+      if (!retryable && placementAttemptSignature) {
+        delete placementAttemptKeysRef.current[placementAttemptSignature];
+      }
+      showError(`${failure.category}: ${failure.message}`);
     } finally {
       setSavingId(null);
     }
@@ -932,6 +1110,25 @@ function AdminCheckinPageInner() {
           const attendee = undoAttendee;
           await saveCheckin(attendee, false);
           setUndoAttendee(null);
+        }}
+      />
+      <ConfirmDialog
+        open={!!placementConfirmation}
+        title="Resolve Site Conflict"
+        message={placementConfirmation
+          ? `Site ${placementConfirmation.siteLabel} is assigned to ${placementConfirmation.occupantName}. Move ${fullName(placementConfirmation.attendee.pilot_first, placementConfirmation.attendee.pilot_last) || "the selected attendee"} into this site and clear the previous assignment?`
+          : "Resolve this site conflict?"}
+        confirmLabel="Move and Check In"
+        danger
+        busy={!!placementConfirmation && savingId === placementConfirmation.attendee.id}
+        onCancel={() => setPlacementConfirmation(null)}
+        onConfirm={async () => {
+          if (!placementConfirmation) {
+            return;
+          }
+          const attendee = placementConfirmation.attendee;
+          setPlacementConfirmation(null);
+          await saveCheckin(attendee, true, true);
         }}
       />
       <div
@@ -962,6 +1159,32 @@ function AdminCheckinPageInner() {
           role="alert"
         >
           {error}
+          {operationFailure?.retry ? (
+            <div style={{ marginTop: 8 }}>
+              <AppButton
+                variant="warning"
+                onClick={() => {
+                  const retryAttendee = attendees.find(
+                    (attendee) => attendee.id === operationFailure.retry?.attendeeId,
+                  );
+                  if (retryAttendee && operationFailure.retry) {
+                    void saveCheckin(
+                      retryAttendee,
+                      operationFailure.retry.nextHasArrived,
+                    );
+                  }
+                }}
+              >
+                Retry Check-In
+              </AppButton>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {recentCompletion ? (
+        <div role="status" style={{ border: "1px solid #86efac", borderRadius: 10, background: "#f0fdf4", color: "#166534", padding: 12 }}>
+          <strong>{recentCompletion.attendeeName}</strong>: {recentCompletion.message}
         </div>
       ) : null}
 
@@ -1055,6 +1278,9 @@ function AdminCheckinPageInner() {
           const members = householdByAttendee.get(attendee.id) || [];
           const pilotMember = getRoleMember(members, "pilot");
           const copilotMember = getRoleMember(members, "copilot");
+          const additionalMembers = members.filter(
+            (member) => member.person_role === "additional",
+          );
 
           const current = editState[attendee.id] || {
             siteNumber: attendee.assigned_site || "",
@@ -1093,12 +1319,25 @@ function AdminCheckinPageInner() {
                   Back to results
                 </AppButton>
               </div>
+              {selectedIsDirty ? (
+                <div style={{ fontSize: 13, color: "#92400e" }}>Unsaved changes</div>
+              ) : null}
+              {selectedConflict ? (
+                <div role="alert" style={{ border: "1px solid #f59e0b", borderRadius: 8, background: "#fffbeb", color: "#92400e", padding: 12 }}>
+                  <strong>Record changed elsewhere.</strong> {selectedConflict}
+                  <div style={{ marginTop: 8 }}>
+                    <AppButton variant="warning" onClick={() => void reloadSelectedAttendee()}>
+                      Reload Current Record
+                    </AppButton>
+                  </div>
+                </div>
+              ) : null}
               <div
                 style={{
                   display: "grid",
                   gridTemplateColumns: isCompact
                     ? "minmax(0, 1fr)"
-                    : "minmax(0, 1.3fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr)",
+                    : "minmax(0, 1.3fr) minmax(0, 1.3fr) minmax(0, 1fr)",
                   gap: 12,
                   minWidth: 0,
                 }}
@@ -1111,11 +1350,6 @@ function AdminCheckinPageInner() {
                       : fullName(attendee.pilot_first, attendee.pilot_last) ||
                         "—"}
                   </div>
-                  {attendee.email ? (
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      {attendee.email}
-                    </div>
-                  ) : null}
                 </div>
 
                 <div style={{ minWidth: 0 }}>
@@ -1131,19 +1365,6 @@ function AdminCheckinPageInner() {
                 </div>
 
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700 }}>
-                    {[attendee.coach_make, attendee.coach_model]
-                      .filter(Boolean)
-                      .join(" ") || "—"}
-                  </div>
-                  {attendee.coach_length ? (
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      {attendee.coach_length} ft
-                    </div>
-                  ) : null}
-                </div>
-
-                <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700 }}>Arrival</div>
                   <div style={{ color: attendee.has_arrived ? "#166534" : "#92400e", fontWeight: 700 }}>
                     {attendee.has_arrived ? "Checked in" : "Not yet arrived"}
@@ -1151,25 +1372,30 @@ function AdminCheckinPageInner() {
                 </div>
               </div>
 
-              {members.length > 0 ? (
-                <div>
-                  <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                    Coach / Household Members
+              <details style={{ fontSize: 13, color: "#475569" }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+                  Additional details
+                </summary>
+                <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                  <div>Email: {attendee.email || "Not provided"}</div>
+                  <div>
+                    Coach: {[attendee.coach_make, attendee.coach_model]
+                      .filter(Boolean)
+                      .join(" ") || "Not provided"}
+                    {attendee.coach_length ? ` · ${attendee.coach_length} ft` : ""}
                   </div>
-                  <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
-                    {members.map((member) => (
-                      <div key={member.id}>
-                        {member.person_role === "pilot"
-                          ? "Pilot"
-                          : member.person_role === "copilot"
-                            ? "Co-Pilot"
-                            : "Additional"}
-                        : {householdLine(member)}
-                      </div>
-                    ))}
-                  </div>
+                  <div>First Time: {attendee.first_time ? "Yes" : "No"}</div>
+                  <div>Volunteer: {attendee.volunteer ? "Yes" : "No"}</div>
+                  {additionalMembers.length > 0 ? (
+                    <div>
+                      <strong>Additional household members</strong>
+                      {additionalMembers.map((member) => (
+                        <div key={member.id}>{householdLine(member)}</div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+              </details>
 
               <div
                 style={{
@@ -1249,7 +1475,7 @@ function AdminCheckinPageInner() {
                   <AppButton
                     variant="success"
                     onClick={() => void saveCheckin(attendee, true)}
-                    disabled={savingId === attendee.id || (!!current.siteNumber && !matchedSite)}
+                    disabled={savingId === attendee.id || !!selectedConflict || (!!current.siteNumber && !matchedSite)}
                     style={{ minHeight: 52, minWidth: 150, width: isCompact ? "100%" : "auto", fontSize: 16 }}
                   >
                     {savingId === attendee.id ? "Checking In..." : "Check In"}
@@ -1326,18 +1552,6 @@ function AdminCheckinPageInner() {
                 </div>
               </details>
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: 16,
-                  flexWrap: "wrap",
-                  fontSize: 13,
-                  color: "#555",
-                }}
-              >
-                <div>First Time: {attendee.first_time ? "Yes" : "No"}</div>
-                <div>Volunteer: {attendee.volunteer ? "Yes" : "No"}</div>
-              </div>
             </div>
           );
         })}

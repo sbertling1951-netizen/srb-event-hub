@@ -159,8 +159,23 @@ test("handicap need and site conflict are presented beside placement", () => {
   assert.match(source, /This site was not found on the Event parking map/);
 });
 
+test("decision-critical identity is primary while coach and reference facts are disclosed once", () => {
+  assert.match(source, /Pilot:/);
+  assert.match(source, /Co-Pilot:/);
+  assert.match(source, /<details[\s\S]*?Additional details[\s\S]*?Email:[\s\S]*?Coach:[\s\S]*?First Time:[\s\S]*?Volunteer:[\s\S]*?<\/details>/);
+  assert.match(source, /member\.person_role === "additional"/);
+  assert.equal(/Coach \/ Household Members/.test(source), false);
+});
+
 test("map access is progressively disclosed rather than a co-equal action", () => {
   assert.match(source, /<details[\s\S]*?Need to verify placement\?[\s\S]*?Show site on map[\s\S]*?<\/details>/);
+});
+
+test("occupied-site override uses the canonical confirmation dialog", () => {
+  assert.match(source, /title="Resolve Site Conflict"/);
+  assert.match(source, /confirmLabel="Move and Check In"/);
+  assert.match(source, /saveCheckin\(attendee, true, true\)/);
+  assert.equal(/window\.confirm/.test(source), false);
 });
 
 test("sharing remains a subordinate field-level panel with a sharing-only retry", () => {
@@ -168,4 +183,66 @@ test("sharing remains a subordinate field-level panel with a sharing-only retry"
   assert.match(source, /Retry Sharing Update/);
   assert.match(source, /async function retrySharingPreferences/);
   assert.equal(/complete_admin_checkin/.test(source.match(/async function retrySharingPreferences[\s\S]*?\n  \}/)?.[0] || ""), false);
+});
+
+test("realtime refreshes preserve the selected draft instead of blindly rebuilding it", () => {
+  const realtimeCalls = source.match(/loadPage\(\{ preserveSelectedEdit: true, silent: true \}\)/g) || [];
+  assert.equal(realtimeCalls.length, 2, "attendee and parking realtime channels must both reconcile safely");
+  assert.match(source, /reconcileCheckinEditState\(/);
+  assert.match(source, /editStateRef\.current/);
+});
+
+test("slower realtime loads cannot overwrite a newer server snapshot", () => {
+  assert.match(source, /const generation = \+\+loadGenerationRef\.current/);
+  assert.match(source, /if \(generation !== loadGenerationRef\.current\) \{\s*return;/);
+});
+
+test("a remote change to the selected dirty attendee surfaces and blocks submission", () => {
+  assert.match(source, /selectedAttendeeChangedRemotely\(/);
+  assert.match(source, /This attendee changed at another Check-In station/);
+  assert.match(source, /Record changed elsewhere/);
+  assert.match(source, /Reload Current Record/);
+  assert.match(source, /disabled=\{savingId === attendee\.id \|\| !!selectedConflict/);
+});
+
+test("placement retry reuses one idempotency key for the same action meaning", () => {
+  assert.match(source, /placementAttemptKeysRef/);
+  assert.match(source, /placementAttemptKeysRef\.current\[placementAttemptSignature\] \|\|/);
+  assert.match(source, /p_placement_idempotency_key: placementIdempotencyKey/);
+  assert.match(source, /delete placementAttemptKeysRef\.current\[placementAttemptSignature\]/);
+});
+
+test("successful Check-In is explicit, recent, and returns focus to attendee search", () => {
+  assert.match(source, /Checked in successfully/);
+  assert.match(source, /setRecentCompletion\(/);
+  assert.match(source, /setSearch\(""\)/);
+  assert.match(source, /searchInputRef\.current\?\.focus\(\)/);
+  assert.match(source, /recentCompletion\.attendeeName/);
+});
+
+test("Check-In success plus sharing failure remains truthful and retryable", () => {
+  assert.match(source, /Check-In saved\. Sharing still needs attention/);
+  assert.match(source, /check-in \(arrival\/site\) was saved, but sharing preferences were not saved/);
+  assert.match(source, /Retry Sharing Update/);
+});
+
+test("failures are categorized and only connectivity failures receive Check-In retry", () => {
+  for (const category of ["authority", "conflict", "placement", "connectivity"]) {
+    assert.match(source, new RegExp(`category: "${category}"`));
+  }
+  assert.match(source, /retryable = failure\.category === "connectivity"/);
+  assert.match(source, /Retry Check-In/);
+});
+
+test("compact viewport keeps the primary action full-width and touch-sized", () => {
+  assert.match(source, /useShellInterfaceCapabilities\(\)/);
+  assert.match(source, /minHeight: 52/);
+  assert.match(source, /width: isCompact \? "100%" : "auto"/);
+});
+
+test("authority and Event context continue through existing guards and canonical readers", () => {
+  assert.match(source, /requiredPermission="can_mark_arrived"/);
+  assert.match(source, /getCurrentAdminEvent\(\)/);
+  assert.match(source, /canAccessEvent\(admin, adminEvent\.id\)/);
+  assert.equal(/setCurrentAdminEvent|clearCurrentAdminEvent/.test(source), false);
 });

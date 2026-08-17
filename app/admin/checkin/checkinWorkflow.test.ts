@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   type CheckinBrowseAttendee,
+  checkinServerFingerprint,
   filterCheckinBrowseAttendees,
   reconcileCheckinEditState,
   selectedAttendeeChangedRemotely,
@@ -85,4 +86,20 @@ test("remote change to the actively edited attendee is an explicit conflict", ()
   assert.equal(selectedAttendeeChangedRemotely("before", "after", true), true);
   assert.equal(selectedAttendeeChangedRemotely("before", "after", false), false);
   assert.equal(selectedAttendeeChangedRemotely("same", "same", true), false);
+});
+
+test("server fingerprint covers arrival, placement, and governed sharing state", () => {
+  const row = attendee("selected", false, "Selected");
+  const initial = checkinServerFingerprint(row, ["phone", "email"]);
+
+  assert.equal(initial, checkinServerFingerprint(row, ["email", "phone"]));
+  assert.notEqual(
+    initial,
+    checkinServerFingerprint({ ...row, assigned_site: "A1" }, ["email", "phone"]),
+  );
+  assert.notEqual(
+    initial,
+    checkinServerFingerprint({ ...row, has_arrived: true }, ["email", "phone"]),
+  );
+  assert.notEqual(initial, checkinServerFingerprint(row, ["email"]));
 });
