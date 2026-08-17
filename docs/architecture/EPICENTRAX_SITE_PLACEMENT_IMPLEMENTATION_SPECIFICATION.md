@@ -29,9 +29,9 @@ conflicts.
 
 The operation is the sole database decision boundary for authoritative Site
 Placement. It establishes, reassigns, corrects, clears, or confirms current
-placement. It also records a member report as non-authoritative evidence.
-Identity, actor, Event, Tenant, authority, current state, and audit values are
-derived server-side.
+placement. The adjacent governed evidence boundary records a member report
+without making it authoritative. Identity, actor, Event, Tenant, authority,
+current state, and audit values are derived server-side.
 
 | Input | Rule |
 | --- | --- |
@@ -57,15 +57,18 @@ it calls a private evidence-recording helper in the governed placement
 persistence boundary. The helper receives the verified attendee, Event,
 Tenant, authorization basis (`authenticated` or `temporary`), and available
 Person/authentication identity. This context is constructed by the verifying
-boundary, never accepted from the browser, and is retained as report
-provenance in placement history. The helper receives the normalized entered
-site text and an optional inventory match; unknown text is preserved exactly
-as evidence subject to the configured length limit.
+boundary, never accepted from the browser, and is retained in a narrow
+member-site-report evidence record. The helper receives the raw and normalized
+answer to **“What site are you parked in?”** and an optional inventory match;
+unknown text is preserved exactly as evidence subject to the configured length
+limit.
 
 The helper verifies that its trusted context matches the attendee's Event and
 Tenant and writes only a non-authoritative report record. It is not
 `record_site_placement`, does not receive placement authority, and cannot
-change current placement. Later confirmation or correction is a new,
+change current placement. It never occupies a site, clears placement,
+displaces an attendee, materializes inventory, or updates
+`attendees.assigned_site`. Later confirmation or correction is a new,
 Event-scoped authorized `record_site_placement` call that may reference the
 report. Blank member input creates no report and never clears placement.
 
@@ -329,7 +332,7 @@ not returned as governed placement outcomes.
 | Admin Attendees | Placement display only; any future control calls the operation. | Remove `assigned_site` from create/edit payload; new attendee is unplaced. |
 | Admin Check-In | Arrival-only governed operation under `event.checkin.manage`, plus an optional canonical attendee-target handoff to Parking after successful Arrival. | Remove every site, occupancy, override, materialization, idempotency, and placement-action control. Arrival succeeds with no site. |
 | Admin Parking | Operation call for every placement action. | Keep Arrival controls separate; UI confirmation merely requests override. |
-| Member Check-In (Stage B) | Nonblank site becomes `report`; retain verified Arrival/share processing. | Blank site does not clear placement. Retire placement mutation from `submit_member_checkin`. This is separate from the Admin Stage A cutover. |
+| Member Check-In (Stage B) | Nonblank answer to “What site are you parked in?” becomes a non-authoritative **Member-reported site** record; retain verified Arrival/share processing. | Blank input creates no report and does not clear placement. Retire placement mutation from `submit_member_checkin`. This is separate from the Admin Stage A cutover. |
 | Future QR | Authorized `confirm` or `correct` with QR evidence. | QR never writes placement directly. |
 | Map publication and synchronization | Governed inventory materialization. | It may create/reconcile unoccupied inventory only; it cannot delete or alter occupied placement. |
 | Master-site deletion or identity edit | Reject while related Event inventory is occupied. | A future governed map transition is required before delete, replacement, rename-as-identity, or detachment. |
@@ -386,6 +389,55 @@ experience beyond its governed call boundary, the placement algorithm, RLS/task
 semantics, or the Member Check-In placement redesign. It does not authorize a
 direct projection write or any duplicate occupancy algorithm.
 
+### 9.2 Member Check-In site-reporting cutover — Stage B
+
+Stage B retains Member Check-In's legitimate Arrival operation while retiring
+its nonconforming direct Site Placement mutation:
+
+1. The existing authenticated-or-temporary Member Check-In verification
+   boundary continues to derive and verify the attendee, Event, Tenant, and
+   reporter provenance before recording Arrival or a report. A report must use
+   the applicable governed Member participation/lifecycle boundary and never
+   bypass it.
+2. The member-facing prompt is **“What site are you parked in?”** Supporting
+   text makes clear that it may be left blank when unknown or not yet parked.
+   It must not call the answer assigned, confirmed, reserved, or canonical.
+3. A nonblank answer writes one narrow, non-authoritative member-site-report
+   evidence record: Event, attendee/participation reference, raw and
+   normalized reported value, optional matched parking-site reference,
+   authenticated-or-temporary reporter provenance, timestamp, and—only where
+   necessary for Parking review—disposition plus an optional link to a later
+   placement-history decision.
+4. A blank answer creates no report and never creates, changes, clears,
+   reserves, displaces, confirms, or otherwise alters canonical placement.
+5. An unknown or unmatched value remains preserved evidence; it is not rejected
+   merely because it has no current inventory match. A matching report also
+   remains evidence only. A conflicting report and confirmed placement remain
+   separately visible and auditable.
+6. `submit_member_checkin` must stop mutating
+   `parking_sites.assigned_attendee_id`, creating parking inventory, and
+   writing the `attendees.assigned_site` compatibility projection. It must not
+   invoke `record_site_placement` on a member's behalf.
+7. The evidence helper is private to the already-verified server boundary; no
+   `anon` or `authenticated` client can call it directly or assert a different
+   attendee, Event, Tenant, or reporter context.
+8. Parking may show **Member-reported site** as evidence. An authorized Parking
+   staff member independently chooses whether to invoke the ordinary
+   `record_site_placement` operation. That operation remains the only source
+   of confirmed/canonical placement and may retain an auditable report link.
+9. Member and staff reads of confirmed placement derive from canonical Parking
+   state, never from the report or `attendees.assigned_site`. When both facts
+   are shown, label them distinctly as **Member-reported site** and
+   **Confirmed site** (or the existing canonical Parking term).
+
+The current durable Member Check-In implementation is explicitly
+nonconforming: it can clear the member's canonical occupancy, assign a vacant
+site, materialize parking inventory, and write `attendees.assigned_site`
+without `record_site_placement` authority/history. Stage B retires those
+behaviors. It does not redesign Person identity, temporary verification,
+consent/sharing, Event context, or the Parking algorithm; it introduces no
+generic request, ticket, notification, or member approval framework.
+
 ## 10. Implementation Sequence and Rollback
 
 1. Run production-equivalent, read-only preflight. Check duplicate occupancy,
@@ -404,10 +456,11 @@ direct projection write or any duplicate occupancy algorithm.
 4. Add authorization predicate and canonical operation.
 5. Validate authority, locking, retry, rollback, and per-attendee replay in
    isolation.
-6. Apply the Admin Check-In / Parking Stage A cutover in §9.1. The legacy
-   Member Check-In direct placement mutation is the separately scoped Stage B:
-   preserve reporting only through the trusted evidence path in §3.1 if needed,
-   then retire the direct mutation without inventing new reporting semantics.
+6. Apply the Admin Check-In / Parking Stage A cutover in §9.1. The separately
+   scoped Member Check-In Stage B cutover in §9.2 retains the settled physical
+   location report through the trusted evidence path in §3.1, then retires the
+   direct placement mutation without inventing any additional request
+   semantics.
 7. Migrate remaining consumers, including map workflows and the separately
    authorized Stage B member-report conversion; remove all legacy placement
    mutations.
@@ -433,7 +486,7 @@ reactivate a legacy placement write path.
 | Admin Check-In Stage A | Arrival succeeds without placement; Check-In-only authority is denied placement; a dual-authority actor may perform each module's distinct operation; frozen Event Arrival is denied. |
 | Targeted Admin handoff | Check-In's Parking handoff preserves the Event context and target attendee; a stale or cross-Event target fails closed in Parking's current Event roster. |
 | Projection synchronization | Assign, reassign, clear, and displacement atomically synchronize `attendees.assigned_site` from canonical occupancy; no Check-In-maintained projection is consulted as authority. |
-| Member report and QR | Report preserves evidence only; QR uses authorized confirm/correct only. |
+| Member report and QR | Blank member input creates no report and no placement change; matching, unmatched, and conflicting reports preserve evidence only; QR uses authorized confirm/correct only. |
 | Two attendees/one site and one attendee/two sites | Constraints and locks prevent conflict and split placement. |
 | Simultaneous/stale writes | No deadlock, lost update, or stale overwrite. |
 | Idempotency replay | Equivalent calls with one key return the original result, repeat no mutation/history, and allocate no second Event sequence; materially different reuse rejects. |

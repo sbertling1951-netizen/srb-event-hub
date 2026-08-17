@@ -26,11 +26,14 @@ for an attendee. It may be established, changed, cleared, confirmed, or
 corrected only by `record_site_placement`. A confirmation is authoritative as
 an audited determination even when it does not change the current site.
 
-**Reported placement** is a statement or observation about an attendee's site
-that has not itself determined the current authoritative placement. A member's
-entered site, park-provided information, and an observation made during QR
-verification are reported placement evidence until an authorized actor uses
-the governed operation to determine the authoritative result.
+**Member-reported site** is a member's statement of where their coach is
+physically parked at check-in time. It is reported placement evidence, not an
+assignment request or an authoritative placement determination. It never
+reserves, occupies, changes, clears, displaces, or confirms a site. A blank
+member report means only that no location is reported; it never alters current
+placement. Park-provided information and an observation made during QR
+verification are likewise reported placement evidence until an authorized
+actor uses the governed operation to determine an authoritative result.
 
 **Evidence source** identifies where the information supporting a governed
 determination came from. It does not grant authority and does not create a
@@ -46,7 +49,10 @@ placement.
 
 Historical evidence and placement history are separate from the current
 authoritative placement. They preserve what was reported, observed, decided,
-and by whom; they do not become a parallel current-state source.
+and by whom; they do not become a parallel current-state source. A
+member-reported site and a later confirmed placement remain separately sourced
+facts even when they have the same value, and remain separately preserved when
+they conflict.
 
 The architecture does not introduce a new Person-Tenant relationship concept.
 Site Placement remains Event-owned Operational Context data.
@@ -134,12 +140,20 @@ the server-side task determination.
 
 ## 7. Evidence Model
 
-Member-entered site information must be preserved with its provenance,
-including the reporter, time, Event and attendee scope, reported value, and
-the resulting disposition when one is made. An incorrect report remains a
-historical observation; it must not be rewritten to look correct merely
-because a later decision differs. A correct report is likewise evidence of
-what the member reported, not a second placement record.
+Member site reporting asks, in plain language, **“What site are you parked
+in?”** A member may leave the answer blank when they do not know or are not
+parked. A nonblank answer is preserved as **Member-reported site** evidence
+with its reporter, time, Event and attendee scope, raw and normalized value,
+and an optional inventory match. An unmatched value is evidence, not an error
+or a reason to fabricate inventory. A blank answer creates no report and
+never clears placement.
+
+An incorrect report remains a historical observation; it must not be rewritten
+to look correct merely because a later decision differs. A matching report is
+likewise evidence of what the member reported, not a second placement record.
+If a later canonical placement differs, both values remain visible and
+auditable rather than silently overwriting either fact. Any disposition or
+link to a later authoritative determination must preserve that distinction.
 
 An authorized actor may use member-reported information as evidence for an
 initial placement, correction, or confirmation through
