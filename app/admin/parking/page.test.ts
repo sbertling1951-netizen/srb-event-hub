@@ -105,6 +105,22 @@ test("Parking rejects stale context and realtime responses before applying them"
   assert.match(SOURCE, /setSelectionStale\(/);
 });
 
+test("marker selection is deliberate: tapping a site selects it but does not call a placement mutation", () => {
+  const fn = SOURCE.match(/function handleSiteClick\([\s\S]*?\n  \}/);
+  assert.ok(fn);
+  assert.match(fn![0], /setSelectedSiteId\(selectedId\)/);
+  assert.equal(/assignSelectedToSite|assignAttendeeToSite/.test(fn![0]), false);
+});
+
+test("Parking uses one contextual action zone and in-context conflict confirmation", () => {
+  assert.match(SOURCE, /const placementAction = useMemo/);
+  assert.match(SOURCE, /const actionPanel = \(/);
+  assert.match(SOURCE, /Review occupied-site move/);
+  assert.match(SOURCE, /Move and unassign/);
+  assert.equal(/window\.confirm/.test(SOURCE), false);
+  assert.equal(/Quick Park|Mark Parked|Mark Arrived/.test(SOURCE), false);
+});
+
 test("no second Authority definition is introduced -- client-side permission checks are not duplicated as a security boundary in these functions", () => {
   const fn = extractAssignAttendeeToSite()
     + (SOURCE.match(/async function clearSite\([\s\S]*?\n  \}\n/) || [""])[0];

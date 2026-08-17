@@ -7,6 +7,9 @@ import PageNavigation from "@/components/layout/PageNavigation";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -112,6 +115,7 @@ type Attendee = {
 
 function ParkingAdminPageInner() {
   const { admin } = useAdmin();
+  const { isCompact: isNarrow } = useShellInterfaceCapabilities();
   const mapViewportRef = useRef<MapCanvasHandle | null>(null);
   const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const loadGenerationRef = useRef(0);
@@ -128,9 +132,15 @@ function ParkingAdminPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectionStale, setSelectionStale] = useState<string | null>(null);
+  const [placementConfirmation, setPlacementConfirmation] = useState<{
+    attendee: Attendee;
+    site: ParkingSite;
+    occupant: Attendee | null;
+  } | null>(null);
+  const [clearConfirmation, setClearConfirmation] = useState<ParkingSite | null>(null);
+  const [lastAction, setLastAction] = useState<string | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
-  const [isNarrow, setIsNarrow] = useState(false);
   const [showQueuePanel, setShowQueuePanel] = useState(true);
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [showParked, setShowParked] = useState(false);
@@ -491,18 +501,10 @@ function ParkingAdminPageInner() {
   }, []);
 
   useEffect(() => {
-    function handleResize() {
-      const narrow = window.innerWidth < 900;
-      setIsNarrow(narrow);
-      if (!narrow) {
-        setShowQueuePanel(true);
-      }
+    if (!isNarrow) {
+      setShowQueuePanel(true);
     }
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  }, [isNarrow]);
 
   // useEffect(() => {
   // document.body.classList.add("coach-map-lock");
@@ -709,6 +711,18 @@ function ParkingAdminPageInner() {
     attendees.find((a) => a.id === selectedAttendeeId) || null;
   const selectedSite =
     sites.find((s) => (s.id || s.master_site_id) === selectedSiteId) || null;
+  const selectedAttendeeSite = selectedAttendee
+    ? siteLabelByAttendeeId.get(selectedAttendee.id) || null
+    : null;
+  const placementAction = useMemo(() => {
+    if (selectionStale) {return { label: "Review current state", detail: selectionStale, enabled: false };}
+    if (!selectedAttendee && !selectedSite) {return { label: "Find attendee or select site", detail: "Start with the queue or the map.", enabled: false };}
+    if (selectedAttendee && !selectedSite) {return { label: "Select destination site", detail: `${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""}`.trim(), enabled: false };}
+    if (!selectedAttendee && selectedSite) {return { label: "Choose attendee", detail: `${selectedSite.display_label || selectedSite.site_number} is ${selectedSite.assigned_attendee_id ? "occupied" : "vacant"}.`, enabled: false };}
+    if (selectedSite?.assigned_attendee_id && selectedSite.assigned_attendee_id !== selectedAttendee?.id) {return { label: "Review conflict", detail: `${selectedSite.display_label || selectedSite.site_number} is occupied.`, enabled: true };}
+    if (selectedAttendeeSite && siteMatchKey(selectedAttendeeSite) === siteMatchKey(selectedSite?.display_label || selectedSite?.site_number)) {return { label: "Confirm placement", detail: `Already at ${selectedAttendeeSite}.`, enabled: true };}
+    return { label: selectedAttendeeSite ? "Move to selected site" : "Assign to selected site", detail: selectedSite?.display_label || selectedSite?.site_number || "", enabled: true };
+  }, [selectedAttendee, selectedAttendeeSite, selectedSite, selectionStale]);
 
   useEffect(() => {
     if (!event?.id) {
@@ -861,15 +875,6 @@ function ParkingAdminPageInner() {
 
   // ─── Attendee/site interaction ────────────────────────────────────────────────
 
-  function scrollAttendeeIntoView(attendeeId: string) {
-    runAfterLayout(() => {
-      attendeeButtonRefs.current[attendeeId]?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }, 40);
-  }
-
   function recenterMap() {
     if (selectedSite) {
       focusSite(selectedSite);
@@ -913,7 +918,7 @@ function ParkingAdminPageInner() {
   async function assignAttendeeToSite({
     attendee,
     site,
-    allowOverride = true,
+    allowOverride = false,
   }: {
     attendee: Attendee;
     site: ParkingSite;
@@ -955,19 +960,6 @@ function ParkingAdminPageInner() {
         return false;
       }
 
-      const confirmed = window.confirm(
-        `Site ${siteLabel} is already assigned to ${occupiedName}.
-
-Move ${
-          `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim() ||
-          "this attendee"
-        } to this site and clear the previous assignment?`,
-      );
-
-      if (!confirmed) {
-        showStatus("Site assignment cancelled.");
-        return false;
-      }
     }
 
     const currentSiteKey = siteMatchKey(siteLabelByAttendeeId.get(attendee.id));
@@ -1053,12 +1045,19 @@ Move ${
 
     setSelectedSiteId(site.id || site.master_site_id);
     focusSite(site);
-    showStatus(
-      `Assigned ${
+    const displacementMessage = result.displaced_attendee_id
+      ? ` ${
+          attendees.find((candidate) => candidate.id === result.displaced_attendee_id)
+            ? `${attendees.find((candidate) => candidate.id === result.displaced_attendee_id)?.pilot_first || ""} ${attendees.find((candidate) => candidate.id === result.displaced_attendee_id)?.pilot_last || ""}`.trim()
+            : "The prior occupant"
+        } is now unassigned.`
+      : "";
+    const successMessage = `Assigned ${
         `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim() ||
         "attendee"
-      } at site ${siteLabel}.`,
-    );
+      } at site ${siteLabel}.${displacementMessage}`;
+    showStatus(successMessage);
+    setLastAction(successMessage);
 
     selectionFingerprintRef.current = null;
     setSelectionStale(null);
@@ -1066,7 +1065,7 @@ Move ${
     return true;
   }
 
-  async function assignSelectedToSite(site: ParkingSite) {
+  async function assignSelectedToSite(site: ParkingSite, allowOverride = false) {
     if (!selectedAttendee) {
       showError("Select an attendee first.");
       return;
@@ -1074,24 +1073,27 @@ Move ${
     await assignAttendeeToSite({
       attendee: selectedAttendee,
       site,
-      allowOverride: true,
+      allowOverride,
     });
   }
 
-  async function quickParkSelected() {
-    if (!selectedAttendee) {
-      showError("Select an attendee first.");
+  function beginPlacement() {
+    if (!selectedAttendee || !selectedSite) {
+      showError("Select an attendee and a destination site first.");
       return;
     }
-    if (!selectedSite) {
-      showError("Select an open site first.");
+    if (selectionStale) {
+      showError(selectionStale);
       return;
     }
-    await assignAttendeeToSite({
-      attendee: selectedAttendee,
-      site: selectedSite,
-      allowOverride: true,
-    });
+    const occupant = selectedSite.assigned_attendee_id
+      ? attendees.find((attendee) => attendee.id === selectedSite.assigned_attendee_id) || null
+      : null;
+    if (occupant && occupant.id !== selectedAttendee.id) {
+      setPlacementConfirmation({ attendee: selectedAttendee, site: selectedSite, occupant });
+      return;
+    }
+    void assignSelectedToSite(selectedSite);
   }
 
   async function clearSite(site: ParkingSite) {
@@ -1106,11 +1108,6 @@ Move ${
     if (!site.assigned_attendee_id || !site.id) {
       return;
     }
-    const confirmed = window.confirm(`Clear site ${site.site_number}?`);
-    if (!confirmed) {
-      return;
-    }
-
     const { data, error: rpcError } = await supabase.rpc(
       "record_site_placement",
       {
@@ -1152,30 +1149,27 @@ Move ${
     const selectedId = site.id || site.master_site_id;
 
     setSelectedSiteId(selectedId);
-
-    if (site.assigned_attendee_id) {
-      setSelectedAttendeeId(site.assigned_attendee_id);
-      scrollAttendeeIntoView(site.assigned_attendee_id);
-
-      if (isNarrow) {
-        setShowQueuePanel(true);
-      }
-      return;
-    }
-
-    if (selectedAttendeeId) {
-      void assignSelectedToSite(site);
-    } else {
-      showStatus(
-        `Selected open site ${site.site_number}. Choose an attendee to assign.`,
-      );
-    }
+    showStatus(
+      `Selected site ${site.display_label || site.site_number}. Review the placement action before continuing.`,
+    );
   }
 
-  function closeMobilePalette() {
-    setSelectedAttendeeId("");
-    setSelectedSiteId("");
-  }
+  const actionPanel = (
+    <div style={{ border: "1px solid #bfdbfe", borderRadius: 10, background: "#eff6ff", padding: 12, display: "grid", gap: 6 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: "#1e3a8a", textTransform: "uppercase" }}>Placement action</div>
+      <div style={{ fontWeight: 800 }}>{placementAction.label}</div>
+      <div style={{ fontSize: 13, color: "#334155" }}>{placementAction.detail}</div>
+      {selectedAttendee && <div style={{ fontSize: 13 }}>Attendee: {`${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""}`.trim()} · Current: {selectedAttendeeSite || "Unassigned"}</div>}
+      {selectedSite && <div style={{ fontSize: 13 }}>Destination: {selectedSite.display_label || selectedSite.site_number} · {selectedSite.assigned_attendee_id ? "Occupied" : "Vacant"}</div>}
+      {placementAction.enabled && (
+        <AppButton variant={placementAction.label === "Review conflict" ? "warning" : "primary"} onClick={beginPlacement}>
+          {placementAction.label === "Review conflict" ? "Review conflict" : placementAction.label}
+        </AppButton>
+      )}
+      {selectionStale && <AppButton variant="muted" onClick={() => { setSelectionStale(null); void loadPage(); }}>Reload current state</AppButton>}
+      {lastAction && <div role="status" style={{ fontSize: 13, color: "#166534" }}>{lastAction}</div>}
+    </div>
+  );
 
   // ─── Queue panel ─────────────────────────────────────────────────────────────
 
@@ -1195,6 +1189,7 @@ Move ${
       <div style={{ fontWeight: 700 }}>
         {isNarrow ? "Active Check-In Queue" : "Assignments"}
       </div>
+      {actionPanel}
 
       <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
         <button
@@ -1343,36 +1338,6 @@ Move ${
                 <div style={{ fontSize: 13 }}>
                   Arrival: {selectedAttendee.arrival_status || "not_arrived"}
                 </div>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    flexWrap: "wrap",
-                    marginTop: 10,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => void quickParkSelected()}
-                    disabled={
-                      !!selectionStale ||
-                      !selectedSite ||
-                      (!!selectedSite.assigned_attendee_id &&
-                        selectedSite.assigned_attendee_id !==
-                          selectedAttendee.id)
-                    }
-                  >
-                    Quick Park
-                  </button>
-                  {selectedSite?.assigned_attendee_id && (
-                    <button
-                      type="button"
-                      onClick={() => void clearSite(selectedSite)}
-                    >
-                      Clear Site
-                    </button>
-                  )}
-                </div>
               </>
             ) : (
               <div style={{ fontSize: 13, color: "#666" }}>
@@ -1400,19 +1365,10 @@ Move ${
                 <div style={{ fontSize: 13, color: "#555" }}>
                   {selectedSite.assigned_attendee_id ? "Occupied" : "Open"}
                 </div>
-                {!selectedSite.assigned_attendee_id && (
-                  <button
-                    type="button"
-                    style={{ marginTop: 10 }}
-                    disabled={!selectedAttendee || !!selectionStale}
-                    onClick={() => {
-                      if (selectedAttendee) {
-                        void assignSelectedToSite(selectedSite);
-                      }
-                    }}
-                  >
-                    Assign Selected Attendee
-                  </button>
+                {selectedSite.assigned_attendee_id && !selectedAttendee && (
+                  <AppButton variant="muted" style={{ marginTop: 10 }} onClick={() => setClearConfirmation(selectedSite)}>
+                    Clear site (correction)
+                  </AppButton>
                 )}
               </>
             ) : (
@@ -1564,6 +1520,29 @@ Move ${
         boxSizing: "border-box",
       }}
     >
+      <ConfirmDialog
+        open={!!placementConfirmation}
+        title="Review occupied-site move"
+        message={placementConfirmation ? `Move ${`${placementConfirmation.attendee.pilot_first || ""} ${placementConfirmation.attendee.pilot_last || ""}`.trim() || "the selected attendee"} to ${placementConfirmation.site.display_label || placementConfirmation.site.site_number}. ${`${placementConfirmation.occupant?.pilot_first || ""} ${placementConfirmation.occupant?.pilot_last || ""}`.trim() || "The current occupant"} will become unassigned and return to the Parking queue.` : ""}
+        confirmLabel={placementConfirmation ? `Move and unassign ${`${placementConfirmation.occupant?.pilot_first || ""} ${placementConfirmation.occupant?.pilot_last || ""}`.trim() || "occupant"}` : "Confirm"}
+        danger
+        onCancel={() => { setPlacementConfirmation(null); showStatus("Site move cancelled."); }}
+        onConfirm={async () => {
+          if (!placementConfirmation) {return;}
+          const { attendee, site } = placementConfirmation;
+          setPlacementConfirmation(null);
+          await assignAttendeeToSite({ attendee, site, allowOverride: true });
+        }}
+      />
+      <ConfirmDialog
+        open={!!clearConfirmation}
+        title="Clear site assignment"
+        message={clearConfirmation ? `Clear ${clearConfirmation.display_label || clearConfirmation.site_number}. The attendee will return to the Parking queue.` : ""}
+        confirmLabel="Clear site"
+        danger
+        onCancel={() => setClearConfirmation(null)}
+        onConfirm={async () => { if (!clearConfirmation) {return;} const site = clearConfirmation; setClearConfirmation(null); await clearSite(site); }}
+      />
       <style>{`
         @keyframes parkingSelectedPulse {
           0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.85), 0 1px 4px rgba(0,0,0,0.35); }
@@ -1629,11 +1608,8 @@ Move ${
       {isNarrow && selectedAttendee && (
         <div
           style={{
-            position: "fixed",
-            top: "calc(env(safe-area-inset-top, 0px) + 72px)",
-            right: "12px",
-            zIndex: 2500,
-            width: "min(320px, calc(100vw - 24px))",
+            position: "static",
+            width: "100%",
             border: "1px solid #d6d6d6",
             borderRadius: 12,
             background: "rgba(255,255,255,0.96)",
@@ -1654,52 +1630,9 @@ Move ${
               ? selectedSite.display_label || selectedSite.site_number
               : "None"}
           </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 6,
-              flexWrap: "wrap",
-              marginBottom: 8,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => void quickParkSelected()}
-              disabled={
-                !!selectionStale ||
-                !selectedSite ||
-                (!!selectedSite.assigned_attendee_id &&
-                  selectedSite.assigned_attendee_id !== selectedAttendee.id)
-              }
-            >
-              Quick Park
-            </button>
-          </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {selectedSite && !selectedSite.assigned_attendee_id && (
-              <button
-                type="button"
-                style={{ marginTop: 10 }}
-                disabled={!selectedAttendee || !!selectionStale}
-                onClick={() => {
-                  if (selectedAttendee) {
-                    void assignSelectedToSite(selectedSite);
-                  }
-                }}
-              >
-                Assign Selected Attendee
-              </button>
-            )}
-            {selectedSite?.assigned_attendee_id && (
-              <button
-                type="button"
-                onClick={() => void clearSite(selectedSite)}
-              >
-                Clear Site
-              </button>
-            )}
-            <button type="button" onClick={closeMobilePalette}>
-              Close
+            <button type="button" onClick={() => { setSelectedAttendeeId(""); setSelectedSiteId(""); }}>
+              Clear selection
             </button>
           </div>
         </div>
