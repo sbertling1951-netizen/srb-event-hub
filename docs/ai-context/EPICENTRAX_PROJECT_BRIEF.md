@@ -71,7 +71,8 @@ The truth of a data workflow is the data actually persisted and retrievable. Sou
 
 - Every real person is a legitimate identity, including non-members.
 - Only a PILOT may own `attendees.person_id` under the current bridge architecture.
-- COPILOT and HOUSEHOLD_MEMBER roles must not write to `attendees.person_id`; they are represented through role instances and the appropriate identity structures.
+- `attendees.person_id` is a PILOT-only registration-owner bridge, not a universal Person slot. COPILOT and HOUSEHOLD_MEMBER roles must not write to it; they are represented through role instances and the appropriate identity structures.
+- A canonical Person is role- and Event-independent. After governed resolution from sufficiently unique verified participant evidence, later Pilot, Co-Pilot, Additional Participant, Volunteer, Guest, or other legitimate participation must reuse that Person; only genuine ambiguity or conflict requires reconciliation. See the accepted Domain Model, **Role-independent Person continuity**, for the governing semantic rule.
 - Placeholder or non-member membership values such as `F123456`, `F999999`, `FM22222`, and similar values indicate membership status. They are not invalid-person markers and must never be used as person-specific identity evidence.
 - A matching identifier is not conclusive when it points to multiple people.
 - Historical identifiers such as prior email, phone, or address may support self-service activation or recovery, but are not current preferred contact data and must not be sole proof when ambiguous.

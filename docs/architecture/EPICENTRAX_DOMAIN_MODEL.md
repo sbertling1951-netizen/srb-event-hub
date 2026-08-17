@@ -2,11 +2,11 @@
 
 **Status:** Accepted architectural standard
 
-**Version:** 2.1
+**Version:** 2.2
 
 **Accepted:** August 4, 2026
 
-**Last Amended:** August 13, 2026 — see Amendment History
+**Last Amended:** August 17, 2026 — see Amendment History
 
 ---
 
@@ -338,6 +338,34 @@ Every real person possesses one enduring identity.
 
 EpicentraX preserves every legitimate representation until governed evidence
 permits broader continuity to be established safely.
+
+## Role-independent Person continuity
+
+Person identity is independent of Event role, registration position, household
+relationship, membership status, Assignment, and the operational record that
+first represented the person. Those facts describe a Person's context or
+Participation; they never redefine who the Person is.
+
+Once a governed Person-resolution flow has linked a successfully authenticated
+Account to one canonical Person using sufficiently unique, verified participant
+evidence — for example, verified possession of an email address or mobile
+number associated with the participation record — that Person remains the
+canonical identity across later Events and legitimate roles. A later role as a
+Pilot, Co-Pilot, Additional Participant, Volunteer, Guest, or another
+participant must reuse that Person; it must not trigger a second identity
+creation or require identity establishment again merely because the role or
+Event changed.
+
+This is reasonable participant verification, not government-grade proof. A
+name alone is never sufficient. A genuinely ambiguous, disputed, conflicting,
+or internally inconsistent Account-to-Person link remains a governed
+reconciliation case and fails closed for attribution until resolved.
+
+A role-specific registration-owner bridge may evidence a Person's
+Participation, but it is not a universal identity mechanism for every person
+named on that registration. The authoritative Person-to-Event Participation
+record answers how the already-resolved Person is participating in that Event;
+it never replaces the Person or creates a separate identity.
 
 ---
 
@@ -2601,6 +2629,38 @@ Such documents must remain consistent with this Domain Model.
 ---
 
 # Amendment History
+
+## v2.2 — August 17, 2026
+
+**Governed decision:** Person identity is independent of Event role,
+registration position, and household relationship. A successfully resolved
+canonical Person continues across later Events and legitimate participation
+roles; a role change does not establish a new Person or renew an already
+settled identity decision.
+
+**Existing meaning:** the Model already defined Person as enduring, and
+Participation, Account, and identity evidence as distinct concepts. It did not
+explicitly apply that distinction to a person moving among Pilot, Co-Pilot,
+Additional Participant, Volunteer, Guest, or similar roles.
+
+**Corrected meaning:** added **Role-independent Person continuity**. The new
+section states that sufficiently unique verified participant evidence may
+support governed Person resolution without government-grade proof; names,
+ambiguous, disputed, conflicting, and internally inconsistent evidence remain
+reconciliation cases; and clarifies that a role-specific registration bridge
+cannot be a universal identity mechanism.
+
+**Affected architecture:** current member identity activation, role-instance,
+and Person × Event Participation implementation must conform when they add
+Co-Pilot and Additional Participant linkage. No implementation, authority,
+schema, or lifecycle decision is made by this conceptual amendment.
+
+**Historical interpretation preserved:** this amendment clarifies the existing
+one-Person and separate-Participation principles. It does not treat prior
+operational role records as new identity evidence, create any Person, or alter
+existing identity attribution.
+
+---
 
 ## v2.1 — August 13, 2026
 
