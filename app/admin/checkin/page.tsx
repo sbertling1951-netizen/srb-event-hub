@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -13,6 +14,10 @@ import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import {
+  readAdminAttendeeTarget,
+  resolveAdminAttendeeTarget,
+} from "@/lib/adminAttendeeTarget";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -218,7 +223,9 @@ function AdminCheckinPageInner() {
   >({});
   const [search, setSearch] = useState("");
   const [showArrived, setShowArrived] = useState(false);
-  const [selectedAttendeeId, setSelectedAttendeeId] = useState<string | null>(null);
+  const [selectedAttendeeId, setSelectedAttendeeId] = useState<string | null>(
+    null,
+  );
   const [status, setStatus] = useState("Loading check-in...");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<Record<string, EditState>>({});
@@ -241,7 +248,8 @@ function AdminCheckinPageInner() {
     attendeeName: string;
     message: string;
   } | null>(null);
-  const [operationFailure, setOperationFailure] = useState<CheckinOperationFailure | null>(null);
+  const [operationFailure, setOperationFailure] =
+    useState<CheckinOperationFailure | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const selectedAttendeeIdRef = useRef<string | null>(null);
   const selectedIsDirtyRef = useRef(false);
@@ -249,9 +257,16 @@ function AdminCheckinPageInner() {
   const editStateRef = useRef<Record<string, EditState>>({});
   const loadGenerationRef = useRef(0);
   const placementAttemptKeysRef = useRef<Record<string, string>>({});
+  // Guards the canonical attendee-target handoff (lib/adminAttendeeTarget)
+  // so it is consumed exactly once per raw target value -- never re-run on
+  // every realtime-triggered loadPage() reload, which would otherwise
+  // silently override whatever the admin has since selected.
+  const consumedAttendeeTargetRef = useRef<string | null>(null);
 
   const { admin } = useAdmin();
   const { isCompact } = useShellInterfaceCapabilities();
+  const searchParams = useSearchParams();
+  const attendeeTarget = readAdminAttendeeTarget(searchParams);
 
   function showStatus(message: string) {
     setError(null);
@@ -405,12 +420,16 @@ function AdminCheckinPageInner() {
       const mapSettings = (mapSettingsRows?.[0] ||
         null) as EventMapSettingsRow | null;
 
-      const [attendeeResult, masterSiteResult, assignmentResult, sharingResult] =
-        await Promise.all([
-          supabase
-            .from("attendees")
-            .select(
-              `
+      const [
+        attendeeResult,
+        masterSiteResult,
+        assignmentResult,
+        sharingResult,
+      ] = await Promise.all([
+        supabase
+          .from("attendees")
+          .select(
+            `
   id,
   entry_id,
   email,
@@ -428,25 +447,25 @@ function AdminCheckinPageInner() {
   volunteer:wants_to_volunteer,
   first_time:is_first_timer
 `,
-            )
-            .eq("event_id", loadedEvent.id)
-            .order("pilot_last", { ascending: true, nullsFirst: false })
-            .order("pilot_first", { ascending: true, nullsFirst: false }),
-          mapSettings?.selected_master_map_id
-            ? supabase
-                .from("master_map_sites")
-                .select("id,site_number,display_label")
-                .eq("master_map_id", mapSettings.selected_master_map_id)
-                .order("site_number", { ascending: true, nullsFirst: false })
-            : Promise.resolve({ data: [], error: null }),
-          supabase
-            .from("parking_sites")
-            .select("id,event_id,master_site_id,assigned_attendee_id")
-            .eq("event_id", loadedEvent.id),
-          supabase.rpc("get_admin_attendee_sharing_preferences", {
-            p_event_id: loadedEvent.id,
-          }),
-        ]);
+          )
+          .eq("event_id", loadedEvent.id)
+          .order("pilot_last", { ascending: true, nullsFirst: false })
+          .order("pilot_first", { ascending: true, nullsFirst: false }),
+        mapSettings?.selected_master_map_id
+          ? supabase
+              .from("master_map_sites")
+              .select("id,site_number,display_label")
+              .eq("master_map_id", mapSettings.selected_master_map_id)
+              .order("site_number", { ascending: true, nullsFirst: false })
+          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from("parking_sites")
+          .select("id,event_id,master_site_id,assigned_attendee_id")
+          .eq("event_id", loadedEvent.id),
+        supabase.rpc("get_admin_attendee_sharing_preferences", {
+          p_event_id: loadedEvent.id,
+        }),
+      ]);
 
       if (attendeeResult.error) {
         throw attendeeResult.error;
@@ -605,30 +624,27 @@ function AdminCheckinPageInner() {
 
   const filteredAttendees = useMemo(
     () =>
-      filterCheckinBrowseAttendees(
-        attendees,
-        search,
-        showArrived,
-        (attendee) =>
-          (householdByAttendee.get(attendee.id) || [])
-            .map((member) =>
-              [
-                member.display_name,
-                member.first_name,
-                member.last_name,
-                member.nickname,
-                member.raw_text,
-              ]
-                .filter(Boolean)
-                .join(" "),
-            )
-            .join(" "),
+      filterCheckinBrowseAttendees(attendees, search, showArrived, (attendee) =>
+        (householdByAttendee.get(attendee.id) || [])
+          .map((member) =>
+            [
+              member.display_name,
+              member.first_name,
+              member.last_name,
+              member.nickname,
+              member.raw_text,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          )
+          .join(" "),
       ),
     [attendees, householdByAttendee, search, showArrived],
   );
 
   const selectedAttendee = useMemo(
-    () => attendees.find((attendee) => attendee.id === selectedAttendeeId) || null,
+    () =>
+      attendees.find((attendee) => attendee.id === selectedAttendeeId) || null,
     [attendees, selectedAttendeeId],
   );
 
@@ -637,16 +653,46 @@ function AdminCheckinPageInner() {
     selectedAttendeeIdRef.current = attendeeId;
     selectedIsDirtyRef.current = false;
     selectedBaselineRef.current = attendee
-      ? checkinServerFingerprint(
-          attendee,
-          sharingByAttendee[attendeeId] || [],
-        )
+      ? checkinServerFingerprint(attendee, sharingByAttendee[attendeeId] || [])
       : null;
     setSelectedAttendeeId(attendeeId);
     setSelectedIsDirty(false);
     setSelectedConflict(null);
     setError(null);
   }
+
+  // Canonical attendee-target handoff (lib/adminAttendeeTarget): consumes
+  // ?attendee=<id>, once per distinct value, once the current Event's own
+  // roster has loaded. Resolution is purely against `attendees`, which
+  // loadPage() has already filtered to the current working Event -- so a
+  // stale, deleted, or cross-Event id simply will not be found here, and
+  // this never fetches, never switches Event, and never mutates Arrival.
+  useEffect(() => {
+    if (!attendeeTarget || loading) {
+      return;
+    }
+    if (consumedAttendeeTargetRef.current === attendeeTarget) {
+      return;
+    }
+
+    const resolution = resolveAdminAttendeeTarget(attendeeTarget, attendees);
+
+    if (resolution.status === "none") {
+      return;
+    }
+
+    consumedAttendeeTargetRef.current = attendeeTarget;
+
+    if (resolution.status === "valid") {
+      selectAttendee(resolution.attendeeId);
+      return;
+    }
+
+    showError(
+      "That attendee could not be found in the current Check-In event. They may have been removed, or the link may be for a different event.",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attendeeTarget, attendees, loading]);
 
   function closeSelectedAttendee() {
     selectedAttendeeIdRef.current = null;
@@ -852,7 +898,8 @@ function AdminCheckinPageInner() {
       const oldSiteKey = siteMatchKey(oldAssignedSite);
       const newSiteKey = siteMatchKey(normalizedSite);
 
-      let placementAction: "assign" | "reassign" | "confirm" | "clear" | null = null;
+      let placementAction: "assign" | "reassign" | "confirm" | "clear" | null =
+        null;
       let placementSiteId: string | null = null;
       let placementOverride = false;
 
@@ -977,11 +1024,21 @@ function AdminCheckinPageInner() {
       );
 
       if (checkinError) {
-        throw new Error(mapSitePlacementError(new Error(checkinError.message), "Could not save check-in."));
+        throw new Error(
+          mapSitePlacementError(
+            new Error(checkinError.message),
+            "Could not save check-in.",
+          ),
+        );
       }
       const checkinResult = checkinData?.[0];
       if (!checkinResult || checkinResult.outcome === "rejected") {
-        throw new Error(mapSitePlacementError(new Error(checkinResult?.rejection_code || "unknown"), "Could not save check-in."));
+        throw new Error(
+          mapSitePlacementError(
+            new Error(checkinResult?.rejection_code || "unknown"),
+            "Could not save check-in.",
+          ),
+        );
       }
       if (placementAttemptSignature) {
         delete placementAttemptKeysRef.current[placementAttemptSignature];
@@ -1067,14 +1124,16 @@ function AdminCheckinPageInner() {
           ? `${attendeeName} saved. No visible changes were made.`
           : `${attendeeName}: ${changes.join(" · ")}.`;
 
-          selectedIsDirtyRef.current = false;
-          setSelectedIsDirty(false);
-          setOperationFailure(null);
+      selectedIsDirtyRef.current = false;
+      setSelectedIsDirty(false);
+      setOperationFailure(null);
       await loadPage();
       setRecentCompletion({
         attendeeId: attendee.id,
         attendeeName,
-        message: nextHasArrived ? "Checked in successfully." : "Check-In was undone.",
+        message: nextHasArrived
+          ? "Checked in successfully."
+          : "Check-In was undone.",
       });
       showStatus(feedback);
       setSearch("");
@@ -1119,12 +1178,17 @@ function AdminCheckinPageInner() {
       <ConfirmDialog
         open={!!placementConfirmation}
         title="Resolve Site Conflict"
-        message={placementConfirmation
-          ? `Site ${placementConfirmation.siteLabel} is assigned to ${placementConfirmation.occupantName}. Move ${fullName(placementConfirmation.attendee.pilot_first, placementConfirmation.attendee.pilot_last) || "the selected attendee"} into this site and clear the previous assignment?`
-          : "Resolve this site conflict?"}
+        message={
+          placementConfirmation
+            ? `Site ${placementConfirmation.siteLabel} is assigned to ${placementConfirmation.occupantName}. Move ${fullName(placementConfirmation.attendee.pilot_first, placementConfirmation.attendee.pilot_last) || "the selected attendee"} into this site and clear the previous assignment?`
+            : "Resolve this site conflict?"
+        }
         confirmLabel="Move and Check In"
         danger
-        busy={!!placementConfirmation && savingId === placementConfirmation.attendee.id}
+        busy={
+          !!placementConfirmation &&
+          savingId === placementConfirmation.attendee.id
+        }
         onCancel={() => setPlacementConfirmation(null)}
         onConfirm={async () => {
           if (!placementConfirmation) {
@@ -1169,7 +1233,8 @@ function AdminCheckinPageInner() {
                 variant="warning"
                 onClick={() => {
                   const retryAttendee = attendees.find(
-                    (attendee) => attendee.id === operationFailure.retry?.attendeeId,
+                    (attendee) =>
+                      attendee.id === operationFailure.retry?.attendeeId,
                   );
                   if (retryAttendee && operationFailure.retry) {
                     void saveCheckin(
@@ -1187,8 +1252,18 @@ function AdminCheckinPageInner() {
       ) : null}
 
       {recentCompletion ? (
-        <div role="status" style={{ border: "1px solid #86efac", borderRadius: 10, background: "#f0fdf4", color: "#166534", padding: 12 }}>
-          <strong>{recentCompletion.attendeeName}</strong>: {recentCompletion.message}
+        <div
+          role="status"
+          style={{
+            border: "1px solid #86efac",
+            borderRadius: 10,
+            background: "#f0fdf4",
+            color: "#166534",
+            padding: 12,
+          }}
+        >
+          <strong>{recentCompletion.attendeeName}</strong>:{" "}
+          {recentCompletion.message}
         </div>
       ) : null}
 
@@ -1220,7 +1295,15 @@ function AdminCheckinPageInner() {
             fontSize: 16,
           }}
         />
-        <label style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 44, marginTop: 8 }}>
+        <label
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            minHeight: 44,
+            marginTop: 8,
+          }}
+        >
           <input
             type="checkbox"
             checked={showArrived}
@@ -1237,10 +1320,18 @@ function AdminCheckinPageInner() {
       </div>
 
       {!selectedAttendee ? (
-        <div aria-label="Check-In attendee results" style={{ display: "grid", gap: 8, minWidth: 0 }}>
+        <div
+          aria-label="Check-In attendee results"
+          style={{ display: "grid", gap: 8, minWidth: 0 }}
+        >
           {filteredAttendees.map((attendee) => {
-            const pilotName = fullName(attendee.pilot_first, attendee.pilot_last) || "Unnamed attendee";
-            const copilotName = fullName(attendee.copilot_first, attendee.copilot_last);
+            const pilotName =
+              fullName(attendee.pilot_first, attendee.pilot_last) ||
+              "Unnamed attendee";
+            const copilotName = fullName(
+              attendee.copilot_first,
+              attendee.copilot_last,
+            );
             return (
               <button
                 key={attendee.id}
@@ -1248,13 +1339,17 @@ function AdminCheckinPageInner() {
                 onClick={() => selectAttendee(attendee.id)}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "minmax(0, 1fr) auto",
+                  gridTemplateColumns: isCompact
+                    ? "minmax(0, 1fr)"
+                    : "minmax(0, 1fr) auto",
                   gap: 8,
                   textAlign: "left",
                   padding: 14,
                   minHeight: 64,
                   borderRadius: 10,
-                  border: attendee.has_arrived ? "1px solid #bbf7d0" : "1px solid #cbd5e1",
+                  border: attendee.has_arrived
+                    ? "1px solid #bbf7d0"
+                    : "1px solid #cbd5e1",
                   background: attendee.has_arrived ? "#f0fdf4" : "white",
                   color: "#0f172a",
                   cursor: "pointer",
@@ -1263,12 +1358,27 @@ function AdminCheckinPageInner() {
                 <span style={{ minWidth: 0 }}>
                   <strong>{pilotName}</strong>
                   {copilotName ? <span> + {copilotName}</span> : null}
-                  <span style={{ display: "block", marginTop: 4, fontSize: 13, color: "#64748b", overflowWrap: "anywhere" }}>
+                  <span
+                    style={{
+                      display: "block",
+                      marginTop: 4,
+                      fontSize: 13,
+                      color: "#64748b",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
                     {attendee.email || "No email"}
-                    {attendee.assigned_site ? ` · Site ${attendee.assigned_site}` : " · No site confirmed"}
+                    {attendee.assigned_site
+                      ? ` · Site ${attendee.assigned_site}`
+                      : " · No site confirmed"}
                   </span>
                 </span>
-                <span style={{ fontWeight: 700, color: attendee.has_arrived ? "#166534" : "#92400e" }}>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: attendee.has_arrived ? "#166534" : "#92400e",
+                  }}
+                >
                   {attendee.has_arrived ? "Checked in" : "Waiting"}
                 </span>
               </button>
@@ -1298,10 +1408,13 @@ function AdminCheckinPageInner() {
                   siteMatchKey(site.display_label) === enteredSiteKey,
               ) || null
             : null;
-          const conflictingAttendee = matchedSite?.assigned_attendee_id &&
+          const conflictingAttendee =
+            matchedSite?.assigned_attendee_id &&
             matchedSite.assigned_attendee_id !== attendee.id
-            ? attendees.find((row) => row.id === matchedSite.assigned_attendee_id) || null
-            : null;
+              ? attendees.find(
+                  (row) => row.id === matchedSite.assigned_attendee_id,
+                ) || null
+              : null;
 
           return (
             <div
@@ -1317,20 +1430,42 @@ function AdminCheckinPageInner() {
                 overflowWrap: "anywhere",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
                 <strong>Selected attendee</strong>
                 <AppButton variant="muted" onClick={closeSelectedAttendee}>
                   Back to results
                 </AppButton>
               </div>
               {selectedIsDirty ? (
-                <div style={{ fontSize: 13, color: "#92400e" }}>Unsaved changes</div>
+                <div style={{ fontSize: 13, color: "#92400e" }}>
+                  Unsaved changes
+                </div>
               ) : null}
               {selectedConflict ? (
-                <div role="alert" style={{ border: "1px solid #f59e0b", borderRadius: 8, background: "#fffbeb", color: "#92400e", padding: 12 }}>
+                <div
+                  role="alert"
+                  style={{
+                    border: "1px solid #f59e0b",
+                    borderRadius: 8,
+                    background: "#fffbeb",
+                    color: "#92400e",
+                    padding: 12,
+                  }}
+                >
                   <strong>Record changed elsewhere.</strong> {selectedConflict}
                   <div style={{ marginTop: 8 }}>
-                    <AppButton variant="warning" onClick={() => void reloadSelectedAttendee()}>
+                    <AppButton
+                      variant="warning"
+                      onClick={() => void reloadSelectedAttendee()}
+                    >
                       Reload Current Record
                     </AppButton>
                   </div>
@@ -1370,7 +1505,12 @@ function AdminCheckinPageInner() {
 
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700 }}>Arrival</div>
-                  <div style={{ color: attendee.has_arrived ? "#166534" : "#92400e", fontWeight: 700 }}>
+                  <div
+                    style={{
+                      color: attendee.has_arrived ? "#166534" : "#92400e",
+                      fontWeight: 700,
+                    }}
+                  >
                     {attendee.has_arrived ? "Checked in" : "Not yet arrived"}
                   </div>
                 </div>
@@ -1383,10 +1523,13 @@ function AdminCheckinPageInner() {
                 <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
                   <div>Email: {attendee.email || "Not provided"}</div>
                   <div>
-                    Coach: {[attendee.coach_make, attendee.coach_model]
+                    Coach:{" "}
+                    {[attendee.coach_make, attendee.coach_model]
                       .filter(Boolean)
                       .join(" ") || "Not provided"}
-                    {attendee.coach_length ? ` · ${attendee.coach_length} ft` : ""}
+                    {attendee.coach_length
+                      ? ` · ${attendee.coach_length} ft`
+                      : ""}
                   </div>
                   <div>First Time: {attendee.first_time ? "Yes" : "No"}</div>
                   <div>Volunteer: {attendee.volunteer ? "Yes" : "No"}</div>
@@ -1416,9 +1559,15 @@ function AdminCheckinPageInner() {
                   <div style={{ fontWeight: 700, marginBottom: 4 }}>
                     Confirm site
                   </div>
-                  <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>
-                    Current: {attendee.assigned_site?.toUpperCase() || "No site assigned"}
-                    {attendee.handicap_parking ? " · Handicap parking needed" : ""}
+                  <div
+                    style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}
+                  >
+                    Current:{" "}
+                    {attendee.assigned_site?.toUpperCase() ||
+                      "No site assigned"}
+                    {attendee.handicap_parking
+                      ? " · Handicap parking needed"
+                      : ""}
                   </div>
                   <datalist id="parking-site-suggestions">
                     {siteSuggestions.map((site) => (
@@ -1440,24 +1589,40 @@ function AdminCheckinPageInner() {
                     }}
                   />
                   {current.siteNumber && !matchedSite ? (
-                    <div role="alert" style={{ color: "#b91c1c", fontSize: 13, marginTop: 6 }}>
+                    <div
+                      role="alert"
+                      style={{ color: "#b91c1c", fontSize: 13, marginTop: 6 }}
+                    >
                       This site was not found on the Event parking map.
                     </div>
                   ) : null}
                   {conflictingAttendee ? (
-                    <div role="alert" style={{ color: "#b45309", fontSize: 13, marginTop: 6 }}>
-                      Site conflict: assigned to {fullName(conflictingAttendee.pilot_first, conflictingAttendee.pilot_last) || "another attendee"}. Check-In will ask before overriding it.
+                    <div
+                      role="alert"
+                      style={{ color: "#b45309", fontSize: 13, marginTop: 6 }}
+                    >
+                      Site conflict: assigned to{" "}
+                      {fullName(
+                        conflictingAttendee.pilot_first,
+                        conflictingAttendee.pilot_last,
+                      ) || "another attendee"}
+                      . Check-In will ask before overriding it.
                     </div>
                   ) : null}
                   {matchedSite ? (
                     <details style={{ marginTop: 8 }}>
-                      <summary style={{ cursor: "pointer", fontWeight: 700 }}>Need to verify placement?</summary>
+                      <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+                        Need to verify placement?
+                      </summary>
                       <AppButton
                         variant="muted"
                         style={{ marginTop: 8 }}
                         onClick={() => {
                           const siteToFocus = normalizeSite(current.siteNumber);
-                          localStorage.setItem("fcoc-parking-focus-site", siteToFocus);
+                          localStorage.setItem(
+                            "fcoc-parking-focus-site",
+                            siteToFocus,
+                          );
                           window.location.href = "/admin/parking";
                         }}
                       >
@@ -1471,7 +1636,10 @@ function AdminCheckinPageInner() {
                     variant="danger"
                     onClick={() => setUndoAttendee(attendee)}
                     disabled={savingId === attendee.id}
-                    style={{ minHeight: 48, width: isCompact ? "100%" : "auto" }}
+                    style={{
+                      minHeight: 48,
+                      width: isCompact ? "100%" : "auto",
+                    }}
                   >
                     Undo Check-In
                   </AppButton>
@@ -1479,71 +1647,90 @@ function AdminCheckinPageInner() {
                   <AppButton
                     variant="success"
                     onClick={() => void saveCheckin(attendee, true)}
-                    disabled={savingId === attendee.id || !!selectedConflict || (!!current.siteNumber && !matchedSite)}
-                    style={{ minHeight: 52, minWidth: 150, width: isCompact ? "100%" : "auto", fontSize: 16 }}
+                    disabled={
+                      savingId === attendee.id ||
+                      !!selectedConflict ||
+                      (!!current.siteNumber && !matchedSite)
+                    }
+                    style={{
+                      minHeight: 52,
+                      minWidth: 150,
+                      width: isCompact ? "100%" : "auto",
+                      fontSize: 16,
+                    }}
                   >
                     {savingId === attendee.id ? "Checking In..." : "Check In"}
                   </AppButton>
                 )}
               </div>
 
-              <details style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fafafa", padding: 12 }}>
-                <summary style={{ cursor: "pointer", fontWeight: 700 }}>Attendee Sharing</summary>
+              <details
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  background: "#fafafa",
+                  padding: 12,
+                }}
+              >
+                <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+                  Attendee Sharing
+                </summary>
                 <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
                   <div style={{ fontSize: 13, color: "#475569" }}>
-                    Choose what other participating attendees can see. Name is required for participation.
+                    Choose what other participating attendees can see. Name is
+                    required for participation.
                   </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {SHARING_OPTIONAL_FIELDS.map((field) => (
-                    <label
-                      key={field.key}
-                      style={{
-                        display: "flex",
-                        gap: 6,
-                        alignItems: "center",
-                        minHeight: 32,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={current.sharedFields.includes(field.key)}
-                        onChange={() =>
-                          toggleSharedField(attendee.id, field.key)
-                        }
-                      />
-                      {field.label}
-                    </label>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() => selectAllSharedFields(attendee.id)}
+                  <div
                     style={{
-                      padding: "4px 10px",
-                      borderRadius: 6,
-                      border: "1px solid #cbd5e1",
-                      background: "white",
-                      fontSize: 12,
-                      fontWeight: 700,
+                      display: "flex",
+                      gap: 12,
+                      flexWrap: "wrap",
                     }}
                   >
-                    Select all
-                  </button>
-                </div>
+                    {SHARING_OPTIONAL_FIELDS.map((field) => (
+                      <label
+                        key={field.key}
+                        style={{
+                          display: "flex",
+                          gap: 6,
+                          alignItems: "center",
+                          minHeight: 32,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={current.sharedFields.includes(field.key)}
+                          onChange={() =>
+                            toggleSharedField(attendee.id, field.key)
+                          }
+                        />
+                        {field.label}
+                      </label>
+                    ))}
 
-                <div style={{ fontSize: 12, color: "#666" }}>
-                  Sharing lets this attendee see information that other
-                  participating attendees choose to share. Turning all
-                  sharing off removes their access to the attendee-sharing
-                  directory/locator.
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => selectAllSharedFields(attendee.id)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        border: "1px solid #cbd5e1",
+                        background: "white",
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Select all
+                    </button>
+                  </div>
+
+                  <div style={{ fontSize: 12, color: "#666" }}>
+                    Sharing lets this attendee see information that other
+                    participating attendees choose to share. Turning all sharing
+                    off removes their access to the attendee-sharing
+                    directory/locator.
+                  </div>
                   {sharingRetry?.attendeeId === attendee.id ? (
                     <AppButton
                       variant="warning"
@@ -1555,7 +1742,6 @@ function AdminCheckinPageInner() {
                   ) : null}
                 </div>
               </details>
-
             </div>
           );
         })}

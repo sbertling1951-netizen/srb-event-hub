@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -10,6 +11,10 @@ import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import {
+  readAdminAttendeeTarget,
+  resolveAdminAttendeeTarget,
+} from "@/lib/adminAttendeeTarget";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -116,11 +121,17 @@ type Attendee = {
 function ParkingAdminPageInner() {
   const { admin } = useAdmin();
   const { isCompact: isNarrow } = useShellInterfaceCapabilities();
+  const searchParams = useSearchParams();
+  const attendeeTarget = readAdminAttendeeTarget(searchParams);
   const mapViewportRef = useRef<MapCanvasHandle | null>(null);
   const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const loadGenerationRef = useRef(0);
   const selectionFingerprintRef = useRef<ParkingSelectionFingerprint | null>(null);
   const selectedIdsRef = useRef({ attendeeId: "", siteId: "" });
+  // Guards the canonical attendee-target handoff (lib/adminAttendeeTarget)
+  // so it is consumed exactly once per raw target value -- never re-run on
+  // every realtime-triggered loadPage() reload.
+  const consumedAttendeeTargetRef = useRef<string | null>(null);
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [sites, setSites] = useState<ParkingSite[]>([]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -767,6 +778,70 @@ function ParkingAdminPageInner() {
       `Focused map on site ${searchedSite.display_label || searchedSite.site_number}.`,
     );
   }, [searchedSite, focusSite]);
+
+  // Selects an attendee and, only if they already have a canonical
+  // placement, focuses the map on it for display -- this never assigns,
+  // reassigns, or clears a site; it merely looks at siteLabelByAttendeeId
+  // (already-loaded canonical occupancy) and pans/zooms to what is already
+  // there. Shared by the attendee-row click handler and the canonical
+  // attendee-target handoff below, so both mean exactly the same thing by
+  // "select an attendee" rather than drifting into two behaviors.
+  function selectAttendeeAndFocusSite(attendeeId: string) {
+    setSelectionStale(null);
+    setSelectedAttendeeId(attendeeId);
+    const canonicalSite = siteLabelByAttendeeId.get(attendeeId);
+    if (canonicalSite) {
+      const assignedSiteKey = siteMatchKey(canonicalSite);
+      const site = sites.find(
+        (s) =>
+          siteMatchKey(s.site_number) === assignedSiteKey ||
+          siteMatchKey(s.display_label) === assignedSiteKey,
+      );
+      if (site) {
+        setSelectedSiteId(site.id || site.master_site_id);
+        focusSite(site);
+        showStatus(
+          `Focused map on site ${site.display_label || site.site_number}.`,
+        );
+      } else {
+        showError(`Could not find canonical site ${canonicalSite} on the map.`);
+      }
+    }
+  }
+
+  // Canonical attendee-target handoff (lib/adminAttendeeTarget): consumes
+  // ?attendee=<id>, once per distinct value, once the current Event's own
+  // roster has loaded. Resolution is purely against `attendees`, which
+  // loadPage() has already filtered to the current working Event -- so a
+  // stale, deleted, or cross-Event id simply will not be found here, and
+  // this never fetches, never switches Event, and never assigns or clears
+  // a site merely because navigation occurred.
+  useEffect(() => {
+    if (!attendeeTarget || loading) {
+      return;
+    }
+    if (consumedAttendeeTargetRef.current === attendeeTarget) {
+      return;
+    }
+
+    const resolution = resolveAdminAttendeeTarget(attendeeTarget, attendees);
+
+    if (resolution.status === "none") {
+      return;
+    }
+
+    consumedAttendeeTargetRef.current = attendeeTarget;
+
+    if (resolution.status === "valid") {
+      selectAttendeeAndFocusSite(resolution.attendeeId);
+      return;
+    }
+
+    showError(
+      "That attendee could not be found in the current Parking event. They may have been removed, or the link may be for a different event.",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attendeeTarget, attendees, loading]);
 
   // ─── Map marker rendering ─────────────────────────────────────────────────────
 
@@ -1430,30 +1505,7 @@ function ParkingAdminPageInner() {
             }}
             role="button"
             tabIndex={0}
-            onClick={() => {
-              setSelectionStale(null);
-              setSelectedAttendeeId(attendee.id);
-              const canonicalSite = siteLabelByAttendeeId.get(attendee.id);
-              if (canonicalSite) {
-                const assignedSiteKey = siteMatchKey(canonicalSite);
-                const site = sites.find(
-                  (s) =>
-                    siteMatchKey(s.site_number) === assignedSiteKey ||
-                    siteMatchKey(s.display_label) === assignedSiteKey,
-                );
-                if (site) {
-                  setSelectedSiteId(site.id || site.master_site_id);
-                  focusSite(site);
-                  showStatus(
-                    `Focused map on site ${site.display_label || site.site_number}.`,
-                  );
-                } else {
-                  showError(
-                    `Could not find canonical site ${canonicalSite} on the map.`,
-                  );
-                }
-              }
-            }}
+            onClick={() => selectAttendeeAndFocusSite(attendee.id)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
