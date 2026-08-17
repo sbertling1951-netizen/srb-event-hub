@@ -7,6 +7,7 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -138,7 +139,6 @@ type AdminEventRow = {
 
 type EditState = {
   siteNumber: string;
-  hasArrived: boolean;
   sharedFields: SharingFieldKey[];
 };
 
@@ -189,6 +189,11 @@ function AdminCheckinPageInner() {
   const [editState, setEditState] = useState<Record<string, EditState>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [undoAttendee, setUndoAttendee] = useState<AttendeeRow | null>(null);
+  const [sharingRetry, setSharingRetry] = useState<{
+    attendeeId: string;
+    sharedFields: SharingFieldKey[];
+  } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { admin } = useAdmin();
@@ -457,7 +462,6 @@ function AdminCheckinPageInner() {
       attendeeList.forEach((attendee) => {
         nextEditState[attendee.id] = {
           siteNumber: attendee.assigned_site || "",
-          hasArrived: !!attendee.has_arrived,
           sharedFields: nextSharingByAttendee[attendee.id] || [],
         };
       });
@@ -594,7 +598,57 @@ function AdminCheckinPageInner() {
     );
   }
 
-  async function saveCheckin(attendee: AttendeeRow) {
+  async function saveSharingPreferences(
+    attendee: AttendeeRow,
+    sharedFields: SharingFieldKey[],
+  ): Promise<string | null> {
+    if (!event?.id) {
+      return "No working event selected.";
+    }
+
+    const { data, error: sharingError } = await supabase.rpc(
+      "set_attendee_sharing_preferences",
+      {
+        p_attendee_id: attendee.id,
+        p_expected_event_id: event.id,
+        p_shared_field_keys: sharedFields,
+      },
+    );
+    const result = data?.[0];
+    if (sharingError || !result || result.outcome === "rejected") {
+      return mapSitePlacementError(
+        new Error(sharingError?.message || result?.rejection_code || "unknown"),
+        "an unknown error",
+      );
+    }
+    return null;
+  }
+
+  async function retrySharingPreferences(attendee: AttendeeRow) {
+    if (!sharingRetry || sharingRetry.attendeeId !== attendee.id) {
+      return;
+    }
+    setSavingId(attendee.id);
+    setError(null);
+    showStatus("Retrying attendee sharing...");
+    try {
+      const sharingError = await saveSharingPreferences(
+        attendee,
+        sharingRetry.sharedFields,
+      );
+      if (sharingError) {
+        showError(`Sharing was not updated -- ${sharingError}`);
+        return;
+      }
+      setSharingRetry(null);
+      await loadPage();
+      showStatus("Attendee sharing updated.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function saveCheckin(attendee: AttendeeRow, nextHasArrived: boolean) {
     if (!event?.id) {
       showError("No working event selected.");
       return;
@@ -605,7 +659,9 @@ function AdminCheckinPageInner() {
       return;
     }
 
-    let normalizedSite = normalizeSite(current.siteNumber);
+    let normalizedSite = nextHasArrived
+      ? normalizeSite(current.siteNumber)
+      : normalizeSite(attendee.assigned_site || "");
     const enteredSiteKey = siteMatchKey(normalizedSite);
 
     if (current.siteNumber !== normalizedSite) {
@@ -618,7 +674,7 @@ function AdminCheckinPageInner() {
 
       let matchedSite: ParkingSiteRow | null = null;
 
-      if (normalizedSite) {
+      if (nextHasArrived && normalizedSite) {
         matchedSite =
           parkingSites.find((site) => {
             const siteNumberMatch =
@@ -740,7 +796,7 @@ function AdminCheckinPageInner() {
         placementAction = action;
         placementSiteId = resolvedSiteId;
         placementOverride = occupiedByOther;
-      } else if (!normalizedSite && oldAssignedSite) {
+      } else if (nextHasArrived && !normalizedSite && oldAssignedSite) {
         const oldSite =
           parkingSites.find(
             (site) =>
@@ -758,7 +814,7 @@ function AdminCheckinPageInner() {
         {
           p_attendee_id: attendee.id,
           p_expected_event_id: event.id,
-          p_has_arrived: current.hasArrived,
+          p_has_arrived: nextHasArrived,
           p_share_with_attendees: current.sharedFields.length > 0,
           p_placement_action: placementAction,
           p_site_id: placementSiteId,
@@ -789,32 +845,23 @@ function AdminCheckinPageInner() {
       // "check-in failed," regardless of which specific rejection code
       // fired. The page is reloaded so the card reflects the true
       // persisted state rather than the operator's stale local edit.
-      const { data: sharingData, error: sharingError } = await supabase.rpc(
-        "set_attendee_sharing_preferences",
-        {
-          p_attendee_id: attendee.id,
-          p_expected_event_id: event.id,
-          p_shared_field_keys: current.sharedFields,
-        },
+      const sharingFailure = await saveSharingPreferences(
+        attendee,
+        current.sharedFields,
       );
 
-      const sharingResult = sharingData?.[0];
-      const sharingFailed =
-        !!sharingError || !sharingResult || sharingResult.outcome === "rejected";
-
-      if (sharingFailed) {
-        const detail = mapSitePlacementError(
-          new Error(
-            sharingError?.message || sharingResult?.rejection_code || "unknown",
-          ),
-          "an unknown error",
-        );
+      if (sharingFailure) {
+        setSharingRetry({
+          attendeeId: attendee.id,
+          sharedFields: current.sharedFields,
+        });
         await loadPage();
         showError(
-          `${attendeeName}: check-in (arrival/site) was saved, but sharing preferences were not saved -- ${detail} Reopen this attendee and try saving sharing again.`,
+          `${attendeeName}: check-in (arrival/site) was saved, but sharing preferences were not saved -- ${sharingFailure}`,
         );
         return;
       }
+      setSharingRetry(null);
 
       const changes: string[] = [];
 
@@ -832,9 +879,9 @@ function AdminCheckinPageInner() {
         );
       }
 
-      if (!oldHasArrived && current.hasArrived) {
+      if (!oldHasArrived && nextHasArrived) {
         changes.push("marked arrived");
-      } else if (oldHasArrived && !current.hasArrived) {
+      } else if (oldHasArrived && !nextHasArrived) {
         changes.push("arrival unmarked");
       }
 
@@ -870,6 +917,23 @@ function AdminCheckinPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
+      <ConfirmDialog
+        open={!!undoAttendee}
+        title="Undo Check-In"
+        message={`Mark ${undoAttendee ? fullName(undoAttendee.pilot_first, undoAttendee.pilot_last) || "this attendee" : "this attendee"} as not arrived? Their current site assignment will remain in place.`}
+        confirmLabel="Undo Check-In"
+        danger
+        busy={!!undoAttendee && savingId === undoAttendee.id}
+        onCancel={() => setUndoAttendee(null)}
+        onConfirm={async () => {
+          if (!undoAttendee) {
+            return;
+          }
+          const attendee = undoAttendee;
+          await saveCheckin(attendee, false);
+          setUndoAttendee(null);
+        }}
+      />
       <div
         style={{
           border: "1px solid #ddd",
@@ -994,9 +1058,20 @@ function AdminCheckinPageInner() {
 
           const current = editState[attendee.id] || {
             siteNumber: attendee.assigned_site || "",
-            hasArrived: !!attendee.has_arrived,
             sharedFields: sharingByAttendee[attendee.id] || [],
           };
+          const enteredSiteKey = siteMatchKey(current.siteNumber);
+          const matchedSite = enteredSiteKey
+            ? parkingSites.find(
+                (site) =>
+                  siteMatchKey(site.site_number) === enteredSiteKey ||
+                  siteMatchKey(site.display_label) === enteredSiteKey,
+              ) || null
+            : null;
+          const conflictingAttendee = matchedSite?.assigned_attendee_id &&
+            matchedSite.assigned_attendee_id !== attendee.id
+            ? attendees.find((row) => row.id === matchedSite.assigned_attendee_id) || null
+            : null;
 
           return (
             <div
@@ -1069,8 +1144,10 @@ function AdminCheckinPageInner() {
                 </div>
 
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700 }}>Current Site</div>
-                  <div>{attendee.assigned_site?.toUpperCase() || "—"}</div>
+                  <div style={{ fontWeight: 700 }}>Arrival</div>
+                  <div style={{ color: attendee.has_arrived ? "#166534" : "#92400e", fontWeight: 700 }}>
+                    {attendee.has_arrived ? "Checked in" : "Not yet arrived"}
+                  </div>
                 </div>
               </div>
 
@@ -1106,8 +1183,12 @@ function AdminCheckinPageInner() {
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
-                    Site Number
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    Confirm site
+                  </div>
+                  <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>
+                    Current: {attendee.assigned_site?.toUpperCase() || "No site assigned"}
+                    {attendee.handicap_parking ? " · Handicap parking needed" : ""}
                   </div>
                   <datalist id="parking-site-suggestions">
                     {siteSuggestions.map((site) => (
@@ -1128,87 +1209,60 @@ function AdminCheckinPageInner() {
                       fontSize: 16,
                     }}
                   />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const siteToFocus = normalizeSite(current.siteNumber);
-                      if (!siteToFocus) {
-                        showError("Enter a site number first.");
-                        return;
-                      }
-
-                      localStorage.setItem(
-                        "fcoc-parking-focus-site",
-                        siteToFocus,
-                      );
-                      window.location.href = "/admin/parking";
-                    }}
-                    style={{
-                      marginTop: 6,
-                      padding: "10px 12px",
-                      width: isCompact ? "100%" : "auto",
-                      background: "#facc15",
-                      border: "1px solid #eab308",
-                      color: "#111827",
-                      fontWeight: 700,
-                      boxShadow: "0 4px 12px rgba(234,179,8,0.35)",
-                    }}
-                  >
-                    Show on Map
-                  </button>
+                  {current.siteNumber && !matchedSite ? (
+                    <div role="alert" style={{ color: "#b91c1c", fontSize: 13, marginTop: 6 }}>
+                      This site was not found on the Event parking map.
+                    </div>
+                  ) : null}
+                  {conflictingAttendee ? (
+                    <div role="alert" style={{ color: "#b45309", fontSize: 13, marginTop: 6 }}>
+                      Site conflict: assigned to {fullName(conflictingAttendee.pilot_first, conflictingAttendee.pilot_last) || "another attendee"}. Check-In will ask before overriding it.
+                    </div>
+                  ) : null}
+                  {matchedSite ? (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 700 }}>Need to verify placement?</summary>
+                      <AppButton
+                        variant="muted"
+                        style={{ marginTop: 8 }}
+                        onClick={() => {
+                          const siteToFocus = normalizeSite(current.siteNumber);
+                          localStorage.setItem("fcoc-parking-focus-site", siteToFocus);
+                          window.location.href = "/admin/parking";
+                        }}
+                      >
+                        Show site on map
+                      </AppButton>
+                    </details>
+                  ) : null}
                 </div>
-
-                <label
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    minHeight: 44,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={current.hasArrived}
-                    onChange={(e) =>
-                      updateEditState(attendee.id, {
-                        hasArrived: e.target.checked,
-                      })
-                    }
-                  />
-                  Arrived
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => void saveCheckin(attendee)}
-                  disabled={savingId === attendee.id}
-                  style={{
-                    minHeight: 44,
-                    padding: "10px 14px",
-                    width: isCompact ? "100%" : "auto",
-                  }}
-                >
-                  {savingId === attendee.id ? "Saving..." : "Save"}
-                </button>
+                {attendee.has_arrived ? (
+                  <AppButton
+                    variant="danger"
+                    onClick={() => setUndoAttendee(attendee)}
+                    disabled={savingId === attendee.id}
+                    style={{ minHeight: 48, width: isCompact ? "100%" : "auto" }}
+                  >
+                    Undo Check-In
+                  </AppButton>
+                ) : (
+                  <AppButton
+                    variant="success"
+                    onClick={() => void saveCheckin(attendee, true)}
+                    disabled={savingId === attendee.id || (!!current.siteNumber && !matchedSite)}
+                    style={{ minHeight: 52, minWidth: 150, width: isCompact ? "100%" : "auto", fontSize: 16 }}
+                  >
+                    {savingId === attendee.id ? "Checking In..." : "Check In"}
+                  </AppButton>
+                )}
               </div>
 
-              <div
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 8,
-                  background: "#fafafa",
-                  padding: 12,
-                  display: "grid",
-                  gap: 8,
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 700 }}>Attendee Sharing</div>
-                  <div style={{ fontSize: 12, color: "#666" }}>
-                    Choose what other participating attendees can see.
-                    Participation means Name is shared.
+              <details style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fafafa", padding: 12 }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700 }}>Attendee Sharing</summary>
+                <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                  <div style={{ fontSize: 13, color: "#475569" }}>
+                    Choose what other participating attendees can see. Name is required for participation.
                   </div>
-                </div>
 
                 <div
                   style={{
@@ -1260,7 +1314,17 @@ function AdminCheckinPageInner() {
                   sharing off removes their access to the attendee-sharing
                   directory/locator.
                 </div>
-              </div>
+                  {sharingRetry?.attendeeId === attendee.id ? (
+                    <AppButton
+                      variant="warning"
+                      onClick={() => void retrySharingPreferences(attendee)}
+                      disabled={savingId === attendee.id}
+                    >
+                      Retry Sharing Update
+                    </AppButton>
+                  ) : null}
+                </div>
+              </details>
 
               <div
                 style={{
@@ -1273,7 +1337,6 @@ function AdminCheckinPageInner() {
               >
                 <div>First Time: {attendee.first_time ? "Yes" : "No"}</div>
                 <div>Volunteer: {attendee.volunteer ? "Yes" : "No"}</div>
-                <div>Handicap: {attendee.handicap_parking ? "Yes" : "No"}</div>
               </div>
             </div>
           );

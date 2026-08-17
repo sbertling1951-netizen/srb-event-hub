@@ -32,15 +32,19 @@ test("attendee sharing writes through the governed set_attendee_sharing_preferen
 });
 
 test("the sharing RPC call happens only after complete_admin_checkin has succeeded", () => {
-  const checkinCall = source.indexOf('supabase.rpc(\n        "complete_admin_checkin"');
-  const checkinRejectGuard = source.indexOf('checkinResult.outcome === "rejected"');
-  const sharingCall = source.indexOf('supabase.rpc(\n        "set_attendee_sharing_preferences"');
+  const saveStart = source.indexOf("async function saveCheckin(");
+  const saveBody = source.slice(saveStart, source.indexOf("\n  return (", saveStart));
+  const checkinCall = saveBody.indexOf('supabase.rpc(\n        "complete_admin_checkin"');
+  const checkinRejectGuard = saveBody.indexOf('checkinResult.outcome === "rejected"');
+  const sharingCall = saveBody.indexOf("await saveSharingPreferences(");
   assert.ok(checkinCall >= 0 && checkinRejectGuard > checkinCall && sharingCall > checkinRejectGuard);
 });
 
 test("a rejected sharing-preference result cannot reach the success feedback either", () => {
-  const reject = source.indexOf('sharingResult.outcome === "rejected"');
-  const feedback = source.indexOf("const feedback");
+  const saveStart = source.indexOf("async function saveCheckin(");
+  const saveBody = source.slice(saveStart, source.indexOf("\n  return (", saveStart));
+  const reject = saveBody.indexOf("if (sharingFailure)");
+  const feedback = saveBody.indexOf("const feedback");
   assert.ok(reject >= 0 && feedback > reject);
 });
 
@@ -93,9 +97,9 @@ test("Name is never submitted as a client-chosen key -- it is not among the chec
 
 test("a sharing-preference failure always states check-in already saved, regardless of which rejection code fired, and reconciles the UI before surfacing it", () => {
   const block = source.match(
-    /const sharingFailed =[\s\S]*?\n {6}\}\n/,
+    /if \(sharingFailure\) \{[\s\S]*?\n {6}\}\n/,
   )?.[0];
-  assert.ok(block, "expected the sharingFailed branch");
+  assert.ok(block, "expected the sharingFailure branch");
   // The message text is a fixed template, not built from mapSitePlacementError's
   // return value alone -- so a dictionary-mapped code (e.g. authorization_denied)
   // can never replace the "check-in was saved" framing the way it would if the
@@ -133,4 +137,35 @@ test("compact browse results remain keyboard-native buttons with identity confir
   assert.match(source, /<button[\s\S]*?type="button"[\s\S]*?onClick=\{\(\) => selectAttendee\(attendee\.id\)\}/);
   assert.match(source, /attendee\.email \|\| "No email"/);
   assert.match(source, /attendee\.has_arrived \? "Checked in" : "Waiting"/);
+});
+
+test("the dominant workflow has one explicit Check In action and no Arrived checkbox", () => {
+  assert.match(source, /saveCheckin\(attendee, true\)/);
+  assert.match(source, /"Checking In\.\.\." : "Check In"/);
+  assert.equal(/checked=\{current\.hasArrived\}/.test(source), false);
+  assert.equal(/>\s*Save\s*</.test(source), false);
+});
+
+test("Undo Check-In is a named correction behind the canonical confirmation dialog", () => {
+  assert.match(source, /title="Undo Check-In"/);
+  assert.match(source, /confirmLabel="Undo Check-In"/);
+  assert.match(source, /saveCheckin\(attendee, false\)/);
+  assert.match(source, /current site assignment will remain in place/);
+});
+
+test("handicap need and site conflict are presented beside placement", () => {
+  assert.match(source, /Handicap parking needed/);
+  assert.match(source, /Site conflict: assigned to/);
+  assert.match(source, /This site was not found on the Event parking map/);
+});
+
+test("map access is progressively disclosed rather than a co-equal action", () => {
+  assert.match(source, /<details[\s\S]*?Need to verify placement\?[\s\S]*?Show site on map[\s\S]*?<\/details>/);
+});
+
+test("sharing remains a subordinate field-level panel with a sharing-only retry", () => {
+  assert.match(source, /<details[\s\S]*?Attendee Sharing[\s\S]*?<\/details>/);
+  assert.match(source, /Retry Sharing Update/);
+  assert.match(source, /async function retrySharingPreferences/);
+  assert.equal(/complete_admin_checkin/.test(source.match(/async function retrySharingPreferences[\s\S]*?\n  \}/)?.[0] || ""), false);
 });
