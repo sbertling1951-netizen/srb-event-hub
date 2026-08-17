@@ -5,78 +5,29 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
-import { fullName, preferredDisplayLine } from "@/lib/formatters";
+import { fullName } from "@/lib/formatters";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
+// Fields returned here are exactly the governed attendee-sharing contract's
+// output (get_event_attendee_locator): each is present only when the
+// target attendee has chosen to share it, masked server-side. There is no
+// client-side field to withhold -- an absent value here was never sent.
 type Attendee = {
   id: string;
-  entry_id: string | null;
   pilot_first: string | null;
   pilot_last: string | null;
-  copilot_first: string | null;
-  copilot_last: string | null;
   email: string | null;
-  primary_phone: string | null;
-  cell_phone: string | null;
+  phone: string | null;
+  campsite_location: string | null;
   coach_make: string | null;
   coach_model: string | null;
-  coach_length: string | null;
-  first_time: boolean | null;
-  volunteer: boolean | null;
-  handicap_parking: boolean | null;
-  assigned_site: string | null;
-  share_with_attendees: boolean | null;
-  has_arrived: boolean | null;
 };
-
-type HouseholdMember = {
-  id: string;
-  attendee_id: string;
-  person_role: "pilot" | "copilot" | "additional";
-  first_name: string | null;
-  last_name: string | null;
-  nickname: string | null;
-  display_name: string | null;
-  age_text: string | null;
-  sort_order: number | null;
-  raw_text: string | null;
-};
-
-function yesNo(value?: boolean | null) {
-  return value ? "Yes" : "No";
-}
-
-function displayPhone(attendee: Attendee) {
-  return attendee.primary_phone || attendee.cell_phone || "";
-}
-
-function memberLine(member: HouseholdMember) {
-  const full = fullName(member.first_name, member.last_name);
-
-  if (full) {
-    return full;
-  }
-
-  return (
-    member.display_name ||
-    preferredDisplayLine(member) ||
-    member.raw_text ||
-    "—"
-  );
-}
-
-function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
-  return members.find((m) => m.person_role === role) || null;
-}
 
 function AttendeesPageInner() {
   const { event, attendeeId, isReady, session } = useMemberWorkspace();
   const [eventId, setEventId] = useState<string | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
-  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
-    [],
-  );
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading attendees...");
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +38,6 @@ function AttendeesPageInner() {
     if (!isReady) {
       setEventId(null);
       setAttendees([]);
-      setHouseholdMembers([]);
       setCanViewLocator(true);
       return;
     }
@@ -95,7 +45,6 @@ function AttendeesPageInner() {
     if (!event?.id || !attendeeId) {
       setEventId(null);
       setAttendees([]);
-      setHouseholdMembers([]);
       setCanViewLocator(true);
       return;
     }
@@ -115,23 +64,31 @@ function AttendeesPageInner() {
         p_registration_identifier: identifier,
       };
 
-      const { data: ownRecord, error: ownRecordError } = await supabase.rpc(
-        "get_my_attendee_record",
-        rpcArgs,
-      );
+      // Whether this viewer participates is derived from the same governed
+      // contract as the list itself, not a separately-read legacy flag: a
+      // participating caller's own row is always among these results (the
+      // RPC never excludes the caller), so its presence or absence is the
+      // one authoritative signal -- there is no way for this gate to
+      // disagree with what the list actually shows.
+      const { data, error } = await supabase
+        .rpc("get_event_attendee_locator", rpcArgs)
+        .order("pilot_last", { ascending: true, nullsFirst: false })
+        .order("pilot_first", { ascending: true, nullsFirst: false });
 
-      if (ownRecordError) {
-        setError(ownRecordError.message);
+      if (error) {
+        setError(error.message);
         setStatus("");
         return;
       }
 
-      const viewer = Array.isArray(ownRecord) ? ownRecord[0] : null;
+      const rows = (data || []) as Attendee[];
+      const viewerParticipates = attendeeId
+        ? rows.some((row) => row.id === attendeeId)
+        : rows.length > 0;
 
-      if (!viewer?.share_with_attendees) {
+      if (!viewerParticipates) {
         setCanViewLocator(false);
         setAttendees([]);
-        setHouseholdMembers([]);
         setStatus(
           "Attendee Locator is available after you choose to share your information with other attendees.",
         );
@@ -148,50 +105,9 @@ function AttendeesPageInner() {
         });
       }
 
-      const { data, error } = await supabase
-        .rpc("get_event_attendee_locator", rpcArgs)
-        .order("pilot_last", { ascending: true, nullsFirst: false })
-        .order("pilot_first", { ascending: true, nullsFirst: false });
-
-      if (error) {
-        setError(error.message);
-        setStatus("");
-        return;
-      }
-
-      const sharedAttendeeRows = ((data || []) as Array<
-        Record<string, unknown>
-      >).map((row) => ({
-        ...row,
-        coach_make: (row.coach_manufacturer as string | null) ?? null,
-        first_time: row.is_first_timer as boolean | null,
-        volunteer: row.wants_to_volunteer as boolean | null,
-      })) as unknown as Attendee[];
-
-      setAttendees(sharedAttendeeRows);
-
-      if (sharedAttendeeRows.length === 0) {
-        setHouseholdMembers([]);
-        setStatus("Loaded 0 shared attendees.");
-        return;
-      }
-
-      const { data: memberData, error: memberError } = await supabase.rpc(
-        "get_event_locator_household_members",
-        rpcArgs,
-      );
-
-      if (memberError) {
-        setError(
-          `Loaded attendees, but household members failed: ${memberError.message}`,
-        );
-        setStatus("");
-        setHouseholdMembers([]);
-        return;
-      }
-
-      setHouseholdMembers((memberData || []) as HouseholdMember[]);
-      setStatus(`Loaded ${sharedAttendeeRows.length} shared attendees.`);
+      const otherAttendees = rows.filter((row) => row.id !== attendeeId);
+      setAttendees(otherAttendees);
+      setStatus(`Loaded ${otherAttendees.length} shared attendees.`);
     },
     [attendeeId, session],
   );
@@ -219,16 +135,6 @@ function AttendeesPageInner() {
     };
   }, [attendeeId, event?.id, isReady, loadAttendees, loadCurrentEventData]);
 
-  const householdByAttendee = useMemo(() => {
-    const map = new Map<string, HouseholdMember[]>();
-    householdMembers.forEach((member) => {
-      const existing = map.get(member.attendee_id) || [];
-      existing.push(member);
-      map.set(member.attendee_id, existing);
-    });
-    return map;
-  }, [householdMembers]);
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) {
@@ -237,40 +143,23 @@ function AttendeesPageInner() {
 
     return attendees.filter((a) => {
       const pilot = fullName(a.pilot_first, a.pilot_last).toLowerCase();
-      const copilot = fullName(a.copilot_first, a.copilot_last).toLowerCase();
       const coach = [a.coach_make, a.coach_model]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-      const site = (a.assigned_site || "").toLowerCase();
+      const site = (a.campsite_location || "").toLowerCase();
       const email = (a.email || "").toLowerCase();
-      const phone = displayPhone(a).toLowerCase();
-
-      const members = (householdByAttendee.get(a.id) || [])
-        .map((m) =>
-          [
-            m.display_name || "",
-            m.first_name || "",
-            m.last_name || "",
-            m.nickname || "",
-            m.raw_text || "",
-          ]
-            .join(" ")
-            .toLowerCase(),
-        )
-        .join(" ");
+      const phone = (a.phone || "").toLowerCase();
 
       return (
         pilot.includes(q) ||
-        copilot.includes(q) ||
         coach.includes(q) ||
         site.includes(q) ||
         email.includes(q) ||
-        phone.includes(q) ||
-        members.includes(q)
+        phone.includes(q)
       );
     });
-  }, [attendees, householdByAttendee, search]);
+  }, [attendees, search]);
 
   return (
     <div style={{ display: "grid", gap: 16, maxWidth: 1000 }}>
@@ -281,9 +170,8 @@ function AttendeesPageInner() {
       </p>
 
       <p style={{ margin: 0 }}>
-        As attendees arrive and complete check-in, additional
-        information—including campsite assignments and coach locations (for
-        those who choose to share them)—will automatically become available.
+        As attendees choose to share their campsite assignment or coach
+        information, it will automatically become available here.
       </p>
 
       <div
@@ -353,7 +241,7 @@ function AttendeesPageInner() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, nickname, email, phone, coach, or site"
+              placeholder="Name, email, phone, coach, or campsite"
               style={{ width: "100%", minWidth: 0, padding: 8 }}
             />
           </div>
@@ -364,137 +252,58 @@ function AttendeesPageInner() {
           </div>
 
           <div style={{ display: "grid", gap: 12 }}>
-            {filtered.map((a) => {
-              const members = householdByAttendee.get(a.id) || [];
-
-              console.log({
-                attendeeId: a.id,
-                pilot: a.pilot_last,
-                members,
-              });
-              const pilotMember = getRoleMember(members, "pilot");
-              const copilotMember = getRoleMember(members, "copilot");
-              const phone = displayPhone(a);
-
-              return (
+            {filtered.map((a) => (
+              <div
+                key={a.id}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: 10,
+                  background: "white",
+                  padding: 14,
+                  minWidth: 0,
+                }}
+              >
                 <div
-                  key={a.id}
                   style={{
-                    border: "1px solid #ddd",
-                    borderRadius: 10,
-                    background: "white",
-                    padding: 14,
-                    minWidth: 0,
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                    gap: 12,
                   }}
                 >
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fit, minmax(160px, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>
-                        Pilot:{" "}
-                        {pilotMember
-                          ? memberLine(pilotMember)
-                          : fullName(a.pilot_first, a.pilot_last) || "—"}
-                      </div>
-                      {a.email ? (
-                        <div
-                          style={{ fontSize: 12, color: "#666", marginTop: 4, overflowWrap: "anywhere" }}
-                        >
-                          {a.email}
-                        </div>
-                      ) : null}
-                      {phone ? (
-                        <div
-                          style={{ fontSize: 12, color: "#666", marginTop: 4, overflowWrap: "anywhere" }}
-                        >
-                          {phone}
-                        </div>
-                      ) : null}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>
+                      {fullName(a.pilot_first, a.pilot_last) || "—"}
                     </div>
-
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>
-                        Co-Pilot:{" "}
-                        {copilotMember
-                          ? memberLine(copilotMember)
-                          : fullName(a.copilot_first, a.copilot_last) || "—"}
+                    {a.email ? (
+                      <div
+                        style={{ fontSize: 12, color: "#666", marginTop: 4, overflowWrap: "anywhere" }}
+                      >
+                        {a.email}
                       </div>
-                    </div>
-
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>
-                        {[a.coach_make, a.coach_model]
-                          .filter(Boolean)
-                          .join(" ") || "—"}
+                    ) : null}
+                    {a.phone ? (
+                      <div
+                        style={{ fontSize: 12, color: "#666", marginTop: 4, overflowWrap: "anywhere" }}
+                      >
+                        {a.phone}
                       </div>
-                      {a.coach_length ? (
-                        <div
-                          style={{ fontSize: 12, color: "#666", marginTop: 4 }}
-                        >
-                          {a.coach_length} ft
-                        </div>
-                      ) : null}
-                    </div>
+                    ) : null}
+                  </div>
 
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700 }}>Site</div>
-                      <div>
-                        {a.has_arrived
-                          ? a.assigned_site || "—"
-                          : "Available after check-in"}
-                      </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>
+                      {[a.coach_make, a.coach_model].filter(Boolean).join(" ") ||
+                        "—"}
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 16,
-                      flexWrap: "wrap",
-                      marginTop: 10,
-                      fontSize: 13,
-                      color: "#555",
-                    }}
-                  >
-                    <div>
-                      Status: {a.has_arrived ? "🟢 Arrived" : "🟡 Registered"}
-                    </div>
-                    <div>1st Time: {yesNo(a.first_time)}</div>
-                    <div>Volunteer: {yesNo(a.volunteer)}</div>
-                    <div>Handicap: {yesNo(a.handicap_parking)}</div>
-                    <div>
-                      Shares with attendees: {yesNo(a.share_with_attendees)}
-                    </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700 }}>Site</div>
+                    <div>{a.campsite_location || "—"}</div>
                   </div>
-
-                  {members.length > 0 ? (
-                    <div style={{ marginTop: 12 }}>
-                      <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                        Coach / Household Members
-                      </div>
-                      <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
-                        {members.map((member) => (
-                          <div key={member.id} style={{ overflowWrap: "anywhere" }}>
-                            {member.person_role === "pilot"
-                              ? "Pilot"
-                              : member.person_role === "copilot"
-                                ? "Co-Pilot"
-                                : "Additional"}
-                            : {memberLine(member)}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
-              );
-            })}
+              </div>
+            ))}
 
             {filtered.length === 0 ? (
               <div

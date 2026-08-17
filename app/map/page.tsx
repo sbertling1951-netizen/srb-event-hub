@@ -22,14 +22,17 @@ type ParkingSite = {
   assigned_attendee_id: string | null;
 };
 
+// Governed attendee-sharing contract output (get_event_public_roster):
+// pilot_first/pilot_last and coach_make/coach_model are each masked
+// server-side per the occupant's own choice, so presence of a name is
+// itself the "did they opt in" signal -- there is no separate flag to
+// check client-side.
 type Attendee = {
   id: string;
   pilot_first: string | null;
   pilot_last: string | null;
   coach_make: string | null;
   coach_model: string | null;
-  coach_length: string | null;
-  share_with_attendees: boolean | null;
 };
 
 type ActiveEventRow = {
@@ -58,7 +61,7 @@ function visibleOccupantLabel(a: Attendee | undefined, assigned: boolean) {
   if (!a) {
     return "Occupied Site";
   }
-  if (a.share_with_attendees) {
+  if (a.pilot_first || a.pilot_last) {
     return attendeeName(a);
   }
   return "Occupied Site";
@@ -225,7 +228,7 @@ export default function CoachMapPage() {
         return false;
       }
       const assigned = attendeeById.get(site.assigned_attendee_id);
-      if (!assigned?.share_with_attendees) {
+      if (!assigned?.pilot_first && !assigned?.pilot_last) {
         return false;
       }
       return attendeeName(assigned).toLowerCase().includes(q);
@@ -245,9 +248,10 @@ export default function CoachMapPage() {
         ? attendeeById.get(site.assigned_attendee_id)
         : undefined;
 
-      const visibleName = assignedAttendee?.share_with_attendees
-        ? attendeeName(assignedAttendee).toLowerCase()
-        : "";
+      const visibleName =
+        assignedAttendee?.pilot_first || assignedAttendee?.pilot_last
+          ? attendeeName(assignedAttendee).toLowerCase()
+          : "";
 
       const siteNumber = (site.site_number || "").toLowerCase();
       const displayLabel = (site.display_label || "").toLowerCase();
@@ -314,7 +318,8 @@ export default function CoachMapPage() {
   }
 
   const selectedCoachText =
-    selectedAttendee && selectedAttendee.share_with_attendees
+    selectedAttendee &&
+    (selectedAttendee.coach_make || selectedAttendee.coach_model)
       ? [selectedAttendee.coach_make, selectedAttendee.coach_model]
           .filter(Boolean)
           .join(" ") || "—"
@@ -546,10 +551,6 @@ export default function CoachMapPage() {
           </div>
           <div>Occupant: {selectedOccupantText}</div>
           <div>Coach: {selectedCoachText}</div>
-          {selectedAttendee?.share_with_attendees &&
-            selectedAttendee?.coach_length && (
-              <div>Length: {selectedAttendee.coach_length} ft</div>
-            )}
         </div>
       )}
 

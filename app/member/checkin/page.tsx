@@ -44,6 +44,20 @@ type CheckinResult = {
   has_arrived: boolean;
 };
 
+// This page still offers only a single "share" checkbox -- the granular
+// per-field panel is Admin Check-In's UI (deliberately not duplicated
+// into member self-service in this workstream). Turning it on is the
+// coarse-grained equivalent of Select All against the same governed
+// registry Admin Check-In writes to; turning it off fully opts out. When
+// this page eventually gains its own granular controls, this becomes the
+// default rather than a redesign of the write path itself.
+const MEMBER_SHARE_ALL_FIELD_KEYS = [
+  "email",
+  "phone",
+  "campsite_location",
+  "coach_make_model",
+];
+
 function householdLine(member: HouseholdMember) {
   const first = member.first_name?.trim() || "";
   const last = member.last_name?.trim() || "";
@@ -279,6 +293,35 @@ function MemberCheckinPageInner() {
             }
           : prev,
       );
+
+      // Check-in itself has already been governedly recorded above. The
+      // sharing-preference write is a separate governed call against a
+      // separate domain concept (see the transaction-boundary note in
+      // saveCheckin's outer scope) -- its own failure must never read as
+      // "check-in failed," since it did not.
+      const { data: sharingData, error: sharingError } = await supabase.rpc(
+        "set_member_attendee_sharing_preferences",
+        {
+          p_event_id: event.id,
+          p_event_code: temporaryAccess ? temporaryEventCode.trim() : null,
+          p_registration_identifier: temporaryAccess
+            ? temporaryRegistrationIdentifier.trim()
+            : null,
+          p_shared_field_keys: shareWithAttendees
+            ? MEMBER_SHARE_ALL_FIELD_KEYS
+            : [],
+        },
+      );
+
+      const sharingResult = sharingData?.[0];
+      if (sharingError || !sharingResult || sharingResult.outcome === "rejected") {
+        setError(
+          "Your check-in was saved, but your sharing choice could not be saved. Please try Save again.",
+        );
+        setStatus("");
+        return;
+      }
+
       // Update local state immediately before navigating.
       if (typeof window !== "undefined") {
         localStorage.setItem("fcoc-member-has-arrived", String(hasArrived));

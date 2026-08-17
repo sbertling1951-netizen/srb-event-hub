@@ -30,6 +30,10 @@ const SITE_PLACEMENT_ERROR_MESSAGES: Record<string, string> = {
     "This request could not be completed. Please try again.",
   placement_state_unstable:
     "Site assignment is changing rapidly. Please try again.",
+  event_scope_mismatch:
+    "Your admin working event changed. Reload and try again.",
+  unknown_share_field:
+    "One of the sharing choices was not recognized. Please try again.",
 };
 
 function mapSitePlacementError(err: unknown, fallback: string): string {
@@ -56,12 +60,31 @@ type AttendeeRow = {
   coach_model: string | null;
   coach_length: string | null;
   assigned_site: string | null;
-  share_with_attendees: boolean | null;
   has_arrived: boolean | null;
   arrival_status: string | null;
   handicap_parking: boolean | null;
   volunteer: boolean | null;
   first_time: boolean | null;
+};
+
+// The four attendee-chosen optional sharing fields, per the governed
+// attendee_sharing_fields registry. Name is deliberately excluded here --
+// it is the mandatory participation identity, derived automatically
+// (server-side) from whether any of these four are on, never an
+// independent choice this page submits.
+const SHARING_OPTIONAL_FIELDS = [
+  { key: "email", label: "Email" },
+  { key: "phone", label: "Phone" },
+  { key: "campsite_location", label: "Campsite location" },
+  { key: "coach_make_model", label: "Coach make/model" },
+] as const;
+
+type SharingFieldKey = (typeof SHARING_OPTIONAL_FIELDS)[number]["key"];
+
+type SharingPreferenceRow = {
+  attendee_id: string;
+  field_key: string;
+  shared: boolean;
 };
 
 type HouseholdMember = {
@@ -114,7 +137,7 @@ type AdminEventRow = {
 type EditState = {
   siteNumber: string;
   hasArrived: boolean;
-  shareWithAttendees: boolean;
+  sharedFields: SharingFieldKey[];
 };
 
 function normalizeSite(value: string) {
@@ -153,6 +176,9 @@ function AdminCheckinPageInner() {
     [],
   );
   const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
+  const [sharingByAttendee, setSharingByAttendee] = useState<
+    Record<string, SharingFieldKey[]>
+  >({});
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading check-in...");
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -181,6 +207,7 @@ function AdminCheckinPageInner() {
       setAttendees([]);
       setHouseholdMembers([]);
       setParkingSites([]);
+      setSharingByAttendee({});
       showError("You do not have permission to manage check-in.");
       setLoading(false);
       return;
@@ -193,6 +220,7 @@ function AdminCheckinPageInner() {
       setAttendees([]);
       setHouseholdMembers([]);
       setParkingSites([]);
+      setSharingByAttendee({});
       showStatus("No admin working event selected.");
       setLoading(false);
       return;
@@ -203,6 +231,7 @@ function AdminCheckinPageInner() {
       setAttendees([]);
       setHouseholdMembers([]);
       setParkingSites([]);
+      setSharingByAttendee({});
       showError("You do not have access to this event.");
       setLoading(false);
       return;
@@ -273,6 +302,7 @@ function AdminCheckinPageInner() {
         setAttendees([]);
         setHouseholdMembers([]);
         setParkingSites([]);
+        setSharingByAttendee({});
         showStatus("No admin working event selected.");
         setLoading(false);
         return;
@@ -304,7 +334,7 @@ function AdminCheckinPageInner() {
       const mapSettings = (mapSettingsRows?.[0] ||
         null) as EventMapSettingsRow | null;
 
-      const [attendeeResult, masterSiteResult, assignmentResult] =
+      const [attendeeResult, masterSiteResult, assignmentResult, sharingResult] =
         await Promise.all([
           supabase
             .from("attendees")
@@ -321,7 +351,6 @@ function AdminCheckinPageInner() {
   coach_model,
   coach_length,
   assigned_site,
-  share_with_attendees,
   has_arrived,
   arrival_status,
   handicap_parking,
@@ -343,6 +372,9 @@ function AdminCheckinPageInner() {
             .from("parking_sites")
             .select("id,event_id,master_site_id,assigned_attendee_id")
             .eq("event_id", loadedEvent.id),
+          supabase.rpc("get_admin_attendee_sharing_preferences", {
+            p_event_id: loadedEvent.id,
+          }),
         ]);
 
       if (attendeeResult.error) {
@@ -354,12 +386,30 @@ function AdminCheckinPageInner() {
       if (assignmentResult.error) {
         throw assignmentResult.error;
       }
+      if (sharingResult.error) {
+        throw sharingResult.error;
+      }
 
       const attendeeList = (attendeeResult.data || []) as AttendeeRow[];
       const masterSiteRows = (masterSiteResult.data ||
         []) as MasterMapSiteRow[];
       const assignmentRows = (assignmentResult.data ||
         []) as ParkingAssignmentRow[];
+      const sharingRows = (sharingResult.data || []) as SharingPreferenceRow[];
+
+      const optionalFieldKeys = new Set<string>(
+        SHARING_OPTIONAL_FIELDS.map((field) => field.key),
+      );
+      const nextSharingByAttendee: Record<string, SharingFieldKey[]> = {};
+      sharingRows.forEach((row) => {
+        if (!row.shared || !optionalFieldKeys.has(row.field_key)) {
+          return;
+        }
+        const existing = nextSharingByAttendee[row.attendee_id] || [];
+        existing.push(row.field_key as SharingFieldKey);
+        nextSharingByAttendee[row.attendee_id] = existing;
+      });
+      setSharingByAttendee(nextSharingByAttendee);
 
       const siteRows: ParkingSiteRow[] = masterSiteRows.map((site) => {
         const assignment =
@@ -403,7 +453,7 @@ function AdminCheckinPageInner() {
         nextEditState[attendee.id] = {
           siteNumber: attendee.assigned_site || "",
           hasArrived: !!attendee.has_arrived,
-          shareWithAttendees: !!attendee.share_with_attendees,
+          sharedFields: nextSharingByAttendee[attendee.id] || [],
         };
       });
       setEditState(nextEditState);
@@ -497,6 +547,25 @@ function AdminCheckinPageInner() {
     }));
   }
 
+  function toggleSharedField(attendeeId: string, fieldKey: SharingFieldKey) {
+    const current = editState[attendeeId];
+    if (!current) {
+      return;
+    }
+    const isShared = current.sharedFields.includes(fieldKey);
+    updateEditState(attendeeId, {
+      sharedFields: isShared
+        ? current.sharedFields.filter((key) => key !== fieldKey)
+        : [...current.sharedFields, fieldKey],
+    });
+  }
+
+  function selectAllSharedFields(attendeeId: string) {
+    updateEditState(attendeeId, {
+      sharedFields: SHARING_OPTIONAL_FIELDS.map((field) => field.key),
+    });
+  }
+
   function handleSiteNumberTyping(attendeeId: string, nextValue: string) {
     const nextSite = nextValue.toUpperCase();
     updateEditState(attendeeId, { siteNumber: nextSite });
@@ -581,7 +650,8 @@ function AdminCheckinPageInner() {
 
       const oldAssignedSite = attendee.assigned_site || "";
       const oldHasArrived = !!attendee.has_arrived;
-      const oldShare = !!attendee.share_with_attendees;
+      const oldSharedFields = sharingByAttendee[attendee.id] || [];
+      const oldParticipates = oldSharedFields.length > 0;
       const oldSiteKey = siteMatchKey(oldAssignedSite);
       const newSiteKey = siteMatchKey(normalizedSite);
 
@@ -692,7 +762,7 @@ function AdminCheckinPageInner() {
           p_attendee_id: attendee.id,
           p_expected_event_id: event.id,
           p_has_arrived: current.hasArrived,
-          p_share_with_attendees: current.shareWithAttendees,
+          p_share_with_attendees: current.sharedFields.length > 0,
           p_placement_action: placementAction,
           p_site_id: placementSiteId,
           p_placement_idempotency_key: placementAction
@@ -708,6 +778,45 @@ function AdminCheckinPageInner() {
       const checkinResult = checkinData?.[0];
       if (!checkinResult || checkinResult.outcome === "rejected") {
         throw new Error(mapSitePlacementError(new Error(checkinResult?.rejection_code || "unknown"), "Could not save check-in."));
+      }
+
+      const attendeeName =
+        fullName(attendee.pilot_first, attendee.pilot_last) || "Attendee";
+
+      // Arrival/placement and sharing preferences are two separate
+      // governed domain concepts (an operational fact vs. a Person's own
+      // consent) written by two separate RPC calls on purpose -- see the
+      // top-of-function note. complete_admin_checkin has already
+      // committed by this point, so a failure here must always read as
+      // "check-in saved, sharing preferences were not" and never as
+      // "check-in failed," regardless of which specific rejection code
+      // fired. The page is reloaded so the card reflects the true
+      // persisted state rather than the operator's stale local edit.
+      const { data: sharingData, error: sharingError } = await supabase.rpc(
+        "set_attendee_sharing_preferences",
+        {
+          p_attendee_id: attendee.id,
+          p_expected_event_id: event.id,
+          p_shared_field_keys: current.sharedFields,
+        },
+      );
+
+      const sharingResult = sharingData?.[0];
+      const sharingFailed =
+        !!sharingError || !sharingResult || sharingResult.outcome === "rejected";
+
+      if (sharingFailed) {
+        const detail = mapSitePlacementError(
+          new Error(
+            sharingError?.message || sharingResult?.rejection_code || "unknown",
+          ),
+          "an unknown error",
+        );
+        await loadPage();
+        showError(
+          `${attendeeName}: check-in (arrival/site) was saved, but sharing preferences were not saved -- ${detail} Reopen this attendee and try saving sharing again.`,
+        );
+        return;
       }
 
       const changes: string[] = [];
@@ -732,14 +841,20 @@ function AdminCheckinPageInner() {
         changes.push("arrival unmarked");
       }
 
-      if (oldShare !== current.shareWithAttendees) {
-        changes.push(
-          current.shareWithAttendees ? "sharing enabled" : "sharing disabled",
-        );
-      }
+      const newParticipates = current.sharedFields.length > 0;
+      const sharedFieldsChanged =
+        oldSharedFields.length !== current.sharedFields.length ||
+        oldSharedFields.some((key) => !current.sharedFields.includes(key));
 
-      const attendeeName =
-        fullName(attendee.pilot_first, attendee.pilot_last) || "Attendee";
+      if (oldParticipates !== newParticipates) {
+        changes.push(
+          newParticipates
+            ? "attendee sharing turned on"
+            : "attendee sharing turned off",
+        );
+      } else if (sharedFieldsChanged) {
+        changes.push("attendee sharing choices updated");
+      }
 
       const feedback =
         changes.length === 0
@@ -827,7 +942,7 @@ function AdminCheckinPageInner() {
           const current = editState[attendee.id] || {
             siteNumber: attendee.assigned_site || "",
             hasArrived: !!attendee.has_arrived,
-            shareWithAttendees: !!attendee.share_with_attendees,
+            sharedFields: sharingByAttendee[attendee.id] || [],
           };
 
           return (
@@ -1004,26 +1119,6 @@ function AdminCheckinPageInner() {
                   Arrived
                 </label>
 
-                <label
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    minHeight: 44,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={current.shareWithAttendees}
-                    onChange={(e) =>
-                      updateEditState(attendee.id, {
-                        shareWithAttendees: e.target.checked,
-                      })
-                    }
-                  />
-                  Share
-                </label>
-
                 <button
                   type="button"
                   onClick={() => void saveCheckin(attendee)}
@@ -1036,6 +1131,76 @@ function AdminCheckinPageInner() {
                 >
                   {savingId === attendee.id ? "Saving..." : "Save"}
                 </button>
+              </div>
+
+              <div
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  background: "#fafafa",
+                  padding: 12,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700 }}>Attendee Sharing</div>
+                  <div style={{ fontSize: 12, color: "#666" }}>
+                    Choose what other participating attendees can see.
+                    Participation means Name is shared.
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {SHARING_OPTIONAL_FIELDS.map((field) => (
+                    <label
+                      key={field.key}
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "center",
+                        minHeight: 32,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={current.sharedFields.includes(field.key)}
+                        onChange={() =>
+                          toggleSharedField(attendee.id, field.key)
+                        }
+                      />
+                      {field.label}
+                    </label>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => selectAllSharedFields(attendee.id)}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 6,
+                      border: "1px solid #cbd5e1",
+                      background: "white",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Select all
+                  </button>
+                </div>
+
+                <div style={{ fontSize: 12, color: "#666" }}>
+                  Sharing lets this attendee see information that other
+                  participating attendees choose to share. Turning all
+                  sharing off removes their access to the attendee-sharing
+                  directory/locator.
+                </div>
               </div>
 
               <div

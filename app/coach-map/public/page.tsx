@@ -6,7 +6,7 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { logEngagement } from "@/lib/engagement";
-import { fullName, preferredDisplayLine } from "@/lib/formatters";
+import { fullName } from "@/lib/formatters";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
@@ -86,32 +86,20 @@ type MapSite = {
   assigned_attendee_id: string | null;
 };
 
+// Governed attendee-sharing contract output (get_event_public_roster):
+// name/coach are masked together server-side per the target's own choice;
+// campsite_location resolves through governed parking_sites occupancy, not
+// the legacy free-text assigned_site column. Arrival stays independent of
+// sharing under the Site Placement architecture and is returned unmasked.
 type Attendee = {
   id: string;
   pilot_first: string | null;
   pilot_last: string | null;
-  copilot_first: string | null;
-  copilot_last: string | null;
-  share_with_attendees: boolean | null;
-  assigned_site: string | null;
+  campsite_location: string | null;
   coach_make: string | null;
   coach_model: string | null;
-  coach_length: string | null;
   has_arrived: boolean | null;
   arrival_status: string | null;
-};
-
-type HouseholdMember = {
-  id: string;
-  attendee_id: string;
-  person_role: "pilot" | "copilot" | "additional";
-  first_name: string | null;
-  last_name: string | null;
-  nickname: string | null;
-  display_name: string | null;
-  age_text: string | null;
-  sort_order: number | null;
-  raw_text: string | null;
 };
 
 type RenderedSite = {
@@ -148,10 +136,6 @@ function normalizeSiteKey(value: string | null | undefined) {
     .replace(/[^a-z0-9]/g, "");
 }
 
-function householdLine(member: HouseholdMember) {
-  return preferredDisplayLine(member);
-}
-
 function getStoredViewerAttendeeId() {
   if (typeof window === "undefined") {
     return null;
@@ -160,17 +144,9 @@ function getStoredViewerAttendeeId() {
 }
 
 function CoachMapPublicPageInner() {
-  const {
-    event: workspaceEvent,
-    attendeeId,
-    isReady,
-    session,
-  } = useMemberWorkspace();
+  const { event: workspaceEvent, attendeeId, isReady } = useMemberWorkspace();
   const [event, setEvent] = useState<ActiveEvent | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
-  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
-    [],
-  );
   const [sites, setSites] = useState<MapSite[]>([]);
   const [locations, setLocations] = useState<MasterMapLocation[]>([]);
   const [viewerAttendeeId, setViewerAttendeeId] = useState<string | null>(null);
@@ -330,7 +306,7 @@ function CoachMapPublicPageInner() {
         const directAssignment =
           assignments.find((a) => a.master_site_id === site.id) || null;
         const fallbackAttendee = attendeeList.find((attendee) => {
-          const n = normalizeSiteKey(attendee.assigned_site);
+          const n = normalizeSiteKey(attendee.campsite_location);
           return (
             n &&
             (n === normalizeSiteKey(site.site_number) ||
@@ -355,24 +331,6 @@ function CoachMapPublicPageInner() {
       setLocations((masterLocationsResult.data || []) as MasterMapLocation[]);
       setAttendees(attendeeList);
 
-      if (attendeeList.length > 0) {
-        const { data: memberRows, error: memberError } = await supabase.rpc(
-          "get_event_locator_household_members",
-          {
-            p_event_id: memberEvent.id,
-            p_event_code: session?.event_code || null,
-            p_registration_identifier:
-              session?.attendee_email || session?.attendee_phone || null,
-          },
-        );
-        if (memberError) {
-          throw memberError;
-        }
-        setHouseholdMembers((memberRows || []) as HouseholdMember[]);
-      } else {
-        setHouseholdMembers([]);
-      }
-
       setStatus("Coach map ready.");
     } catch (err: any) {
       console.error("loadMap error:", err);
@@ -380,10 +338,9 @@ function CoachMapPublicPageInner() {
       setSites([]);
       setLocations([]);
       setAttendees([]);
-      setHouseholdMembers([]);
       setStatus(err?.message || "Failed to load coach map.");
     }
-  }, [attendeeId, isReady, workspaceEvent, session]);
+  }, [attendeeId, isReady, workspaceEvent]);
 
   // ─── Effects ──────────────────────────────────────────────────────────────────
 
@@ -458,16 +415,6 @@ function CoachMapPublicPageInner() {
     return map;
   }, [attendees]);
 
-  const householdByAttendee = useMemo(() => {
-    const map = new Map<string, HouseholdMember[]>();
-    householdMembers.forEach((m) => {
-      const existing = map.get(m.attendee_id) || [];
-      existing.push(m);
-      map.set(m.attendee_id, existing);
-    });
-    return map;
-  }, [householdMembers]);
-
   const renderedSites = useMemo<RenderedSite[]>(() => {
     return sites.map((site) => ({
       key: site.master_site_id,
@@ -484,23 +431,14 @@ function CoachMapPublicPageInner() {
       const assigned = site.assigned_attendee_id
         ? attendeeLookup.get(site.assigned_attendee_id) || null
         : null;
-      const members = site.assigned_attendee_id
-        ? householdByAttendee.get(site.assigned_attendee_id) || []
-        : [];
       const searchParts = [
         site.site_number,
         site.display_label,
         assigned ? fullName(assigned.pilot_first, assigned.pilot_last) : "",
-        assigned ? fullName(assigned.copilot_first, assigned.copilot_last) : "",
-        ...members.map((m) =>
-          [m.display_name, m.nickname, m.first_name, m.last_name, m.raw_text]
-            .filter(Boolean)
-            .join(" "),
-        ),
       ];
       return { site, searchText: searchParts.join(" ").toLowerCase() };
     });
-  }, [renderedSites, attendeeLookup, householdByAttendee]);
+  }, [renderedSites, attendeeLookup]);
 
   const searchResults = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -518,10 +456,10 @@ function CoachMapPublicPageInner() {
     : null;
 
   const viewerAssignedSiteKey = useMemo(() => {
-    if (!viewerAttendee?.assigned_site) {
+    if (!viewerAttendee?.campsite_location) {
       return null;
     }
-    const n = normalizeSiteKey(viewerAttendee.assigned_site);
+    const n = normalizeSiteKey(viewerAttendee.campsite_location);
     return (
       renderedSites.find(
         (s) =>
@@ -531,16 +469,16 @@ function CoachMapPublicPageInner() {
     );
   }, [viewerAttendee, renderedSites]);
 
-  const viewerHasOptedIn = !!viewerAttendee?.share_with_attendees;
+  // Presence of the masked name field is the participation signal (both
+  // pilot_first and pilot_last are populated together only when the
+  // attendee shares -- see get_event_public_roster).
+  const viewerHasOptedIn = !!viewerAttendee?.pilot_first;
   const selectedSite =
     renderedSites.find((s) => s.key === selectedSiteKey) || null;
   const selectedAttendee = selectedSite?.assigned_attendee_id
     ? attendeeLookup.get(selectedSite.assigned_attendee_id) || null
     : null;
-  const selectedHousehold = selectedSite?.assigned_attendee_id
-    ? householdByAttendee.get(selectedSite.assigned_attendee_id) || []
-    : [];
-  const occupantHasOptedIn = !!selectedAttendee?.share_with_attendees;
+  const occupantHasOptedIn = !!selectedAttendee?.pilot_first;
   const canShowPrivateDetails =
     !!selectedAttendee &&
     viewerAttendeeId !== null &&
@@ -903,8 +841,8 @@ function CoachMapPublicPageInner() {
               fontWeight: 700,
             }}
           >
-            {viewerAttendee?.assigned_site
-              ? `My Site: ${viewerAttendee.assigned_site}`
+            {viewerAttendee?.campsite_location
+              ? `My Site: ${viewerAttendee.campsite_location}`
               : "My Site"}
           </button>
         </div>
@@ -1026,41 +964,17 @@ function CoachMapPublicPageInner() {
                 </div>
               ) : canShowPrivateDetails ? (
                 <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>
-                    Coach / Household
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Pilot</div>
+                  <div style={{ color: "#666", fontSize: 14 }}>
+                    {fullName(
+                      selectedAttendee.pilot_first,
+                      selectedAttendee.pilot_last,
+                    )}
                   </div>
-                  {selectedHousehold.length > 0 ? (
-                    <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
-                      {selectedHousehold.map((member) => (
-                        <div key={member.id}>
-                          {member.person_role === "pilot"
-                            ? "Pilot"
-                            : member.person_role === "copilot"
-                              ? "Co-Pilot"
-                              : "Additional"}
-                          : {householdLine(member)}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ color: "#666", fontSize: 14 }}>
-                      {fullName(
-                        selectedAttendee.pilot_first,
-                        selectedAttendee.pilot_last,
-                      )}
-                      {selectedAttendee.copilot_first ||
-                      selectedAttendee.copilot_last
-                        ? ` / ${fullName(selectedAttendee.copilot_first, selectedAttendee.copilot_last)}`
-                        : ""}
-                    </div>
-                  )}
                   <div style={{ fontSize: 13, color: "#555" }}>
                     {[selectedAttendee.coach_make, selectedAttendee.coach_model]
                       .filter(Boolean)
                       .join(" ") || "Coach information not available"}
-                    {selectedAttendee.coach_length
-                      ? ` \u00b7 ${selectedAttendee.coach_length} ft`
-                      : ""}
                   </div>
                   <div style={{ fontSize: 13, color: "#555" }}>
                     Arrival status:{" "}
@@ -1076,7 +990,7 @@ function CoachMapPublicPageInner() {
                   </div>
                   <div style={{ color: "#555" }}>Occupied</div>
                   <div style={{ fontSize: 12, color: "#666" }}>
-                    Household details are shown only when both you and the
+                    Pilot details are shown only when both you and the
                     occupant have opted in to sharing.
                   </div>
                 </div>
