@@ -776,6 +776,9 @@ function AdminCheckinPageInner() {
         return;
       }
       setSharingRetry(null);
+      selectedIsDirtyRef.current = false;
+      setSelectedIsDirty(false);
+      setSelectedConflict(null);
       await loadPage();
       showStatus("Attendee sharing updated.");
     } finally {
@@ -1008,6 +1011,7 @@ function AdminCheckinPageInner() {
         });
         selectedIsDirtyRef.current = false;
         setSelectedIsDirty(false);
+        setSelectedConflict(null);
         await loadPage();
         setRecentCompletion({
           attendeeId: attendee.id,

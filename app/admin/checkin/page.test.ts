@@ -224,6 +224,7 @@ test("Check-In success plus sharing failure remains truthful and retryable", () 
   assert.match(source, /Check-In saved\. Sharing still needs attention/);
   assert.match(source, /check-in \(arrival\/site\) was saved, but sharing preferences were not saved/);
   assert.match(source, /Retry Sharing Update/);
+  assert.match(source, /setSelectedConflict\(null\)/);
 });
 
 test("failures are categorized and only connectivity failures receive Check-In retry", () => {
