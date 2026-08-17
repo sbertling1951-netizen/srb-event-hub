@@ -61,6 +61,16 @@ test("Stage A: generic attendee payload excludes operational Arrival and placeme
   assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
 });
 
+test("saveMembershipNumber: the quick-correction path defers to the governed validateField check, not a second hardcoded F/C copy (Refactor Audit Q7)", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const start = source.indexOf("async function saveMembershipNumber");
+  const body = source.slice(start, source.indexOf("async function updateDataStatus", start));
+
+  assert.match(body, /validateField\(\s*"membership_number",\s*draftValue,\s*rules,\s*currentEvent\?\.id,?\s*\)/);
+  assert.equal(/draftValue\.startsWith\("F"\)/.test(body), false);
+  assert.equal(/draftValue\.startsWith\("C"\)/.test(body), false);
+});
+
 // --- 1. Household-member deletion requires explicit confirmation ---------
 
 test("computeHouseholdRemovalWarnings: create mode never warns, regardless of state", () => {

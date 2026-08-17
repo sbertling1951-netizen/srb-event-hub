@@ -42,6 +42,7 @@ import {
   type ReviewItem,
   sortAttendees,
   sortReviewItems,
+  validateField,
   type ValidationRule,
   type ViewMode,
 } from "@/app/admin/attendees/attendeesWorkflow";
@@ -2589,8 +2590,14 @@ created_at
       return;
     }
 
-    if (!(draftValue.startsWith("F") || draftValue.startsWith("C"))) {
-      setError("Membership number must begin with F or C.");
+    const membershipIssue = validateField(
+      "membership_number",
+      draftValue,
+      rules,
+      currentEvent?.id,
+    );
+    if (membershipIssue) {
+      setError(membershipIssue.issue);
       setStatus("Correction not saved.");
       return;
     }

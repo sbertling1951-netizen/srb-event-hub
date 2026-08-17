@@ -3,6 +3,10 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
+import {
+  validateField,
+  type ValidationRule,
+} from "@/app/admin/attendees/attendeesWorkflow";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
@@ -527,7 +531,13 @@ function deriveMinimumImportParticipantCapacity(row: {
   return hasCopilot ? 2 : 1;
 }
 
-function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
+function mapRow(
+  row: RawRow,
+  rowNumber: number,
+  groups: ActivityGroup[],
+  rules: ValidationRule[],
+  eventId: string | null,
+) {
   const entry_id = text(getValueByAliases(row, FIELD_ALIASES.entry_id));
   const email = text(getValueByAliases(row, FIELD_ALIASES.email)).toLowerCase();
   const pilot_first = text(getValueByAliases(row, FIELD_ALIASES.pilot_first));
@@ -596,14 +606,16 @@ function mapRow(row: RawRow, rowNumber: number, groups: ActivityGroup[]) {
   }
   if (!membership_number) {
     warnings.push("Missing membership number");
-  }
-  const normalizedMembershipNumber = membership_number.trim().toUpperCase();
-  if (
-    membership_number &&
-    !normalizedMembershipNumber.startsWith("F") &&
-    !normalizedMembershipNumber.startsWith("C")
-  ) {
-    warnings.push("Invalid membership number (must begin with 'F' or 'C')");
+  } else {
+    const membershipIssue = validateField(
+      "membership_number",
+      membership_number,
+      rules,
+      eventId,
+    );
+    if (membershipIssue) {
+      warnings.push(membershipIssue.issue);
+    }
   }
   if (!coach_manufacturer && !coach_model) {
     warnings.push("Missing coach information");
@@ -658,6 +670,7 @@ function AdminAttendeeImportsPageInner() {
   const [availableEvents, setAvailableEvents] = useState<EventContext[]>([]);
   const [selectedImportEventId, setSelectedImportEventId] = useState("");
   const [loadedForEventId, setLoadedForEventId] = useState("");
+  const [rules, setRules] = useState<ValidationRule[]>([]);
 
   const [rows, setRows] = useState<ParsedRegistration[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -731,14 +744,27 @@ function AdminAttendeeImportsPageInner() {
         const stored = getCurrentAdminEvent();
         setCurrentEvent(stored);
 
-        const { data, error } = await supabase
-          .from("events")
-          .select("id, name, venue_name, location, start_date, end_date")
-          .order("start_date", { ascending: false });
+        const [{ data, error }, { data: rulesData, error: rulesError }] =
+          await Promise.all([
+            supabase
+              .from("events")
+              .select("id, name, venue_name, location, start_date, end_date")
+              .order("start_date", { ascending: false }),
+            supabase
+              .from("validation_rules")
+              .select("*")
+              .order("priority", { ascending: true })
+              .order("created_at", { ascending: true }),
+          ]);
 
         if (error) {
           throw error;
         }
+        if (rulesError) {
+          throw rulesError;
+        }
+
+        setRules((rulesData || []) as ValidationRule[]);
 
         const accessibleEvents = ((data || []) as EventContext[]).filter(
           (event) => !!event.id && canAccessEvent(admin, event.id),
@@ -933,22 +959,22 @@ function AdminAttendeeImportsPageInner() {
           isResolved: false,
         });
       } else {
-        const normalizedMembershipNumber = row.membership_number
-          .trim()
-          .toUpperCase();
+        const membershipIssue = validateField(
+          "membership_number",
+          row.membership_number,
+          rules,
+          selectedImportEventId || null,
+        );
 
-        if (
-          !normalizedMembershipNumber.startsWith("F") &&
-          !normalizedMembershipNumber.startsWith("C")
-        ) {
+        if (membershipIssue) {
           issues.push({
             key: `${attendeeKey}-membership-invalid`,
             rowNumber: row.rowNumber,
             attendeeKey,
             field: "membership_number",
             label: "Member #",
-            message: "Membership number must begin with F or C",
-            severity: "error",
+            message: membershipIssue.issue,
+            severity: membershipIssue.severity,
             currentValue: row.membership_number,
             isResolved: false,
           });
@@ -985,7 +1011,7 @@ function AdminAttendeeImportsPageInner() {
 
       return issues;
     });
-  }, [rows]);
+  }, [rows, rules, selectedImportEventId]);
 
   useEffect(() => {
     setReviewIssues(parsedReviewIssues);
@@ -1045,26 +1071,28 @@ function AdminAttendeeImportsPageInner() {
           severity: "warning",
         });
       } else {
-        const normalizedMembershipNumber = memberNumber.toUpperCase();
+        const membershipIssue = validateField(
+          "membership_number",
+          memberNumber,
+          rules,
+          selectedImportEventId || null,
+        );
 
-        if (
-          !normalizedMembershipNumber.startsWith("F") &&
-          !normalizedMembershipNumber.startsWith("C")
-        ) {
+        if (membershipIssue) {
           issues.push({
             key: `${attendee.id}-membership-invalid`,
             attendee,
             label: "Member #",
-            message: "Membership number must begin with F or C",
+            message: membershipIssue.issue,
             currentValue: memberNumber,
-            severity: "error",
+            severity: membershipIssue.severity,
           });
         }
       }
 
       return issues;
     });
-  }, [savedAttendees]);
+  }, [savedAttendees, rules, selectedImportEventId]);
 
   async function loadSavedAttendees(eventId: string) {
     try {
@@ -1523,7 +1551,9 @@ function AdminAttendeeImportsPageInner() {
 
       const foundHeaders = Object.keys(json[0] || {});
       const groups = detectActivityGroups(foundHeaders);
-      const parsed = json.map((row, index) => mapRow(row, index + 2, groups));
+      const parsed = json.map((row, index) =>
+        mapRow(row, index + 2, groups, rules, selectedImportEventId || null),
+      );
 
       setHeaders(foundHeaders);
       console.log("Detected import headers:", foundHeaders);
