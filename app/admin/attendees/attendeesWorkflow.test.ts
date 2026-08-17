@@ -2,8 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  ATTENDEE_EDIT_SECTIONS,
+  attendeeChangedRemotelyWhileDirty,
+  attendeeConcurrencyFingerprint,
   type AttendeeRow,
   computeReviewItems,
+  dirtySectionIds,
+  editorStateDiffKeys,
+  editorStateIsDirty,
+  emptyAttendeeEditorState,
   filterAttendees,
   matchesViewMode,
   sortAttendees,
@@ -167,5 +174,124 @@ test("sortAttendees: 'site' groups by assigned site, pushing unassigned to the b
   assert.deepEqual(
     sortAttendees(rows, "site").map((r) => r.id),
     ["a1", "b12", "unassigned"],
+  );
+});
+
+// --- Test Expectation E: dirty-state detection ------------------------------
+
+test("editorStateIsDirty: false for an unchanged form, true after any content field changes", () => {
+  const baseline = emptyAttendeeEditorState();
+  assert.equal(editorStateIsDirty(baseline, { ...baseline }), false);
+  assert.equal(
+    editorStateIsDirty(baseline, { ...baseline, pilot_first: "Jane" }),
+    true,
+  );
+});
+
+test("editorStateIsDirty: bookkeeping-only fields never count as a change", () => {
+  const baseline = emptyAttendeeEditorState();
+  const current = {
+    ...baseline,
+    had_copilot_at_load: true,
+    copilot_name_at_load: "Sam Rivera",
+    registration_capacity_original: 3,
+    registration_capacity_was_unset: true,
+  };
+
+  assert.equal(editorStateIsDirty(baseline, current), false);
+  assert.deepEqual(editorStateDiffKeys(baseline, current), []);
+});
+
+test("editorStateDiffKeys: reports exactly the fields that changed", () => {
+  const baseline = emptyAttendeeEditorState();
+  const current = { ...baseline, pilot_first: "Jane", city: "Reno" };
+
+  assert.deepEqual(
+    [...editorStateDiffKeys(baseline, current)].sort(),
+    ["city", "pilot_first"],
+  );
+});
+
+test("dirtySectionIds: maps changed fields to the one section each belongs to", () => {
+  const baseline = emptyAttendeeEditorState();
+  const current = {
+    ...baseline,
+    pilot_first: "Jane", // identity
+    city: "Reno", // location
+  };
+
+  assert.deepEqual(dirtySectionIds(baseline, current).sort(), [
+    "identity",
+    "location",
+  ]);
+});
+
+test("dirtySectionIds: empty when nothing changed", () => {
+  const baseline = emptyAttendeeEditorState();
+  assert.deepEqual(dirtySectionIds(baseline, { ...baseline }), []);
+});
+
+test("ATTENDEE_EDIT_SECTIONS: every section has a non-empty field list and no field is claimed twice", () => {
+  const seen = new Set<string>();
+  for (const section of ATTENDEE_EDIT_SECTIONS) {
+    assert.ok(section.fields.length > 0, `${section.id} must own at least one field`);
+    for (const field of section.fields) {
+      assert.ok(!seen.has(field), `${String(field)} claimed by more than one section`);
+      seen.add(field);
+    }
+  }
+});
+
+// --- Test Expectation H: same-record conflict -------------------------------
+
+test("attendeeConcurrencyFingerprint: stable for identical governed content, changes when a governed field changes", () => {
+  const row = attendee({ id: "x" });
+  const fp1 = attendeeConcurrencyFingerprint(row);
+  const fp2 = attendeeConcurrencyFingerprint({ ...row });
+  assert.equal(fp1, fp2);
+
+  const changed = attendeeConcurrencyFingerprint({
+    ...row,
+    membership_number: "F99999",
+  });
+  assert.notEqual(fp1, changed);
+});
+
+test("attendeeConcurrencyFingerprint: Stage A boundary -- has_arrived and assigned_site are not Attendees-governed fields and never affect the fingerprint", () => {
+  const row = attendee({ id: "x" });
+  const fp1 = attendeeConcurrencyFingerprint(row);
+
+  const arrivalChanged = attendeeConcurrencyFingerprint({
+    ...row,
+    has_arrived: true,
+  } as any);
+  const siteChanged = attendeeConcurrencyFingerprint({
+    ...row,
+    assigned_site: "B14",
+  } as any);
+
+  assert.equal(fp1, arrivalChanged);
+  assert.equal(fp1, siteChanged);
+});
+
+test("attendeeChangedRemotelyWhileDirty: only true when dirty AND the fingerprint actually differs", () => {
+  assert.equal(
+    attendeeChangedRemotelyWhileDirty("before", "after", true),
+    true,
+  );
+  assert.equal(
+    attendeeChangedRemotelyWhileDirty("before", "after", false),
+    false,
+    "not dirty -- no conflict, safe to reconcile silently",
+  );
+  assert.equal(
+    attendeeChangedRemotelyWhileDirty("same", "same", true),
+    false,
+    "dirty but nothing actually changed server-side -- no conflict",
+  );
+  assert.equal(
+    attendeeChangedRemotelyWhileDirty(null, "after", true),
+    false,
+    "no baseline captured yet -- cannot judge a conflict",
   );
 });

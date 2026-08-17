@@ -6,15 +6,15 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  type AttendeeEditorState,
   type AttendeeRow,
+  buildHouseholdRemovalConfirmMessage,
+  computeHouseholdRemovalWarnings,
+  emptyAttendeeEditorState,
   formatCancellationDetail,
 } from "@/app/admin/attendees/attendeesWorkflow";
 import {
   AttendeeActionRow,
-  type AttendeeEditorState,
-  buildHouseholdRemovalConfirmMessage,
-  computeHouseholdRemovalWarnings,
-  emptyAttendeeEditorState,
   QuickActionBar,
 } from "@/app/admin/attendees/page";
 
@@ -442,7 +442,7 @@ test("AttendeeRecordWorkspace: Save/Create respects canEdit in both editor modes
     source.indexOf("const secondaryActions ="),
   );
 
-  assert.match(primaryActionsSource, /disabled=\{saving \|\| !canEdit\}/);
+  assert.match(primaryActionsSource, /disabled=\{saving \|\| !canEdit/);
 });
 
 // --- Stage C: viewing and editing are distinct states -----------------------
@@ -502,7 +502,7 @@ test("openCreateAttendeeEditor: creating a new record has nothing to view yet an
 
   const fnSource = source.slice(
     source.indexOf("function openCreateAttendeeEditor()"),
-    source.indexOf("function openCreateAttendeeEditor()") + 400,
+    source.indexOf("function openCreateAttendeeEditor()") + 700,
   );
 
   assert.match(fnSource, /setViewState\("edit"\)/);
@@ -792,4 +792,162 @@ test("authorization (canAccessEvent) remains a separate gate after Event-context
     source,
     /if \(!canAccessEvent\(adminRef\.current!, eventToUse\.id!\)\)/,
   );
+});
+
+// --- Stage D ------------------------------------------------------------
+
+// Test Expectation G: a different attendee changing does not wipe the
+// selected dirty edit. This holds structurally -- editorState is separate
+// React state from the attendees list, so a background reload of the list
+// (loadQueue) can never itself overwrite editorState; only this file's own
+// explicit reconciliation code (guarded by the *same* attendee's id) may.
+
+test("loadQueue's realtime reconciliation only ever touches the open workspace for the SAME attendee id, never a different one", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const loadQueueSource = source.slice(
+    source.indexOf("const loadQueue = useCallback("),
+    source.indexOf("const loadEventAndData = useCallback("),
+  );
+
+  // setAttendees/setRules (the only writes touching every row) never
+  // reference editorState; the reconciliation block that does is scoped to
+  // openId === editorStateRef.current.id, one specific attendee.
+  assert.ok(!/setAttendees\([^)]*editorState/.test(loadQueueSource));
+  assert.match(loadQueueSource, /const openId = editorStateRef\.current\.id/);
+});
+
+// Test Expectation H: same-attendee remote change while dirty blocks Save.
+
+test("Save is disabled while a conflict is present, and handleSaveAttendeeRecord re-checks it defensively", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /disabled=\{saving \|\| !canEdit \|\| !!conflict\}/);
+
+  const saveFnSource = source.slice(
+    source.indexOf("async function handleSaveAttendeeRecord()"),
+    source.indexOf("async function handleSaveAttendeeRecord()") + 600,
+  );
+  assert.match(saveFnSource, /if \(selectedConflict\)/);
+});
+
+test("a conflict offers an explicit 'Reload Current Record' recovery action, never an automatic overwrite", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /Reload Current Record/);
+  assert.match(source, /onClick=\{onReloadRecord\}/);
+});
+
+// Test Expectation I: Event-context change cannot silently retarget the
+// open record.
+
+test("an unavailable selected record (deleted, or the admin working Event changed underneath it) closes the workspace with an explicit message, never silently", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /function closeAttendeeEditorForUnavailableRecord/);
+  assert.match(source, /no longer available in the current event/);
+
+  const loadQueueSource = source.slice(
+    source.indexOf("const loadQueue = useCallback("),
+    source.indexOf("const loadEventAndData = useCallback("),
+  );
+  assert.match(
+    loadQueueSource,
+    /if \(openId && !serverRow\) \{[\s\S]*?closeAttendeeEditorForUnavailableRecord\(\)/,
+  );
+});
+
+// Test Expectation J: household removal confirmation remains specific to
+// the affected participant, and is now also reachable as an explicit,
+// discoverable action (not only a consequence discovered at Save time).
+
+test("removeHouseholdMember: builds a confirmation naming the specific participant and role, via the canonical confirm dialog", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const fnSource = source.slice(
+    source.indexOf("async function removeHouseholdMember("),
+    source.indexOf("async function removeHouseholdMember(") + 1200,
+  );
+
+  assert.match(fnSource, /confirmViaDialog\(/);
+  assert.match(fnSource, /role === "copilot" \? "Co-Pilot" : "Additional Participant"/);
+});
+
+test("explicit Remove Co-Pilot / Remove Additional Participant controls exist in the edit form, conditioned on that participant currently having data", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /hasCopilotNow \? \(/);
+  assert.match(source, />\s*Remove Co-Pilot\s*</);
+  assert.match(source, /hasAdditionalNow \? \(/);
+  assert.match(source, />\s*Remove Additional Participant\s*</);
+});
+
+// Test Expectation K: consequential actions use the canonical confirmation
+// pattern, never a new window.confirm().
+
+test("no window.confirm() usage exists anywhere in the Attendees page -- every consequential action uses the canonical ConfirmDialog pattern", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  // No actual window.confirm(...) call site remains; the string may still
+  // legitimately appear only inside comments explaining the replacement.
+  assert.ok(!/window\.confirm\(/.test(source));
+  assert.match(source, /import ConfirmDialog from "@\/components\/ui\/ConfirmDialog"/);
+  assert.match(source, /<ConfirmDialog/);
+});
+
+test("Cancel Registration and record deactivation both route through confirmViaDialog", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const cancelFnSource = source.slice(
+    source.indexOf("async function onCancelRegistration("),
+    source.indexOf("async function onCancelRegistration(") + 400,
+  );
+  assert.match(cancelFnSource, /confirmViaDialog\(/);
+
+  const updateFieldSource = source.slice(
+    source.indexOf("function updateEditorField<"),
+    source.indexOf("function updateEditorField<") + 900,
+  );
+  assert.match(updateFieldSource, /confirmViaDialog\(\s*"Deactivate this record\?"/);
+});
+
+// Test Expectation F: save/recovery communicates what is being persisted,
+// with the record -- not only a page-level banner.
+
+test("the workspace carries its own aria-live saving/saved/conflict feedback, distinct from the page-level status/error banners", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const editBodySource = source.slice(
+    source.indexOf("const editBody = ("),
+    source.indexOf("const primaryActions ="),
+  );
+
+  assert.match(editBodySource, /aria-live="polite"/);
+  assert.match(editBodySource, /role=\{conflict \? "alert" : "status"\}/);
+});
+
+// Test Expectation L: Review Queue continuous-operation behavior does not
+// regress -- it must still genuinely advance to the next flagged record.
+
+test("the post-save review-queue advance genuinely opens the next flagged record instead of immediately closing it again", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const advanceIndex = source.indexOf("if (nextReviewItem) {");
+  assert.ok(advanceIndex > -1);
+  const advanceSource = source.slice(advanceIndex, advanceIndex + 700);
+
+  assert.match(advanceSource, /await selectAttendee\(nextReviewItem\.attendee/);
+  // The prior defect: opening the next item and then unconditionally
+  // closing the editor again in the same save must not reappear.
+  assert.ok(!/await selectAttendee\(nextReviewItem\.attendee[\s\S]*?closeAttendeeEditor\(\);\s*\n\s*\/\/ Then refresh/.test(source));
 });

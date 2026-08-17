@@ -10,15 +10,25 @@ import {
 } from "react";
 
 import {
+  ATTENDEE_EDIT_SECTIONS,
+  attendeeChangedRemotelyWhileDirty,
+  attendeeConcurrencyFingerprint,
+  type AttendeeEditorState,
   type AttendeeRow,
   type AttendeeSortMode,
+  attendeeToEditorState,
+  buildHouseholdRemovalConfirmMessage,
+  computeHouseholdRemovalWarnings,
   computeReviewItems,
   DATA_STATUS_OPTIONS,
   type DataStatusFilter,
   dataStatusLabel,
   dataStatusOptionLabel,
+  dirtySectionIds,
   displayCopilotName,
   displayPilotName,
+  editorStateIsDirty,
+  emptyAttendeeEditorState,
   filterAttendees,
   formatCancellationDetail,
   fullName,
@@ -38,6 +48,8 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { ObjectPanel } from "@/components/ObjectPanel";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { buildAdminAttendeeTargetHref } from "@/lib/adminAttendeeTarget";
 import { useAdmin } from "@/lib/adminContext";
 import {
@@ -61,79 +73,6 @@ type EventContext = {
   end_date?: string | null;
 };
 
-export type AttendeeEditorState = {
-  id: string | null;
-  pilot_first: string;
-  pilot_last: string;
-  copilot_first: string;
-  copilot_last: string;
-  nickname: string;
-  copilot_nickname: string;
-  email: string;
-  copilot_email: string;
-  copilot_cell_phone: string;
-  additional_first_name: string;
-  additional_last_name: string;
-  additional_nickname: string;
-  additional_email: string;
-  additional_cell_phone: string;
-  membership_number: string;
-  city: string;
-  state: string;
-  assigned_site: string;
-  participant_type: string;
-  registration_capacity: number; // Add registration_capacity after participant_type
-  // True when the underlying stored participant_capacity was null when this
-  // editor session loaded (or this is a brand-new record) and the
-  // administrator has not yet deliberately changed the capacity control.
-  // While true, save must leave capacity unknown rather than persisting the
-  // stepper's display default.
-  registration_capacity_was_unset: boolean;
-  // The stored participant_capacity value as loaded (null if unset, or null
-  // for a brand-new record). Used only to detect whether the admin is
-  // raising capacity above what is currently stored -- never written back
-  // directly.
-  registration_capacity_original: number | null;
-  // Whether a Co-Pilot / Additional Participant household row already
-  // existed when this editor session loaded. Used only to distinguish the
-  // administrator newly adding that participant this save (which
-  // automatically authorizes the resulting capacity, per governed product
-  // rule) from an unrelated edit to an already-existing row (which must
-  // never silently "fix" a pre-existing roster/capacity mismatch). Not
-  // applicable to create mode (always false there).
-  had_copilot_at_load: boolean;
-  had_additional_at_load: boolean;
-  // The Co-Pilot's / Additional Participant's display name as loaded, used
-  // only to name them in the removal-confirmation prompt if their fields
-  // are cleared before Save -- never written back, never used to infer
-  // identity. Empty when no such household member existed at load.
-  copilot_name_at_load: string;
-  additional_name_at_load: string;
-  // Optional operational note attached to a capacity adjustment, if any
-  // occurs this save. EpicentraX does not ask how a slot was authorized or
-  // record payment information -- this is purely an optional free-text
-  // note. Cleared whenever a record is loaded.
-  capacity_increase_note: string;
-  primary_phone: string;
-  cell_phone: string;
-  wants_to_volunteer: boolean;
-  coach_manufacturer: string;
-  coach_model: string;
-  special_events_raw: string;
-  include_in_headcount: boolean;
-  needs_name_tag: boolean;
-  needs_coach_plate: boolean;
-  needs_parking: boolean;
-  is_first_timer: boolean;
-  has_arrived: boolean;
-  share_with_attendees: boolean;
-  is_active: boolean;
-  data_status: string;
-  entry_id: string;
-  source_type?: string | null;
-  notes: string;
-};
-
 type SummaryCardItem = {
   label: string;
   value: number;
@@ -150,188 +89,6 @@ type AttendeeCommandCenterPrefs = {
 };
 
 const ATTENDEE_COMMAND_CENTER_PREFS_KEY = "fcoc-attendee-command-center-prefs";
-
-export function emptyAttendeeEditorState(): AttendeeEditorState {
-  return {
-    id: null,
-    pilot_first: "",
-    pilot_last: "",
-    copilot_first: "",
-    copilot_last: "",
-    nickname: "",
-    copilot_nickname: "",
-    email: "",
-    copilot_email: "",
-    copilot_cell_phone: "",
-    additional_first_name: "",
-    additional_last_name: "",
-    additional_nickname: "",
-    additional_email: "",
-    additional_cell_phone: "",
-    membership_number: "",
-    city: "",
-    state: "",
-    assigned_site: "",
-    participant_type: "attendee",
-    registration_capacity: 1, // initialize to 1
-    registration_capacity_was_unset: false,
-    registration_capacity_original: null,
-    had_copilot_at_load: false,
-    had_additional_at_load: false,
-    copilot_name_at_load: "",
-    additional_name_at_load: "",
-    capacity_increase_note: "",
-    primary_phone: "",
-    cell_phone: "",
-    coach_manufacturer: "",
-    coach_model: "",
-    special_events_raw: "",
-    wants_to_volunteer: false,
-    is_first_timer: false,
-    has_arrived: false,
-    share_with_attendees: false,
-    is_active: true,
-    include_in_headcount: true,
-    needs_name_tag: false,
-    needs_coach_plate: false,
-    needs_parking: false,
-    data_status: "pending",
-    entry_id: "",
-    notes: "",
-  };
-}
-
-function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorState {
-  return {
-    id: attendee.id,
-    pilot_first: attendee.pilot_first || "",
-    pilot_last: attendee.pilot_last || "",
-    copilot_first: attendee.copilot_first || "",
-    copilot_last: attendee.copilot_last || "",
-    nickname: attendee.nickname || "",
-    copilot_nickname: attendee.copilot_nickname || "",
-    email: attendee.email || "",
-    copilot_email: attendee.copilot_email || "",
-    copilot_cell_phone: attendee.copilot_cell_phone || "",
-    additional_first_name: "",
-    additional_last_name: "",
-    additional_nickname: "",
-    additional_email: "",
-    additional_cell_phone: "",
-    membership_number: attendee.membership_number || "",
-    city: attendee.city || "",
-    state: attendee.state || "",
-    assigned_site: attendee.assigned_site || "",
-    participant_type: attendee.participant_type || "attendee",
-    registration_capacity: attendee.participant_capacity ?? 1,
-    registration_capacity_was_unset:
-      attendee.participant_capacity === null ||
-      attendee.participant_capacity === undefined,
-    registration_capacity_original: attendee.participant_capacity ?? null,
-    // Overwritten immediately after this call in selectAttendee,
-    // once the actual attendee_household_members rows are known.
-    had_copilot_at_load: false,
-    had_additional_at_load: false,
-    // Overwritten immediately after this call in selectAttendee,
-    // alongside had_copilot_at_load/had_additional_at_load above.
-    copilot_name_at_load: "",
-    additional_name_at_load: "",
-    capacity_increase_note: "",
-    primary_phone: attendee.primary_phone || "",
-    cell_phone: attendee.cell_phone || "",
-    coach_manufacturer: attendee.coach_manufacturer || "",
-    coach_model: attendee.coach_model || "",
-    special_events_raw: attendee.special_events_raw || "",
-    wants_to_volunteer: !!attendee.wants_to_volunteer,
-    is_first_timer: !!attendee.is_first_timer,
-    has_arrived: !!attendee.has_arrived,
-    share_with_attendees: !!attendee.share_with_attendees,
-    is_active: attendee.is_active,
-    include_in_headcount: attendee.include_in_headcount ?? true,
-    needs_name_tag: !!attendee.needs_name_tag,
-    needs_coach_plate: !!attendee.needs_coach_plate,
-    needs_parking: !!attendee.needs_parking,
-    data_status: attendee.data_status || "pending",
-    entry_id: attendee.entry_id || "",
-    notes: attendee.notes || "",
-  };
-}
-
-export type HouseholdRemovalWarning = {
-  role: "copilot" | "additional";
-  name: string;
-};
-
-// Pure decision gate: given the editor's loaded-vs-current household
-// state, determines which household-member rows this save would silently
-// hard-delete (per syncHouseholdMembers's own clear-the-row-when-empty
-// behavior), so the save flow can require explicit confirmation before any
-// write occurs rather than deleting a person record because a field was
-// cleared. Exported so this decision logic is directly unit-testable
-// without needing to drive the full save flow.
-export function computeHouseholdRemovalWarnings(
-  editorMode: "create" | "edit",
-  state: AttendeeEditorState,
-): HouseholdRemovalWarning[] {
-  if (editorMode !== "edit") {
-    return [];
-  }
-
-  const hasCopilot =
-    state.copilot_first.trim() !== "" ||
-    state.copilot_last.trim() !== "" ||
-    state.copilot_email.trim() !== "";
-  const hasAdditional =
-    (state.additional_first_name ?? "").trim() !== "" ||
-    (state.additional_last_name ?? "").trim() !== "" ||
-    (state.additional_email ?? "").trim() !== "" ||
-    (state.additional_nickname ?? "").trim() !== "" ||
-    (state.additional_cell_phone ?? "").trim() !== "";
-
-  const warnings: HouseholdRemovalWarning[] = [];
-
-  if (state.had_copilot_at_load && !hasCopilot) {
-    warnings.push({
-      role: "copilot",
-      name: state.copilot_name_at_load || "the Co-Pilot",
-    });
-  }
-
-  if (state.had_additional_at_load && !hasAdditional) {
-    warnings.push({
-      role: "additional",
-      name: state.additional_name_at_load || "the Additional Participant",
-    });
-  }
-
-  return warnings;
-}
-
-const HOUSEHOLD_ROLE_LABEL: Record<HouseholdRemovalWarning["role"], string> = {
-  copilot: "Co-Pilot",
-  additional: "Additional Participant",
-};
-
-// Builds the exact, specific confirmation prompt for a pending
-// household-member removal -- deliberately names who is being removed and
-// what will happen, per this task's explicit prohibition on vague
-// "Are you sure?" wording.
-export function buildHouseholdRemovalConfirmMessage(
-  warnings: HouseholdRemovalWarning[],
-): string {
-  const names = warnings
-    .map((w) => `${w.name} (${HOUSEHOLD_ROLE_LABEL[w.role]})`)
-    .join(" and ");
-
-  const pronoun = warnings.length === 1 ? "them" : "both";
-
-  return (
-    `This save will permanently remove ${names} as a household member on ` +
-    `this attendee record, because their information was cleared from the ` +
-    `form. This cannot be undone from here.\n\n` +
-    `Continue and remove ${pronoun}?`
-  );
-}
 
 function getStoredAttendeeCommandCenterPrefs(): AttendeeCommandCenterPrefs {
   if (typeof window === "undefined") {
@@ -1213,6 +970,11 @@ export function AttendeeRecordWorkspace(props: {
   reviewIssues: ReviewFieldIssue[];
   saving: boolean;
   canEdit: boolean;
+  // Stage D dirty-state / concurrency / feedback
+  isDirty: boolean;
+  dirtySections: string[];
+  conflict: string | null;
+  saveFeedback: string | null;
   onClose: () => void;
   onChange: <K extends keyof AttendeeEditorState>(
     key: K,
@@ -1221,6 +983,8 @@ export function AttendeeRecordWorkspace(props: {
   onEnterEdit: () => void;
   onCancelEdit: () => void;
   onSave: () => Promise<void>;
+  onReloadRecord: () => void;
+  onRemoveHouseholdMember: (role: "copilot" | "additional") => Promise<void>;
   onUpdateDataStatus: (
     attendeeId: string,
     nextStatus: string,
@@ -1239,11 +1003,17 @@ export function AttendeeRecordWorkspace(props: {
     reviewIssues,
     saving,
     canEdit,
+    isDirty,
+    dirtySections,
+    conflict,
+    saveFeedback,
     onClose,
     onChange,
     onEnterEdit,
     onCancelEdit,
     onSave,
+    onReloadRecord,
+    onRemoveHouseholdMember,
     onUpdateDataStatus,
     onCancelRegistration,
     onPrevious,
@@ -1313,30 +1083,85 @@ export function AttendeeRecordWorkspace(props: {
   ]);
   // Insert membership_number after copilot_email if not already present there
   // Remove assigned_site from the main textFields array
-  const textFields: Array<{ key: keyof AttendeeEditorState; label: string }> =
-    (() => {
-      // Reorder and move copilot_cell_phone per requirements
-      const fields: Array<{ key: keyof AttendeeEditorState; label: string }> = [
-        { key: "pilot_first", label: "Pilot First" },
-        { key: "pilot_last", label: "Pilot Last" },
-        { key: "copilot_first", label: "Co-Pilot First" },
-        { key: "copilot_last", label: "Co-Pilot Last" },
-        { key: "nickname", label: "Pilot Nickname" },
-        { key: "copilot_nickname", label: "Co-Pilot Nickname" },
-        { key: "email", label: "Email" },
-        { key: "copilot_email", label: "Co-Pilot Email" },
-        { key: "membership_number", label: "Membership Number" },
-        { key: "city", label: "City" },
-        { key: "state", label: "State" },
-        { key: "primary_phone", label: "Primary Phone" },
-        { key: "cell_phone", label: "Cell Phone" },
-        { key: "coach_manufacturer", label: "Coach Manufacturer" },
-        { key: "coach_model", label: "Coach Model" },
-        { key: "entry_id", label: "Entry ID" },
-        { key: "copilot_cell_phone", label: "Co-Pilot Cell Phone" },
-      ];
-      return fields;
-    })();
+  // Stage D requirement 2: fields are grouped into the same coherent
+  // sections ATTENDEE_EDIT_SECTIONS defines (and dirtySections badges
+  // against), so "which section changed" and "which fields are in this
+  // section" can never silently disagree.
+  const SECTION_TEXT_FIELDS: Record<
+    string,
+    Array<{ key: keyof AttendeeEditorState; label: string }>
+  > = {
+    identity: [
+      { key: "pilot_first", label: "Pilot First" },
+      { key: "pilot_last", label: "Pilot Last" },
+      { key: "nickname", label: "Pilot Nickname" },
+    ],
+    household: [
+      { key: "copilot_first", label: "Co-Pilot First" },
+      { key: "copilot_last", label: "Co-Pilot Last" },
+      { key: "copilot_nickname", label: "Co-Pilot Nickname" },
+      { key: "copilot_email", label: "Co-Pilot Email" },
+      { key: "copilot_cell_phone", label: "Co-Pilot Cell Phone" },
+    ],
+    contact: [
+      { key: "email", label: "Email" },
+      { key: "primary_phone", label: "Primary Phone" },
+      { key: "cell_phone", label: "Cell Phone" },
+    ],
+    location: [
+      { key: "city", label: "City" },
+      { key: "state", label: "State" },
+    ],
+    coach: [
+      { key: "coach_manufacturer", label: "Coach Manufacturer" },
+      { key: "coach_model", label: "Coach Model" },
+    ],
+    registration: [
+      { key: "membership_number", label: "Membership Number" },
+      { key: "entry_id", label: "Entry ID" },
+    ],
+  };
+
+  function renderTextField(field: {
+    key: keyof AttendeeEditorState;
+    label: string;
+  }) {
+    return (
+      <div key={String(field.key)}>
+        <label style={labelStyle}>{field.label}</label>
+        <input
+          value={String(state[field.key] ?? "")}
+          onChange={(e) =>
+            onChange(
+              field.key,
+              field.key === "membership_number"
+                ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
+                : (e.target.value as AttendeeEditorState[typeof field.key]),
+            )
+          }
+          style={inputStyle}
+        />
+      </div>
+    );
+  }
+
+  function sectionHeading(id: string, label: string) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <strong style={{ fontSize: 15 }}>{label}</strong>
+        {dirtySections.includes(id) ? (
+          <span style={badgeVariant("#dbeafe", "#1d4ed8")}>Changed</span>
+        ) : null}
+      </div>
+    );
+  }
+
+  const sectionStyle: CSSProperties = {
+    border: "1px solid #e5e7eb",
+    borderRadius: 12,
+    padding: 14,
+    background: "#fafafa",
+  };
 
   const operationalStatusBlock =
     mode === "edit" && state.id ? (
@@ -1545,65 +1370,323 @@ export function AttendeeRecordWorkspace(props: {
   );
 
   const editBody = (
-    <div>
-      <div
-        style={{
-          display: "grid",
-          gap: 14,
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        }}
-      >
-        {/* Render attendee text fields */}
-        {(() => {
-          const rows = [];
-          for (let i = 0; i < textFields.length; ++i) {
-            const field = textFields[i];
-            rows.push(
-              <div key={String(field.key)}>
-                <label style={labelStyle}>{field.label}</label>
-                <input
-                  value={String(state[field.key] ?? "")}
-                  onChange={(e) =>
-                    onChange(
-                      field.key,
-                      field.key === "membership_number"
-                        ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
-                        : (e.target
-                            .value as AttendeeEditorState[typeof field.key]),
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>,
-            );
-          }
-          return rows;
-        })()}
-        {/* Single full-width Add Additional Participant button row */}
-        <div style={{ display: "flex", alignItems: "end" }}>
-          <button
-            type="button"
+    <div style={{ display: "grid", gap: 16 }}>
+      {/* Feedback belongs with the record, not only a page-level banner
+          (Stage D requirement 7). aria-live announces saving/saved/
+          validation/conflict state to assistive technology as it changes. */}
+      <div aria-live="polite" role={conflict ? "alert" : "status"}>
+        {conflict ? (
+          <div
             style={{
-              ...secondaryButtonStyle,
-              width: "100%",
-              minWidth: "340px",
-              whiteSpace: "nowrap",
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid #f59e0b",
+              background: "#fffbeb",
+              color: "#92400e",
+              fontSize: 13,
             }}
-            onClick={() =>
-              setShowAdditionalParticipant((current) => !current)
-            }
+          >
+            <strong>Record changed elsewhere.</strong> {conflict}
+            <div style={{ marginTop: 8 }}>
+              <AppButton variant="warning" onClick={onReloadRecord}>
+                Reload Current Record
+              </AppButton>
+            </div>
+          </div>
+        ) : saving ? (
+          <div style={{ fontSize: 13, color: "#475569" }}>Saving...</div>
+        ) : saveFeedback ? (
+          <div
+            style={{
+              fontSize: 13,
+              color: saveFeedback.startsWith("Save failed") ? "#b91c1c" : "#166534",
+            }}
+          >
+            {saveFeedback}
+          </div>
+        ) : isDirty ? (
+          <div style={{ fontSize: 13, color: "#92400e" }}>
+            Unsaved changes{dirtySections.length > 0 ? " in: " : ""}
+            {dirtySections
+              .map(
+                (id) =>
+                  ATTENDEE_EDIT_SECTIONS.find((section) => section.id === id)
+                    ?.label ?? id,
+              )
+              .join(", ")}
+          </div>
+        ) : null}
+      </div>
+
+      <div style={sectionStyle}>
+        {sectionHeading("identity", "Pilot Identity")}
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          }}
+        >
+          {SECTION_TEXT_FIELDS.identity.map(renderTextField)}
+        </div>
+      </div>
+
+      <div style={sectionStyle}>
+        {sectionHeading("household", "Household")}
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          }}
+        >
+          {SECTION_TEXT_FIELDS.household.map(renderTextField)}
+        </div>
+        {hasCopilotNow ? (
+          <div style={{ marginTop: 10 }}>
+            <AppButton
+              variant="danger"
+              onClick={() => void onRemoveHouseholdMember("copilot")}
+            >
+              Remove Co-Pilot
+            </AppButton>
+          </div>
+        ) : null}
+
+        <div style={{ marginTop: 14 }}>
+          <AppButton
+            onClick={() => setShowAdditionalParticipant((current) => !current)}
+            style={{ width: "100%" }}
           >
             {showAdditionalParticipant
               ? "− Hide Additional Participant"
               : "+ Add Additional Participant"}
-          </button>
+          </AppButton>
+        </div>
+
+        {/* Responsive auto-fit grid, not a fixed 5-column layout, so it
+            never forces horizontal overflow on phone/tablet widths
+            (Refactor Audit E.1 / Test Expectation M). */}
+        {showAdditionalParticipant ? (
+          <div
+            style={{
+              marginTop: 14,
+              display: "grid",
+              gap: 14,
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              alignItems: "end",
+            }}
+          >
+            <div>
+              <label style={labelStyle}>Participant First Name</label>
+              <input
+                style={inputStyle}
+                placeholder="First name"
+                value={state.additional_first_name}
+                onChange={(e) =>
+                  onChange("additional_first_name", e.target.value)
+                }
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Participant Last Name</label>
+              <input
+                style={inputStyle}
+                placeholder="Last name"
+                value={state.additional_last_name}
+                onChange={(e) =>
+                  onChange("additional_last_name", e.target.value)
+                }
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Participant Nickname</label>
+              <input
+                style={inputStyle}
+                placeholder="Nickname"
+                value={state.additional_nickname}
+                onChange={(e) =>
+                  onChange("additional_nickname", e.target.value)
+                }
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Participant Email</label>
+              <input
+                style={inputStyle}
+                placeholder="Email address"
+                value={state.additional_email}
+                onChange={(e) =>
+                  onChange("additional_email", e.target.value)
+                }
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Participant Cell Phone</label>
+              <input
+                style={inputStyle}
+                placeholder="Cell phone (optional)"
+                value={state.additional_cell_phone}
+                onChange={(e) =>
+                  onChange("additional_cell_phone", e.target.value)
+                }
+              />
+            </div>
+          </div>
+        ) : null}
+        {hasAdditionalNow ? (
+          <div style={{ marginTop: 10 }}>
+            <AppButton
+              variant="danger"
+              onClick={() => void onRemoveHouseholdMember("additional")}
+            >
+              Remove Additional Participant
+            </AppButton>
+          </div>
+        ) : null}
+      </div>
+
+      <div style={sectionStyle}>
+        {sectionHeading("contact", "Contact")}
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          }}
+        >
+          {SECTION_TEXT_FIELDS.contact.map(renderTextField)}
         </div>
       </div>
 
-      {/* Additional Participant fields UI. Responsive auto-fit grid, not a
-          fixed 5-column layout, so it never forces horizontal overflow on
-          phone/tablet widths (Refactor Audit E.1). */}
-      {showAdditionalParticipant ? (
+      <div style={sectionStyle}>
+        {sectionHeading("location", "Location")}
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          }}
+        >
+          {SECTION_TEXT_FIELDS.location.map(renderTextField)}
+        </div>
+      </div>
+
+      <div style={sectionStyle}>
+        {sectionHeading("coach", "Coach & Logistics")}
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          }}
+        >
+          {SECTION_TEXT_FIELDS.coach.map(renderTextField)}
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <label style={labelStyle}>Special Events Raw</label>
+          <textarea
+            value={state.special_events_raw}
+            onChange={(e) => onChange("special_events_raw", e.target.value)}
+            style={textareaStyle}
+            rows={3}
+          />
+        </div>
+        <div
+          style={{
+            marginTop: 14,
+            display: "grid",
+            gap: 8,
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          }}
+        >
+          <label style={checkLabelStyle}>
+            <input
+              type="checkbox"
+              checked={state.wants_to_volunteer}
+              onChange={(e) =>
+                onChange("wants_to_volunteer", e.target.checked)
+              }
+            />
+            Volunteer
+          </label>
+
+          <label style={checkLabelStyle}>
+            <input
+              type="checkbox"
+              checked={state.is_first_timer}
+              onChange={(e) => onChange("is_first_timer", e.target.checked)}
+            />
+            First Timer
+          </label>
+
+          <label style={checkLabelStyle}>
+            <input
+              type="checkbox"
+              checked={state.share_with_attendees}
+              onChange={(e) =>
+                onChange("share_with_attendees", e.target.checked)
+              }
+            />
+            Share With Attendees
+          </label>
+          <label style={checkLabelStyle}>
+            <input
+              type="checkbox"
+              checked={state.include_in_headcount}
+              onChange={(e) =>
+                onChange("include_in_headcount", e.target.checked)
+              }
+            />
+            Include In Headcount
+          </label>
+
+          <label style={checkLabelStyle}>
+            <input
+              type="checkbox"
+              checked={state.needs_name_tag}
+              onChange={(e) => onChange("needs_name_tag", e.target.checked)}
+            />
+            Needs Name Tag
+          </label>
+
+          <label style={checkLabelStyle}>
+            <input
+              type="checkbox"
+              checked={state.needs_coach_plate}
+              onChange={(e) =>
+                onChange("needs_coach_plate", e.target.checked)
+              }
+            />
+            Needs Coach Plate
+          </label>
+
+          <label style={checkLabelStyle}>
+            <input
+              type="checkbox"
+              checked={state.needs_parking}
+              onChange={(e) => onChange("needs_parking", e.target.checked)}
+            />
+            Needs Parking
+          </label>
+        </div>
+      </div>
+
+      <div style={sectionStyle}>
+        {sectionHeading("registration", "Registration")}
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          }}
+        >
+          {SECTION_TEXT_FIELDS.registration.map(renderTextField)}
+        </div>
         <div
           style={{
             marginTop: 14,
@@ -1614,166 +1697,131 @@ export function AttendeeRecordWorkspace(props: {
           }}
         >
           <div>
-            <label style={labelStyle}>Participant First Name</label>
-            <input
-              style={inputStyle}
-              placeholder="First name"
-              value={state.additional_first_name}
-              onChange={(e) =>
-                onChange("additional_first_name", e.target.value)
-              }
-            />
+            <label style={labelStyle}>Registration Capacity</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                type="button"
+                style={secondaryButtonStyle}
+                onClick={() => {
+                  onChange(
+                    "registration_capacity",
+                    Math.max(1, state.registration_capacity - 1) as any,
+                  );
+                  onChange("registration_capacity_was_unset", false);
+                }}
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={state.registration_capacity}
+                onChange={(e) => {
+                  onChange(
+                    "registration_capacity",
+                    Math.max(1, Number(e.target.value) || 1) as any,
+                  );
+                  onChange("registration_capacity_was_unset", false);
+                }}
+                style={{
+                  ...inputStyle,
+                  width: 70,
+                  textAlign: "center",
+                }}
+              />
+              <button
+                type="button"
+                style={secondaryButtonStyle}
+                onClick={() => {
+                  onChange(
+                    "registration_capacity",
+                    (state.registration_capacity + 1) as any,
+                  );
+                  onChange("registration_capacity_was_unset", false);
+                }}
+              >
+                +
+              </button>
+            </div>
           </div>
-
           <div>
-            <label style={labelStyle}>Participant Last Name</label>
-            <input
+            <label style={labelStyle}>Participant Type</label>
+            <select
+              value={state.participant_type}
+              onChange={(e) => onChange("participant_type", e.target.value)}
               style={inputStyle}
-              placeholder="Last name"
-              value={state.additional_last_name}
-              onChange={(e) =>
-                onChange("additional_last_name", e.target.value)
-              }
-            />
+            >
+              {PARTICIPANT_TYPE_OPTIONS.filter(
+                (option) => option !== "all",
+              ).map((option) => (
+                <option key={option} value={option}>
+                  {participantTypeLabel(option)}
+                </option>
+              ))}
+            </select>
           </div>
-
           <div>
-            <label style={labelStyle}>Participant Nickname</label>
-            <input
+            <label style={labelStyle}>Data Status</label>
+            <select
+              value={state.data_status}
+              onChange={(e) => onChange("data_status", e.target.value)}
               style={inputStyle}
-              placeholder="Nickname"
-              value={state.additional_nickname}
-              onChange={(e) =>
-                onChange("additional_nickname", e.target.value)
-              }
-            />
+            >
+              {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
+                (option) => (
+                  <option key={option} value={option}>
+                    {dataStatusOptionLabel(option)}
+                  </option>
+                ),
+              )}
+            </select>
           </div>
-
           <div>
-            <label style={labelStyle}>Participant Email</label>
-            <input
-              style={inputStyle}
-              placeholder="Email address"
-              value={state.additional_email}
-              onChange={(e) =>
-                onChange("additional_email", e.target.value)
-              }
-            />
-          </div>
-
-          <div>
-            <label style={labelStyle}>Participant Cell Phone</label>
-            <input
-              style={inputStyle}
-              placeholder="Cell phone (optional)"
-              value={state.additional_cell_phone}
-              onChange={(e) =>
-                onChange("additional_cell_phone", e.target.value)
-              }
-            />
+            <label style={checkLabelStyle}>
+              <input
+                type="checkbox"
+                checked={state.is_active}
+                onChange={(e) => onChange("is_active", e.target.checked)}
+              />
+              Active Record
+            </label>
           </div>
         </div>
-      ) : null}
-      <div style={{ marginTop: 14 }}>
-        <label style={labelStyle}>Special Events Raw</label>
-        <textarea
-          value={state.special_events_raw}
-          onChange={(e) => onChange("special_events_raw", e.target.value)}
-          style={textareaStyle}
-          rows={3}
-        />
+
+        {isCapacityIncrease && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 14,
+              border: "1px solid #bfdbfe",
+              background: "#eff6ff",
+              borderRadius: 8,
+            }}
+          >
+            <div style={{ fontSize: 14, color: "#1e3a8a" }}>
+              {isAddingNewParticipant
+                ? "Adding this participant will also authorize one additional participant slot."
+                : `This will authorize ${targetCapacity} total participant ${targetCapacity === 1 ? "slot" : "slots"}.`}{" "}
+              Participant Capacity will be set to {targetCapacity} (from{" "}
+              {state.registration_capacity_original ?? "unset"}).
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <label style={labelStyle}>Note (optional)</label>
+              <input
+                value={state.capacity_increase_note}
+                onChange={(e) =>
+                  onChange("capacity_increase_note", e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
-      <div
-        style={{
-          marginTop: 14,
-          display: "grid",
-          gap: 8,
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-        }}
-      >
-        <label style={checkLabelStyle}>
-          <input
-            type="checkbox"
-            checked={state.wants_to_volunteer}
-            onChange={(e) =>
-              onChange("wants_to_volunteer", e.target.checked)
-            }
-          />
-          Volunteer
-        </label>
-
-        <label style={checkLabelStyle}>
-          <input
-            type="checkbox"
-            checked={state.is_first_timer}
-            onChange={(e) => onChange("is_first_timer", e.target.checked)}
-          />
-          First Timer
-        </label>
-
-        <label style={checkLabelStyle}>
-          <input
-            type="checkbox"
-            checked={state.share_with_attendees}
-            onChange={(e) =>
-              onChange("share_with_attendees", e.target.checked)
-            }
-          />
-          Share With Attendees
-        </label>
-        <label style={checkLabelStyle}>
-          <input
-            type="checkbox"
-            checked={state.include_in_headcount}
-            onChange={(e) =>
-              onChange("include_in_headcount", e.target.checked)
-            }
-          />
-          Include In Headcount
-        </label>
-
-        <label style={checkLabelStyle}>
-          <input
-            type="checkbox"
-            checked={state.needs_name_tag}
-            onChange={(e) => onChange("needs_name_tag", e.target.checked)}
-          />
-          Needs Name Tag
-        </label>
-
-        <label style={checkLabelStyle}>
-          <input
-            type="checkbox"
-            checked={state.needs_coach_plate}
-            onChange={(e) =>
-              onChange("needs_coach_plate", e.target.checked)
-            }
-          />
-          Needs Coach Plate
-        </label>
-
-        <label style={checkLabelStyle}>
-          <input
-            type="checkbox"
-            checked={state.needs_parking}
-            onChange={(e) => onChange("needs_parking", e.target.checked)}
-          />
-          Needs Parking
-        </label>
-
-        <label style={checkLabelStyle}>
-          <input
-            type="checkbox"
-            checked={state.is_active}
-            onChange={(e) => onChange("is_active", e.target.checked)}
-          />
-          Active Record
-        </label>
-      </div>
-
-      <div style={{ marginTop: 14 }}>
-        <label style={labelStyle}>Notes</label>
+      <div style={sectionStyle}>
+        {sectionHeading("notes", "Notes")}
         <textarea
           value={state.notes}
           onChange={(e) => onChange("notes", e.target.value)}
@@ -1781,134 +1829,6 @@ export function AttendeeRecordWorkspace(props: {
           rows={4}
         />
       </div>
-      {/* Registration Capacity, Participant Type, Data Status row */}
-      <div
-        style={{
-          marginTop: 14,
-          display: "grid",
-          gap: 14,
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          alignItems: "end",
-        }}
-      >
-        <div>
-          <label style={labelStyle}>Registration Capacity</label>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <button
-              type="button"
-              style={secondaryButtonStyle}
-              onClick={() => {
-                onChange(
-                  "registration_capacity",
-                  Math.max(1, state.registration_capacity - 1) as any,
-                );
-                onChange("registration_capacity_was_unset", false);
-              }}
-            >
-              −
-            </button>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={state.registration_capacity}
-              onChange={(e) => {
-                onChange(
-                  "registration_capacity",
-                  Math.max(1, Number(e.target.value) || 1) as any,
-                );
-                onChange("registration_capacity_was_unset", false);
-              }}
-              style={{
-                ...inputStyle,
-                width: 70,
-                textAlign: "center",
-              }}
-            />
-            <button
-              type="button"
-              style={secondaryButtonStyle}
-              onClick={() => {
-                onChange(
-                  "registration_capacity",
-                  (state.registration_capacity + 1) as any,
-                );
-                onChange("registration_capacity_was_unset", false);
-              }}
-            >
-              +
-            </button>
-          </div>
-        </div>
-        <div>
-          <label style={labelStyle}>Participant Type</label>
-          <select
-            value={state.participant_type}
-            onChange={(e) => onChange("participant_type", e.target.value)}
-            style={inputStyle}
-          >
-            {PARTICIPANT_TYPE_OPTIONS.filter(
-              (option) => option !== "all",
-            ).map((option) => (
-              <option key={option} value={option}>
-                {participantTypeLabel(option)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={labelStyle}>Data Status</label>
-          <select
-            value={state.data_status}
-            onChange={(e) => onChange("data_status", e.target.value)}
-            style={inputStyle}
-          >
-            {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
-              (option) => (
-                <option key={option} value={option}>
-                  {dataStatusOptionLabel(option)}
-                </option>
-              ),
-            )}
-          </select>
-        </div>
-      </div>
-
-      {isCapacityIncrease && (
-        <div
-          style={{
-            marginTop: 14,
-            padding: 14,
-            border: "1px solid #bfdbfe",
-            background: "#eff6ff",
-            borderRadius: 8,
-          }}
-        >
-          <div style={{ fontSize: 14, color: "#1e3a8a" }}>
-            {isAddingNewParticipant
-              ? "Adding this participant will also authorize one additional participant slot."
-              : `This will authorize ${targetCapacity} total participant ${targetCapacity === 1 ? "slot" : "slots"}.`}{" "}
-            Participant Capacity will be set to {targetCapacity} (from{" "}
-            {state.registration_capacity_original ?? "unset"}).
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <label style={labelStyle}>Note (optional)</label>
-            <input
-              value={state.capacity_increase_note}
-              onChange={(e) =>
-                onChange("capacity_increase_note", e.target.value)
-              }
-              style={inputStyle}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -1946,7 +1866,7 @@ export function AttendeeRecordWorkspace(props: {
           type="button"
           onClick={() => void onSave()}
           style={primaryButtonStyle}
-          disabled={saving || !canEdit}
+          disabled={saving || !canEdit || !!conflict}
         >
           {saving
             ? "Saving..."
@@ -2072,11 +1992,88 @@ function AdminAttendeesPageInner() {
 
   const [showReviewQueue, setShowReviewQueue] = useState(false);
 
-  const loadQueue = useCallback(async (eventId: string) => {
+  // Stage D: dirty-state and same-record concurrency tracking. editorBaseline
+  // is the editor state exactly as loaded (selectAttendee/openCreate); the
+  // operator's live edits are editorState. Refs mirror the state React needs
+  // for rendering so loadQueue's realtime-triggered reconciliation (a stable
+  // useCallback) always reads the current value rather than a stale closure.
+  const [editorBaseline, setEditorBaseline] = useState<AttendeeEditorState>(
+    emptyAttendeeEditorState(),
+  );
+  const [selectedConflict, setSelectedConflict] = useState<string | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const editorStateRef = useRef(editorState);
+  const editorOpenRef = useRef(editorOpen);
+  const editorModeRef = useRef(editorMode);
+  const isDirtyRef = useRef(false);
+  const selectedBaselineFingerprintRef = useRef<string | null>(null);
+  const loadGenerationRef = useRef(0);
+
+  const isDirty = useMemo(
+    () => editorMode === "edit" && editorStateIsDirty(editorBaseline, editorState),
+    [editorMode, editorBaseline, editorState],
+  );
+  const dirtySections = useMemo(
+    () => dirtySectionIds(editorBaseline, editorState),
+    [editorBaseline, editorState],
+  );
+
+  useEffect(() => {
+    editorStateRef.current = editorState;
+  }, [editorState]);
+  useEffect(() => {
+    editorOpenRef.current = editorOpen;
+  }, [editorOpen]);
+  useEffect(() => {
+    editorModeRef.current = editorMode;
+  }, [editorMode]);
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+
+  // Canonical accessible confirmation pattern (components/ui/ConfirmDialog),
+  // used for every consequential Attendees action instead of window.confirm
+  // (Stage D requirement 4). One shared dialog instance; confirmViaDialog
+  // resolves a Promise<boolean> so existing linear async save/action flows
+  // can `await` it exactly where window.confirm used to sit.
+  const [confirmDialogState, setConfirmDialogState] = useState<{
+    title: string;
+    message: string;
+    danger?: boolean;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
+
+  function confirmViaDialog(
+    title: string,
+    message: string,
+    danger = false,
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmDialogState({ title, message, danger });
+    });
+  }
+
+  function resolveConfirmDialog(result: boolean) {
+    setConfirmBusy(false);
+    setConfirmDialogState(null);
+    const resolve = confirmResolverRef.current;
+    confirmResolverRef.current = null;
+    resolve?.(result);
+  }
+
+  const loadQueue = useCallback(async (
+    eventId: string,
+    options: { silent?: boolean } = {},
+  ) => {
+    const generation = ++loadGenerationRef.current;
     try {
-      setLoading(true);
-      setError(null);
-      setStatus("Loading attendee records...");
+      if (!options.silent) {
+        setLoading(true);
+        setError(null);
+        setStatus("Loading attendee records...");
+      }
 
       const [
         { data: attendeeData, error: attendeeError },
@@ -2145,27 +2142,80 @@ created_at
         throw rulesError;
       }
 
+      if (generation !== loadGenerationRef.current) {
+        // A newer load has already started (event switch, refresh); this
+        // response is stale and must never overwrite newer state.
+        return undefined;
+      }
+
       const nextAttendees = (attendeeData || []) as AttendeeRow[];
       const nextRules = (rulesData || []) as ValidationRule[];
 
       setAttendees(nextAttendees);
       setRules(nextRules);
-      setStatus(
-        `Ready. ${nextAttendees.length} attendee${
-          nextAttendees.length === 1 ? "" : "s"
-        } loaded. ${nextRules.length} validation rule${
-          nextRules.length === 1 ? "" : "s"
-        } active.`,
-      );
+
+      // Stage D requirements 5/6: reconcile the open workspace, if any,
+      // against this freshly-loaded roster. A different attendee changing
+      // never touches editorState here (it is separate local state), so
+      // requirement G already holds structurally; this only ever concerns
+      // the one attendee currently selected.
+      if (editorOpenRef.current && editorModeRef.current === "edit") {
+        const openId = editorStateRef.current.id;
+        const serverRow = openId
+          ? nextAttendees.find((row) => row.id === openId)
+          : null;
+
+        if (openId && !serverRow) {
+          // The selected record is no longer in this event's roster --
+          // deleted, or (ADR-006 §2) the admin working Event changed
+          // underneath the open workspace. Never silently retarget or keep
+          // displaying it as though it were still current: fail visibly.
+          setSelectedConflict(null);
+          closeAttendeeEditorForUnavailableRecord();
+        } else if (serverRow) {
+          const serverFingerprint = attendeeConcurrencyFingerprint(serverRow);
+          if (
+            attendeeChangedRemotelyWhileDirty(
+              selectedBaselineFingerprintRef.current,
+              serverFingerprint,
+              isDirtyRef.current,
+            )
+          ) {
+            setSelectedConflict(
+              "This attendee's record changed elsewhere. Review the current server record before saving your changes.",
+            );
+          }
+        }
+      }
+
+      if (!options.silent) {
+        setStatus(
+          `Ready. ${nextAttendees.length} attendee${
+            nextAttendees.length === 1 ? "" : "s"
+          } loaded. ${nextRules.length} validation rule${
+            nextRules.length === 1 ? "" : "s"
+          } active.`,
+        );
+      }
+
+      return nextAttendees;
     } catch (err: any) {
       console.error("loadQueue error:", err);
-      setError(err?.message || "Could not load attendee records.");
-      setStatus("Load failed.");
-      setAttendees([]);
-      setRules([]);
+      if (generation === loadGenerationRef.current) {
+        setError(err?.message || "Could not load attendee records.");
+        setStatus("Load failed.");
+        if (!options.silent) {
+          setAttendees([]);
+          setRules([]);
+        }
+      }
+      return undefined;
     } finally {
-      setLoading(false);
+      if (generation === loadGenerationRef.current && !options.silent) {
+        setLoading(false);
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadEventAndData = useCallback(async () => {
@@ -2323,6 +2373,40 @@ created_at
 
     return unsubscribe;
   }, [admin?.adminUser?.id, loadEventAndData]);
+
+  // Stage D requirement 5: same-record concurrency protection. Reuses the
+  // architectural lesson already proven by Check-In/Parking (a realtime
+  // subscription silently reloading in the background, reconciled against
+  // whatever is currently selected) -- scoped here to the `attendees` table
+  // only, since Attendees owns none of Check-In's or Parking's own tables.
+  useEffect(() => {
+    if (!currentEvent?.id) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`admin-attendees-${currentEvent.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "attendees",
+          filter: `event_id=eq.${currentEvent.id}`,
+        },
+        () => {
+          void loadQueue(currentEvent.id!, { silent: true });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+    // loadQueue is intentionally omitted to avoid resubscribing on every reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentEvent?.id]);
+
   useEffect(() => {
     saveAttendeeCommandCenterPrefs({
       search,
@@ -2580,6 +2664,15 @@ created_at
         ),
       );
 
+      // Keep the open workspace's own display in sync with this quick
+      // action rather than letting it silently drift from what was just
+      // persisted -- this is the operator's own change, not a remote one,
+      // so it updates both state and baseline (never appears "dirty").
+      if (editorState.id === attendeeId) {
+        setEditorState((prev) => ({ ...prev, data_status: nextStatus }));
+        setEditorBaseline((prev) => ({ ...prev, data_status: nextStatus }));
+      }
+
       setStatus("Status update complete.");
       showFlash(`Status set to ${nextStatus}.`);
     } catch (err: any) {
@@ -2589,27 +2682,19 @@ created_at
     }
   }
   async function onCancelRegistration(attendee: AttendeeRow) {
-    const confirmed = window.confirm(
-      `Cancel the registration for ${displayPilotName(attendee)}?\n\nThis will mark the registration as cancelled but will not delete any history.`,
+    const confirmed = await confirmViaDialog(
+      "Cancel registration?",
+      `Cancel the registration for ${displayPilotName(attendee)}? This marks the registration as cancelled but does not delete any history.`,
+      true,
     );
 
     if (!confirmed) {
       return;
     }
 
-    console.log("========== CANCEL REGISTRATION ==========");
-    console.log("Attendee ID:", attendee.id);
-    console.log("Pilot:", displayPilotName(attendee));
-    console.log("Event:", currentEvent?.id);
-
     try {
-      console.log("Admin object:", admin);
-      console.log("Admin user:", admin?.adminUser);
-
       setError(null);
       setStatus("Cancelling registration...");
-
-      console.log("About to update attendees table...");
 
       const { error } = await supabase
         .from("attendees")
@@ -2621,8 +2706,6 @@ created_at
         })
         .eq("id", attendee.id);
 
-      console.log("Supabase returned error:", error);
-
       if (error) {
         throw error;
       }
@@ -2633,10 +2716,8 @@ created_at
         await loadQueue(currentEvent.id);
       }
     } catch (err: any) {
-      console.log("Cancel Error:", err);
-      console.log("JSON:", JSON.stringify(err, null, 2));
-      console.dir(err);
-      setError(err.message ?? "Could not cancel registration.");
+      console.error("onCancelRegistration error:", err);
+      setError(err?.message ?? "Could not cancel registration.");
       setStatus("Cancellation failed.");
     }
   }
@@ -2795,8 +2876,13 @@ created_at
   }
 
   function openCreateAttendeeEditor() {
+    const blank = emptyAttendeeEditorState();
     setEditorMode("create");
-    setEditorState(emptyAttendeeEditorState());
+    setEditorState(blank);
+    setEditorBaseline(blank);
+    setSelectedConflict(null);
+    setSaveFeedback(null);
+    selectedBaselineFingerprintRef.current = null;
     // Create has nothing yet to view -- it legitimately starts in edit
     // mode. Stage C's "selecting never implies edit mode" rule governs
     // *existing* records; there is no existing record here to browse first.
@@ -2869,6 +2955,10 @@ created_at
         : "";
 
       setEditorState(nextState);
+      setEditorBaseline(nextState);
+      setSelectedConflict(null);
+      setSaveFeedback(null);
+      selectedBaselineFingerprintRef.current = attendeeConcurrencyFingerprint(attendee);
       setEditorOpen(true);
     },
     [currentEvent?.id],
@@ -2888,11 +2978,21 @@ created_at
     setViewState("edit");
   }
 
-  // Discards any in-progress edits and returns to the read-only view of
-  // the same record (Stage D adds a dirty-aware confirmation ahead of
-  // this; Stage C's contract is simply that editing and viewing remain
-  // distinct, reversible states).
-  function cancelEditToView() {
+  // Discards any in-progress edits and returns to the read-only view of the
+  // same record. Dirty edits require deliberate confirmation before being
+  // discarded (Stage D: editing/viewing are reversible, but never silently).
+  async function cancelEditToView() {
+    if (isDirty) {
+      const confirmed = await confirmViaDialog(
+        "Discard unsaved changes?",
+        "You have unsaved changes on this record. Discard them and return to the saved version?",
+        true,
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
     if (editorMode === "create") {
       closeAttendeeEditor();
       return;
@@ -2910,16 +3010,115 @@ created_at
     setEditorMode("create");
     setViewState("view");
     setEditorState(emptyAttendeeEditorState());
+    setEditorBaseline(emptyAttendeeEditorState());
+    setSelectedConflict(null);
+    setSaveFeedback(null);
+    selectedBaselineFingerprintRef.current = null;
+  }
+
+  // Requested close via the workspace's own close control/Escape/backdrop
+  // (ObjectPanel's onClose) -- distinct from closeAttendeeEditor itself so a
+  // dirty edit is never silently discarded by an incidental dismissal.
+  async function requestCloseAttendeeEditor() {
+    if (isDirty) {
+      const confirmed = await confirmViaDialog(
+        "Discard unsaved changes?",
+        "You have unsaved changes on this record. Close and discard them?",
+        true,
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    closeAttendeeEditor();
+  }
+
+  // Stage D requirement 6 (ADR-006 §2): the selected record became
+  // unavailable in this event's roster -- deleted, or the admin working
+  // Event changed underneath the open workspace. Never silently retarget or
+  // continue showing it as current; close and say so explicitly.
+  function closeAttendeeEditorForUnavailableRecord() {
+    closeAttendeeEditor();
+    setError(
+      "The record you had open is no longer available in the current event. It may have been removed, or your admin working event changed.",
+    );
+    setStatus("Record unavailable.");
   }
 
   function updateEditorField<K extends keyof AttendeeEditorState>(
     key: K,
     value: AttendeeEditorState[K],
   ) {
+    // Deactivation is a meaningful state change and gets the canonical
+    // confirmation pattern (Stage D requirement 4); the checkbox does not
+    // visually move until the operator confirms. Reactivating is reversible
+    // and safe, so it is not gated the same way.
+    if (key === "is_active" && editorState.is_active === true && value === false) {
+      void confirmViaDialog(
+        "Deactivate this record?",
+        `Mark ${displayPilotName({ pilot_first: editorState.pilot_first, pilot_last: editorState.pilot_last } as AttendeeRow) || "this attendee"} as an inactive record? It can be reactivated later.`,
+        true,
+      ).then((confirmed) => {
+        if (confirmed) {
+          setEditorState((prev) => ({ ...prev, is_active: false }));
+        }
+      });
+      return;
+    }
+
     setEditorState((prev) => ({
       ...prev,
       [key]: value,
     }));
+  }
+
+  // Explicit household-member removal (Stage D requirement 3): a discoverable,
+  // deliberate action rather than an incidental consequence discovered only
+  // at Save time. Clearing the fields still goes through the exact same
+  // Save-time confirmation (buildHouseholdRemovalConfirmMessage) as a safety
+  // net for any other path that clears them.
+  async function removeHouseholdMember(role: "copilot" | "additional") {
+    const name =
+      role === "copilot"
+        ? editorState.copilot_name_at_load ||
+          fullName(editorState.copilot_first, editorState.copilot_last) ||
+          "the Co-Pilot"
+        : editorState.additional_name_at_load ||
+          fullName(
+            editorState.additional_first_name,
+            editorState.additional_last_name,
+          ) ||
+          "the Additional Participant";
+
+    const confirmed = await confirmViaDialog(
+      "Remove household member?",
+      `Remove ${name} (${role === "copilot" ? "Co-Pilot" : "Additional Participant"}) from this attendee record? This clears their fields; Save will then permanently remove them as a household member. This cannot be undone from here.`,
+      true,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setEditorState((prev) =>
+      role === "copilot"
+        ? {
+            ...prev,
+            copilot_first: "",
+            copilot_last: "",
+            copilot_nickname: "",
+            copilot_email: "",
+            copilot_cell_phone: "",
+          }
+        : {
+            ...prev,
+            additional_first_name: "",
+            additional_last_name: "",
+            additional_nickname: "",
+            additional_email: "",
+            additional_cell_phone: "",
+          },
+    );
   }
 
   // Continuous operation (Stage C requirement 8): Next/Previous inside the
@@ -2960,6 +3159,15 @@ created_at
       return;
     }
 
+    // Stage D requirement 5: a same-record remote change while dirty must
+    // never become last-write-wins. Re-checked here (not only via the
+    // disabled Save button) so a save already in flight when a conflict
+    // appears cannot slip through.
+    if (selectedConflict) {
+      setStatus("Save blocked: reload the current record first.");
+      return;
+    }
+
     const pilotFirst = editorState.pilot_first.trim();
     const pilotLast = editorState.pilot_last.trim();
     const email = editorState.email.trim().toLowerCase();
@@ -2983,8 +3191,10 @@ created_at
     );
 
     if (pendingRemovals.length > 0) {
-      const confirmedRemoval = window.confirm(
+      const confirmedRemoval = await confirmViaDialog(
+        "Remove household member?",
         buildHouseholdRemovalConfirmMessage(pendingRemovals),
+        true,
       );
 
       if (!confirmedRemoval) {
@@ -3079,6 +3289,11 @@ created_at
     try {
       setEditorSaving(true);
       setError(null);
+      setSaveFeedback(
+        editorMode === "create"
+          ? "Creating attendee record..."
+          : "Saving attendee record...",
+      );
       setStatus(
         editorMode === "create"
           ? "Creating attendee record..."
@@ -3327,9 +3542,27 @@ created_at
 
       // Refresh data in the background so the workspace and list reflect
       // the persisted record.
-      await loadQueue(currentEvent.id);
+      const freshAttendees = await loadQueue(currentEvent.id);
+
+      if (editorMode === "edit" && viewMode !== "review" && editorState.id) {
+        // The operator's own just-saved values are the new resting point
+        // (Stage D requirement 1: dirty-state resets on a clean save); the
+        // fingerprint used to detect a *different* station's later change
+        // comes from the server row this same save just produced.
+        setEditorBaseline(editorState);
+        const savedRow = freshAttendees?.find(
+          (row) => row.id === editorState.id,
+        );
+        if (savedRow) {
+          selectedBaselineFingerprintRef.current =
+            attendeeConcurrencyFingerprint(savedRow);
+        }
+      }
+
+      setSaveFeedback("Saved.");
     } catch (err: any) {
       console.error("handleSaveAttendeeRecord error:", err);
+      setSaveFeedback(`Save failed: ${err?.message || "unknown error"}`);
       setError(err?.message || "Could not save attendee record.");
       setStatus("Save failed.");
     } finally {
@@ -3532,16 +3765,40 @@ created_at
         }
         saving={editorSaving}
         canEdit={canEditAttendees}
-        onClose={closeAttendeeEditor}
+        isDirty={isDirty}
+        dirtySections={dirtySections}
+        conflict={selectedConflict}
+        saveFeedback={saveFeedback}
+        onClose={requestCloseAttendeeEditor}
         onChange={updateEditorField}
         onEnterEdit={enterEditMode}
         onCancelEdit={cancelEditToView}
         onSave={handleSaveAttendeeRecord}
+        onReloadRecord={() => {
+          const freshRow = attendees.find((row) => row.id === editorState.id);
+          if (freshRow) {
+            void selectAttendee(freshRow, { listContext: workspaceListContext });
+          }
+        }}
+        onRemoveHouseholdMember={removeHouseholdMember}
         onUpdateDataStatus={updateDataStatus}
         onCancelRegistration={onCancelRegistration}
         onPrevious={canGoPrevious ? () => goToWorkspaceOffset(-1) : undefined}
         onNext={canGoNext ? () => goToWorkspaceOffset(1) : undefined}
         operationalStatus={operationalStatus}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDialogState}
+        title={confirmDialogState?.title || ""}
+        message={confirmDialogState?.message || ""}
+        danger={confirmDialogState?.danger}
+        busy={confirmBusy}
+        onConfirm={() => {
+          setConfirmBusy(true);
+          resolveConfirmDialog(true);
+        }}
+        onCancel={() => resolveConfirmDialog(false)}
       />
     </div>
   );
