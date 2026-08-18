@@ -20,7 +20,7 @@ test("the root no longer has a query-driven embedded shell mode", () => {
 });
 
 test("Imports always retains its normal guarded presentation", () => {
-  assert.ok(importsSource.includes('AdminRouteGuard requiredPermission="can_manage_imports"'));
+  assert.ok(importsSource.includes('AdminRouteGuard requiredTask="event.imports.manage"'));
   assert.ok(importsSource.includes("<PageNavigation"));
   assert.ok(!importsSource.includes("useSearchParams"));
   assert.ok(!importsSource.includes("isEmbedded"));
@@ -37,6 +37,12 @@ test("Validation Rules has one guarded route path", () => {
 
 test("embedded retirement does not change Admin route classifications", () => {
   assert.ok(routeRegistrySource.includes('"/admin/reports"'));
-  assert.ok(!routeRegistrySource.includes('"/admin/imports"'));
-  assert.ok(!routeRegistrySource.includes('"/admin/validation-rules"'));
+  // /admin/imports and /admin/validation-rules were deliberately moved to
+  // the canonical Admin shell by a separate, later, already-authorized
+  // migration (commit 0feeaa3, "Migrate admin data pages to canonical
+  // shell") -- not a side effect of embedded-mode retirement. Their
+  // canonical classification is the authoritative, currently-tested
+  // behavior (components/shell/routeRegistry.test.ts).
+  assert.ok(routeRegistrySource.includes('"/admin/imports"'));
+  assert.ok(routeRegistrySource.includes('"/admin/validation-rules"'));
 });
