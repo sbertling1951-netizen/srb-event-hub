@@ -1489,7 +1489,21 @@ const gridButtonStyle: React.CSSProperties = {
 
 export default function EventAdminPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_events">
+    // Page-content access is governed by the canonical Event Task
+    // Authority resolver (event.definition.manage for the current
+    // working Event), not the legacy can_manage_events permission. New
+    // Event creation is unaffected either way: it remains unconditionally
+    // blocked by blockNewEventCreation() (NEW_EVENT_CREATION_UNAVAILABLE)
+    // above, and public.events INSERT is closed at RLS/grant level too
+    // (20260813140000_reconcile_events_rls_grant_drift.sql) -- creation
+    // is a Tenant-scoped authority question deliberately deferred until a
+    // governed create_event RPC exists, not something this route-level
+    // task grants. Existing-Event UPDATE remains gated server-side by the
+    // broader has_event_admin_authority(auth.uid(), id) (same migration),
+    // so this route guard is a narrower, more conservative page-
+    // reachability check than the RLS boundary already enforces, never a
+    // widening of it.
+    <AdminRouteGuard requiredTask="event.definition.manage">
       <AdminShellAdapter pageTitle="Event Admin">
         <EventAdminPageInner />
       </AdminShellAdapter>

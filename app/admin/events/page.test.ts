@@ -614,3 +614,56 @@ test("the explicit Select Event picker still writes canonical context exactly on
     .length;
   assert.equal(setWorkspaceCalls, 1);
 });
+
+// -- G-03G: Events route-authority migration -------------------------------
+//
+// Existing-Event management (this page's only live-reachable mutation --
+// see below) is Event-scoped: has_event_admin_authority(auth.uid(), id)
+// already gates public.events UPDATE server-side
+// (20260813140000_reconcile_events_rls_grant_drift.sql), a broader
+// population than event.definition.manage, so this route guard narrows
+// page reachability relative to the RLS boundary, never widens it. New
+// Event creation is unaffected by this migration either way: it is
+// unconditionally blocked in-page by blockNewEventCreation()
+// (NEW_EVENT_CREATION_UNAVAILABLE) regardless of authority, and
+// public.events INSERT is closed at both the RLS-policy and table-grant
+// level in the same migration -- Event creation is Tenant-scoped
+// authority, deliberately deferred until a governed create_event RPC
+// exists (per the explicit architecture decision: "Tenant Admin may
+// create Events within their governed Tenant; Event-scoped authority
+// begins after the Event exists").
+
+test("route requires event.definition.manage, not the legacy can_manage_events permission", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<AdminRouteGuard requiredTask="event\.definition\.manage">/,
+  );
+  assert.equal(/requiredPermission/.test(PAGE_SOURCE), false);
+  assert.equal(
+    /can_manage_events/.test(PAGE_SOURCE.replace(/\/\/.*$/gm, "")),
+    false,
+  );
+  assert.equal(/hasPermission/.test(PAGE_SOURCE), false);
+});
+
+test("no direct has_event_task_authority RPC call is introduced -- authority is owned entirely by AdminRouteGuard", () => {
+  assert.equal(/\.rpc\(\s*["']has_event_task_authority["']/.test(PAGE_SOURCE), false);
+  assert.equal(/checkAdminEventTaskAuthority/.test(PAGE_SOURCE), false);
+});
+
+test("new-Event creation remains unconditionally blocked in-page, unaffected by the route-authority migration", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /if \(!form\.id && blockNewEventCreation\(\)\) \{\s*\n\s*return;\s*\n\s*\}/,
+  );
+  assert.match(PAGE_SOURCE, /NEW_EVENT_CREATION_UNAVAILABLE/);
+});
+
+test("existing-Event update/create request payloads and RLS-facing table access are unchanged", () => {
+  assert.match(PAGE_SOURCE, /\.from\("events"\)\s*\n\s*\.update\(payload\)/);
+  assert.match(PAGE_SOURCE, /\.from\("events"\)\s*\n\s*\.insert\(payload\)/);
+});
+
+test("Event-membership (canAccessEvent) remains as a page-local per-row check, unrelated to the migrated route permission", () => {
+  assert.match(PAGE_SOURCE, /canAccessEvent\(admin, form\.id\)/);
+});
