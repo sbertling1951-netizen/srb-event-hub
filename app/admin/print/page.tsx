@@ -593,10 +593,18 @@ function AdminPrintPageInner() {
   }
 
   const filteredAttendees = useMemo(() => {
-    let rows = [...attendees, ...manualAttendees];
+    // Cancelled registrations are excluded from Print regardless of
+    // includeInactive -- "include inactive" and "cancelled" are separately
+    // reportable categories per the canonical Active Registration
+    // definition (registration_status != 'cancelled' AND is_active = true;
+    // docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md, Canonical
+    // Event Operational Summary Read Contract).
+    let rows = [...attendees, ...manualAttendees].filter(
+      (row) => row.registration_status !== "cancelled",
+    );
 
     if (!includeInactive) {
-      rows = rows.filter((row) => row.registration_status !== "cancelled");
+      rows = rows.filter((row) => row.is_active);
     }
 
     switch (printFilter) {
@@ -1083,7 +1091,7 @@ top: 0 !important;
               onChange={(e) => setPrintFilter(e.target.value as PrintFilter)}
               style={inputStyle}
             >
-              <option value="all">All Active Attendees</option>
+              <option value="all">All Active Registrations</option>
               <option value="arrived">Arrived Only</option>
               <option value="first_timers">First Timers Only</option>
             </select>
