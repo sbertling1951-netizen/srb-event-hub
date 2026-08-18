@@ -135,7 +135,7 @@ function openParkingMapForSite(siteNumber: string | null) {
 
 export default function VendorRequestsPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_events">
+    <AdminRouteGuard requiredTask="event.vendors.manage">
       <AdminShellAdapter pageTitle="Vendor Requests">
         <VendorRequestsInner />
       </AdminShellAdapter>
