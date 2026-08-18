@@ -54,3 +54,36 @@ export async function checkAdminTenantAuthority(): Promise<AdminTenantAuthorityR
 
   return data ? { status: "allowed" } : { status: "denied" };
 }
+
+// Self-Scoped Tenant Administration Read Surface
+// (20260818100000_create_self_scoped_tenant_admin_access_list.sql).
+// Same self-scoping discipline as checkAdminTenantAuthority above: no
+// admin/user/Tenant ID parameter exists to broaden or redirect the
+// query, and the governed RPC derives the caller from auth.uid()
+// internally. Where checkAdminTenantAuthority answers only a boolean
+// route-reachability question, this answers "which Tenants may the
+// current admin actually choose" -- the minimum data a Tenant selector
+// needs, and the eventual replacement for
+// /admin/nearby-settings' own unfiltered `tenants` table query.
+
+export type MyTenantAdminAccessRow = {
+  tenant_id: string;
+  display_name: string;
+};
+
+/**
+ * Lists the Tenant(s) the current admin may operate as a Tenant Admin,
+ * or every active Tenant if the caller is a Platform Admin. Fails
+ * closed to an empty list -- never falls back to an unfiltered Tenant
+ * list -- on any RPC error, matching checkAdminTenantAuthority's own
+ * never-widen-on-failure discipline.
+ */
+export async function listMyTenantAdminAccess(): Promise<MyTenantAdminAccessRow[]> {
+  const { data, error } = await supabase.rpc("list_my_tenant_admin_access");
+
+  if (error) {
+    return [];
+  }
+
+  return (data || []) as MyTenantAdminAccessRow[];
+}
