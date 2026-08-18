@@ -1070,3 +1070,125 @@ test("Attendees-owned validation/flag/detail metrics (correctedCount, fullyValid
   assert.match(secondarySource, /label: "Volunteers"/);
   assert.match(secondarySource, /attendees\.filter\(/);
 });
+
+// --- Attendees + Household Members canonical task-authority cutover:
+// canEditAttendees moves from the page-wide, Event-agnostic
+// hasPermission(admin, "can_edit_attendees") to the Event-scoped
+// event.attendees.manage task, checked through the shared
+// checkAdminEventTaskAuthority helper -- the same pattern already
+// established for Reports' canExport/runExportAuthorityCheck. -------------
+
+test("canEditAttendees is checked through the shared helper, never a direct RPC call or has_event_task_authority reference in the page", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /import \{ checkAdminEventTaskAuthority \} from "@\/lib\/adminTaskAuthority";/,
+  );
+  assert.match(
+    source,
+    /checkAdminEventTaskAuthority\(\s*"event\.attendees\.manage",\s*eventId,?\s*\)/,
+  );
+  assert.equal(/\.rpc\(\s*"has_event_task_authority"/.test(source), false);
+  assert.equal((source.match(/checkAdminEventTaskAuthority\(/g) || []).length, 1);
+});
+
+test("canEditAttendees fails closed: starts false and is only set true from an exact allowed result", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /const \[canEditAttendees, setCanEditAttendees\] = useState\(false\);/);
+  const fn = source.slice(
+    source.indexOf("const runAttendeeManageAuthorityCheck = useCallback"),
+  );
+  const fnBody = fn.slice(0, fn.indexOf("}, []);"));
+  assert.match(fnBody, /setCanEditAttendees\(false\);/);
+  assert.match(fnBody, /setCanEditAttendees\(result\.status === "allowed"\);/);
+  assert.equal(/setCanEditAttendees\(true\)/.test(source), false);
+});
+
+test("canEditAttendees resets before the async check resolves, and discards a stale response from an abandoned Event's check", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const fn = source.slice(
+    source.indexOf("const runAttendeeManageAuthorityCheck = useCallback"),
+  );
+  const resetIdx = fn.indexOf("setCanEditAttendees(false);");
+  const checkIdx = fn.indexOf("checkAdminEventTaskAuthority(");
+  assert.ok(resetIdx > -1 && checkIdx > -1);
+  assert.ok(resetIdx < checkIdx, "canEditAttendees must be reset before the async check is issued");
+  assert.match(fn, /const generation = \+\+attendeeManageCheckGeneration\.current;/);
+  assert.match(
+    fn,
+    /if \(attendeeManageCheckGeneration\.current === generation\) \{\s*\n\s*setCanEditAttendees\(result\.status === "allowed"\);/,
+  );
+});
+
+test("the authority check re-runs on every Admin working-Event change via the canonical subscription, not only once on mount", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /useEffect\(\(\) => \{\s*\n\s*runAttendeeManageAuthorityCheck\(\);\s*\n\s*\n\s*return subscribeToAdminWorkspace\(runAttendeeManageAuthorityCheck\);\s*\n\s*\}, \[runAttendeeManageAuthorityCheck\]\);/,
+  );
+});
+
+test("no second, competing canEditAttendees setter exists -- setCanEditAttendees is called only from within runAttendeeManageAuthorityCheck's own generation-guarded paths", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const setterCalls = (source.match(/setCanEditAttendees\(/g) || []).length;
+  // Reset call + generation-guarded result call = exactly 2 call sites.
+  assert.equal(setterCalls, 2);
+});
+
+test("every mutation control (Save/Create, household sync, membership-number correction, data-status changes, Cancel Registration) remains wired to the same canEditAttendees value -- no control was silently ungated by this change", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const consumers = (source.match(/canEdit=\{canEditAttendees\}/g) || []).length;
+  assert.ok(consumers >= 4, `expected canEditAttendees threaded to every mutating sub-component, found ${consumers}`);
+});
+
+test("the Review Queue membership-number correction input and Save button are both gated by canEdit", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const reviewQueueBlock = source.slice(
+    source.indexOf("function ReviewQueue("),
+    source.indexOf("function AttendeeList("),
+  );
+  assert.match(reviewQueueBlock, /placeholder="Must begin with F or C"[\s\S]*?disabled=\{saving \|\| !canEdit\}/);
+  assert.match(
+    reviewQueueBlock,
+    /onClick=\{\(\) => void onSaveMembership\(item\)\}[\s\S]*?disabled=\{saving \|\| !canEdit\}[\s\S]*?Save Correction/,
+  );
+});
+
+test("the page-wide can_edit_attendees read/navigation gate is untouched -- only mutation capability moved to the canonical task", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /!hasPermission\(admin, "can_edit_attendees"\) &&\s*\n\s*!hasPermission\(admin, "can_manage_imports"\) &&\s*\n\s*!hasPermission\(admin, "can_manage_reports"\) &&\s*\n\s*!hasPermission\(admin, "can_manage_validation_rules"\)/,
+  );
+});
+
+test("Check-In/Parking ownership remains intact: no Arrival or placement mutation was reintroduced by this change", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+  const payload = source.slice(
+    source.indexOf("const payload = {"),
+    source.indexOf('if (editorMode === "create")'),
+  );
+
+  assert.equal(/assigned_site:/.test(payload), false);
+  assert.equal(/has_arrived:/.test(payload), false);
+  assert.equal(/arrival_status:/.test(payload), false);
+  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/checkin", state\.id\)/);
+  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
+});

@@ -53,6 +53,7 @@ import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { buildAdminAttendeeTargetHref } from "@/lib/adminAttendeeTarget";
 import { useAdmin } from "@/lib/adminContext";
+import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
   getCurrentAdminEvent,
   resolveAdminWorkingEvent,
@@ -1943,13 +1944,49 @@ function AdminAttendeesPageInner() {
   const storedPrefs = useMemo(() => getStoredAttendeeCommandCenterPrefs(), []);
   const { admin } = useAdmin();
   const adminRef = useRef(admin);
-  // UI defense-in-depth only, per the same governed mechanism Sidebar.tsx
-  // and AdminRouteGuard already use -- this does not replace backend
-  // authorization (RLS remains the actual enforcement boundary). Fails
-  // closed while admin access is still resolving (hasPermission(null, ...)
-  // is false), so mutation controls never appear enabled before a real
-  // permission decision exists.
-  const canEditAttendees = hasPermission(admin, "can_edit_attendees");
+
+  // UI defense-in-depth only -- this does not replace backend
+  // authorization (RLS, cut over to
+  // has_event_task_authority('event.attendees.manage', event_id), remains
+  // the actual enforcement boundary). Event-scoped, matching the shared
+  // checkAdminEventTaskAuthority helper AdminRouteGuard/Reports/Print
+  // already use, rather than the page-wide, Event-agnostic
+  // hasPermission(admin, "can_edit_attendees") this replaces for mutation
+  // capability specifically -- can_edit_attendees remains, unchanged, the
+  // page-wide read/navigation gate below. Starts false and stays false
+  // until an exact "allowed" result resolves, so every mutation control
+  // wired to canEditAttendees fails closed while the check is in flight,
+  // on an Event switch, or on any error -- never optimistically enabled.
+  const [canEditAttendees, setCanEditAttendees] = useState(false);
+  const attendeeManageCheckGeneration = useRef(0);
+
+  const runAttendeeManageAuthorityCheck = useCallback(() => {
+    const generation = ++attendeeManageCheckGeneration.current;
+    const eventId = getCurrentAdminEvent()?.id ?? null;
+
+    // Reset before the async check resolves: a prior Event's "allowed"
+    // must never remain rendered while the new Event's authority is
+    // still unresolved.
+    setCanEditAttendees(false);
+
+    if (!eventId) {
+      return;
+    }
+
+    void checkAdminEventTaskAuthority("event.attendees.manage", eventId).then(
+      (result) => {
+        if (attendeeManageCheckGeneration.current === generation) {
+          setCanEditAttendees(result.status === "allowed");
+        }
+      },
+    );
+  }, []);
+
+  useEffect(() => {
+    runAttendeeManageAuthorityCheck();
+
+    return subscribeToAdminWorkspace(runAttendeeManageAuthorityCheck);
+  }, [runAttendeeManageAuthorityCheck]);
 
   useEffect(() => {
     adminRef.current = admin;
