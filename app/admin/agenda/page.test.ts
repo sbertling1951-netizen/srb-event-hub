@@ -165,9 +165,82 @@ test("page access is gated by the governed event.agenda.view/manage resolver, no
     false,
     "can_manage_agenda must no longer gate page visibility",
   );
-  assert.match(PAGE_SOURCE, /has_event_task_authority/);
+  assert.match(PAGE_SOURCE, /checkAdminEventTaskAuthority/);
   assert.match(PAGE_SOURCE, /event\.agenda\.view/);
   assert.match(PAGE_SOURCE, /hasAgendaAccess/);
+});
+
+// -- G-02: Agenda's direct has_event_task_authority calls are gone -------
+
+test("the page never calls has_event_task_authority directly -- only the shared helper does", () => {
+  assert.equal(
+    /\.rpc\(\s*["']has_event_task_authority["']/.test(PAGE_SOURCE),
+    false,
+    "expected zero direct has_event_task_authority RPC calls in the page",
+  );
+});
+
+test("the page imports checkAdminEventTaskAuthority from the shared helper module", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import \{ checkAdminEventTaskAuthority \} from "@\/lib\/adminTaskAuthority";/,
+  );
+});
+
+test("event.agenda.view is checked before event.agenda.manage, in that source order", () => {
+  const viewIdx = PAGE_SOURCE.indexOf(
+    'checkAdminEventTaskAuthority(\n      "event.agenda.view"',
+  );
+  const manageIdx = PAGE_SOURCE.indexOf(
+    'checkAdminEventTaskAuthority(\n        "event.agenda.manage"',
+  );
+  assert.ok(viewIdx > -1, "expected an event.agenda.view check");
+  assert.ok(manageIdx > -1, "expected an event.agenda.manage fallback check");
+  assert.ok(viewIdx < manageIdx, "view must be checked before the manage fallback");
+});
+
+test("event.agenda.manage is only checked when event.agenda.view was not allowed -- the fallback stays nested under that condition", () => {
+  const viewCheckIdx = PAGE_SOURCE.indexOf('if (viewResult.status === "check_failed")');
+  const fallbackGateIdx = PAGE_SOURCE.indexOf('if (viewResult.status !== "allowed") {');
+  const manageCallIdx = PAGE_SOURCE.indexOf(
+    'checkAdminEventTaskAuthority(\n        "event.agenda.manage"',
+  );
+  assert.ok(viewCheckIdx > -1 && fallbackGateIdx > -1 && manageCallIdx > -1);
+  assert.ok(viewCheckIdx < fallbackGateIdx);
+  assert.ok(fallbackGateIdx < manageCallIdx);
+});
+
+test("a check_failed view result fails closed with the access-check error message, distinct from a plain denial", () => {
+  const block = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf('if (viewResult.status === "check_failed") {'),
+    PAGE_SOURCE.indexOf('if (viewResult.status !== "allowed") {'),
+  );
+  assert.match(block, /Could not check Agenda access for this event\./);
+  assert.match(block, /setHasAgendaAccess\(false\);/);
+});
+
+test("a denied manage fallback fails closed with the no-access message, and only an exact allowed status grants page access", () => {
+  const block = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf('if (viewResult.status !== "allowed") {'),
+    PAGE_SOURCE.indexOf("setHasAgendaAccess(true);"),
+  );
+  assert.match(block, /if \(manageResult\.status !== "allowed"\) \{/);
+  assert.match(block, /You do not have Agenda access for this event\./);
+  assert.match(block, /setHasAgendaAccess\(false\);/);
+});
+
+test("no-Event behavior is checked before either task-authority call and never reaches the helper", () => {
+  const noEventIdx = PAGE_SOURCE.indexOf("No admin working event selected.");
+  const viewCallIdx = PAGE_SOURCE.indexOf(
+    'checkAdminEventTaskAuthority(\n      "event.agenda.view"',
+  );
+  assert.ok(noEventIdx > -1 && viewCallIdx > -1);
+  assert.ok(noEventIdx < viewCallIdx);
+});
+
+test("Agenda access is re-evaluated on Admin working-Event change via loadPage, subscribed through subscribeToAdminWorkspace", () => {
+  assert.match(PAGE_SOURCE, /subscribeToAdminWorkspace/);
+  assert.match(PAGE_SOURCE, /loadPage/);
 });
 
 test("page access check never inspects privilege_group or is_super_admin in code", () => {

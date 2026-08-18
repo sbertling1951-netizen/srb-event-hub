@@ -11,6 +11,7 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useAdmin } from "@/lib/adminContext";
+import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -757,16 +758,19 @@ function AdminAgendaPageInner() {
     // Event Task Authority resolver every mutation RPC already enforces
     // server-side. "view" is sufficient to see the page; mutation
     // buttons remain gated only by the RPCs' own event.agenda.manage
-    // checks (never re-derived here).
-    const { data: viewAccess, error: viewAccessError } = await supabase.rpc(
-      "has_event_task_authority",
-      { p_task_key: "event.agenda.view", p_event_id: selectedEvent.id },
+    // checks (never re-derived here). Routed through the shared
+    // checkAdminEventTaskAuthority helper (lib/adminTaskAuthority.ts)
+    // rather than calling has_event_task_authority directly -- same RPC,
+    // same fallback order, same fail-closed behavior.
+    const viewResult = await checkAdminEventTaskAuthority(
+      "event.agenda.view",
+      selectedEvent.id,
     );
 
-    if (viewAccessError) {
+    if (viewResult.status === "check_failed") {
       showError(
         mapAgendaRpcError(
-          new Error(viewAccessError.message),
+          new Error(viewResult.message),
           "Could not check Agenda access for this event.",
         ),
       );
@@ -775,13 +779,13 @@ function AdminAgendaPageInner() {
       return;
     }
 
-    if (!viewAccess) {
-      const { data: manageAccess } = await supabase.rpc("has_event_task_authority", {
-        p_task_key: "event.agenda.manage",
-        p_event_id: selectedEvent.id,
-      });
+    if (viewResult.status !== "allowed") {
+      const manageResult = await checkAdminEventTaskAuthority(
+        "event.agenda.manage",
+        selectedEvent.id,
+      );
 
-      if (!manageAccess) {
+      if (manageResult.status !== "allowed") {
         setHasAgendaAccess(false);
         setItems([]);
         setStatus("You do not have Agenda access for this event.");
