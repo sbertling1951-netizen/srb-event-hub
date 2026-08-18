@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 
 export default function ExportPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_export_reports">
+    <AdminRouteGuard requiredTask="event.reports.export">
       <AdminShellAdapter pageTitle="Export">
         <ExportPageInner />
       </AdminShellAdapter>
