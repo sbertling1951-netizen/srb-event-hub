@@ -7,11 +7,71 @@ const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
 const source = readFileSync(sourcePath, "utf8");
 
 test("Reports has one guarded canonical render path", () => {
-  assert.ok(source.includes('AdminRouteGuard requiredPermission="can_manage_reports"'));
+  assert.ok(source.includes('AdminRouteGuard requiredTask="event.reports.view"'));
   assert.ok(source.includes('<AdminShellAdapter pageTitle="Reports">'));
   assert.ok(!source.includes("useSearchParams"));
   assert.ok(!source.includes("isEmbedded"));
   assert.ok(!source.includes("AdminReportsPageContent"));
+});
+
+// Task-Authority Guard Design, Reports consumer migration -- Reports no
+// longer uses legacy can_manage_reports (or the never-granted
+// can_export_reports/can_edit_attendees keys) for either route access
+// or export authority.
+
+test("Reports no longer references any legacy can_manage_reports/can_export_reports/can_edit_attendees permission key", () => {
+  assert.equal(/can_manage_reports/.test(source), false);
+  assert.equal(/can_export_reports/.test(source), false);
+  assert.equal(/can_edit_attendees/.test(source), false);
+  assert.equal(/requiredPermission/.test(source), false);
+});
+
+test("export authority (CSV/XLSX) is checked through the shared canonical helper, never a direct RPC call in the page", () => {
+  assert.match(
+    source,
+    /import \{ checkAdminEventTaskAuthority \} from "@\/lib\/adminTaskAuthority";/,
+  );
+  assert.match(
+    source,
+    /checkAdminEventTaskAuthority\(\s*"event\.reports\.export",\s*eventId,?\s*\)/,
+  );
+  assert.equal(/\.rpc\(\s*"has_event_task_authority"/.test(source), false);
+  assert.equal((source.match(/checkAdminEventTaskAuthority\(/g) || []).length, 1);
+});
+
+test("export authority fails closed: canExport starts false and is only set true from an exact allowed result", () => {
+  assert.match(source, /const \[canExport, setCanExport\] = useState\(false\);/);
+  const fn = source.slice(source.indexOf("const runExportAuthorityCheck = useCallback"));
+  const fnBody = fn.slice(0, fn.indexOf("}, []);"));
+  assert.match(fnBody, /setCanExport\(false\);/);
+  assert.match(fnBody, /setCanExport\(result\.status === "allowed"\);/);
+  assert.equal(/setCanExport\(true\)/.test(source), false);
+});
+
+test("export authority resets before the async check resolves, and discards a stale response from an abandoned Event's check", () => {
+  const fn = source.slice(source.indexOf("const runExportAuthorityCheck = useCallback"));
+  const resetIdx = fn.indexOf("setCanExport(false);");
+  const checkIdx = fn.indexOf("checkAdminEventTaskAuthority(");
+  assert.ok(resetIdx > -1 && checkIdx > -1);
+  assert.ok(resetIdx < checkIdx, "canExport must be reset before the async check is issued");
+  assert.match(fn, /const generation = \+\+exportCheckGeneration\.current;/);
+  assert.match(
+    fn,
+    /if \(exportCheckGeneration\.current === generation\) \{\s*\n\s*setCanExport\(result\.status === "allowed"\);/,
+  );
+});
+
+test("export authority is re-checked on every Admin working-Event change via the canonical subscription", () => {
+  assert.match(
+    source,
+    /useEffect\(\(\) => \{\s*\n\s*runExportAuthorityCheck\(\);\s*\n\s*\n\s*return subscribeToAdminWorkspace\(runExportAuthorityCheck\);\s*\n\s*\}, \[runExportAuthorityCheck\]\);/,
+  );
+});
+
+test("only one page-access authority model remains: canAccessEvent (Event membership) stays, the duplicate can_manage_reports page-access re-check is gone", () => {
+  assert.match(source, /canAccessEvent\(admin, activeEventId\)/);
+  assert.match(source, /canAccessEvent\(admin, event\.id\)/);
+  assert.equal((source.match(/You do not have permission to manage reports\./g) || []).length, 0);
 });
 
 test("Reports no longer has an embedded shell bypass", () => {

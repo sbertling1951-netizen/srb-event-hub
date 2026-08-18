@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import * as XLSX from "xlsx";
@@ -23,6 +24,7 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Page } from "@/components/ui/Page";
 import { useAdmin } from "@/lib/adminContext";
+import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -31,7 +33,7 @@ import {
   type CanonicalEventOperationalSummary,
   fetchEventOperationalSummary,
 } from "@/lib/eventOperationalSummary";
-import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type EventContext = {
@@ -316,7 +318,7 @@ function sortRosterRows(rows: RosterRow[], sortType: SortType) {
 
 export default function AdminReportsPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_reports">
+    <AdminRouteGuard requiredTask="event.reports.view">
       <AdminShellAdapter pageTitle="Reports">
         <AdminReportsPageInner />
       </AdminShellAdapter>
@@ -346,7 +348,43 @@ function AdminReportsPageInner() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("Loading reports...");
   const [error, setError] = useState<string | null>(null);
+  // Export authority (event.reports.export) is a distinct, narrower
+  // capability than page view access (event.reports.view, owned by
+  // AdminRouteGuard at the route boundary) -- CSV/XLSX downloads are a
+  // real export action; the canonical task resolver, not view access,
+  // decides this. Defaults to false and stays false until the check
+  // resolves to "allowed" -- never optimistically exportable.
   const [canExport, setCanExport] = useState(false);
+  const exportCheckGeneration = useRef(0);
+
+  const runExportAuthorityCheck = useCallback(() => {
+    const generation = ++exportCheckGeneration.current;
+    const eventId = getCurrentAdminEvent()?.id ?? null;
+
+    // Reset before the async check resolves: a prior Event's export
+    // authority must never remain effective while the new Event's
+    // check is still unresolved.
+    setCanExport(false);
+
+    if (!eventId) {
+      return;
+    }
+
+    void checkAdminEventTaskAuthority("event.reports.export", eventId).then(
+      (result) => {
+        if (exportCheckGeneration.current === generation) {
+          setCanExport(result.status === "allowed");
+        }
+      },
+    );
+  }, []);
+
+  useEffect(() => {
+    runExportAuthorityCheck();
+
+    return subscribeToAdminWorkspace(runExportAuthorityCheck);
+  }, [runExportAuthorityCheck]);
+
   const [presetName, setPresetName] = useState("");
   const [showReportMenu, setShowReportMenu] = useState(false);
   const [showControls, setShowControls] = useState(false);
@@ -380,17 +418,6 @@ function AdminReportsPageInner() {
         return;
       }
 
-      if (
-        !hasPermission(admin, "can_manage_reports") &&
-        !hasPermission(admin, "can_edit_attendees")
-      ) {
-        resetPageState();
-        setError("You do not have permission to manage reports.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
       if (!canAccessEvent(admin, activeEventId)) {
         resetPageState();
         setError("You do not have access to this event.");
@@ -398,12 +425,6 @@ function AdminReportsPageInner() {
         setLoading(false);
         return;
       }
-
-      setCanExport(
-        hasPermission(admin, "can_export_reports") ||
-          hasPermission(admin, "can_manage_reports") ||
-          hasPermission(admin, "can_edit_attendees"),
-      );
 
       const [
         { data: attendeeData, error: attendeeError },
@@ -526,23 +547,6 @@ function AdminReportsPageInner() {
     if (!admin) {
       return;
     }
-
-    if (
-      !hasPermission(admin, "can_manage_reports") &&
-      !hasPermission(admin, "can_edit_attendees")
-    ) {
-      resetPageState();
-      setError("You do not have permission to manage reports.");
-      setStatus("Access denied.");
-      setLoading(false);
-      return;
-    }
-
-    setCanExport(
-      hasPermission(admin, "can_export_reports") ||
-        hasPermission(admin, "can_manage_reports") ||
-        hasPermission(admin, "can_edit_attendees"),
-    );
 
     const event = getCurrentAdminEvent();
     if (!event?.id) {
