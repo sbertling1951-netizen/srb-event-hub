@@ -9,6 +9,10 @@ import {
   checkAdminEventTaskAuthority,
 } from "@/lib/adminTaskAuthority";
 import {
+  type AdminTenantAuthorityResult,
+  checkAdminTenantAuthority,
+} from "@/lib/adminTenantAuthority";
+import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
@@ -18,6 +22,7 @@ type Props = {
   children: React.ReactNode;
   requiredPermission?: string;
   requiredTask?: string;
+  requiredTenantAuthority?: boolean;
   fallbackPath?: string;
 };
 
@@ -25,6 +30,7 @@ export default function AdminRouteGuard({
   children,
   requiredPermission,
   requiredTask,
+  requiredTenantAuthority,
   fallbackPath = "/admin/login",
 }: Props) {
   const router = useRouter();
@@ -67,6 +73,39 @@ export default function AdminRouteGuard({
     });
   }, [requiredTask]);
 
+  // requiredTenantAuthority only. null = checking (or not yet started) --
+  // never a stale prior result, same discipline as taskAuthority above.
+  // This has no Event dimension at all: the Admin working-Event context
+  // is never read by this block, and it is never re-checked on Admin
+  // working-Event change (deliberately no subscribeToAdminWorkspace
+  // subscription below, unlike requiredTask) -- checkAdminTenantAuthority
+  // answers a coarse, Tenant-agnostic, session-scoped question that does
+  // not depend on which Event is currently selected. It re-runs only
+  // when the authenticated Admin identity itself changes (userId).
+  const [tenantAuthority, setTenantAuthority] =
+    useState<AdminTenantAuthorityResult | null>(null);
+  const tenantCheckGeneration = useRef(0);
+
+  const runTenantCheck = useCallback(() => {
+    if (!requiredTenantAuthority) {
+      return;
+    }
+
+    const generation = ++tenantCheckGeneration.current;
+
+    // Reset before the async check resolves: a prior session's
+    // "allowed" must never remain rendered while the new session's
+    // authority is still unresolved, same anti-race discipline as
+    // runTaskCheck.
+    setTenantAuthority(null);
+
+    void checkAdminTenantAuthority().then((result) => {
+      if (tenantCheckGeneration.current === generation) {
+        setTenantAuthority(result);
+      }
+    });
+  }, [requiredTenantAuthority]);
+
   useEffect(() => {
     if (!loading && !userId) {
       router.replace(fallbackPath);
@@ -86,6 +125,14 @@ export default function AdminRouteGuard({
 
     return subscribeToAdminWorkspace(runTaskCheck);
   }, [requiredTask, userId, runTaskCheck]);
+
+  useEffect(() => {
+    if (!requiredTenantAuthority || !userId) {
+      return;
+    }
+
+    runTenantCheck();
+  }, [requiredTenantAuthority, userId, runTenantCheck]);
 
   if (loading) {
     return null;
@@ -109,6 +156,16 @@ export default function AdminRouteGuard({
     }
 
     if (taskAuthority.status !== "allowed") {
+      return <div style={{ padding: 24 }}>No permission</div>;
+    }
+  }
+
+  if (requiredTenantAuthority) {
+    if (tenantAuthority === null) {
+      return null;
+    }
+
+    if (tenantAuthority.status !== "allowed") {
       return <div style={{ padding: 24 }}>No permission</div>;
     }
   }
