@@ -43,6 +43,29 @@ test("page is gated by AdminRouteGuard", () => {
   assert.match(PAGE_SOURCE, /AdminRouteGuard/);
 });
 
+// Task-Authority Guard Design, Photos consumer migration. Photo Library
+// is Event-scoped, not a shared/global asset library: fetchPhotos scopes
+// every read to getCurrentAdminEvent(), re-fetches on Event switch via
+// subscribeToAdminWorkspace, and handleSave's only mutation is the same
+// governed manage_event_photo RPC Admin Photos uses -- already
+// server-side gated by event.photos.manage. Same authority shape as
+// Admin Photos; the route previously carried no permission at all
+// (bare AdminRouteGuard).
+
+test("route requires event.photos.manage -- previously ungated beyond authentication", () => {
+  assert.match(PAGE_SOURCE, /<AdminRouteGuard requiredTask="event\.photos\.manage">/);
+});
+
+test("no direct has_event_task_authority RPC call is introduced -- authority is owned entirely by AdminRouteGuard", () => {
+  assert.equal(/has_event_task_authority/.test(PAGE_SOURCE), false);
+  assert.equal(/checkAdminEventTaskAuthority/.test(PAGE_SOURCE), false);
+});
+
+test("photo library remains Event-scoped: every read and the one mutation are keyed to getCurrentAdminEvent()", () => {
+  assert.match(PAGE_SOURCE, /const currentEvent = getCurrentAdminEvent\(\);/);
+  assert.match(PAGE_SOURCE, /subscribeToAdminWorkspace\(/);
+});
+
 test("page uses the canonical Admin shell (migrated by a later, separate shell-migration stage)", () => {
   assert.match(PAGE_SOURCE, /AdminShellAdapter/);
 });

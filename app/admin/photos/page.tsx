@@ -19,7 +19,7 @@ import { supabase } from "@/lib/supabase";
 
 export default function AdminPhotosPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredTask="event.photos.manage">
       <AdminShellAdapter pageTitle="Admin Photos">
         <AdminPhotosPageInner />
       </AdminShellAdapter>
