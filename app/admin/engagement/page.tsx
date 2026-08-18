@@ -7,6 +7,7 @@ import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { fetchEventOperationalSummary } from "@/lib/eventOperationalSummary";
 
 import { supabase } from "@/lib/supabase";
 
@@ -43,11 +44,21 @@ function formatActivityLabel(activityType: string): string {
 
 function EngagementPageInner() {
   const [stats, setStats] = useState({
-    registered: 0,
     loggedIn: 0,
     started: 0,
     submitted: 0,
   });
+
+  // Canonical Event-wide active registration count, per
+  // docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md's Canonical
+  // Event Operational Summary Read Contract. Consumed verbatim from
+  // fetchEventOperationalSummary -- never recomputed locally.
+  const [activeRegistrations, setActiveRegistrations] = useState<
+    number | null
+  >(null);
+  const [activeRegistrationsError, setActiveRegistrationsError] = useState<
+    string | null
+  >(null);
 
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [activityLimit, setActivityLimit] = useState<ActivityLimitOption>("100");
@@ -66,7 +77,9 @@ function EngagementPageInner() {
   const loadStats = useCallback(async () => {
     const currentEvent = getCurrentAdminEvent();
     if (!currentEvent?.id) {
-      setStats({ registered: 0, loggedIn: 0, started: 0, submitted: 0 });
+      setStats({ loggedIn: 0, started: 0, submitted: 0 });
+      setActiveRegistrations(null);
+      setActiveRegistrationsError(null);
       setRecentActivity([]);
       setFeatureStats({
         attendeeLocator: 0,
@@ -81,16 +94,21 @@ function EngagementPageInner() {
       return;
     }
 
-    const { count: registered, error: registeredError } = await supabase
-      .from("attendees")
-      .select("*", { count: "exact", head: true })
-      .in("registration_status", ["active", "registered"])
-      .eq("event_id", currentEvent.id);
+    const summaryResult = await fetchEventOperationalSummary(currentEvent.id);
 
-    console.log({
-      registered,
-      registeredError,
-    });
+    if (summaryResult.ok) {
+      setActiveRegistrations(summaryResult.summary.activeRegistrations);
+      setActiveRegistrationsError(null);
+    } else {
+      // Fail visibly: never substitute a locally recomputed registration
+      // count when the canonical summary call fails or is denied.
+      setActiveRegistrations(null);
+      setActiveRegistrationsError(
+        summaryResult.reason === "authorization_denied"
+          ? "You do not have access to the operational summary for this event."
+          : summaryResult.message,
+      );
+    }
 
     const { data: loginRows } = await supabase
       .from("engagement_activity")
@@ -186,7 +204,6 @@ function EngagementPageInner() {
     });
 
     setStats({
-      registered: registered ?? 0,
       loggedIn,
       started,
       submitted,
@@ -233,8 +250,14 @@ function EngagementPageInner() {
     }
   }
 
-  const cards = [
-    { title: "Attendees", value: stats.registered },
+  const cards: { title: string; value: number | string }[] = [
+    {
+      title: "Active Registrations",
+      value:
+        activeRegistrations !== null
+          ? activeRegistrations
+          : activeRegistrationsError || "Unavailable",
+    },
     { title: "Logged Into App", value: stats.loggedIn },
     { title: "Evaluations Started", value: stats.started },
     { title: "Evaluations Submitted", value: stats.submitted },
@@ -248,7 +271,7 @@ function EngagementPageInner() {
     { title: "Photos", value: featureStats.photos },
     { title: "Coach Map", value: featureStats.coachMap },
     { title: "Check-In", value: featureStats.checkIn },
-    { title: "Participants", value: featureStats.participants },
+    { title: "Participant Views", value: featureStats.participants },
   ];
 
   return (
@@ -277,7 +300,18 @@ function EngagementPageInner() {
             }}
           >
             <div style={{ fontSize: 14, color: "#666" }}>{card.title}</div>
-            <div style={{ fontSize: 32, fontWeight: 700, marginTop: 8 }}>
+            <div
+              style={
+                typeof card.value === "number"
+                  ? { fontSize: 32, fontWeight: 700, marginTop: 8 }
+                  : {
+                      fontSize: 14,
+                      fontWeight: 600,
+                      marginTop: 8,
+                      color: "#b91c1c",
+                    }
+              }
+            >
               {card.value}
             </div>
           </div>
