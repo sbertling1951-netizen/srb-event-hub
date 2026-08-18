@@ -798,7 +798,7 @@ function AdminLocationsPageInner() {
 
 export default function AdminLocationsPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_locations">
+    <AdminRouteGuard requiredTask="event.locations.manage">
       <AdminShellAdapter
         pageTitle="Map Locations"
         backTarget={{ href: "/admin/map-admin", label: "Map Admin" }}
