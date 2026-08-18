@@ -201,15 +201,109 @@ test("requiredTenantAuthority introduces no second, competing Tenant-authority r
   assert.equal(setterCalls, 2);
 });
 
-test("all three authority props compose with AND semantics -- each is an independent, sequential early-return block, so every supplied requirement must pass before children render", () => {
+test("all four authority props compose with AND semantics -- each is an independent, sequential early-return block, so every supplied requirement must pass before children render", () => {
   const permissionIdx = SOURCE.indexOf("if (requiredPermission && !hasPermission(");
   const taskIdx = SOURCE.indexOf("if (requiredTask) {");
   const tenantIdx = SOURCE.indexOf("if (requiredTenantAuthority) {");
+  const vendorCatalogIdx = SOURCE.indexOf("if (requiredVendorCatalogAuthority) {");
   const childrenIdx = SOURCE.indexOf("return <>{children}</>;");
 
-  assert.ok(permissionIdx > -1 && taskIdx > -1 && tenantIdx > -1 && childrenIdx > -1);
   assert.ok(
-    permissionIdx < taskIdx && taskIdx < tenantIdx && tenantIdx < childrenIdx,
-    "expected all three gates, in sequence, strictly before the children render",
+    permissionIdx > -1 && taskIdx > -1 && tenantIdx > -1 && vendorCatalogIdx > -1 && childrenIdx > -1,
   );
+  assert.ok(
+    permissionIdx < taskIdx &&
+      taskIdx < tenantIdx &&
+      tenantIdx < vendorCatalogIdx &&
+      vendorCatalogIdx < childrenIdx,
+    "expected all four gates, in sequence, strictly before the children render",
+  );
+});
+
+// ---- requiredVendorCatalogAuthority (Vendor Catalog Authority Client Foundation). ----
+
+test("requiredVendorCatalogAuthority is additive: requiredPermission, requiredTask, and requiredTenantAuthority keep their existing prop declarations and behavior unchanged", () => {
+  assert.match(SOURCE, /requiredPermission\?: string;/);
+  assert.match(SOURCE, /requiredTask\?: string;/);
+  assert.match(SOURCE, /requiredTenantAuthority\?: boolean;/);
+  assert.match(SOURCE, /requiredVendorCatalogAuthority\?: boolean;/);
+  // The existing requiredTenantAuthority render-gate block is untouched.
+  assert.match(
+    SOURCE,
+    /if \(requiredTenantAuthority\) \{\s*\n\s*if \(tenantAuthority === null\) \{/,
+  );
+});
+
+test("requiredVendorCatalogAuthority is checked through the shared helper, never a direct RPC call in the guard itself", () => {
+  assert.match(
+    SOURCE,
+    /import \{\s*\n\s*type AdminVendorCatalogAuthorityResult,\s*\n\s*checkAdminVendorCatalogAuthority,\s*\n\s*\} from "@\/lib\/adminVendorCatalogAuthority";/,
+  );
+  assert.equal(/has_my_vendor_catalog_admin_authority\(/.test(SOURCE.replace(/\/\/.*$/gm, "")), false);
+  assert.equal(/has_vendor_catalog_admin_authority/.test(SOURCE), false);
+});
+
+test("no Event-context and no Tenant-context dependency is introduced for the Vendor Catalog check: the effect carries no subscribeToAdminWorkspace subscription and no Tenant reference", () => {
+  const vendorEffectIdx = SOURCE.indexOf(
+    "useEffect(() => {\n    if (!requiredVendorCatalogAuthority || !userId)",
+  );
+  assert.ok(vendorEffectIdx > -1, "expected the requiredVendorCatalogAuthority effect");
+  const vendorEffectEndIdx = SOURCE.indexOf(
+    "}, [requiredVendorCatalogAuthority, userId, runVendorCatalogCheck]);",
+  );
+  const vendorEffectBlock = SOURCE.slice(vendorEffectIdx, vendorEffectEndIdx);
+
+  assert.equal(/getCurrentAdminEvent/.test(vendorEffectBlock), false);
+  assert.equal(/subscribeToAdminWorkspace/.test(vendorEffectBlock), false);
+
+  const vendorCheckFn = SOURCE.slice(
+    SOURCE.indexOf("const runVendorCatalogCheck = useCallback"),
+    SOURCE.indexOf("}, [requiredVendorCatalogAuthority]);") + 30,
+  );
+  const vendorCheckFnNoComments = vendorCheckFn.replace(/\/\/.*$/gm, "");
+  assert.equal(/getCurrentAdminEvent|tenantId|checkAdminTenantAuthority/.test(vendorCheckFnNoComments), false);
+});
+
+test("the Vendor Catalog check re-runs when the authenticated Admin identity changes (userId in the effect's dependency array), never on Event switch", () => {
+  assert.match(
+    SOURCE,
+    /\}, \[requiredVendorCatalogAuthority, userId, runVendorCatalogCheck\]\);/,
+  );
+});
+
+test("Vendor Catalog authority fails closed: an in-flight check (vendorCatalogAuthority === null) renders null, matching the existing loading convention -- never a flash of denial or access", () => {
+  const gate = SOURCE.slice(SOURCE.indexOf("if (requiredVendorCatalogAuthority) {"));
+  assert.match(gate, /if \(vendorCatalogAuthority === null\) \{\s*\n\s*return null;\s*\n\s*\}/);
+});
+
+test("only an exact allowed status renders children when requiredVendorCatalogAuthority is set", () => {
+  const gate = SOURCE.slice(SOURCE.indexOf("if (requiredVendorCatalogAuthority) {"));
+  assert.match(gate, /vendorCatalogAuthority\.status !== "allowed"/);
+});
+
+test("switching state resets to a non-authorized state BEFORE the new check resolves -- a stale prior session's allowed result can never remain rendered", () => {
+  const fn = SOURCE.slice(
+    SOURCE.indexOf("const runVendorCatalogCheck = useCallback"),
+    SOURCE.indexOf("}, [requiredVendorCatalogAuthority]);") + 30,
+  );
+  const resetIdx = fn.indexOf("setVendorCatalogAuthority(null);");
+  const thenIdx = fn.indexOf("checkAdminVendorCatalogAuthority().then(");
+  assert.ok(resetIdx > -1 && thenIdx > -1, "expected both the reset call and the async check to be present");
+  assert.ok(resetIdx < thenIdx, "the reset to a non-authorized state must happen before the async check is issued");
+});
+
+test("a stale Vendor Catalog authority response from an abandoned check can never overwrite a newer check's result -- a generation counter gates every applied result", () => {
+  const fn = SOURCE.slice(SOURCE.indexOf("const runVendorCatalogCheck = useCallback"));
+  assert.match(fn, /const generation = \+\+vendorCatalogCheckGeneration\.current;/);
+  assert.match(
+    fn,
+    /if \(vendorCatalogCheckGeneration\.current === generation\) \{\s*\n\s*setVendorCatalogAuthority\(result\);/,
+  );
+});
+
+test("requiredVendorCatalogAuthority introduces no second, competing Vendor Catalog authority result setter -- setVendorCatalogAuthority is called only from within runVendorCatalogCheck's own generation-guarded paths", () => {
+  const setterCalls = (SOURCE.match(/setVendorCatalogAuthority\(/g) || []).length;
+  // Reset call + generation-guarded result call = exactly 2 call sites,
+  // both inside runVendorCatalogCheck.
+  assert.equal(setterCalls, 2);
 });

@@ -13,6 +13,10 @@ import {
   checkAdminTenantAuthority,
 } from "@/lib/adminTenantAuthority";
 import {
+  type AdminVendorCatalogAuthorityResult,
+  checkAdminVendorCatalogAuthority,
+} from "@/lib/adminVendorCatalogAuthority";
+import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
@@ -23,6 +27,7 @@ type Props = {
   requiredPermission?: string;
   requiredTask?: string;
   requiredTenantAuthority?: boolean;
+  requiredVendorCatalogAuthority?: boolean;
   fallbackPath?: string;
 };
 
@@ -31,6 +36,7 @@ export default function AdminRouteGuard({
   requiredPermission,
   requiredTask,
   requiredTenantAuthority,
+  requiredVendorCatalogAuthority,
   fallbackPath = "/admin/login",
 }: Props) {
   const router = useRouter();
@@ -106,6 +112,39 @@ export default function AdminRouteGuard({
     });
   }, [requiredTenantAuthority]);
 
+  // requiredVendorCatalogAuthority only. null = checking (or not yet
+  // started) -- never a stale prior result, same discipline as
+  // tenantAuthority above. This has no Event dimension and no Tenant
+  // dimension at all: Vendor Catalog administration (vendor-org/catalog
+  // access) is neither Event-scoped nor Tenant-scoped, so this is never
+  // re-checked on Admin working-Event change (no subscribeToAdminWorkspace
+  // subscription below, matching requiredTenantAuthority's own
+  // discipline). It re-runs only when the authenticated Admin identity
+  // itself changes (userId).
+  const [vendorCatalogAuthority, setVendorCatalogAuthority] =
+    useState<AdminVendorCatalogAuthorityResult | null>(null);
+  const vendorCatalogCheckGeneration = useRef(0);
+
+  const runVendorCatalogCheck = useCallback(() => {
+    if (!requiredVendorCatalogAuthority) {
+      return;
+    }
+
+    const generation = ++vendorCatalogCheckGeneration.current;
+
+    // Reset before the async check resolves: a prior session's
+    // "allowed" must never remain rendered while the new session's
+    // authority is still unresolved, same anti-race discipline as
+    // runTenantCheck.
+    setVendorCatalogAuthority(null);
+
+    void checkAdminVendorCatalogAuthority().then((result) => {
+      if (vendorCatalogCheckGeneration.current === generation) {
+        setVendorCatalogAuthority(result);
+      }
+    });
+  }, [requiredVendorCatalogAuthority]);
+
   useEffect(() => {
     if (!loading && !userId) {
       router.replace(fallbackPath);
@@ -133,6 +172,14 @@ export default function AdminRouteGuard({
 
     runTenantCheck();
   }, [requiredTenantAuthority, userId, runTenantCheck]);
+
+  useEffect(() => {
+    if (!requiredVendorCatalogAuthority || !userId) {
+      return;
+    }
+
+    runVendorCatalogCheck();
+  }, [requiredVendorCatalogAuthority, userId, runVendorCatalogCheck]);
 
   if (loading) {
     return null;
@@ -166,6 +213,16 @@ export default function AdminRouteGuard({
     }
 
     if (tenantAuthority.status !== "allowed") {
+      return <div style={{ padding: 24 }}>No permission</div>;
+    }
+  }
+
+  if (requiredVendorCatalogAuthority) {
+    if (vendorCatalogAuthority === null) {
+      return null;
+    }
+
+    if (vendorCatalogAuthority.status !== "allowed") {
       return <div style={{ padding: 24 }}>No permission</div>;
     }
   }

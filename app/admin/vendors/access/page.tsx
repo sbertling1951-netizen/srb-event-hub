@@ -371,7 +371,7 @@ function AdminVendorAccessInner() {
 
 export default function AdminVendorAccessPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_vendors">
+    <AdminRouteGuard requiredVendorCatalogAuthority>
       <AdminShellAdapter pageTitle="Vendor Access Invitations">
         <AdminVendorAccessInner />
       </AdminShellAdapter>
