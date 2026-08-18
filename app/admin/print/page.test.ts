@@ -98,3 +98,84 @@ test("manual print entries never carry assigned_site and are never keyed into ca
   assert.ok(source.includes('id: `manual-${kind}-${uniqueId}`,'));
   assert.ok(!source.includes("assigned_site: null,"));
 });
+
+// Task-Authority Guard Design, Print consumer migration. Print Center
+// performs zero database writes (verified: no .update/.upsert/.insert/
+// .delete/.rpc anywhere in this page) -- it is a pure view + client-side
+// print surface, so its route requires event.print.view, not .manage.
+
+test("Print Center route requires event.print.view, not the legacy can_manage_reports permission", () => {
+  assert.match(source, /<AdminRouteGuard requiredTask="event\.print\.view">/);
+  assert.equal(/requiredPermission/.test(source), false);
+  assert.equal(/can_manage_reports/.test(source), false);
+});
+
+test("Print Center performs no database write of any kind -- confirms it is a view-only surface, consistent with event.print.view", () => {
+  assert.equal(/\.update\(/.test(source), false);
+  assert.equal(/\.upsert\(/.test(source), false);
+  assert.equal(/\.insert\(/.test(source), false);
+  assert.equal(/\.delete\(/.test(source), false);
+  assert.equal(/\.rpc\(/.test(source), false);
+});
+
+test("the unrelated can_manage_admins check (which admin may browse all Events to print for) is preserved unchanged -- not part of this migration", () => {
+  assert.match(
+    source,
+    /const superAdminCanSelectEvents = hasPermission\(\s*\n\s*admin,\s*\n\s*"can_manage_admins",\s*\n\s*\);/,
+  );
+});
+
+test("the Print Settings link's visibility uses the shared canonical helper for event.print.manage, replacing the dead can_manage_print_settings key", () => {
+  assert.equal(/hasPermission\([^)]*"can_manage_print_settings"/.test(source), false);
+  assert.match(
+    source,
+    /import \{ checkAdminEventTaskAuthority \} from "@\/lib\/adminTaskAuthority";/,
+  );
+  assert.match(
+    source,
+    /checkAdminEventTaskAuthority\(\s*"event\.print\.manage",\s*eventId,?\s*\)/,
+  );
+  assert.match(source, /\{canManagePrintSettings \? \(/);
+  assert.equal(/\.rpc\(\s*"has_event_task_authority"/.test(source), false);
+  assert.equal((source.match(/checkAdminEventTaskAuthority\(/g) || []).length, 1);
+});
+
+test("Print Settings link authority fails closed and resets before the async check resolves", () => {
+  assert.match(
+    source,
+    /const \[canManagePrintSettings, setCanManagePrintSettings\] = useState\(false\);/,
+  );
+  const fn = source.slice(
+    source.indexOf("const runPrintSettingsAuthorityCheck = useCallback"),
+  );
+  const fnBody = fn.slice(0, fn.indexOf("}, []);"));
+  const resetIdx = fnBody.indexOf("setCanManagePrintSettings(false);");
+  const checkIdx = fnBody.indexOf("checkAdminEventTaskAuthority(");
+  assert.ok(resetIdx > -1 && checkIdx > -1);
+  assert.ok(resetIdx < checkIdx, "must reset before issuing the async check");
+  assert.match(fnBody, /setCanManagePrintSettings\(result\.status === "allowed"\);/);
+  assert.equal(/setCanManagePrintSettings\(true\)/.test(source), false);
+});
+
+test("Print Settings link authority discards a stale response from an abandoned Event's check", () => {
+  const fn = source.slice(
+    source.indexOf("const runPrintSettingsAuthorityCheck = useCallback"),
+  );
+  assert.match(fn, /const generation = \+\+printSettingsCheckGeneration\.current;/);
+  assert.match(
+    fn,
+    /if \(printSettingsCheckGeneration\.current === generation\) \{\s*\n\s*setCanManagePrintSettings\(result\.status === "allowed"\);/,
+  );
+});
+
+test("Print Settings link authority re-checks on every Admin working-Event change via the canonical subscription", () => {
+  assert.match(
+    source,
+    /useEffect\(\(\) => \{\s*\n\s*runPrintSettingsAuthorityCheck\(\);\s*\n\s*\n\s*return subscribeToAdminWorkspace\(runPrintSettingsAuthorityCheck\);\s*\n\s*\}, \[runPrintSettingsAuthorityCheck\]\);/,
+  );
+});
+
+test("printing itself (window.print) remains ungated, unchanged -- Print Center's own view/print action was never a distinct manage-level capability", () => {
+  assert.match(source, /function handlePrint\(\) \{\s*\n\s*window\.print\(\);\s*\n\s*\}/);
+  assert.match(source, /function printOnlyAttendee\(attendeeId: string\) \{/);
+});

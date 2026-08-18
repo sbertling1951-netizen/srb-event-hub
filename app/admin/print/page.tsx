@@ -1,10 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { useAdmin } from "@/lib/adminContext";
+import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -426,6 +434,43 @@ function AdminPrintPageInner() {
   const [coachPlateTextColor, setCoachPlateTextColor] = useState("#000000");
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
 
+  // Print Settings is a manage-only surface (background upload/removal,
+  // no distinct view mode) -- its link here is shown only when the
+  // admin holds event.print.manage for their own current working
+  // Event, the same scope Print Settings' own route guard checks.
+  // Replaces the dead can_manage_print_settings key, never granted to
+  // any non-super-admin.
+  const [canManagePrintSettings, setCanManagePrintSettings] = useState(false);
+  const printSettingsCheckGeneration = useRef(0);
+
+  const runPrintSettingsAuthorityCheck = useCallback(() => {
+    const generation = ++printSettingsCheckGeneration.current;
+    const eventId = getCurrentAdminEvent()?.id ?? null;
+
+    // Reset before the async check resolves: a prior Event's authority
+    // must never remain effective while the new Event's check is still
+    // unresolved.
+    setCanManagePrintSettings(false);
+
+    if (!eventId) {
+      return;
+    }
+
+    void checkAdminEventTaskAuthority("event.print.manage", eventId).then(
+      (result) => {
+        if (printSettingsCheckGeneration.current === generation) {
+          setCanManagePrintSettings(result.status === "allowed");
+        }
+      },
+    );
+  }, []);
+
+  useEffect(() => {
+    runPrintSettingsAuthorityCheck();
+
+    return subscribeToAdminWorkspace(runPrintSettingsAuthorityCheck);
+  }, [runPrintSettingsAuthorityCheck]);
+
   useEffect(() => {
     if (!admin) {
       return;
@@ -435,16 +480,6 @@ function AdminPrintPageInner() {
       setLoading(true);
       setError(null);
       setStatus("Loading print center...");
-
-      if (
-        !hasPermission(admin, "can_manage_print_settings") &&
-        !hasPermission(admin, "can_manage_reports")
-      ) {
-        setError("You do not have permission to use the print center.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
 
       const adminEvent = getCurrentAdminEvent();
       const superAdminCanSelectEvents = hasPermission(
@@ -943,7 +978,7 @@ function AdminPrintPageInner() {
         <Link href="/admin/reports" style={navigationLinkStyle}>
           Reports
         </Link>
-        {hasPermission(admin, "can_manage_print_settings") ? (
+        {canManagePrintSettings ? (
           <Link href="/admin/print-settings" style={navigationLinkStyle}>
             Print Settings
           </Link>
@@ -2140,7 +2175,7 @@ const errorBoxStyle: CSSProperties = {
 
 export default function AdminPrintPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_reports">
+    <AdminRouteGuard requiredTask="event.print.view">
       <AdminPrintPageInner />
     </AdminRouteGuard>
   );

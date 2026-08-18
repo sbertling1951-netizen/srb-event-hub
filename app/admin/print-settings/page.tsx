@@ -9,7 +9,7 @@ import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
-import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 
@@ -53,7 +53,7 @@ function withCacheBust(url: string | null | undefined) {
 
 export default function AdminPrintSettingsPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_print_settings">
+    <AdminRouteGuard requiredTask="event.print.manage">
       <AdminShellAdapter
         pageTitle="Print Settings"
         backTarget={{ href: "/admin/print", label: "Print Center" }}
@@ -84,13 +84,6 @@ function AdminPrintSettingsPageInner() {
     if (!admin) return;
 
     function loadForCurrentEvent() {
-      if (!hasPermission(admin!, "can_manage_print_settings")) {
-        setError("You do not have permission to manage print settings.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
       const adminEvent = getCurrentAdminEvent();
 
       if (!adminEvent?.id) {
