@@ -113,7 +113,7 @@ export function isStalePresentationVersionError(err: unknown): boolean {
 
 export default function AdminSlideshowPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredTask="event.slideshow.manage">
       <AdminShellAdapter
         pageTitle="Slideshow Presenter"
         backTarget={{ href: "/admin/photos", label: "Photos" }}
@@ -125,51 +125,29 @@ export default function AdminSlideshowPage() {
 }
 
 function AdminSlideshowPageInner() {
-  // Page-content access is governed by the canonical Task Authority
-  // resolver (event.slideshow.manage for the current admin working
-  // Event), the same pattern app/admin/agenda/page.tsx already
-  // established: this page never inspects privilege_group/
-  // is_super_admin or reimplements has_event_task_authority's
-  // semantics itself -- it only asks the existing governed resolver
-  // the one question it needs answered. null = not yet checked (no
-  // Event selected, or check in flight).
-  const [hasSlideshowAccess, setHasSlideshowAccess] = useState<
-    boolean | null
-  >(null);
+  // Page-access authority (event.slideshow.manage for the current admin
+  // working Event) is now owned entirely by AdminRouteGuard's
+  // requiredTask -- this component never mounts without it already
+  // being granted. What remains here is Event-context tracking for
+  // this page's OWN data loading (deck list, live session, restart
+  // candidate) and its "Controlling event" label -- a separate concern
+  // from access, re-read on every Admin working-Event change via the
+  // same canonical subscription so this page's own data reloads for
+  // the newly selected Event, not to recheck authority.
   const [eventId, setEventId] = useState<string | null>(null);
   const [eventName, setEventName] = useState<string | null>(null);
 
-  const checkSlideshowAccess = useCallback(async () => {
+  const syncCurrentAdminEvent = useCallback(() => {
     const adminEvent = getCurrentAdminEvent();
     setEventId(adminEvent?.id ?? null);
     setEventName(adminEvent?.name ?? adminEvent?.eventName ?? null);
-
-    if (!adminEvent?.id) {
-      setHasSlideshowAccess(null);
-      return;
-    }
-
-    const { data, error } = await supabase.rpc("has_event_task_authority", {
-      p_task_key: "event.slideshow.manage",
-      p_event_id: adminEvent.id,
-    });
-
-    if (error) {
-      console.error("Failed to check Slideshow access", error);
-      setHasSlideshowAccess(false);
-      return;
-    }
-
-    setHasSlideshowAccess(!!data);
   }, []);
 
   useEffect(() => {
-    void checkSlideshowAccess();
+    syncCurrentAdminEvent();
 
-    return subscribeToAdminWorkspace(() => {
-      void checkSlideshowAccess();
-    });
-  }, [checkSlideshowAccess]);
+    return subscribeToAdminWorkspace(syncCurrentAdminEvent);
+  }, [syncCurrentAdminEvent]);
 
   const [decks, setDecks] = useState<PresentationDeck[] | null>(null);
   const [selectedDeckId, setSelectedDeckId] = useState<string>("");
@@ -725,19 +703,13 @@ function AdminSlideshowPageInner() {
   }, []);
 
   useEffect(() => {
-    if (hasSlideshowAccess !== true || !eventId) {
+    if (!eventId) {
       return;
     }
     void loadDecks(eventId);
     void loadLiveSession(eventId);
     void loadRestartCandidate(eventId);
-  }, [
-    hasSlideshowAccess,
-    eventId,
-    loadDecks,
-    loadLiveSession,
-    loadRestartCandidate,
-  ]);
+  }, [eventId, loadDecks, loadLiveSession, loadRestartCandidate]);
 
   const selectedDeck = decks?.find((deck) => deck.id === selectedDeckId) ?? null;
   const selectedManualDeckId =
@@ -1073,24 +1045,6 @@ function AdminSlideshowPageInner() {
       return;
     }
     void runControl("end_presentation_session", "Ending presentation...", "");
-  }
-
-  if (hasSlideshowAccess !== true) {
-    return (
-      <div
-        style={{
-          background: "#111",
-          color: "white",
-          padding: 24,
-        }}
-      >
-        <div>
-          {hasSlideshowAccess === null
-            ? "No admin working event selected."
-            : "You do not have Slideshow management authority for this event."}
-        </div>
-      </div>
-    );
   }
 
   const isLive = session?.status === "live";

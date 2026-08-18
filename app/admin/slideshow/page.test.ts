@@ -38,9 +38,26 @@ test("presenter returns to the owning Photos module through the canonical shell"
   );
 });
 
-test("presenter page resolves event.slideshow.manage via the canonical Task Authority resolver", () => {
-  assert.match(PAGE_SOURCE, /has_event_task_authority/);
-  assert.match(PAGE_SOURCE, /event\.slideshow\.manage/);
+test("presenter page authority is delegated entirely to AdminRouteGuard's requiredTask -- no page-local Task Authority check remains", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<AdminRouteGuard requiredTask="event\.slideshow\.manage">/,
+  );
+});
+
+test("the presenter no longer performs its own has_event_task_authority RPC call -- the canonical guard foundation owns this now", () => {
+  assert.equal(/\.rpc\(\s*"has_event_task_authority"/.test(PAGE_SOURCE), false);
+  // The one remaining mention is an explanatory comment about the RLS
+  // read policy on presentation_decks/presentation_sessions (a
+  // different, DB-level concern this migration does not touch) -- not
+  // a page-level authority check. Stripped of comments, the string
+  // must not appear anywhere in the page at all.
+  assert.equal(/has_event_task_authority/.test(PAGE_SOURCE_NO_COMMENTS), false);
+});
+
+test("the duplicate page-access authority state and effect (hasSlideshowAccess/checkSlideshowAccess) no longer exist", () => {
+  assert.equal(/hasSlideshowAccess/.test(PAGE_SOURCE), false);
+  assert.equal(/checkSlideshowAccess/.test(PAGE_SOURCE), false);
 });
 
 test("presenter page contains no legacy role-name authority reimplementation", () => {
@@ -59,14 +76,19 @@ test("presenter page contains no legacy role-name authority reimplementation", (
   }
 });
 
-test("unauthorized/unchecked access state precedes and short-circuits the active presenter controls", () => {
-  const gateIdx = PAGE_SOURCE.indexOf("hasSlideshowAccess !== true");
+test("the active presenter controls (Show Control) are only ever reachable as AdminRouteGuard's children -- no page-local access gate precedes them anymore", () => {
   const controlIdx = PAGE_SOURCE.indexOf("Show Control");
-  assert.notEqual(gateIdx, -1, "expected an explicit hasSlideshowAccess !== true gate");
   assert.notEqual(controlIdx, -1, "expected the Show Control panel to still exist");
-  assert.ok(
-    gateIdx < controlIdx,
-    "the access gate must appear before the active presenter controls in source order",
+  // AdminSlideshowPageInner (which renders Show Control) is declared
+  // once, as a direct child of AdminShellAdapter inside AdminRouteGuard
+  // requiredTask="event.slideshow.manage" -- structurally, it cannot
+  // render before that boundary resolves. See
+  // components/auth/AdminRouteGuard.test.ts for the guard's own
+  // in-flight/no-event/denied/allowed coverage; this file no longer
+  // duplicates that ordering assertion at the page level.
+  assert.match(
+    PAGE_SOURCE,
+    /<AdminRouteGuard requiredTask="event\.slideshow\.manage">\s*\n\s*<AdminShellAdapter[\s\S]{0,200}<AdminSlideshowPageInner \/>/,
   );
 });
 
@@ -429,13 +451,13 @@ test("the presenter never writes to the shared Admin working Event", () => {
   assert.equal(/setCurrentAdminEvent/.test(PAGE_SOURCE), false);
 });
 
-test("checkSlideshowAccess reads the current Event only through the canonical getCurrentAdminEvent(), with no fallback/default selection", () => {
+test("syncCurrentAdminEvent reads the current Event only through the canonical getCurrentAdminEvent(), with no fallback/default selection", () => {
   assert.match(
     PAGE_SOURCE,
     /import\s*\{[^}]*getCurrentAdminEvent[^}]*\}\s*from\s*["']@\/lib\/adminWorkspaceContext["']/,
   );
 
-  const fnIdx = PAGE_SOURCE.indexOf("const checkSlideshowAccess = useCallback(");
+  const fnIdx = PAGE_SOURCE.indexOf("const syncCurrentAdminEvent = useCallback(");
   assert.notEqual(fnIdx, -1);
   const fnBody = PAGE_SOURCE.slice(fnIdx, fnIdx + 700);
 
@@ -577,9 +599,7 @@ test("loadRestartCandidate only restores selectedDeckId/restartCandidateDeckId a
 });
 
 test("loadRestartCandidate runs on every presenter load/reload alongside loadDecks and loadLiveSession, for the exact same Event", () => {
-  const effectIdx = PAGE_SOURCE.indexOf(
-    "if (hasSlideshowAccess !== true || !eventId)",
-  );
+  const effectIdx = PAGE_SOURCE.indexOf("if (!eventId) {");
   assert.notEqual(effectIdx, -1);
   const effectBody = PAGE_SOURCE.slice(effectIdx, effectIdx + 400);
   assert.match(effectBody, /void loadDecks\(eventId\)/);
