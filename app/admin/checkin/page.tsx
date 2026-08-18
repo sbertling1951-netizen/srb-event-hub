@@ -25,7 +25,7 @@ import {
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { fullName, preferredDisplayLine } from "@/lib/formatters";
-import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 // Check-In owns Arrival only (Admin Check-In / Parking ownership cutover,
@@ -152,7 +152,7 @@ function classifyCheckinFailure(error: unknown): CheckinOperationFailure {
 
 export default function AdminCheckinPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_mark_arrived">
+    <AdminRouteGuard requiredTask="event.checkin.manage">
       <AdminShellAdapter pageTitle="Admin Check-In">
         <AdminCheckinPageInner />
       </AdminShellAdapter>
@@ -222,16 +222,6 @@ function AdminCheckinPageInner() {
 
   useEffect(() => {
     if (!admin) {
-      return;
-    }
-
-    if (!hasPermission(admin, "can_mark_arrived")) {
-      setEvent(null);
-      setAttendees([]);
-      setHouseholdMembers([]);
-      setSharingByAttendee({});
-      showError("You do not have permission to manage check-in.");
-      setLoading(false);
       return;
     }
 

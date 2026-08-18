@@ -354,11 +354,33 @@ test("compact viewport keeps the primary action full-width and touch-sized", () 
 });
 
 test("authority and Event context continue through existing guards and canonical readers", () => {
-  assert.match(source, /requiredPermission="can_mark_arrived"/);
+  assert.match(source, /requiredTask="event\.checkin\.manage"/);
   assert.match(source, /getCurrentAdminEvent\(\)/);
   assert.match(source, /canAccessEvent\(admin, adminEvent\.id\)/);
   assert.equal(
     /setCurrentAdminEvent|clearCurrentAdminEvent/.test(source),
     false,
   );
+});
+
+// Task-Authority Guard Design, Check-In consumer migration -- Check-In no
+// longer uses the legacy can_mark_arrived permission for route access or
+// any in-page re-check; event.checkin.manage (server-enforced already by
+// complete_admin_checkin) is the sole client-side authority gate.
+
+test("Check-In no longer references the legacy can_mark_arrived permission anywhere", () => {
+  assert.equal(/can_mark_arrived/.test(source), false);
+  assert.equal(/requiredPermission/.test(source), false);
+});
+
+test("the duplicate in-page page-access re-check is gone -- AdminRouteGuard is the only authority gate, and no direct has_event_task_authority call replaces it", () => {
+  assert.equal(/hasPermission\(/.test(source), false);
+  assert.equal(/import \{[^}]*hasPermission/.test(source), false);
+  assert.equal(/checkAdminEventTaskAuthority/.test(source), false);
+  assert.equal(/\.rpc\(\s*"has_event_task_authority"/.test(source), false);
+});
+
+test("Parking authority remains separate: no placement task or permission is introduced alongside the Arrival task", () => {
+  assert.equal(/event\.parking\.manage/.test(source), false);
+  assert.equal(/can_assign_parking|can_manage_parking/.test(source), false);
 });
