@@ -2,6 +2,7 @@
 "use client";
 import React, { useCallback, useEffect, useState } from "react";
 
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import {
   getCurrentAdminEvent,
@@ -447,8 +448,25 @@ function EngagementPageInner() {
 
 export default function EngagementPage() {
   return (
-    <AdminShellAdapter pageTitle="Attendee Engagement">
-      <EngagementPageInner />
-    </AdminShellAdapter>
+    // Auth-only gate (no requiredPermission): this route has no governed
+    // permission key of its own. Its nav-visibility gate
+    // (components/shell/navigation/adminNav.ts) is admin?.privilege_group
+    // === "super_admin" checked directly, deliberately not translated
+    // through hasPermission()/requiredPermission when that nav was
+    // migrated -- resolving that bypass was explicitly deferred to a
+    // future ADR-011 Workspace Resolver migration, not decided here.
+    // Asserting a requiredPermission (e.g. can_manage_admins) would invent
+    // authority semantics no governed source establishes for this page,
+    // and could silently drift from the nav gate if that permission key's
+    // grant is ever edited independently via /admin/permissions. This
+    // mirrors the same bare-AdminRouteGuard pattern already used by
+    // Evaluations, Photo Library, Agenda, Attendees, and Map Admin: it
+    // closes the "reachable by any authenticated user" gap without
+    // asserting a privilege-group-specific rule the guard cannot express.
+    <AdminRouteGuard>
+      <AdminShellAdapter pageTitle="Attendee Engagement">
+        <EngagementPageInner />
+      </AdminShellAdapter>
+    </AdminRouteGuard>
   );
 }

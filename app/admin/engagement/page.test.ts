@@ -74,3 +74,33 @@ test("the participants_view feature card no longer claims an unqualified people/
   assert.match(source, /title: "Participant Views"/);
   assert.equal(/title: "Participants"/.test(source), false);
 });
+
+// Admin UX Audit, F-05 / Workstream 2 -- Engagement was the only Admin
+// route with no AdminRouteGuard at all (reachable by any authenticated
+// user who knows the URL). Run with:
+//   npx tsx --test app/admin/engagement/page.test.ts
+
+test("page is gated by AdminRouteGuard, consistent with the other reconciled Admin routes", () => {
+  assert.match(source, /import AdminRouteGuard from "@\/components\/auth\/AdminRouteGuard";/);
+  assert.match(source, /<AdminRouteGuard>\s*\n\s*<AdminShellAdapter/);
+});
+
+test("no requiredPermission prop is asserted on the guard -- no governed permission key exists for this route's authority yet", () => {
+  assert.equal(/requiredPermission\s*=/.test(source), false);
+});
+
+test("AdminShellAdapter still wraps EngagementPageInner unchanged, inside the new guard", () => {
+  assert.match(
+    source,
+    /<AdminShellAdapter pageTitle="Attendee Engagement">\s*\n\s*<EngagementPageInner \/>\s*\n\s*<\/AdminShellAdapter>/,
+  );
+});
+
+test("Event-context wiring is unchanged: still reads/subscribes via the canonical adminWorkspaceContext, never a page-local store", () => {
+  assert.match(
+    source,
+    /import \{\s*\n\s*getCurrentAdminEvent,\s*\n\s*subscribeToAdminWorkspace,\s*\n\s*\} from "@\/lib\/adminWorkspaceContext";/,
+  );
+  assert.equal((source.match(/getCurrentAdminEvent\(\)/g) || []).length, 1);
+  assert.equal((source.match(/subscribeToAdminWorkspace\(/g) || []).length, 1);
+});
