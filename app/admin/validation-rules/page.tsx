@@ -16,7 +16,7 @@ import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
-import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type EventContext = {
@@ -158,16 +158,6 @@ function AdminValidationRulesPageInner() {
 
   useEffect(() => {
     if (!admin) {
-      return;
-    }
-
-    if (
-      !hasPermission(admin, "can_manage_admins") &&
-      !hasPermission(admin, "can_manage_validation_rules")
-    ) {
-      setError("You do not have permission to manage validation rules.");
-      setStatus("Access denied.");
-      setLoading(false);
       return;
     }
 
@@ -724,7 +714,7 @@ function AdminValidationRulesPageInner() {
 
 function AdminValidationRulesPageContent() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_validation_rules">
+    <AdminRouteGuard requiredTask="event.validation_rules.manage">
       <AdminShellAdapter pageTitle="Validation Rules">
         <AdminValidationRulesPageInner />
       </AdminShellAdapter>

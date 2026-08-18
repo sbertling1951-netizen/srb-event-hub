@@ -27,7 +27,7 @@ test("Imports always retains its normal guarded presentation", () => {
 });
 
 test("Validation Rules has one guarded route path", () => {
-  assert.ok(validationRulesSource.includes('AdminRouteGuard requiredPermission="can_manage_validation_rules"'));
+  assert.ok(validationRulesSource.includes('AdminRouteGuard requiredTask="event.validation_rules.manage"'));
   assert.ok(validationRulesSource.includes("<PageNavigation"));
   assert.ok(!validationRulesSource.includes("useSearchParams"));
   assert.ok(!validationRulesSource.includes("isEmbedded"));
