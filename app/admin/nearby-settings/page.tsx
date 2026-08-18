@@ -8,6 +8,7 @@ import { AppButton } from "@/components/ui/AppButton";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAdmin } from "@/lib/adminContext";
+import { listMyTenantAdminAccess } from "@/lib/adminTenantAuthority";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -19,13 +20,16 @@ import { supabase } from "@/lib/supabase";
  * search-existing-first "Add a Place" workflow against the shared central
  * catalog.
  *
- * IMPORTANT, and shown in the UI below rather than hidden: every write
- * here goes through governed RPCs that currently fail closed to
- * `public.has_platform_admin_authority` (super_admin only) -- the Tenant
- * Admin authority foundation this page is meant for does not exist yet
- * (see the architecture doc). A Tenant Admin cannot actually use this page
- * to change anything until that foundation ships; only a super_admin can,
- * and this page tells them so rather than failing silently or opaquely.
+ * Route eligibility is the coarse `requiredTenantAuthority` check (Tenant
+ * Admin for at least one Tenant, or Platform Admin); the Tenant selector
+ * is populated from the governed, self-scoped listMyTenantAdminAccess()
+ * RPC, so a Tenant Admin only ever sees Tenants they administer. Category
+ * overrides and Tenant-specific places are then authorized per-Tenant,
+ * server-side, by the existing has_tenant_admin_authority(auth.uid(),
+ * p_tenant_id) check inside set_tenant_category_override and
+ * set_tenant_place_relevance -- adding a new *shared/public* place
+ * remains public.has_platform_admin_authority-gated (Super Admin only),
+ * shown in the UI below rather than hidden.
  */
 
 type Tenant = {
@@ -84,8 +88,8 @@ function NearbySettingsPageInner() {
 
   useEffect(() => {
     void (async () => {
-      const [{ data: tenantRows }, { data: categoryRows }] = await Promise.all([
-        supabase.from("tenants").select("id,display_name").eq("is_active", true).order("display_name"),
+      const [accessRows, { data: categoryRows }] = await Promise.all([
+        listMyTenantAdminAccess(),
         supabase
           .from("place_categories")
           .select("id,code,label,sort_order")
@@ -93,10 +97,22 @@ function NearbySettingsPageInner() {
           .order("sort_order"),
       ]);
 
-      setTenants((tenantRows || []) as Tenant[]);
+      setTenants(
+        accessRows.map((row) => ({ id: row.tenant_id, display_name: row.display_name })),
+      );
       setCategories((categoryRows || []) as PlaceCategory[]);
     })();
   }, []);
+
+  // Fail closed: a selected Tenant that is no longer present in the
+  // governed, self-scoped access list (e.g. it loaded before the
+  // access list resolved, or authority changed) is never retained
+  // silently.
+  useEffect(() => {
+    if (selectedTenantId && !tenants.some((tenant) => tenant.id === selectedTenantId)) {
+      setSelectedTenantId("");
+    }
+  }, [tenants, selectedTenantId]);
 
   const loadOverrides = useCallback(async (tenantId: string) => {
     if (!tenantId) {
@@ -110,12 +126,10 @@ function NearbySettingsPageInner() {
       .eq("tenant_id", tenantId);
 
     if (overridesError) {
-      // Expected for a non-super-admin session today -- RLS denies the
-      // read rather than erroring loudly; surface it plainly rather than
+      // RLS denies the read rather than erroring loudly for a Tenant
+      // outside the caller's authority; surface it plainly rather than
       // pretending the (empty) result means "no overrides configured."
-      setError(
-        "Could not load this Tenant's category overrides. This page currently requires super_admin authority (see note above).",
-      );
+      setError("Could not load this Tenant's category overrides.");
       setOverrides([]);
       return;
     }
@@ -271,13 +285,11 @@ function NearbySettingsPageInner() {
       {!isSuperAdmin ? (
         <div className="card" role="note" style={{ borderColor: "#f59e0b", marginBottom: 16 }}>
           <strong>Tenant curation requires authority for the selected Tenant.</strong>{" "}
-          Category overrides and Tenant-specific places require either
-          Super Admin authority or an explicit Tenant Admin assignment for
-          that Tenant (granted via <code>public.set_tenant_admin_access</code>);
-          adding a new shared/public place requires Super Admin
-          specifically. This browser session cannot determine your Tenant
-          Admin assignments in advance -- if a save fails below, that is
-          why. See
+          The Tenant list above already only shows Tenants you administer
+          (granted via <code>public.set_tenant_admin_access</code>).
+          Category overrides and Tenant-specific places are still
+          authorized per-Tenant on the server; adding a new shared/public
+          place requires Super Admin specifically. See
           docs/architecture/EPICENTRAX_ADMINISTRATIVE_AUTHORITY_FOUNDATION_ARCHITECTURE.md.
         </div>
       ) : null}
@@ -495,7 +507,7 @@ function NearbySettingsPageInner() {
 
 export default function NearbySettingsPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_nearby">
+    <AdminRouteGuard requiredTenantAuthority>
       <AdminShellAdapter pageTitle="Nearby Settings">
         <NearbySettingsPageInner />
       </AdminShellAdapter>
