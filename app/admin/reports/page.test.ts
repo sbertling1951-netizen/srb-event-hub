@@ -33,3 +33,29 @@ test("Reports preserves its data and task actions", () => {
     assert.ok(source.includes(needle), `Reports must retain ${needle}`);
   }
 });
+
+// Canonical Event Operational Summary Read Contract reconciliation --
+// docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md, "Consumer
+// implications" for Reports.
+
+test("Reports obtains operational summary values through the canonical governed layer, not a page-local recomputation", () => {
+  assert.match(
+    source,
+    /import\s*{[^}]*fetchEventOperationalSummary[^}]*}\s*from\s*"@\/lib\/eventOperationalSummary"/,
+  );
+  assert.ok(source.includes("fetchEventOperationalSummary(activeEventId)"));
+});
+
+test("Unassigned Parking Needed no longer derives placement from attendees.assigned_site", () => {
+  assert.ok(
+    !source.includes("!row.assigned_site"),
+    "Reports must not test attendees.assigned_site for placement/unplacement",
+  );
+  assert.ok(source.includes("canonicallyPlacedAttendeeIds"));
+  assert.match(source, /site\.assigned_attendee_id/);
+});
+
+test("Reports no longer labels a registration-row grouping as a Participant Breakdown", () => {
+  assert.ok(!source.includes("participantBreakdown"));
+  assert.ok(source.includes("registrationTypeBreakdown"));
+});

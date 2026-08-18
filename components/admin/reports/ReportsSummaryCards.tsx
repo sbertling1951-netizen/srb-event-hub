@@ -1,3 +1,5 @@
+import type { CanonicalEventOperationalSummary } from "@/lib/eventOperationalSummary";
+
 type BreakdownRow = {
   label: string;
   count: number;
@@ -12,11 +14,16 @@ type RosterRow = {
 };
 
 type ReportsSummaryCardsProps = {
-  participantBreakdown: BreakdownRow[];
+  registrationTypeBreakdown: BreakdownRow[];
   dataStatusBreakdown: BreakdownRow[];
-  unassignedParkingCount: number;
+  // The canonical Event Operational Summary Read Contract result --
+  // docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md. Card counts
+  // below are copied verbatim from this; only the preview name lists are a
+  // page-local detail view.
+  operationalSummary: CanonicalEventOperationalSummary | null;
+  operationalSummaryError: string | null;
+  arrivedRows: RosterRow[];
   unassignedParkingRows: RosterRow[];
-  notArrivedCount: number;
   notArrivedRows: RosterRow[];
   firstTimerCount: number;
   firstTimerRows: RosterRow[];
@@ -24,12 +31,26 @@ type ReportsSummaryCardsProps = {
   vendorStaffRows: RosterRow[];
 };
 
+function operationalSummaryText(
+  operationalSummary: CanonicalEventOperationalSummary | null,
+  operationalSummaryError: string | null,
+  value: (summary: CanonicalEventOperationalSummary) => number,
+  noun: string,
+) {
+  if (!operationalSummary) {
+    return operationalSummaryError || "Operational summary unavailable.";
+  }
+  const count = value(operationalSummary);
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 export default function ReportsSummaryCards({
-  participantBreakdown,
+  registrationTypeBreakdown,
   dataStatusBreakdown,
-  unassignedParkingCount,
+  operationalSummary,
+  operationalSummaryError,
+  arrivedRows,
   unassignedParkingRows,
-  notArrivedCount,
   notArrivedRows,
   firstTimerCount,
   firstTimerRows,
@@ -46,14 +67,14 @@ export default function ReportsSummaryCards({
     >
       <div className="card" style={{ padding: 18 }}>
         <h2 style={{ marginTop: 0, marginBottom: 10 }}>
-          Participant Breakdown
+          Registration Type Breakdown
         </h2>
 
-        {participantBreakdown.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No participant data found.</div>
+        {registrationTypeBreakdown.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>No registration data found.</div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
-            {participantBreakdown.map((row) => (
+            {registrationTypeBreakdown.map((row) => (
               <div
                 key={row.label}
                 style={{
@@ -103,8 +124,12 @@ export default function ReportsSummaryCards({
           Unassigned Parking Needed
         </h2>
         <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
-          {unassignedParkingRows.length} attendee
-          {unassignedParkingRows.length === 1 ? "" : "s"}
+          {operationalSummaryText(
+            operationalSummary,
+            operationalSummaryError,
+            (summary) => summary.activeNeedsParkingUnplaced,
+            "active registration",
+          )}
         </div>
         {unassignedParkingRows.length === 0 ? (
           <div style={{ opacity: 0.8 }}>
@@ -128,10 +153,43 @@ export default function ReportsSummaryCards({
         )}
       </div>
       <div className="card" style={{ padding: 18 }}>
+        <h2 style={{ marginTop: 0, marginBottom: 10 }}>Arrived</h2>
+        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
+          {operationalSummaryText(
+            operationalSummary,
+            operationalSummaryError,
+            (summary) => summary.activeArrived,
+            "active registration",
+          )}
+        </div>
+        {arrivedRows.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>No attendees are marked arrived.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {arrivedRows.slice(0, 12).map((row, index) => (
+              <div
+                key={`${row.pilot}-${row.email}-${index}`}
+                style={quickListRowStyle}
+              >
+                <strong>{row.pilot || "Unnamed"}</strong>
+                <div style={quickListMetaStyle}>
+                  {row.site ? `Site ${row.site}` : "No site assigned"}
+                  {row.email ? ` • ${row.email}` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="card" style={{ padding: 18 }}>
         <h2 style={{ marginTop: 0, marginBottom: 10 }}>Not Arrived</h2>
         <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
-          {notArrivedRows.length} attendee
-          {notArrivedRows.length === 1 ? "" : "s"}
+          {operationalSummaryText(
+            operationalSummary,
+            operationalSummaryError,
+            (summary) => summary.activeNotArrived,
+            "active registration",
+          )}
         </div>
         {notArrivedRows.length === 0 ? (
           <div style={{ opacity: 0.8 }}>All attendees are marked arrived.</div>

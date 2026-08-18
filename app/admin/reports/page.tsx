@@ -27,6 +27,10 @@ import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import {
+  type CanonicalEventOperationalSummary,
+  fetchEventOperationalSummary,
+} from "@/lib/eventOperationalSummary";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -315,6 +319,11 @@ function AdminReportsPageInner() {
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [activities, setActivities] = useState<ActivityRow[]>([]);
   const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
+  const [operationalSummary, setOperationalSummary] =
+    useState<CanonicalEventOperationalSummary | null>(null);
+  const [operationalSummaryError, setOperationalSummaryError] = useState<
+    string | null
+  >(null);
   const [reportType, setReportType] = useState<ReportType>("all_attendees");
   const [selectedActivity, setSelectedActivity] = useState("");
   const [sortType, setSortType] = useState<SortType>("name_asc");
@@ -341,6 +350,8 @@ function AdminReportsPageInner() {
     setAttendees([]);
     setActivities([]);
     setParkingSites([]);
+    setOperationalSummary(null);
+    setOperationalSummaryError(null);
     setCanExport(false);
   }
 
@@ -387,6 +398,7 @@ function AdminReportsPageInner() {
         { data: attendeeData, error: attendeeError },
         { data: activityData, error: activityError },
         { data: parkingData, error: parkingError },
+        summaryResult,
       ] = await Promise.all([
         supabase
           .from("attendees")
@@ -443,6 +455,8 @@ function AdminReportsPageInner() {
           .select("id,event_id,site_number,display_label,assigned_attendee_id")
           .eq("event_id", activeEventId)
           .order("site_number", { ascending: true }),
+
+        fetchEventOperationalSummary(activeEventId),
       ]);
 
       if (attendeeError) {
@@ -469,6 +483,19 @@ function AdminReportsPageInner() {
       setAttendees((attendeeData || []) as AttendeeRow[]);
       setActivities((activityData || []) as ActivityRow[]);
       setParkingSites((parkingData || []) as ParkingSiteRow[]);
+
+      if (summaryResult.ok) {
+        setOperationalSummary(summaryResult.summary);
+        setOperationalSummaryError(null);
+      } else {
+        setOperationalSummary(null);
+        setOperationalSummaryError(
+          summaryResult.reason === "authorization_denied"
+            ? "You do not have access to the operational summary for this event."
+            : summaryResult.message,
+        );
+      }
+
       setCurrentEvent((prev) =>
         prev?.id === activeEventId
           ? prev
@@ -573,6 +600,19 @@ function AdminReportsPageInner() {
     }
     return map;
   }, [attendees]);
+
+  // Canonical current placement, per parking_sites.assigned_attendee_id
+  // occupancy -- attendees.assigned_site is a non-authoritative
+  // compatibility projection and must never decide placement/unplacement.
+  const canonicallyPlacedAttendeeIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const site of parkingSites) {
+      if (site.assigned_attendee_id) {
+        ids.add(site.assigned_attendee_id);
+      }
+    }
+    return ids;
+  }, [parkingSites]);
 
   const rosterRows = useMemo(() => {
     switch (reportType) {
@@ -724,7 +764,10 @@ function AdminReportsPageInner() {
 
       case "unassigned_parking_needed":
         return attendees
-          .filter((row) => row.needs_parking && !row.assigned_site)
+          .filter(
+            (row) =>
+              row.needs_parking && !canonicallyPlacedAttendeeIds.has(row.id),
+          )
           .filter((row) =>
             attendeeMatchesFilters(
               row,
@@ -767,6 +810,7 @@ function AdminReportsPageInner() {
     attendees,
     parkingSites,
     attendeeById,
+    canonicallyPlacedAttendeeIds,
     participantTypeFilter,
     dataStatusFilter,
     activities,
@@ -882,7 +926,7 @@ function AdminReportsPageInner() {
     }
   }, [reportType]);
 
-  const participantBreakdown = useMemo(() => {
+  const registrationTypeBreakdown = useMemo(() => {
     const counts = new Map<string, number>();
 
     for (const attendee of attendees) {
@@ -915,7 +959,27 @@ function AdminReportsPageInner() {
   const unassignedParkingRows = useMemo(() => {
     return sortRosterRows(
       attendees
-        .filter((row) => row.needs_parking && !row.assigned_site)
+        .filter(
+          (row) =>
+            row.needs_parking && !canonicallyPlacedAttendeeIds.has(row.id),
+        )
+        .filter((row) =>
+          attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
+        )
+        .map(attendeeToRosterRow),
+      "name_asc",
+    );
+  }, [
+    attendees,
+    canonicallyPlacedAttendeeIds,
+    participantTypeFilter,
+    dataStatusFilter,
+  ]);
+
+  const arrivedRows = useMemo(() => {
+    return sortRosterRows(
+      attendees
+        .filter((row) => !!row.has_arrived)
         .filter((row) =>
           attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
         )
@@ -1262,11 +1326,12 @@ function AdminReportsPageInner() {
 
       {showSummary ? (
         <ReportsSummaryCards
-          participantBreakdown={participantBreakdown}
+          registrationTypeBreakdown={registrationTypeBreakdown}
           dataStatusBreakdown={dataStatusBreakdown}
-          unassignedParkingCount={unassignedParkingRows.length}
+          operationalSummary={operationalSummary}
+          operationalSummaryError={operationalSummaryError}
+          arrivedRows={arrivedRows}
           unassignedParkingRows={unassignedParkingRows}
-          notArrivedCount={notArrivedRows.length}
           notArrivedRows={notArrivedRows}
           firstTimerCount={firstTimerRows.length}
           firstTimerRows={firstTimerRows}
