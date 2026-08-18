@@ -69,6 +69,7 @@ type AttendeeRow = {
   has_arrived: boolean | null;
   share_with_attendees: boolean | null;
   is_active: boolean;
+  registration_status: string | null;
   inactive_reason: string | null;
   participant_type: string | null;
   source_type: string | null;
@@ -171,6 +172,14 @@ function cityState(row: AttendeeRow) {
   return [row.city, row.state].filter(Boolean).join(", ");
 }
 
+// Canonical Active Registration --
+// docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md, Canonical
+// Event Operational Summary Read Contract: registration_status != 'cancelled'
+// AND is_active = true. row.is_active alone is not equivalent.
+function isActiveRegistration(row: AttendeeRow) {
+  return row.registration_status !== "cancelled" && row.is_active;
+}
+
 function participantTypeLabel(value?: string | null) {
   if (!value) {
     return "attendee";
@@ -241,7 +250,7 @@ function attendeeToRosterRow(row: AttendeeRow): RosterRow {
     email: row.email || "",
     cityState: cityState(row),
     arrived: row.has_arrived ? "YES" : "NO",
-    active: row.is_active ? "YES" : "NO",
+    active: isActiveRegistration(row) ? "YES" : "NO",
     firstTimer: row.is_first_timer ? "YES" : "NO",
     volunteer: row.wants_to_volunteer ? "YES" : "NO",
     source: row.source_type || "imported",
@@ -428,6 +437,7 @@ function AdminReportsPageInner() {
             has_arrived,
             share_with_attendees,
             is_active,
+            registration_status,
             inactive_reason,
             participant_type,
             source_type,
@@ -639,7 +649,7 @@ function AdminReportsPageInner() {
 
       case "arrived":
         return attendees
-          .filter((row) => !!row.has_arrived)
+          .filter((row) => isActiveRegistration(row) && !!row.has_arrived)
           .filter((row) =>
             attendeeMatchesFilters(
               row,
@@ -651,7 +661,7 @@ function AdminReportsPageInner() {
 
       case "not_arrived":
         return attendees
-          .filter((row) => !row.has_arrived)
+          .filter((row) => isActiveRegistration(row) && !row.has_arrived)
           .filter((row) =>
             attendeeMatchesFilters(
               row,
@@ -742,7 +752,11 @@ function AdminReportsPageInner() {
               email: assigned?.email || "",
               cityState: assigned ? cityState(assigned) : "",
               arrived: assigned?.has_arrived ? "YES" : assigned ? "NO" : "",
-              active: assigned?.is_active ? "YES" : assigned ? "NO" : "",
+              active: assigned
+                ? isActiveRegistration(assigned)
+                  ? "YES"
+                  : "NO"
+                : "",
               firstTimer: assigned?.is_first_timer
                 ? "YES"
                 : assigned
@@ -766,7 +780,9 @@ function AdminReportsPageInner() {
         return attendees
           .filter(
             (row) =>
-              row.needs_parking && !canonicallyPlacedAttendeeIds.has(row.id),
+              isActiveRegistration(row) &&
+              row.needs_parking &&
+              !canonicallyPlacedAttendeeIds.has(row.id),
           )
           .filter((row) =>
             attendeeMatchesFilters(
@@ -961,7 +977,9 @@ function AdminReportsPageInner() {
       attendees
         .filter(
           (row) =>
-            row.needs_parking && !canonicallyPlacedAttendeeIds.has(row.id),
+            isActiveRegistration(row) &&
+            row.needs_parking &&
+            !canonicallyPlacedAttendeeIds.has(row.id),
         )
         .filter((row) =>
           attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
@@ -979,7 +997,7 @@ function AdminReportsPageInner() {
   const arrivedRows = useMemo(() => {
     return sortRosterRows(
       attendees
-        .filter((row) => !!row.has_arrived)
+        .filter((row) => isActiveRegistration(row) && !!row.has_arrived)
         .filter((row) =>
           attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
         )
@@ -991,7 +1009,7 @@ function AdminReportsPageInner() {
   const notArrivedRows = useMemo(() => {
     return sortRosterRows(
       attendees
-        .filter((row) => !row.has_arrived)
+        .filter((row) => isActiveRegistration(row) && !row.has_arrived)
         .filter((row) =>
           attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
         )

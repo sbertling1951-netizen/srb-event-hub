@@ -49,7 +49,7 @@ export default function ReportsPanel({
           {reportType === "activity_summary"
             ? `${activitySummaryRows.length} activity rows`
             : `${sortedRosterRows.length} roster rows`}{" "}
-          • Participant type:{" "}
+          • Registration type:{" "}
           {participantTypeFilter === "all"
             ? "All Types"
             : participantTypeFilter}{" "}

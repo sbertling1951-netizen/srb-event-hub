@@ -59,3 +59,96 @@ test("Reports no longer labels a registration-row grouping as a Participant Brea
   assert.ok(!source.includes("participantBreakdown"));
   assert.ok(source.includes("registrationTypeBreakdown"));
 });
+
+// Reports detail/preview reconciliation with canonical Active headline
+// scope -- docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md,
+// Canonical Event Operational Summary Read Contract: Active means
+// registration_status != 'cancelled' AND is_active = true.
+
+test("Reports loads registration_status so Active scope can be enforced", () => {
+  assert.match(source, /registration_status: string \| null;/);
+  assert.match(source, /^\s{12}registration_status,\s*$/m);
+});
+
+test("Reports defines one canonical Active Registration predicate, not is_active alone", () => {
+  assert.match(
+    source,
+    /function isActiveRegistration\(row: AttendeeRow\) {\s*return row\.registration_status !== "cancelled" && row\.is_active;\s*}/,
+  );
+});
+
+test("Arrived detail rows require canonical Active Registration scope plus has_arrived", () => {
+  const arrivedFilters = [
+    ...source.matchAll(
+      /\.filter\(\(row\) => isActiveRegistration\(row\) && !!row\.has_arrived\)/g,
+    ),
+  ];
+  // Once for the Arrived report type's roster rows, once for the
+  // Summary/Print-Pack-feeding arrivedRows preview list.
+  assert.equal(arrivedFilters.length, 2);
+  assert.ok(!source.includes('.filter((row) => !!row.has_arrived)'));
+});
+
+test("Not Arrived detail rows require canonical Active Registration scope plus !has_arrived", () => {
+  const notArrivedFilters = [
+    ...source.matchAll(
+      /\.filter\(\(row\) => isActiveRegistration\(row\) && !row\.has_arrived\)/g,
+    ),
+  ];
+  assert.equal(notArrivedFilters.length, 2);
+  assert.ok(!source.includes('.filter((row) => !row.has_arrived)'));
+});
+
+test("Needs-Parking/Unassigned detail rows require canonical Active Registration scope", () => {
+  const needsParkingFilters = [
+    ...source.matchAll(
+      /isActiveRegistration\(row\) &&\s*row\.needs_parking &&\s*!canonicallyPlacedAttendeeIds\.has\(row\.id\)/g,
+    ),
+  ];
+  // Once for the report type's roster rows, once for the Summary/Print-Pack
+  // unassignedParkingRows preview list.
+  assert.equal(needsParkingFilters.length, 2);
+  assert.ok(
+    !source.includes(
+      "row.needs_parking && !canonicallyPlacedAttendeeIds.has(row.id)",
+    ),
+    "needs_parking filtering must not run without the Active Registration guard",
+  );
+});
+
+test("cancelled and inactive registrations cannot appear in Active operational detail sets, because isActiveRegistration excludes both", () => {
+  // registration_status !== 'cancelled' excludes cancelled rows;
+  // && row.is_active excludes inactive rows. Both conjuncts are required
+  // in the same predicate, so an Active-scoped filter using it can never
+  // admit either.
+  assert.match(
+    source,
+    /return row\.registration_status !== "cancelled" && row\.is_active;/,
+  );
+});
+
+test("the generic table's Active column reflects the complete canonical predicate, not is_active alone", () => {
+  assert.match(source, /active: isActiveRegistration\(row\) \? "YES" : "NO"/);
+  assert.ok(!source.includes('active: row.is_active ? "YES" : "NO"'));
+  assert.match(
+    source,
+    /active: assigned\s*\?\s*isActiveRegistration\(assigned\)\s*\?\s*"YES"\s*:\s*"NO"\s*:\s*""/,
+  );
+});
+
+test("unplaced classification continues to derive solely from parking_sites.assigned_attendee_id", () => {
+  assert.match(source, /site\.assigned_attendee_id/);
+  assert.ok(
+    !source.includes("!row.assigned_site"),
+    "attendees.assigned_site must never decide unplaced classification",
+  );
+  assert.ok(
+    !source.includes("!assigned.assigned_site"),
+    "attendees.assigned_site must never decide unplaced classification",
+  );
+});
+
+test("Reports still passes the canonical operational summary through to the Summary cards unmodified", () => {
+  assert.match(source, /operationalSummary=\{operationalSummary\}/);
+  assert.match(source, /setOperationalSummary\(summaryResult\.summary\)/);
+});

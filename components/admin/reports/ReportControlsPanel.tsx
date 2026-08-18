@@ -149,7 +149,7 @@ export default function ReportControlsPanel(props: {
       </div>
 
       <div>
-        <label style={labelStyle}>Participant Type</label>
+        <label style={labelStyle}>Registration Type</label>
         <select
           value={participantTypeFilter}
           onChange={(e) =>
