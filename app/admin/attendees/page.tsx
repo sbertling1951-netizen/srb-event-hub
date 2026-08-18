@@ -60,6 +60,10 @@ import {
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { type CanonicalAttendeePlacementResult,fetchCanonicalAttendeePlacement } from "@/lib/canonicalAttendeePlacement";
+import {
+  type CanonicalEventOperationalSummary,
+  fetchEventOperationalSummary,
+} from "@/lib/eventOperationalSummary";
 import { isActiveEventStatus } from "@/lib/eventStatus";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -76,7 +80,7 @@ type EventContext = {
 
 type SummaryCardItem = {
   label: string;
-  value: number;
+  value: number | string;
 };
 
 type AttendeeCommandCenterPrefs = {
@@ -172,7 +176,15 @@ function SummaryCards({ items }: { items: SummaryCardItem[] }) {
           }}
         >
           <strong>{item.label}</strong>
-          <div style={summaryValueStyle}>{item.value}</div>
+          <div
+            style={
+              typeof item.value === "number"
+                ? summaryValueStyle
+                : summaryValueErrorStyle
+            }
+          >
+            {item.value}
+          </div>
         </div>
       ))}
     </div>
@@ -1946,6 +1958,15 @@ function AdminAttendeesPageInner() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
+  // Canonical Event Operational Summary Read Contract --
+  // docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md. Roster
+  // Summary's Total Registrations/Active/Arrived cards are copied verbatim
+  // from this; never independently recomputed from `attendees`.
+  const [operationalSummary, setOperationalSummary] =
+    useState<CanonicalEventOperationalSummary | null>(null);
+  const [operationalSummaryError, setOperationalSummaryError] = useState<
+    string | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading attendee records...");
@@ -2079,6 +2100,7 @@ function AdminAttendeesPageInner() {
       const [
         { data: attendeeData, error: attendeeError },
         { data: rulesData, error: rulesError },
+        summaryResult,
       ] = await Promise.all([
         supabase
           .from("attendees")
@@ -2134,6 +2156,7 @@ created_at
           .select("*")
           .order("priority", { ascending: true })
           .order("created_at", { ascending: true }),
+        fetchEventOperationalSummary(eventId),
       ]);
 
       if (attendeeError) {
@@ -2154,6 +2177,20 @@ created_at
 
       setAttendees(nextAttendees);
       setRules(nextRules);
+
+      if (summaryResult.ok) {
+        setOperationalSummary(summaryResult.summary);
+        setOperationalSummaryError(null);
+      } else {
+        // Fail visibly: never substitute a locally recomputed Event
+        // aggregate when the canonical summary call fails or is denied.
+        setOperationalSummary(null);
+        setOperationalSummaryError(
+          summaryResult.reason === "authorization_denied"
+            ? "You do not have access to the operational summary for this event."
+            : summaryResult.message,
+        );
+      }
 
       // Stage D requirements 5/6: reconcile the open workspace, if any,
       // against this freshly-loaded roster. A different attendee changing
@@ -2208,6 +2245,8 @@ created_at
         if (!options.silent) {
           setAttendees([]);
           setRules([]);
+          setOperationalSummary(null);
+          setOperationalSummaryError(null);
         }
       }
       return undefined;
@@ -2235,6 +2274,8 @@ created_at
       setCurrentEvent(null);
       setAttendees([]);
       setRules([]);
+      setOperationalSummary(null);
+      setOperationalSummaryError(null);
       setError(eventsError.message || "Could not load events.");
       setStatus("Load failed.");
       setLoading(false);
@@ -2290,6 +2331,8 @@ created_at
       setCurrentEvent(null);
       setAttendees([]);
       setRules([]);
+      setOperationalSummary(null);
+      setOperationalSummaryError(null);
       setStatus(
         invalidStoredContext
           ? "Your previously selected event is no longer available. Choose one above."
@@ -2327,6 +2370,8 @@ created_at
       setCurrentEvent(null);
       setAttendees([]);
       setRules([]);
+      setOperationalSummary(null);
+      setOperationalSummaryError(null);
       setError("You do not have access to this event.");
       setStatus("Access denied.");
       setLoading(false);
@@ -2361,6 +2406,8 @@ created_at
       setCurrentEvent(null);
       setAttendees([]);
       setRules([]);
+      setOperationalSummary(null);
+      setOperationalSummaryError(null);
       setError("You do not have permission to use Attendee Management.");
       setStatus("Access denied.");
       setLoading(false);
@@ -2537,24 +2584,37 @@ created_at
   // in three places. Primary tiles stay always visible; the rest live
   // behind progressive disclosure so the browse surface stays operational,
   // not a dashboard.
+  //
+  // Total Registrations/Active/Arrived are Event-wide canonical facts, per
+  // docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md's Canonical
+  // Event Operational Summary Read Contract: copied verbatim from
+  // operationalSummary, never recomputed from the local `attendees` roster.
+  // A failed/denied canonical read shows visibly (operationalSummaryError)
+  // instead of silently falling back to a local count. Flagged remains
+  // Attendees-owned, sourced from computeReviewItems above.
   const primarySummaryItems = useMemo<SummaryCardItem[]>(
     () => [
-      { label: "Total Registrations", value: attendees.length },
+      {
+        label: "Total Registrations",
+        value: operationalSummary
+          ? operationalSummary.totalRegistrations
+          : operationalSummaryError || "Unavailable",
+      },
       {
         label: "Active",
-        value: attendees.filter(
-          (row) => row.registration_status !== "cancelled" && row.is_active,
-        ).length,
+        value: operationalSummary
+          ? operationalSummary.activeRegistrations
+          : operationalSummaryError || "Unavailable",
       },
       { label: "Flagged", value: reviewItems.length },
       {
         label: "Arrived",
-        value: attendees.filter(
-          (row) => row.registration_status !== "cancelled" && !!row.has_arrived,
-        ).length,
+        value: operationalSummary
+          ? operationalSummary.activeArrived
+          : operationalSummaryError || "Unavailable",
       },
     ],
-    [attendees, reviewItems.length],
+    [operationalSummary, operationalSummaryError, reviewItems.length],
   );
 
   const secondarySummaryItems = useMemo<SummaryCardItem[]>(
@@ -3926,6 +3986,13 @@ const summaryValueStyle: CSSProperties = {
   fontSize: 26,
   fontWeight: 800,
   marginTop: 8,
+};
+
+const summaryValueErrorStyle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 600,
+  marginTop: 8,
+  color: "#b91c1c",
 };
 
 const secondaryBadgeStyle: CSSProperties = {

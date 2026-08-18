@@ -961,3 +961,112 @@ test("the post-save review-queue advance genuinely opens the next flagged record
   // closing the editor again in the same save must not reappear.
   assert.ok(!/await selectAttendee\(nextReviewItem\.attendee[\s\S]*?closeAttendeeEditor\(\);\s*\n\s*\/\/ Then refresh/.test(source));
 });
+
+// Roster Summary reconciliation with the canonical Event Operational
+// Summary Read Contract --
+// docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md, Canonical
+// Event Operational Summary Read Contract. Total Registrations/Active/
+// Arrived must come from the shared lib/eventOperationalSummary.ts
+// wrapper, never a page-local recomputation over `attendees`.
+
+test("Attendees consumes the existing canonical operational-summary wrapper, not a page-local RPC or a second helper", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /import \{\s*type CanonicalEventOperationalSummary,\s*fetchEventOperationalSummary,\s*\} from "@\/lib\/eventOperationalSummary";/,
+  );
+  assert.equal((source.match(/fetchEventOperationalSummary\(/g) || []).length, 1);
+  assert.equal(/\.rpc\("get_event_operational_summary"/.test(source), false);
+});
+
+test("Total Registrations, Active, and Arrived are copied verbatim from the canonical summary", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const itemsSource = source.slice(
+    source.indexOf("const primarySummaryItems ="),
+    source.indexOf("const secondarySummaryItems ="),
+  );
+
+  assert.match(itemsSource, /label: "Total Registrations"/);
+  assert.match(itemsSource, /operationalSummary\.totalRegistrations/);
+  assert.match(itemsSource, /label: "Active"/);
+  assert.match(itemsSource, /operationalSummary\.activeRegistrations/);
+  assert.match(itemsSource, /label: "Arrived"/);
+  assert.match(itemsSource, /operationalSummary\.activeArrived/);
+
+  // The prior defect: Arrived only excluded cancelled registrations, so an
+  // inactive-but-arrived registration still inflated it. Neither this card
+  // nor its value source may filter `attendees` directly anymore.
+  assert.equal(
+    /value:\s*attendees\.filter\(\s*\(row\)\s*=>\s*row\.registration_status/.test(
+      itemsSource,
+    ),
+    false,
+  );
+});
+
+test("Flagged remains Attendees-owned, sourced from reviewItems, not the canonical summary", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const itemsSource = source.slice(
+    source.indexOf("const primarySummaryItems ="),
+    source.indexOf("const secondarySummaryItems ="),
+  );
+
+  assert.match(itemsSource, /label: "Flagged", value: reviewItems\.length/);
+});
+
+test("canonical-summary failure clears the summary and surfaces an error, never a locally recomputed Event aggregate", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const okIndex = source.indexOf("if (summaryResult.ok)");
+  const failBranch = source.slice(
+    source.indexOf("} else {", okIndex),
+    source.indexOf("if (editorOpenRef.current", okIndex),
+  );
+  assert.match(failBranch, /setOperationalSummary\(null\)/);
+  assert.match(failBranch, /setOperationalSummaryError\(/);
+});
+
+test("a failed/denied summary renders visibly as error text rather than silently as a plain count", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  const itemsSource = source.slice(
+    source.indexOf("const primarySummaryItems ="),
+    source.indexOf("const secondarySummaryItems ="),
+  );
+
+  assert.match(
+    itemsSource,
+    /operationalSummaryError \|\| "Unavailable"/,
+  );
+});
+
+test("Attendees-owned validation/flag/detail metrics (correctedCount, fullyValidCount, vendors, first timers, volunteers) remain locally sourced from `attendees`, unchanged", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /const correctedCount = useMemo\(\(\) => \{\s*return attendees\.filter\(/,
+  );
+  assert.match(
+    source,
+    /const fullyValidCount = useMemo\(\s*\(\) => attendees\.length - reviewItems\.length,/,
+  );
+
+  const secondarySource = source.slice(
+    source.indexOf("const secondarySummaryItems ="),
+    source.indexOf("async function saveMembershipNumber"),
+  );
+  assert.match(secondarySource, /label: "Vendors"/);
+  assert.match(secondarySource, /label: "First Timers"/);
+  assert.match(secondarySource, /label: "Volunteers"/);
+  assert.match(secondarySource, /attendees\.filter\(/);
+});
