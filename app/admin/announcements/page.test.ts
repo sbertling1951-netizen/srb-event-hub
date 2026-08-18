@@ -62,3 +62,41 @@ test("shell wrapper and AdminRouteGuard remain in place", () => {
   assert.match(PAGE_SOURCE, /AdminRouteGuard/);
   assert.match(PAGE_SOURCE, /AdminShellAdapter/);
 });
+
+// -- G-03A: Announcements route-authority migration ----------------------
+//
+// Announcements has no view-only mode -- the page's one job is
+// Event-scoped announcement CRUD (create/edit/publish/pin/delete), all of
+// which already route through governed RPCs that enforce
+// event.announcements.manage server-side
+// (20260814000000_create_announcements_governed_operations.sql) -- so the
+// whole route requires event.announcements.manage, matching the pattern
+// already established for Print Settings.
+
+test("route requires event.announcements.manage, not the legacy can_manage_announcements permission", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<AdminRouteGuard requiredTask="event\.announcements\.manage">/,
+  );
+  assert.equal(/requiredPermission/.test(PAGE_SOURCE), false);
+  assert.equal(/can_manage_announcements/.test(PAGE_SOURCE), false);
+  assert.equal(/hasPermission/.test(PAGE_SOURCE), false);
+});
+
+test("no direct has_event_task_authority RPC call is introduced -- authority is owned entirely by AdminRouteGuard", () => {
+  assert.equal(/has_event_task_authority/.test(PAGE_SOURCE), false);
+  assert.equal(/checkAdminEventTaskAuthority/.test(PAGE_SOURCE), false);
+});
+
+test("announcement CRUD and publish/pin toggle behavior is unchanged", () => {
+  for (const needle of [
+    'from("announcements")',
+    "create_event_announcement",
+    "update_event_announcement",
+    "delete_event_announcement",
+    "is_pinned",
+    "is_published",
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(needle), `Announcements must retain ${needle}`);
+  }
+});

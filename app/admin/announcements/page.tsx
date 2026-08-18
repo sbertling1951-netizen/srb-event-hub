@@ -127,7 +127,7 @@ const primaryButtonStyle = {
 
 export default function AdminAnnouncementsPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_announcements">
+    <AdminRouteGuard requiredTask="event.announcements.manage">
       <AdminShellAdapter pageTitle="Announcements">
         <AdminAnnouncementsPageInner />
       </AdminShellAdapter>
