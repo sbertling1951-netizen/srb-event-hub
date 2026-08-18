@@ -1200,14 +1200,19 @@ function AdminVendorsPageInner() {
 
 export default function AdminVendorsPage() {
   return (
-    // requiredPermission is a UI-alignment convenience only -- it is the
-    // existing, coarser can_manage_vendors permission key, not the
-    // canonical per-Event event.vendors.manage/view task authority (no
-    // client-side adapter for that exists yet). The RPCs' own
-    // has_event_task_authority checks remain the authoritative boundary
-    // regardless of what this guard shows; a denied action here surfaces
-    // as a plain RPC error rather than a hidden control.
-    <AdminRouteGuard requiredPermission="can_manage_vendors">
+    // Page-content access is governed by the canonical Event Task
+    // Authority resolver (event.vendors.manage), not the legacy
+    // can_manage_vendors permission. Event-admission lifecycle RPCs
+    // (register/admit/reject/revoke, update_event_vendor_metadata) already
+    // independently enforce event.vendors.manage/view server-side
+    // (20260814130000, 20260814150000); Vendor Catalog identity CRUD
+    // (public.vendors) is a separate, already-independently-governed
+    // authority question (has_vendor_catalog_admin_authority, RLS on
+    // vendors_insert_policy/vendors_update_policy/vendors_select_policy,
+    // 20260814080000) unaffected by this route guard either way. A denied
+    // action here still surfaces as a plain RPC/RLS error rather than a
+    // hidden control.
+    <AdminRouteGuard requiredTask="event.vendors.manage">
       <AdminShellAdapter pageTitle="Vendor Admin">
         <AdminVendorsPageInner />
       </AdminShellAdapter>
