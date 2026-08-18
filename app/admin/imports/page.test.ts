@@ -70,3 +70,49 @@ test("mapRow, parsedReviewIssues, and savedAttendeeIssues all pull from the same
   const matches = source.match(/from\("validation_rules"\)/g) || [];
   assert.equal(matches.length, 1);
 });
+
+// -- G-03C: Imports route-authority migration -----------------------------
+//
+// Attendee Imports is fully Event-scoped -- import parsing/preview is
+// client-local, and every write (attendees, event_import_rows,
+// attendee_activities) targets the selected admin working Event.
+// event_import_rows' own INSERT/UPDATE/DELETE RLS policies have required
+// event.imports.manage(event_id) since
+// 20260811250000_cutover_imports_task_authority.sql, so the whole route
+// requires event.imports.manage, matching the pattern already established
+// for Locations and Announcements.
+
+test("route requires event.imports.manage, not the legacy can_manage_imports permission", () => {
+  const source = readSource();
+  assert.match(
+    source,
+    /<AdminRouteGuard requiredTask="event\.imports\.manage">/,
+  );
+  assert.equal(/requiredPermission/.test(source), false);
+  assert.equal(/can_manage_imports/.test(source), false);
+});
+
+test("no direct has_event_task_authority RPC call is introduced -- authority is owned entirely by AdminRouteGuard", () => {
+  const source = readSource();
+  assert.equal(/has_event_task_authority\(/.test(source), false);
+  assert.equal(/checkAdminEventTaskAuthority/.test(source), false);
+});
+
+test("Event-membership (canAccessEvent) remains as a page-local check, unrelated to the migrated permission", () => {
+  const source = readSource();
+  assert.match(source, /canAccessEvent\(admin, event\.id\)/);
+  assert.match(source, /canAccessEvent\(admin, stored\.id\)/);
+});
+
+test("the embedded Vendor Library section's distinct can_manage_vendors authority is untouched -- it is a separate capability, not a duplicate of the migrated Imports permission", () => {
+  const source = readSource();
+  const matches = [...source.matchAll(/hasPermission\(admin, "can_manage_vendors"\)/g)];
+  assert.equal(matches.length, 2, "expected both existing can_manage_vendors UI-alignment checks to remain exactly as-is");
+});
+
+test("Event context handling is unchanged: reads getCurrentAdminEvent and re-syncs on Admin workspace change", () => {
+  const source = readSource();
+  assert.match(source, /const stored = getCurrentAdminEvent\(\);/);
+  assert.match(source, /subscribeToAdminWorkspace\(/);
+  assert.equal(/setCurrentAdminEvent/.test(source), false);
+});

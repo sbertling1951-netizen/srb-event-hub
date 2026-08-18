@@ -655,7 +655,7 @@ function mapRow(
 
 export default function AdminAttendeeImportsPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_imports">
+    <AdminRouteGuard requiredTask="event.imports.manage">
       <AdminShellAdapter pageTitle="Attendee Imports">
         <AdminAttendeeImportsPageInner />
       </AdminShellAdapter>
