@@ -166,3 +166,31 @@ test("staff canonical placement still requires the ordinary record_site_placemen
   );
   assert.equal(/record_site_placement/.test(nearbySlice), false);
 });
+
+// --- Route Authority (Admin Check-In / Parking ownership cutover --
+// canonical Event task authority adoption). Parking moves from a bare,
+// authentication-only AdminRouteGuard to event.parking.manage -- the same
+// authority record_site_placement and materialize_event_parking_site
+// already require server-side for every mutation this page performs
+// (20260817150000_restrict_site_placement_to_parking_authority.sql), and
+// the same authority get_member_site_reports_for_event already requires
+// for its read (20260817170000_add_member_site_report_read_surfaces.sql).
+
+test("the route requires the canonical event.parking.manage Event task, not a bare auth-only guard", () => {
+  assert.match(SOURCE, /<AdminRouteGuard requiredTask="event\.parking\.manage">/);
+});
+
+test("no legacy parking permission key is introduced alongside the canonical task", () => {
+  assert.equal(/can_manage_parking|can_assign_parking/.test(SOURCE), false);
+  assert.equal(/requiredPermission/.test(SOURCE), false);
+});
+
+test("no direct has_event_task_authority call is introduced -- AdminRouteGuard is the only authority gate", () => {
+  assert.equal(/\.rpc\(\s*"has_event_task_authority"/.test(SOURCE), false);
+  assert.equal(/checkAdminEventTaskAuthority/.test(SOURCE), false);
+});
+
+test("Check-In's Arrival task is not granted or referenced by the Parking route", () => {
+  assert.equal(/event\.checkin\.manage/.test(SOURCE), false);
+  assert.equal(/can_mark_arrived/.test(SOURCE), false);
+});

@@ -1803,7 +1803,7 @@ function ParkingAdminPageInner() {
 
 export default function ParkingAdminPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredTask="event.parking.manage">
       <AdminShellAdapter pageTitle="Parking Admin" contentMode="full-bleed">
         <ParkingAdminPageInner />
       </AdminShellAdapter>
