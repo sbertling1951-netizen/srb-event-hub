@@ -43,7 +43,6 @@ type AttendeeRow = {
   membership_number: string | null;
   city: string | null;
   state: string | null;
-  assigned_site: string | null;
   has_arrived: boolean | null;
   is_first_timer: boolean | null;
   coach_manufacturer: string | null;
@@ -52,6 +51,23 @@ type AttendeeRow = {
   is_active: boolean;
   registration_status: string | null;
 };
+
+// Canonical current placement -- parking_sites.assigned_attendee_id, per
+// docs/architecture/EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md
+// and EPICENTRAX_CANONICAL_PARKING_READ_MIGRATION_PLAN.md §6.2. Mirrors
+// the same bulk canonical read app/admin/reports/page.tsx already uses;
+// attendees.assigned_site is never read for Print's Site display.
+type ParkingSiteRow = {
+  id: string;
+  event_id: string;
+  site_number: string | null;
+  display_label: string | null;
+  assigned_attendee_id: string | null;
+};
+
+function siteLabel(site: ParkingSiteRow) {
+  return site.display_label || site.site_number || "";
+}
 
 type PrintMode = "name_tags" | "coach_plates";
 type PrintFilter = "all" | "arrived" | "first_timers";
@@ -103,7 +119,6 @@ function createEmptyManualAttendee(kind: ManualPrintEntryKind): AttendeeRow {
     membership_number: "",
     city: "",
     state: "",
-    assigned_site: null,
     has_arrived: null,
     is_first_timer: false,
     coach_manufacturer: null,
@@ -372,6 +387,7 @@ function AdminPrintPageInner() {
   const [canSelectPrintEvent, setCanSelectPrintEvent] = useState(false);
   const [settings, setSettings] = useState<PrintSettingsRow | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
+  const [parkingSites, setParkingSites] = useState<ParkingSiteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const { admin } = useAdmin();
   const [error, setError] = useState<string | null>(null);
@@ -458,6 +474,7 @@ function AdminPrintPageInner() {
           setEvent(null);
           setSettings(null);
           setAttendees([]);
+          setParkingSites([]);
           setManualAttendees([]);
           setSelectedIds([]);
           setStatus("No events available for printing.");
@@ -474,6 +491,7 @@ function AdminPrintPageInner() {
         setEvent(null);
         setSettings(null);
         setAttendees([]);
+        setParkingSites([]);
         setManualAttendees([]);
         setSelectedIds([]);
         setStatus("No admin working event selected.");
@@ -516,6 +534,7 @@ function AdminPrintPageInner() {
         { data: eventData, error: eventError },
         { data: settingsData, error: settingsError },
         { data: attendeeData, error: attendeeError },
+        { data: parkingData, error: parkingError },
       ] = await Promise.all([
         supabase
           .from("events")
@@ -544,7 +563,6 @@ function AdminPrintPageInner() {
             membership_number,
             city,
             state,
-            assigned_site,
             has_arrived,
             is_first_timer,
             coach_manufacturer,
@@ -557,6 +575,10 @@ function AdminPrintPageInner() {
           .eq("event_id", eventId)
           .order("pilot_last", { ascending: true })
           .order("pilot_first", { ascending: true }),
+        supabase
+          .from("parking_sites")
+          .select("id,event_id,site_number,display_label,assigned_attendee_id")
+          .eq("event_id", eventId),
       ]);
 
       if (eventError) {
@@ -568,9 +590,13 @@ function AdminPrintPageInner() {
       if (attendeeError) {
         throw attendeeError;
       }
+      if (parkingError) {
+        throw parkingError;
+      }
 
       const eventRow = eventData as EventRow;
       const attendeeRows = (attendeeData || []) as AttendeeRow[];
+      const parkingRows = (parkingData || []) as ParkingSiteRow[];
       const settingsRow = (settingsData as PrintSettingsRow | null) || {
         event_id: eventId,
         name_tag_bg_url: null,
@@ -580,6 +606,7 @@ function AdminPrintPageInner() {
       setEvent(eventRow);
       setSettings(settingsRow);
       setAttendees(attendeeRows);
+      setParkingSites(parkingRows);
       setManualAttendees([]);
       setSelectedIds(attendeeRows.map((row) => row.id));
       setStatus(`Loaded ${attendeeRows.length} attendees.`);
@@ -591,6 +618,22 @@ function AdminPrintPageInner() {
       setLoading(false);
     }
   }
+
+  // Row-level Site display -- canonical parking_sites occupancy only, per
+  // docs/architecture/EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md
+  // and EPICENTRAX_CANONICAL_PARKING_READ_MIGRATION_PLAN.md §6.2. A manual
+  // print entry's id never appears in parkingSites, so it stays blank/"—"
+  // exactly as before -- manual entries are never treated as a canonical
+  // registration.
+  const canonicalSiteLabelByAttendeeId = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const site of parkingSites) {
+      if (site.assigned_attendee_id) {
+        labels.set(site.assigned_attendee_id, siteLabel(site));
+      }
+    }
+    return labels;
+  }, [parkingSites]);
 
   const filteredAttendees = useMemo(() => {
     // Cancelled registrations are excluded from Print regardless of
@@ -1277,7 +1320,7 @@ top: 0 !important;
                       {copilot ? ` / ${copilot}` : ""}
                     </div>
                     <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-                      Site: {row.assigned_site || "—"}
+                      Site: {canonicalSiteLabelByAttendeeId.get(row.id) || "—"}
                       {row.membership_number
                         ? ` • Member #: ${row.membership_number}`
                         : ""}

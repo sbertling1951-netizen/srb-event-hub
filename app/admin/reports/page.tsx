@@ -65,7 +65,6 @@ type AttendeeRow = {
   coach_manufacturer: string | null;
   coach_model: string | null;
   special_events_raw: string | null;
-  assigned_site: string | null;
   has_arrived: boolean | null;
   share_with_attendees: boolean | null;
   is_active: boolean;
@@ -241,9 +240,12 @@ function normalizeSortValue(value?: string | null) {
   return (value || "").trim().toLowerCase();
 }
 
-function attendeeToRosterRow(row: AttendeeRow): RosterRow {
+function attendeeToRosterRow(
+  row: AttendeeRow,
+  canonicalSiteLabelByAttendeeId: Map<string, string>,
+): RosterRow {
   return {
-    site: row.assigned_site || "",
+    site: canonicalSiteLabelByAttendeeId.get(row.id) || "",
     participantType: participantTypeLabel(row.participant_type),
     pilot: pilotName(row),
     copilot: coPilotName(row),
@@ -433,7 +435,6 @@ function AdminReportsPageInner() {
             coach_manufacturer,
             coach_model,
             special_events_raw,
-            assigned_site,
             has_arrived,
             share_with_attendees,
             is_active,
@@ -624,6 +625,21 @@ function AdminReportsPageInner() {
     return ids;
   }, [parkingSites]);
 
+  // Row-level Site display for every non-Parking-Assignments report --
+  // docs/architecture/EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md,
+  // EPICENTRAX_CANONICAL_PARKING_READ_MIGRATION_PLAN.md §6.2. Same
+  // canonical parking_sites occupancy as canonicallyPlacedAttendeeIds
+  // above; attendees.assigned_site is never read for this label.
+  const canonicalSiteLabelByAttendeeId = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const site of parkingSites) {
+      if (site.assigned_attendee_id) {
+        labels.set(site.assigned_attendee_id, siteLabel(site));
+      }
+    }
+    return labels;
+  }, [parkingSites]);
+
   const rosterRows = useMemo(() => {
     switch (reportType) {
       case "all_attendees":
@@ -635,7 +651,7 @@ function AdminReportsPageInner() {
               dataStatusFilter,
             ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
       case "household_contact_sheet":
         return attendees
           .filter((row) =>
@@ -645,7 +661,7 @@ function AdminReportsPageInner() {
               dataStatusFilter,
             ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
 
       case "arrived":
         return attendees
@@ -657,7 +673,7 @@ function AdminReportsPageInner() {
               dataStatusFilter,
             ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
 
       case "not_arrived":
         return attendees
@@ -669,7 +685,7 @@ function AdminReportsPageInner() {
               dataStatusFilter,
             ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
 
       case "first_timers":
         return attendees
@@ -681,7 +697,7 @@ function AdminReportsPageInner() {
               dataStatusFilter,
             ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
 
       case "volunteers":
         return attendees
@@ -693,7 +709,7 @@ function AdminReportsPageInner() {
               dataStatusFilter,
             ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
 
       case "vendors":
         return attendees
@@ -705,7 +721,7 @@ function AdminReportsPageInner() {
               dataStatusFilter,
             ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
 
       case "staff_hosts_helpers":
         return attendees
@@ -721,7 +737,7 @@ function AdminReportsPageInner() {
               dataStatusFilter,
             ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
 
       case "parking_assignments":
         return parkingSites
@@ -791,7 +807,7 @@ function AdminReportsPageInner() {
               dataStatusFilter,
             ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
 
       // --- Inserted case for activity_roster ---
       case "activity_roster":
@@ -815,7 +831,7 @@ function AdminReportsPageInner() {
                 dataStatusFilter,
               ),
           )
-          .map(attendeeToRosterRow);
+          .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId));
       // --- End inserted case ---
 
       default:
@@ -827,6 +843,7 @@ function AdminReportsPageInner() {
     parkingSites,
     attendeeById,
     canonicallyPlacedAttendeeIds,
+    canonicalSiteLabelByAttendeeId,
     participantTypeFilter,
     dataStatusFilter,
     activities,
@@ -984,12 +1001,13 @@ function AdminReportsPageInner() {
         .filter((row) =>
           attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
         )
-        .map(attendeeToRosterRow),
+        .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId)),
       "name_asc",
     );
   }, [
     attendees,
     canonicallyPlacedAttendeeIds,
+    canonicalSiteLabelByAttendeeId,
     participantTypeFilter,
     dataStatusFilter,
   ]);
@@ -1001,10 +1019,15 @@ function AdminReportsPageInner() {
         .filter((row) =>
           attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
         )
-        .map(attendeeToRosterRow),
+        .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId)),
       "name_asc",
     );
-  }, [attendees, participantTypeFilter, dataStatusFilter]);
+  }, [
+    attendees,
+    canonicalSiteLabelByAttendeeId,
+    participantTypeFilter,
+    dataStatusFilter,
+  ]);
 
   const notArrivedRows = useMemo(() => {
     return sortRosterRows(
@@ -1013,10 +1036,15 @@ function AdminReportsPageInner() {
         .filter((row) =>
           attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
         )
-        .map(attendeeToRosterRow),
+        .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId)),
       "name_asc",
     );
-  }, [attendees, participantTypeFilter, dataStatusFilter]);
+  }, [
+    attendees,
+    canonicalSiteLabelByAttendeeId,
+    participantTypeFilter,
+    dataStatusFilter,
+  ]);
 
   const firstTimerRows = useMemo(() => {
     return sortRosterRows(
@@ -1025,10 +1053,15 @@ function AdminReportsPageInner() {
         .filter((row) =>
           attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
         )
-        .map(attendeeToRosterRow),
+        .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId)),
       "name_asc",
     );
-  }, [attendees, participantTypeFilter, dataStatusFilter]);
+  }, [
+    attendees,
+    canonicalSiteLabelByAttendeeId,
+    participantTypeFilter,
+    dataStatusFilter,
+  ]);
 
   const vendorStaffRows = useMemo(() => {
     return sortRosterRows(
@@ -1041,10 +1074,15 @@ function AdminReportsPageInner() {
         .filter((row) =>
           attendeeMatchesFilters(row, participantTypeFilter, dataStatusFilter),
         )
-        .map(attendeeToRosterRow),
+        .map((row) => attendeeToRosterRow(row, canonicalSiteLabelByAttendeeId)),
       "name_asc",
     );
-  }, [attendees, participantTypeFilter, dataStatusFilter]);
+  }, [
+    attendees,
+    canonicalSiteLabelByAttendeeId,
+    participantTypeFilter,
+    dataStatusFilter,
+  ]);
 
   function handleExportCsv() {
     if (!canExport) {

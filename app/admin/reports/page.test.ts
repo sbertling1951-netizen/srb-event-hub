@@ -152,3 +152,57 @@ test("Reports still passes the canonical operational summary through to the Summ
   assert.match(source, /operationalSummary=\{operationalSummary\}/);
   assert.match(source, /setOperationalSummary\(summaryResult\.summary\)/);
 });
+
+// Row-level Site display reconciliation --
+// docs/architecture/EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md,
+// EPICENTRAX_CANONICAL_PARKING_READ_MIGRATION_PLAN.md §6.2: every generic
+// Site column, sort, group, CSV/XLSX row, and print-pack row uses the same
+// canonical display_label result, never attendees.assigned_site.
+
+test("Reports no longer selects attendees.assigned_site or reads it off an attendee row", () => {
+  assert.ok(
+    !source.includes("assigned_site: string | null;"),
+    "AttendeeRow must not declare assigned_site",
+  );
+  assert.ok(
+    !/^\s*assigned_site,\s*$/m.test(source),
+    "the attendees select list must not include assigned_site",
+  );
+  assert.ok(
+    !source.includes("row.assigned_site"),
+    "no row-level read of attendees.assigned_site may remain",
+  );
+  assert.ok(
+    !source.includes("assigned.assigned_site"),
+    "no row-level read of attendees.assigned_site may remain",
+  );
+});
+
+test("attendeeToRosterRow derives its Site value from canonical parking_sites occupancy, not attendees.assigned_site", () => {
+  assert.match(
+    source,
+    /function attendeeToRosterRow\(\s*row: AttendeeRow,\s*canonicalSiteLabelByAttendeeId: Map<string, string>,\s*\): RosterRow \{\s*return \{\s*site: canonicalSiteLabelByAttendeeId\.get\(row\.id\) \|\| "",/,
+  );
+});
+
+test("every row-level report type routes attendeeToRosterRow through the canonical site label map", () => {
+  const calls = [
+    ...source.matchAll(
+      /\.map\(\(row\) => attendeeToRosterRow\(row, canonicalSiteLabelByAttendeeId\)\)/g,
+    ),
+  ];
+  // all_attendees, household_contact_sheet, arrived, not_arrived,
+  // first_timers, volunteers, vendors, staff_hosts_helpers,
+  // unassigned_parking_needed, activity_roster (rosterRows) plus
+  // unassignedParkingRows, arrivedRows, notArrivedRows, firstTimerRows,
+  // vendorStaffRows (Summary/Print-Pack preview lists) = 15.
+  assert.equal(calls.length, 15);
+  assert.ok(!source.includes(".map(attendeeToRosterRow)"));
+});
+
+test("canonicalSiteLabelByAttendeeId derives only from parking_sites.assigned_attendee_id occupancy", () => {
+  assert.match(
+    source,
+    /const canonicalSiteLabelByAttendeeId = useMemo\(\(\) => \{\s*const labels = new Map<string, string>\(\);\s*for \(const site of parkingSites\) \{\s*if \(site\.assigned_attendee_id\) \{\s*labels\.set\(site\.assigned_attendee_id, siteLabel\(site\)\);/,
+  );
+});
