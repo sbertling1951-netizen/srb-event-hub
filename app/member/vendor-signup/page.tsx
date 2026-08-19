@@ -224,26 +224,34 @@ function MemberVendorSignupInner() {
       }
 
       const vendorRows = (vendorData || []) as VendorRow[];
-      const vendorIds = vendorRows.map((vendor) => vendor.id).filter(Boolean);
 
+      // Governed read boundary for attendee-facing vendor "Notice" content
+      // (public.vendor_event_status): anon holds no raw SELECT grant on
+      // that table (correctly hardened alongside the recent vendor
+      // governance work), so a direct table read fails for Temporary
+      // Event Access. resolve_attendee_visible_vendor_notices re-derives
+      // the Event's own visibility/status admission predicate and the
+      // same is_visible_to_members/is_active scoping the vendor listing
+      // above already requires, returning only the four attendee-safe
+      // Notice columns -- never a governance field. See
+      // supabase/migrations/20260819120000_create_resolve_attendee_visible_vendor_notices.sql.
       let noticeByVendorId: Record<string, VendorNotice> = {};
-      if (vendorIds.length > 0) {
-        const { data: noticeRows, error: noticeError } = await supabase
-          .from("vendor_event_status")
-          .select("vendor_id,status_type,message,expires_at,is_active")
-          .eq("event_id", event.id)
-          .in("vendor_id", vendorIds);
+      const { data: noticeRows, error: noticeError } = await supabase.rpc(
+        "resolve_attendee_visible_vendor_notices",
+        { p_event_id: event.id },
+      );
 
-        if (noticeError) {
-          console.error("Vendor notice load error:", noticeError);
-        } else {
-          noticeByVendorId = Object.fromEntries(
-            (noticeRows || []).map((row) => [
+      if (noticeError) {
+        console.error("Vendor notice load error:", noticeError);
+      } else {
+        noticeByVendorId = Object.fromEntries(
+          (noticeRows || []).map(
+            (row: VendorNotice & { vendor_id: string }) => [
               row.vendor_id,
               row as VendorNotice,
-            ]),
-          );
-        }
+            ],
+          ),
+        );
       }
 
       const visibleVendors = vendorRows
