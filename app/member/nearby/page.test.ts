@@ -36,3 +36,46 @@ test("existing Event-context behavior (workspaceEvent fallback, EventRow cast) i
   assert.match(SOURCE, /const eventInfo: EventRow = eventRow/);
   assert.match(SOURCE, /workspaceEvent\.id/);
 });
+
+test("get_my_member_event_continuity_context is only called for a real authenticated Supabase session, not unconditionally", () => {
+  // Temporary Event Access never creates a Supabase session and stays
+  // anon, which does not hold EXECUTE on this authenticated-only RPC --
+  // calling it unconditionally throws for that caller before Nearby data
+  // ever loads. Gating on an actual session (not just local
+  // workspaceEvent/attendee presence, which Temporary Event Access also
+  // sets) is what distinguishes the two paths.
+  assert.match(SOURCE, /supabase\.auth\.getSession\(\)/);
+
+  const sessionCheckIndex = SOURCE.indexOf("supabase.auth.getSession()");
+  const rpcCallIndex = SOURCE.indexOf(
+    '.rpc("get_my_member_event_continuity_context"',
+  );
+  assert.ok(sessionCheckIndex >= 0 && rpcCallIndex > sessionCheckIndex);
+
+  const ifGuardStart = SOURCE.lastIndexOf("if (", rpcCallIndex);
+  const guardCondition = SOURCE.slice(
+    ifGuardStart,
+    SOURCE.indexOf(")", ifGuardStart) + 1,
+  );
+  assert.match(guardCondition, /sessionData\?\.session/);
+});
+
+test("resolve_effective_nearby_places call is not itself gated behind the authenticated-session check", () => {
+  // The Nearby data RPC is the accepted anon-reachable Temporary Event
+  // Access path (event-scoped, is_hidden-filtered) -- only the
+  // Participation-continuity RPC above requires a real session.
+  const sessionCheckIndex = SOURCE.indexOf("supabase.auth.getSession()");
+  const nearbyRpcIndex = SOURCE.indexOf(
+    '.rpc("resolve_effective_nearby_places"',
+  );
+  assert.ok(nearbyRpcIndex > sessionCheckIndex);
+
+  const between = SOURCE.slice(sessionCheckIndex, nearbyRpcIndex);
+  // Exactly one open brace net of the continuity-RPC `if` block should
+  // have closed by the time resolve_effective_nearby_places is reached --
+  // i.e. that call sits back at the outer try-block level, not still
+  // nested inside `if (sessionData?.session) { ... }`.
+  const opens = (between.match(/\{/g) || []).length;
+  const closes = (between.match(/\}/g) || []).length;
+  assert.equal(opens, closes);
+});

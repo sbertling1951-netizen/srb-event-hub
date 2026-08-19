@@ -186,13 +186,27 @@ function NearbyPageInner() {
       const eventId = workspaceEvent.id;
 
       // Established Member continuity is authorized from canonical
-      // Participation, not from public discovery or Event lifecycle state.
-      const { data: eventRow, error: eventError } = await supabase
-        .rpc("get_my_member_event_continuity_context", { p_event_id: eventId })
-        .maybeSingle();
+      // Participation, not from public discovery or Event lifecycle state --
+      // but that RPC requires an authenticated Supabase session
+      // (auth.uid()) to resolve a Participation link, so it is only
+      // reachable for a real authenticated Member. Temporary Event Access
+      // (Event code + registration email/phone) never creates a Supabase
+      // session and stays anon, so it is skipped for that caller; the
+      // fallback below already supplies eventInfo from the Temporary Event
+      // Access context captured at login (workspaceEvent).
+      const { data: sessionData } = await supabase.auth.getSession();
+      let eventRow: EventRow | null = null;
 
-      if (eventError) {
-        throw eventError;
+      if (sessionData?.session) {
+        const { data, error: eventError } = await supabase
+          .rpc("get_my_member_event_continuity_context", { p_event_id: eventId })
+          .maybeSingle();
+
+        if (eventError) {
+          throw eventError;
+        }
+
+        eventRow = data as EventRow | null;
       }
 
       const eventInfo: EventRow = eventRow
