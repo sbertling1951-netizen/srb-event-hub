@@ -829,6 +829,20 @@ a.app-button-stop:hover {
   padding-left: calc(var(--space-5) - 3px);
 }
 
+/* "Currently loaded into the edit form below" -- a distinct concept from
+   the pinned/admitted left-accent above (a full-row tint, not another
+   border, so the two never visually collide on a row that is both).
+   Generic to any Admin list/table with an edit-in-place flow, not
+   Vendor-specific -- first needed here, reused by a future module. */
+.data-table tbody tr.data-table-row-selected {
+  background: var(--color-selected-bg);
+}
+
+.responsive-list-item-selected {
+  border-color: var(--color-selected);
+  background: var(--color-selected-bg);
+}
+
 .data-table-cell-primary {
   display: flex;
   align-items: center;
