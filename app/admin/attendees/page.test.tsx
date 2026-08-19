@@ -210,6 +210,60 @@ test("no I/O: the household-removal decision logic is pure -- it issues no fetch
   );
 });
 
+// --- 1b. Governed household-member RPC cutover (20260818160000) ----------
+// syncHouseholdMembers() writes exclusively through
+// manage_attendee_household_member; no direct table upsert/delete remains.
+
+test("syncHouseholdMembers: no direct attendee_household_members upsert or delete remains -- every write goes through the governed RPC", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const start = source.indexOf("async function syncHouseholdMembers(");
+  const end = source.indexOf("\n  }\n\n  function openCreateAttendeeEditor", start);
+  assert.ok(start > -1 && end > start, "syncHouseholdMembers body must be found");
+  const body = source.slice(start, end);
+
+  assert.equal(/\.from\("attendee_household_members"\)\s*\n?\s*\.upsert\(/.test(body), false);
+  assert.equal(/\.from\("attendee_household_members"\)\s*\n?\s*\.delete\(/.test(body), false);
+});
+
+test("syncHouseholdMembers: manage_attendee_household_member is called for all three roles", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const start = source.indexOf("async function syncHouseholdMembers(");
+  const end = source.indexOf("\n  }\n\n  function openCreateAttendeeEditor", start);
+  const body = source.slice(start, end);
+
+  const calls = body.match(/supabase\.rpc\("manage_attendee_household_member"/g) || [];
+  assert.equal(
+    calls.length,
+    5,
+    "pilot upsert, copilot upsert, copilot delete, additional upsert, additional delete",
+  );
+  assert.match(body, /p_person_role: "pilot"/);
+  assert.match(body, /p_person_role: "copilot"/);
+  assert.match(body, /p_person_role: "additional"/);
+});
+
+test("syncHouseholdMembers: delete behavior is preserved -- copilot/additional still delete only when their fields are cleared and a row exists", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const start = source.indexOf("async function syncHouseholdMembers(");
+  const end = source.indexOf("\n  }\n\n  function openCreateAttendeeEditor", start);
+  const body = source.slice(start, end);
+
+  assert.match(body, /else if \(copilotRow\)/);
+  assert.match(body, /else if \(additionalRow\)/);
+  const deleteCalls = body.match(/p_delete: true/g) || [];
+  assert.equal(deleteCalls.length, 2);
+});
+
+test("syncHouseholdMembers: rpcOwnedParticipantRole still skips exactly the one role record_participant_capacity_increase owns for the save", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const start = source.indexOf("async function syncHouseholdMembers(");
+  const end = source.indexOf("\n  }\n\n  function openCreateAttendeeEditor", start);
+  const body = source.slice(start, end);
+
+  assert.match(body, /if \(rpcOwnedParticipantRole !== "copilot"\)/);
+  assert.match(body, /if \(rpcOwnedParticipantRole !== "additional"\)/);
+});
+
 // --- 2. Per-action edit permission guards ---------------------------------
 
 test("AttendeeActionRow: without can_edit_attendees, every mutating button is disabled", () => {

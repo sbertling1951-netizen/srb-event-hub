@@ -2826,7 +2826,11 @@ created_at
     }
   }
 
-  // Helper to sync pilot/copilot/additional household members for an attendee
+  // Helper to sync pilot/copilot/additional household members for an attendee.
+  // Every write goes through the governed manage_attendee_household_member
+  // RPC (event derivation, authorization, mutation, and audit all happen
+  // server-side and atomically) rather than a direct table upsert/delete --
+  // see 20260818160000_govern_admin_household_member_mutations.sql.
   async function syncHouseholdMembers(
     attendeeId: string,
     payload: any,
@@ -2841,7 +2845,10 @@ created_at
     rpcOwnedParticipantRole: "copilot" | "additional" | null = null,
   ) {
     try {
-      // 1. Query attendee_household_members for this attendee
+      // 1. Query attendee_household_members for this attendee -- read-only,
+      //    used only to decide whether a cleared copilot/additional role
+      //    should upsert or delete; the RPC itself resolves created-vs-
+      //    updated server-side.
       const { data: memberRows, error: memberError } = await supabase
         .from("attendee_household_members")
         .select("id, person_role")
@@ -2849,9 +2856,6 @@ created_at
       if (memberError) {
         throw memberError;
       }
-      const pilotRow = memberRows?.find(
-        (row: any) => row.person_role === "pilot",
-      );
       const copilotRow = memberRows?.find(
         (row: any) => row.person_role === "copilot",
       );
@@ -2859,36 +2863,18 @@ created_at
         (row: any) => row.person_role === "additional",
       );
 
-      // 3. Build pilotDisplayName
-      const pilotDisplayName = payload.nickname
-        ? payload.nickname
-        : [payload.pilot_first, payload.pilot_last].filter(Boolean).join(" ");
-      // 4. Build copilotDisplayName
-      const copilotDisplayName = payload.copilot_nickname
-        ? payload.copilot_nickname
-        : [payload.copilot_first, payload.copilot_last]
-            .filter(Boolean)
-            .join(" ");
+      // 2. Upsert the pilot row. Never deleted.
+      await supabase.rpc("manage_attendee_household_member", {
+        p_attendee_id: attendeeId,
+        p_person_role: "pilot",
+        p_delete: false,
+        p_first_name: payload.pilot_first || null,
+        p_last_name: payload.pilot_last || null,
+        p_nickname: payload.nickname || null,
+        p_email: payload.email || null,
+      });
 
-      // 5. Upsert/update the pilot row
-      const pilotUpsert = {
-        person_role: "pilot",
-        first_name: payload.pilot_first || null,
-        last_name: payload.pilot_last || null,
-        nickname: payload.nickname || null,
-        display_name: pilotDisplayName || null,
-        email: payload.email || null,
-        participant_status: "identified",
-        event_id: eventId,
-        attendee_id: attendeeId,
-      };
-      await supabase
-        .from("attendee_household_members")
-        .upsert(pilotRow ? { ...pilotUpsert, id: pilotRow.id } : pilotUpsert, {
-          onConflict: "attendee_id,person_role",
-        });
-
-      // 6. Handle copilot logic. Skipped only when the capacity-increase RPC
+      // 3. Handle copilot logic. Skipped only when the capacity-increase RPC
       //    owns the Co-Pilot row for this save.
       const hasCopilot =
         !!payload.copilot_first ||
@@ -2896,31 +2882,22 @@ created_at
         !!payload.copilot_email;
       if (rpcOwnedParticipantRole !== "copilot") {
         if (hasCopilot) {
-          const copilotUpsert = {
-            person_role: "copilot",
-            first_name: payload.copilot_first || null,
-            last_name: payload.copilot_last || null,
-            nickname: payload.copilot_nickname || null,
-            display_name: copilotDisplayName || null,
-            email: payload.copilot_email || null,
-            participant_status: "identified",
-            event_id: eventId,
-            attendee_id: attendeeId,
-          };
-          await supabase
-            .from("attendee_household_members")
-            .upsert(
-              copilotRow
-                ? { ...copilotUpsert, id: copilotRow.id }
-                : copilotUpsert,
-              { onConflict: "attendee_id,person_role" },
-            );
+          await supabase.rpc("manage_attendee_household_member", {
+            p_attendee_id: attendeeId,
+            p_person_role: "copilot",
+            p_delete: false,
+            p_first_name: payload.copilot_first || null,
+            p_last_name: payload.copilot_last || null,
+            p_nickname: payload.copilot_nickname || null,
+            p_email: payload.copilot_email || null,
+          });
         } else if (copilotRow) {
-          // 7. If no copilot info but copilot row exists, delete only the copilot row
-          await supabase
-            .from("attendee_household_members")
-            .delete()
-            .eq("id", copilotRow.id);
+          // 4. If no copilot info but copilot row exists, delete only the copilot row
+          await supabase.rpc("manage_attendee_household_member", {
+            p_attendee_id: attendeeId,
+            p_person_role: "copilot",
+            p_delete: true,
+          });
         }
       }
 
@@ -2935,45 +2912,25 @@ created_at
 
       if (rpcOwnedParticipantRole !== "additional") {
         if (hasAdditional) {
-          const additionalDisplayName = editorState.additional_nickname
-            ? editorState.additional_nickname
-            : [
-                editorState.additional_first_name,
-                editorState.additional_last_name,
-              ]
-                .filter(Boolean)
-                .join(" ");
-
-          const additionalUpsert = {
-            person_role: "additional",
-            first_name: editorState.additional_first_name || null,
-            last_name: editorState.additional_last_name || null,
-            nickname: editorState.additional_nickname || null,
-            display_name: additionalDisplayName || null,
-            email: editorState.additional_email || null,
-            cell_phone: editorState.additional_cell_phone || null,
-            participant_status: "identified",
-            event_id: eventId,
-            attendee_id: attendeeId,
-          };
-
-          await supabase
-            .from("attendee_household_members")
-            .upsert(
-              additionalRow
-                ? { ...additionalUpsert, id: additionalRow.id }
-                : additionalUpsert,
-              { onConflict: "attendee_id,person_role" },
-            )
-            .select();
+          await supabase.rpc("manage_attendee_household_member", {
+            p_attendee_id: attendeeId,
+            p_person_role: "additional",
+            p_delete: false,
+            p_first_name: editorState.additional_first_name || null,
+            p_last_name: editorState.additional_last_name || null,
+            p_nickname: editorState.additional_nickname || null,
+            p_email: editorState.additional_email || null,
+            p_cell_phone: editorState.additional_cell_phone || null,
+          });
         } else if (additionalRow) {
-          await supabase
-            .from("attendee_household_members")
-            .delete()
-            .eq("id", additionalRow.id);
+          await supabase.rpc("manage_attendee_household_member", {
+            p_attendee_id: attendeeId,
+            p_person_role: "additional",
+            p_delete: true,
+          });
         }
       }
-      // 8. Do not touch any other person_role rows
+      // 5. Do not touch any other person_role rows
     } catch (err) {
       console.error("syncHouseholdMembers error", err);
     }
