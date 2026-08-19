@@ -118,8 +118,24 @@ export default function PublicLocationsPage() {
     } else {
       const memberEvent = getCurrentMemberEvent();
       if (memberEvent?.id) {
+        // Authenticated Members resolve Event context through canonical
+        // Person/Participation continuity. Temporary Event Access (Event
+        // code + registration email/phone) never creates a Supabase
+        // session and holds no Participation link, so it is not eligible
+        // for that RPC -- it resolves the same known Event id through the
+        // public known-ID continuity path instead
+        // (get_event_continuity_context), already anon+authenticated
+        // EXECUTE-granted and gated by the identical visible_to_members/
+        // is_active/status predicate Temporary Event Access admission
+        // itself already requires (verify_member_event_login). This does
+        // not expose anything beyond what public discovery already can.
+        const { data: sessionData } = await supabase.auth.getSession();
+        const continuityRpc = sessionData?.session
+          ? "get_my_member_event_continuity_context"
+          : "get_event_continuity_context";
+
         const { data, error } = await supabase
-          .rpc("get_my_member_event_continuity_context", { p_event_id: memberEvent.id })
+          .rpc(continuityRpc, { p_event_id: memberEvent.id })
           .maybeSingle();
         if (error || !data) {
           setEvent(null);
@@ -185,12 +201,15 @@ export default function PublicLocationsPage() {
       map_image_url: resolvedMapImageUrl,
     });
 
-    const { data: locationData, error: locationError } = await supabase
-      .from("event_locations")
-      .select("id,event_id,name,category,description,map_x,map_y,priority")
-      .eq("event_id", typedEvent.id)
-      .order("priority", { ascending: true })
-      .order("name", { ascending: true });
+    // Governed Locations read boundary (mirrors resolve_effective_nearby_places
+    // for Nearby): re-derives the Event's public/member-visible admission
+    // state server-side rather than trusting the raw table's own
+    // unrestricted anon SELECT, which this migration closes. See
+    // supabase/migrations/20260819110000_create_resolve_effective_event_locations.sql.
+    const { data: locationData, error: locationError } = await supabase.rpc(
+      "resolve_effective_event_locations",
+      { p_event_id: typedEvent.id },
+    );
 
     if (locationError) {
       setStatus({
