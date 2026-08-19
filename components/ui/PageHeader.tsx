@@ -4,6 +4,7 @@ type HeadingLevel = "h1" | "h2" | "h3";
 
 type PageHeaderProps = {
   title: ReactNode;
+  titleId?: string;
   titleClassName?: string;
   titleStyle?: CSSProperties;
   headingLevel?: HeadingLevel;
@@ -34,9 +35,14 @@ type PageHeaderProps = {
  * overridable because heading level and text styling vary across the pages
  * this replaces and must be reproduced exactly, not normalized. These are
  * the only overrides in use by the current migrated pages.
+ *
+ * `titleId` (UI Phase 1) is optional and only needed when a caller wants
+ * to point a landmark's `aria-labelledby` at this exact heading rather
+ * than relying on document-order heading navigation alone.
  */
 export function PageHeader({
   title,
+  titleId,
   titleClassName,
   titleStyle,
   headingLevel = "h2",
@@ -48,7 +54,7 @@ export function PageHeader({
   const Heading = headingLevel;
 
   const heading = (
-    <Heading className={titleClassName} style={titleStyle}>
+    <Heading id={titleId} className={titleClassName} style={titleStyle}>
       {title}
     </Heading>
   );

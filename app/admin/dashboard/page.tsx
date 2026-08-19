@@ -6,6 +6,8 @@ import AdminSummaryLink from "@/components/admin/AdminSummaryLink";
 import AdminTrustIndicator from "@/components/admin/AdminTrustIndicator";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -204,6 +206,92 @@ export function visibleAdminSummaryLinks(
   );
 }
 
+// UI Phase 1 presentation grouping only -- purely a rendering/ordering
+// concern layered over the same ADMIN_LEVEL1_SUMMARY_LINKS array above
+// (its own order, titles, hrefs, and permissions are unchanged). Groups
+// the Level-1 modules by operational likelihood (Part 4: "organize them
+// by likely operational importance") without inventing any statistic:
+// day-of-operations modules first, event content/support next, output
+// last. A module missing from this map renders in an unlabeled trailing
+// group rather than silently disappearing.
+type DashboardModuleCategory = "operations" | "content" | "output";
+
+const SUMMARY_LINK_CATEGORY: Record<string, DashboardModuleCategory> = {
+  Attendees: "operations",
+  "Check-In": "operations",
+  Parking: "operations",
+  Agenda: "content",
+  Communications: "content",
+  Media: "content",
+  Vendors: "content",
+  Reporting: "output",
+};
+
+const DASHBOARD_MODULE_SECTIONS: readonly {
+  key: DashboardModuleCategory;
+  title: string;
+  description: string;
+}[] = [
+  {
+    key: "operations",
+    title: "Day-of Operations",
+    description: "The modules you'll reach for most while the event is running.",
+  },
+  {
+    key: "content",
+    title: "Event Content & Support",
+    description: "Schedule, communications, media, and vendor management.",
+  },
+  {
+    key: "output",
+    title: "Reporting & Output",
+    description: "Generate reports and print name tags or coach plates.",
+  },
+];
+
+// Pure, presentation-only. Derived entirely from the Event's own already-
+// loaded `status` field (Event Configuration's own data, not a module-
+// owned operational statistic) -- answers "am I in the expected
+// workspace right now," never a count.
+function eventStatusPresentation(
+  status: string | null | undefined,
+): { label: string; tone: "success" | "warning" | "info" } | null {
+  const normalized = normalizeEventStatus(status);
+  if (!normalized) {
+    return null;
+  }
+  if (isActiveEventStatus(status)) {
+    return { label: "Active", tone: "success" };
+  }
+  if (normalized === "draft") {
+    return { label: "Draft", tone: "warning" };
+  }
+  if (normalized === "archived" || normalized === "inactive") {
+    return { label: normalized === "archived" ? "Archived" : "Inactive", tone: "info" };
+  }
+  if (normalized === "closed" || normalized === "complete" || normalized === "completed") {
+    return { label: "Completed", tone: "info" };
+  }
+  return { label: status as string, tone: "info" };
+}
+
+// Pure, presentation-only classification of the page's own existing
+// status text into an Alert tone -- never a second source of the message
+// itself, only how it is styled.
+function dashboardStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+  if (lower.startsWith("we couldn't") || lower.includes("no admin access")) {
+    return "danger";
+  }
+  if (lower.includes("no longer available")) {
+    return "warning";
+  }
+  if (lower.startsWith("admin working event changed")) {
+    return "success";
+  }
+  return "neutral";
+}
+
 function AdminDashboardPageInner() {
   const initialEvent = getInitialAdminEvent();
 
@@ -314,7 +402,7 @@ function AdminDashboardPageInner() {
       });
     } catch (err: any) {
       console.error("loadDashboard error:", err);
-      setStatus(err?.message || "Failed to load dashboard.");
+      setStatus("We couldn't load the dashboard. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -398,7 +486,7 @@ function AdminDashboardPageInner() {
       );
     } catch (err: any) {
       console.error("handleSwitchEvent error:", err);
-      setStatus(err?.message || "Failed to switch admin event.");
+      setStatus("We couldn't switch events. Please try again.");
     } finally {
       setSwitching(false);
     }
@@ -420,102 +508,160 @@ function AdminDashboardPageInner() {
   );
 
   const visibleLinks = visibleAdminSummaryLinks(adminAccess);
+  const eventStatus = eventStatusPresentation(selectedEvent?.status);
+  const statusMessage = switching
+    ? "Switching event..."
+    : loading
+      ? "Loading..."
+      : status;
+  const statusTone: AlertTone =
+    switching || loading ? "info" : dashboardStatusTone(statusMessage);
 
   return (
     <div style={pageStyle}>
-      <div className="card" style={headerCardStyle}>
-        <div style={eventSelectorGridStyle}>
-          <div style={{ minWidth: 0 }}>
-            <label style={labelStyle} htmlFor="admin-working-event">
-              Admin Working Event
-            </label>
-            <select
-              id="admin-working-event"
-              value={selectedEventId}
-              onChange={(e) => void handleSwitchEvent(e.target.value)}
-              disabled={loading || switching}
-              style={selectStyle}
-            >
-              <option value="">Select an event</option>
-              {pickerEvents.map((evt) => (
-                <option key={evt.id} value={evt.id}>
-                  {formatEventLabel(evt)}
-                </option>
-              ))}
-            </select>
-            {selectedEvent ? (
-              <div style={workingEventLineStyle}>
-                Working Event: {formatEventLabel(selectedEvent)}
-              </div>
+      <section aria-labelledby="dashboard-event-heading" style={sectionStyle}>
+        <PageHeader
+          title="Working Event"
+          titleId="dashboard-event-heading"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+        />
+        <div className="card" style={{ minWidth: 0 }}>
+          <div style={eventSelectorGridStyle}>
+            <div style={{ minWidth: 0 }}>
+              <label style={labelStyle} htmlFor="admin-working-event">
+                Admin Working Event
+              </label>
+              <select
+                id="admin-working-event"
+                value={selectedEventId}
+                onChange={(e) => void handleSwitchEvent(e.target.value)}
+                disabled={loading || switching}
+                className="app-form-input"
+                style={{ minHeight: 44 }}
+              >
+                <option value="">Select an event</option>
+                {pickerEvents.map((evt) => (
+                  <option key={evt.id} value={evt.id}>
+                    {formatEventLabel(evt)}
+                  </option>
+                ))}
+              </select>
+              {selectedEvent ? (
+                <div style={workingEventLineStyle}>
+                  <span>Working Event: {formatEventLabel(selectedEvent)}</span>
+                  {eventStatus ? (
+                    <span
+                      className={`app-status-pill app-status-pill-${eventStatus.tone}`}
+                    >
+                      {eventStatus.label}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            {switching || loading || status ? (
+              <Alert tone={statusTone}>{statusMessage}</Alert>
             ) : null}
           </div>
-
-          {(switching || loading || status) && (
-            <div style={statusBoxStyle} aria-live="polite">
-              {switching
-                ? "Switching event..."
-                : loading
-                  ? "Loading..."
-                  : status}
-            </div>
-          )}
         </div>
-      </div>
+      </section>
 
-      <AdminTrustIndicator />
+      <section aria-labelledby="dashboard-trust-heading" style={sectionStyle}>
+        <h2 id="dashboard-trust-heading" className="sr-only">
+          System status
+        </h2>
+        <AdminTrustIndicator />
+      </section>
+
+      {/* No Context Card: no governed Admin Experience Resolver exists
+          yet. An absent card is architecturally correct here (see
+          module-level comment above), not an omission to fill in. */}
+
+      {visibleLinks.length === 0 ? (
+        <Alert tone="neutral">
+          No admin modules are enabled for your current permissions.
+        </Alert>
+      ) : (
+        DASHBOARD_MODULE_SECTIONS.map((section) => {
+          const links = visibleLinks.filter(
+            (link) => (SUMMARY_LINK_CATEGORY[link.title] ?? "output") === section.key,
+          );
+
+          if (links.length === 0) {
+            return null;
+          }
+
+          return (
+            <section
+              key={section.key}
+              aria-labelledby={`dashboard-${section.key}-heading`}
+              style={sectionStyle}
+            >
+              <PageHeader
+                title={section.title}
+                titleId={`dashboard-${section.key}-heading`}
+                headingLevel="h2"
+                titleClassName="app-section-title"
+                description={section.description}
+                descriptionClassName="app-subtle-text"
+              />
+              <div style={summaryLinkGridStyle}>
+                {links.map((link) => (
+                  <AdminSummaryLink
+                    key={link.href}
+                    title={link.title}
+                    description={link.description}
+                    href={link.href}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })
+      )}
 
       {adminAccess?.isSuperAdmin && (
-        <div className="card" style={productionStatusStyle}>
-          <div style={{ fontWeight: 700 }}>Production Status</div>
+        <section
+          aria-labelledby="dashboard-production-heading"
+          className="admin-dashboard-diagnostics"
+        >
+          <h2
+            id="dashboard-production-heading"
+            className="admin-dashboard-diagnostics-heading"
+          >
+            Production Status
+          </h2>
           {systemStatusState === "loading" ? (
-            <div style={{ color: "#555", fontSize: 14 }}>Checking deployment status…</div>
+            <Alert tone="neutral">Checking deployment status…</Alert>
           ) : systemStatusState === "unavailable" || !systemStatus ? (
-            <div role="status" style={{ color: "#555", fontSize: 14 }}>
+            <Alert tone="neutral">
               Production status is currently unavailable.
-            </div>
+            </Alert>
           ) : (
-            <div style={{ display: "grid", gap: 4, fontSize: 14, color: "#444" }}>
+            <div className="admin-dashboard-diagnostics-grid">
               <div>Service: {systemStatus.status}</div>
               <div>Environment: {systemStatus.environment}</div>
               <div>Commit: {systemStatus.commit || "Unavailable"}</div>
               <div>Working tree: {systemStatus.dirty ? "Dirty" : "Clean"}</div>
             </div>
           )}
-        </div>
+        </section>
       )}
-
-      {/* No Context Card: no governed Admin Experience Resolver exists
-          yet. An absent card is architecturally correct here (see
-          module-level comment above), not an omission to fill in. */}
-
-      <div style={summaryLinkGridStyle}>
-        {visibleLinks.map((link) => (
-          <AdminSummaryLink
-            key={link.href}
-            title={link.title}
-            description={link.description}
-            href={link.href}
-          />
-        ))}
-
-        {visibleLinks.length === 0 ? (
-          <div style={emptyCardStyle}>
-            No admin modules are enabled for your current permissions.
-          </div>
-        ) : null}
-      </div>
     </div>
   );
 }
 
 const pageStyle: React.CSSProperties = {
   display: "grid",
-  gap: 18,
+  gap: "var(--space-10)",
   minWidth: 0,
 };
 
-const headerCardStyle: React.CSSProperties = {
-  padding: 18,
+const sectionStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "var(--space-4)",
   minWidth: 0,
 };
 
@@ -523,78 +669,44 @@ const headerCardStyle: React.CSSProperties = {
 // a single CSS grid that reflows by available space, no JS-computed
 // breakpoint state. Matches the pattern already used elsewhere in this
 // app (e.g. app/member/page.tsx's own nav grid) rather than the
-// dashboard's own prior window.innerWidth-driven layout state.
+// dashboard's own prior window.innerWidth-driven layout state. UI Phase
+// 1: deliberately no new fixed breakpoint was added for tablet -- a
+// fluid `auto-fit`/`minmax` grid already reflows continuously across
+// portrait/landscape tablet widths without a hard cutoff, which is a
+// stronger fit for the "test tablet, don't assume 900px" instruction
+// than adding a second breakpoint would have been.
 const eventSelectorGridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))",
-  gap: 14,
+  gap: "var(--space-6)",
   alignItems: "end",
-  marginTop: 4,
+  marginTop: "var(--space-1)",
   minWidth: 0,
 };
 
 const labelStyle: React.CSSProperties = {
   display: "block",
-  marginBottom: 6,
+  marginBottom: "var(--space-2)",
   fontWeight: 600,
-  fontSize: 14,
-};
-
-const selectStyle: React.CSSProperties = {
-  width: "100%",
-  maxWidth: "100%",
-  boxSizing: "border-box",
-  padding: "10px 12px",
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  background: "#fff",
-  fontSize: 14,
-  minHeight: 44,
+  fontSize: "var(--font-size-body)",
+  color: "var(--color-text-secondary)",
 };
 
 const workingEventLineStyle: React.CSSProperties = {
-  marginTop: 6,
-  fontSize: 13,
-  color: "#555",
-};
-
-const statusBoxStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  border: "1px solid #ddd",
-  borderRadius: 10,
-  background: "#f8f9fb",
-  padding: "10px 12px",
-  fontSize: 14,
-  color: "#444",
-  minHeight: 42,
+  marginTop: "var(--space-2)",
+  fontSize: "var(--font-size-small)",
+  color: "var(--color-text-muted)",
   display: "flex",
   alignItems: "center",
-  minWidth: 0,
-  overflowWrap: "anywhere",
+  gap: "var(--space-3)",
+  flexWrap: "wrap",
 };
 
 const summaryLinkGridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-  gap: 14,
+  gap: "var(--space-6)",
   minWidth: 0,
-};
-
-const productionStatusStyle: React.CSSProperties = {
-  padding: 16,
-  display: "grid",
-  gap: 8,
-};
-
-const emptyCardStyle: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 12,
-  background: "white",
-  padding: 18,
-  color: "#555",
-  minWidth: 0,
-  overflowWrap: "anywhere",
 };
 
 export default function AdminDashboardPage() {

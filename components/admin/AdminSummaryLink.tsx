@@ -18,6 +18,11 @@ import Link from "next/link";
 // open-in-new-tab, and correct link (not button) semantics for assistive
 // technology. The whole card is the one interactive surface -- no nested
 // interactive control inside it.
+//
+// Styling (UI Phase 1) moved from an inline style object to the shared
+// `.admin-summary-link` class (app/globals.css) -- token-driven colors/
+// radius/shadow, plus a real hover and `:focus-visible` state that inline
+// styles could not express.
 export type AdminSummaryLinkProps = {
   title: string;
   description: string;
@@ -30,24 +35,9 @@ export default function AdminSummaryLink({
   href,
 }: AdminSummaryLinkProps) {
   return (
-    <Link
-      href={href as Route}
-      style={{
-        display: "block",
-        padding: 16,
-        borderRadius: 12,
-        border: "1px solid #d1d5db",
-        background: "#ffffff",
-        color: "#111827",
-        textDecoration: "none",
-        boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
-        minHeight: 44,
-      }}
-    >
-      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>
-        {title}
-      </div>
-      <div style={{ fontSize: 13, color: "#4b5563" }}>{description}</div>
+    <Link href={href as Route} className="admin-summary-link">
+      <div className="admin-summary-link-title">{title}</div>
+      <div className="admin-summary-link-description">{description}</div>
     </Link>
   );
 }

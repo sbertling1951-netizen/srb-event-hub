@@ -568,6 +568,24 @@ a.app-button-stop:hover {
   background: var(--color-status-success-bg);
 }
 
+.app-status-pill-warning {
+  border-color: #fde68a;
+  color: var(--color-status-warning);
+  background: var(--color-status-warning-bg);
+}
+
+.app-status-pill-danger {
+  border-color: #fecaca;
+  color: var(--color-status-error);
+  background: var(--color-status-error-bg);
+}
+
+.app-status-pill-info {
+  border-color: #bfdbfe;
+  color: var(--color-status-info);
+  background: var(--color-status-info-bg);
+}
+
 @media (max-width: 899px) {
   .app-form-grid-2 {
     grid-template-columns: 1fr;
@@ -591,6 +609,151 @@ a.app-button-stop:hover {
     max-width: 100% !important;
     margin: 0 !important;
   }
+}
+
+/* ===== VISUALLY HIDDEN (screen-reader-only) ===== */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ===== ALERT / STATUS MESSAGE =====
+   Shared UI Phase 1 primitive (components/ui/Alert.tsx). One consistent
+   treatment for loading/empty/error/success/informational text, replacing
+   page-local ad hoc status boxes. `tone` selects the modifier below;
+   omitting a tone class leaves the neutral base style. */
+.app-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-medium);
+  border: var(--border-width-default) solid var(--color-border-default);
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-normal);
+  min-height: var(--touch-target-min);
+  box-sizing: border-box;
+}
+
+.app-alert-icon {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.app-alert-info {
+  border-color: #bfdbfe;
+  background: var(--color-status-info-bg);
+  color: var(--color-status-info);
+}
+
+.app-alert-warning {
+  border-color: #fde68a;
+  background: var(--color-status-warning-bg);
+  color: var(--color-status-warning);
+}
+
+.app-alert-danger {
+  border-color: #fecaca;
+  background: var(--color-status-error-bg);
+  color: var(--color-status-error);
+}
+
+.app-alert-success {
+  border-color: #86efac;
+  background: var(--color-status-success-bg);
+  color: var(--color-status-success);
+}
+
+/* ===== ADMIN SUMMARY LINK (Dashboard Level-1 module card) =====
+   UI Phase 1 (Admin Dashboard pilot). One reusable card-link style,
+   token-driven, with a real hover/focus-visible state -- the inline-style
+   version this replaces could not express either. */
+.admin-summary-link {
+  display: block;
+  padding: var(--space-6);
+  border-radius: var(--radius-medium);
+  border: var(--border-width-default) solid var(--color-border-default);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  text-decoration: none;
+  box-shadow: var(--shadow-small);
+  min-height: 44px;
+  box-sizing: border-box;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.1s ease;
+}
+
+.admin-summary-link:hover {
+  border-color: var(--color-action-primary);
+  box-shadow: var(--shadow-medium);
+}
+
+.admin-summary-link:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.admin-summary-link:active {
+  transform: scale(0.99);
+}
+
+.admin-summary-link-title {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-card-title);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.admin-summary-link-description {
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-normal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-summary-link {
+    transition: none;
+  }
+}
+
+/* ===== ADMIN DASHBOARD SECONDARY DIAGNOSTICS =====
+   Deliberately de-emphasized relative to Working Event / module sections
+   -- platform/deploy metadata, not Event-operational content, per the
+   Dashboard's information hierarchy (UI Phase 1). Super-admin only. */
+.admin-dashboard-diagnostics {
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg-muted);
+  padding: var(--space-5);
+}
+
+.admin-dashboard-diagnostics-heading {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-3);
+}
+
+.admin-dashboard-diagnostics-grid {
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
 }
 
 /* ===== NEARBY FILTER CHIPS ===== */
