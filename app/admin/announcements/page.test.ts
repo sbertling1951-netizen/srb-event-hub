@@ -3,6 +3,13 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import {
+  announcementStatusTone,
+  formatDate,
+  priorityLabel,
+  priorityTone,
+} from "@/app/admin/announcements/page";
+
 // Focused tests for the Event Context Single-Owner Integrity pass
 // (docs/architecture/ADR-006 Event Context Architecture.md §3.1/§3.4):
 // Announcements previously read the Admin working Event through
@@ -99,4 +106,102 @@ test("announcement CRUD and publish/pin toggle behavior is unchanged", () => {
   ]) {
     assert.ok(PAGE_SOURCE.includes(needle), `Announcements must retain ${needle}`);
   }
+});
+
+// -- UI Phase 2: reusable Admin table/list pattern, piloted here --------
+
+test("formatDate renders a date-only string, and preserves each call site's own fallback wording", () => {
+  assert.equal(formatDate(null, "No expiration"), "No expiration");
+  assert.equal(formatDate(undefined, "Unknown"), "Unknown");
+  assert.equal(formatDate("not-a-date", "Unknown"), "Unknown");
+
+  const rendered = formatDate("2026-03-05T10:00:00.000Z", "Unknown");
+  assert.notEqual(rendered, "Unknown");
+  // Date-only, not a timestamp: no colon-separated time component.
+  assert.equal(/\d{1,2}:\d{2}/.test(rendered), false);
+});
+
+test("priorityTone maps every supported priority to a distinct, semantic tone", () => {
+  assert.equal(priorityTone("urgent"), "danger");
+  assert.equal(priorityTone("high"), "warning");
+  assert.equal(priorityTone("normal"), "info");
+  assert.equal(priorityTone("low"), "neutral");
+});
+
+test("priorityTone is case-insensitive and defaults an absent priority to Normal's tone", () => {
+  assert.equal(priorityTone("URGENT"), "danger");
+  assert.equal(priorityTone(null), "info");
+});
+
+test("priorityLabel title-cases the stored value without inventing new priority names", () => {
+  assert.equal(priorityLabel("urgent"), "Urgent");
+  assert.equal(priorityLabel("low"), "Low");
+  assert.equal(priorityLabel(null), "Normal");
+});
+
+test("announcementStatusTone classifies confirmation text as success, everything else as informational", () => {
+  assert.equal(announcementStatusTone("Announcement created."), "success");
+  assert.equal(announcementStatusTone("Announcement unpublished."), "success");
+  assert.equal(announcementStatusTone("Announcement pinned."), "success");
+  assert.equal(announcementStatusTone("Loading announcements..."), "info");
+  assert.equal(announcementStatusTone("Creating announcement..."), "info");
+  assert.equal(
+    announcementStatusTone("Select an admin working event before managing announcements."),
+    "info",
+  );
+});
+
+test("the retired page-local isMobile/resize-listener breakpoint state is gone", () => {
+  for (const forbidden of ["isMobile", 'addEventListener("resize"', "window.innerWidth"]) {
+    assert.equal(
+      PAGE_SOURCE.includes(forbidden),
+      false,
+      `page-local breakpoint state "${forbidden}" should be replaced by the shared useShellInterfaceCapabilities() hook`,
+    );
+  }
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{[^}]*useShellInterfaceCapabilities[^}]*\}\s*from\s*["']@\/components\/shell\/useShellViewport["']/,
+  );
+});
+
+test("desktop and narrow-viewport presentations are both driven by the one shared isCompact signal", () => {
+  assert.match(PAGE_SOURCE, /const \{ isCompact \} = useShellInterfaceCapabilities\(\);/);
+  assert.match(PAGE_SOURCE, /isCompact \? \(/);
+});
+
+test("the desktop table uses the shared DataTable primitive with real column headers, not a hand-rolled table", () => {
+  assert.match(PAGE_SOURCE, /<DataTable caption="[^"]+">/);
+  for (const column of ["Title", "Status", "Priority", "Created", "Expires", "Actions"]) {
+    assert.ok(
+      PAGE_SOURCE.includes(`<th scope="col">${column}</th>`),
+      `expected a <th scope="col"> for "${column}"`,
+    );
+  }
+});
+
+test("the narrow-viewport presentation uses the shared ResponsiveList primitive, not a second bespoke card layout", () => {
+  assert.match(PAGE_SOURCE, /<ResponsiveList>/);
+});
+
+test("Published/Draft, priority, and Pinned all render through the shared StatusBadge -- text is the sole carrier, never color alone", () => {
+  const badgeCount = (PAGE_SOURCE.match(/<StatusBadge/g) || []).length;
+  // Status + Priority in each of the two presentations, plus a
+  // conditional Pinned badge in each -- at minimum 4 call sites.
+  assert.ok(badgeCount >= 4, `expected at least 4 StatusBadge usages, found ${badgeCount}`);
+  assert.match(PAGE_SOURCE, />Published<|is_published \? "Published" : "Draft"/);
+});
+
+test("row actions carry a more specific accessible name than their visible label, for screen-reader users scanning many identically-labelled rows", () => {
+  assert.match(PAGE_SOURCE, /aria-label=\{`Edit "\$\{name\}"`\}/);
+  assert.match(PAGE_SOURCE, /aria-label=\{`Delete "\$\{name\}"`\}/);
+});
+
+test("the destructive action alone uses the danger button variant -- routine row actions stay visually equal", () => {
+  const rowActionsIdx = PAGE_SOURCE.indexOf("function renderRowActions(");
+  assert.notEqual(rowActionsIdx, -1);
+  const rowActionsBody = PAGE_SOURCE.slice(rowActionsIdx, PAGE_SOURCE.indexOf("\n  }", rowActionsIdx));
+
+  assert.equal((rowActionsBody.match(/variant="danger"/g) || []).length, 1);
+  assert.equal(/variant="primary"/.test(rowActionsBody), false);
 });

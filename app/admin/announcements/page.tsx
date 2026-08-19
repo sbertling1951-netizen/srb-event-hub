@@ -4,7 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSection } from "@/components/ui/PageSection";
+import { RowActions } from "@/components/ui/RowActions";
+import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import type { AdminWorkspaceContext } from "@/lib/adminEventContext";
 import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
@@ -62,67 +70,72 @@ function normalizeForInput(value?: string | null) {
   return local.toISOString().slice(0, 16);
 }
 
-function formatDateTime(value?: string | null) {
+// UI Phase 2: one shared date formatter for both the Created and Expires
+// columns/fields (Part 3: "consistent treatment... for dates"). Renders
+// the day only, not the time -- table scanability over precision; the
+// exact timestamp remains one click away in Edit, exactly as the full
+// announcement body already is. `fallback` preserves each call site's
+// own existing wording ("Unknown" for a missing created_at, "No
+// expiration" for a missing expire_at) rather than inventing new copy.
+export function formatDate(value: string | null | undefined, fallback: string): string {
   if (!value) {
-    return "No expiration";
+    return fallback;
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return "No expiration";
+    return fallback;
   }
-  return date.toLocaleString();
+  return date.toLocaleDateString();
 }
-const appInputStyle = (isMobile: boolean) => ({
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  boxSizing: "border-box" as const,
-  fontSize: 16,
-  minHeight: isMobile ? 48 : undefined,
-});
 
-const mobileStackRow = (isMobile: boolean) => ({
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap" as const,
-  flexDirection: isMobile ? ("column" as const) : ("row" as const),
-  alignItems: isMobile ? ("stretch" as const) : ("center" as const),
-});
-
-const mobileCheckboxRow = (isMobile: boolean) => ({
-  display: "flex",
-  gap: 18,
-  flexWrap: "wrap" as const,
-  flexDirection: isMobile ? ("column" as const) : ("row" as const),
-  alignItems: isMobile ? ("flex-start" as const) : ("center" as const),
-});
-
-const mobileHeaderRow = (isMobile: boolean) => ({
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-  flexWrap: "wrap" as const,
-  flexDirection: isMobile ? ("column" as const) : ("row" as const),
-  alignItems: isMobile ? ("flex-start" as const) : ("center" as const),
-});
-
-const appButtonStyle = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "#fff",
-  cursor: "pointer",
+const PRIORITY_TONE: Record<string, StatusBadgeTone> = {
+  urgent: "danger",
+  high: "warning",
+  normal: "info",
+  low: "neutral",
 };
 
-const primaryButtonStyle = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#111827",
-  color: "#fff",
-  fontWeight: 700,
-  cursor: "pointer",
+export function priorityTone(priority: string | null): StatusBadgeTone {
+  return PRIORITY_TONE[(priority || "normal").toLowerCase()] ?? "info";
+}
+
+export function priorityLabel(priority: string | null): string {
+  const value = priority || "normal";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+// Pure, presentation-only classification of the page's own existing
+// `status` confirmation text into an Alert tone -- never a second source
+// of the message itself (showStatus/showError below are untouched).
+const STATUS_SUCCESS_ENDINGS = [
+  "created.",
+  "updated.",
+  "deleted.",
+  "published.",
+  "unpublished.",
+  "pinned.",
+  "unpinned.",
+];
+
+export function announcementStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+  return STATUS_SUCCESS_ENDINGS.some((suffix) => lower.endsWith(suffix))
+    ? "success"
+    : "info";
+}
+
+const fieldLabelStyle: React.CSSProperties = {
+  display: "block",
+  fontWeight: 600,
+  marginBottom: "var(--space-2)",
+  fontSize: "var(--font-size-body)",
+  color: "var(--color-text-secondary)",
+};
+
+const checkboxLabelStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
 };
 
 export default function AdminAnnouncementsPage() {
@@ -142,7 +155,7 @@ function AdminAnnouncementsPageInner() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const { isCompact } = useShellInterfaceCapabilities();
 
   const [loadingEvent, setLoadingEvent] = useState(true);
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
@@ -159,20 +172,6 @@ function AdminAnnouncementsPageInner() {
 
   const { admin } = useAdmin();
   const eventId = currentEvent?.id ?? null;
-
-  useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 900);
-    }
-
-    handleResize();
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, []);
 
   function showStatus(message: string) {
     setError(null);
@@ -536,8 +535,55 @@ function AdminAnnouncementsPageInner() {
     }
   }
 
+  // UI Phase 2: shared between the desktop table's actions cell and the
+  // narrow-viewport list card, so both presentations offer the identical
+  // actions with identical labels/handlers -- one render path, two
+  // layouts. Accessible names are more specific than the visible label
+  // (e.g. `Edit "Weekend Schedule Change"`) so a screen-reader user
+  // tabbing through many rows' worth of same-named buttons can tell them
+  // apart; the shorter visible text is what a sighted user scanning the
+  // row already has the title right next to.
+  function renderRowActions(item: Announcement) {
+    const name = item.title || "Untitled";
+    return (
+      <RowActions>
+        <AppButton
+          onClick={() => startEdit(item)}
+          aria-label={`Edit "${name}"`}
+        >
+          Edit
+        </AppButton>
+        <AppButton
+          onClick={() => void togglePublished(item)}
+          aria-label={`${item.is_published ? "Unpublish" : "Publish"} "${name}"`}
+        >
+          {item.is_published ? "Unpublish" : "Publish"}
+        </AppButton>
+        <AppButton
+          onClick={() => void togglePinned(item)}
+          aria-label={`${item.is_pinned ? "Unpin" : "Pin"} "${name}"`}
+        >
+          {item.is_pinned ? "Unpin" : "Pin"}
+        </AppButton>
+        <AppButton
+          variant="danger"
+          onClick={() => void handleDelete(item.id)}
+          aria-label={`Delete "${name}"`}
+        >
+          Delete
+        </AppButton>
+      </RowActions>
+    );
+  }
+
+  const eventContextMessage = loadingEvent
+    ? "Loading selected event..."
+    : !currentEvent
+      ? "No event selected."
+      : null;
+
   return (
-    <div style={{ display: "grid", gap: 18 }}>
+    <div style={{ display: "grid", gap: "var(--space-10)" }}>
       <ConfirmDialog
         open={!!confirmDialog}
         title={confirmDialog?.title || "Confirm Action"}
@@ -548,322 +594,251 @@ function AdminAnnouncementsPageInner() {
         onCancel={() => closeConfirmDialog(false)}
         onConfirm={() => closeConfirmDialog(true)}
       />
-      <div className="card" style={{ padding: 18 }}>
-        {/* Non-steady-state only (Stage 3B §D): the canonical Admin shell
-            header now owns Event name/location/date range for the normal
-            resolved+authorized case, so this line shows only what the
-            shell cannot -- that a selection is still loading, or that
-            nothing is currently selected. The specific access-denied
-            reason remains the separate `error` banner below, unchanged. */}
-        {loadingEvent ? (
-          <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
-            Loading selected event...
-          </div>
-        ) : !currentEvent ? (
-          <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>
-            No event selected
-          </div>
-        ) : null}
 
-        {status ? (
-          <div style={{ marginBottom: 12, fontSize: 14 }}>{status}</div>
-        ) : null}
+      <section style={{ display: "grid", gap: "var(--space-4)" }}>
+        <PageHeader
+          title={editingId ? "Edit Announcement" : "New Announcement"}
+          headingLevel="h2"
+          titleClassName="app-section-title"
+        />
 
-        {error ? (
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #e2b4b4",
-              background: "#fff3f3",
-              color: "#8a1f1f",
-            }}
-          >
-            {error}
-          </div>
-        ) : null}
+        <PageSection variant="section">
+          <div style={{ display: "grid", gap: "var(--space-5)" }}>
+            {/* Non-steady-state only (Stage 3B §D): the canonical Admin
+                shell header now owns Event name/location/date range for
+                the normal resolved+authorized case, so this line shows
+                only what the shell cannot -- that a selection is still
+                loading, or that nothing is currently selected. The
+                specific access-denied reason remains the separate
+                `error` Alert below, unchanged. */}
+            {eventContextMessage ? (
+              <Alert tone="neutral">{eventContextMessage}</Alert>
+            ) : null}
 
-        <div style={{ display: "grid", gap: 12 }}>
-          <div>
-            <label
-              style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
-            >
-              Title
-            </label>
-            <input
-              value={form.title}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, title: e.target.value }))
-              }
-              placeholder="Announcement title"
-              style={appInputStyle(isMobile)}
-            />
-          </div>
+            {error ? <Alert tone="danger">{error}</Alert> : null}
+            {!error && status ? (
+              <Alert tone={announcementStatusTone(status)}>{status}</Alert>
+            ) : null}
 
-          <div>
-            <label
-              style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
-            >
-              Message
-            </label>
-            <textarea
-              value={form.body}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, body: e.target.value }))
-              }
-              placeholder="Write the announcement here..."
-              rows={6}
-              style={{
-                ...appInputStyle(isMobile),
-                resize: "vertical",
-              }}
-            />
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile
-                ? "1fr"
-                : "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
             <div>
-              <label
-                style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
-              >
-                Priority
+              <label style={fieldLabelStyle} htmlFor="announcement-title">
+                Title
               </label>
-              <select
-                value={form.priority}
+              <input
+                id="announcement-title"
+                value={form.title}
                 onChange={(e) =>
-                  setForm((prev) => ({ ...prev, priority: e.target.value }))
+                  setForm((prev) => ({ ...prev, title: e.target.value }))
                 }
-                style={appInputStyle(isMobile)}
-              >
-                <option value="low">Low</option>
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
-              </select>
+                placeholder="Announcement title"
+              />
             </div>
 
             <div>
-              <label
-                style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
-              >
-                Expire At
+              <label style={fieldLabelStyle} htmlFor="announcement-body">
+                Message
               </label>
-              <input
-                type="datetime-local"
-                value={form.expire_at}
+              <textarea
+                id="announcement-body"
+                value={form.body}
                 onChange={(e) =>
-                  setForm((prev) => ({ ...prev, expire_at: e.target.value }))
+                  setForm((prev) => ({ ...prev, body: e.target.value }))
                 }
-                style={appInputStyle(isMobile)}
+                placeholder="Write the announcement here..."
+                rows={6}
               />
             </div>
+
+            <div className="app-form-grid-2">
+              <div>
+                <label style={fieldLabelStyle} htmlFor="announcement-priority">
+                  Priority
+                </label>
+                <select
+                  id="announcement-priority"
+                  value={form.priority}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, priority: e.target.value }))
+                  }
+                >
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={fieldLabelStyle} htmlFor="announcement-expire">
+                  Expire At
+                </label>
+                <input
+                  id="announcement-expire"
+                  type="datetime-local"
+                  value={form.expire_at}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, expire_at: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="app-flex-wrap-12">
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={form.is_pinned}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      is_pinned: e.target.checked,
+                    }))
+                  }
+                />
+                Pin this announcement
+              </label>
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={form.is_published}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      is_published: e.target.checked,
+                    }))
+                  }
+                />
+                Published
+              </label>
+            </div>
+
+            <div className="app-button-row">
+              <AppButton
+                variant="primary"
+                onClick={() => void handleSave()}
+                disabled={saving || !eventId}
+              >
+                {saving
+                  ? "Saving..."
+                  : editingId
+                    ? "Update Announcement"
+                    : "Create Announcement"}
+              </AppButton>
+
+              <AppButton onClick={resetForm} disabled={saving}>
+                {editingId ? "Cancel Edit" : "Clear"}
+              </AppButton>
+            </div>
           </div>
+        </PageSection>
+      </section>
 
-          <div style={mobileCheckboxRow(isMobile)}>
-            {" "}
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={form.is_pinned}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, is_pinned: e.target.checked }))
-                }
-              />
-              Pin this announcement
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={form.is_published}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    is_published: e.target.checked,
-                  }))
-                }
-              />
-              Published
-            </label>
-          </div>
-
-          <div style={mobileStackRow(isMobile)}>
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={saving || !eventId}
-              style={{
-                ...primaryButtonStyle,
-                cursor: saving ? "not-allowed" : "pointer",
-                opacity: saving ? 0.7 : 1,
-              }}
-            >
-              {saving
-                ? "Saving..."
-                : editingId
-                  ? "Update Announcement"
-                  : "Create Announcement"}
-            </button>
-
-            <button
-              type="button"
-              onClick={resetForm}
-              disabled={saving}
-              style={appButtonStyle}
-            >
-              {editingId ? "Cancel Edit" : "Clear"}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>
-          Existing Announcements
-        </h2>
+      <section style={{ display: "grid", gap: "var(--space-4)" }}>
+        <PageHeader
+          title="Existing Announcements"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+        />
 
         {loadingAnnouncements ? (
-          <div>Loading announcements...</div>
+          <Alert tone="neutral">Loading announcements...</Alert>
         ) : sortedAnnouncements.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>
-            No announcements yet for this event.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {sortedAnnouncements.map((announcement) => (
-              <div
-                key={announcement.id}
-                style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 12,
-                  padding: 14,
-                  background: announcement.is_pinned ? "#fffdf2" : "#fafafa",
-                }}
-              >
-                <div
-                  style={{
-                    ...mobileHeaderRow(isMobile),
-                    marginBottom: 8,
-                  }}
+          <Alert tone="neutral">No announcements yet for this event.</Alert>
+        ) : isCompact ? (
+          <ResponsiveList>
+            {sortedAnnouncements.map((announcement) => {
+              const name = announcement.title || "Untitled";
+              return (
+                <li
+                  key={announcement.id}
+                  className={
+                    "responsive-list-item" +
+                    (announcement.is_pinned
+                      ? " responsive-list-item-pinned"
+                      : "")
+                  }
                 >
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>
-                      {announcement.title || "Untitled"}
-                    </div>
-                    <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4 }}>
-                      Created:{" "}
-                      {announcement.created_at
-                        ? new Date(announcement.created_at).toLocaleString()
-                        : "Unknown"}
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        padding: "4px 8px",
-                        borderRadius: 999,
-                        border: "1px solid #ccc",
-                        background: "#fff",
-                      }}
-                    >
-                      {announcement.priority || "normal"}
-                    </span>
-
-                    <span
-                      style={{
-                        fontSize: 12,
-                        padding: "4px 8px",
-                        borderRadius: 999,
-                        border: "1px solid #ccc",
-                        background: announcement.is_published
-                          ? "#eefaf0"
-                          : "#f6f6f6",
-                      }}
+                  <div className="responsive-list-item-header">
+                    <div className="responsive-list-item-title">{name}</div>
+                    <StatusBadge
+                      tone={announcement.is_published ? "success" : "neutral"}
                     >
                       {announcement.is_published ? "Published" : "Draft"}
-                    </span>
+                    </StatusBadge>
+                  </div>
 
+                  <div className="responsive-list-item-badges">
+                    <StatusBadge tone={priorityTone(announcement.priority)}>
+                      {priorityLabel(announcement.priority)} priority
+                    </StatusBadge>
                     {announcement.is_pinned ? (
-                      <span
-                        style={{
-                          fontSize: 12,
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          border: "1px solid #ccc",
-                          background: "#fff6cc",
-                        }}
-                      >
-                        Pinned
-                      </span>
+                      <StatusBadge tone="warning">Pinned</StatusBadge>
                     ) : null}
                   </div>
-                </div>
 
-                <div
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    lineHeight: 1.45,
-                    marginBottom: 10,
-                  }}
+                  <div className="responsive-list-item-meta">
+                    <span>Created {formatDate(announcement.created_at, "Unknown")}</span>
+                    <span>Expires {formatDate(announcement.expire_at, "No expiration")}</span>
+                  </div>
+
+                  {renderRowActions(announcement)}
+                </li>
+              );
+            })}
+          </ResponsiveList>
+        ) : (
+          <DataTable caption="Existing announcements for this event">
+            <thead>
+              <tr>
+                <th scope="col">Title</th>
+                <th scope="col">Status</th>
+                <th scope="col">Priority</th>
+                <th scope="col">Created</th>
+                <th scope="col">Expires</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedAnnouncements.map((announcement) => (
+                <tr
+                  key={announcement.id}
+                  className={
+                    announcement.is_pinned ? "data-table-row-pinned" : undefined
+                  }
                 >
-                  {announcement.body || ""}
-                </div>
-
-                <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 12 }}>
-                  Expires: {formatDateTime(announcement.expire_at)}
-                </div>
-
-                <div style={mobileStackRow(isMobile)}>
-                  <button
-                    type="button"
-                    onClick={() => startEdit(announcement)}
-                    style={appButtonStyle}
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void togglePublished(announcement)}
-                    style={appButtonStyle}
-                  >
-                    {announcement.is_published ? "Unpublish" : "Publish"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void togglePinned(announcement)}
-                    style={appButtonStyle}
-                  >
-                    {announcement.is_pinned ? "Unpin" : "Pin"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void handleDelete(announcement.id)}
-                    style={{
-                      ...appButtonStyle,
-                      border: "1px solid #d7b1b1",
-                      background: "#fff5f5",
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+                  <td>
+                    <div className="data-table-cell-primary">
+                      {announcement.title || "Untitled"}
+                      {announcement.is_pinned ? (
+                        <StatusBadge tone="warning">Pinned</StatusBadge>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td>
+                    <StatusBadge
+                      tone={announcement.is_published ? "success" : "neutral"}
+                    >
+                      {announcement.is_published ? "Published" : "Draft"}
+                    </StatusBadge>
+                  </td>
+                  <td>
+                    <StatusBadge tone={priorityTone(announcement.priority)}>
+                      {priorityLabel(announcement.priority)}
+                    </StatusBadge>
+                  </td>
+                  <td className="data-table-cell-meta">
+                    {formatDate(announcement.created_at, "Unknown")}
+                  </td>
+                  <td className="data-table-cell-meta">
+                    {formatDate(announcement.expire_at, "No expiration")}
+                  </td>
+                  <td>{renderRowActions(announcement)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
         )}
-      </div>
+      </section>
     </div>
   );
 }

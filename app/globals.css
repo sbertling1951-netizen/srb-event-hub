@@ -482,6 +482,21 @@ a.app-button-stop:hover {
   resize: vertical;
 }
 
+/* Checkboxes/radios are not text fields -- without this they would
+   inherit the block above's width/padding/border/background and render
+   as a padded rectangle instead of a checkbox (UI Phase 2, first
+   encountered by Announcements' Pin/Published checkboxes). */
+.app-card-section input[type="checkbox"],
+.app-card-section input[type="radio"],
+.app-card-section-muted input[type="checkbox"],
+.app-card-section-muted input[type="radio"] {
+  width: auto;
+  padding: 0;
+  border-radius: 0;
+  border: initial;
+  background: initial;
+}
+
 .app-card-section input:focus-visible,
 .app-card-section select:focus-visible,
 .app-card-section textarea:focus-visible,
@@ -754,6 +769,144 @@ a.app-button-stop:hover {
   gap: var(--space-2);
   font-size: var(--font-size-small);
   color: var(--color-text-secondary);
+}
+
+/* =====================================================================
+   ADMIN DATA TABLE / RESPONSIVE LIST (UI Phase 2)
+   components/ui/DataTable.tsx, components/ui/ResponsiveList (same file),
+   components/ui/RowActions.tsx, components/ui/StatusBadge.tsx. Piloted
+   on Admin Announcements; intended for reuse across other Admin list
+   modules without forcing a single rigid table abstraction on all of
+   them -- callers write plain semantic markup, these classes only
+   supply consistent spacing/color/state treatment.
+   ===================================================================== */
+
+.data-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-table {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  font-size: var(--font-size-body);
+}
+
+.data-table thead th {
+  text-align: left;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 2px solid var(--color-border-default);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.data-table tbody td {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border-width-default) solid var(--color-border-default);
+  vertical-align: middle;
+  color: var(--color-text-primary);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover {
+  background: var(--color-bg-muted);
+}
+
+/* A left accent, not a full-row tint -- pinned status is already carried
+   in text (the "Pinned" badge); this is a redundant, non-color-only,
+   deliberately understated visual cue, not the primary signal. */
+.data-table tbody tr.data-table-row-pinned td:first-child {
+  border-left: 3px solid var(--color-status-warning);
+  padding-left: calc(var(--space-5) - 3px);
+}
+
+.data-table-cell-primary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.data-table-cell-meta {
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+}
+
+.responsive-list {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.responsive-list-item {
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-small);
+  padding: var(--space-5);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.responsive-list-item-pinned {
+  border-left: 3px solid var(--color-status-warning);
+  padding-left: calc(var(--space-5) - 3px);
+}
+
+.responsive-list-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.responsive-list-item-title {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-card-title);
+  color: var(--color-text-primary);
+}
+
+.responsive-list-item-badges {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.responsive-list-item-meta {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Row actions are repeated, precision-sensitive touch targets (Edit /
+   Publish / Pin / Delete on every row) -- held to the 44px platform
+   minimum rather than the shared --touch-target-min token (42px),
+   matching the same reasoning already applied to admin-summary-link in
+   the Dashboard pilot. */
+.row-actions .app-button {
+  min-height: 44px;
 }
 
 /* ===== NEARBY FILTER CHIPS ===== */
