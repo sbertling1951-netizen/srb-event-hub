@@ -217,6 +217,10 @@ test("Admin Dashboard uses the canonical Admin shell", () => {
   );
 });
 
+test("Admin UI Reference (design workbench) uses the canonical Admin shell", () => {
+  assert.equal(resolveShellMode("/admin/ui-reference"), "canonical-admin");
+});
+
 test("Admin Photos, Photo Library, and Slideshow use the canonical Admin shell while the audience viewer stays an exception", () => {
   assert.equal(resolveShellMode("/admin/photos"), "canonical-admin");
   assert.equal(resolveShellMode("/admin/photo-library"), "canonical-admin");

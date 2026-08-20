@@ -2937,3 +2937,114 @@ body.slideshow-view-mode .app-header-card {
     animation: none;
   }
 }
+
+/* =====================================================================
+   ADMIN UI REFERENCE PAGE (UI Reference Workstream)
+   /admin/ui-reference only -- not consumed by any other route. Purely
+   composition/presentation for the design-workbench surface; every value
+   below is an existing token, nothing new. Do not reuse these classes
+   outside that page -- if a pattern here turns out to be broadly useful,
+   promote it deliberately instead of accreting call sites onto a
+   reference-only class.
+   ===================================================================== */
+
+.ui-ref-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.ui-ref-toc a {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  border: var(--border-width-default) solid var(--color-border-default);
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  min-height: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+.ui-ref-toc a:hover {
+  background: var(--color-action-secondary-hover);
+  border-color: var(--color-border-strong);
+}
+
+.ui-ref-toc a:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.ui-ref-section {
+  scroll-margin-top: 88px;
+}
+
+.ui-ref-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-4);
+}
+
+.ui-ref-swatch {
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--radius-medium);
+  overflow: hidden;
+  background: var(--color-bg-elevated);
+}
+
+.ui-ref-swatch-chip {
+  height: 48px;
+}
+
+.ui-ref-swatch-label {
+  padding: var(--space-3);
+  display: grid;
+  gap: 2px;
+}
+
+.ui-ref-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--font-size-caption);
+  background: var(--color-bg-muted);
+  border-radius: var(--radius-small);
+  padding: 2px 6px;
+  color: var(--color-text-secondary);
+}
+
+.ui-ref-type-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) 1fr;
+  gap: var(--space-5);
+  align-items: baseline;
+  padding: var(--space-4) 0;
+  border-bottom: var(--border-width-default) solid var(--color-border-default);
+}
+
+.ui-ref-type-row:last-child {
+  border-bottom: none;
+}
+
+.ui-ref-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-5);
+}
+
+.ui-ref-compare-card {
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--radius-medium);
+  padding: var(--space-5);
+  display: grid;
+  gap: var(--space-3);
+  background: var(--color-bg-elevated);
+}
+
+@media (max-width: 899px) {
+  .ui-ref-type-row {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+}
