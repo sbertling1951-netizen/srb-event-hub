@@ -52,6 +52,7 @@ const TOC: Array<{ id: string; label: string }> = [
   { id: "device", label: "13. Device & Layout Preferences" },
   { id: "scale", label: "14. Mid-Size UI Scale (✅ approved)" },
   { id: "action-hierarchy", label: "15. Button Hierarchy (✅ approved) & Row Actions (undecided)" },
+  { id: "depth", label: "16. Button Depth / Tactile Treatment (prototype)" },
 ];
 
 // ----------------------------------------------------------------------------
@@ -313,6 +314,14 @@ export function AdminUiReferenceContent() {
   // confirmed" destructive treatment (Button System 3) reuses the real
   // ConfirmDialog, via its own open state separate from Section 3's.
   const [system3ConfirmOpen, setSystem3ConfirmOpen] = useState(false);
+
+  // Section 16 demos only: a second, independent ConfirmDialog trigger
+  // (the real, unmodified component -- illustrates canonical destructive
+  // confirmation next to the 3D candidate's static equivalent), and a
+  // local-only Canonical/3D Candidate toggle for the repeated table-row
+  // action set. Neither is persisted anywhere.
+  const [depthConfirmOpen, setDepthConfirmOpen] = useState(false);
+  const [depthToggle, setDepthToggle] = useState<"flat" | "3d">("flat");
 
   const demoActiveFilterCount = (demoCategory !== "all" ? 1 : 0) + (demoStatus !== "all" ? 1 : 0);
   const demoHasClearable = demoActiveFilterCount > 0 || demoSearch.trim() !== "";
@@ -1988,6 +1997,113 @@ export function AdminUiReferenceContent() {
           </Alert>
         </div>
       </RefSection>
+
+      {/* =================================================================
+          16. BUTTON DEPTH / TACTILE TREATMENT (PROTOTYPE)
+          ================================================================= */}
+      <RefSection
+        id="depth"
+        title="Button Depth / Tactile Treatment (prototype)"
+        description="A reference-only exploration of a subtle modern 3D/tactile surface for the SAME approved System 3 semantics -- depth and interaction feel only, never a meaning change. Not approved; the canonical .app-button/AppButton/AppLinkButton/ConfirmDialog are untouched."
+      >
+        <Alert tone="info">
+          Question: does modest physical depth make controls easier to recognize as interactive, more satisfying with
+          mouse/trackpad, more tactile on touch, and easier to distinguish from status badges -- without looking
+          dated, glossy, or game-like? Hover elevation only applies on real pointer devices (
+          <code className="ui-ref-code">hover: hover</code> + <code className="ui-ref-code">pointer: fine</code>);
+          press/compress works identically for mouse and touch via <code className="ui-ref-code">:active</code>.
+        </Alert>
+
+        <div className="ui-ref-compare-grid">
+          <PageSection variant="section">
+            <PageHeader
+              title="Canonical Flat (System 3)"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+            />
+            <div style={{ display: "grid", gap: "var(--space-5)" }}>
+              <DepthActionRow depth="flat" onCancelClick={() => setDepthConfirmOpen(true)} />
+              <div>
+                <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+                  Destructive confirmation (ConfirmDialog&rsquo;s Confirm button)
+                </div>
+                <DepthStopExample depth="flat" />
+              </div>
+              <DepthTableRowActions depth="flat" records={SAMPLE_RECORDS.slice(0, 2)} />
+            </div>
+          </PageSection>
+
+          <PageSection variant="section">
+            <PageHeader
+              title="Modern 3D Candidate"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+            />
+            <div style={{ display: "grid", gap: "var(--space-5)" }}>
+              <DepthActionRow depth="3d" />
+              <div>
+                <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+                  Destructive confirmation -- static example (ConfirmDialog itself is untouched; this is what its
+                  Confirm button would look like with the depth class added)
+                </div>
+                <DepthStopExample depth="3d" />
+              </div>
+              <DepthTableRowActions depth="3d" records={SAMPLE_RECORDS.slice(0, 2)} />
+            </div>
+          </PageSection>
+        </div>
+
+        <ConfirmDialog
+          open={depthConfirmOpen}
+          title="Cancel this registration?"
+          message="Reference-page demo only -- confirming here does not change any real data. This is the real, unmodified ConfirmDialog (canonical flat) -- see the note above about why the 3D column shows a static equivalent instead."
+          confirmLabel="Cancel Registration"
+          cancelLabel="Keep Registration"
+          danger
+          onConfirm={() => setDepthConfirmOpen(false)}
+          onCancel={() => setDepthConfirmOpen(false)}
+        />
+
+        <PageSection variant="section">
+          <PageHeader
+            title="Try it: flip one repeated action group"
+            headingLevel="h3"
+            titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+            description="Local-only toggle, not persisted -- compare the two treatments on the same table without navigating away."
+            descriptionClassName="app-subtle-text"
+          />
+          <fieldset style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: "var(--space-2)" }}>
+            <legend className="table-toolbar-label" style={{ padding: 0 }}>
+              Row actions treatment
+            </legend>
+            {(["flat", "3d"] as const).map((mode) => (
+              <label key={mode} style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name="ref-depth-toggle"
+                  checked={depthToggle === mode}
+                  onChange={() => setDepthToggle(mode)}
+                />
+                {mode === "flat" ? "Canonical Flat (System 3)" : "Modern 3D Candidate"}
+              </label>
+            ))}
+          </fieldset>
+          <div style={{ marginTop: "var(--space-4)" }}>
+            <DepthTableRowActions depth={depthToggle} records={SAMPLE_RECORDS} />
+          </div>
+        </PageSection>
+
+        <Observation>
+          Depth/interaction feel only -- no semantic meaning changed: Primary is still the one solid, most-elevated
+          action; Ordinary is still the quietest of the four (smallest lift, even with a faint surface added);
+          Destructive still shows zero shadow at rest and only gains depth on hover, never before; Destructive
+          confirmation still only ever appears inside ConfirmDialog&rsquo;s Confirm step; Navigation/handoff stays a
+          link in both columns, with no depth class applied at all. Compare for yourself: obviously clickable?
+          polished or dated? does Primary still dominate appropriately? does Destructive still stay restrained until
+          confirmation? does it hold up with several buttons together in RowActions? Not approved -- this is
+          exploration, not a decision.
+        </Observation>
+      </RefSection>
     </div>
   );
 }
@@ -2490,6 +2606,102 @@ function OperationalHandoffExample() {
             </RowActions>
           </td>
         </tr>
+      </tbody>
+    </DataTable>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Button Depth / Tactile Treatment (Section 16). Every element below is the
+// real AppButton/AppLinkButton/DataTable/RowActions/StatusBadge, extended
+// only through AppButton's own className prop with the reference-only
+// .ui-ref-3d-* classes defined in app/globals.css -- components/ui/* itself
+// is never touched. Navigation/handoff never receives a depth class, at
+// either treatment.
+// ----------------------------------------------------------------------------
+
+function depthClassName(depth: "flat" | "3d", variantClass: string): string | undefined {
+  return depth === "3d" ? `ui-ref-3d ${variantClass}` : undefined;
+}
+
+/** Save (primary) / Edit (ordinary) / Cancel Registration (danger) / Save (disabled) / View in Parking (nav). */
+function DepthActionRow({ depth, onCancelClick }: { depth: "flat" | "3d"; onCancelClick?: () => void }) {
+  return (
+    <div className="app-button-row">
+      <AppButton variant="primary" className={depthClassName(depth, "ui-ref-3d-primary")}>
+        Save
+      </AppButton>
+      <AppButton className={depthClassName(depth, "ui-ref-3d-ordinary")}>Edit</AppButton>
+      <AppButton
+        variant="danger"
+        className={depthClassName(depth, "ui-ref-3d-danger")}
+        onClick={onCancelClick}
+      >
+        Cancel Registration
+      </AppButton>
+      <AppButton disabled className={depthClassName(depth, "ui-ref-3d-ordinary")}>
+        Save
+      </AppButton>
+      <AppLinkButton href="#tables">View in Parking →</AppLinkButton>
+    </div>
+  );
+}
+
+/** The solid destructive-confirmation treatment, standalone (variant="stop"). */
+function DepthStopExample({ depth }: { depth: "flat" | "3d" }) {
+  return (
+    <AppButton variant="stop" className={depthClassName(depth, "ui-ref-3d-stop")}>
+      Cancel Registration
+    </AppButton>
+  );
+}
+
+/** A representative table-row action set (Contact/Edit/Cancel) at the given depth treatment. */
+function DepthTableRowActions({ depth, records }: { depth: "flat" | "3d"; records: SampleRecord[] }) {
+  return (
+    <DataTable caption={`Representative row actions (${depth === "3d" ? "3D candidate" : "canonical flat"})`}>
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Status</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {records.map((r) => (
+          <tr key={r.id}>
+            <td>
+              <div className="data-table-cell-primary">{r.name}</div>
+              <div className="data-table-cell-meta">{r.email || "No email on file"}</div>
+            </td>
+            <td>
+              <StatusBadge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</StatusBadge>
+            </td>
+            <td>
+              <RowActions>
+                <AppButton
+                  variant="primary"
+                  className={depthClassName(depth, "ui-ref-3d-primary")}
+                  aria-label={`Contact ${r.name}`}
+                >
+                  Contact
+                </AppButton>
+                <AppButton className={depthClassName(depth, "ui-ref-3d-ordinary")} aria-label={`Edit ${r.name}`}>
+                  Edit
+                </AppButton>
+                {r.status !== "cancelled" ? (
+                  <AppButton
+                    variant="danger"
+                    className={depthClassName(depth, "ui-ref-3d-danger")}
+                    aria-label={`Cancel ${r.name}'s request`}
+                  >
+                    Cancel
+                  </AppButton>
+                ) : null}
+              </RowActions>
+            </td>
+          </tr>
+        ))}
       </tbody>
     </DataTable>
   );

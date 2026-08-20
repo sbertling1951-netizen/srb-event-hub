@@ -3208,3 +3208,134 @@ a.ui-ref-legacy-danger {
   -webkit-text-fill-color: var(--color-status-error) !important;
   text-decoration: none !important;
 }
+
+/* ---- Button Depth / Tactile Treatment prototype (reference-only, Section 16) ----
+   A subtle 3D/tactile alternative surface for the SAME approved System 3
+   semantics -- depth/interaction feel only, never a meaning change. Each
+   rule pairs a real AppButton variant class with its own reference-only
+   depth class (e.g. .app-button-primary.ui-ref-3d-primary); .app-button/
+   .app-button-* themselves are never touched, and none of this is used
+   outside /admin/ui-reference. Colored shadow tints reuse the exact
+   rgba() values .app-button-primary/.app-button-stop already use
+   elsewhere in this file, not new colors. Hover elevation is gated to
+   real pointer devices (hover:hover + pointer:fine) so touch never gets
+   a "stuck hover"; :active (press/compress) works identically for mouse
+   and touch. Motion is disabled under prefers-reduced-motion. Navigation/
+   handoff (a.app-button) intentionally receives no depth class anywhere
+   on the reference page -- it is a link, not a button, and stays that
+   way in both the flat and 3D comparison. */
+.ui-ref-3d {
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-ref-3d {
+    transition: none;
+  }
+}
+
+/* Ordinary/secondary: still the most subordinate of the four -- a faint
+   neutral surface (the existing --shadow-small/-medium tokens, not a new
+   color) and the smallest lift of any variant, so it keeps receding next
+   to Primary even once both have some depth. */
+.app-button.ui-ref-3d-ordinary {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border-default);
+  box-shadow: var(--shadow-small);
+}
+
+.app-button.ui-ref-3d-ordinary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+  background: var(--color-bg-muted);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-button.ui-ref-3d-ordinary:hover:not(:disabled) {
+    box-shadow: var(--shadow-medium);
+    transform: translateY(-1px);
+  }
+}
+
+/* Primary: the most elevated surface -- it is the one action meant to
+   draw the eye. The tint (rgba(59,130,246,...)) is the exact value
+   .app-button-primary's own box-shadow already uses; the inset top
+   highlight is a single flat translucent-white line, not a gradient
+   sweep, kept deliberately minimal. */
+.app-button-primary.ui-ref-3d-primary {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 5px rgba(59, 130, 246, 0.3);
+}
+
+.app-button-primary.ui-ref-3d-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.25);
+  background: var(--color-action-primary-active);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-button-primary.ui-ref-3d-primary:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      0 4px 10px rgba(59, 130, 246, 0.35);
+    transform: translateY(-1px);
+  }
+}
+
+/* Destructive initiation: stays visually flat at rest -- no shadow at
+   all -- matching the approved "restrained/outlined until confirmed"
+   rule exactly. Depth only appears on hover/focus (a real pointer is
+   asking "what is this"), never before. */
+.app-button-danger.ui-ref-3d-danger {
+  box-shadow: none;
+}
+
+.app-button-danger.ui-ref-3d-danger:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(220, 38, 38, 0.18);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-button-danger.ui-ref-3d-danger:hover:not(:disabled) {
+    box-shadow: 0 2px 6px rgba(220, 38, 38, 0.2);
+    transform: translateY(-1px);
+  }
+}
+
+/* Destructive confirmation (ConfirmDialog's Confirm button only, when
+   danger is set): the most deliberate press-feedback of any variant --
+   this is the one moment a solid destructive fill exists at all, so its
+   depth should read as "this is the final, weighty action." Tint reuses
+   .app-button-stop's own existing rgba(220,38,38,...) shadow value. */
+.app-button-stop.ui-ref-3d-stop {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 3px 7px rgba(220, 38, 38, 0.35);
+}
+
+.app-button-stop.ui-ref-3d-stop:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.3);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-button-stop.ui-ref-3d-stop:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      0 5px 12px rgba(220, 38, 38, 0.4);
+    transform: translateY(-1px);
+  }
+}
+
+/* Disabled always wins over any variant's depth -- higher specificity
+   than the (class + class) box-shadow rules above, not !important, so a
+   disabled 3D button reads as unambiguously flat/non-interactive. */
+.app-button-primary.ui-ref-3d-primary:disabled,
+.app-button.ui-ref-3d-ordinary:disabled,
+.app-button-danger.ui-ref-3d-danger:disabled,
+.app-button-stop.ui-ref-3d-stop:disabled {
+  box-shadow: none;
+  transform: none;
+}

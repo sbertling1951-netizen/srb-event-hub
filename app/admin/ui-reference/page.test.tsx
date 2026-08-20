@@ -386,6 +386,101 @@ test("Table Row Actions layout (Treatments 1/2/3) is explicitly flagged as still
   assert.match(sectionSource, /which of Treatments 1-3 becomes the canonical table-row action layout/);
 });
 
+test("the Button Depth / Tactile Treatment section exists with a Canonical Flat vs. Modern 3D Candidate side-by-side, and is explicitly not approved", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+
+  assert.ok(html.includes("Button Depth / Tactile Treatment (prototype)"));
+  assert.ok(html.includes("Canonical Flat (System 3)"));
+  assert.ok(html.includes("Modern 3D Candidate"));
+
+  const sectionSource = source.slice(source.indexOf('id="depth"'), source.indexOf("function depthClassName("));
+  assert.match(sectionSource, /Not approved -- this is\s*\n?\s*exploration, not a decision\./);
+});
+
+test("only the 3D column applies the reference-only depth classes -- the flat column renders the real variant classes with no ui-ref-3d modifier", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  const depthSection = html.slice(html.indexOf('id="depth"'), html.length);
+  const flatStart = depthSection.indexOf("Canonical Flat (System 3)");
+  const threeDStart = depthSection.indexOf("Modern 3D Candidate");
+  const flatHtml = depthSection.slice(flatStart, threeDStart);
+  const threeDHtml = depthSection.slice(threeDStart, depthSection.indexOf("Try it: flip one repeated action group"));
+
+  assert.equal(/ui-ref-3d/.test(flatHtml), false);
+  assert.match(flatHtml, /class="app-button app-button-primary"/);
+
+  assert.match(threeDHtml, /class="app-button app-button-primary ui-ref-3d ui-ref-3d-primary"/);
+  assert.match(threeDHtml, /class="app-button ui-ref-3d ui-ref-3d-ordinary"/);
+  assert.match(threeDHtml, /class="app-button app-button-danger ui-ref-3d ui-ref-3d-danger"/);
+});
+
+test("navigation/handoff (View in Parking) never receives a depth class, in either treatment -- it stays a link, not a tactile button", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  const depthSection = html.slice(
+    html.indexOf('id="depth"'),
+    html.indexOf("Try it: flip one repeated action group"),
+  );
+
+  const navLinkMatches = [...depthSection.matchAll(/<a class="([^"]*)" href="#tables">View in Parking/g)];
+  assert.ok(navLinkMatches.length >= 2, "expected View in Parking to appear in both the flat and 3D columns");
+  for (const match of navLinkMatches) {
+    assert.equal(match[1], "app-button");
+  }
+});
+
+test("the destructive-confirmation exhibit uses variant=\"stop\" (the solid fill) in both columns, and the flat column wires the real, unmodified ConfirmDialog -- the 3D column only shows a static equivalent", () => {
+  const sectionSource = source.slice(source.indexOf('id="depth"'), source.indexOf("function depthClassName("));
+
+  assert.match(sectionSource, /<DepthStopExample depth="flat" \/>/);
+  assert.match(sectionSource, /<DepthStopExample depth="3d" \/>/);
+  assert.match(sectionSource, /ConfirmDialog itself is untouched; this is what its/);
+
+  const confirmDialogUses = (sectionSource.match(/<ConfirmDialog\s/g) || []).length;
+  assert.equal(confirmDialogUses, 1, "expected exactly one real ConfirmDialog instance in Section 16 (the flat column's)");
+
+  const stopFn = source.slice(source.indexOf("function DepthStopExample("), source.indexOf("function DepthTableRowActions("));
+  assert.match(stopFn, /variant="stop"/);
+});
+
+test("the depth prototype CSS gates hover elevation to real pointer devices, uses :active for press feedback on both mouse and touch, respects prefers-reduced-motion, and flattens fully when disabled", () => {
+  const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
+  const depthBlock = cssSource.slice(
+    cssSource.indexOf("Button Depth / Tactile Treatment prototype"),
+    cssSource.length,
+  );
+
+  assert.match(depthBlock, /@media \(hover: hover\) and \(pointer: fine\) \{/);
+  assert.match(depthBlock, /:active:not\(:disabled\)/);
+  assert.match(depthBlock, /@media \(prefers-reduced-motion: reduce\) \{/);
+  assert.match(depthBlock, /\.app-button-primary\.ui-ref-3d-primary:disabled,/);
+  assert.match(depthBlock, /box-shadow: none;\s*\n\s*transform: none;/);
+  // Colored tints reuse the exact rgba() values already used elsewhere in
+  // this file (.app-button-primary/.app-button-stop), not new colors.
+  assert.match(depthBlock, /rgba\(59, 130, 246,/);
+  assert.match(depthBlock, /rgba\(220, 38, 38,/);
+});
+
+test("components/ui/AppButton.tsx and components/ui/ConfirmDialog.tsx contain no reference-only classes -- the canonical shared primitives are untouched by this prototype", () => {
+  const appButtonSource = readFileSync(
+    fileURLToPath(new URL("../../../components/ui/AppButton.tsx", import.meta.url)),
+    "utf8",
+  );
+  const confirmDialogSource = readFileSync(
+    fileURLToPath(new URL("../../../components/ui/ConfirmDialog.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.equal(/ui-ref-3d|ui-ref-legacy|ui-ref-scale/.test(appButtonSource), false);
+  assert.equal(/ui-ref-3d|ui-ref-legacy|ui-ref-scale/.test(confirmDialogSource), false);
+});
+
+test("the local Canonical/3D toggle re-renders the real, full sample roster (including Casey) at whichever depth is selected, and is never persisted", () => {
+  const sectionSource = source.slice(source.indexOf('id="depth"'), source.indexOf("function depthClassName("));
+  assert.match(sectionSource, /<DepthTableRowActions depth=\{depthToggle\} records=\{SAMPLE_RECORDS\} \/>/);
+  assert.equal(/localStorage/.test(sectionSource), false);
+
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  assert.ok(html.includes("Casey Whitfield-Alvarenga-Thornbury"));
+});
+
 test("no new StatusBadge tone or AppButton variant was invented to build this page", () => {
   const badgeToneUses = [...source.matchAll(/tone=\{?"?(neutral|info|warning|danger|success)"?\}?/g)].map(
     (m) => m[1],
