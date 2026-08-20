@@ -13,25 +13,60 @@ import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 // block, exercised manually via the reference page.
 // Run with: npx tsx --test components/ui/AppButton.test.tsx
 
-test("the default (unset) variant applies no app-button-* modifier class -- this IS the ordinary/secondary ghost treatment, not a separate opt-in", () => {
+test("the default (unset) variant applies no app-button-* modifier class -- this IS the Tertiary/quiet ghost treatment, not a separate opt-in", () => {
   const html = renderToStaticMarkup(<AppButton>Edit</AppButton>);
   assert.match(html, /class="app-button"/);
   assert.equal(/app-button-\w+/.test(html), false);
 });
 
-test("every canonical variant applies its exact modifier class", () => {
+test("variant=\"tertiary\" renders identically to the unset default -- both are the same ghost treatment, just one is explicit", () => {
+  const html = renderToStaticMarkup(<AppButton variant="tertiary">Edit</AppButton>);
+  assert.match(html, /class="app-button"/);
+  assert.equal(/app-button-\w+/.test(html), false);
+});
+
+test("variant=\"secondary\" and its transitional alias variant=\"muted\" apply their own exact (and equal-weight) modifier class", () => {
+  const secondary = renderToStaticMarkup(<AppButton variant="secondary">Cancel</AppButton>);
+  assert.match(secondary, /class="app-button app-button-secondary"/);
+  const muted = renderToStaticMarkup(<AppButton variant="muted">Cancel</AppButton>);
+  assert.match(muted, /class="app-button app-button-muted"/);
+});
+
+test("every canonical/transitional variant applies its exact modifier class", () => {
   for (const variant of [
     "primary",
-    "success",
+    "secondary",
     "danger",
+    "stop",
+    "success",
     "warning",
     "muted",
     "start",
-    "stop",
   ] as const) {
     const html = renderToStaticMarkup(<AppButton variant={variant}>Go</AppButton>);
     assert.match(html, new RegExp(`class="app-button app-button-${variant}"`));
   }
+});
+
+test("loading renders a spinner, sets aria-busy, and forces disabled even when disabled was not passed", () => {
+  const html = renderToStaticMarkup(<AppButton loading>Save</AppButton>);
+  assert.match(html, /aria-busy="true"/);
+  assert.match(html, /disabled=""/);
+  assert.match(html, /class="app-button-spinner"/);
+});
+
+test("loading combined with an explicit disabled=false still disables the button -- loading always wins", () => {
+  const html = renderToStaticMarkup(
+    <AppButton loading disabled={false}>
+      Save
+    </AppButton>,
+  );
+  assert.match(html, /disabled=""/);
+});
+
+test("a non-loading button has no aria-busy attribute at all, not aria-busy=\"false\"", () => {
+  const html = renderToStaticMarkup(<AppButton>Save</AppButton>);
+  assert.equal(/aria-busy/.test(html), false);
 });
 
 test("AppButton defaults to type=\"button\" -- never submits a form by accident", () => {

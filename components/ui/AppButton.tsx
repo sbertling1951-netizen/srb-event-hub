@@ -1,44 +1,86 @@
-import type {
-  AnchorHTMLAttributes,
-  ButtonHTMLAttributes,
-  ReactNode,
+import {
+  type AnchorHTMLAttributes,
+  type ButtonHTMLAttributes,
+  forwardRef,
+  type ReactNode,
 } from "react";
 
+/**
+ * Canonical action hierarchy (Central UI Standard, Stage 2). `"default"`
+ * and `"tertiary"` are the same quiet/ghost treatment -- `"tertiary"` is
+ * the explicit, discoverable name for it going forward; `"default"`
+ * remains so every existing unset-variant call site is unaffected.
+ * `"secondary"` is the persistent-visible-chrome treatment (formerly
+ * reachable only as `"muted"`, which is kept as a transitional alias --
+ * both produce identical output; new code should prefer `"secondary"`).
+ *
+ * `"success"`, `"warning"`, and `"start"` are transitional aliases from
+ * before System 3 (approved 2026-08-19): affirmative/status-toned
+ * action buttons should use `"primary"` going forward (color communicates
+ * urgency/destructiveness, not decoration) -- these three remain only for
+ * existing call sites and are not part of the canonical hierarchy.
+ */
 type ButtonVariant =
   | "default"
   | "primary"
-  | "success"
+  | "secondary"
+  | "tertiary"
   | "danger"
+  | "stop"
+  | "success"
   | "warning"
   | "muted"
-  | "start"
-  | "stop";
+  | "start";
 
-type AppButtonProps = {
+const GHOST_VARIANTS = new Set<ButtonVariant>(["default", "tertiary"]);
+
+type AppButtonOwnProps = {
   children: ReactNode;
   variant?: ButtonVariant;
   className?: string;
-} & ButtonHTMLAttributes<HTMLButtonElement>;
+  /**
+   * Standardized loading/busy presentation (Central UI Standard, Stage 2):
+   * shows a spinner, sets `aria-busy`, and forces the effective disabled
+   * state, so every consumer gets the same "Working..." shape
+   * `ConfirmDialog` already established rather than hand-rolling its own.
+   */
+  loading?: boolean;
+};
 
-export function AppButton({
-  children,
-  variant = "default",
-  className = "",
-  type = "button",
-  ...props
-}: AppButtonProps) {
-  const variantClass = variant === "default" ? "" : ` app-button-${variant}`;
+type AppButtonProps = AppButtonOwnProps & ButtonHTMLAttributes<HTMLButtonElement>;
 
-  return (
-    <button
-      type={type}
-      className={`app-button${variantClass} ${className}`.trim()}
-      {...props}
-    >
-      {children}
-    </button>
-  );
+function variantClassName(variant: ButtonVariant): string {
+  return GHOST_VARIANTS.has(variant) ? "" : ` app-button-${variant}`;
 }
+
+export const AppButton = forwardRef<HTMLButtonElement, AppButtonProps>(
+  function AppButton(
+    {
+      children,
+      variant = "default",
+      className = "",
+      type = "button",
+      loading = false,
+      disabled,
+      ...props
+    },
+    ref,
+  ) {
+    return (
+      <button
+        ref={ref}
+        type={type}
+        className={`app-button${variantClassName(variant)} ${className}`.trim()}
+        disabled={disabled || loading}
+        aria-busy={loading || undefined}
+        {...props}
+      >
+        {loading ? <span className="app-button-spinner" aria-hidden="true" /> : null}
+        {children}
+      </button>
+    );
+  },
+);
 
 type AppLinkButtonProps = {
   children: ReactNode;
@@ -46,17 +88,16 @@ type AppLinkButtonProps = {
   className?: string;
 } & AnchorHTMLAttributes<HTMLAnchorElement>;
 
-export function AppLinkButton({
-  children,
-  variant = "default",
-  className = "",
-  ...props
-}: AppLinkButtonProps) {
-  const variantClass = variant === "default" ? "" : ` app-button-${variant}`;
-
-  return (
-    <a className={`app-button${variantClass} ${className}`.trim()} {...props}>
-      {children}
-    </a>
-  );
-}
+export const AppLinkButton = forwardRef<HTMLAnchorElement, AppLinkButtonProps>(
+  function AppLinkButton({ children, variant = "default", className = "", ...props }, ref) {
+    return (
+      <a
+        ref={ref}
+        className={`app-button${variantClassName(variant)} ${className}`.trim()}
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
+);

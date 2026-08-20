@@ -10,6 +10,8 @@ import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { Dialog } from "@/components/ui/Dialog";
+import { Checkbox, Field, Input, Radio, Select, Textarea } from "@/components/ui/Field";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { RowActions } from "@/components/ui/RowActions";
@@ -53,6 +55,7 @@ const TOC: Array<{ id: string; label: string }> = [
   { id: "scale", label: "14. Mid-Size UI Scale (✅ approved)" },
   { id: "action-hierarchy", label: "15. Button Hierarchy (✅ approved) & Row Actions (undecided)" },
   { id: "depth", label: "16. Button Depth / Tactile Treatment (prototype)" },
+  { id: "overlays", label: "17. Dialog & Overlays (✅ approved)" },
 ];
 
 // ----------------------------------------------------------------------------
@@ -304,6 +307,10 @@ export function AdminUiReferenceContent() {
   const [demoPreferredView, setDemoPreferredView] = useState<"automatic" | "table" | "list">("automatic");
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Section 17 demo only: the general-purpose Dialog trigger, separate
+  // from ConfirmDialog's own confirmOpen state above.
+  const [overlayDialogOpen, setOverlayDialogOpen] = useState(false);
 
   // Section 14 demo only: which scale the toggleable sample roster below
   // renders at. Local state only -- never persisted, never affects any
@@ -578,15 +585,17 @@ export function AdminUiReferenceContent() {
           </div>
         </PageSection>
 
-        <Observation>
-          <code className="ui-ref-code">.shell-page-title</code> (the real, live page-title class) renders with{" "}
-          <code className="ui-ref-code">clamp(18px, 2.2vw, 24px)</code> and{" "}
-          <code className="ui-ref-code">--font-weight-semibold</code> -- it does not consume the{" "}
-          <code className="ui-ref-code">--font-size-page-title</code> (22px) or{" "}
-          <code className="ui-ref-code">--font-weight-bold</code> (800) tokens defined in{" "}
-          <code className="ui-ref-code">:root</code> at all. Compare the two rows above: they are close but not
-          identical. Either the token is stale and should be removed, or the header should be switched onto it.
-        </Observation>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          <strong>Resolved (Central UI Standard, Stage 2):</strong> the two rows above now render at the exact
+          same font size -- <code className="ui-ref-code">.shell-page-title</code> consumes{" "}
+          <code className="ui-ref-code">var(--font-size-page-title)</code> directly, and the token itself was
+          promoted from a static 23px to the shell's own <code className="ui-ref-code">clamp(19px, 2.3vw, 25px)</code>{" "}
+          expression rather than the other way around, so the live shell&rsquo;s rendered size is unchanged. The
+          font-<em>weight</em> gap is unchanged and intentionally left open: <code className="ui-ref-code">.shell-page-title</code>{" "}
+          still uses <code className="ui-ref-code">--font-weight-semibold</code> (700), a deliberate choice from the
+          Mid-Size UI Scale approval, not the <code className="ui-ref-code">--font-weight-bold</code> (800) shown in
+          the token row above -- changing that is a real visual decision this stage did not make.
+        </p>
         <Observation>
           The &ldquo;subsection&rdquo; style and the field-label style are visually almost the same size and weight
           but are not the same values (13px/700 vs. 14px/600) -- there is no single documented third heading tier
@@ -601,40 +610,63 @@ export function AdminUiReferenceContent() {
       <RefSection
         id="buttons"
         title="Buttons and Action Hierarchy"
-        description="Every AppButton/AppLinkButton variant currently defined, plus realistic action groupings. No new variant was added to build this section."
+        description="The canonical Primary/Secondary/Tertiary/Destructive/Disabled-loading hierarchy (Central UI Standard, Stage 2), plus realistic action groupings. Every example below is the real AppButton component."
       >
         <div className="ui-ref-swatch-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
-          <div style={{ display: "grid", gap: "var(--space-2)" }}>
-            <AppButton>Default</AppButton>
-            <code className="ui-ref-code">variant (omitted)</code>
-          </div>
           <div style={{ display: "grid", gap: "var(--space-2)" }}>
             <AppButton variant="primary">Primary</AppButton>
             <code className="ui-ref-code">variant=&quot;primary&quot;</code>
           </div>
           <div style={{ display: "grid", gap: "var(--space-2)" }}>
-            <AppButton variant="muted">Muted</AppButton>
-            <code className="ui-ref-code">variant=&quot;muted&quot;</code>
+            <AppButton variant="secondary">Secondary</AppButton>
+            <code className="ui-ref-code">variant=&quot;secondary&quot;</code>
           </div>
           <div style={{ display: "grid", gap: "var(--space-2)" }}>
-            <AppButton variant="success">Success</AppButton>
-            <code className="ui-ref-code">variant=&quot;success&quot;</code>
+            <AppButton variant="tertiary">Tertiary</AppButton>
+            <code className="ui-ref-code">variant=&quot;tertiary&quot; (= unset)</code>
           </div>
           <div style={{ display: "grid", gap: "var(--space-2)" }}>
-            <AppButton variant="danger">Danger</AppButton>
+            <AppButton variant="danger">Destructive</AppButton>
             <code className="ui-ref-code">variant=&quot;danger&quot;</code>
           </div>
           <div style={{ display: "grid", gap: "var(--space-2)" }}>
-            <AppButton variant="warning">Warning</AppButton>
-            <code className="ui-ref-code">variant=&quot;warning&quot;</code>
+            <AppButton variant="stop">Destructive (confirm)</AppButton>
+            <code className="ui-ref-code">variant=&quot;stop&quot;</code>
           </div>
           <div style={{ display: "grid", gap: "var(--space-2)" }}>
             <AppButton disabled>Disabled</AppButton>
             <code className="ui-ref-code">disabled</code>
           </div>
           <div style={{ display: "grid", gap: "var(--space-2)" }}>
+            <AppButton loading>Loading</AppButton>
+            <code className="ui-ref-code">loading</code>
+          </div>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
             <AppLinkButton href="#tables">Link / navigation</AppLinkButton>
             <code className="ui-ref-code">AppLinkButton</code>
+          </div>
+        </div>
+
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Transitional aliases, still rendered but not part of the canonical hierarchy above -- kept only for
+          existing call sites (see each swatch&rsquo;s own code caption):
+        </p>
+        <div className="ui-ref-swatch-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
+            <AppButton variant="muted">Muted</AppButton>
+            <code className="ui-ref-code">variant=&quot;muted&quot; (= secondary)</code>
+          </div>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
+            <AppButton variant="success">Success</AppButton>
+            <code className="ui-ref-code">variant=&quot;success&quot; (prefer primary)</code>
+          </div>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
+            <AppButton variant="start">Start</AppButton>
+            <code className="ui-ref-code">variant=&quot;start&quot; (prefer primary)</code>
+          </div>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
+            <AppButton variant="warning">Warning</AppButton>
+            <code className="ui-ref-code">variant=&quot;warning&quot; (status color, not an action)</code>
           </div>
         </div>
 
@@ -669,14 +701,22 @@ export function AdminUiReferenceContent() {
           </div>
         </div>
 
-        <Observation>
-          Two independent visual systems exist for the same two meanings (affirmative and destructive): a
-          tinted-pill pair (<code className="ui-ref-code">success</code>/<code className="ui-ref-code">danger</code>
-          , used everywhere else) and a solid-fill pair (
-          <code className="ui-ref-code">start</code>/<code className="ui-ref-code">stop</code>, used only in
-          Slideshow). Nothing distinguishes when a page should reach for one pair over the other. This is not
-          resolved here -- both are shown as they exist today.
-        </Observation>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          <strong>Resolved (Central UI Standard, Stage 2):</strong> going forward, &ldquo;affirmative&rdquo; is not
+          a distinct action tier -- an action that succeeds is still just the <code className="ui-ref-code">
+            primary
+          </code>{" "}
+          action for its surface, and color communicates urgency/destructiveness, not a decoration for good
+          outcomes. <code className="ui-ref-code">success</code>/<code className="ui-ref-code">start</code> remain
+          as transitional aliases for existing call sites (shown above) but are not part of the canonical
+          hierarchy. Destructive keeps its existing two-step shape unchanged: <code className="ui-ref-code">
+            danger
+          </code>{" "}
+          (quiet, initiation) for a row/page-level &ldquo;begin this destructive action&rdquo; control, and{" "}
+          <code className="ui-ref-code">stop</code> (solid, confirmation) reserved for the moment a{" "}
+          <code className="ui-ref-code">Dialog</code>/<code className="ui-ref-code">ConfirmDialog</code> actually
+          confirms it -- that was already correct (System 3, approved 2026-08-19) and is unchanged here.
+        </p>
 
         <div>
           <PageHeader
@@ -696,20 +736,25 @@ export function AdminUiReferenceContent() {
               <strong>Edit / View</strong>
               <RowActions>
                 <AppButton>Edit</AppButton>
-                <AppButton variant="muted">View</AppButton>
+                <AppButton variant="secondary">View</AppButton>
               </RowActions>
             </div>
             <div className="ui-ref-compare-card">
-              <strong>Approve / Reject</strong>
+              <strong>Approve / Reject (canonical)</strong>
               <RowActions>
-                <AppButton variant="success">Approve</AppButton>
+                <AppButton variant="primary">Approve</AppButton>
                 <AppButton variant="danger">Reject</AppButton>
               </RowActions>
+              <p className="app-subtle-text" style={{ margin: 0 }}>
+                Approve is this row&rsquo;s principal action (primary); Reject is destructive-initiation (danger).
+                Not <code className="ui-ref-code">success</code>/<code className="ui-ref-code">danger</code> -- see
+                the resolved note above.
+              </p>
             </div>
             <div className="ui-ref-compare-card">
-              <strong>Complete / Cancel</strong>
+              <strong>Complete / Cancel (canonical)</strong>
               <RowActions>
-                <AppButton variant="success">Complete</AppButton>
+                <AppButton variant="primary">Complete</AppButton>
                 <AppButton variant="danger">Cancel</AppButton>
               </RowActions>
             </div>
@@ -747,14 +792,16 @@ export function AdminUiReferenceContent() {
           onCancel={() => setConfirmOpen(false)}
         />
 
-        <Observation>
-          <code className="ui-ref-code">ConfirmDialog</code> (used above) predates the token system and is entirely
-          hand-styled: literal hex colors (<code className="ui-ref-code">#dc2626</code>,{" "}
-          <code className="ui-ref-code">#2563eb</code>, <code className="ui-ref-code">#0f172a</code>, ...) and
-          literal pixel radii/padding that don&rsquo;t match <code className="ui-ref-code">--radius-medium</code>/
-          <code className="ui-ref-code">--radius-large</code> or the spacing scale. It happens to land close to the
-          token palette by coincidence, not by reference. A real candidate for tokenizing in a future pass.
-        </Observation>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          <strong>Resolved (Central UI Standard, Stage 2):</strong> <code className="ui-ref-code">ConfirmDialog</code>{" "}
+          (used above) no longer hand-styles its own overlay -- it renders through the canonical{" "}
+          <code className="ui-ref-code">Dialog</code> foundation (<code className="ui-ref-code">.app-dialog*</code>,
+          fully tokenized), keeping only its own confirm/cancel decision logic. See{" "}
+          <a href="#overlays" className="app-button">
+            Overlays
+          </a>{" "}
+          below for <code className="ui-ref-code">Dialog</code> on its own.
+        </p>
       </RefSection>
 
       {/* =================================================================
@@ -903,23 +950,70 @@ export function AdminUiReferenceContent() {
           </div>
         </PageSection>
 
-        <Observation>
-          There is no shared <code className="ui-ref-code">&lt;TextField&gt;</code>/<code className="ui-ref-code">
-            &lt;Select&gt;
-          </code>/<code className="ui-ref-code">&lt;Textarea&gt;</code> component and no single canonical CSS class
-          for a form control -- three parallel, near-identical rule sets style inputs today (
-          <code className="ui-ref-code">.app-card-section input</code>,{" "}
-          <code className="ui-ref-code">.table-toolbar-row input</code>,{" "}
-          <code className="ui-ref-code">.app-form-input</code>). A bare <code className="ui-ref-code">&lt;input&gt;</code>{" "}
-          outside any of those three containers renders completely unstyled.
-        </Observation>
-        <Observation>
-          The error-state field above is a reference-only proposal built from existing{" "}
-          <code className="ui-ref-code">--color-status-error</code>/<code className="ui-ref-code">
-            --color-status-error-bg
+        <PageSection variant="section" title="Field / Input / Select / Textarea / Checkbox / Radio (canonical)">
+          <p className="app-subtle-text" style={{ margin: 0 }}>
+            <strong>Resolved (Central UI Standard, Stage 2):</strong> the three parallel rule sets below this
+            heading (<code className="ui-ref-code">.app-card-section input</code>,{" "}
+            <code className="ui-ref-code">.table-toolbar-row input</code>,{" "}
+            <code className="ui-ref-code">.app-form-input</code>) are now transitional aliases for one canonical{" "}
+            <code className="ui-ref-code">.app-control</code> rule, which{" "}
+            <code className="ui-ref-code">components/ui/Field.tsx</code>&rsquo;s <code className="ui-ref-code">
+              Input
+            </code>
+            /<code className="ui-ref-code">Select</code>/<code className="ui-ref-code">Textarea</code> apply
+            directly. <code className="ui-ref-code">Field</code> owns label/required/help/error association;
+            error styling now has a real, shared treatment (below) instead of being reference-only.
+          </p>
+
+          <div className="ui-ref-compare-grid">
+            <div className="ui-ref-compare-card">
+              <Field label="Event name" required help="Shown to attendees on their agenda.">
+                {(controlProps) => (
+                  <Input {...controlProps} defaultValue="EpicentraX Fall Rally" />
+                )}
+              </Field>
+            </div>
+            <div className="ui-ref-compare-card">
+              <Field label="Contact email" error="Enter a valid email address.">
+                {(controlProps) => <Input {...controlProps} type="email" defaultValue="not-an-email" />}
+              </Field>
+            </div>
+            <div className="ui-ref-compare-card">
+              <Field label="Region" disabled help="Set automatically from the Tenant's default region.">
+                {(controlProps) => (
+                  <Select {...controlProps} disabled defaultValue="west">
+                    <option value="west">West</option>
+                    <option value="east">East</option>
+                  </Select>
+                )}
+              </Field>
+            </div>
+            <div className="ui-ref-compare-card">
+              <Field label="Notes">
+                {(controlProps) => (
+                  <Textarea {...controlProps} rows={3} defaultValue="Arrives Friday evening; needs accessible parking." />
+                )}
+              </Field>
+            </div>
+            <div className="ui-ref-compare-card">
+              <Checkbox label="Pinned" help="Shows at the top of the announcements list." />
+            </div>
+            <div className="ui-ref-compare-card">
+              <Radio label="Standard registration" name="ui-ref-radio-demo" defaultChecked />
+              <Radio label="VIP registration" name="ui-ref-radio-demo" />
+            </div>
+          </div>
+        </PageSection>
+
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          <strong>Resolved (Central UI Standard, Stage 2):</strong> a bare <code className="ui-ref-code">
+            &lt;input&gt;
           </code>{" "}
-          tokens -- no shared validation/error treatment for form controls exists anywhere in the app today.
-        </Observation>
+          outside any legacy container still renders unstyled -- but new/migrated code applies{" "}
+          <code className="ui-ref-code">.app-control</code> directly via <code className="ui-ref-code">Input</code>/
+          <code className="ui-ref-code">Select</code>/<code className="ui-ref-code">Textarea</code>, so this no
+          longer depends on which container a control happens to sit inside.
+        </p>
       </RefSection>
 
       {/* =================================================================
@@ -1667,13 +1761,12 @@ export function AdminUiReferenceContent() {
             </thead>
             <tbody>
               <tr>
-                <td>--font-size-page-title</td>
-                <td>22px</td>
-                <td>23px</td>
-                <td>+4.5%</td>
-              </tr>
-              <tr>
-                <td>.shell-page-title (live shell chrome title; kept as its own responsive clamp, not the token above -- proportionally raised)</td>
+                <td>
+                  --font-size-page-title / .shell-page-title (Central UI Standard, Stage 2: merged into one
+                  clamp() token both the token and the live shell chrome title now consume -- previously two
+                  separately-tracked values, a static 23px token nothing referenced and the shell&rsquo;s own
+                  independent clamp)
+                </td>
                 <td>clamp(18px, 2.2vw, 24px)</td>
                 <td>clamp(19px, 2.3vw, 25px)</td>
                 <td>~+4%</td>
@@ -2103,6 +2196,66 @@ export function AdminUiReferenceContent() {
           confirmation? does it hold up with several buttons together in RowActions? Not approved -- this is
           exploration, not a decision.
         </Observation>
+      </RefSection>
+
+      {/* =================================================================
+          17. DIALOG & OVERLAYS
+          ================================================================= */}
+      <RefSection
+        id="overlays"
+        title="Dialog & Overlays (✅ approved -- canonical foundation)"
+        description="Dialog (components/ui/Dialog.tsx), generalized from PreferredMapChooser.tsx's already-proven pattern, and ConfirmDialog, now built on top of it. Both below are the real, production components."
+      >
+        <div className="ui-ref-compare-grid">
+          <div className="ui-ref-compare-card">
+            <strong>Dialog -- general purpose</strong>
+            <AppButton variant="primary" onClick={() => setOverlayDialogOpen(true)}>
+              Open Dialog
+            </AppButton>
+            <p className="app-subtle-text" style={{ margin: 0 }}>
+              Correct dialog semantics, labeling, focus entry/containment/restoration, Escape, backdrop dismissal,
+              and <code className="ui-ref-code">dialogLayerStack</code> integration -- centrally provided, not
+              re-implemented per consumer.
+            </p>
+          </div>
+          <div className="ui-ref-compare-card">
+            <strong>ConfirmDialog -- specialized confirm/cancel</strong>
+            <AppButton variant="danger" onClick={() => setConfirmOpen(true)}>
+              Cancel Registration
+            </AppButton>
+            <p className="app-subtle-text" style={{ margin: 0 }}>
+              Same demo trigger already used in{" "}
+              <a href="#buttons" className="app-button">
+                Buttons
+              </a>
+              . Now consumes <code className="ui-ref-code">Dialog</code> for every mechanic above; only the
+              danger/busy decision logic remains its own.
+            </p>
+          </div>
+        </div>
+
+        <Dialog
+          open={overlayDialogOpen}
+          onClose={() => setOverlayDialogOpen(false)}
+          title="Reference Dialog"
+          description="This is a reference-page demo only -- it does not change any real data. Tab cycles within it, Escape or the backdrop closes it, and focus returns to the Open Dialog button on close."
+          footer={
+            <>
+              <AppButton onClick={() => setOverlayDialogOpen(false)}>Cancel</AppButton>
+              <AppButton variant="primary" onClick={() => setOverlayDialogOpen(false)}>
+                Confirm
+              </AppButton>
+            </>
+          }
+        />
+
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Interactive behavior (focus trap, Escape, portal mounting, stacking) is exercised live above and by real
+          finger/keyboard on a physical device -- it cannot be captured by a static rendering test the way the rest
+          of this page&rsquo;s markup contract can (see <code className="ui-ref-code">Dialog.tsx</code>&rsquo;s own
+          doc comment for why). Try it here: open it, press Tab repeatedly (focus should never leave the dialog),
+          press Escape, and confirm focus returns to the button that opened it.
+        </p>
       </RefSection>
     </div>
   );

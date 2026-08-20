@@ -61,8 +61,13 @@
   /* Mid-Size UI Scale (approved 2026-08-19, reviewed on /admin/ui-reference
      Section 14 -- roughly +5-8% over the prior values on each size, chosen
      for legibility without changing padding/gaps/dimensions). This is the
-     canonical Admin scale; do not add a page-local override of these. */
-  --font-size-page-title: 23px;
+     canonical Admin scale; do not add a page-local override of these.
+     --font-size-page-title is a clamp(), not a static value (Central UI
+     Standard, Stage 2) -- it's the live shell page title's own
+     responsive expression, promoted to the token so .shell-page-title
+     consumes it instead of maintaining an independent duplicate; no
+     other production rule referenced the static 23px this replaced. */
+  --font-size-page-title: clamp(19px, 2.3vw, 25px);
   --font-size-section-title: 21px;
   --font-size-card-title: 18px;
   --font-size-body: 15px;
@@ -238,6 +243,11 @@ body.coach-map-lock .app-shell {
   margin-bottom: var(--space-8);
 }
 
+/* .card vs .app-card-section (Central UI Standard, Stage 2): documented,
+   distinct semantics, not an accidental duplicate -- see PageSection.tsx's
+   own doc comment. .card is a standalone bordered container (16px
+   padding); .app-card-section, below, is a denser in-page section
+   variant (14px padding) for a run of stacked sections under one page. */
 .card {
   border: var(--border-width-default) solid var(--color-border-default);
   border-radius: var(--radius-medium);
@@ -274,27 +284,38 @@ button:disabled {
 }
 
 /* ===== STANDARD APP BUTTON SYSTEM =====
-   Canonical action semantics (approved 2026-08-19, System 3 -- reviewed
-   on /admin/ui-reference Section 15). AppButton/AppLinkButton's `variant`
-   prop is unchanged; what changed is what each one means:
+   Canonical action hierarchy (System 3, approved 2026-08-19; formalized
+   as the Central UI Standard's Primary/Secondary/Tertiary/Destructive/
+   Disabled-loading hierarchy in Stage 2). AppButton/AppLinkButton's
+   `variant` prop carries the meaning:
 
-     - Unset ("Ordinary/secondary mutation"): quiet ghost treatment below
-       -- clearly actionable (a real border/background appears on hover/
-       focus), but never competes visually with Primary.
-     - variant="primary" ("Primary mutation"): solid blue fill, the one
-       principal action for the current work area.
-     - variant="danger" ("Destructive initiation"): quiet/outlined --
+     - variant="primary" (Primary): solid blue fill, the one principal
+       action for the current work area.
+     - variant="secondary" (Secondary, alias: "muted"): persistent,
+       always-visible quiet chrome -- an ordinary alternate action, one
+       step down from Primary.
+     - Unset / variant="tertiary" (Tertiary/quiet): the quietest ghost
+       treatment -- transparent until hover/focus. Low-emphasis action
+       where appropriate; never competes visually with Primary or
+       Secondary. Both names render identically.
+     - variant="danger" (Destructive, initiation step): quiet/outlined --
        never a solid red fill just because a destructive action exists.
-     - variant="stop" ("Destructive confirmation"): the one place a solid
-       destructive fill belongs -- reserved for ConfirmDialog's own
-       Confirm action when `danger` is set.
-     - An <a class="app-button"> with no variant ("Navigation/handoff"):
+     - variant="stop" (Destructive, confirmation step): the one place a
+       solid destructive fill belongs -- reserved for the Dialog/
+       ConfirmDialog Confirm action when `danger` is set.
+     - `loading` prop (Disabled/loading): spinner + `aria-busy`, forces
+       the effective disabled state. Standardizes what ConfirmDialog's
+       own "Working..." pattern already did by hand.
+     - An <a class="app-button"> with no variant (Navigation/handoff):
        reads as a link, not a button -- see the a.app-button rule below.
-     - variant="success"/"start": still green/solid-green, still valid,
-       but green is a STATUS color first (StatusBadge tone="success") --
-       new "this outcome is positive" action buttons should reach for
-       primary, not success, going forward. Existing success/start call
-       sites were not mass-migrated in this pass; see the reference page.
+     - variant="success"/"warning"/"start": transitional aliases from
+       before System 3 -- still valid CSS, still rendered, but not part
+       of the canonical hierarchy above. Color communicated a status
+       first (StatusBadge tone="success"/"warning"), not an action
+       decision; new "this outcome is positive" action buttons should
+       reach for primary, not success/start, going forward. Existing
+       call sites were not mass-migrated in this pass; see the
+       reference page.
    ===== */
 .app-button,
 button.app-button {
@@ -427,8 +448,17 @@ a.app-button-danger:hover {
 }
 
 
+/* Secondary (Central UI Standard, Stage 2 -- the ordinary-alternate-
+   action tier of the canonical Primary/Secondary/Tertiary/Destructive
+   hierarchy): persistent, always-visible chrome, one step down from
+   Primary. `.app-button-muted` is a transitional alias for the exact
+   same declarations -- kept because ~40 existing call sites already use
+   it; new code should prefer variant="secondary". */
+.app-button-secondary,
 .app-button-muted,
+button.app-button-secondary,
 button.app-button-muted,
+a.app-button-secondary,
 a.app-button-muted {
   border-color: var(--color-border-strong);
   background: var(--color-action-secondary);
@@ -516,6 +546,30 @@ a.app-button-stop:hover {
   width: 100%;
 }
 
+/* Disabled/loading (Central UI Standard, Stage 2). aria-busy is the
+   accessible signal; the spinner is decorative (aria-hidden). */
+.app-button-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.7;
+  animation: app-button-spinner-rotate 0.7s linear infinite;
+}
+
+@keyframes app-button-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-button-spinner {
+    animation: none;
+  }
+}
+
 /* Keep literal 899px in media queries for broad browser support.
   It corresponds to --breakpoint-mobile. */
 @media (max-width: 899px) {
@@ -548,13 +602,30 @@ a.app-button-stop:hover {
   padding: var(--space-6);
 }
 
+/* ===== CANONICAL FORM CONTROL (Central UI Standard, Stage 2) =====
+   .app-control is the class components/ui/Field.tsx's Input/Select/
+   Textarea apply. It consolidates what were three near-duplicate rule
+   sets -- this one (.app-card-section/-muted input/select/textarea),
+   .table-toolbar-row input/select, and .app-form-input -- into one
+   canonical declaration, adding what only .table-toolbar-row's copy
+   had (min-height: var(--touch-target-min), box-sizing: border-box) so
+   every form control meets the same standards-compliant touch-target
+   floor. The other three selector groups are kept, unchanged, as
+   TRANSITIONAL ALIASES so no already-rendered page's output changes --
+   new/migrated code should target .app-control (via Field/Input/Select/
+   Textarea) directly, not these container-scoped selectors. */
+.app-control,
 .app-card-section input,
 .app-card-section select,
 .app-card-section textarea,
 .app-card-section-muted input,
 .app-card-section-muted select,
-.app-card-section-muted textarea {
+.app-card-section-muted textarea,
+.table-toolbar-row input,
+.table-toolbar-row select,
+.app-form-input {
   width: 100%;
+  min-height: var(--touch-target-min);
   padding: var(--space-4);
   border-radius: var(--radius-medium);
   border: var(--border-width-default) solid var(--color-border-strong);
@@ -562,8 +633,10 @@ a.app-button-stop:hover {
   color: var(--color-text-primary);
   font-family: inherit;
   font-size: var(--font-size-body);
+  box-sizing: border-box;
 }
 
+textarea.app-control,
 .app-card-section textarea,
 .app-card-section-muted textarea {
   resize: vertical;
@@ -572,26 +645,113 @@ a.app-button-stop:hover {
 /* Checkboxes/radios are not text fields -- without this they would
    inherit the block above's width/padding/border/background and render
    as a padded rectangle instead of a checkbox (UI Phase 2, first
-   encountered by Announcements' Pin/Published checkboxes). */
+   encountered by Announcements' Pin/Published checkboxes). Field's own
+   Checkbox/Radio (components/ui/Field.tsx) render bare native inputs and
+   never apply .app-control at all, so this override exists only for
+   already-migrated pages still relying on the container-scoped
+   selectors above. */
+.app-control[type="checkbox"],
+.app-control[type="radio"],
 .app-card-section input[type="checkbox"],
 .app-card-section input[type="radio"],
 .app-card-section-muted input[type="checkbox"],
 .app-card-section-muted input[type="radio"] {
   width: auto;
+  min-height: 0;
   padding: 0;
   border-radius: 0;
   border: initial;
   background: initial;
 }
 
+.app-control:focus-visible,
 .app-card-section input:focus-visible,
 .app-card-section select:focus-visible,
 .app-card-section textarea:focus-visible,
 .app-card-section-muted input:focus-visible,
 .app-card-section-muted select:focus-visible,
-.app-card-section-muted textarea:focus-visible {
+.app-card-section-muted textarea:focus-visible,
+.table-toolbar-row input:focus-visible,
+.table-toolbar-row select:focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
+}
+
+/* Disabled/read-only/error states (Central UI Standard, Stage 2). Scoped
+   to real attribute selectors, so this is inert everywhere none of the
+   three legacy rule sets' existing markup sets them -- no rendered page
+   changes; only Field-based controls that actually use these states are
+   affected. */
+.app-control:disabled,
+.app-control[aria-disabled="true"] {
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.app-control[readonly] {
+  background: var(--color-bg-muted);
+}
+
+.app-control[aria-invalid="true"] {
+  border-color: var(--color-status-error);
+}
+
+.app-control[aria-invalid="true"]:focus-visible {
+  outline-color: var(--color-status-error);
+}
+
+/* ===== FIELD (Central UI Standard, Stage 2) =====
+   Backs components/ui/Field.tsx: label + control + help/error text. */
+.app-field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.app-field-disabled {
+  opacity: 0.7;
+}
+
+.app-field-label {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.app-field-required {
+  color: var(--color-status-error);
+}
+
+.app-field-help {
+  margin: 0;
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+}
+
+.app-field-error {
+  margin: 0;
+  font-size: var(--font-size-small);
+  color: var(--color-status-error);
+}
+
+/* Checkbox/Radio (Field.tsx) -- inline "control, then label text" shape,
+   distinct from Field's "label above control" shape above. The label
+   itself carries the touch target, not the (deliberately native-sized)
+   checkbox/radio input. */
+.app-field-checkable {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.app-field-checkable-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch-target-min);
+  cursor: pointer;
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
 }
 
 .app-section-title {
@@ -640,16 +800,9 @@ a.app-button-stop:hover {
   gap: var(--space-3);
 }
 
-.app-form-input {
-  width: 100%;
-  padding: var(--space-4);
-  border-radius: var(--radius-medium);
-  border: var(--border-width-default) solid var(--color-border-strong);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-primary);
-  font-family: inherit;
-  font-size: var(--font-size-body);
-}
+/* .app-form-input's declarations now live in the canonical .app-control
+   rule above (Central UI Standard, Stage 2) -- this selector is kept as
+   a transitional alias there, not redeclared here. */
 
 .app-status-pill {
   display: inline-flex;
@@ -779,6 +932,84 @@ a.app-button-stop:hover {
   border-color: #86efac;
   background: var(--color-status-success-bg);
   color: var(--color-status-success);
+}
+
+/* ===== CANONICAL DIALOG (Central UI Standard, Stage 2) =====
+   Backs components/ui/Dialog.tsx, generalized from the already-proven
+   `.preferred-map-chooser-*` pattern (components/PreferredMapChooser.tsx)
+   -- same tokens, same safe-area/reflow handling, same reduced-motion
+   discipline. z-index matches that component's proven 10010 (well above
+   ordinary page/shell chrome; the shell's own highest z-index,
+   `.shell-nav-drawer-backdrop`, is 60) rather than the lower `--z-modal`
+   token, which nothing in the app currently treats as authoritative --
+   reconciling that token is a separate, wider z-index audit, out of
+   scope here. */
+.app-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10010;
+  background: var(--color-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+}
+
+.app-dialog {
+  width: 100%;
+  max-width: 460px;
+  max-height: min(85vh, 85dvh);
+  overflow-y: auto;
+  background: var(--color-bg-panel);
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-large);
+  padding: var(--space-8);
+  padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
+  animation: app-dialog-enter 0.18s ease;
+}
+
+.app-dialog:focus-visible {
+  outline: none;
+}
+
+.app-dialog-title {
+  margin: 0;
+  font-size: var(--font-size-card-title);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.app-dialog-description {
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-secondary);
+}
+
+.app-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+  flex-wrap: wrap;
+}
+
+@keyframes app-dialog-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-dialog {
+    animation: none;
+  }
 }
 
 /* ===== ADMIN SUMMARY LINK (Dashboard Level-1 module card) =====
@@ -1040,25 +1271,9 @@ a.app-button-stop:hover {
   align-items: end;
 }
 
-.table-toolbar-row input,
-.table-toolbar-row select {
-  width: 100%;
-  min-height: var(--touch-target-min);
-  padding: var(--space-4);
-  border-radius: var(--radius-medium);
-  border: var(--border-width-default) solid var(--color-border-strong);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-primary);
-  font-family: inherit;
-  font-size: var(--font-size-body);
-  box-sizing: border-box;
-}
-
-.table-toolbar-row input:focus-visible,
-.table-toolbar-row select:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 2px;
-}
+/* .table-toolbar-row input/select's declarations now live in the
+   canonical .app-control rule (Central UI Standard, Stage 2) -- kept as
+   a transitional alias there, not redeclared here. */
 
 .table-toolbar-label {
   display: block;
@@ -2953,12 +3168,14 @@ body.slideshow-view-mode .app-header-card {
 
 .shell-page-title {
   margin: 2px 0 0;
-  /* Mid-Size UI Scale (approved 2026-08-19): the audit behind that
-     approval found this clamp never consumed --font-size-page-title --
-     raised proportionally to land on the approved 25px live-shell
-     ceiling while keeping the same responsive-shrink shape for narrow
-     viewports (18px/2.2vw -> 19px/2.3vw at the low end). */
-  font-size: clamp(19px, 2.3vw, 25px);
+  /* Central UI Standard, Stage 2: now consumes --font-size-page-title
+     directly, resolving the gap the Mid-Size UI Scale audit (approved
+     2026-08-19) found -- this clamp previously duplicated the token's
+     value instead of referencing it. The token itself (see :root) was
+     changed from a static 23px to this exact clamp() expression, so the
+     rendered result is unchanged (19px/2.3vw -> 25px across viewport
+     widths); nothing else in production consumed the static value. */
+  font-size: var(--font-size-page-title);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
   overflow-wrap: anywhere;
@@ -3094,11 +3311,41 @@ body.slideshow-view-mode .app-header-card {
 
 .ui-ref-section {
   scroll-margin-top: 88px;
+  /* Real-iPhone finding, confirmed via Web Inspector across several
+     rounds of live diagnosis: every RefSection on this page is a
+     sibling grid item in ONE shared implicit column (the page's own
+     outer `display:grid` wrapper). Grid items default to
+     min-width:auto, so without this, EVERY section -- regardless of its
+     own content -- inherits whichever single sibling section's content
+     demands the most width as that one shared column's width. Confirmed
+     on device: with every child of this specific section hidden, its
+     own computed width was STILL 798.77px, proving the demand came from
+     a different sibling section entirely, not this section's own
+     content (ruling out .ui-ref-compare-grid/.ui-ref-swatch-grid's own
+     formulas, already tried and confirmed NOT the cause). This is the
+     actual fix; the min-width(min(...)) changes to those two grids
+     remain as a real, independent, standards-correct hardening even
+     though they were not this bug's cause. */
+  min-width: 0;
 }
 
 .ui-ref-swatch-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  /* Root cause of the real-iPhone "second card clipped off-screen"
+     defect (multi-round diagnosis via Web Inspector on physical
+     hardware) was .ui-ref-section itself: every RefSection is a sibling
+     grid item in ONE shared implicit column (the page's own outer
+     display:grid wrapper), and grid items default to min-width:auto --
+     so without min-width:0 there (now added, see .ui-ref-section
+     below), EVERY section inherited whichever single sibling's content
+     demanded the most width, regardless of its own content. Confirmed
+     on device: fixing .ui-ref-section alone resolved the reported
+     defect; this grid's own column formula was never the cause.
+     minmax(min(X, 100%), 1fr) here is kept anyway as real, independent
+     hardening against the same class of bug -- the proven pattern
+     already used in app/admin/dashboard/page.tsx's own grids -- not
+     itself the fix. */
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
   gap: var(--space-4);
 }
 
@@ -3143,7 +3390,15 @@ body.slideshow-view-mode .app-header-card {
 
 .ui-ref-compare-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  /* Root-cause note: real-iPhone diagnosis (see .ui-ref-section above)
+     found the actual defect was .ui-ref-section itself lacking
+     min-width:0 as a grid item -- not this grid's own column formula.
+     Fixing .ui-ref-section alone was sufficient and verified on device.
+     minmax(min(X, 100%), 1fr) below is kept anyway as real, independent
+     hardening against the same class of bug (already the proven pattern
+     in app/admin/dashboard/page.tsx's own grids) -- not itself the fix
+     for the reported defect. */
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: var(--space-5);
 }
 

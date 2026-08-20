@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode } from "react";
+import { type InputHTMLAttributes, type ReactNode, useId } from "react";
 
 type TableToolbarProps = {
   children: ReactNode;
@@ -71,9 +71,16 @@ type SearchFieldProps = {
  * Presentation only -- the caller owns the search term's state and
  * whatever matching logic it drives, exactly as Attendees' own
  * attendeeMatchesSearch already does.
+ *
+ * The default id is generated via `useId()` (Central UI Standard,
+ * Stage 2) -- it previously fell back to the literal string
+ * `"search-field"`, so two `SearchField`s on the same page without an
+ * explicit `id` prop would collide, breaking both fields' label
+ * association. An explicit `id` prop still overrides it.
  */
 export function SearchField({ label, value, onChange, id, ...rest }: SearchFieldProps) {
-  const fieldId = id || "search-field";
+  const generatedId = useId();
+  const fieldId = id || generatedId;
 
   return (
     <div>

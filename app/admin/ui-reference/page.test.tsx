@@ -223,7 +223,12 @@ test("the Mid-Size UI Scale section is now approved/canonical: a Legacy vs. Appr
   // it is just the ambient page state now.
   assert.equal(/class="ui-ref-scale-mid"/.test(html), false);
 
-  for (const value of ["22px", "23px", "20px", "21px", "14px", "15px", "42px", "45px"]) {
+  // 19px/25px (approved) and 18px/24px (legacy) replace the old flat
+  // 22px/23px pair (Central UI Standard, Stage 2): --font-size-page-title
+  // and .shell-page-title's own clamp were merged into one token, so the
+  // page-title row now shows only the clamp's bounds, not a separate
+  // static value.
+  for (const value of ["18px", "24px", "19px", "25px", "20px", "21px", "14px", "15px", "42px", "45px"]) {
     assert.ok(html.includes(value), `expected the value table to include ${value}`);
   }
 
@@ -249,7 +254,10 @@ test("the Mid-Size UI Scale IS now the real :root token set -- app/globals.css's
   const rootEnd = cssSource.indexOf("\n}\n", rootStart);
   const rootBlock = cssSource.slice(rootStart, rootEnd);
 
-  assert.match(rootBlock, /--font-size-page-title: 23px;/);
+  // Central UI Standard, Stage 2: --font-size-page-title is now the
+  // clamp() .shell-page-title itself consumes, not a static 23px value
+  // nothing referenced.
+  assert.match(rootBlock, /--font-size-page-title: clamp\(19px, 2\.3vw, 25px\);/);
   assert.match(rootBlock, /--font-size-body: 15px;/);
   assert.match(rootBlock, /--touch-target-min: 45px;/);
   // The reference-only override now reproduces the OLD values, not the
@@ -495,8 +503,22 @@ test("no new StatusBadge tone or AppButton variant was invented to build this pa
   );
   assert.ok(buttonVariantUses.length > 0);
   for (const variant of buttonVariantUses) {
+    // "secondary"/"tertiary" are the Central UI Standard, Stage 2 canonical
+    // hierarchy additions -- real AppButton.tsx variants, not page-local
+    // inventions.
     assert.ok(
-      ["default", "primary", "success", "danger", "warning", "muted", "start", "stop"].includes(variant),
+      [
+        "default",
+        "primary",
+        "secondary",
+        "tertiary",
+        "success",
+        "danger",
+        "warning",
+        "muted",
+        "start",
+        "stop",
+      ].includes(variant),
     );
   }
 });

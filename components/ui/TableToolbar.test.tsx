@@ -76,3 +76,19 @@ test("SearchField renders a labeled, real search input wired to the caller's own
   assert.ok(html.includes('for="my-search"'));
   assert.ok(html.includes(">Search<"));
 });
+
+test("two SearchFields without an explicit id no longer collide on the literal \"search-field\" default -- each gets a distinct generated id", () => {
+  const html = renderToStaticMarkup(
+    <div>
+      <SearchField label="Attendee search" value="" onChange={() => {}} />
+      <SearchField label="Vendor search" value="" onChange={() => {}} />
+    </div>,
+  );
+
+  const ids = [...html.matchAll(/<label class="table-toolbar-label" for="([^"]+)"/g)].map(
+    (m) => m[1],
+  );
+  assert.equal(ids.length, 2);
+  assert.notEqual(ids[0], ids[1]);
+  assert.equal(ids.includes("search-field"), false);
+});
