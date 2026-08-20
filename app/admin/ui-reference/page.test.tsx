@@ -45,7 +45,7 @@ test("responsive behavior goes through the canonical shell capability hook only 
   // mentions are expected. What must never appear is this file computing
   // capability itself: no useEffect/useLayoutEffect import at all, since
   // the only capability source in scope is the imported hook.
-  assert.match(source, /import \{ useMemo, useState \} from "react";/);
+  assert.match(source, /import \{ useId, useMemo, useState \} from "react";/);
   assert.equal(/useEffect|useLayoutEffect/.test(source), false);
 });
 
@@ -210,6 +210,46 @@ test("the desktop/pointer candidate and touch candidate are built from real Data
   assert.match(touchFn, /<ResponsiveList>/);
   assert.match(touchFn, /<RowActions className="ui-ref-touch-more-actions">/);
   assert.match(touchFn, /<StatusBadge tone=\{STATUS_TONE\[r\.status\]\}>/);
+});
+
+test("the Mid-Size UI Scale section exists, with a Current Scale / Mid-Size Candidate side-by-side and the exact value table rendered", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+
+  assert.ok(html.includes("Mid-Size UI Scale (prototype)"));
+  assert.ok(html.includes("Current Scale"));
+  assert.ok(html.includes("Mid-Size Candidate"));
+  assert.ok(html.includes('class="ui-ref-scale-current"'));
+  assert.ok(html.includes('class="ui-ref-scale-mid"'));
+
+  for (const value of ["22px", "23px", "20px", "21px", "14px", "15px", "42px", "45px"]) {
+    assert.ok(html.includes(value), `expected the value table to include ${value}`);
+  }
+
+  // Two independently-scoped copies of the same representative panel --
+  // "Vendor Dispatch Lists" (the section-title sample text) should
+  // appear at least twice: once at Current scale, once at Mid scale.
+  const occurrences = html.split("Vendor Dispatch Lists").length - 1;
+  assert.ok(occurrences >= 2, `expected the section-title sample to appear at least twice, found ${occurrences}`);
+});
+
+test("the Mid-Size Scale toggle re-renders the real, existing SampleRoster (Section 6) -- not separate prototype table markup", () => {
+  const scaleSectionSource = source.slice(source.indexOf('id="scale"'), source.length);
+  assert.match(scaleSectionSource, /<SampleRoster records=\{SAMPLE_RECORDS\} showNotes asList=\{false\} \/>/);
+  assert.match(
+    scaleSectionSource,
+    /className=\{scaleToggle === "mid" \? "ui-ref-scale-mid" : "ui-ref-scale-current"\}/,
+  );
+});
+
+test("the scale prototype touches only its own locally-scoped classes -- no :root token in app/globals.css was changed", () => {
+  const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
+  const rootStart = cssSource.indexOf(":root {");
+  const rootEnd = cssSource.indexOf("\n}\n", rootStart);
+  const rootBlock = cssSource.slice(rootStart, rootEnd);
+
+  assert.equal(/ui-ref-scale/.test(rootBlock), false);
+  assert.match(cssSource, /\.ui-ref-scale-current \{/);
+  assert.match(cssSource, /\.ui-ref-scale-mid \{/);
 });
 
 test("no new StatusBadge tone or AppButton variant was invented to build this page", () => {

@@ -3081,3 +3081,47 @@ body.slideshow-view-mode .app-header-card {
 .ui-ref-touch-more-actions {
   margin-top: var(--space-3);
 }
+
+/* ---- Mid-Size UI Scale prototype (reference-only) ----
+   Redefines ONLY the typography-affecting custom properties (plus
+   --touch-target-min and the two hardcoded button dimensions
+   .app-button/.row-actions .app-button don't consume any token today --
+   see the Typography section's own callout) within a locally-scoped
+   class. :root is never touched, so no other page is affected even
+   though the same shared components (DataTable, StatusBadge, AppButton,
+   form controls, .shell-nav-item, .shell-page-title, .app-section-title)
+   render inside it unmodified. Padding, gaps, sidebar width, card
+   dimensions, row spacing, and border radius are deliberately absent
+   from both blocks below, so density is identical in both states --
+   only legibility changes. Used only on /admin/ui-reference. */
+.ui-ref-scale-current {
+  --font-size-page-title: 22px;
+  --font-size-section-title: 20px;
+  --font-size-card-title: 17px;
+  --font-size-body: 14px;
+  --font-size-small: 13px;
+  --font-size-caption: 12px;
+  --touch-target-min: 42px;
+}
+
+.ui-ref-scale-mid {
+  --font-size-page-title: 23px;
+  --font-size-section-title: 21px;
+  --font-size-card-title: 18px;
+  --font-size-body: 15px;
+  --font-size-small: 14px;
+  --font-size-caption: 13px;
+  --touch-target-min: 45px;
+}
+
+.ui-ref-scale-mid .shell-page-title {
+  font-size: 25px;
+}
+
+.ui-ref-scale-mid .app-button {
+  font-size: 16px;
+}
+
+.ui-ref-scale-mid .row-actions .app-button {
+  min-height: 47px;
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
@@ -46,6 +46,7 @@ const TOC: Array<{ id: string; label: string }> = [
   { id: "states", label: "11. Empty / Loading / Error States" },
   { id: "responsive", label: "12. Responsive Review" },
   { id: "device", label: "13. Device & Layout Preferences" },
+  { id: "scale", label: "14. Mid-Size UI Scale (prototype)" },
 ];
 
 // ----------------------------------------------------------------------------
@@ -297,6 +298,11 @@ export function AdminUiReferenceContent() {
   const [demoPreferredView, setDemoPreferredView] = useState<"automatic" | "table" | "list">("automatic");
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Section 14 demo only: which scale the toggleable sample roster below
+  // renders at. Local state only -- never persisted, never affects any
+  // other page.
+  const [scaleToggle, setScaleToggle] = useState<"current" | "mid">("current");
 
   const demoActiveFilterCount = (demoCategory !== "all" ? 1 : 0) + (demoStatus !== "all" ? 1 : 0);
   const demoHasClearable = demoActiveFilterCount > 0 || demoSearch.trim() !== "";
@@ -1603,6 +1609,167 @@ export function AdminUiReferenceContent() {
           </ul>
         </PageSection>
       </RefSection>
+
+      {/* =================================================================
+          14. MID-SIZE UI SCALE (PROTOTYPE)
+          ================================================================= */}
+      <RefSection
+        id="scale"
+        title="Mid-Size UI Scale (prototype)"
+        description="Pap/Mel compared normal Safari zoom against one ⌘+ step -- normal felt slightly small, one step felt too large. This is a reference-only prototype of the visual midpoint, targeting a roughly 5-7% increase in the elements that affect readability, without changing padding, gaps, sidebar width, card dimensions, row spacing, or radii. Not approved; not applied anywhere else."
+      >
+        <Alert tone="info">
+          This changes only local, reference-page-scoped CSS custom properties inside a wrapper class -- no{" "}
+          <code className="ui-ref-code">:root</code> token, no shared component, and no other page is touched. If
+          approved, translating this into the real token set is a separate, deliberate future step.
+        </Alert>
+
+        <PageSection variant="section">
+          <PageHeader
+            title="Exact values used"
+            headingLevel="h3"
+            titleStyle={{ fontSize: "var(--font-size-body)" }}
+          />
+          <DataTable caption="Current vs. Mid-Size Candidate token values">
+            <thead>
+              <tr>
+                <th scope="col">Property</th>
+                <th scope="col">Current</th>
+                <th scope="col">Mid-Size Candidate</th>
+                <th scope="col">Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>--font-size-page-title</td>
+                <td>22px</td>
+                <td>23px</td>
+                <td>+4.5%</td>
+              </tr>
+              <tr>
+                <td>.shell-page-title (live, clamp-based, not token-driven)</td>
+                <td>clamp(18px, 2.2vw, 24px)</td>
+                <td>25px</td>
+                <td>~+4%</td>
+              </tr>
+              <tr>
+                <td>--font-size-section-title</td>
+                <td>20px</td>
+                <td>21px</td>
+                <td>+5%</td>
+              </tr>
+              <tr>
+                <td>--font-size-card-title</td>
+                <td>17px</td>
+                <td>18px</td>
+                <td>+5.9%</td>
+              </tr>
+              <tr>
+                <td>--font-size-body</td>
+                <td>14px</td>
+                <td>15px</td>
+                <td>+7.1%</td>
+              </tr>
+              <tr>
+                <td>--font-size-small</td>
+                <td>13px</td>
+                <td>14px</td>
+                <td>+7.7%</td>
+              </tr>
+              <tr>
+                <td>--font-size-caption</td>
+                <td>12px</td>
+                <td>13px</td>
+                <td>+8.3%</td>
+              </tr>
+              <tr>
+                <td>--touch-target-min</td>
+                <td>42px</td>
+                <td>45px</td>
+                <td>+7.1%</td>
+              </tr>
+              <tr>
+                <td>.app-button font-size (hardcoded, not token-driven)</td>
+                <td>15px</td>
+                <td>16px</td>
+                <td>+6.7%</td>
+              </tr>
+              <tr>
+                <td>.row-actions .app-button min-height (hardcoded, not token-driven)</td>
+                <td>44px</td>
+                <td>47px</td>
+                <td>+6.8%</td>
+              </tr>
+            </tbody>
+          </DataTable>
+
+          <p className="app-subtle-text" style={{ marginTop: "var(--space-4)" }}>
+            Deliberately NOT touched, at any scale: page/card padding (<code className="ui-ref-code">--space-*</code>
+            ), major page gaps, sidebar width, panel/card dimensions, table row spacing, border radius, and
+            decorative whitespace -- every one of those stays exactly as it is today, so density is preserved and
+            only legibility changes.
+          </p>
+        </PageSection>
+
+        <div className="ui-ref-compare-grid">
+          <PageSection variant="section">
+            <PageHeader
+              title="Current Scale"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+            />
+            <div className="ui-ref-scale-current">
+              <ScaleExamplePanel />
+            </div>
+          </PageSection>
+          <PageSection variant="section">
+            <PageHeader
+              title="Mid-Size Candidate"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+            />
+            <div className="ui-ref-scale-mid">
+              <ScaleExamplePanel />
+            </div>
+          </PageSection>
+        </div>
+
+        <PageSection variant="section">
+          <PageHeader
+            title="Try it on the existing sample roster"
+            headingLevel="h3"
+            titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+            description="Same DataTable example from Section 6, above, re-rendered live at whichever scale is selected -- no separate prototype markup."
+            descriptionClassName="app-subtle-text"
+          />
+          <fieldset style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: "var(--space-2)" }}>
+            <legend className="table-toolbar-label" style={{ padding: 0 }}>
+              View the sample roster at
+            </legend>
+            {(["current", "mid"] as const).map((mode) => (
+              <label key={mode} style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name="ref-scale-toggle"
+                  checked={scaleToggle === mode}
+                  onChange={() => setScaleToggle(mode)}
+                />
+                {mode === "current" ? "Current Scale" : "Mid-Size Candidate"}
+              </label>
+            ))}
+          </fieldset>
+          <div className={scaleToggle === "mid" ? "ui-ref-scale-mid" : "ui-ref-scale-current"} style={{ marginTop: "var(--space-4)" }}>
+            <SampleRoster records={SAMPLE_RECORDS} showNotes asList={false} />
+          </div>
+        </PageSection>
+
+        <Observation>
+          This is a design workbench, not a decision. &ldquo;Roughly 5-7%&rdquo; landed between 4.5% and 8.3%
+          depending on the property -- each value was rounded to a clean pixel rather than forced to an exact
+          percentage. Whether the page-title/button hardcoded values (not token-driven today) should be fixed onto
+          real tokens is a separate, smaller finding this prototype surfaces along the way.
+        </Observation>
+      </RefSection>
     </div>
   );
 }
@@ -1808,5 +1975,152 @@ function TouchOptimizedCandidate({ records }: { records: SampleRecord[] }) {
         </li>
       ))}
     </ResponsiveList>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Mid-Size UI Scale prototype (Section 14). One representative-example
+// panel, rendered inside a scale-scoping wrapper class (.ui-ref-scale-current
+// / .ui-ref-scale-mid) so the SAME markup demonstrates both states -- the
+// scoping class shadows a handful of CSS custom properties (font-size-*,
+// touch-target-min) for its own subtree only; :root and every production
+// page are untouched. See app/globals.css for the exact values.
+// ----------------------------------------------------------------------------
+
+function ScaleExamplePanel() {
+  const nameFieldId = useId();
+  const statusFieldId = useId();
+
+  return (
+    <div style={{ display: "grid", gap: "var(--space-5)" }}>
+      <div>
+        <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+          Page title (.shell-page-title)
+        </div>
+        <span className="shell-page-title" style={{ display: "block" }}>
+          Admin UI Reference
+        </span>
+      </div>
+
+      <div>
+        <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+          Section title (.app-section-title)
+        </div>
+        <span className="app-section-title" style={{ display: "block", margin: 0 }}>
+          Vendor Dispatch Lists
+        </span>
+      </div>
+
+      <div>
+        <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+          Body text
+        </div>
+        <p style={{ margin: 0, fontSize: "var(--font-size-body)", lineHeight: "var(--line-height-normal)" }}>
+          A vendor service request links a member&rsquo;s ask to a specific vendor and site.
+        </p>
+      </div>
+
+      <div>
+        <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+          Sidebar nav sample (illustrative only -- not the live nav)
+        </div>
+        <div
+          className="shell-nav"
+          style={{
+            maxWidth: 220,
+            border: "var(--border-width-default) solid var(--color-border-default)",
+            borderRadius: "var(--radius-medium)",
+            padding: "var(--space-3)",
+          }}
+        >
+          <div className="shell-nav-section">
+            <div className="shell-nav-section-title">Operations</div>
+            <div className="shell-nav-list">
+              <span className="shell-nav-item shell-nav-item-active">Attendees Management</span>
+              <span className="shell-nav-item">Vendor Management</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+          Button row
+        </div>
+        <div className="app-button-row">
+          <AppButton variant="primary">Save</AppButton>
+          <AppButton>Cancel</AppButton>
+          <AppButton variant="danger">Cancel Registration</AppButton>
+        </div>
+      </div>
+
+      <div>
+        <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+          Form controls
+        </div>
+        <div className="app-form-grid-2">
+          <div>
+            <label className="table-toolbar-label" htmlFor={nameFieldId}>
+              Business name
+            </label>
+            <input id={nameFieldId} className="app-form-input" placeholder="Business name" />
+          </div>
+          <div>
+            <label className="table-toolbar-label" htmlFor={statusFieldId}>
+              Status
+            </label>
+            <select id={statusFieldId} className="app-form-input" defaultValue="pending">
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {STATUS_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+          DataTable row
+        </div>
+        <DataTable caption="Scale example rows">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SAMPLE_RECORDS.slice(0, 2).map((r) => (
+              <tr key={r.id}>
+                <td>
+                  <div className="data-table-cell-primary">{r.name}</div>
+                  <div className="data-table-cell-meta">{r.email || "No email on file"}</div>
+                </td>
+                <td>
+                  <StatusBadge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</StatusBadge>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      </div>
+
+      <div>
+        <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+          Status &amp; category badges
+        </div>
+        <div className="app-button-row">
+          <StatusBadge tone="warning">Pending</StatusBadge>
+          <StatusBadge tone="success">Complete</StatusBadge>
+          <span style={sampleCategoryBadgeStyle("vendor")}>{CATEGORY_LABEL.vendor}</span>
+        </div>
+        <div className="app-subtle-text" style={{ marginTop: "var(--space-2)" }}>
+          The category badge (right) does not scale -- it is hardcoded pixel text (see Section 7), the same gap
+          this prototype otherwise leaves untouched.
+        </div>
+      </div>
+    </div>
   );
 }
