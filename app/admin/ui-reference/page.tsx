@@ -1023,6 +1023,77 @@ export function AdminUiReferenceContent() {
           full-row background tint in the list. The two states are visually harder to tell apart in the table than
           in the list.
         </Observation>
+
+        <div id="tables-comparison" style={{ display: "grid", gap: "var(--space-5)" }}>
+          <PageHeader
+            title="Table & Action Treatment Comparison"
+            headingLevel="h3"
+            titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+            description="Design workbench only -- none of the four treatments below is approved or canonical. Same six sample records in every one, so scanability, row height, and action prominence can be compared directly."
+            descriptionClassName="app-subtle-text"
+          />
+
+          <Alert tone="info">
+            We are exploring <strong>capabilities + available space + content needs + user preference&nbsp;→&nbsp;appropriate
+            presentation</strong>, not a fixed &ldquo;desktop = table, mobile = list&rdquo; rule. Review each treatment
+            against: is it easy to scan? Are rows too tall? Are actions too prominent or too hidden? Is primary vs.
+            secondary information obvious? Are Casey&rsquo;s long name/email/note handled well? Would it feel natural
+            with a mouse/trackpad? With touch? Which pieces should combine into the eventual canonical design?
+          </Alert>
+
+          <PageSection variant="section">
+            <PageHeader
+              title="1. Current / Baseline"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-body)" }}
+              description="The exact DataTable treatment from the Live/Desktop example above, repeated here for direct side-by-side comparison. DataTable + RowActions + AppButton exactly as shipped -- no prototype styling."
+              descriptionClassName="app-subtle-text"
+            />
+            <SampleRoster records={SAMPLE_RECORDS} showNotes asList={false} />
+          </PageSection>
+
+          <PageSection variant="section">
+            <PageHeader
+              title="2. Desktop / Pointer-Optimized Candidate"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-body)" }}
+              description="Category and site fold into the record cell as secondary text; notes clamp to two lines (full text stays in the DOM); actions stay on one row via a non-wrapping RowActions. Prototype-only: the note-clamp and nowrap-actions treatments do not exist as shared primitives yet."
+              descriptionClassName="app-subtle-text"
+            />
+            <DesktopPointerCandidate records={SAMPLE_RECORDS} />
+          </PageSection>
+
+          <PageSection variant="section">
+            <PageHeader
+              title="3. Touch-Optimized Candidate"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-body)" }}
+              description="One always-visible, generously-sized primary action (Contact); Edit/Cancel sit behind a native, always-visible &quot;More actions&quot; disclosure -- no hover, no gesture, same native <details>/<summary> pattern TableToolbarDisclosure already uses. Prototype-only: the larger touch-target sizing on the primary action does not exist as a shared primitive yet."
+              descriptionClassName="app-subtle-text"
+            />
+            <TouchOptimizedCandidate records={SAMPLE_RECORDS} />
+          </PageSection>
+
+          <PageSection variant="section">
+            <PageHeader
+              title="4. Existing ResponsiveList"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-body)" }}
+              description="The exact ResponsiveList treatment from the Compact example above, repeated here for direct side-by-side comparison -- today's actual compact-shell default, not a new candidate."
+              descriptionClassName="app-subtle-text"
+            />
+            <SampleRoster records={SAMPLE_RECORDS} showNotes asList />
+          </PageSection>
+
+          <Observation>
+            None of these four is being recommended over the others here. Candidates 2 and 3 each solve a real
+            problem the baseline has (row height from always-shown notes; three same-weight buttons with no
+            primary/secondary distinction) with a treatment built for a specific input mode -- but neither is a
+            drop-in shared primitive today, and mixing pieces from more than one (e.g. Candidate 2&rsquo;s compact
+            record cell with Candidate 3&rsquo;s primary/secondary action split) is a live option worth discussing,
+            not just picking one of the four whole.
+          </Observation>
+        </div>
       </RefSection>
 
       {/* =================================================================
@@ -1542,9 +1613,9 @@ export function AdminUiReferenceContent() {
 // Vendor Requests.
 // ----------------------------------------------------------------------------
 
-function sampleRowActions(record: SampleRecord) {
+function sampleRowActions(record: SampleRecord, rowActionsClassName?: string) {
   return (
-    <RowActions>
+    <RowActions className={rowActionsClassName}>
       <AppButton aria-label={`Edit ${record.name}`}>Edit</AppButton>
       <AppButton variant="primary" aria-label={`Contact ${record.name}`}>
         Contact
@@ -1629,5 +1700,113 @@ function SampleRoster({
         ))}
       </tbody>
     </DataTable>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Table & Action Treatment Comparison (design workbench, no winner declared).
+// Two candidate layouts below are REFERENCE-ONLY PROTOTYPES -- they reuse
+// DataTable/ResponsiveList/RowActions/AppButton/StatusBadge exactly as
+// shipped, extended only through those components' own className/style
+// extension points (never by editing components/ui/* itself). Anything that
+// needed a genuinely new visual treatment (note clamping, a wider touch
+// target, nowrap actions) is a small, clearly-named `.ui-ref-*` class --
+// see the callouts in the comparison section for what is and isn't a real
+// shared primitive today.
+// ----------------------------------------------------------------------------
+
+/**
+ * Candidate 2: Desktop / pointer-optimized. Fewer columns (category and
+ * site fold into the record cell as secondary information, same fields as
+ * the baseline -- nothing removed), notes clamp to two lines instead of
+ * running the row tall (full text stays in the DOM for assistive tech and
+ * find-in-page), and actions stay on one row via a nowrap RowActions
+ * (falls back to the table's own horizontal scroll rather than wrapping
+ * into a stack) since a pointer/mouse user has room to reach across a row.
+ */
+function DesktopPointerCandidate({ records }: { records: SampleRecord[] }) {
+  return (
+    <DataTable caption="Desktop/pointer-optimized candidate (reference-only prototype layout)">
+      <thead>
+        <tr>
+          <th scope="col">Record</th>
+          <th scope="col">Status</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {records.map((r) => (
+          <tr key={r.id}>
+            <td>
+              <div className="data-table-cell-primary">
+                {r.name}
+                <span style={sampleCategoryBadgeStyle(r.category)}>{CATEGORY_LABEL[r.category]}</span>
+              </div>
+              <div className="data-table-cell-meta">
+                {[r.email || "No email on file", r.phone || "No phone on file", r.site ? `Site ${r.site}` : "Unassigned site"].join(
+                  " · ",
+                )}
+              </div>
+              {r.detail ? <div className="data-table-cell-meta ui-ref-notes-clamp">{r.detail}</div> : null}
+            </td>
+            <td>
+              <StatusBadge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</StatusBadge>
+            </td>
+            <td>{sampleRowActions(r, "ui-ref-actions-nowrap")}</td>
+          </tr>
+        ))}
+      </tbody>
+    </DataTable>
+  );
+}
+
+/**
+ * Candidate 3: Touch-optimized. Not "the desktop table, shrunk" -- a card
+ * per record (like ResponsiveList) with exactly one always-visible primary
+ * action sized well past the 42px touch-target-min token, and the routine
+ * secondary actions (Edit/Cancel) behind a native <details>/<summary>
+ * disclosure -- the same accessible, no-JS-state, keyboard-and-
+ * screen-reader-friendly pattern TableToolbarDisclosure already uses, just
+ * applied per row instead of per toolbar. The "More actions" trigger is
+ * always visible text, never a hover state or a swipe gesture -- there is
+ * no capability here that isn't also reachable by tap or by keyboard.
+ */
+function TouchOptimizedCandidate({ records }: { records: SampleRecord[] }) {
+  return (
+    <ResponsiveList>
+      {records.map((r) => (
+        <li key={r.id} className="responsive-list-item">
+          <div className="responsive-list-item-header">
+            <div className="responsive-list-item-title">{r.name}</div>
+            <StatusBadge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</StatusBadge>
+          </div>
+          <div className="responsive-list-item-badges">
+            <span style={sampleCategoryBadgeStyle(r.category)}>{CATEGORY_LABEL[r.category]}</span>
+          </div>
+          <div className="responsive-list-item-meta">
+            <span>{r.email || "No email on file"}</span>
+            <span>{r.phone || "No phone on file"}</span>
+            <span>Site: {r.site || "Unassigned"}</span>
+          </div>
+          {r.detail ? <div className="data-table-cell-meta ui-ref-notes-clamp">{r.detail}</div> : null}
+
+          <AppButton variant="primary" className="ui-ref-touch-primary" aria-label={`Contact ${r.name}`}>
+            Contact
+          </AppButton>
+
+          <details className="ui-ref-touch-more">
+            <summary className="table-toolbar-disclosure-summary">More actions</summary>
+            <RowActions className="ui-ref-touch-more-actions">
+              <AppButton aria-label={`Edit ${r.name}`}>Edit</AppButton>
+              {r.status !== "cancelled" ? (
+                <AppButton variant="danger" aria-label={`Cancel ${r.name}'s request`}>
+                  Cancel
+                </AppButton>
+              ) : null}
+            </RowActions>
+          </details>
+        </li>
+      ))}
+    </ResponsiveList>
   );
 }

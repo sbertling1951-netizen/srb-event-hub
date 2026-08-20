@@ -138,6 +138,80 @@ test("capability remains the safety constraint on the demo preferred-view contro
   );
 });
 
+test("the Table & Action Treatment Comparison shows all four labeled treatments, with Casey's long name present in each", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+
+  assert.ok(html.includes("Table &amp; Action Treatment Comparison"));
+  for (const label of [
+    "1. Current / Baseline",
+    "2. Desktop / Pointer-Optimized Candidate",
+    "3. Touch-Optimized Candidate",
+    "4. Existing ResponsiveList",
+  ]) {
+    assert.ok(html.includes(label), `expected rendered output to include "${label}"`);
+  }
+
+  const occurrences = html.split("Casey Whitfield-Alvarenga-Thornbury").length - 1;
+  assert.ok(
+    occurrences >= 4,
+    `expected Casey's long name to appear in every treatment (>=4 times), found ${occurrences}`,
+  );
+});
+
+test("the comparison declares no winner -- both candidates are explicitly labeled prototype-only, not shared primitives", () => {
+  const comparisonSource = source.slice(
+    source.indexOf('id="tables-comparison"'),
+    source.indexOf("7. STATUS AND SEMANTIC TREATMENTS"),
+  );
+  assert.match(comparisonSource, /Prototype-only/);
+  assert.match(comparisonSource, /None of these four is being recommended over the others/);
+  assert.match(comparisonSource, /none of the four treatments below is approved or canonical/);
+});
+
+test("the touch-optimized candidate uses a native, always-visible <details>/<summary> disclosure for secondary actions -- no hover state and no custom JS open/close logic", () => {
+  const fnSource = source.slice(
+    source.indexOf("function TouchOptimizedCandidate("),
+    source.length,
+  );
+  assert.match(fnSource, /<details className="ui-ref-touch-more">/);
+  assert.match(fnSource, /<summary className="table-toolbar-disclosure-summary">More actions<\/summary>/);
+  assert.equal(/onMouseEnter|onMouseOver|:hover/.test(fnSource), false);
+  assert.equal(/useState/.test(fnSource), false);
+
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  assert.ok(html.includes("<details"));
+  assert.ok(html.includes("More actions"));
+});
+
+test("the touch-optimized candidate's primary action (Contact) renders outside the disclosure -- always visible, not tucked behind More actions", () => {
+  const fnSource = source.slice(
+    source.indexOf("function TouchOptimizedCandidate("),
+    source.length,
+  );
+  const contactIndex = fnSource.indexOf("Contact");
+  const detailsIndex = fnSource.indexOf("<details");
+  assert.ok(contactIndex > -1 && detailsIndex > -1 && contactIndex < detailsIndex);
+});
+
+test("the desktop/pointer candidate and touch candidate are built from real DataTable/ResponsiveList/RowActions/AppButton/StatusBadge, not page-local table/list markup", () => {
+  const desktopFn = source.slice(
+    source.indexOf("function DesktopPointerCandidate("),
+    source.indexOf("function TouchOptimizedCandidate("),
+  );
+  const touchFn = source.slice(
+    source.indexOf("function TouchOptimizedCandidate("),
+    source.length,
+  );
+
+  assert.match(desktopFn, /<DataTable caption=/);
+  assert.match(desktopFn, /sampleRowActions\(r, "ui-ref-actions-nowrap"\)/);
+  assert.match(desktopFn, /<StatusBadge tone=\{STATUS_TONE\[r\.status\]\}>/);
+
+  assert.match(touchFn, /<ResponsiveList>/);
+  assert.match(touchFn, /<RowActions className="ui-ref-touch-more-actions">/);
+  assert.match(touchFn, /<StatusBadge tone=\{STATUS_TONE\[r\.status\]\}>/);
+});
+
 test("no new StatusBadge tone or AppButton variant was invented to build this page", () => {
   const badgeToneUses = [...source.matchAll(/tone=\{?"?(neutral|info|warning|danger|success)"?\}?/g)].map(
     (m) => m[1],
