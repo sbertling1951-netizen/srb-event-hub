@@ -1,6 +1,6 @@
 "use client";
 
-import {
+import React, {
   type CSSProperties,
   useCallback,
   useEffect,
@@ -49,8 +49,21 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { ObjectPanel } from "@/components/ObjectPanel";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
-import { AppButton } from "@/components/ui/AppButton";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSection } from "@/components/ui/PageSection";
+import { RowActions } from "@/components/ui/RowActions";
+import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
+import {
+  SearchField,
+  TableToolbar,
+  TableToolbarDisclosure,
+  TableToolbarPrimaryRow,
+} from "@/components/ui/TableToolbar";
 import { buildAdminAttendeeTargetHref } from "@/lib/adminAttendeeTarget";
 import { useAdmin } from "@/lib/adminContext";
 import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
@@ -60,7 +73,12 @@ import {
   setCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
-import { type CanonicalAttendeePlacementResult,fetchCanonicalAttendeePlacement } from "@/lib/canonicalAttendeePlacement";
+import {
+  type CanonicalAttendeePlacementMap,
+  type CanonicalAttendeePlacementResult,
+  fetchCanonicalAttendeePlacement,
+  fetchCanonicalAttendeePlacementsForEvent,
+} from "@/lib/canonicalAttendeePlacement";
 import {
   type CanonicalEventOperationalSummary,
   fetchEventOperationalSummary,
@@ -225,47 +243,39 @@ function FilterBar(props: {
     setShowResolvedInfo,
   } = props;
 
+  const activeFilterCount =
+    (dataStatusFilter !== "all" ? 1 : 0) + (participantTypeFilter !== "all" ? 1 : 0);
+  const hasClearableState = activeFilterCount > 0 || search.trim() !== "";
+
+  function clearFilters() {
+    setSearch("");
+    setDataStatusFilter("all");
+    setParticipantTypeFilter("all");
+  }
+
   return (
-    <div
-      className="card"
-      style={{
-        position: "sticky",
-        top: 78,
-        zIndex: 900,
-        padding: 18,
-        background: "white",
-        border: "1px solid #eee",
-        boxShadow: "0 2px 10px rgba(15, 23, 42, 0.06)",
-      }}
-    >
+    <TableToolbar>
       {/* Search and View are the two primary, always-visible browse
           decisions (Refactor Audit Section F). Every other filter here is
           secondary/low-frequency and lives behind the "More filters"
           disclosure below so it never competes with them for attention. */}
-      <div
-        style={{
-          display: "grid",
-          gap: 14,
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          alignItems: "end",
-        }}
-      >
-        <div>
-          <label style={labelStyle}>Search</label>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, email, member #, site..."
-            style={inputStyle}
-          />
-        </div>
+      <TableToolbarPrimaryRow>
+        <SearchField
+          label="Search"
+          value={search}
+          onChange={setSearch}
+          id="attendee-search"
+          placeholder="Search name, email, member #, site..."
+        />
 
         <div>
-          <label style={labelStyle}>View</label>
+          <label className="table-toolbar-label" htmlFor="attendee-view-mode">
+            View
+          </label>
           <select
+            id="attendee-view-mode"
             value={viewMode}
             onChange={(e) => setViewMode(e.target.value as ViewMode)}
-            style={inputStyle}
           >
             <option value="active">Active Registrations</option>
             <option value="review">Flagged Active</option>
@@ -273,113 +283,101 @@ function FilterBar(props: {
             <option value="all">All Registrations</option>
           </select>
         </div>
-      </div>
 
-      <details style={{ marginTop: 14 }}>
-        <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
-          More filters
-        </summary>
-        <div
-          style={{
-            marginTop: 14,
-            display: "grid",
-            gap: 14,
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            alignItems: "end",
-          }}
-        >
-          <div>
-            <label style={labelStyle}>Rows to Show</label>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(e.target.value as PageSize)}
-              style={inputStyle}
-            >
-              <option value="10">10</option>
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="all">Entire List</option>
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>Sort</label>
-            <select
-              value={attendeeSortMode}
-              onChange={(e) =>
-                setAttendeeSortMode(e.target.value as AttendeeSortMode)
-              }
-              style={inputStyle}
-            >
-              <option value="last_name">A–Z by Last Name</option>
-              <option value="site">Group by Site</option>
-            </select>
-          </div>
-
-          <div>
-            <label style={labelStyle}>Data Status</label>
-            <select
-              value={dataStatusFilter}
-              onChange={(e) =>
-                setDataStatusFilter(e.target.value as DataStatusFilter)
-              }
-              style={inputStyle}
-            >
-              <option value="all">All Statuses</option>
-              {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
-                (option) => (
-                  <option key={option} value={option}>
-                    {dataStatusOptionLabel(option)}
-                  </option>
-                ),
-              )}
-            </select>
-          </div>
-
-          <div>
-            <label style={labelStyle}>Participant Type</label>
-            <select
-              value={participantTypeFilter}
-              onChange={(e) =>
-                setParticipantTypeFilter(
-                  e.target.value as ParticipantTypeFilter,
-                )
-              }
-              style={inputStyle}
-            >
-              <option value="all">All Types</option>
-              {PARTICIPANT_TYPE_OPTIONS.filter(
-                (option) => option !== "all",
-              ).map((option) => (
-                <option key={option} value={option}>
-                  {participantTypeLabel(option)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={showResolvedInfo}
-                onChange={(e) => setShowResolvedInfo(e.target.checked)}
-              />
-              Show auto-resolve note
-            </label>
-          </div>
-        </div>
-
-        {showResolvedInfo ? (
-          <div style={infoBoxStyle}>
-            Once a membership number is corrected so it begins with{" "}
-            <strong>F or C</strong>, the membership-number issue clears
-            automatically. Records stay in the queue until all remaining
-            flagged issues are resolved.
+        {hasClearableState ? (
+          <div style={{ alignSelf: "end" }}>
+            <AppButton onClick={clearFilters}>Clear Search &amp; Filters</AppButton>
           </div>
         ) : null}
-      </details>
-    </div>
+      </TableToolbarPrimaryRow>
+
+      <TableToolbarDisclosure label="More filters" activeCount={activeFilterCount}>
+        <div>
+          <label className="table-toolbar-label" htmlFor="attendee-page-size">
+            Rows to Show
+          </label>
+          <select
+            id="attendee-page-size"
+            value={pageSize}
+            onChange={(e) => setPageSize(e.target.value as PageSize)}
+          >
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="all">Entire List</option>
+          </select>
+        </div>
+        <div>
+          <label className="table-toolbar-label" htmlFor="attendee-sort">
+            Sort
+          </label>
+          <select
+            id="attendee-sort"
+            value={attendeeSortMode}
+            onChange={(e) => setAttendeeSortMode(e.target.value as AttendeeSortMode)}
+          >
+            <option value="last_name">A–Z by Last Name</option>
+            <option value="site">Group by Site</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="table-toolbar-label" htmlFor="attendee-data-status">
+            Data Status
+          </label>
+          <select
+            id="attendee-data-status"
+            value={dataStatusFilter}
+            onChange={(e) => setDataStatusFilter(e.target.value as DataStatusFilter)}
+          >
+            <option value="all">All Statuses</option>
+            {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map((option) => (
+              <option key={option} value={option}>
+                {dataStatusOptionLabel(option)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="table-toolbar-label" htmlFor="attendee-participant-type">
+            Participant Type
+          </label>
+          <select
+            id="attendee-participant-type"
+            value={participantTypeFilter}
+            onChange={(e) => setParticipantTypeFilter(e.target.value as ParticipantTypeFilter)}
+          >
+            <option value="all">All Types</option>
+            {PARTICIPANT_TYPE_OPTIONS.filter((option) => option !== "all").map((option) => (
+              <option key={option} value={option}>
+                {participantTypeLabel(option)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+          <label style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={showResolvedInfo}
+              onChange={(e) => setShowResolvedInfo(e.target.checked)}
+            />
+            Show auto-resolve note
+          </label>
+        </div>
+      </TableToolbarDisclosure>
+
+      {showResolvedInfo ? (
+        <Alert tone="info">
+          Once a membership number is corrected so it begins with <strong>F or C</strong>, the
+          membership-number issue clears automatically. Records stay in the queue until all
+          remaining flagged issues are resolved.
+        </Alert>
+      ) : null}
+    </TableToolbar>
   );
 }
 
@@ -396,33 +394,18 @@ export function QuickActionBar(props: {
 }) {
   const { canEdit, onAddAttendee, onRefresh } = props;
 
+  // UI Phase 4: no longer sticky -- the TableToolbar below is the one
+  // sticky-while-scrolling region on this page now (search/filter access
+  // while scanning a long roster is the primary "stays reachable" need);
+  // two independently sticky bars at the same viewport offset was the
+  // kind of scattered, uncoordinated chrome this pass exists to remove.
   return (
-    <div
-      className="card"
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 1000,
-        background: "white",
-        padding: 18,
-        border: "1px solid #eee",
-        boxShadow: "0 2px 10px rgba(15, 23, 42, 0.08)",
-      }}
-    >
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          onClick={onAddAttendee}
-          style={primaryButtonStyle}
-          disabled={!canEdit}
-        >
-          + Add Attendee
-        </button>
+    <div className="app-button-row">
+      <AppButton variant="primary" onClick={onAddAttendee} disabled={!canEdit}>
+        + Add Attendee
+      </AppButton>
 
-        <button type="button" onClick={onRefresh} style={secondaryButtonStyle}>
-          Refresh
-        </button>
-      </div>
+      <AppButton onClick={onRefresh}>Refresh</AppButton>
     </div>
   );
 }
@@ -453,58 +436,56 @@ export function AttendeeActionRow(props: {
     onUpdateDataStatus,
     onCancelRegistration,
   } = props;
+  const name = displayPilotName(attendee);
 
   return (
-    <div style={actionRowStyle}>
+    <RowActions>
       {/* Selecting only opens the record for viewing (Understand) --
           entering edit mode is always a separate, explicit action inside
           the workspace itself (Stage C). */}
-      <button
-        type="button"
-        onClick={() => onSelect(attendee)}
-        style={secondaryButtonStyle}
-      >
+      <AppButton onClick={() => onSelect(attendee)} aria-label={`View "${name}"'s record`}>
         View Record
-      </button>
+      </AppButton>
 
-      <button
-        type="button"
+      <AppButton
         disabled={!canEdit}
         onClick={() => void onUpdateDataStatus(attendee.id, "reviewed")}
-        style={secondaryButtonStyle}
+        aria-label={`Mark "${name}" reviewed`}
       >
         Mark Reviewed
-      </button>
+      </AppButton>
 
-      <button
-        type="button"
+      {/* Ends this registration's participation -- the one action in this
+          row with real, consequential effect, so it alone gets the danger
+          treatment (UI Phase 4, Part 8): routine status transitions never
+          visually compete with it. */}
+      <AppButton
+        variant="danger"
         disabled={!canEdit}
         onClick={() => void onCancelRegistration(attendee)}
-        style={secondaryButtonStyle}
+        aria-label={`Cancel "${name}"'s registration`}
       >
         Cancel Registration
-      </button>
+      </AppButton>
 
-      <button
-        type="button"
+      <AppButton
         disabled={!canEdit}
         onClick={() => void onUpdateDataStatus(attendee.id, "locked")}
-        style={secondaryButtonStyle}
+        aria-label={`Lock "${name}"'s record`}
       >
         Lock Record
-      </button>
+      </AppButton>
 
       {showBackToPending ? (
-        <button
-          type="button"
+        <AppButton
           disabled={!canEdit}
           onClick={() => void onUpdateDataStatus(attendee.id, "pending")}
-          style={secondaryButtonStyle}
+          aria-label={`Move "${name}" back to pending`}
         >
           Back To Pending
-        </button>
+        </AppButton>
       ) : null}
-    </div>
+    </RowActions>
   );
 }
 
@@ -540,157 +521,79 @@ function ReviewQueue(props: {
   } = props;
 
   return (
-    <div className="card" style={{ padding: 18 }}>
-      <div style={{ marginBottom: 14 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Review Queue</h2>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          Showing {visibleReviewItems.length} of {filteredReviewItems.length}{" "}
-          flagged attendee
-          {filteredReviewItems.length === 1 ? "" : "s"} • Status filter:{" "}
-          {dataStatusFilter === "all"
-            ? "All Statuses"
-            : dataStatusOptionLabel(dataStatusFilter)}{" "}
-          • Participant type:{" "}
-          {participantTypeFilter === "all"
-            ? "All Types"
-            : participantTypeLabel(participantTypeFilter)}
-        </div>
-      </div>
+    <section style={{ display: "grid", gap: "var(--space-4)" }}>
+      <PageHeader
+        title="Review Queue"
+        headingLevel="h2"
+        titleClassName="app-section-title"
+        description={`Showing ${visibleReviewItems.length} of ${filteredReviewItems.length} flagged attendee${filteredReviewItems.length === 1 ? "" : "s"} · Status filter: ${dataStatusFilter === "all" ? "All Statuses" : dataStatusOptionLabel(dataStatusFilter)} · Participant type: ${participantTypeFilter === "all" ? "All Types" : participantTypeLabel(participantTypeFilter)}`}
+        descriptionClassName="app-subtle-text"
+      />
 
       {loading ? (
-        <div>Loading...</div>
+        <Alert tone="neutral">Loading review queue...</Alert>
       ) : filteredReviewItems.length === 0 ? (
-        <div style={{ opacity: 0.8 }}>No flagged records for this event.</div>
+        <Alert tone="success">No flagged records for this Event.</Alert>
       ) : (
-        <div style={{ display: "grid", gap: 12 }}>
+        <ResponsiveList>
           {visibleReviewItems.map((item) => {
             const attendee = item.attendee;
             const draftValue =
-              drafts[attendee.id] ??
-              normalizeMemberNumber(attendee.membership_number);
+              drafts[attendee.id] ?? normalizeMemberNumber(attendee.membership_number);
             const saving = savingRowId === attendee.id;
 
             return (
-              <div
+              <li
                 key={attendee.id}
-                style={{
-                  border:
-                    attendee.registration_status === "cancelled"
-                      ? "1px solid #d1d5db"
-                      : "1px solid #ddd",
-                  borderRadius: 12,
-                  padding: 14,
-                  background:
-                    attendee.registration_status === "cancelled"
-                      ? "#f5f5f5"
-                      : "white",
-                  opacity:
-                    attendee.registration_status === "cancelled" ? 0.65 : 1,
-                  transition: "background 0.2s ease, border-color 0.2s ease",
-                }}
+                className={
+                  "responsive-list-item" +
+                  (item.severity === "error" ? " responsive-list-item-pinned" : "")
+                }
               >
-                <div
-                  style={{
-                    marginTop: 8,
-                    display: "flex",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: 16 }}>
-                      {displayPilotName(attendee)}
-                      {displayCopilotName(attendee)
-                        ? ` / ${displayCopilotName(attendee)}`
-                        : ""}
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                        fontSize: 13,
-                        color: "#555",
-                        marginTop: 4,
-                      }}
-                    >
-                      <span
-                        style={participantTypeBadgeStyle(
-                          attendee.participant_type,
-                        )}
-                      >
-                        {participantTypeLabel(attendee.participant_type)}
-                      </span>
-                      {attendee.email ? <span>{attendee.email}</span> : null}
-                      {attendee.assigned_site ? (
-                        <span>{`Site ${attendee.assigned_site}`}</span>
-                      ) : null}
-                    </div>
+                <div className="responsive-list-item-header">
+                  <div className="responsive-list-item-title">
+                    {displayPilotName(attendee)}
+                    {displayCopilotName(attendee) ? ` / ${displayCopilotName(attendee)}` : ""}
                   </div>
-
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      padding: "4px 8px",
-                      borderRadius: 999,
-                      background:
-                        item.severity === "error" ? "#fee2e2" : "#fef3c7",
-                      color: item.severity === "error" ? "#991b1b" : "#92400e",
-                      alignSelf: "start",
-                    }}
-                  >
-                    {item.severity.toUpperCase()}
+                  <div className="responsive-list-item-badges">
+                    {attendee.registration_status === "cancelled" ? (
+                      <StatusBadge tone="neutral">Cancelled</StatusBadge>
+                    ) : null}
+                    <StatusBadge tone={item.severity === "error" ? "danger" : "warning"}>
+                      {item.severity.toUpperCase()}
+                    </StatusBadge>
                   </div>
                 </div>
 
-                <div style={{ marginBottom: 10 }}>
-                  <div
-                    style={{
-                      marginBottom: 6,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: item.severity === "error" ? "#991b1b" : "#92400e",
-                    }}
-                  >
-                    {item.issues.length} issue
-                    {item.issues.length === 1 ? "" : "s"} found
-                  </div>
+                <div className="responsive-list-item-meta">
+                  <span style={participantTypeBadgeStyle(attendee.participant_type)}>
+                    {participantTypeLabel(attendee.participant_type)}
+                  </span>
+                  {attendee.email ? <span>{attendee.email}</span> : null}
+                </div>
 
-                  <div style={{ display: "grid", gap: 6 }}>
+                <Alert tone={item.severity === "error" ? "danger" : "warning"}>
+                  <div style={{ display: "grid", gap: "var(--space-2)" }}>
+                    <strong>
+                      {item.issues.length} issue{item.issues.length === 1 ? "" : "s"} found
+                    </strong>
                     {item.issues.map((issue, index) => (
-                      <div
-                        key={`${attendee.id}-${issue.field}-${index}`}
-                        style={{
-                          fontSize: 14,
-                          color:
-                            issue.severity === "error" ? "#991b1b" : "#92400e",
-                        }}
-                      >
-                        <strong>{reviewFieldLabel(issue.field)}:</strong>{" "}
-                        {issue.issue}
+                      <div key={`${attendee.id}-${issue.field}-${index}`}>
+                        <strong>{reviewFieldLabel(issue.field)}:</strong> {issue.issue}
                       </div>
                     ))}
                   </div>
-                </div>
+                </Alert>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 12,
-                    gridTemplateColumns: "minmax(220px, 1fr) auto",
-                    alignItems: "end",
-                  }}
-                >
+                <div className="app-form-grid-2">
                   <div>
-                    <label style={labelStyle}>Correct Member Number</label>
+                    <label style={labelStyle} htmlFor={`correct-member-number-${attendee.id}`}>
+                      Correct Member Number
+                    </label>
                     <input
+                      id={`correct-member-number-${attendee.id}`}
                       value={draftValue}
-                      onChange={(e) =>
-                        onDraftChange(attendee.id, e.target.value)
-                      }
+                      onChange={(e) => onDraftChange(attendee.id, e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !saving) {
                           e.preventDefault();
@@ -703,24 +606,24 @@ function ReviewQueue(props: {
                     />
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => void onSaveMembership(item)}
-                    style={primaryButtonStyle}
-                    disabled={saving || !canEdit}
-                  >
-                    {saving ? "Saving..." : "Save Correction"}
-                  </button>
+                  <div style={{ alignSelf: "end" }}>
+                    <AppButton
+                      variant="primary"
+                      onClick={() => void onSaveMembership(item)}
+                      disabled={saving || !canEdit}
+                    >
+                      {saving ? "Saving..." : "Save Correction"}
+                    </AppButton>
+                  </div>
                 </div>
 
-                <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
-                  Current stored value:{" "}
-                  <strong>{attendee.membership_number || "—"}</strong>
-                  {attendee.entry_id ? ` • Entry ID: ${attendee.entry_id}` : ""}
-                  {attendee.source_type
-                    ? ` • Source: ${attendee.source_type}`
-                    : ""}
-                  {` • Data Status: ${dataStatusLabel(attendee.data_status)}`}
+                <div className="responsive-list-item-meta">
+                  <span>
+                    Current stored value: <strong>{attendee.membership_number || "—"}</strong>
+                  </span>
+                  {attendee.entry_id ? <span>Entry ID: {attendee.entry_id}</span> : null}
+                  {attendee.source_type ? <span>Source: {attendee.source_type}</span> : null}
+                  <span>Data Status: {dataStatusLabel(attendee.data_status)}</span>
                 </div>
 
                 <AttendeeActionRow
@@ -731,12 +634,12 @@ function ReviewQueue(props: {
                   onUpdateDataStatus={onUpdateDataStatus}
                   onCancelRegistration={onCancelRegistration}
                 />
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ResponsiveList>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -746,14 +649,61 @@ function ReviewQueue(props: {
 // step. Selecting (row click or "View Record") always opens the one
 // AttendeeRecordWorkspace in view mode; there is no separate inline expand
 // panel to keep in sync with it.
+// UI Phase 4: read-only Arrival straight from the already-loaded roster
+// row (no query -- has_arrived is part of the generic attendee select
+// already). Never writable from this page (Part 7/Non-negotiable
+// architecture): Check-In alone owns Arrival mutation.
+function attendeeArrivalPresentation(
+  attendee: AttendeeRow,
+): { label: string; tone: StatusBadgeTone } {
+  return attendee.has_arrived
+    ? { label: "Arrived", tone: "success" }
+    : { label: "Not Arrived", tone: "neutral" };
+}
+
+// Read-only Placement, sourced only from the canonical
+// fetchCanonicalAttendeePlacementsForEvent map (never attendees.
+// assigned_site) -- Parking alone owns placement mutation; this page only
+// ever reads and hands off (View in Parking, in AttendeeActionRow/
+// AttendeeRecordWorkspace).
+function attendeePlacementPresentation(
+  attendee: AttendeeRow,
+  placements: CanonicalAttendeePlacementMap,
+  placementsLoading: boolean,
+): { label: string; tone: StatusBadgeTone } {
+  const site = placements.get(attendee.id);
+  if (site) {
+    return { label: site.label, tone: "success" };
+  }
+  if (placementsLoading) {
+    return { label: "Checking...", tone: "neutral" };
+  }
+  if (attendee.needs_parking === false) {
+    return { label: "Does Not Need Parking", tone: "neutral" };
+  }
+  return { label: "Needs Parking", tone: "warning" };
+}
+
+function attendeeGroupSiteLabel(
+  attendee: AttendeeRow,
+  placements: CanonicalAttendeePlacementMap,
+): string {
+  return placements.get(attendee.id)?.label || "Unassigned";
+}
+
 function AttendeeList(props: {
   loading: boolean;
   canEdit: boolean;
+  totalAttendeesCount: number;
   filteredAttendees: AttendeeRow[];
   visibleAttendees: AttendeeRow[];
   reviewItems: ReviewItem[];
   attendeeSortMode: AttendeeSortMode;
   selectedAttendeeId: string | null;
+  placementsByAttendeeId: CanonicalAttendeePlacementMap;
+  placementsLoading: boolean;
+  placementsError: string | null;
+  isCompact: boolean;
   onSelect: (attendee: AttendeeRow) => void;
   onUpdateDataStatus: (attendeeId: string, nextStatus: string) => Promise<void>;
   onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
@@ -761,199 +711,224 @@ function AttendeeList(props: {
   const {
     loading,
     canEdit,
+    totalAttendeesCount,
     filteredAttendees,
     visibleAttendees,
     reviewItems,
     attendeeSortMode,
     selectedAttendeeId,
+    placementsByAttendeeId,
+    placementsLoading,
+    placementsError,
+    isCompact,
     onSelect,
     onUpdateDataStatus,
     onCancelRegistration,
   } = props;
 
-  return (
-    <div className="card" style={{ padding: 18 }}>
-      <div style={{ marginBottom: 14 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 6 }}>Attendee List</h2>
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
-          Showing {visibleAttendees.length} of {filteredAttendees.length}{" "}
-          attendee
-          {filteredAttendees.length === 1 ? "" : "s"}
-        </div>
+  function dataStatusBadges(attendee: AttendeeRow) {
+    const attendeeIssues = reviewItems.find((item) => item.attendee.id === attendee.id);
+    return (
+      <div className="responsive-list-item-badges">
+        {attendee.registration_status === "cancelled" ? (
+          <StatusBadge tone="danger">Cancelled</StatusBadge>
+        ) : null}
+        <StatusBadge tone="neutral">{dataStatusLabel(attendee.data_status)}</StatusBadge>
+        {attendeeIssues ? (
+          <StatusBadge tone="warning">
+            {attendeeIssues.issues.length} issue{attendeeIssues.issues.length === 1 ? "" : "s"}
+          </StatusBadge>
+        ) : (
+          <StatusBadge tone="success">OK</StatusBadge>
+        )}
       </div>
+    );
+  }
 
-      {loading ? (
-        <div>Loading...</div>
-      ) : visibleAttendees.length === 0 ? (
-        <div style={{ opacity: 0.8 }}>
-          No attendee records match the current filters.
-        </div>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {visibleAttendees.map((attendee, index) => {
-            const attendeeIssues = reviewItems.find(
-              (item) => item.attendee.id === attendee.id,
-            );
-            const isSelected = selectedAttendeeId === attendee.id;
-            const currentSite =
-              String(attendee.assigned_site || "Unassigned").trim() ||
-              "Unassigned";
-            const previousAttendee =
-              index > 0 ? visibleAttendees[index - 1] : null;
-            const previousSite = previousAttendee
-              ? String(previousAttendee.assigned_site || "Unassigned").trim() ||
-                "Unassigned"
-              : null;
-            const showSiteHeader =
-              attendeeSortMode === "site" && currentSite !== previousSite;
-            const selectThisAttendee = () => onSelect(attendee);
+  function groupHeader(label: string, key: string) {
+    return (
+      <div
+        key={key}
+        style={{
+          padding: "var(--space-2) var(--space-3)",
+          fontWeight: 700,
+          fontSize: "var(--font-size-small)",
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        Site {label}
+      </div>
+    );
+  }
 
-            return (
-              <div key={attendee.id} style={{ display: "contents" }}>
-                {showSiteHeader ? (
-                  <div
-                    style={{
-                      position: "sticky",
-                      top: 160,
-                      zIndex: 20,
-                      marginTop: index === 0 ? 0 : 8,
-                      padding: "8px 10px",
-                      borderRadius: 10,
-                      background: "#eef2ff",
-                      border: "1px solid #c7d2fe",
-                      color: "#3730a3",
-                      fontWeight: 800,
-                      fontSize: 14,
-                      boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
-                    }}
-                  >
-                    Site {currentSite}
-                  </div>
-                ) : null}
+  const body = loading ? (
+    <Alert tone="neutral">Loading attendee records...</Alert>
+  ) : visibleAttendees.length === 0 ? (
+    <Alert tone="neutral">
+      {totalAttendeesCount === 0
+        ? "No attendees are registered for this Event yet."
+        : "No attendee records match your search or filters. Try clearing them."}
+    </Alert>
+  ) : isCompact ? (
+    <ResponsiveList>
+      {visibleAttendees.map((attendee, index) => {
+        const previousAttendee = index > 0 ? visibleAttendees[index - 1] : null;
+        const currentSiteLabel = attendeeGroupSiteLabel(attendee, placementsByAttendeeId);
+        const previousSiteLabel = previousAttendee
+          ? attendeeGroupSiteLabel(previousAttendee, placementsByAttendeeId)
+          : null;
+        const showSiteHeader = attendeeSortMode === "site" && currentSiteLabel !== previousSiteLabel;
+        const isSelected = selectedAttendeeId === attendee.id;
+        const arrival = attendeeArrivalPresentation(attendee);
+        const placement = attendeePlacementPresentation(attendee, placementsByAttendeeId, placementsLoading);
 
-                <div
-                  key={attendee.id}
-                  style={{
-                    border: isSelected
-                      ? "1px solid #2563eb"
-                      : attendee.registration_status === "cancelled"
-                        ? "1px solid #d1d5db"
-                        : "1px solid #ddd",
-                    borderRadius: 12,
-                    padding: 14,
-                    background:
-                      attendee.registration_status === "cancelled"
-                        ? "#fef2f2"
-                        : "white",
-                    opacity:
-                      attendee.registration_status === "cancelled" ? 0.82 : 1,
-                    transition: "background 0.2s ease, border-color 0.2s ease",
-                  }}
-                >
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={selectThisAttendee}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        selectThisAttendee();
-                      }
-                    }}
-                    title="View attendee record"
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      flexWrap: "wrap",
-                      marginBottom: 10,
-                      cursor: "pointer",
-                      borderRadius: 10,
-                      padding: "4px 6px",
-                      marginLeft: -6,
-                      marginRight: -6,
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 15 }}>
-                        {displayPilotName(attendee)}
-                        {displayCopilotName(attendee)
-                          ? ` / ${displayCopilotName(attendee)}`
-                          : ""}
-                      </div>
-
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          alignItems: "center",
-                          fontSize: 12,
-                          color: "#555",
-                          marginTop: 4,
-                        }}
-                      >
-                        <span
-                          style={participantTypeBadgeStyle(
-                            attendee.participant_type,
-                          )}
-                        >
-                          {participantTypeLabel(attendee.participant_type)}
-                        </span>
-                        {attendee.email ? <span>{attendee.email}</span> : null}
-                        {attendee.assigned_site ? (
-                          <span>{`Site ${attendee.assigned_site}`}</span>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {attendee.registration_status === "cancelled" && (
-                        <span
-                          style={{
-                            display: "inline-block",
-                            padding: "3px 8px",
-                            borderRadius: 999,
-                            background: "#fee2e2",
-                            color: "#991b1b",
-                            fontSize: 12,
-                            fontWeight: 700,
-                          }}
-                        >
-                          Cancelled
-                        </span>
-                      )}
-                      <span style={secondaryBadgeStyle}>
-                        {dataStatusLabel(attendee.data_status)}
-                      </span>
-                      {attendeeIssues ? (
-                        <span style={issueBadgeStyle}>
-                          {attendeeIssues.issues.length} issue
-                          {attendeeIssues.issues.length === 1 ? "" : "s"}
-                        </span>
-                      ) : (
-                        <span style={okBadgeStyle}>OK</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div onClick={(event) => event.stopPropagation()}>
-                    <AttendeeActionRow
-                      attendee={attendee}
-                      canEdit={canEdit}
-                      showBackToPending={false}
-                      onSelect={onSelect}
-                      onUpdateDataStatus={onUpdateDataStatus}
-                      onCancelRegistration={onCancelRegistration}
-                    />
-                  </div>
+        return (
+          <li key={attendee.id} style={{ display: "contents" }}>
+            {showSiteHeader ? groupHeader(currentSiteLabel, `${attendee.id}-group`) : null}
+            <div
+              className={
+                "responsive-list-item" + (isSelected ? " responsive-list-item-selected" : "")
+              }
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelect(attendee)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(attendee);
+                }
+              }}
+            >
+              <div className="responsive-list-item-header">
+                <div className="responsive-list-item-title">
+                  {displayPilotName(attendee)}
+                  {displayCopilotName(attendee) ? ` / ${displayCopilotName(attendee)}` : ""}
                 </div>
+                <span style={participantTypeBadgeStyle(attendee.participant_type)}>
+                  {participantTypeLabel(attendee.participant_type)}
+                </span>
               </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+
+              <div className="responsive-list-item-meta">
+                {attendee.email ? <span>{attendee.email}</span> : null}
+              </div>
+
+              <div className="responsive-list-item-badges">
+                <StatusBadge tone={arrival.tone}>{arrival.label}</StatusBadge>
+                <StatusBadge tone={placement.tone}>{placement.label}</StatusBadge>
+              </div>
+
+              {dataStatusBadges(attendee)}
+
+              <div onClick={(event) => event.stopPropagation()}>
+                <AttendeeActionRow
+                  attendee={attendee}
+                  canEdit={canEdit}
+                  showBackToPending={false}
+                  onSelect={onSelect}
+                  onUpdateDataStatus={onUpdateDataStatus}
+                  onCancelRegistration={onCancelRegistration}
+                />
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ResponsiveList>
+  ) : (
+    <DataTable caption="Attendee roster for the current Event">
+      <thead>
+        <tr>
+          <th scope="col">Attendee</th>
+          <th scope="col">Data Status</th>
+          <th scope="col">Arrival</th>
+          <th scope="col">Placement</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {visibleAttendees.map((attendee, index) => {
+          const previousAttendee = index > 0 ? visibleAttendees[index - 1] : null;
+          const currentSiteLabel = attendeeGroupSiteLabel(attendee, placementsByAttendeeId);
+          const previousSiteLabel = previousAttendee
+            ? attendeeGroupSiteLabel(previousAttendee, placementsByAttendeeId)
+            : null;
+          const showSiteHeader = attendeeSortMode === "site" && currentSiteLabel !== previousSiteLabel;
+          const isSelected = selectedAttendeeId === attendee.id;
+          const arrival = attendeeArrivalPresentation(attendee);
+          const placement = attendeePlacementPresentation(attendee, placementsByAttendeeId, placementsLoading);
+
+          return (
+            <React.Fragment key={attendee.id}>
+              {showSiteHeader ? (
+                <tr>
+                  <td colSpan={5} style={{ background: "var(--color-bg-muted)" }}>
+                    {groupHeader(currentSiteLabel, `${attendee.id}-group`)}
+                  </td>
+                </tr>
+              ) : null}
+              <tr className={isSelected ? "data-table-row-selected" : undefined}>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(attendee)}
+                    aria-label={`View "${displayPilotName(attendee)}"'s record`}
+                    style={{
+                      all: "unset",
+                      cursor: "pointer",
+                      display: "block",
+                      width: "100%",
+                    }}
+                  >
+                    <div className="data-table-cell-primary">
+                      {displayPilotName(attendee)}
+                      {displayCopilotName(attendee) ? ` / ${displayCopilotName(attendee)}` : ""}
+                    </div>
+                    <div className="data-table-cell-meta">
+                      <span style={participantTypeBadgeStyle(attendee.participant_type)}>
+                        {participantTypeLabel(attendee.participant_type)}
+                      </span>
+                      {attendee.email ? ` · ${attendee.email}` : ""}
+                    </div>
+                  </button>
+                </td>
+                <td>{dataStatusBadges(attendee)}</td>
+                <td>
+                  <StatusBadge tone={arrival.tone}>{arrival.label}</StatusBadge>
+                </td>
+                <td>
+                  <StatusBadge tone={placement.tone}>{placement.label}</StatusBadge>
+                </td>
+                <td>
+                  <AttendeeActionRow
+                    attendee={attendee}
+                    canEdit={canEdit}
+                    showBackToPending={false}
+                    onSelect={onSelect}
+                    onUpdateDataStatus={onUpdateDataStatus}
+                    onCancelRegistration={onCancelRegistration}
+                  />
+                </td>
+              </tr>
+            </React.Fragment>
+          );
+        })}
+      </tbody>
+    </DataTable>
+  );
+
+  return (
+    <section style={{ display: "grid", gap: "var(--space-4)" }}>
+      <PageHeader
+        title="Attendee List"
+        headingLevel="h2"
+        titleClassName="app-section-title"
+        description={`Showing ${visibleAttendees.length} of ${filteredAttendees.length} attendee${filteredAttendees.length === 1 ? "" : "s"}.`}
+        descriptionClassName="app-subtle-text"
+      />
+      {placementsError ? <Alert tone="warning">{placementsError}</Alert> : null}
+      {body}
+    </section>
   );
 }
 
@@ -1161,49 +1136,57 @@ export function AttendeeRecordWorkspace(props: {
 
   function sectionHeading(id: string, label: string) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <strong style={{ fontSize: 15 }}>{label}</strong>
-        {dirtySections.includes(id) ? (
-          <span style={badgeVariant("#dbeafe", "#1d4ed8")}>Changed</span>
-        ) : null}
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
+        <strong style={{ fontSize: "var(--font-size-card-title)" }}>{label}</strong>
+        {dirtySections.includes(id) ? <StatusBadge tone="info">Changed</StatusBadge> : null}
       </div>
     );
   }
 
   const sectionStyle: CSSProperties = {
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: 14,
-    background: "#fafafa",
+    border: "var(--border-width-default) solid var(--color-border-default)",
+    borderRadius: "var(--radius-medium)",
+    padding: "var(--space-6)",
+    background: "var(--color-bg-muted)",
   };
 
+  // Read-only Arrival/Placement (Part 7/Non-negotiable architecture) --
+  // Check-In and Parking alone own mutation; this panel only ever reads
+  // (state.has_arrived from the already-loaded record; operationalStatus
+  // from the canonical fetchCanonicalAttendeePlacement, never
+  // attendees.assigned_site) and hands off via real navigation links, not
+  // local buttons that could be mistaken for in-place actions.
   const operationalStatusBlock =
     mode === "edit" && state.id ? (
-      <div
-        style={{
-          border: "1px solid #bfdbfe",
-          borderRadius: 10,
-          padding: 12,
-          background: "#eff6ff",
-        }}
-      >
-        <strong>Operational Status</strong>
-        <div>Arrival: {state.has_arrived ? "Arrived" : "Not arrived"}</div>
-        <div>
-          Placement:{" "}
-          {operationalStatus?.ok
-            ? operationalStatus.site?.label || "Unassigned"
-            : operationalStatus
-              ? "Unavailable"
-              : "Loading..."}
+      <div style={{ ...sectionStyle, display: "grid", gap: "var(--space-3)" }}>
+        <strong style={{ fontSize: "var(--font-size-card-title)" }}>Operational Status</strong>
+        <div className="responsive-list-item-badges">
+          <StatusBadge tone={state.has_arrived ? "success" : "neutral"}>
+            {state.has_arrived ? "Arrived" : "Not Arrived"}
+          </StatusBadge>
+          <StatusBadge
+            tone={
+              operationalStatus?.ok && operationalStatus.site
+                ? "success"
+                : operationalStatus?.ok
+                  ? "warning"
+                  : "neutral"
+            }
+          >
+            {operationalStatus?.ok
+              ? operationalStatus.site?.label || "Unassigned"
+              : operationalStatus
+                ? "Placement Unavailable"
+                : "Checking Placement..."}
+          </StatusBadge>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-          <a href={buildAdminAttendeeTargetHref("/admin/checkin", state.id)}>
+        <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+          <AppLinkButton href={buildAdminAttendeeTargetHref("/admin/checkin", state.id)}>
             View in Check-In
-          </a>
-          <a href={buildAdminAttendeeTargetHref("/admin/parking", state.id)}>
+          </AppLinkButton>
+          <AppLinkButton href={buildAdminAttendeeTargetHref("/admin/parking", state.id)}>
             View in Parking
-          </a>
+          </AppLinkButton>
         </div>
       </div>
     ) : null;
@@ -1217,13 +1200,13 @@ export function AttendeeRecordWorkspace(props: {
     mode === "create" ? (
       "Create a new attendee manually."
     ) : (
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}>
         <span style={participantTypeBadgeStyle(state.participant_type)}>
           {participantTypeLabel(state.participant_type)}
         </span>
-        <span style={secondaryBadgeStyle}>{dataStatusLabel(state.data_status)}</span>
+        <StatusBadge tone="neutral">{dataStatusLabel(state.data_status)}</StatusBadge>
         {attendee?.registration_status === "cancelled" ? (
-          <span style={badgeVariant("#fee2e2", "#991b1b")}>Cancelled</span>
+          <StatusBadge tone="danger">Cancelled</StatusBadge>
         ) : null}
       </div>
     );
@@ -1849,54 +1832,40 @@ export function AttendeeRecordWorkspace(props: {
   const primaryActions =
     viewState === "view" ? (
       <>
-        <button
-          type="button"
-          onClick={onEnterEdit}
-          style={primaryButtonStyle}
-          disabled={!canEdit}
-        >
+        <AppButton variant="primary" onClick={onEnterEdit} disabled={!canEdit}>
           Edit
-        </button>
-        <button
-          type="button"
+        </AppButton>
+        <AppButton
           disabled={!canEdit || !attendee}
           onClick={() => attendee && void onUpdateDataStatus(attendee.id, "reviewed")}
-          style={secondaryButtonStyle}
         >
           Mark Reviewed
-        </button>
-        <button
-          type="button"
+        </AppButton>
+        {/* Ends this registration's participation -- the one consequential
+            action here, so it alone gets the danger treatment (Part 6/8),
+            matching AttendeeActionRow's identical decision for the same
+            action elsewhere on this page. */}
+        <AppButton
+          variant="danger"
           disabled={!canEdit || !attendee}
           onClick={() => attendee && void onCancelRegistration(attendee)}
-          style={secondaryButtonStyle}
         >
           Cancel Registration
-        </button>
+        </AppButton>
       </>
     ) : (
       <>
-        <button
-          type="button"
+        <AppButton
+          variant="primary"
           onClick={() => void onSave()}
-          style={primaryButtonStyle}
           disabled={saving || !canEdit || !!conflict}
         >
-          {saving
-            ? "Saving..."
-            : mode === "create"
-              ? "Create Attendee"
-              : "Save Changes"}
-        </button>
+          {saving ? "Saving..." : mode === "create" ? "Create Attendee" : "Save Changes"}
+        </AppButton>
         {mode === "edit" ? (
-          <button
-            type="button"
-            onClick={onCancelEdit}
-            style={secondaryButtonStyle}
-            disabled={saving}
-          >
+          <AppButton onClick={onCancelEdit} disabled={saving}>
             Cancel Edit
-          </button>
+          </AppButton>
         ) : null}
       </>
     );
@@ -1904,22 +1873,12 @@ export function AttendeeRecordWorkspace(props: {
   const secondaryActions =
     viewState === "view" && mode === "edit" && attendee ? (
       <>
-        <button
-          type="button"
-          disabled={!canEdit}
-          onClick={() => void onUpdateDataStatus(attendee.id, "locked")}
-          style={secondaryButtonStyle}
-        >
+        <AppButton disabled={!canEdit} onClick={() => void onUpdateDataStatus(attendee.id, "locked")}>
           Lock Record
-        </button>
-        <button
-          type="button"
-          disabled={!canEdit}
-          onClick={() => void onUpdateDataStatus(attendee.id, "pending")}
-          style={secondaryButtonStyle}
-        >
+        </AppButton>
+        <AppButton disabled={!canEdit} onClick={() => void onUpdateDataStatus(attendee.id, "pending")}>
           Back To Pending
-        </button>
+        </AppButton>
       </>
     ) : null;
 
@@ -1940,10 +1899,13 @@ export function AttendeeRecordWorkspace(props: {
 }
 
 function AdminAttendeesPageInner() {
-  console.count("ATTENDEES RENDER");
   const storedPrefs = useMemo(() => getStoredAttendeeCommandCenterPrefs(), []);
   const { admin } = useAdmin();
   const adminRef = useRef(admin);
+  // Shell's own canonical compact-state signal (UI Phase 2-4) -- decides
+  // desktop table vs. narrow-viewport list, replacing what would
+  // otherwise be a page-local resize listener.
+  const { isCompact } = useShellInterfaceCapabilities();
 
   // UI defense-in-depth only -- this does not replace backend
   // authorization (RLS, cut over to
@@ -2277,7 +2239,7 @@ created_at
     } catch (err: any) {
       console.error("loadQueue error:", err);
       if (generation === loadGenerationRef.current) {
-        setError(err?.message || "Could not load attendee records.");
+        setError("We couldn't load attendee records. Please try again.");
         setStatus("Load failed.");
         if (!options.silent) {
           setAttendees([]);
@@ -2580,6 +2542,49 @@ created_at
     return filteredAttendees.slice(0, Number(pageSize));
   }, [filteredAttendees, pageSize]);
 
+  // UI Phase 4: canonical, read-only Placement for the roster list itself
+  // (Part 5/7) -- one batched query per visible-set change via
+  // fetchCanonicalAttendeePlacementsForEvent, never
+  // fetchCanonicalAttendeePlacement called once per row (that would be an
+  // N+1 query pattern against the canonical parking occupancy table for
+  // every render of a genuinely large roster). Sourced only from that
+  // same canonical occupancy read, exactly like AttendeeRecordWorkspace's own
+  // operationalStatus below -- never from attendees.assigned_site.
+  const [placementsByAttendeeId, setPlacementsByAttendeeId] =
+    useState<CanonicalAttendeePlacementMap>(new Map());
+  const [placementsLoading, setPlacementsLoading] = useState(false);
+  const [placementsError, setPlacementsError] = useState<string | null>(null);
+  const placementsGenerationRef = useRef(0);
+
+  useEffect(() => {
+    const eventId = currentEvent?.id;
+    const ids = visibleAttendees.map((a) => a.id);
+    const generation = ++placementsGenerationRef.current;
+
+    if (!eventId || ids.length === 0) {
+      setPlacementsByAttendeeId(new Map());
+      setPlacementsError(null);
+      setPlacementsLoading(false);
+      return;
+    }
+
+    setPlacementsLoading(true);
+    void fetchCanonicalAttendeePlacementsForEvent(eventId, ids).then((result) => {
+      if (generation !== placementsGenerationRef.current) {
+        return;
+      }
+      setPlacementsLoading(false);
+      if (!result.ok) {
+        console.error("fetchCanonicalAttendeePlacementsForEvent failed:", result.message);
+        setPlacementsError("Placement status is temporarily unavailable.");
+        setPlacementsByAttendeeId(new Map());
+        return;
+      }
+      setPlacementsError(null);
+      setPlacementsByAttendeeId(result.placements);
+    });
+  }, [currentEvent?.id, visibleAttendees]);
+
   useEffect(() => {
     if (!attendees.length || editorOpen) {
       return;
@@ -2741,7 +2746,7 @@ created_at
       showFlash(`${displayPilotName(item.attendee)} corrected successfully.`);
     } catch (err: any) {
       console.error("saveMembershipNumber error:", err);
-      setError(err?.message || "Could not save membership number.");
+      setError("We couldn't save the membership number. Please try again.");
       setStatus("Save failed.");
     } finally {
       setSavingRowId(null);
@@ -2781,7 +2786,7 @@ created_at
       showFlash(`Status set to ${nextStatus}.`);
     } catch (err: any) {
       console.error("updateDataStatus error:", err);
-      setError(err?.message || "Could not update attendee status.");
+      setError("We couldn't update the attendee status. Please try again.");
       setStatus("Status update failed.");
     }
   }
@@ -3623,8 +3628,8 @@ created_at
       setSaveFeedback("Saved.");
     } catch (err: any) {
       console.error("handleSaveAttendeeRecord error:", err);
-      setSaveFeedback(`Save failed: ${err?.message || "unknown error"}`);
-      setError(err?.message || "Could not save attendee record.");
+      setSaveFeedback("Save failed. Please try again.");
+      setError("We couldn't save this attendee record. Please try again.");
       setStatus("Save failed.");
     } finally {
       setEditorSaving(false);
@@ -3632,20 +3637,26 @@ created_at
   }
 
   return (
-    <div style={{ display: "grid", gap: 18 }}>
-      {(!loading && (status || error)) || flashMessage ? (
-        <div className="card" style={{ padding: 18 }}>
-          {!loading && status ? <div style={statusBoxStyle}>{status}</div> : null}
-
-          {flashMessage ? (
-            <div style={successBoxStyle}>{flashMessage}</div>
-          ) : null}
-
-          {!loading && error ? <div style={errorBoxStyle}>{error}</div> : null}
-        </div>
+    <div style={{ display: "grid", gap: "var(--space-10)" }}>
+      {/* Error, then the transient success flash, then the ambient status
+          line -- shown one at a time (never stacked) so a genuine problem
+          is never buried beneath a routine "Loading..." line, matching
+          the same priority pattern already established in Dashboard/
+          Announcements/Vendors. Every setError/showFlash/setStatus call
+          site that feeds these is unchanged. */}
+      {!loading && error ? (
+        <Alert tone="danger">{error}</Alert>
+      ) : flashMessage ? (
+        <Alert tone="success">{flashMessage}</Alert>
+      ) : !loading && status ? (
+        <Alert tone="neutral">{status}</Alert>
       ) : null}
 
       <>
+        {/* The Canonical Shell header already carries the page title
+            ("Attendees") -- no second heading duplicates it here (Part
+            11). QuickActionBar is the page's own primary/secondary
+            action pair, placed first in reading order. */}
         <QuickActionBar
           canEdit={canEditAttendees}
           onAddAttendee={openCreateAttendeeEditor}
@@ -3656,28 +3667,34 @@ created_at
           }}
         />
 
-        <div
-          className="card"
-          style={{ padding: 18, display: "grid", gap: 14 }}
-        >
-          <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Roster Summary</h2>
-            <div style={{ fontSize: 14, opacity: 0.8 }}>
-              Operational counts for the selected event.
-            </div>
-          </div>
+        <PageSection variant="section">
+          <PageHeader
+            title="Roster Summary"
+            headingLevel="h3"
+            description="Operational counts for the selected Event."
+            descriptionClassName="app-subtle-text"
+          />
 
           <SummaryCards items={primarySummaryItems} />
 
-          <details>
-            <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+          <details style={{ marginTop: "var(--space-4)" }}>
+            <summary
+              style={{
+                cursor: "pointer",
+                fontWeight: 700,
+                fontSize: "var(--font-size-body)",
+                minHeight: "var(--touch-target-min)",
+                display: "inline-flex",
+                alignItems: "center",
+              }}
+            >
               More stats
             </summary>
-            <div style={{ marginTop: 14 }}>
+            <div style={{ marginTop: "var(--space-4)" }}>
               <SummaryCards items={secondarySummaryItems} />
             </div>
           </details>
-        </div>
+        </PageSection>
 
         <FilterBar
           search={search}
@@ -3708,20 +3725,12 @@ created_at
           setShowResolvedInfo={setShowResolvedInfo}
         />
 
-        <div className="card" style={{ padding: 18 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
+        <PageSection variant="card">
+          <div className="app-row-between-wrap">
             <div>
-              <h2 style={{ marginTop: 0, marginBottom: 6 }}>Review Queue</h2>
+              <h2 className="app-section-title" style={{ marginTop: 0, marginBottom: "var(--space-2)" }}>Review Queue</h2>
 
-              <div style={{ fontSize: 14, opacity: 0.8 }}>
+              <div className="app-subtle-text">
                 {filteredReviewItems.length} flagged attendee
                 {filteredReviewItems.length === 1 ? "" : "s"}
                 {showReviewQueue
@@ -3730,13 +3739,9 @@ created_at
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowReviewQueue((prev) => !prev)}
-              style={secondaryButtonStyle}
-            >
+            <AppButton onClick={() => setShowReviewQueue((prev) => !prev)}>
               {showReviewQueue ? "Hide Review Queue" : "Show Review Queue"}
-            </button>
+            </AppButton>
           </div>
 
           {/* Stage B: the former standalone "Data Review" card's status
@@ -3746,9 +3751,9 @@ created_at
           {showReviewQueue ? (
             <div
               style={{
-                marginTop: 14,
+                marginTop: "var(--space-4)",
                 display: "grid",
-                gap: 10,
+                gap: "var(--space-3)",
                 gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
               }}
             >
@@ -3772,7 +3777,7 @@ created_at
               </div>
             </div>
           ) : null}
-        </div>
+        </PageSection>
 
         {showReviewQueue ? (
           <ReviewQueue
@@ -3797,11 +3802,16 @@ created_at
         <AttendeeList
           loading={loading}
           canEdit={canEditAttendees}
+          totalAttendeesCount={attendees.length}
           filteredAttendees={filteredAttendees}
           visibleAttendees={visibleAttendees}
           reviewItems={reviewItems}
           attendeeSortMode={attendeeSortMode}
           selectedAttendeeId={editorOpen ? editorState.id : null}
+          placementsByAttendeeId={placementsByAttendeeId}
+          placementsLoading={placementsLoading}
+          placementsError={placementsError}
+          isCompact={isCompact}
           onSelect={(attendee) =>
             void selectAttendee(attendee, { listContext: "browse" })
           }
@@ -3865,159 +3875,75 @@ created_at
   );
 }
 
+// UI Phase 4: token-driven values only -- every one of these constants is
+// referenced by `style={...}` from dozens of call sites throughout this
+// file (the roster list, the review queue, the record workspace), so
+// tokenizing the values here brings the whole page onto the shared
+// design system without needing to touch each call site individually.
 const labelStyle: CSSProperties = {
   display: "block",
-  marginBottom: 6,
+  marginBottom: "var(--space-2)",
   fontWeight: 600,
+  fontSize: "var(--font-size-body)",
+  color: "var(--color-text-secondary)",
 };
 
 const inputStyle: CSSProperties = {
   width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
+  padding: "var(--space-4)",
+  borderRadius: "var(--radius-medium)",
+  border: "var(--border-width-default) solid var(--color-border-strong)",
+  background: "var(--color-bg-elevated)",
+  color: "var(--color-text-primary)",
+  fontSize: "var(--font-size-body)",
 };
 
 const textareaStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
+  ...inputStyle,
   resize: "vertical",
 };
 
 const checkLabelStyle: CSSProperties = {
   display: "flex",
-  gap: 8,
+  gap: "var(--space-3)",
   alignItems: "center",
 };
 
-const primaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#111827",
-  color: "#ffffff",
-  WebkitTextFillColor: "#ffffff",
-  fontWeight: 700,
-  cursor: "pointer",
-  lineHeight: 1.2,
-};
-
 const secondaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "#ffffff",
-  color: "#111827",
-  WebkitTextFillColor: "#111827",
+  minHeight: "var(--touch-target-min)",
+  padding: "var(--space-4) 18px",
+  borderRadius: "var(--radius-medium)",
+  border: "var(--border-width-default) solid var(--color-border-strong)",
+  background: "var(--color-bg-elevated)",
+  color: "var(--color-text-primary)",
+  WebkitTextFillColor: "var(--color-text-primary)",
   fontWeight: 700,
   lineHeight: 1.2,
   cursor: "pointer",
-};
-
-// Shared by AttendeeActionRow in both its ReviewQueue and AttendeeList
-// usages -- always wraps, never depends on horizontal scrolling, matching
-// the wrapping behavior AttendeeList's row already used (this replaces
-// ReviewQueue's own prior horizontal-scroll-only row).
-const actionRowStyle: CSSProperties = {
-  marginTop: 12,
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-};
-
-const statusBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  background: "#f8fafc",
-  color: "#334155",
-  fontSize: 14,
-};
-
-const errorBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #e2b4b4",
-  background: "#fff3f3",
-  color: "#8a1f1f",
-};
-
-const successBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #bbf7d0",
-  background: "#f0fdf4",
-  color: "#166534",
-};
-
-const infoBoxStyle: CSSProperties = {
-  marginTop: 14,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #bfdbfe",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontSize: 14,
 };
 
 const summaryCardStyle: CSSProperties = {
-  padding: 16,
+  padding: "var(--space-6)",
   display: "flex",
   flexDirection: "column",
   justifyContent: "flex-start",
   alignSelf: "start",
   height: "auto",
+  boxShadow: "var(--shadow-small)",
 };
 
 const summaryValueStyle: CSSProperties = {
   fontSize: 26,
   fontWeight: 800,
-  marginTop: 8,
+  marginTop: "var(--space-2)",
+  color: "var(--color-text-primary)",
 };
 
 const summaryValueErrorStyle: CSSProperties = {
-  fontSize: 14,
+  fontSize: "var(--font-size-body)",
   fontWeight: 600,
-  marginTop: 8,
-  color: "#b91c1c",
-};
-
-const secondaryBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#e5e7eb",
-  color: "#374151",
-  fontSize: 12,
-  fontWeight: 700,
-  textTransform: "capitalize",
-};
-
-const issueBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#fff7ed",
-  color: "#9a3412",
-  fontSize: 12,
-  fontWeight: 700,
-};
-
-const okBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#dcfce7",
-  color: "#166534",
-  fontSize: 12,
-  fontWeight: 700,
+  marginTop: "var(--space-2)",
+  color: "var(--color-status-error)",
 };
 
 export default function AdminAttendeesPage() {

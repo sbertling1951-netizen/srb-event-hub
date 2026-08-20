@@ -152,3 +152,66 @@ export async function fetchCanonicalAttendeePlacement(
     placementRow as unknown as PlacementQueryRow | null,
   );
 }
+
+export type CanonicalAttendeePlacementMap = Map<string, CanonicalAttendeePlacementSite>;
+
+/**
+ * Batched sibling of fetchCanonicalAttendeePlacement above, for the Admin
+ * Attendees roster (UI Phase 4) -- one query regardless of row count,
+ * rather than one fetchCanonicalAttendeePlacement call per visible row.
+ * Same governance guarantee: reads only parking_sites occupancy, never
+ * attendees.assigned_site.
+ *
+ * Callers pass ids they already know belong to `eventId` (every row of
+ * an already Event-scoped, already-loaded roster does), so this skips
+ * the per-id attendee-exists re-check the single-attendee function above
+ * performs for its own, independently-supplied id -- that check exists
+ * there specifically because a single id can arrive stale or cross-Event
+ * (e.g. a previously selected record); a freshly loaded roster's own ids
+ * cannot.
+ *
+ * An id absent from the returned map has no current placement
+ * (Unassigned) -- exactly what a null `site` means in
+ * CanonicalAttendeePlacementResult above.
+ */
+export async function fetchCanonicalAttendeePlacementsForEvent(
+  eventId: string,
+  attendeeIds: readonly string[],
+): Promise<
+  | { ok: true; placements: CanonicalAttendeePlacementMap }
+  | { ok: false; message: string }
+> {
+  if (!eventId || attendeeIds.length === 0) {
+    return { ok: true, placements: new Map() };
+  }
+
+  const { data, error } = await supabase
+    .from("parking_sites")
+    .select("id,master_site_id,assigned_attendee_id,master_map_sites(site_number,display_label)")
+    .eq("event_id", eventId)
+    .in("assigned_attendee_id", Array.from(attendeeIds));
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  const placements: CanonicalAttendeePlacementMap = new Map();
+  for (const row of (data || []) as unknown as Array<
+    PlacementQueryRow & { assigned_attendee_id: string | null }
+  >) {
+    if (!row.assigned_attendee_id) {
+      continue;
+    }
+    const label =
+      row.master_map_sites?.display_label ||
+      row.master_map_sites?.site_number ||
+      row.master_site_id;
+    placements.set(row.assigned_attendee_id, {
+      parkingSiteId: row.id,
+      masterSiteId: row.master_site_id,
+      label,
+    });
+  }
+
+  return { ok: true, placements };
+}

@@ -66,7 +66,12 @@ test("reduceCanonicalAttendeePlacement never reads or derives from an assigned_s
 // ---- Structural proof for the impure fetch wrapper. ----
 
 test("fetchCanonicalAttendeePlacement never selects or filters by attendees.assigned_site", () => {
-  const fn = SOURCE.slice(SOURCE.indexOf("export async function fetchCanonicalAttendeePlacement"));
+  // Code only -- the batched sibling's own explanatory comments below
+  // legitimately mention "assigned_site" in prose (contrasting itself
+  // against it), so strip // line comments before checking, exactly as
+  // the Announcements/Vendors/Dashboard page tests already do for the
+  // same reason.
+  const fn = SINGLE_ATTENDEE_FN.replace(/\/\/.*$/gm, "");
   assert.equal(/assigned_site/.test(fn), false);
 });
 
@@ -75,14 +80,22 @@ test("fetchCanonicalAttendeePlacement derives placement only from parking_sites,
   assert.match(SOURCE, /master_map_sites\(site_number,display_label\)/);
 });
 
+// Bounded to end just before the batched sibling below (§UI Phase 4) --
+// not sliced to end-of-file, so appending further exports later never
+// silently re-breaks these counts the way this test file's own bound
+// once did when fetchCanonicalAttendeePlacementsForEvent was added.
+const SINGLE_ATTENDEE_FN = SOURCE.slice(
+  SOURCE.indexOf("export async function fetchCanonicalAttendeePlacement("),
+  SOURCE.indexOf("export type CanonicalAttendeePlacementMap"),
+);
+
 test("fetchCanonicalAttendeePlacement is Event-scoped on both the attendee-exists check and the placement query", () => {
-  const fn = SOURCE.slice(SOURCE.indexOf("export async function fetchCanonicalAttendeePlacement"));
-  const eqEventIdCount = (fn.match(/\.eq\("event_id", eventId\)/g) || []).length;
+  const eqEventIdCount = (SINGLE_ATTENDEE_FN.match(/\.eq\("event_id", eventId\)/g) || []).length;
   assert.equal(eqEventIdCount, 2);
 });
 
 test("fetchCanonicalAttendeePlacement verifies the attendee belongs to the requested Event before ever reading placement -- a cross-Event id cannot return a site", () => {
-  const fn = SOURCE.slice(SOURCE.indexOf("export async function fetchCanonicalAttendeePlacement"));
+  const fn = SINGLE_ATTENDEE_FN;
   const attendeeCheckIndex = fn.indexOf('.from("attendees")');
   const placementCheckIndex = fn.indexOf('.from("parking_sites")');
   assert.ok(attendeeCheckIndex >= 0 && placementCheckIndex > attendeeCheckIndex);
@@ -92,4 +105,37 @@ test("fetchCanonicalAttendeePlacement verifies the attendee belongs to the reque
 test("fetchCanonicalAttendeePlacement introduces no new RPC, and performs a plain client read (no service-role / admin client import)", () => {
   assert.equal(/\.rpc\(/.test(SOURCE), false);
   assert.equal(/service_role|createAdminClient|SUPABASE_SERVICE/i.test(SOURCE), false);
+});
+
+// ---- UI Phase 4: batched sibling for roster-scale reads. ----
+
+test("fetchCanonicalAttendeePlacementsForEvent never selects or filters by attendees.assigned_site, and performs exactly one query", () => {
+  const fn = SOURCE.slice(SOURCE.indexOf("export async function fetchCanonicalAttendeePlacementsForEvent"));
+  assert.equal(/assigned_site/.test(fn), false);
+  assert.equal(
+    (fn.match(/\.from\("/g) || []).length,
+    1,
+    "must be a single Supabase table query regardless of roster size",
+  );
+  assert.match(fn, /\.from\("parking_sites"\)/);
+  assert.match(fn, /\.in\("assigned_attendee_id", Array\.from\(attendeeIds\)\)/);
+});
+
+test("fetchCanonicalAttendeePlacementsForEvent is Event-scoped", () => {
+  const fn = SOURCE.slice(SOURCE.indexOf("export async function fetchCanonicalAttendeePlacementsForEvent"));
+  assert.match(fn, /\.eq\("event_id", eventId\)/);
+});
+
+test("fetchCanonicalAttendeePlacementsForEvent short-circuits to an empty map without querying when there is nothing to look up", () => {
+  const fn = SOURCE.slice(
+    SOURCE.indexOf("export async function fetchCanonicalAttendeePlacementsForEvent"),
+    SOURCE.indexOf("export async function fetchCanonicalAttendeePlacementsForEvent") + 600,
+  );
+  assert.match(fn, /if \(!eventId \|\| attendeeIds\.length === 0\) \{\s*return \{ ok: true, placements: new Map\(\) \};/);
+});
+
+test("fetchCanonicalAttendeePlacementsForEvent introduces no new RPC or service-role access", () => {
+  const fn = SOURCE.slice(SOURCE.indexOf("export async function fetchCanonicalAttendeePlacementsForEvent"));
+  assert.equal(/\.rpc\(/.test(fn), false);
+  assert.equal(/service_role|createAdminClient|SUPABASE_SERVICE/i.test(fn), false);
 });

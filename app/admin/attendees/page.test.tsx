@@ -61,6 +61,48 @@ test("Stage A: generic attendee payload excludes operational Arrival and placeme
   assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
 });
 
+// -- UI Phase 4: read-only Arrival/Placement in the roster list itself ------
+
+test("attendeeArrivalPresentation and attendeePlacementPresentation are read-only derivations -- neither returns a setter, handler, or writable control", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const arrivalFn = source.slice(
+    source.indexOf("function attendeeArrivalPresentation("),
+    source.indexOf("function attendeePlacementPresentation("),
+  );
+  const placementFn = source.slice(
+    source.indexOf("function attendeePlacementPresentation("),
+    source.indexOf("function attendeeGroupSiteLabel("),
+  );
+
+  for (const fn of [arrivalFn, placementFn]) {
+    assert.equal(/onChange|onClick|setHasArrived|setAssignedSite/.test(fn), false);
+    assert.equal(/\.rpc\(|supabase\.from\(/.test(fn), false);
+  }
+});
+
+test("the roster list never reads or displays attendees.assigned_site directly -- Placement is sourced only from the canonical placements map", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const attendeeListSource = source.slice(
+    source.indexOf("function AttendeeList("),
+    source.indexOf("export function AttendeeRecordWorkspace("),
+  );
+
+  assert.equal(/attendee\.assigned_site/.test(attendeeListSource), false);
+  assert.match(attendeeListSource, /placementsByAttendeeId/);
+});
+
+test("Arrival and Placement badges in the roster render through the shared, read-only StatusBadge -- no <input>/<select> ever mutates has_arrived or placement from this page", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const attendeeListSource = source.slice(
+    source.indexOf("function AttendeeList("),
+    source.indexOf("export function AttendeeRecordWorkspace("),
+  );
+
+  assert.match(attendeeListSource, /<StatusBadge tone=\{arrival\.tone\}>\{arrival\.label\}<\/StatusBadge>/);
+  assert.match(attendeeListSource, /<StatusBadge tone=\{placement\.tone\}>\{placement\.label\}<\/StatusBadge>/);
+  assert.equal(/type="checkbox"|type="radio"/.test(attendeeListSource), false);
+});
+
 test("saveMembershipNumber: the quick-correction path defers to the governed validateField check, not a second hardcoded F/C copy (Refactor Audit Q7)", () => {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
   const start = source.indexOf("async function saveMembershipNumber");
@@ -400,7 +442,7 @@ test("QuickActionBar no longer accepts onSetReviewMode/onSetAllMode -- the View 
   );
 });
 
-test("secondary filters (Rows to Show, Sort, Data Status, Participant Type) are progressively disclosed, not competing with Search/View", () => {
+test("secondary filters (Rows to Show, Sort, Data Status, Participant Type) are progressively disclosed via the shared TableToolbarDisclosure, not competing with Search/View", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
@@ -409,21 +451,45 @@ test("secondary filters (Rows to Show, Sort, Data Status, Participant Type) are 
     source.indexOf("export function QuickActionBar"),
   );
 
-  assert.match(filterBarSource, /<details/);
-  assert.match(filterBarSource, /More filters/);
+  // UI Phase 4: the disclosure itself moved into the shared
+  // TableToolbarDisclosure primitive (components/ui/TableToolbar.tsx,
+  // its own <details>/<summary> semantics verified there) -- FilterBar's
+  // own source no longer spells out "<details" directly, so this checks
+  // for the primitive's usage instead of the implementation detail it
+  // now delegates to.
+  assert.match(filterBarSource, /<TableToolbarDisclosure label="More filters"/);
 
-  const detailsIndex = filterBarSource.indexOf("<details");
+  const disclosureIndex = filterBarSource.indexOf("<TableToolbarDisclosure");
   const rowsToShowIndex = filterBarSource.indexOf("Rows to Show");
-  const dataStatusIndex = filterBarSource.indexOf(">Data Status<");
+  const dataStatusMatch = />\s*Data Status\s*</.exec(filterBarSource);
   const participantTypeIndex = filterBarSource.indexOf("Participant Type");
-  const searchIndex = filterBarSource.indexOf(">Search<");
-  const viewIndex = filterBarSource.indexOf(">View<");
+  const searchIndex = filterBarSource.indexOf('label="Search"');
+  const viewMatch = />\s*View\s*</.exec(filterBarSource);
 
-  assert.ok(searchIndex > -1 && searchIndex < detailsIndex);
-  assert.ok(viewIndex > -1 && viewIndex < detailsIndex);
-  assert.ok(rowsToShowIndex > detailsIndex);
-  assert.ok(dataStatusIndex > detailsIndex);
-  assert.ok(participantTypeIndex > detailsIndex);
+  assert.ok(searchIndex > -1 && searchIndex < disclosureIndex);
+  assert.ok(viewMatch !== null && viewMatch.index < disclosureIndex);
+  assert.ok(rowsToShowIndex > disclosureIndex);
+  assert.ok(dataStatusMatch !== null && dataStatusMatch.index > disclosureIndex);
+  assert.ok(participantTypeIndex > disclosureIndex);
+});
+
+test("Clear Search & Filters resets search, Data Status, and Participant Type -- never View, Rows to Show, or Sort, which are display preferences, not filters", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+  const fn = source.slice(source.indexOf("function clearFilters()"), source.indexOf("function clearFilters()") + 200);
+
+  assert.match(fn, /setSearch\(""\)/);
+  assert.match(fn, /setDataStatusFilter\("all"\)/);
+  assert.match(fn, /setParticipantTypeFilter\("all"\)/);
+  assert.equal(/setViewMode|setPageSize|setAttendeeSortMode/.test(fn), false);
+});
+
+test("the Clear Search & Filters control only appears once there is something to clear", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /const hasClearableState = activeFilterCount > 0 \|\| search\.trim\(\) !== "";/);
+  assert.match(source, /\{hasClearableState \? \(/);
 });
 
 // --- Stage B: consolidated summary hierarchy --------------------------------
@@ -475,9 +541,16 @@ test("City/State no longer appears in the collapsed Review Queue / Attendee List
     source.indexOf("function ReviewQueue("),
     source.indexOf("function AttendeeList("),
   );
+  // Bounded to AttendeeList's own end (the next function declared after
+  // it), not the pre-existing "isExpanded ? (" marker -- that marker
+  // never actually occurred in this file (verified against the pre-Phase-4
+  // baseline too), so the slice it produced silently ran to end-of-file
+  // via String.slice's negative-index behavior. The assertion below still
+  // happened to hold across that wider, unintended slice, but this bound
+  // is now what the test's own comment always claimed to check.
   const attendeeListHeaderSource = source.slice(
     source.indexOf("function AttendeeList("),
-    source.indexOf("isExpanded ? ("),
+    source.indexOf("export function AttendeeRecordWorkspace("),
   );
 
   assert.ok(!reviewQueueSource.includes("cityState(attendee)"));
@@ -657,15 +730,39 @@ test("the three unreferenced *EmbedPanel components and the dead top-banner nav 
 
 // --- 4. Duplicated action rows normalized ---------------------------------
 
-test("the duplicated action rows are consolidated into one shared component, referenced by both list contexts", () => {
+test("the duplicated action rows are consolidated into one shared component, referenced only by ReviewQueue and AttendeeList", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
-  const usageCount = (source.match(/<AttendeeActionRow/g) || []).length;
+  const reviewQueueSource = source.slice(
+    source.indexOf("function ReviewQueue("),
+    source.indexOf("function AttendeeList("),
+  );
+  // UI Phase 4: AttendeeList itself now renders two responsive
+  // presentations of the same roster (DataTable / ResponsiveList, per
+  // the Shell's isCompact signal) -- both legitimately render
+  // AttendeeActionRow once each, so its own usage count is 2, not the
+  // drifted-second-implementation case this test originally guarded
+  // against. The guard that matters is unchanged: no *other* component
+  // anywhere in the file may define its own competing action row.
+  const attendeeListSource = source.slice(
+    source.indexOf("function AttendeeList("),
+    source.indexOf("export function AttendeeRecordWorkspace("),
+  );
+  const totalUsageCount = (source.match(/<AttendeeActionRow/g) || []).length;
+  const reviewQueueUsageCount = (reviewQueueSource.match(/<AttendeeActionRow/g) || []).length;
+  const attendeeListUsageCount = (attendeeListSource.match(/<AttendeeActionRow/g) || []).length;
+
+  assert.equal(reviewQueueUsageCount, 1, "ReviewQueue must render AttendeeActionRow exactly once");
   assert.equal(
-    usageCount,
+    attendeeListUsageCount,
     2,
-    "AttendeeActionRow must be used by exactly ReviewQueue and AttendeeList",
+    "AttendeeList renders AttendeeActionRow once per responsive presentation (table, list)",
+  );
+  assert.equal(
+    totalUsageCount,
+    reviewQueueUsageCount + attendeeListUsageCount,
+    "no third, independent AttendeeActionRow usage exists outside ReviewQueue/AttendeeList",
   );
   assert.ok(
     !source.includes("overflowX: \"auto\""),
@@ -709,7 +806,7 @@ test("AttendeeActionRow: showBackToPending governs exactly the one legitimate di
   }
 });
 
-test("AttendeeActionRow: never depends on horizontal scrolling for the primary action row", () => {
+test("AttendeeActionRow: never depends on horizontal scrolling for the primary action row -- now via the shared RowActions primitive, not a page-local inline style", () => {
   const html = renderToStaticMarkup(
     <AttendeeActionRow
       attendee={baseAttendee()}
@@ -721,8 +818,8 @@ test("AttendeeActionRow: never depends on horizontal scrolling for the primary a
     />,
   );
 
-  assert.ok(!html.includes("overflow-x:auto"));
-  assert.ok(html.includes("flex-wrap:wrap"));
+  assert.equal(/overflow-x\s*:\s*auto/.test(html), false);
+  assert.ok(html.includes('class="row-actions"'));
 });
 
 // --- 5. Cancellation metadata surfaced only where relevant ----------------

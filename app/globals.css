@@ -923,6 +923,76 @@ a.app-button-stop:hover {
   min-height: 44px;
 }
 
+/* =====================================================================
+   TABLE TOOLBAR (UI Phase 4)
+   components/ui/TableToolbar.tsx. Search + primary decision always
+   visible; secondary filters progressively disclosed via native
+   <details>. First built for Attendees; reusable by any future Admin
+   list module with the same search/filter shape.
+   ===================================================================== */
+
+.table-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 900;
+  padding: var(--space-6);
+  background: var(--color-bg-panel);
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-small);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.table-toolbar-row {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
+}
+
+.table-toolbar-row input,
+.table-toolbar-row select {
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-4);
+  border-radius: var(--radius-medium);
+  border: var(--border-width-default) solid var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-body);
+  box-sizing: border-box;
+}
+
+.table-toolbar-row input:focus-visible,
+.table-toolbar-row select:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.table-toolbar-label {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-weight: 600;
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
+}
+
+.table-toolbar-disclosure-summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
+  min-height: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+.table-toolbar-disclosure > .table-toolbar-row {
+  margin-top: var(--space-4);
+}
+
 /* ===== NEARBY FILTER CHIPS ===== */
 .nearby-chip {
   padding: 6px 12px;
