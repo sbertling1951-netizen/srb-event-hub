@@ -4,6 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
+import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSection } from "@/components/ui/PageSection";
+import { RowActions } from "@/components/ui/RowActions";
+import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
+import { SearchField, TableToolbar, TableToolbarPrimaryRow } from "@/components/ui/TableToolbar";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -45,6 +54,49 @@ type RequestRow = {
         phone: string | null;
       }[]
     | null;
+};
+
+// UI Phase 5: request-status vocabulary for the shared StatusBadge/
+// AppButton primitives. Values are unchanged from the original literal
+// button labels (request_status itself is still "new"/"contacted"/
+// "confirmed"/"completed"/"cancelled" -- only display text/color moved
+// onto the shared token system).
+const REQUEST_STATUS_OPTIONS = [
+  "new",
+  "contacted",
+  "confirmed",
+  "completed",
+  "cancelled",
+] as const;
+
+const STATUS_LABELS: Record<string, string> = {
+  new: "New",
+  contacted: "Contacted",
+  confirmed: "Confirmed",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+const STATUS_TONE: Record<string, StatusBadgeTone> = {
+  new: "neutral",
+  contacted: "info",
+  confirmed: "info",
+  completed: "success",
+  cancelled: "danger",
+};
+
+// Same completed=success / cancelled=danger / contacted+confirmed=primary /
+// new=muted hierarchy the original inline className switch already used --
+// carried over exactly, not redesigned.
+const STATUS_BUTTON_VARIANT: Record<
+  string,
+  "success" | "danger" | "primary" | "muted"
+> = {
+  new: "muted",
+  contacted: "primary",
+  confirmed: "primary",
+  completed: "success",
+  cancelled: "danger",
 };
 
 function csvEscape(value: unknown) {
@@ -133,6 +185,40 @@ function openParkingMapForSite(siteNumber: string | null) {
   window.location.href = "/admin/parking";
 }
 
+// Pure, presentation-only classification of the page's existing status
+// text into an Alert tone -- never a second source of the message itself
+// (every setStatus call site below is unchanged). Mirrors the same
+// heuristic already established for Vendors (vendorPageStatusTone).
+function vendorRequestStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.includes("failed") ||
+    lower.startsWith("we couldn't") ||
+    lower.startsWith("could not") ||
+    lower.includes("denied")
+  ) {
+    return "danger";
+  }
+  if (lower.includes("no admin event selected") || lower.includes("unavailable")) {
+    return "neutral";
+  }
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+  if (
+    lower.startsWith("loaded") ||
+    lower.includes("updated") ||
+    lower.includes("sent") ||
+    lower.includes("copied") ||
+    lower.includes("opened") ||
+    lower.includes("admitted")
+  ) {
+    return "success";
+  }
+  return "neutral";
+}
+
 export default function VendorRequestsPage() {
   return (
     <AdminRouteGuard requiredTask="event.vendors.manage">
@@ -150,6 +236,10 @@ function VendorRequestsInner() {
   const [status, setStatus] = useState("Loading...");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+  // Shell's own canonical compact-state signal (Canonical Shell Extension
+  // Rule 7) -- decides desktop table vs. narrow-viewport list below,
+  // replacing what would otherwise be a page-local resize listener.
+  const { isCompact } = useShellInterfaceCapabilities();
 
   async function loadRequests() {
     const event = getCurrentAdminEvent();
@@ -190,7 +280,8 @@ function VendorRequestsInner() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      setStatus(error.message);
+      console.error("load vendor requests error:", error);
+      setStatus("We couldn't load vendor requests. Please try again.");
       return;
     }
 
@@ -305,12 +396,7 @@ function VendorRequestsInner() {
       setStatus(`Email sent to ${vendorName} at ${vendorEmail}.`);
     } catch (error) {
       console.error("sendVendorEmail error:", error);
-
-      setStatus(
-        error instanceof Error
-          ? `Email failed: ${error.message}`
-          : "Email failed.",
-      );
+      setStatus("Email failed. Please try again.");
     } finally {
       setSendingEmailId(null);
     }
@@ -327,7 +413,8 @@ function VendorRequestsInner() {
     setUpdatingId(null);
 
     if (error) {
-      setStatus(error.message);
+      console.error("update vendor request status error:", error);
+      setStatus("We couldn't update this request's status. Please try again.");
       return;
     }
 
@@ -456,7 +543,8 @@ function VendorRequestsInner() {
     setUpdatingId(null);
 
     if (error) {
-      setStatus(error.message);
+      console.error("bulk update vendor request status error:", error);
+      setStatus(`We couldn't update ${vendorName}'s requests. Please try again.`);
       return;
     }
 
@@ -471,319 +559,350 @@ function VendorRequestsInner() {
     setStatus(`${vendorName} requests marked ${nextStatus}.`);
   }
 
-  return (
-    <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
-      <div className="card" style={{ padding: 18, minWidth: 0 }}>
-        <div role="status" style={{ fontSize: 14, opacity: 0.8 }}>
-          {status}
-        </div>
-      </div>
+  // Shared between the desktop table's Actions cell and the compact list
+  // card, so both presentations offer identical contact/handoff actions --
+  // one render path, two layouts (the pattern established in Vendors/
+  // Attendees). Contact/handoff actions (reach the requester or vendor,
+  // jump to the site on the map) are kept in their own RowActions group,
+  // visually separate from the status-lifecycle actions below.
+  function renderContactActions(request: RequestRow) {
+    const vendor = vendorForRequest(request);
+    const vendorEmail = vendor?.email?.trim() || "";
+    const name = request.requester_name || "this requester";
+    const site = currentSiteForRequest(request);
 
-      <div
-        className="card"
-        style={{
-          padding: 18,
-          display: "grid",
-          gap: 12,
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-          alignItems: "end",
-          minWidth: 0,
-        }}
-      >
-        <label>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Search</div>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Name, vendor, site, phone, service..."
-            style={{ width: "100%", padding: 10 }}
-          />
-        </label>
+    return (
+      <RowActions>
+        {request.requester_phone ? (
+          <AppLinkButton href={phoneHref(request.requester_phone)} aria-label={`Call ${name}`}>
+            Call Member
+          </AppLinkButton>
+        ) : null}
 
-        <label>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Status</div>
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            style={{ width: "100%", padding: 10 }}
+        {request.requester_email ? (
+          <AppLinkButton href={emailHref(request.requester_email)} aria-label={`Email ${name}`}>
+            Email Member
+          </AppLinkButton>
+        ) : null}
+
+        {vendorEmail ? (
+          <AppButton
+            variant="primary"
+            onClick={() => void sendVendorEmail(request)}
+            disabled={sendingEmailId === request.id}
+            aria-label={`Email vendor about ${name}'s request`}
           >
-            <option value="all">All</option>
-            <option value="new">New</option>
-            <option value="contacted">Contacted</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        </label>
+            {sendingEmailId === request.id ? "Sending..." : "Email Vendor"}
+          </AppButton>
+        ) : null}
 
-        <button type="button" onClick={() => void loadRequests()}>
-          Refresh
-        </button>
-
-        <button
-          type="button"
-          onClick={exportCsv}
-          disabled={filtered.length === 0}
+        <AppButton
+          variant="muted"
+          onClick={() => openParkingMapForSite(site)}
+          disabled={!site}
+          aria-label={`Show current site on map for ${name}`}
         >
-          Export CSV
-        </button>
-      </div>
+          Show Current Site on Map
+        </AppButton>
+      </RowActions>
+    );
+  }
 
-      <div style={{ fontWeight: 700 }}>
-        Showing {filtered.length} request{filtered.length === 1 ? "" : "s"} •
-        Total party count: {totalGuests}
-      </div>
+  // Status-lifecycle actions -- request_status is Vendor Requests' own
+  // field (vendor_service_requests.request_status), unrelated to Vendor
+  // Event admission lifecycle (unchanged, untouched by this migration).
+  function renderStatusActions(request: RequestRow) {
+    const name = request.requester_name || "this requester";
+    const current = request.request_status || "new";
+
+    return (
+      <RowActions>
+        {REQUEST_STATUS_OPTIONS.map((s) => (
+          <AppButton
+            key={s}
+            variant={STATUS_BUTTON_VARIANT[s]}
+            disabled={updatingId === request.id || current === s}
+            onClick={() => void updateStatus(request.id, s)}
+            aria-label={`Mark ${name}'s request ${STATUS_LABELS[s]}`}
+          >
+            {STATUS_LABELS[s]}
+          </AppButton>
+        ))}
+      </RowActions>
+    );
+  }
+
+  const activeFilterCount = filter !== "all" ? 1 : 0;
+  const hasClearableState = activeFilterCount > 0 || search.trim() !== "";
+
+  function clearFilters() {
+    setSearch("");
+    setFilter("all");
+  }
+
+  const isLoading = status === "Loading..." && requests.length === 0;
+
+  const requestListBody = isLoading ? (
+    <Alert tone="neutral">Loading vendor requests...</Alert>
+  ) : filtered.length === 0 ? (
+    <Alert tone="neutral">
+      {requests.length === 0
+        ? "No vendor requests have been submitted for this Event yet."
+        : "No vendor requests match your search or filters. Try clearing them."}
+    </Alert>
+  ) : isCompact ? (
+    <ResponsiveList>
+      {filtered.map((r) => {
+        const vendorName = vendorNameForRequest(r);
+        const site = currentSiteForRequest(r);
+        const priorSite = r.site_number && r.site_number !== site ? r.site_number : null;
+
+        return (
+          <li key={r.id} className="responsive-list-item">
+            <div className="responsive-list-item-header">
+              <div className="responsive-list-item-title">{r.requester_name || "Unnamed"}</div>
+              {(() => {
+                const s = r.request_status || "new";
+                return <StatusBadge tone={STATUS_TONE[s]}>{STATUS_LABELS[s]}</StatusBadge>;
+              })()}
+            </div>
+
+            <div className="responsive-list-item-meta">
+              <span>Vendor: {vendorName}</span>
+              <span>Service: {r.requested_service || "—"}</span>
+              <span>Party: {r.guest_count || 0}</span>
+            </div>
+
+            <div className="responsive-list-item-meta">
+              <span>Site: {site || "—"}{priorSite ? ` (was ${priorSite})` : ""}</span>
+            </div>
+
+            <div className="responsive-list-item-meta">
+              {r.requester_phone ? <span>{r.requester_phone}</span> : null}
+              {r.requester_email ? <span>{r.requester_email}</span> : null}
+              {r.preferred_response_method ? (
+                <span>Prefers {r.preferred_response_method}</span>
+              ) : null}
+            </div>
+
+            {r.request_notes ? (
+              <div className="data-table-cell-meta">Notes: {r.request_notes}</div>
+            ) : null}
+
+            {renderContactActions(r)}
+            {renderStatusActions(r)}
+          </li>
+        );
+      })}
+    </ResponsiveList>
+  ) : (
+    <DataTable caption="Vendor service requests for the current Event">
+      <thead>
+        <tr>
+          <th scope="col">Requester</th>
+          <th scope="col">Vendor</th>
+          <th scope="col">Service</th>
+          <th scope="col">Site</th>
+          <th scope="col">Status</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filtered.map((r) => {
+          const vendor = vendorForRequest(r);
+          const vendorName = vendorNameForRequest(r);
+          const vendorPhone = vendorPhoneForRequest(r);
+          const site = currentSiteForRequest(r);
+          const priorSite = r.site_number && r.site_number !== site ? r.site_number : null;
+          const s = r.request_status || "new";
+
+          return (
+            <tr key={r.id}>
+              <td>
+                <div className="data-table-cell-primary">{r.requester_name || "Unnamed"}</div>
+                <div className="data-table-cell-meta">
+                  {[r.requester_phone, r.requester_email].filter(Boolean).join(" · ")}
+                  {r.preferred_response_method ? ` · Prefers ${r.preferred_response_method}` : ""}
+                </div>
+              </td>
+              <td>
+                <div className="data-table-cell-primary">{vendorName}</div>
+                {vendorPhone ? <div className="data-table-cell-meta">{vendorPhone}</div> : null}
+                {!vendor ? <div className="data-table-cell-meta">No vendor on file</div> : null}
+              </td>
+              <td>
+                <div className="data-table-cell-primary">{r.requested_service || "—"}</div>
+                <div className="data-table-cell-meta">
+                  {r.guest_count || 0} guest{(r.guest_count || 0) === 1 ? "" : "s"}
+                  {r.request_notes ? ` · ${r.request_notes}` : ""}
+                </div>
+              </td>
+              <td>
+                {site || "—"}
+                {priorSite ? (
+                  <div className="data-table-cell-meta">was {priorSite}</div>
+                ) : null}
+              </td>
+              <td>
+                <StatusBadge tone={STATUS_TONE[s]}>{STATUS_LABELS[s]}</StatusBadge>
+              </td>
+              <td>
+                <div style={{ display: "grid", gap: "var(--space-2)" }}>
+                  {renderContactActions(r)}
+                  {renderStatusActions(r)}
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </DataTable>
+  );
+
+  return (
+    <div style={{ display: "grid", gap: "var(--space-8)", minWidth: 0 }}>
+      <Alert tone={vendorRequestStatusTone(status)}>{status}</Alert>
+
+      <TableToolbar>
+        <TableToolbarPrimaryRow>
+          <SearchField
+            label="Search"
+            value={search}
+            onChange={setSearch}
+            id="vendor-request-search"
+            placeholder="Name, vendor, site, phone, service..."
+          />
+
+          <div>
+            <label className="table-toolbar-label" htmlFor="vendor-request-status">
+              Status
+            </label>
+            <select
+              id="vendor-request-status"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              {REQUEST_STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {STATUS_LABELS[s]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {hasClearableState ? (
+            <div style={{ alignSelf: "end" }}>
+              <AppButton onClick={clearFilters}>Clear Search &amp; Filters</AppButton>
+            </div>
+          ) : null}
+        </TableToolbarPrimaryRow>
+      </TableToolbar>
 
       {groupedRequests.length > 0 ? (
-        <div
-          className="card"
-          style={{ padding: 16, display: "grid", gap: 12, minWidth: 0 }}
-        >
-          <div style={{ fontWeight: 800, fontSize: 18 }}>
-            Vendor Dispatch Lists
-          </div>
-          <div style={{ fontSize: 13, color: "#555" }}>
-            Export, copy, or text a vendor-specific request list.
-          </div>
+        <PageSection variant="section">
+          <PageHeader
+            title="Vendor Dispatch Lists"
+            headingLevel="h2"
+            titleClassName="app-section-title"
+            description="Export, copy, or text a vendor-specific request list."
+            descriptionClassName="app-subtle-text"
+          />
 
-          {groupedRequests.map(([vendorName, vendorRequests]) => {
-            const firstRequest = vendorRequests[0];
-            const vendorPhone = firstRequest
-              ? vendorPhoneForRequest(firstRequest)
-              : "";
-            const summary = vendorSummaryText(vendorName, vendorRequests);
-            const textLink = smsHref(vendorPhone, summary);
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            {groupedRequests.map(([vendorName, vendorRequests]) => {
+              const firstRequest = vendorRequests[0];
+              const vendorPhone = firstRequest
+                ? vendorPhoneForRequest(firstRequest)
+                : "";
+              const summary = vendorSummaryText(vendorName, vendorRequests);
+              const textLink = smsHref(vendorPhone, summary);
 
-            return (
-              <div
-                key={vendorName}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
-                  background: "#f8fafc",
-                  padding: 12,
-                  display: "grid",
-                  gap: 8,
-                  minWidth: 0,
-                  overflowWrap: "anywhere",
-                }}
-              >
+              return (
                 <div
+                  key={vendorName}
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    alignItems: "center",
+                    border: "var(--border-width-default) solid var(--color-border-default)",
+                    borderRadius: "var(--radius-medium)",
+                    background: "var(--color-bg-muted)",
+                    padding: "var(--space-4)",
+                    display: "grid",
+                    gap: "var(--space-3)",
+                    minWidth: 0,
+                    overflowWrap: "anywhere",
                   }}
                 >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 800, overflowWrap: "anywhere" }}>
-                      {vendorName}
+                  <div className="app-row-between-wrap">
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: "var(--font-weight-semibold)", overflowWrap: "anywhere" }}>
+                        {vendorName}
+                      </div>
+                      <div className="data-table-cell-meta">
+                        {vendorRequests.length} request
+                        {vendorRequests.length === 1 ? "" : "s"}
+                        {vendorPhone ? ` • ${vendorPhone}` : ""}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 13, color: "#555" }}>
-                      {vendorRequests.length} request
-                      {vendorRequests.length === 1 ? "" : "s"}
-                      {vendorPhone ? ` • ${vendorPhone}` : ""}
-                    </div>
-                  </div>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fit, minmax(min(160px, 100%), 1fr))",
-                      gap: 8,
-                      width: "min(100%, 520px)",
-                      minWidth: 0,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        exportVendorCsv(vendorName, vendorRequests)
-                      }
-                      className="app-button"
-                    >
-                      Export CSV
-                    </button>
+                    <RowActions>
+                      <AppButton onClick={() => exportVendorCsv(vendorName, vendorRequests)}>
+                        Export CSV
+                      </AppButton>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void copyVendorSummary(vendorName, vendorRequests)
-                      }
-                      className="app-button"
-                    >
-                      Copy Summary
-                    </button>
+                      <AppButton onClick={() => void copyVendorSummary(vendorName, vendorRequests)}>
+                        Copy Summary
+                      </AppButton>
 
-                    {textLink ? (
-                      <a
-                        href={textLink}
-                        className="app-button app-button-primary"
+                      {textLink ? (
+                        <AppLinkButton
+                          href={textLink}
+                          variant="primary"
+                          onClick={() => setStatus(`Opened text message for ${vendorName}.`)}
+                        >
+                          Text Vendor
+                        </AppLinkButton>
+                      ) : (
+                        <AppButton variant="muted" disabled>
+                          No Vendor Phone
+                        </AppButton>
+                      )}
+
+                      <AppButton
                         onClick={() =>
-                          setStatus(`Opened text message for ${vendorName}.`)
+                          void markVendorRequestsStatus(vendorName, vendorRequests, "contacted")
                         }
+                        disabled={updatingId === `vendor-${vendorName}`}
                       >
-                        Text Vendor
-                      </a>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled
-                        className="app-button app-button-muted"
-                      >
-                        No Vendor Phone
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void markVendorRequestsStatus(
-                          vendorName,
-                          vendorRequests,
-                          "contacted",
-                        )
-                      }
-                      disabled={updatingId === `vendor-${vendorName}`}
-                      className="app-button"
-                    >
-                      {updatingId === `vendor-${vendorName}`
-                        ? "Updating..."
-                        : "Mark Contacted"}
-                    </button>
+                        {updatingId === `vendor-${vendorName}` ? "Updating..." : "Mark Contacted"}
+                      </AppButton>
+                    </RowActions>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </PageSection>
       ) : null}
 
-      {filtered.map((r) => (
-        <div
-          key={r.id}
-          className="card"
-          style={{
-            padding: 16,
-            border: "1px solid #ddd",
-            borderRadius: 12,
-            background: "white",
-            display: "grid",
-            gap: 10,
-            minWidth: 0,
-            overflowWrap: "anywhere",
-          }}
-        >
-          <div
-            style={{ fontWeight: 800, fontSize: 18, overflowWrap: "anywhere" }}
-          >
-            {r.requester_name || "Unnamed"}
-          </div>
+      <section style={{ display: "grid", gap: "var(--space-4)" }}>
+        <PageHeader
+          title="Service Requests"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+          description={`Showing ${filtered.length} request${filtered.length === 1 ? "" : "s"} • Total party count: ${totalGuests}.`}
+          descriptionClassName="app-subtle-text"
+          actions={
+            <div className="app-button-row">
+              <AppButton onClick={() => void loadRequests()}>Refresh</AppButton>
+              <AppButton onClick={exportCsv} disabled={filtered.length === 0}>
+                Export CSV
+              </AppButton>
+            </div>
+          }
+        />
 
-          <div>
-            <strong>Vendor:</strong>{" "}
-            {(Array.isArray(r.vendors) ? r.vendors[0] : r.vendors)
-              ?.business_name || "—"}
-          </div>
-          <div>
-            <strong>Service:</strong> {r.requested_service || "—"}
-          </div>
-          <div>
-            <strong>Party:</strong> {r.guest_count || 0}
-          </div>
-          <div>
-            <strong>Current Site:</strong> {currentSiteForRequest(r) || "—"}
-            {r.site_number && r.site_number !== currentSiteForRequest(r) ? (
-              <span style={{ color: "#666" }}> (was {r.site_number})</span>
-            ) : null}
-          </div>
-          <div>
-            <strong>Phone:</strong> {r.requester_phone || "—"}
-          </div>
-          <div>
-            <strong>Email:</strong> {r.requester_email || "—"}
-          </div>
-          <div>
-            <strong>Preferred:</strong> {r.preferred_response_method || "—"}
-          </div>
-          <div>
-            <strong>Notes:</strong> {r.request_notes || "—"}
-          </div>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {r.requester_phone ? (
-              <a href={phoneHref(r.requester_phone)} className="app-button">
-                Call Member
-              </a>
-            ) : null}
-
-            {r.requester_email ? (
-              <a href={emailHref(r.requester_email)} className="app-button">
-                Email Member
-              </a>
-            ) : null}
-
-            {vendorForRequest(r)?.email?.trim() ? (
-              <button
-                type="button"
-                onClick={() => void sendVendorEmail(r)}
-                disabled={sendingEmailId === r.id}
-                className="app-button app-button-primary"
-              >
-                {sendingEmailId === r.id ? "Sending..." : "Email Vendor"}
-              </button>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={() => openParkingMapForSite(currentSiteForRequest(r))}
-              disabled={!currentSiteForRequest(r)}
-              className="app-button app-button-muted"
-            >
-              Show Current Site on Map
-            </button>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {["new", "contacted", "confirmed", "completed", "cancelled"].map(
-              (s) => {
-                const variant =
-                  s === "completed"
-                    ? "app-button app-button-success"
-                    : s === "cancelled"
-                      ? "app-button app-button-danger"
-                      : s === "contacted" || s === "confirmed"
-                        ? "app-button app-button-primary"
-                        : "app-button app-button-muted";
-
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    disabled={
-                      updatingId === r.id || (r.request_status || "new") === s
-                    }
-                    onClick={() => void updateStatus(r.id, s)}
-                    className={variant}
-                  >
-                    {s}
-                  </button>
-                );
-              },
-            )}
-          </div>
-        </div>
-      ))}
-
-      {filtered.length === 0 ? (
-        <div className="card" style={{ padding: 16, minWidth: 0 }}>
-          No vendor requests found.
-        </div>
-      ) : null}
+        {requestListBody}
+      </section>
     </div>
   );
 }
