@@ -3125,3 +3125,63 @@ body.slideshow-view-mode .app-header-card {
 .ui-ref-scale-mid .row-actions .app-button {
   min-height: 47px;
 }
+
+/* ---- Button Hierarchy + Table Row Actions prototype (reference-only) ----
+   Three narrowly-scoped extensions of .app-button/.app-link-button via
+   their own className prop -- none of components/ui/AppButton.tsx is
+   changed, and none of these classes is used on any other page. Existing
+   base rules (.app-button, button.app-button, a.app-button) mark color/
+   -webkit-text-fill-color !important, so these mirror that exact
+   three-selector shape to win cleanly rather than fighting specificity.
+   All colors below are existing tokens -- nothing new was invented. */
+.ui-ref-btn-ghost,
+button.ui-ref-btn-ghost,
+a.ui-ref-btn-ghost {
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: var(--color-text-secondary) !important;
+  -webkit-text-fill-color: var(--color-text-secondary) !important;
+}
+
+.ui-ref-btn-ghost:hover:not(:disabled),
+a.ui-ref-btn-ghost:hover {
+  background: var(--color-bg-muted) !important;
+  border-color: var(--color-border-default) !important;
+}
+
+.ui-ref-btn-outline-danger,
+button.ui-ref-btn-outline-danger,
+a.ui-ref-btn-outline-danger {
+  background: transparent !important;
+  background-image: none !important;
+  border-color: var(--color-action-destructive) !important;
+  box-shadow: none !important;
+  color: var(--color-status-error) !important;
+  -webkit-text-fill-color: var(--color-status-error) !important;
+}
+
+.ui-ref-btn-outline-danger:hover:not(:disabled),
+a.ui-ref-btn-outline-danger:hover {
+  background: var(--color-status-error-bg) !important;
+}
+
+.ui-ref-btn-navlink,
+button.ui-ref-btn-navlink,
+a.ui-ref-btn-navlink {
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  padding-left: var(--space-2) !important;
+  padding-right: var(--space-2) !important;
+  color: var(--color-action-primary-active) !important;
+  -webkit-text-fill-color: var(--color-action-primary-active) !important;
+  text-decoration: underline;
+}
+
+.ui-ref-btn-navlink:hover:not(:disabled),
+a.ui-ref-btn-navlink:hover {
+  background: var(--color-action-secondary-hover) !important;
+}

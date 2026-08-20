@@ -252,6 +252,116 @@ test("the scale prototype touches only its own locally-scoped classes -- no :roo
   assert.match(cssSource, /\.ui-ref-scale-mid \{/);
 });
 
+test("the Button Hierarchy & Table Row Actions section exists, with Part A/B and all three button systems rendered, wrapped in the approved Mid-Size scale", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+
+  assert.ok(html.includes("Button Hierarchy &amp; Table Row Actions (prototype)"));
+  assert.ok(html.includes("Part A: Button Hierarchy"));
+  assert.ok(html.includes("Part B: Table Row Actions"));
+  assert.ok(html.includes("System 1 -- Current (baseline)"));
+  assert.ok(html.includes("System 2 -- Minimal Adjustment"));
+  assert.ok(html.includes("System 3 -- Restructured Hierarchy"));
+
+  const sectionSource = source.slice(
+    source.indexOf('id="action-hierarchy"'),
+    source.indexOf("</RefSection>\n    </div>\n  );\n}"),
+  );
+  assert.match(sectionSource, /<div className="ui-ref-scale-mid" style=\{\{ display: "grid", gap: "var\(--space-8\)" \}\}>/);
+});
+
+test("System 2/3 give navigation/handoff its own text-link treatment, distinct from System 1's identical-to-a-button AppLinkButton", () => {
+  const sectionSource = source.slice(
+    source.indexOf('id="action-hierarchy"'),
+    source.indexOf("</RefSection>\n    </div>\n  );\n}"),
+  );
+  const system1 = sectionSource.slice(
+    sectionSource.indexOf("System 1 -- Current"),
+    sectionSource.indexOf("System 2 -- Minimal"),
+  );
+  const system2 = sectionSource.slice(
+    sectionSource.indexOf("System 2 -- Minimal"),
+    sectionSource.indexOf("System 3 -- Restructured"),
+  );
+
+  assert.match(system1, /<AppLinkButton href="#tables">View in Parking<\/AppLinkButton>/);
+  assert.equal(/ui-ref-btn-navlink/.test(system1), false);
+  assert.match(system2, /className="ui-ref-btn-navlink"/);
+});
+
+test("System 3's destructive action is outlined until confirmed -- the solid fill only appears inside the real ConfirmDialog", () => {
+  const sectionSource = source.slice(
+    source.indexOf("System 3 -- Restructured"),
+    source.indexOf("Should green mean status only?"),
+  );
+  assert.match(sectionSource, /className="ui-ref-btn-outline-danger" onClick=\{\(\) => setSystem3ConfirmOpen\(true\)\}/);
+  assert.match(sectionSource, /<ConfirmDialog\s/);
+  assert.match(sectionSource, /danger$/m);
+});
+
+test("the green-for-status exhibit compares a success-variant action button against a primary-variant one, both next to the identical success StatusBadge", () => {
+  const sectionSource = source.slice(
+    source.indexOf("Should green mean status only?"),
+    source.indexOf("Part B: Table Row Actions"),
+  );
+  assert.match(sectionSource, /<AppButton variant="success">Complete<\/AppButton>/);
+  assert.match(sectionSource, /<AppButton variant="primary">Complete<\/AppButton>/);
+  const badgeCount = (sectionSource.match(/<StatusBadge tone="success">Complete<\/StatusBadge>/g) || []).length;
+  assert.equal(badgeCount, 2);
+});
+
+test("Table Row Actions Treatment 2 reuses the real Section 6 DesktopPointerCandidate component directly, not a copy", () => {
+  const partB = source.slice(
+    source.indexOf("Part B: Table Row Actions"),
+    source.indexOf("None of the three button systems"),
+  );
+  assert.match(partB, /<DesktopPointerCandidate records=\{SAMPLE_RECORDS\} \/>/);
+});
+
+test("Table Row Actions Treatments 1 and 3, and the operational handoff example, all render with Casey's long name and give every action an accessible name", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  const occurrences = html.split("Casey Whitfield-Alvarenga-Thornbury").length - 1;
+  // 4 from the Section 6 comparison + 2 from this section's two per-record
+  // treatments (Prominent, Disclosure) that iterate all six records.
+  assert.ok(occurrences >= 6, `expected at least 6 occurrences of Casey's name, found ${occurrences}`);
+
+  const treatment1Fn = source.slice(
+    source.indexOf("function RowActionsTreatmentProminent("),
+    source.indexOf("function RowActionsTreatmentDisclosure("),
+  );
+  const treatment3Fn = source.slice(
+    source.indexOf("function RowActionsTreatmentDisclosure("),
+    source.indexOf("function OperationalHandoffExample("),
+  );
+  const handoffFn = source.slice(source.indexOf("function OperationalHandoffExample("), source.length);
+
+  for (const fn of [treatment1Fn, treatment3Fn, handoffFn]) {
+    assert.match(fn, /aria-label=\{`(Contact|Edit|Cancel|View)/);
+  }
+});
+
+test("Table Row Actions Treatment 3 uses the same native <details>/<summary> disclosure pattern as Section 6 -- no hover-only or gesture-only control anywhere in the new section", () => {
+  const treatment3Fn = source.slice(
+    source.indexOf("function RowActionsTreatmentDisclosure("),
+    source.indexOf("function OperationalHandoffExample("),
+  );
+  assert.match(treatment3Fn, /<details className="ui-ref-touch-more">/);
+  assert.match(treatment3Fn, /<summary className="table-toolbar-disclosure-summary">More actions<\/summary>/);
+
+  const sectionSource = source.slice(
+    source.indexOf('id="action-hierarchy"'),
+    source.indexOf("</RefSection>\n    </div>\n  );\n}"),
+  );
+  assert.equal(/onTouchStart|onTouchEnd|onSwipe|:hover(?!\s*\{)/.test(sectionSource), false);
+});
+
+test("the button/row-action comparison declares no winner", () => {
+  const sectionSource = source.slice(
+    source.indexOf('id="action-hierarchy"'),
+    source.indexOf("</RefSection>\n    </div>\n  );\n}"),
+  );
+  assert.match(sectionSource, /None of the three button systems or three row-action treatments is being recommended/);
+});
+
 test("no new StatusBadge tone or AppButton variant was invented to build this page", () => {
   const badgeToneUses = [...source.matchAll(/tone=\{?"?(neutral|info|warning|danger|success)"?\}?/g)].map(
     (m) => m[1],

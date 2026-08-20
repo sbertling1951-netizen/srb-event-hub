@@ -47,6 +47,7 @@ const TOC: Array<{ id: string; label: string }> = [
   { id: "responsive", label: "12. Responsive Review" },
   { id: "device", label: "13. Device & Layout Preferences" },
   { id: "scale", label: "14. Mid-Size UI Scale (prototype)" },
+  { id: "action-hierarchy", label: "15. Button Hierarchy & Table Row Actions (prototype)" },
 ];
 
 // ----------------------------------------------------------------------------
@@ -303,6 +304,11 @@ export function AdminUiReferenceContent() {
   // renders at. Local state only -- never persisted, never affects any
   // other page.
   const [scaleToggle, setScaleToggle] = useState<"current" | "mid">("current");
+
+  // Section 15 demo only: the "outline until confirmed, solid once
+  // confirmed" destructive treatment (Button System 3) reuses the real
+  // ConfirmDialog, via its own open state separate from Section 3's.
+  const [system3ConfirmOpen, setSystem3ConfirmOpen] = useState(false);
 
   const demoActiveFilterCount = (demoCategory !== "all" ? 1 : 0) + (demoStatus !== "all" ? 1 : 0);
   const demoHasClearable = demoActiveFilterCount > 0 || demoSearch.trim() !== "";
@@ -1770,6 +1776,206 @@ export function AdminUiReferenceContent() {
           real tokens is a separate, smaller finding this prototype surfaces along the way.
         </Observation>
       </RefSection>
+
+      {/* =================================================================
+          15. BUTTON HIERARCHY + TABLE ROW ACTIONS (PROTOTYPE)
+          ================================================================= */}
+      <RefSection
+        id="action-hierarchy"
+        title="Button Hierarchy & Table Row Actions (prototype)"
+        description="Pap/Mel approved the Mid-Size scale in Section 14 as the target -- everything below renders at that scale. Reference-only alternatives for the action language itself: primary, ordinary, destructive, disabled, and navigation/handoff, plus three row-action layouts. Nothing here is approved; no system is declared a winner."
+      >
+        <div className="ui-ref-scale-mid" style={{ display: "grid", gap: "var(--space-8)" }}>
+          {/* ---- PART A: BUTTON HIERARCHY ---- */}
+          <PageSection variant="section">
+            <PageHeader
+              title="Part A: Button Hierarchy"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+            />
+
+            <div style={{ display: "grid", gap: "var(--space-6)" }}>
+              <div>
+                <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+                  For comparison: the existing success/danger/start/stop treatments (Section 3) -- shown once more,
+                  not assumed to survive.
+                </div>
+                <div className="app-button-row">
+                  <AppButton variant="success">Success</AppButton>
+                  <AppButton variant="start">Start</AppButton>
+                  <AppButton variant="danger">Danger</AppButton>
+                  <AppButton variant="stop">Stop</AppButton>
+                </div>
+              </div>
+
+              <div>
+                <PageHeader
+                  title="System 1 -- Current (baseline)"
+                  headingLevel="h3"
+                  titleStyle={{ fontSize: "var(--font-size-body)" }}
+                  description="Today's AppButton variants exactly as shipped. Navigation/handoff (an AppLinkButton with no variant) renders identically to an ordinary mutation button -- nothing today distinguishes 'do something here' from 'take me elsewhere.'"
+                  descriptionClassName="app-subtle-text"
+                />
+                <div className="app-button-row">
+                  <AppButton variant="primary">Save</AppButton>
+                  <AppButton>Edit</AppButton>
+                  <AppButton variant="danger">Cancel Registration</AppButton>
+                  <AppButton disabled>Save</AppButton>
+                  <AppLinkButton href="#tables">View in Parking</AppLinkButton>
+                </div>
+              </div>
+
+              <div>
+                <PageHeader
+                  title="System 2 -- Minimal Adjustment"
+                  headingLevel="h3"
+                  titleStyle={{ fontSize: "var(--font-size-body)" }}
+                  description="Smallest change that fixes two specific things: navigation/handoff becomes a plain text link (never confusable with a mutation button), and green is reserved for status -- an affirmative action like Complete/Approve uses primary blue instead of success green. Ordinary and destructive are untouched."
+                  descriptionClassName="app-subtle-text"
+                />
+                <div className="app-button-row">
+                  <AppButton variant="primary">Save</AppButton>
+                  <AppButton>Edit</AppButton>
+                  <AppButton variant="danger">Cancel Registration</AppButton>
+                  <AppButton disabled>Save</AppButton>
+                  <AppLinkButton href="#tables" className="ui-ref-btn-navlink">
+                    View in Parking →
+                  </AppLinkButton>
+                </div>
+              </div>
+
+              <div>
+                <PageHeader
+                  title="System 3 -- Restructured Hierarchy"
+                  headingLevel="h3"
+                  titleStyle={{ fontSize: "var(--font-size-body)" }}
+                  description="A bigger change: ordinary actions drop their box entirely (ghost/text-weight, recedes further behind Primary), destructive stays outlined-only until the moment it is actually confirmed -- try Cancel Registration below, the real ConfirmDialog's own Confirm button is the one moment this system uses a solid destructive fill. Navigation/handoff and the green-for-status rule carry over from System 2."
+                  descriptionClassName="app-subtle-text"
+                />
+                <div className="app-button-row">
+                  <AppButton variant="primary">Save</AppButton>
+                  <AppButton className="ui-ref-btn-ghost">Edit</AppButton>
+                  <AppButton className="ui-ref-btn-outline-danger" onClick={() => setSystem3ConfirmOpen(true)}>
+                    Cancel Registration
+                  </AppButton>
+                  <AppButton disabled>Save</AppButton>
+                  <AppLinkButton href="#tables" className="ui-ref-btn-navlink">
+                    View in Parking →
+                  </AppLinkButton>
+                </div>
+                <ConfirmDialog
+                  open={system3ConfirmOpen}
+                  title="Cancel this registration?"
+                  message="Reference-page demo only -- confirming here does not change any real data. This is the one moment System 3 uses a solid destructive fill."
+                  confirmLabel="Cancel Registration"
+                  cancelLabel="Keep Registration"
+                  danger
+                  onConfirm={() => setSystem3ConfirmOpen(false)}
+                  onCancel={() => setSystem3ConfirmOpen(false)}
+                />
+              </div>
+
+              <div>
+                <PageHeader
+                  title="Should green mean status only?"
+                  headingLevel="h3"
+                  titleStyle={{ fontSize: "var(--font-size-body)" }}
+                  description="The same 'this is done' meaning, rendered two ways."
+                  descriptionClassName="app-subtle-text"
+                />
+                <div className="ui-ref-compare-grid">
+                  <div className="ui-ref-compare-card">
+                    <strong>Today -- green used twice</strong>
+                    <div className="app-button-row">
+                      <AppButton variant="success">Complete</AppButton>
+                      <StatusBadge tone="success">Complete</StatusBadge>
+                    </div>
+                    <p className="app-subtle-text" style={{ margin: 0 }}>
+                      An action you take and a state that already happened, in the identical color.
+                    </p>
+                  </div>
+                  <div className="ui-ref-compare-card">
+                    <strong>Alternative -- green reserved for status</strong>
+                    <div className="app-button-row">
+                      <AppButton variant="primary">Complete</AppButton>
+                      <StatusBadge tone="success">Complete</StatusBadge>
+                    </div>
+                    <p className="app-subtle-text" style={{ margin: 0 }}>
+                      Click the blue button; the badge is the only thing that turns green.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </PageSection>
+
+          {/* ---- PART B: TABLE ROW ACTIONS ---- */}
+          <PageSection variant="section">
+            <PageHeader
+              title="Part B: Table Row Actions"
+              headingLevel="h3"
+              titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+              description="Same six sample records, including Casey's long name/email/note, in three row-action layouts."
+              descriptionClassName="app-subtle-text"
+            />
+
+            <div style={{ display: "grid", gap: "var(--space-6)" }}>
+              <div>
+                <PageHeader
+                  title="Treatment 1 -- Prominent Primary, Quiet Secondary"
+                  headingLevel="h3"
+                  titleStyle={{ fontSize: "var(--font-size-body)" }}
+                  description="One solid Contact per row; Edit recedes to ghost weight, Cancel stays outlined (present, not shouting) until it's actually needed."
+                  descriptionClassName="app-subtle-text"
+                />
+                <RowActionsTreatmentProminent records={SAMPLE_RECORDS} />
+              </div>
+
+              <div>
+                <PageHeader
+                  title="Treatment 2 -- Compact Horizontal, Equal Weight"
+                  headingLevel="h3"
+                  titleStyle={{ fontSize: "var(--font-size-body)" }}
+                  description="Reuses Section 6's Desktop/Pointer-Optimized Candidate directly (same component, not a copy) -- Edit/Contact/Cancel stay equal weight and on one row via nowrap actions."
+                  descriptionClassName="app-subtle-text"
+                />
+                <DesktopPointerCandidate records={SAMPLE_RECORDS} />
+              </div>
+
+              <div>
+                <PageHeader
+                  title="Treatment 3 -- Primary Action + More Actions Disclosure"
+                  headingLevel="h3"
+                  titleStyle={{ fontSize: "var(--font-size-body)" }}
+                  description="The same native-disclosure pattern Section 6's Touch-Optimized Candidate uses per card, shown here inside a table row instead -- compare the two to judge whether pointer and touch should share this pattern or diverge."
+                  descriptionClassName="app-subtle-text"
+                />
+                <RowActionsTreatmentDisclosure records={SAMPLE_RECORDS} />
+              </div>
+
+              <div>
+                <PageHeader
+                  title="Operational handoff example -- View in Check-In / View in Parking / Edit"
+                  headingLevel="h3"
+                  titleStyle={{ fontSize: "var(--font-size-body)" }}
+                  description="Handoffs (leave this record, go operate on it in another module) as text links; Edit (a same-page mutation) stays a ghost button -- the two kinds of action are never visually confused."
+                  descriptionClassName="app-subtle-text"
+                />
+                <OperationalHandoffExample />
+              </div>
+            </div>
+          </PageSection>
+
+          <Observation>
+            None of the three button systems or three row-action treatments is being recommended. Systems 1-3 form a
+            deliberate small-to-large spectrum (no change / two surgical fixes / a restructured hierarchy) rather
+            than three unrelated options, so the real decision is how far along that spectrum to go -- not which of
+            three disconnected ideas to pick. For row actions: Treatment 3&rsquo;s disclosure pattern already exists
+            in touch form (Section 6); whether pointer and touch should share one pattern or use different ones for
+            the same underlying actions is an open question this page raises rather than answers.
+          </Observation>
+        </div>
+      </RefSection>
     </div>
   );
 }
@@ -2122,5 +2328,175 @@ function ScaleExamplePanel() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Table Row Actions treatments (Section 15, Part B). Each renders the real
+// DataTable/RowActions/AppButton/StatusBadge primitives; the only new
+// visual language is the reference-only .ui-ref-btn-* classes defined in
+// app/globals.css (extending AppButton's own className prop, never
+// components/ui/AppButton.tsx itself).
+// ----------------------------------------------------------------------------
+
+/**
+ * Treatment 1: one visually prominent primary action (solid Contact),
+ * quieter secondary actions (ghost Edit, outlined Cancel) that stay
+ * available without competing with it.
+ */
+function RowActionsTreatmentProminent({ records }: { records: SampleRecord[] }) {
+  return (
+    <DataTable caption="Row actions: prominent primary, quiet secondary (prototype)">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Status</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {records.map((r) => (
+          <tr key={r.id}>
+            <td>
+              <div className="data-table-cell-primary">{r.name}</div>
+              <div className="data-table-cell-meta">{r.email || "No email on file"}</div>
+            </td>
+            <td>
+              <StatusBadge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</StatusBadge>
+            </td>
+            <td>
+              <RowActions>
+                <AppButton variant="primary" aria-label={`Contact ${r.name}`}>
+                  Contact
+                </AppButton>
+                <AppButton className="ui-ref-btn-ghost" aria-label={`Edit ${r.name}`}>
+                  Edit
+                </AppButton>
+                {r.status !== "cancelled" ? (
+                  <AppButton
+                    className="ui-ref-btn-outline-danger"
+                    aria-label={`Cancel ${r.name}'s request`}
+                  >
+                    Cancel
+                  </AppButton>
+                ) : null}
+              </RowActions>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </DataTable>
+  );
+}
+
+/**
+ * Treatment 3: the same "one visible primary action, everything else
+ * behind a native, always-visible disclosure" pattern Section 6's
+ * TouchOptimizedCandidate already uses per row-card -- shown here inside
+ * a DataTable row instead, to compare how the same semantics read on a
+ * pointer-oriented desktop layout versus a touch-oriented card.
+ */
+function RowActionsTreatmentDisclosure({ records }: { records: SampleRecord[] }) {
+  return (
+    <DataTable caption="Row actions: primary action plus a More actions disclosure (prototype)">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Status</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {records.map((r) => (
+          <tr key={r.id}>
+            <td>
+              <div className="data-table-cell-primary">{r.name}</div>
+              <div className="data-table-cell-meta">{r.email || "No email on file"}</div>
+            </td>
+            <td>
+              <StatusBadge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</StatusBadge>
+            </td>
+            <td>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
+                <AppButton variant="primary" aria-label={`Contact ${r.name}`}>
+                  Contact
+                </AppButton>
+                <details className="ui-ref-touch-more">
+                  <summary className="table-toolbar-disclosure-summary">More actions</summary>
+                  <RowActions className="ui-ref-touch-more-actions">
+                    <AppButton className="ui-ref-btn-ghost" aria-label={`Edit ${r.name}`}>
+                      Edit
+                    </AppButton>
+                    {r.status !== "cancelled" ? (
+                      <AppButton
+                        className="ui-ref-btn-outline-danger"
+                        aria-label={`Cancel ${r.name}'s request`}
+                      >
+                        Cancel
+                      </AppButton>
+                    ) : null}
+                  </RowActions>
+                </details>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </DataTable>
+  );
+}
+
+/**
+ * A single representative row demonstrating navigation/handoff actions
+ * (View in Check-In, View in Parking -- leave this record, go operate on
+ * it elsewhere) rendered distinctly from a same-page mutation (Edit),
+ * using the reference-only text-link treatment so the two kinds of
+ * action are never visually confused with each other.
+ */
+function OperationalHandoffExample() {
+  const record = SAMPLE_RECORDS[0];
+
+  return (
+    <DataTable caption="Navigation/handoff vs. mutation actions (prototype)">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Status</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <div className="data-table-cell-primary">{record.name}</div>
+            <div className="data-table-cell-meta">Site {record.site}</div>
+          </td>
+          <td>
+            <StatusBadge tone={STATUS_TONE[record.status]}>{STATUS_LABEL[record.status]}</StatusBadge>
+          </td>
+          <td>
+            <RowActions>
+              <AppLinkButton
+                href="#tables"
+                className="ui-ref-btn-navlink"
+                aria-label={`View ${record.name} in Check-In`}
+              >
+                View in Check-In →
+              </AppLinkButton>
+              <AppLinkButton
+                href="#tables"
+                className="ui-ref-btn-navlink"
+                aria-label={`View ${record.name} in Parking`}
+              >
+                View in Parking →
+              </AppLinkButton>
+              <AppButton className="ui-ref-btn-ghost" aria-label={`Edit ${record.name}`}>
+                Edit
+              </AppButton>
+            </RowActions>
+          </td>
+        </tr>
+      </tbody>
+    </DataTable>
   );
 }
