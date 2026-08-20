@@ -212,14 +212,16 @@ test("the desktop/pointer candidate and touch candidate are built from real Data
   assert.match(touchFn, /<StatusBadge tone=\{STATUS_TONE\[r\.status\]\}>/);
 });
 
-test("the Mid-Size UI Scale section exists, with a Current Scale / Mid-Size Candidate side-by-side and the exact value table rendered", () => {
+test("the Mid-Size UI Scale section is now approved/canonical: a Legacy vs. Approved Canonical side-by-side, and the exact value table, are rendered", () => {
   const html = renderToStaticMarkup(<AdminUiReferenceContent />);
 
-  assert.ok(html.includes("Mid-Size UI Scale (prototype)"));
-  assert.ok(html.includes("Current Scale"));
-  assert.ok(html.includes("Mid-Size Candidate"));
-  assert.ok(html.includes('class="ui-ref-scale-current"'));
-  assert.ok(html.includes('class="ui-ref-scale-mid"'));
+  assert.ok(html.includes("Mid-Size UI Scale (✅ Approved"));
+  assert.ok(html.includes("Legacy Scale (historical)"));
+  assert.ok(html.includes("Approved Canonical Scale (current default)"));
+  assert.ok(html.includes('class="ui-ref-scale-legacy"'));
+  // The canonical column renders ScaleExamplePanel with NO wrapper class --
+  // it is just the ambient page state now.
+  assert.equal(/class="ui-ref-scale-mid"/.test(html), false);
 
   for (const value of ["22px", "23px", "20px", "21px", "14px", "15px", "42px", "45px"]) {
     assert.ok(html.includes(value), `expected the value table to include ${value}`);
@@ -227,75 +229,96 @@ test("the Mid-Size UI Scale section exists, with a Current Scale / Mid-Size Cand
 
   // Two independently-scoped copies of the same representative panel --
   // "Vendor Dispatch Lists" (the section-title sample text) should
-  // appear at least twice: once at Current scale, once at Mid scale.
+  // appear at least twice: once at Legacy scale, once ambient/canonical.
   const occurrences = html.split("Vendor Dispatch Lists").length - 1;
   assert.ok(occurrences >= 2, `expected the section-title sample to appear at least twice, found ${occurrences}`);
 });
 
-test("the Mid-Size Scale toggle re-renders the real, existing SampleRoster (Section 6) -- not separate prototype table markup", () => {
+test("the Mid-Size Scale toggle re-renders the real, existing SampleRoster (Section 6) -- Approved Canonical needs no wrapper, only Legacy uses the reference-only class", () => {
   const scaleSectionSource = source.slice(source.indexOf('id="scale"'), source.length);
   assert.match(scaleSectionSource, /<SampleRoster records=\{SAMPLE_RECORDS\} showNotes asList=\{false\} \/>/);
   assert.match(
     scaleSectionSource,
-    /className=\{scaleToggle === "mid" \? "ui-ref-scale-mid" : "ui-ref-scale-current"\}/,
+    /className=\{scaleToggle === "legacy" \? "ui-ref-scale-legacy" : undefined\}/,
   );
 });
 
-test("the scale prototype touches only its own locally-scoped classes -- no :root token in app/globals.css was changed", () => {
+test("the Mid-Size UI Scale IS now the real :root token set -- app/globals.css's :root carries the approved values, and only the Legacy comparison still uses a reference-only override", () => {
   const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
   const rootStart = cssSource.indexOf(":root {");
   const rootEnd = cssSource.indexOf("\n}\n", rootStart);
   const rootBlock = cssSource.slice(rootStart, rootEnd);
 
+  assert.match(rootBlock, /--font-size-page-title: 23px;/);
+  assert.match(rootBlock, /--font-size-body: 15px;/);
+  assert.match(rootBlock, /--touch-target-min: 45px;/);
+  // The reference-only override now reproduces the OLD values, not the
+  // approved ones -- it exists purely for historical comparison.
   assert.equal(/ui-ref-scale/.test(rootBlock), false);
-  assert.match(cssSource, /\.ui-ref-scale-current \{/);
-  assert.match(cssSource, /\.ui-ref-scale-mid \{/);
+  assert.match(cssSource, /\.ui-ref-scale-legacy \{/);
+  assert.match(cssSource, /--font-size-page-title: 22px;/);
+  assert.equal(/\.ui-ref-scale-mid \{/.test(cssSource), false);
 });
 
-test("the Button Hierarchy & Table Row Actions section exists, with Part A/B and all three button systems rendered, wrapped in the approved Mid-Size scale", () => {
+test("the shared .app-button/.app-button-danger/a.app-button rules in app/globals.css carry the approved System 3 semantics -- ghost ordinary, outlined destructive, link-style navigation, all at the approved 16px", () => {
+  const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
+  const baseButtonBlock = cssSource.slice(
+    cssSource.indexOf(".app-button,\nbutton.app-button {"),
+    cssSource.indexOf("a.app-button {"),
+  );
+  assert.match(baseButtonBlock, /background: transparent;/);
+  assert.match(baseButtonBlock, /font-size: 16px;/);
+
+  const navLinkBlock = cssSource.slice(cssSource.indexOf("a.app-button {"), cssSource.indexOf(".app-button:focus-visible"));
+  assert.match(navLinkBlock, /text-decoration: underline;/);
+
+  const dangerBlock = cssSource.slice(cssSource.indexOf(".app-button-danger,"), cssSource.indexOf(".app-button-muted,"));
+  assert.match(dangerBlock, /background: transparent;/);
+
+  const stopComment = cssSource.slice(cssSource.indexOf("Destructive confirmation"), cssSource.indexOf(".app-button-stop,"));
+  assert.match(stopComment, /ConfirmDialog/);
+});
+
+test("the Button Hierarchy section is now approved/canonical (Part A) while Table Row Actions layout remains undecided (Part B)", () => {
   const html = renderToStaticMarkup(<AdminUiReferenceContent />);
 
-  assert.ok(html.includes("Button Hierarchy &amp; Table Row Actions (prototype)"));
-  assert.ok(html.includes("Part A: Button Hierarchy"));
-  assert.ok(html.includes("Part B: Table Row Actions"));
-  assert.ok(html.includes("System 1 -- Current (baseline)"));
-  assert.ok(html.includes("System 2 -- Minimal Adjustment"));
-  assert.ok(html.includes("System 3 -- Restructured Hierarchy"));
+  assert.ok(html.includes("Button Hierarchy (✅ Approved) &amp; Table Row Actions (still undecided)"));
+  assert.ok(html.includes("Part A: Button Hierarchy -- ✅ Approved (System 3)"));
+  assert.ok(html.includes("Part B: Table Row Actions -- layout still undecided"));
+  assert.ok(html.includes("Legacy (pre-2026-08-19) -- historical"));
+  assert.ok(html.includes("Considered alternative (not adopted) -- Minimal Adjustment"));
+  assert.ok(html.includes("✅ Approved / Canonical -- System 3 (Restructured Hierarchy)"));
+});
 
+test("the approved System 3 example uses the real AppButton/AppLinkButton with no prototype className override -- Legacy and the considered alternative still use the reference-only legacy classes", () => {
   const sectionSource = source.slice(
     source.indexOf('id="action-hierarchy"'),
     source.indexOf("</RefSection>\n    </div>\n  );\n}"),
   );
-  assert.match(sectionSource, /<div className="ui-ref-scale-mid" style=\{\{ display: "grid", gap: "var\(--space-8\)" \}\}>/);
-});
-
-test("System 2/3 give navigation/handoff its own text-link treatment, distinct from System 1's identical-to-a-button AppLinkButton", () => {
-  const sectionSource = source.slice(
-    source.indexOf('id="action-hierarchy"'),
-    source.indexOf("</RefSection>\n    </div>\n  );\n}"),
+  const legacy = sectionSource.slice(
+    sectionSource.indexOf("Legacy (pre-2026-08-19)"),
+    sectionSource.indexOf("Considered alternative"),
   );
-  const system1 = sectionSource.slice(
-    sectionSource.indexOf("System 1 -- Current"),
-    sectionSource.indexOf("System 2 -- Minimal"),
+  const considered = sectionSource.slice(
+    sectionSource.indexOf("Considered alternative"),
+    sectionSource.indexOf("Approved / Canonical"),
   );
-  const system2 = sectionSource.slice(
-    sectionSource.indexOf("System 2 -- Minimal"),
-    sectionSource.indexOf("System 3 -- Restructured"),
+  const approved = sectionSource.slice(
+    sectionSource.indexOf("Approved / Canonical"),
+    sectionSource.indexOf("Should green mean status only?"),
   );
 
-  assert.match(system1, /<AppLinkButton href="#tables">View in Parking<\/AppLinkButton>/);
-  assert.equal(/ui-ref-btn-navlink/.test(system1), false);
-  assert.match(system2, /className="ui-ref-btn-navlink"/);
-});
+  assert.match(legacy, /className="ui-ref-legacy-ordinary"/);
+  assert.match(legacy, /className="ui-ref-legacy-danger"/);
+  assert.match(considered, /className="ui-ref-legacy-ordinary"/);
+  assert.match(considered, /className="ui-ref-legacy-danger"/);
 
-test("System 3's destructive action is outlined until confirmed -- the solid fill only appears inside the real ConfirmDialog", () => {
-  const sectionSource = source.slice(
-    source.indexOf("System 3 -- Restructured"),
-    source.indexOf("Should green mean status only?"),
-  );
-  assert.match(sectionSource, /className="ui-ref-btn-outline-danger" onClick=\{\(\) => setSystem3ConfirmOpen\(true\)\}/);
-  assert.match(sectionSource, /<ConfirmDialog\s/);
-  assert.match(sectionSource, /danger$/m);
+  assert.equal(/ui-ref-legacy|ui-ref-btn/.test(approved), false);
+  assert.match(approved, /<AppButton>Edit<\/AppButton>/);
+  assert.match(approved, /<AppButton variant="danger" onClick=\{\(\) => setSystem3ConfirmOpen\(true\)\}>/);
+  assert.match(approved, /<AppLinkButton href="#tables">View in Parking →<\/AppLinkButton>/);
+  assert.match(approved, /<ConfirmDialog\s/);
+  assert.match(approved, /danger$/m);
 });
 
 test("the green-for-status exhibit compares a success-variant action button against a primary-variant one, both next to the identical success StatusBadge", () => {
@@ -312,17 +335,13 @@ test("the green-for-status exhibit compares a success-variant action button agai
 test("Table Row Actions Treatment 2 reuses the real Section 6 DesktopPointerCandidate component directly, not a copy", () => {
   const partB = source.slice(
     source.indexOf("Part B: Table Row Actions"),
-    source.indexOf("None of the three button systems"),
+    source.indexOf("Still undecided:"),
   );
   assert.match(partB, /<DesktopPointerCandidate records=\{SAMPLE_RECORDS\} \/>/);
 });
 
-test("Table Row Actions Treatments 1 and 3, and the operational handoff example, all render with Casey's long name and give every action an accessible name", () => {
-  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
-  const occurrences = html.split("Casey Whitfield-Alvarenga-Thornbury").length - 1;
-  // 4 from the Section 6 comparison + 2 from this section's two per-record
-  // treatments (Prominent, Disclosure) that iterate all six records.
-  assert.ok(occurrences >= 6, `expected at least 6 occurrences of Casey's name, found ${occurrences}`);
+test("Treatments 1 and 3 and the operational handoff example use the real, unmodified AppButton/AppLinkButton (no ui-ref-btn-* prototype class remains anywhere in the file)", () => {
+  assert.equal(/ui-ref-btn-ghost|ui-ref-btn-outline-danger|ui-ref-btn-navlink/.test(source), false);
 
   const treatment1Fn = source.slice(
     source.indexOf("function RowActionsTreatmentProminent("),
@@ -333,6 +352,10 @@ test("Table Row Actions Treatments 1 and 3, and the operational handoff example,
     source.indexOf("function OperationalHandoffExample("),
   );
   const handoffFn = source.slice(source.indexOf("function OperationalHandoffExample("), source.length);
+
+  assert.match(treatment1Fn, /<AppButton aria-label=\{`Edit \$\{r\.name\}`\}>Edit<\/AppButton>/);
+  assert.match(treatment1Fn, /<AppButton variant="danger" aria-label=\{`Cancel \$\{r\.name\}'s request`\}>/);
+  assert.match(handoffFn, /<AppButton aria-label=\{`Edit \$\{record\.name\}`\}>Edit<\/AppButton>/);
 
   for (const fn of [treatment1Fn, treatment3Fn, handoffFn]) {
     assert.match(fn, /aria-label=\{`(Contact|Edit|Cancel|View)/);
@@ -354,12 +377,13 @@ test("Table Row Actions Treatment 3 uses the same native <details>/<summary> dis
   assert.equal(/onTouchStart|onTouchEnd|onSwipe|:hover(?!\s*\{)/.test(sectionSource), false);
 });
 
-test("the button/row-action comparison declares no winner", () => {
+test("Table Row Actions layout (Treatments 1/2/3) is explicitly flagged as still undecided", () => {
   const sectionSource = source.slice(
     source.indexOf('id="action-hierarchy"'),
     source.indexOf("</RefSection>\n    </div>\n  );\n}"),
   );
-  assert.match(sectionSource, /None of the three button systems or three row-action treatments is being recommended/);
+  assert.match(sectionSource, /Still undecided:/);
+  assert.match(sectionSource, /which of Treatments 1-3 becomes the canonical table-row action layout/);
 });
 
 test("no new StatusBadge tone or AppButton variant was invented to build this page", () => {

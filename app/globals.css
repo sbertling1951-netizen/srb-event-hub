@@ -58,12 +58,16 @@
     Arial,
     sans-serif;
 
-  --font-size-page-title: 22px;
-  --font-size-section-title: 20px;
-  --font-size-card-title: 17px;
-  --font-size-body: 14px;
-  --font-size-small: 13px;
-  --font-size-caption: 12px;
+  /* Mid-Size UI Scale (approved 2026-08-19, reviewed on /admin/ui-reference
+     Section 14 -- roughly +5-8% over the prior values on each size, chosen
+     for legibility without changing padding/gaps/dimensions). This is the
+     canonical Admin scale; do not add a page-local override of these. */
+  --font-size-page-title: 23px;
+  --font-size-section-title: 21px;
+  --font-size-card-title: 18px;
+  --font-size-body: 15px;
+  --font-size-small: 14px;
+  --font-size-caption: 13px;
 
   --font-weight-normal: 400;
   --font-weight-medium: 500;
@@ -100,7 +104,8 @@
   --page-content-max-width: 2200px;
   --page-padding-inline: 16px;
   --page-padding-block: 16px;
-  --touch-target-min: 42px;
+  /* Mid-Size UI Scale (approved 2026-08-19) -- see the font-size tokens above. */
+  --touch-target-min: 45px;
   --breakpoint-mobile: 899px;
   --z-sidebar: 50;
   --z-modal: 100;
@@ -242,22 +247,43 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* ===== STANDARD APP BUTTON SYSTEM ===== */
+/* ===== STANDARD APP BUTTON SYSTEM =====
+   Canonical action semantics (approved 2026-08-19, System 3 -- reviewed
+   on /admin/ui-reference Section 15). AppButton/AppLinkButton's `variant`
+   prop is unchanged; what changed is what each one means:
+
+     - Unset ("Ordinary/secondary mutation"): quiet ghost treatment below
+       -- clearly actionable (a real border/background appears on hover/
+       focus), but never competes visually with Primary.
+     - variant="primary" ("Primary mutation"): solid blue fill, the one
+       principal action for the current work area.
+     - variant="danger" ("Destructive initiation"): quiet/outlined --
+       never a solid red fill just because a destructive action exists.
+     - variant="stop" ("Destructive confirmation"): the one place a solid
+       destructive fill belongs -- reserved for ConfirmDialog's own
+       Confirm action when `danger` is set.
+     - An <a class="app-button"> with no variant ("Navigation/handoff"):
+       reads as a link, not a button -- see the a.app-button rule below.
+     - variant="success"/"start": still green/solid-green, still valid,
+       but green is a STATUS color first (StatusBadge tone="success") --
+       new "this outcome is positive" action buttons should reach for
+       primary, not success, going forward. Existing success/start call
+       sites were not mass-migrated in this pass; see the reference page.
+   ===== */
 .app-button,
-button.app-button,
-a.app-button {
+button.app-button {
   min-height: var(--touch-target-min);
   padding: var(--space-4) 18px;
   border-radius: var(--radius-medium);
-  border: var(--border-width-default) solid var(--color-border-strong);
-  background: var(--color-bg-elevated);
+  border: var(--border-width-default) solid transparent;
+  background: transparent;
   background-image: none;
   appearance: none;
-  color: var(--color-text-primary) !important;
-  -webkit-text-fill-color: var(--color-text-primary) !important;
+  color: var(--color-text-secondary) !important;
+  -webkit-text-fill-color: var(--color-text-secondary) !important;
   text-decoration: none;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: var(--font-weight-semibold);
   line-height: var(--line-height-tight);
   cursor: pointer;
@@ -265,14 +291,40 @@ a.app-button {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  box-shadow: var(--shadow-medium);
+  box-shadow: none;
   touch-action: manipulation;
 }
 
-.app-button:hover:not(:disabled),
-a.app-button:hover {
-  background: var(--color-action-secondary);
-  border-color: #94a3b8;
+.app-button:hover:not(:disabled) {
+  background: var(--color-bg-muted);
+  border-color: var(--color-border-default);
+}
+
+/* Navigation/handoff (View in Parking, View in Check-In, ...): an
+   AppLinkButton with no variant renders an <a>, which must read as a
+   link rather than a button -- more specific than the base rule above so
+   it wins for the unmodified case while an explicit variant (e.g.
+   variant="primary") still renders that variant's real button chrome. */
+a.app-button {
+  border-color: transparent;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+  color: var(--color-action-primary-active) !important;
+  -webkit-text-fill-color: var(--color-action-primary-active) !important;
+  text-decoration: underline;
+}
+
+/* :not(:disabled) is redundant here (:disabled never matches <a>) but
+   required so this rule's specificity (0,3,1) beats the base
+   .app-button:hover:not(:disabled) rule (0,3,0) above -- without it, the
+   base ghost-hover background would win over this link-hover background
+   despite appearing earlier in the file. */
+a.app-button:hover:not(:disabled) {
+  background: var(--color-action-secondary-hover);
+  border-color: transparent;
 }
 
 .app-button:focus-visible,
@@ -328,11 +380,15 @@ a.app-button-success {
   -webkit-text-fill-color: var(--color-status-success) !important;
 }
 
+/* Destructive initiation -- quiet/outlined, never a solid fill just
+   because a destructive action exists (System 3). The solid fill is
+   reserved for variant="stop", used by ConfirmDialog's own Confirm
+   action. */
 .app-button-danger,
 button.app-button-danger,
 a.app-button-danger {
   border-color: var(--color-action-destructive);
-  background: var(--color-status-error-bg);
+  background: transparent;
   background-image: none;
   color: var(--color-status-error) !important;
   -webkit-text-fill-color: var(--color-status-error) !important;
@@ -340,6 +396,7 @@ a.app-button-danger {
 
 .app-button-danger:hover:not(:disabled),
 a.app-button-danger:hover {
+  background: var(--color-status-error-bg);
   border-color: var(--color-action-destructive-hover);
 }
 
@@ -381,6 +438,10 @@ a.app-button-start:hover {
   border-color: #15803d;
 }
 
+/* Destructive confirmation -- the one place a solid destructive fill
+   belongs (System 3). Used by ConfirmDialog's own Confirm action when
+   `danger` is set; not intended for a row/page-level "initiate delete"
+   button (that's variant="danger" above, quiet until confirmed). */
 .app-button-stop,
 button.app-button-stop,
 a.app-button-stop {
@@ -915,12 +976,12 @@ a.app-button-stop:hover {
 }
 
 /* Row actions are repeated, precision-sensitive touch targets (Edit /
-   Publish / Pin / Delete on every row) -- held to the 44px platform
-   minimum rather than the shared --touch-target-min token (42px),
-   matching the same reasoning already applied to admin-summary-link in
-   the Dashboard pilot. */
+   Publish / Pin / Delete on every row) -- held above the shared
+   --touch-target-min token (45px, Mid-Size UI Scale, approved
+   2026-08-19), matching the same reasoning already applied to
+   admin-summary-link in the Dashboard pilot. */
 .row-actions .app-button {
-  min-height: 44px;
+  min-height: 47px;
 }
 
 /* =====================================================================
@@ -2842,7 +2903,12 @@ body.slideshow-view-mode .app-header-card {
 
 .shell-page-title {
   margin: 2px 0 0;
-  font-size: clamp(18px, 2.2vw, 24px);
+  /* Mid-Size UI Scale (approved 2026-08-19): the audit behind that
+     approval found this clamp never consumed --font-size-page-title --
+     raised proportionally to land on the approved 25px live-shell
+     ceiling while keeping the same responsive-shrink shape for narrow
+     viewports (18px/2.2vw -> 19px/2.3vw at the low end). */
+  font-size: clamp(19px, 2.3vw, 25px);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
   overflow-wrap: anywhere;
@@ -3082,19 +3148,13 @@ body.slideshow-view-mode .app-header-card {
   margin-top: var(--space-3);
 }
 
-/* ---- Mid-Size UI Scale prototype (reference-only) ----
-   Redefines ONLY the typography-affecting custom properties (plus
-   --touch-target-min and the two hardcoded button dimensions
-   .app-button/.row-actions .app-button don't consume any token today --
-   see the Typography section's own callout) within a locally-scoped
-   class. :root is never touched, so no other page is affected even
-   though the same shared components (DataTable, StatusBadge, AppButton,
-   form controls, .shell-nav-item, .shell-page-title, .app-section-title)
-   render inside it unmodified. Padding, gaps, sidebar width, card
-   dimensions, row spacing, and border radius are deliberately absent
-   from both blocks below, so density is identical in both states --
-   only legibility changes. Used only on /admin/ui-reference. */
-.ui-ref-scale-current {
+/* ---- Legacy (pre-2026-08-19) scale, reference-only ----
+   The Mid-Size UI Scale is now canonical -- these tokens ARE the :root
+   values, so /admin/ui-reference's "approved/current" examples need no
+   wrapper at all. This class exists only to reproduce the OLD, smaller
+   values for side-by-side historical comparison on that page. Used only
+   on /admin/ui-reference. */
+.ui-ref-scale-legacy {
   --font-size-page-title: 22px;
   --font-size-section-title: 20px;
   --font-size-card-title: 17px;
@@ -3104,84 +3164,47 @@ body.slideshow-view-mode .app-header-card {
   --touch-target-min: 42px;
 }
 
-.ui-ref-scale-mid {
-  --font-size-page-title: 23px;
-  --font-size-section-title: 21px;
-  --font-size-card-title: 18px;
-  --font-size-body: 15px;
-  --font-size-small: 14px;
-  --font-size-caption: 13px;
-  --touch-target-min: 45px;
+.ui-ref-scale-legacy .shell-page-title {
+  font-size: clamp(18px, 2.2vw, 24px);
 }
 
-.ui-ref-scale-mid .shell-page-title {
-  font-size: 25px;
+.ui-ref-scale-legacy .app-button {
+  font-size: 15px;
 }
 
-.ui-ref-scale-mid .app-button {
-  font-size: 16px;
+.ui-ref-scale-legacy .row-actions .app-button {
+  min-height: 44px;
 }
 
-.ui-ref-scale-mid .row-actions .app-button {
-  min-height: 47px;
-}
-
-/* ---- Button Hierarchy + Table Row Actions prototype (reference-only) ----
-   Three narrowly-scoped extensions of .app-button/.app-link-button via
-   their own className prop -- none of components/ui/AppButton.tsx is
-   changed, and none of these classes is used on any other page. Existing
-   base rules (.app-button, button.app-button, a.app-button) mark color/
-   -webkit-text-fill-color !important, so these mirror that exact
-   three-selector shape to win cleanly rather than fighting specificity.
-   All colors below are existing tokens -- nothing new was invented. */
-.ui-ref-btn-ghost,
-button.ui-ref-btn-ghost,
-a.ui-ref-btn-ghost {
-  background: transparent !important;
+/* ---- Legacy (pre-2026-08-19) button hierarchy, reference-only ----
+   System 3 is now the canonical action language (.app-button/
+   .app-button-danger/a.app-button above), so /admin/ui-reference's
+   "approved/current" button examples need no override class at all. This
+   class exists only to reproduce the OLD bordered-box ordinary button,
+   OLD filled-pastel destructive button, and OLD button-identical
+   AppLinkButton, for side-by-side historical comparison. Used only on
+   /admin/ui-reference. */
+.ui-ref-legacy-ordinary,
+button.ui-ref-legacy-ordinary,
+a.ui-ref-legacy-ordinary {
+  border-color: var(--color-border-strong) !important;
+  background: var(--color-bg-elevated) !important;
   background-image: none !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-  color: var(--color-text-secondary) !important;
-  -webkit-text-fill-color: var(--color-text-secondary) !important;
+  box-shadow: var(--shadow-medium) !important;
+  padding-left: 18px !important;
+  padding-right: 18px !important;
+  color: var(--color-text-primary) !important;
+  -webkit-text-fill-color: var(--color-text-primary) !important;
+  text-decoration: none !important;
 }
 
-.ui-ref-btn-ghost:hover:not(:disabled),
-a.ui-ref-btn-ghost:hover {
-  background: var(--color-bg-muted) !important;
-  border-color: var(--color-border-default) !important;
-}
-
-.ui-ref-btn-outline-danger,
-button.ui-ref-btn-outline-danger,
-a.ui-ref-btn-outline-danger {
-  background: transparent !important;
-  background-image: none !important;
+.ui-ref-legacy-danger,
+button.ui-ref-legacy-danger,
+a.ui-ref-legacy-danger {
   border-color: var(--color-action-destructive) !important;
-  box-shadow: none !important;
+  background: var(--color-status-error-bg) !important;
+  background-image: none !important;
   color: var(--color-status-error) !important;
   -webkit-text-fill-color: var(--color-status-error) !important;
-}
-
-.ui-ref-btn-outline-danger:hover:not(:disabled),
-a.ui-ref-btn-outline-danger:hover {
-  background: var(--color-status-error-bg) !important;
-}
-
-.ui-ref-btn-navlink,
-button.ui-ref-btn-navlink,
-a.ui-ref-btn-navlink {
-  background: transparent !important;
-  background-image: none !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-  padding-left: var(--space-2) !important;
-  padding-right: var(--space-2) !important;
-  color: var(--color-action-primary-active) !important;
-  -webkit-text-fill-color: var(--color-action-primary-active) !important;
-  text-decoration: underline;
-}
-
-.ui-ref-btn-navlink:hover:not(:disabled),
-a.ui-ref-btn-navlink:hover {
-  background: var(--color-action-secondary-hover) !important;
+  text-decoration: none !important;
 }

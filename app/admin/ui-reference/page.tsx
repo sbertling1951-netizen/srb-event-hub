@@ -25,11 +25,15 @@ import { SearchField, TableToolbar, TableToolbarDisclosure, TableToolbarPrimaryR
 // State declared with useState below is scoped to this page's render only
 // and is discarded on reload; it never touches localStorage or a database.
 //
-// Nothing here should be read as "this is correct, ship it." Where the
-// existing shared system is inconsistent, awkward, or ambiguous, this page
-// shows that plainly rather than quietly picking a winner -- see the
-// "For review" callouts throughout, and the closeout report for the full
-// list. The decision belongs to Pap/Mel, after looking at this page.
+// Most of this page should NOT be read as "this is correct, ship it" --
+// where the shared system is inconsistent, awkward, or ambiguous, it shows
+// that plainly rather than quietly picking a winner (see the "For review"
+// callouts, and the closeout report for the full list). Two areas are the
+// exception, marked "✅ Approved" in their own section: the Mid-Size UI
+// Scale (Section 14) and the button/action hierarchy, System 3 (Section
+// 15, Part A) -- both are now the real canonical Admin visual system, not
+// prototypes, approved 2026-08-19. Table row-action LAYOUT (Section 15,
+// Part B) is still undecided.
 // =============================================================================
 
 const TOC: Array<{ id: string; label: string }> = [
@@ -46,8 +50,8 @@ const TOC: Array<{ id: string; label: string }> = [
   { id: "states", label: "11. Empty / Loading / Error States" },
   { id: "responsive", label: "12. Responsive Review" },
   { id: "device", label: "13. Device & Layout Preferences" },
-  { id: "scale", label: "14. Mid-Size UI Scale (prototype)" },
-  { id: "action-hierarchy", label: "15. Button Hierarchy & Table Row Actions (prototype)" },
+  { id: "scale", label: "14. Mid-Size UI Scale (✅ approved)" },
+  { id: "action-hierarchy", label: "15. Button Hierarchy (✅ approved) & Row Actions (undecided)" },
 ];
 
 // ----------------------------------------------------------------------------
@@ -303,7 +307,7 @@ export function AdminUiReferenceContent() {
   // Section 14 demo only: which scale the toggleable sample roster below
   // renders at. Local state only -- never persisted, never affects any
   // other page.
-  const [scaleToggle, setScaleToggle] = useState<"current" | "mid">("current");
+  const [scaleToggle, setScaleToggle] = useState<"legacy" | "canonical">("canonical");
 
   // Section 15 demo only: the "outline until confirmed, solid once
   // confirmed" destructive treatment (Button System 3) reuses the real
@@ -1617,31 +1621,38 @@ export function AdminUiReferenceContent() {
       </RefSection>
 
       {/* =================================================================
-          14. MID-SIZE UI SCALE (PROTOTYPE)
+          14. MID-SIZE UI SCALE -- APPROVED CANONICAL SCALE
           ================================================================= */}
       <RefSection
         id="scale"
-        title="Mid-Size UI Scale (prototype)"
-        description="Pap/Mel compared normal Safari zoom against one ⌘+ step -- normal felt slightly small, one step felt too large. This is a reference-only prototype of the visual midpoint, targeting a roughly 5-7% increase in the elements that affect readability, without changing padding, gaps, sidebar width, card dimensions, row spacing, or radii. Not approved; not applied anywhere else."
+        title="Mid-Size UI Scale (✅ Approved -- canonical Admin scale)"
+        description="Approved 2026-08-19 as the canonical Admin scale, following the comparison Pap/Mel reviewed here (normal Safari zoom felt slightly small, one ⌘+ step felt too large -- this is the visual midpoint). The values below now live in app/globals.css's :root and are what every shared component actually renders with; nothing on this page is a page-local override of them anymore. Padding, gaps, sidebar width, card dimensions, row spacing, and radii were not touched."
       >
-        <Alert tone="info">
-          This changes only local, reference-page-scoped CSS custom properties inside a wrapper class -- no{" "}
-          <code className="ui-ref-code">:root</code> token, no shared component, and no other page is touched. If
-          approved, translating this into the real token set is a separate, deliberate future step.
+        <Alert tone="success">
+          This scale is now real, not a prototype: every <code className="ui-ref-code">--font-size-*</code> token and{" "}
+          <code className="ui-ref-code">--touch-target-min</code> in <code className="ui-ref-code">:root</code> carry
+          these values, and <code className="ui-ref-code">.shell-page-title</code>/<code className="ui-ref-code">
+            .app-button
+          </code>
+          /<code className="ui-ref-code">.row-actions .app-button</code> (previously hardcoded, not token-driven)
+          were updated in place. Every shared component below (DataTable, StatusBadge, AppButton, form controls,{" "}
+          <code className="ui-ref-code">.shell-nav-item</code>, <code className="ui-ref-code">.shell-page-title</code>
+          , <code className="ui-ref-code">.app-section-title</code>) inherits this automatically -- no per-page
+          migration was needed for pages that already use these primitives.
         </Alert>
 
         <PageSection variant="section">
           <PageHeader
-            title="Exact values used"
+            title="Exact values"
             headingLevel="h3"
             titleStyle={{ fontSize: "var(--font-size-body)" }}
           />
-          <DataTable caption="Current vs. Mid-Size Candidate token values">
+          <DataTable caption="Legacy vs. approved canonical token values">
             <thead>
               <tr>
                 <th scope="col">Property</th>
-                <th scope="col">Current</th>
-                <th scope="col">Mid-Size Candidate</th>
+                <th scope="col">Legacy (pre-2026-08-19)</th>
+                <th scope="col">✅ Approved Canonical (current default)</th>
                 <th scope="col">Change</th>
               </tr>
             </thead>
@@ -1653,9 +1664,9 @@ export function AdminUiReferenceContent() {
                 <td>+4.5%</td>
               </tr>
               <tr>
-                <td>.shell-page-title (live, clamp-based, not token-driven)</td>
+                <td>.shell-page-title (live shell chrome title; kept as its own responsive clamp, not the token above -- proportionally raised)</td>
                 <td>clamp(18px, 2.2vw, 24px)</td>
-                <td>25px</td>
+                <td>clamp(19px, 2.3vw, 25px)</td>
                 <td>~+4%</td>
               </tr>
               <tr>
@@ -1695,13 +1706,13 @@ export function AdminUiReferenceContent() {
                 <td>+7.1%</td>
               </tr>
               <tr>
-                <td>.app-button font-size (hardcoded, not token-driven)</td>
+                <td>.app-button font-size (a literal value in the one shared rule, not a --font-size-* token)</td>
                 <td>15px</td>
                 <td>16px</td>
                 <td>+6.7%</td>
               </tr>
               <tr>
-                <td>.row-actions .app-button min-height (hardcoded, not token-driven)</td>
+                <td>.row-actions .app-button min-height (deliberately above --touch-target-min for precision-sensitive repeated targets)</td>
                 <td>44px</td>
                 <td>47px</td>
                 <td>+6.8%</td>
@@ -1720,39 +1731,41 @@ export function AdminUiReferenceContent() {
         <div className="ui-ref-compare-grid">
           <PageSection variant="section">
             <PageHeader
-              title="Current Scale"
+              title="Legacy Scale (historical)"
               headingLevel="h3"
               titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+              description="Reproduced with a reference-only override (.ui-ref-scale-legacy) -- these values no longer exist anywhere in :root."
+              descriptionClassName="app-subtle-text"
             />
-            <div className="ui-ref-scale-current">
+            <div className="ui-ref-scale-legacy">
               <ScaleExamplePanel />
             </div>
           </PageSection>
           <PageSection variant="section">
             <PageHeader
-              title="Mid-Size Candidate"
+              title="✅ Approved Canonical Scale (current default)"
               headingLevel="h3"
               titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+              description="No wrapper class -- this is just how the real components render everywhere now."
+              descriptionClassName="app-subtle-text"
             />
-            <div className="ui-ref-scale-mid">
-              <ScaleExamplePanel />
-            </div>
+            <ScaleExamplePanel />
           </PageSection>
         </div>
 
         <PageSection variant="section">
           <PageHeader
-            title="Try it on the existing sample roster"
+            title="Compare against the legacy scale on the sample roster"
             headingLevel="h3"
             titleStyle={{ fontSize: "var(--font-size-card-title)" }}
-            description="Same DataTable example from Section 6, above, re-rendered live at whichever scale is selected -- no separate prototype markup."
+            description="Same DataTable example from Section 6, above. Approved Canonical needs no override; Legacy is reproduced with the reference-only class for comparison."
             descriptionClassName="app-subtle-text"
           />
           <fieldset style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: "var(--space-2)" }}>
             <legend className="table-toolbar-label" style={{ padding: 0 }}>
               View the sample roster at
             </legend>
-            {(["current", "mid"] as const).map((mode) => (
+            {(["legacy", "canonical"] as const).map((mode) => (
               <label key={mode} style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
                 <input
                   type="radio"
@@ -1760,36 +1773,36 @@ export function AdminUiReferenceContent() {
                   checked={scaleToggle === mode}
                   onChange={() => setScaleToggle(mode)}
                 />
-                {mode === "current" ? "Current Scale" : "Mid-Size Candidate"}
+                {mode === "legacy" ? "Legacy Scale (historical)" : "✅ Approved Canonical Scale (current default)"}
               </label>
             ))}
           </fieldset>
-          <div className={scaleToggle === "mid" ? "ui-ref-scale-mid" : "ui-ref-scale-current"} style={{ marginTop: "var(--space-4)" }}>
+          <div className={scaleToggle === "legacy" ? "ui-ref-scale-legacy" : undefined} style={{ marginTop: "var(--space-4)" }}>
             <SampleRoster records={SAMPLE_RECORDS} showNotes asList={false} />
           </div>
         </PageSection>
 
-        <Observation>
-          This is a design workbench, not a decision. &ldquo;Roughly 5-7%&rdquo; landed between 4.5% and 8.3%
-          depending on the property -- each value was rounded to a clean pixel rather than forced to an exact
-          percentage. Whether the page-title/button hardcoded values (not token-driven today) should be fixed onto
-          real tokens is a separate, smaller finding this prototype surfaces along the way.
-        </Observation>
+        <p className="app-subtle-text">
+          &ldquo;Roughly 5-7%&rdquo; landed between 4.5% and 8.3% depending on the property -- each value was rounded
+          to a clean pixel rather than forced to an exact percentage. The page-title and button dimensions that were
+          hardcoded rather than token-driven were updated in their one shared rule as part of this approval, per the
+          audit that surfaced them.
+        </p>
       </RefSection>
 
       {/* =================================================================
-          15. BUTTON HIERARCHY + TABLE ROW ACTIONS (PROTOTYPE)
+          15. BUTTON HIERARCHY (APPROVED) + TABLE ROW ACTIONS (UNDECIDED)
           ================================================================= */}
       <RefSection
         id="action-hierarchy"
-        title="Button Hierarchy & Table Row Actions (prototype)"
-        description="Pap/Mel approved the Mid-Size scale in Section 14 as the target -- everything below renders at that scale. Reference-only alternatives for the action language itself: primary, ordinary, destructive, disabled, and navigation/handoff, plus three row-action layouts. Nothing here is approved; no system is declared a winner."
+        title="Button Hierarchy (✅ Approved) & Table Row Actions (still undecided)"
+        description="Part A (button hierarchy) is approved: System 3 is now the canonical action language, implemented in AppButton/AppLinkButton/ConfirmDialog themselves -- the buttons below are the real shared primitives, not prototype copies. Part B (row-action layout) is NOT decided -- Treatments 1/2/3 remain a live comparison for later Pap/Mel review; only the button styling used inside them is now canonical."
       >
-        <div className="ui-ref-scale-mid" style={{ display: "grid", gap: "var(--space-8)" }}>
-          {/* ---- PART A: BUTTON HIERARCHY ---- */}
+        <div style={{ display: "grid", gap: "var(--space-8)" }}>
+          {/* ---- PART A: BUTTON HIERARCHY (APPROVED) ---- */}
           <PageSection variant="section">
             <PageHeader
-              title="Part A: Button Hierarchy"
+              title="Part A: Button Hierarchy -- ✅ Approved (System 3)"
               headingLevel="h3"
               titleStyle={{ fontSize: "var(--font-size-card-title)" }}
             />
@@ -1797,8 +1810,9 @@ export function AdminUiReferenceContent() {
             <div style={{ display: "grid", gap: "var(--space-6)" }}>
               <div>
                 <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
-                  For comparison: the existing success/danger/start/stop treatments (Section 3) -- shown once more,
-                  not assumed to survive.
+                  success/start/danger/stop, as they render today. danger&rsquo;s fill changed to quiet/outlined as
+                  part of this approval; success/start were not touched in this pass -- see &ldquo;should green mean
+                  status only?&rdquo; below.
                 </div>
                 <div className="app-button-row">
                   <AppButton variant="success">Success</AppButton>
@@ -1810,63 +1824,61 @@ export function AdminUiReferenceContent() {
 
               <div>
                 <PageHeader
-                  title="System 1 -- Current (baseline)"
+                  title="Legacy (pre-2026-08-19) -- historical"
                   headingLevel="h3"
                   titleStyle={{ fontSize: "var(--font-size-body)" }}
-                  description="Today's AppButton variants exactly as shipped. Navigation/handoff (an AppLinkButton with no variant) renders identically to an ordinary mutation button -- nothing today distinguishes 'do something here' from 'take me elsewhere.'"
+                  description="Reproduced with reference-only classes (.ui-ref-legacy-ordinary/-danger) -- the real global classes no longer look like this. Navigation/handoff (an AppLinkButton with no variant) used to render identically to an ordinary mutation button."
                   descriptionClassName="app-subtle-text"
                 />
                 <div className="app-button-row">
                   <AppButton variant="primary">Save</AppButton>
-                  <AppButton>Edit</AppButton>
-                  <AppButton variant="danger">Cancel Registration</AppButton>
+                  <AppButton className="ui-ref-legacy-ordinary">Edit</AppButton>
+                  <AppButton className="ui-ref-legacy-danger">Cancel Registration</AppButton>
                   <AppButton disabled>Save</AppButton>
-                  <AppLinkButton href="#tables">View in Parking</AppLinkButton>
-                </div>
-              </div>
-
-              <div>
-                <PageHeader
-                  title="System 2 -- Minimal Adjustment"
-                  headingLevel="h3"
-                  titleStyle={{ fontSize: "var(--font-size-body)" }}
-                  description="Smallest change that fixes two specific things: navigation/handoff becomes a plain text link (never confusable with a mutation button), and green is reserved for status -- an affirmative action like Complete/Approve uses primary blue instead of success green. Ordinary and destructive are untouched."
-                  descriptionClassName="app-subtle-text"
-                />
-                <div className="app-button-row">
-                  <AppButton variant="primary">Save</AppButton>
-                  <AppButton>Edit</AppButton>
-                  <AppButton variant="danger">Cancel Registration</AppButton>
-                  <AppButton disabled>Save</AppButton>
-                  <AppLinkButton href="#tables" className="ui-ref-btn-navlink">
-                    View in Parking →
+                  <AppLinkButton href="#tables" className="ui-ref-legacy-ordinary">
+                    View in Parking
                   </AppLinkButton>
                 </div>
               </div>
 
               <div>
                 <PageHeader
-                  title="System 3 -- Restructured Hierarchy"
+                  title="Considered alternative (not adopted) -- Minimal Adjustment"
                   headingLevel="h3"
                   titleStyle={{ fontSize: "var(--font-size-body)" }}
-                  description="A bigger change: ordinary actions drop their box entirely (ghost/text-weight, recedes further behind Primary), destructive stays outlined-only until the moment it is actually confirmed -- try Cancel Registration below, the real ConfirmDialog's own Confirm button is the one moment this system uses a solid destructive fill. Navigation/handoff and the green-for-status rule carry over from System 2."
+                  description="The smaller change that was on the table: fix navigation/handoff and green-for-status only, leave ordinary/destructive as they were (reproduced here with the same legacy classes as above, since the real global classes moved past this option to System 3 instead)."
                   descriptionClassName="app-subtle-text"
                 />
                 <div className="app-button-row">
                   <AppButton variant="primary">Save</AppButton>
-                  <AppButton className="ui-ref-btn-ghost">Edit</AppButton>
-                  <AppButton className="ui-ref-btn-outline-danger" onClick={() => setSystem3ConfirmOpen(true)}>
+                  <AppButton className="ui-ref-legacy-ordinary">Edit</AppButton>
+                  <AppButton className="ui-ref-legacy-danger">Cancel Registration</AppButton>
+                  <AppButton disabled>Save</AppButton>
+                  <AppLinkButton href="#tables">View in Parking →</AppLinkButton>
+                </div>
+              </div>
+
+              <div>
+                <PageHeader
+                  title="✅ Approved / Canonical -- System 3 (Restructured Hierarchy)"
+                  headingLevel="h3"
+                  titleStyle={{ fontSize: "var(--font-size-body)" }}
+                  description="The real AppButton/AppLinkButton/ConfirmDialog, unmodified below -- no prototype className anywhere in this example. Ordinary drops its box (ghost), destructive stays outlined until the moment it's actually confirmed (try Cancel Registration -- ConfirmDialog's own Confirm button is the one place a solid destructive fill belongs), and navigation/handoff reads as a link natively."
+                  descriptionClassName="app-subtle-text"
+                />
+                <div className="app-button-row">
+                  <AppButton variant="primary">Save</AppButton>
+                  <AppButton>Edit</AppButton>
+                  <AppButton variant="danger" onClick={() => setSystem3ConfirmOpen(true)}>
                     Cancel Registration
                   </AppButton>
                   <AppButton disabled>Save</AppButton>
-                  <AppLinkButton href="#tables" className="ui-ref-btn-navlink">
-                    View in Parking →
-                  </AppLinkButton>
+                  <AppLinkButton href="#tables">View in Parking →</AppLinkButton>
                 </div>
                 <ConfirmDialog
                   open={system3ConfirmOpen}
                   title="Cancel this registration?"
-                  message="Reference-page demo only -- confirming here does not change any real data. This is the one moment System 3 uses a solid destructive fill."
+                  message="Reference-page demo only -- confirming here does not change any real data. This is the one moment the approved hierarchy uses a solid destructive fill (variant=&quot;stop&quot;, inside ConfirmDialog itself)."
                   confirmLabel="Cancel Registration"
                   cancelLabel="Keep Registration"
                   danger
@@ -1880,22 +1892,23 @@ export function AdminUiReferenceContent() {
                   title="Should green mean status only?"
                   headingLevel="h3"
                   titleStyle={{ fontSize: "var(--font-size-body)" }}
-                  description="The same 'this is done' meaning, rendered two ways."
+                  description="The same 'this is done' meaning, rendered two ways. The right-hand rule is now the approved guidance for NEW buttons -- existing success/start action-button call sites were not mass-migrated in this pass (see closeout)."
                   descriptionClassName="app-subtle-text"
                 />
                 <div className="ui-ref-compare-grid">
                   <div className="ui-ref-compare-card">
-                    <strong>Today -- green used twice</strong>
+                    <strong>Legacy pattern -- green used twice</strong>
                     <div className="app-button-row">
                       <AppButton variant="success">Complete</AppButton>
                       <StatusBadge tone="success">Complete</StatusBadge>
                     </div>
                     <p className="app-subtle-text" style={{ margin: 0 }}>
-                      An action you take and a state that already happened, in the identical color.
+                      An action you take and a state that already happened, in the identical color. Still how
+                      existing success/start call sites work today.
                     </p>
                   </div>
                   <div className="ui-ref-compare-card">
-                    <strong>Alternative -- green reserved for status</strong>
+                    <strong>✅ Approved guidance -- green reserved for status</strong>
                     <div className="app-button-row">
                       <AppButton variant="primary">Complete</AppButton>
                       <StatusBadge tone="success">Complete</StatusBadge>
@@ -1909,13 +1922,13 @@ export function AdminUiReferenceContent() {
             </div>
           </PageSection>
 
-          {/* ---- PART B: TABLE ROW ACTIONS ---- */}
+          {/* ---- PART B: TABLE ROW ACTIONS (LAYOUT STILL UNDECIDED) ---- */}
           <PageSection variant="section">
             <PageHeader
-              title="Part B: Table Row Actions"
+              title="Part B: Table Row Actions -- layout still undecided"
               headingLevel="h3"
               titleStyle={{ fontSize: "var(--font-size-card-title)" }}
-              description="Same six sample records, including Casey's long name/email/note, in three row-action layouts."
+              description="Same six sample records, including Casey's long name/email/note, in three row-action layouts. The buttons inside all three now use the real, approved AppButton/RowActions primitives (ghost ordinary, outlined destructive) -- but which of these three LAYOUTS becomes canonical is not decided here."
               descriptionClassName="app-subtle-text"
             />
 
@@ -1966,14 +1979,13 @@ export function AdminUiReferenceContent() {
             </div>
           </PageSection>
 
-          <Observation>
-            None of the three button systems or three row-action treatments is being recommended. Systems 1-3 form a
-            deliberate small-to-large spectrum (no change / two surgical fixes / a restructured hierarchy) rather
-            than three unrelated options, so the real decision is how far along that spectrum to go -- not which of
-            three disconnected ideas to pick. For row actions: Treatment 3&rsquo;s disclosure pattern already exists
-            in touch form (Section 6); whether pointer and touch should share one pattern or use different ones for
-            the same underlying actions is an open question this page raises rather than answers.
-          </Observation>
+          <Alert tone="warning">
+            <strong>Still undecided:</strong> which of Treatments 1-3 becomes the canonical table-row action layout.
+            The action SEMANTICS used inside them (ghost ordinary, outlined destructive, solid primary) are now real
+            and approved -- the LAYOUT arrangement is not. Treatment 3&rsquo;s disclosure pattern already exists in
+            touch-card form (Section 6); whether pointer and touch should share one pattern or use different ones
+            for the same underlying actions remains an open question this page raises rather than answers.
+          </Alert>
         </div>
       </RefSection>
     </div>
@@ -2332,11 +2344,13 @@ function ScaleExamplePanel() {
 }
 
 // ----------------------------------------------------------------------------
-// Table Row Actions treatments (Section 15, Part B). Each renders the real
-// DataTable/RowActions/AppButton/StatusBadge primitives; the only new
-// visual language is the reference-only .ui-ref-btn-* classes defined in
-// app/globals.css (extending AppButton's own className prop, never
-// components/ui/AppButton.tsx itself).
+// Table Row Actions treatments (Section 15, Part B). Each renders the real,
+// now-canonical DataTable/RowActions/AppButton/AppLinkButton/StatusBadge
+// primitives with no className overrides at all -- the ghost ordinary,
+// outlined destructive, and link-style navigation treatments are native to
+// AppButton/AppLinkButton as of the System 3 approval (app/globals.css's
+// STANDARD APP BUTTON SYSTEM block). Only which of these three LAYOUTS is
+// canonical remains undecided (Part E).
 // ----------------------------------------------------------------------------
 
 /**
@@ -2346,7 +2360,7 @@ function ScaleExamplePanel() {
  */
 function RowActionsTreatmentProminent({ records }: { records: SampleRecord[] }) {
   return (
-    <DataTable caption="Row actions: prominent primary, quiet secondary (prototype)">
+    <DataTable caption="Row actions: prominent primary, quiet secondary">
       <thead>
         <tr>
           <th scope="col">Name</th>
@@ -2369,14 +2383,9 @@ function RowActionsTreatmentProminent({ records }: { records: SampleRecord[] }) 
                 <AppButton variant="primary" aria-label={`Contact ${r.name}`}>
                   Contact
                 </AppButton>
-                <AppButton className="ui-ref-btn-ghost" aria-label={`Edit ${r.name}`}>
-                  Edit
-                </AppButton>
+                <AppButton aria-label={`Edit ${r.name}`}>Edit</AppButton>
                 {r.status !== "cancelled" ? (
-                  <AppButton
-                    className="ui-ref-btn-outline-danger"
-                    aria-label={`Cancel ${r.name}'s request`}
-                  >
+                  <AppButton variant="danger" aria-label={`Cancel ${r.name}'s request`}>
                     Cancel
                   </AppButton>
                 ) : null}
@@ -2398,7 +2407,7 @@ function RowActionsTreatmentProminent({ records }: { records: SampleRecord[] }) 
  */
 function RowActionsTreatmentDisclosure({ records }: { records: SampleRecord[] }) {
   return (
-    <DataTable caption="Row actions: primary action plus a More actions disclosure (prototype)">
+    <DataTable caption="Row actions: primary action plus a More actions disclosure">
       <thead>
         <tr>
           <th scope="col">Name</th>
@@ -2424,14 +2433,9 @@ function RowActionsTreatmentDisclosure({ records }: { records: SampleRecord[] })
                 <details className="ui-ref-touch-more">
                   <summary className="table-toolbar-disclosure-summary">More actions</summary>
                   <RowActions className="ui-ref-touch-more-actions">
-                    <AppButton className="ui-ref-btn-ghost" aria-label={`Edit ${r.name}`}>
-                      Edit
-                    </AppButton>
+                    <AppButton aria-label={`Edit ${r.name}`}>Edit</AppButton>
                     {r.status !== "cancelled" ? (
-                      <AppButton
-                        className="ui-ref-btn-outline-danger"
-                        aria-label={`Cancel ${r.name}'s request`}
-                      >
+                      <AppButton variant="danger" aria-label={`Cancel ${r.name}'s request`}>
                         Cancel
                       </AppButton>
                     ) : null}
@@ -2449,15 +2453,15 @@ function RowActionsTreatmentDisclosure({ records }: { records: SampleRecord[] })
 /**
  * A single representative row demonstrating navigation/handoff actions
  * (View in Check-In, View in Parking -- leave this record, go operate on
- * it elsewhere) rendered distinctly from a same-page mutation (Edit),
- * using the reference-only text-link treatment so the two kinds of
- * action are never visually confused with each other.
+ * it elsewhere) rendered distinctly from a same-page mutation (Edit).
+ * AppLinkButton's default link-style treatment carries this natively --
+ * no override needed.
  */
 function OperationalHandoffExample() {
   const record = SAMPLE_RECORDS[0];
 
   return (
-    <DataTable caption="Navigation/handoff vs. mutation actions (prototype)">
+    <DataTable caption="Navigation/handoff vs. mutation actions">
       <thead>
         <tr>
           <th scope="col">Name</th>
@@ -2476,23 +2480,13 @@ function OperationalHandoffExample() {
           </td>
           <td>
             <RowActions>
-              <AppLinkButton
-                href="#tables"
-                className="ui-ref-btn-navlink"
-                aria-label={`View ${record.name} in Check-In`}
-              >
+              <AppLinkButton href="#tables" aria-label={`View ${record.name} in Check-In`}>
                 View in Check-In →
               </AppLinkButton>
-              <AppLinkButton
-                href="#tables"
-                className="ui-ref-btn-navlink"
-                aria-label={`View ${record.name} in Parking`}
-              >
+              <AppLinkButton href="#tables" aria-label={`View ${record.name} in Parking`}>
                 View in Parking →
               </AppLinkButton>
-              <AppButton className="ui-ref-btn-ghost" aria-label={`Edit ${record.name}`}>
-                Edit
-              </AppButton>
+              <AppButton aria-label={`Edit ${record.name}`}>Edit</AppButton>
             </RowActions>
           </td>
         </tr>

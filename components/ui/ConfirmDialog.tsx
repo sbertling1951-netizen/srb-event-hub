@@ -2,6 +2,8 @@
 
 import { useEffect, useId } from "react";
 
+import { AppButton } from "@/components/ui/AppButton";
+
 type ConfirmDialogProps = {
   open: boolean;
   title: string;
@@ -119,42 +121,24 @@ export default function ConfirmDialog({
             flexWrap: "wrap",
           }}
         >
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              border: "1px solid #cbd5e1",
-              background: "#ffffff",
-              color: "#334155",
-              borderRadius: 12,
-              padding: "10px 14px",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            {cancelLabel}
-          </button>
+          {/* Ordinary/secondary mutation (System 3, approved 2026-08-19):
+              the shared ghost AppButton treatment. */}
+          <AppButton onClick={onCancel}>{cancelLabel}</AppButton>
 
-          <button
-            type="button"
+          {/* Destructive confirmation (System 3): the one place a solid
+              destructive fill belongs -- variant="stop" -- reserved for
+              this exact moment. A non-destructive confirm uses the same
+              solid weight via variant="primary" instead. */}
+          <AppButton
+            variant={danger ? "stop" : "primary"}
             autoFocus
             onClick={() => {
               void onConfirm();
             }}
             disabled={busy}
-            style={{
-              border: "none",
-              background: danger ? "#dc2626" : "#2563eb",
-              color: "#ffffff",
-              borderRadius: 12,
-              padding: "10px 14px",
-              fontWeight: 800,
-              cursor: busy ? "not-allowed" : "pointer",
-              opacity: busy ? 0.7 : 1,
-            }}
           >
             {busy ? "Working..." : confirmLabel}
-          </button>
+          </AppButton>
         </div>
       </div>
     </div>
