@@ -1,4 +1,4 @@
-import { type InputHTMLAttributes, type ReactNode, useId } from "react";
+import { forwardRef, type InputHTMLAttributes, type ReactNode, useId } from "react";
 
 type TableToolbarProps = {
   children: ReactNode;
@@ -77,23 +77,32 @@ type SearchFieldProps = {
  * `"search-field"`, so two `SearchField`s on the same page without an
  * explicit `id` prop would collide, breaking both fields' label
  * association. An explicit `id` prop still overrides it.
+ *
+ * Forwards its ref to the underlying `<input>` (Central UI Standard,
+ * Stage 3 -- check-in migration) -- a real, narrow consumer need: an
+ * operator finishing one Check-In must land back in the search field to
+ * scan/type the next attendee with no extra click, which requires an
+ * imperative `.focus()` the page's own code cannot reach without a ref.
  */
-export function SearchField({ label, value, onChange, id, ...rest }: SearchFieldProps) {
-  const generatedId = useId();
-  const fieldId = id || generatedId;
+export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(
+  function SearchField({ label, value, onChange, id, ...rest }, ref) {
+    const generatedId = useId();
+    const fieldId = id || generatedId;
 
-  return (
-    <div>
-      <label className="table-toolbar-label" htmlFor={fieldId}>
-        {label}
-      </label>
-      <input
-        id={fieldId}
-        type="search"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        {...rest}
-      />
-    </div>
-  );
-}
+    return (
+      <div>
+        <label className="table-toolbar-label" htmlFor={fieldId}>
+          {label}
+        </label>
+        <input
+          ref={ref}
+          id={fieldId}
+          type="search"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          {...rest}
+        />
+      </div>
+    );
+  },
+);

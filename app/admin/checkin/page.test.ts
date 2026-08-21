@@ -188,13 +188,93 @@ test("only the selected attendee owns the expanded action workspace", () => {
 });
 
 test("compact browse results remain keyboard-native buttons with identity confirmation", () => {
-  assert.match(source, /aria-label="Check-In attendee results"/);
+  assert.match(source, /<ResponsiveList>/);
   assert.match(
     source,
-    /<button[\s\S]*?type="button"[\s\S]*?onClick=\{\(\) => selectAttendee\(attendee\.id\)\}/,
+    /<button[\s\S]{0,200}type="button"[\s\S]{0,200}onClick=\{\(\) => selectAttendee\(attendee\.id\)\}/,
   );
   assert.match(source, /attendee\.email \|\| "No email"/);
-  assert.match(source, /attendee\.has_arrived \? "Checked in" : "Waiting"/);
+  assert.match(source, /label: "Checked in", tone: "success"/);
+  assert.match(source, /label: "Waiting", tone: "neutral"/);
+});
+
+// Central UI Standard, Stage 3 -- check-in migration. These prove the
+// canonical primitives were actually adopted (not merely imported) and
+// that the legacy hand-rolled equivalents they replace are gone, per
+// docs/architecture/EPICENTRAX_CENTRAL_UI_STANDARD_BLUEPRINT.md.
+
+test("status/error/success feedback renders through the canonical Alert primitive, not hand-rolled colored boxes", () => {
+  assert.match(source, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+  assert.match(source, /<Alert tone="neutral">\{status\}<\/Alert>/);
+  assert.match(source, /<Alert tone="danger">/);
+  assert.match(source, /<Alert tone="success">/);
+  // No leftover hand-rolled status/alert boxes: no literal hex colors
+  // anywhere on the page (the whole prior ad hoc palette is gone).
+  assert.equal(/#[0-9a-fA-F]{3,6}/.test(source), false);
+});
+
+test("arrival state is carried through the canonical StatusBadge primitive -- text is always the label, tone is redundant", () => {
+  assert.match(
+    source,
+    /import \{ StatusBadge, type StatusBadgeTone \} from "@\/components\/ui\/StatusBadge";/,
+  );
+  assert.match(source, /<StatusBadge tone=\{arrival\.tone\}>/);
+  assert.match(source, /<StatusBadge tone=\{placement\.tone\}>\{placement\.label\}<\/StatusBadge>/);
+});
+
+test("the browse surface is DataTable at desktop width and ResponsiveList at compact width, switched only by the Shell's isCompact capability -- never UA/device detection", () => {
+  assert.match(
+    source,
+    /import \{ DataTable, ResponsiveList \} from "@\/components\/ui\/DataTable";/,
+  );
+  assert.match(source, /isCompact \? \(/);
+  assert.match(source, /<ResponsiveList>/);
+  assert.match(source, /<DataTable caption="Check-In attendee results">/);
+  assert.equal(/navigator\.userAgent/.test(source), false);
+  assert.equal(/window\.innerWidth/.test(source), false);
+});
+
+test("desktop browse rows remain a single native button per row inside DataTable -- no row-level click handler reimplementing button semantics", () => {
+  const tableStart = source.indexOf('<DataTable caption="Check-In attendee results">');
+  const tableEnd = source.indexOf("</DataTable>", tableStart);
+  const tableBody = source.slice(tableStart, tableEnd);
+  assert.match(tableBody, /<button[\s\S]{0,200}type="button"[\s\S]{0,200}onClick=\{\(\) => selectAttendee\(attendee\.id\)\}/);
+  assert.equal(/<tr[^>]*onClick=/.test(tableBody), false);
+});
+
+test("search and the browse-toggle checkbox are the canonical TableToolbar/SearchField/Checkbox primitives, not raw styled inputs", () => {
+  assert.match(
+    source,
+    /import \{\s*SearchField,\s*TableToolbar,\s*TableToolbarPrimaryRow,\s*\} from "@\/components\/ui\/TableToolbar";/,
+  );
+  assert.match(source, /import \{ Checkbox \} from "@\/components\/ui\/Field";/);
+  assert.match(source, /<TableToolbar>/);
+  assert.match(source, /<SearchField\b/);
+  assert.match(source, /label="Find attendee"/);
+  assert.match(source, /<Checkbox\b[\s\S]{0,200}label="Show already checked-in attendees"/);
+  // The old raw, unlabeled <input> search box and raw checkbox are gone.
+  assert.equal(/placeholder="Name, nickname, email, coach, or site"\s*\n\s*style=/.test(source), false);
+});
+
+test("the selected-attendee workspace is the canonical PageSection primitive, and its sharing checkboxes are the canonical Checkbox, not raw <input type=\"checkbox\">", () => {
+  assert.match(source, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);
+  assert.match(source, /<PageSection key=\{attendee\.id\} variant="card">/);
+  const sharingStart = source.indexOf("Attendee Sharing");
+  const sharingBlock = source.slice(sharingStart, sharingStart + 1200);
+  assert.match(sharingBlock, /<Checkbox\b/);
+  assert.equal(/<input\s+type="checkbox"/.test(sharingBlock), false);
+});
+
+test("action buttons map into the canonical System 3 hierarchy: Check In is the one primary action, Undo/retry/reload/navigation are not solid-primary-competing", () => {
+  assert.match(source, /variant="primary"[\s\S]{0,80}onClick=\{\(\) => void saveCheckin\(attendee, true\)\}/);
+  assert.match(source, /variant="danger"[\s\S]{0,80}onClick=\{\(\) => setUndoAttendee\(attendee\)\}/);
+  assert.match(source, /variant="secondary"[\s\S]{0,40}onClick=\{closeSelectedAttendee\}/);
+  assert.match(source, /variant="secondary"[\s\S]{0,80}href=\{buildAdminAttendeeTargetHref/);
+});
+
+test("no nested page-level vertical scroll owner was introduced -- the page relies on the shell's native document scroll, matching every other migrated Admin page", () => {
+  assert.equal(/overflow-y/.test(source), false);
+  assert.equal(/overflowY/.test(source), false);
 });
 
 test("the dominant workflow has one explicit Check In action and no Arrived checkbox", () => {

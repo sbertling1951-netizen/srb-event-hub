@@ -12,8 +12,18 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { Checkbox } from "@/components/ui/Field";
+import { PageSection } from "@/components/ui/PageSection";
+import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
+import {
+  SearchField,
+  TableToolbar,
+  TableToolbarPrimaryRow,
+} from "@/components/ui/TableToolbar";
 import { buildAdminAttendeeTargetHref } from "@/lib/adminAttendeeTarget";
 import {
   readAdminAttendeeTarget,
@@ -131,6 +141,26 @@ function householdLine(member: HouseholdMember) {
 
 function getRoleMember(members: HouseholdMember[], role: "pilot" | "copilot") {
   return members.find((m) => m.person_role === role) || null;
+}
+
+// Read-only presentation only -- Check-In owns Arrival mutation directly
+// (below), but Placement here is always sourced from the already-loaded
+// assigned_site projection, never written by this page (Site Assignment
+// Governance Architecture Section 4.1: Parking alone owns placement).
+function arrivalPresentation(attendee: {
+  has_arrived: boolean | null;
+}): { label: string; tone: StatusBadgeTone } {
+  return attendee.has_arrived
+    ? { label: "Checked in", tone: "success" }
+    : { label: "Waiting", tone: "neutral" };
+}
+
+function placementPresentation(attendee: {
+  assigned_site: string | null;
+}): { label: string; tone: StatusBadgeTone } {
+  return attendee.assigned_site
+    ? { label: `Site ${attendee.assigned_site.toUpperCase()}`, tone: "success" }
+    : { label: "Not yet placed", tone: "neutral" };
 }
 
 function classifyCheckinFailure(error: unknown): CheckinOperationFailure {
@@ -789,7 +819,7 @@ function AdminCheckinPageInner() {
   }
 
   return (
-    <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
+    <div style={{ display: "grid", gap: "var(--space-6)", minWidth: 0 }}>
       <ConfirmDialog
         open={!!undoAttendee}
         title="Undo Check-In"
@@ -807,38 +837,16 @@ function AdminCheckinPageInner() {
           setUndoAttendee(null);
         }}
       />
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-          minWidth: 0,
-        }}
-      >
-        <div role="status" style={{ fontSize: 13, color: "#666" }}>
-          {status}
-        </div>
-      </div>
+
+      <Alert tone="neutral">{status}</Alert>
 
       {error ? (
-        <div
-          style={{
-            border: "1px solid #e2b4b4",
-            borderRadius: 10,
-            background: "#fff3f3",
-            color: "#8a1f1f",
-            padding: 12,
-            minWidth: 0,
-            overflowWrap: "anywhere",
-          }}
-          role="alert"
-        >
+        <Alert tone="danger">
           {error}
           {operationFailure?.retry ? (
-            <div style={{ marginTop: 8 }}>
+            <div style={{ marginTop: "var(--space-3)" }}>
               <AppButton
-                variant="warning"
+                variant="primary"
                 onClick={() => {
                   const retryAttendee = attendees.find(
                     (attendee) =>
@@ -856,220 +864,208 @@ function AdminCheckinPageInner() {
               </AppButton>
             </div>
           ) : null}
-        </div>
+        </Alert>
       ) : null}
 
       {recentCompletion ? (
-        <div
-          role="status"
-          style={{
-            border: "1px solid #86efac",
-            borderRadius: 10,
-            background: "#f0fdf4",
-            color: "#166534",
-            padding: 12,
-          }}
-        >
+        <Alert tone="success">
           <strong>{recentCompletion.attendeeName}</strong>:{" "}
           {recentCompletion.message}
-        </div>
+        </Alert>
       ) : null}
 
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "white",
-          padding: 12,
-          minWidth: 0,
-        }}
-      >
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>Find attendee</div>
-        <input
-          ref={searchInputRef}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          disabled={loading}
-          placeholder="Name, nickname, email, coach, or site"
-          style={{
-            width: "100%",
-            minWidth: 0,
-            boxSizing: "border-box",
-            padding: 10,
-            minHeight: 44,
-            fontSize: 16,
-          }}
-        />
-        <label
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            minHeight: 44,
-            marginTop: 8,
-          }}
-        >
-          <input
-            type="checkbox"
+      <TableToolbar>
+        <TableToolbarPrimaryRow>
+          <SearchField
+            ref={searchInputRef}
+            label="Find attendee"
+            value={search}
+            onChange={setSearch}
+            id="checkin-search"
+            disabled={loading}
+            placeholder="Name, nickname, email, coach, or site"
+          />
+
+          <Checkbox
             checked={showArrived}
             onChange={(event) => setShowArrived(event.target.checked)}
+            label="Show already checked-in attendees"
           />
-          Show already checked-in attendees
-        </label>
-      </div>
+        </TableToolbarPrimaryRow>
+      </TableToolbar>
 
-      <div style={{ fontSize: 13, color: "#555" }}>
+      <p className="app-subtle-text" style={{ margin: 0 }}>
         {search.trim() || showArrived
           ? `Showing ${filteredAttendees.length} matching attendee${filteredAttendees.length === 1 ? "" : "s"}.`
           : `${filteredAttendees.length} attendee${filteredAttendees.length === 1 ? "" : "s"} waiting to check in.`}
-      </div>
+      </p>
 
       {!selectedAttendee ? (
-        <div
-          aria-label="Check-In attendee results"
-          style={{ display: "grid", gap: 8, minWidth: 0 }}
-        >
-          {filteredAttendees.map((attendee) => {
-            const pilotName =
-              fullName(attendee.pilot_first, attendee.pilot_last) ||
-              "Unnamed attendee";
-            const copilotName = fullName(
-              attendee.copilot_first,
-              attendee.copilot_last,
-            );
-            return (
-              <button
-                key={attendee.id}
-                type="button"
-                onClick={() => selectAttendee(attendee.id)}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isCompact
-                    ? "minmax(0, 1fr)"
-                    : "minmax(0, 1fr) auto",
-                  gap: 8,
-                  textAlign: "left",
-                  padding: 14,
-                  minHeight: 64,
-                  borderRadius: 10,
-                  border: attendee.has_arrived
-                    ? "1px solid #bbf7d0"
-                    : "1px solid #cbd5e1",
-                  background: attendee.has_arrived ? "#f0fdf4" : "white",
-                  color: "#0f172a",
-                  cursor: "pointer",
-                }}
-              >
-                <span style={{ minWidth: 0 }}>
-                  <strong>{pilotName}</strong>
-                  {copilotName ? <span> + {copilotName}</span> : null}
-                  <span
-                    style={{
-                      display: "block",
-                      marginTop: 4,
-                      fontSize: 13,
-                      color: "#64748b",
-                      overflowWrap: "anywhere",
-                    }}
+        filteredAttendees.length === 0 ? (
+          <Alert tone="neutral">No attendees found.</Alert>
+        ) : isCompact ? (
+          <ResponsiveList>
+            {filteredAttendees.map((attendee) => {
+              const pilotName =
+                fullName(attendee.pilot_first, attendee.pilot_last) ||
+                "Unnamed attendee";
+              const copilotName = fullName(
+                attendee.copilot_first,
+                attendee.copilot_last,
+              );
+              const arrival = arrivalPresentation(attendee);
+
+              return (
+                <li key={attendee.id}>
+                  <button
+                    type="button"
+                    onClick={() => selectAttendee(attendee.id)}
+                    className={
+                      "responsive-list-item" +
+                      (attendee.has_arrived ? " responsive-list-item-selected" : "")
+                    }
+                    style={{ width: "100%", textAlign: "left" }}
                   >
-                    {attendee.email || "No email"}
-                    {attendee.assigned_site
-                      ? ` · Site ${attendee.assigned_site}`
-                      : " · No site confirmed"}
-                  </span>
-                </span>
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: attendee.has_arrived ? "#166534" : "#92400e",
-                  }}
-                >
-                  {attendee.has_arrived ? "Checked in" : "Waiting"}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                    <div className="responsive-list-item-header">
+                      <div className="responsive-list-item-title">
+                        {pilotName}
+                        {copilotName ? ` + ${copilotName}` : ""}
+                      </div>
+                      <StatusBadge tone={arrival.tone}>{arrival.label}</StatusBadge>
+                    </div>
+                    <div className="responsive-list-item-meta">
+                      <span>{attendee.email || "No email"}</span>
+                      <span>
+                        {attendee.assigned_site
+                          ? `Site ${attendee.assigned_site}`
+                          : "No site confirmed"}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ResponsiveList>
+        ) : (
+          <DataTable caption="Check-In attendee results">
+            <thead>
+              <tr>
+                <th scope="col">Attendee</th>
+                <th scope="col">Arrival</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAttendees.map((attendee) => {
+                const pilotName =
+                  fullName(attendee.pilot_first, attendee.pilot_last) ||
+                  "Unnamed attendee";
+                const copilotName = fullName(
+                  attendee.copilot_first,
+                  attendee.copilot_last,
+                );
+                const arrival = arrivalPresentation(attendee);
+
+                return (
+                  <tr
+                    key={attendee.id}
+                    className={attendee.has_arrived ? "data-table-row-selected" : undefined}
+                  >
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => selectAttendee(attendee.id)}
+                        aria-label={`Select "${pilotName}" for check-in`}
+                        style={{
+                          all: "unset",
+                          cursor: "pointer",
+                          display: "block",
+                          width: "100%",
+                        }}
+                      >
+                        <div className="data-table-cell-primary">
+                          {pilotName}
+                          {copilotName ? ` + ${copilotName}` : ""}
+                        </div>
+                        <div className="data-table-cell-meta">
+                          {attendee.email || "No email"}
+                          {" · "}
+                          {attendee.assigned_site
+                            ? `Site ${attendee.assigned_site}`
+                            : "No site confirmed"}
+                        </div>
+                      </button>
+                    </td>
+                    <td>
+                      <StatusBadge tone={arrival.tone}>{arrival.label}</StatusBadge>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </DataTable>
+        )
       ) : null}
 
-      <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
-        {(selectedAttendee ? [selectedAttendee] : []).map((attendee) => {
-          const members = householdByAttendee.get(attendee.id) || [];
-          const pilotMember = getRoleMember(members, "pilot");
-          const copilotMember = getRoleMember(members, "copilot");
-          const additionalMembers = members.filter(
-            (member) => member.person_role === "additional",
-          );
+      {(selectedAttendee ? [selectedAttendee] : []).map((attendee) => {
+        const members = householdByAttendee.get(attendee.id) || [];
+        const pilotMember = getRoleMember(members, "pilot");
+        const copilotMember = getRoleMember(members, "copilot");
+        const additionalMembers = members.filter(
+          (member) => member.person_role === "additional",
+        );
 
-          const current = editState[attendee.id] || {
-            sharedFields: sharingByAttendee[attendee.id] || [],
-          };
+        const current = editState[attendee.id] || {
+          sharedFields: sharingByAttendee[attendee.id] || [],
+        };
+        const arrival = arrivalPresentation(attendee);
+        const placement = placementPresentation(attendee);
 
-          return (
+        return (
+          <PageSection key={attendee.id} variant="card">
             <div
-              key={attendee.id}
               style={{
-                border: "1px solid #ddd",
-                borderRadius: 10,
-                background: "white",
-                padding: 14,
-                display: "grid",
-                gap: 12,
-                minWidth: 0,
-                overflowWrap: "anywhere",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "var(--space-3)",
+                flexWrap: "wrap",
+                marginBottom: "var(--space-4)",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 12,
-                  flexWrap: "wrap",
-                }}
-              >
-                <strong>Selected attendee</strong>
-                <AppButton variant="muted" onClick={closeSelectedAttendee}>
-                  Back to results
-                </AppButton>
-              </div>
+              <strong>Selected attendee</strong>
+              <AppButton variant="secondary" onClick={closeSelectedAttendee}>
+                Back to results
+              </AppButton>
+            </div>
+
+            <div style={{ display: "grid", gap: "var(--space-4)", minWidth: 0 }}>
               {selectedIsDirty ? (
-                <div style={{ fontSize: 13, color: "#92400e" }}>
+                <p className="app-subtle-text" style={{ margin: 0 }}>
                   Unsaved changes
-                </div>
+                </p>
               ) : null}
+
               {selectedConflict ? (
-                <div
-                  role="alert"
-                  style={{
-                    border: "1px solid #f59e0b",
-                    borderRadius: 8,
-                    background: "#fffbeb",
-                    color: "#92400e",
-                    padding: 12,
-                  }}
-                >
+                <Alert tone="warning">
                   <strong>Record changed elsewhere.</strong> {selectedConflict}
-                  <div style={{ marginTop: 8 }}>
+                  <div style={{ marginTop: "var(--space-3)" }}>
                     <AppButton
-                      variant="warning"
+                      variant="primary"
                       onClick={() => void reloadSelectedAttendee()}
                     >
                       Reload Current Record
                     </AppButton>
                   </div>
-                </div>
+                </Alert>
               ) : null}
+
               <div
                 style={{
                   display: "grid",
                   gridTemplateColumns: isCompact
                     ? "minmax(0, 1fr)"
                     : "minmax(0, 1.3fr) minmax(0, 1.3fr) minmax(0, 1fr)",
-                  gap: 12,
+                  gap: "var(--space-4)",
                   minWidth: 0,
                 }}
               >
@@ -1096,23 +1092,20 @@ function AdminCheckinPageInner() {
                 </div>
 
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700 }}>Arrival</div>
-                  <div
-                    style={{
-                      color: attendee.has_arrived ? "#166534" : "#92400e",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {attendee.has_arrived ? "Checked in" : "Not yet arrived"}
+                  <div style={{ fontWeight: 700, marginBottom: "var(--space-2)" }}>
+                    Arrival
                   </div>
+                  <StatusBadge tone={arrival.tone}>
+                    {attendee.has_arrived ? "Checked in" : "Not yet arrived"}
+                  </StatusBadge>
                 </div>
               </div>
 
-              <details style={{ fontSize: 13, color: "#475569" }}>
+              <details className="app-subtle-text">
                 <summary style={{ cursor: "pointer", fontWeight: 700 }}>
                   Additional details
                 </summary>
-                <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                <div style={{ display: "grid", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
                   <div>Email: {attendee.email || "Not provided"}</div>
                   <div>
                     Coach:{" "}
@@ -1142,28 +1135,27 @@ function AdminCheckinPageInner() {
                   gridTemplateColumns: isCompact
                     ? "minmax(0, 1fr)"
                     : "minmax(220px, 1.2fr) auto",
-                  gap: 12,
+                  gap: "var(--space-4)",
                   alignItems: isCompact ? "stretch" : "center",
                   minWidth: 0,
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                  <div style={{ fontWeight: 700, marginBottom: "var(--space-2)" }}>
                     Placement
                   </div>
                   <div
-                    style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}
+                    className="responsive-list-item-badges"
+                    style={{ marginBottom: "var(--space-3)" }}
                   >
-                    {attendee.assigned_site
-                      ? `Site ${attendee.assigned_site.toUpperCase()}`
-                      : "Not yet placed"}
-                    {attendee.handicap_parking
-                      ? " · Handicap parking needed"
-                      : ""}
+                    <StatusBadge tone={placement.tone}>{placement.label}</StatusBadge>
+                    {attendee.handicap_parking ? (
+                      <StatusBadge tone="info">Handicap parking needed</StatusBadge>
+                    ) : null}
                   </div>
                   {attendee.has_arrived && !attendee.assigned_site ? (
                     <AppLinkButton
-                      variant="muted"
+                      variant="secondary"
                       href={buildAdminAttendeeTargetHref(
                         "/admin/parking",
                         attendee.id,
@@ -1187,7 +1179,7 @@ function AdminCheckinPageInner() {
                   </AppButton>
                 ) : (
                   <AppButton
-                    variant="success"
+                    variant="primary"
                     onClick={() => void saveCheckin(attendee, true)}
                     disabled={savingId === attendee.id || !!selectedConflict}
                     style={{
@@ -1202,76 +1194,49 @@ function AdminCheckinPageInner() {
                 )}
               </div>
 
-              <details
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 8,
-                  background: "#fafafa",
-                  padding: 12,
-                }}
-              >
+              <details className="app-card-section">
                 <summary style={{ cursor: "pointer", fontWeight: 700 }}>
                   Attendee Sharing
                 </summary>
-                <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                  <div style={{ fontSize: 13, color: "#475569" }}>
+                <div style={{ display: "grid", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
+                  <p className="app-subtle-text" style={{ margin: 0 }}>
                     Choose what other participating attendees can see. Name is
                     required for participation.
-                  </div>
+                  </p>
 
                   <div
                     style={{
                       display: "flex",
-                      gap: 12,
+                      gap: "var(--space-4)",
                       flexWrap: "wrap",
+                      alignItems: "center",
                     }}
                   >
                     {SHARING_OPTIONAL_FIELDS.map((field) => (
-                      <label
+                      <Checkbox
                         key={field.key}
-                        style={{
-                          display: "flex",
-                          gap: 6,
-                          alignItems: "center",
-                          minHeight: 32,
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={current.sharedFields.includes(field.key)}
-                          onChange={() =>
-                            toggleSharedField(attendee.id, field.key)
-                          }
-                        />
-                        {field.label}
-                      </label>
+                        checked={current.sharedFields.includes(field.key)}
+                        onChange={() =>
+                          toggleSharedField(attendee.id, field.key)
+                        }
+                        label={field.label}
+                      />
                     ))}
 
-                    <button
-                      type="button"
-                      onClick={() => selectAllSharedFields(attendee.id)}
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: 6,
-                        border: "1px solid #cbd5e1",
-                        background: "white",
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
+                    <AppButton onClick={() => selectAllSharedFields(attendee.id)}>
                       Select all
-                    </button>
+                    </AppButton>
                   </div>
 
-                  <div style={{ fontSize: 12, color: "#666" }}>
+                  <p className="app-subtle-text" style={{ margin: 0 }}>
                     Sharing lets this attendee see information that other
                     participating attendees choose to share. Turning all sharing
                     off removes their access to the attendee-sharing
                     directory/locator.
-                  </div>
+                  </p>
                   {sharingRetry?.attendeeId === attendee.id ? (
                     <AppButton
-                      variant="warning"
+                      variant="primary"
                       onClick={() => void retrySharingPreferences(attendee)}
                       disabled={savingId === attendee.id}
                     >
@@ -1281,24 +1246,9 @@ function AdminCheckinPageInner() {
                 </div>
               </details>
             </div>
-          );
-        })}
-
-        {!selectedAttendee && filteredAttendees.length === 0 ? (
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 10,
-              background: "white",
-              padding: 16,
-              color: "#666",
-              minWidth: 0,
-            }}
-          >
-            No attendees found.
-          </div>
-        ) : null}
-      </div>
+          </PageSection>
+        );
+      })}
     </div>
   );
 }
