@@ -1214,6 +1214,26 @@ textarea.app-control,
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  /* Root cause of a real document-level horizontal overflow, found via
+     the /admin/ui-reference Mid-Size UI Scale section (confirmed via
+     document.documentElement.scrollWidth vs clientWidth at 390px):
+     DataTable's own <caption class="sr-only"> (position:absolute, no
+     explicit offsets, so it uses its own "static position" -- the
+     position it would occupy in normal flow) has no positioned ancestor
+     anywhere in DataTable's own template. With none of .card/
+     .app-card-section/.data-table establishing a containing block
+     either, an absolutely-positioned descendant like this falls back to
+     the initial containing block (effectively the document root) for
+     positioning -- landing far outside any of this wrapper's own
+     overflow-x:auto clipping and inflating the WHOLE PAGE's scrollable
+     width, despite the caption itself being 1x1px and fully clipped/
+     invisible. This wrapper already exists specifically to locally
+     contain the table's own overflow; establishing a containing block
+     here is the same responsibility applied to its caption too --
+     position:relative has no visual/layout effect on its own (no
+     offsets are set), it only stops an absolutely-positioned descendant
+     from escaping past this boundary. */
+  position: relative;
 }
 
 .data-table {

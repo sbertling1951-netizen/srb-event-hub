@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -8,6 +10,11 @@ import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 // Focused tests for the shared desktop table / narrow-viewport list
 // shells (UI Phase 2). Run with:
 //   npx tsx --test components/ui/DataTable.test.tsx
+
+const CSS_SOURCE = readFileSync(
+  fileURLToPath(new URL("../../app/globals.css", import.meta.url)),
+  "utf8",
+);
 
 test("DataTable renders a real semantic <table> with an accessible caption", () => {
   const html = renderToStaticMarkup(
@@ -57,6 +64,27 @@ test("DataTable wraps the table in a horizontal-scroll container, never clipping
   );
 
   assert.match(html, /<div class="data-table-scroll"><table/);
+});
+
+// Real defect, found via /admin/ui-reference's Mid-Size UI Scale section
+// (confirmed with document.documentElement.scrollWidth vs clientWidth at
+// 390px): DataTable's own <caption class="sr-only"> is position:absolute
+// with no explicit offsets, so it uses its own "static position" as its
+// anchor. With no containing block anywhere in DataTable's own template
+// (.data-table-scroll/.data-table/.card/.app-card-section all lack
+// position:relative), that static position falls back to the initial
+// containing block wherever no ancestor further up happens to be
+// positioned -- which can land the (invisible, 1x1px, fully clipped)
+// caption far outside any local overflow-x:auto wrapper, inflating the
+// WHOLE PAGE's scrollable width even though nothing is visibly wrong.
+// .data-table-scroll already exists specifically to contain the table's
+// own overflow locally; position:relative (no offsets, so no visual/
+// layout effect on its own) extends that same containment to its
+// caption too, everywhere DataTable is used -- not just this one page.
+test(".data-table-scroll establishes a containing block, so its own sr-only caption can never escape to inflate the document's scrollable width", () => {
+  const match = CSS_SOURCE.match(/\.data-table-scroll\s*\{[^}]*\}/);
+  assert.ok(match, "expected to find the .data-table-scroll rule in app/globals.css");
+  assert.match(match![0], /position:\s*relative/);
 });
 
 test("DataTable renders exactly the children it was given -- no injected columns/rows", () => {
