@@ -162,6 +162,15 @@ function computeSiteErrors(sites: MasterMapSiteRow[]): SiteErrorRow[] {
 export function MapGeometryTestClient() {
   const searchParams = useSearchParams();
   const mapId = searchParams.get("mapId");
+  // "full" (default) replicates Parking's ACTUAL page chrome around the
+  // map -- the sticky shell header, the sticky map card with its
+  // safe-area-inset top offset and z-index, the grid+order swap, and
+  // enough filler content above it to force real scrolling on a phone --
+  // since the simple, non-sticky harness measured zero error on the same
+  // real map on the same real iPhone where Parking itself showed clear
+  // misalignment. "simple" restores the original, already-tested flat
+  // layout for direct comparison / further bisection.
+  const chromeMode = searchParams.get("chrome") === "simple" ? "simple" : "full";
 
   const [isNarrow, setIsNarrow] = useState(false);
   const mapRef = useRef<MapCanvasHandle | null>(null);
@@ -376,62 +385,141 @@ export function MapGeometryTestClient() {
     );
   }
 
-  return (
-    <div style={{ padding: 16, fontFamily: "monospace", fontSize: 12 }}>
-      <div>
-        mapId: {mapId} {mapRow ? `(${mapRow.name})` : "(loading...)"}
+  const mapCard = (
+    <div
+      data-geometry-role="card"
+      className={chromeMode === "full" ? "card" : undefined}
+      style={{
+        border: chromeMode === "simple" ? "1px solid #ddd" : undefined,
+        display: "flex",
+        flexDirection: "column",
+        height: isNarrow ? "60vh" : "78vh",
+        minHeight: 0,
+        // Byte-for-byte the same values app/admin/parking/page.tsx applies
+        // to its own map card -- the one piece of real chrome the prior
+        // "simple" harness never replicated, and the leading suspect now
+        // that "simple" measured zero error on the real device where
+        // Parking itself did not.
+        position: chromeMode === "full" ? (isNarrow ? "sticky" : "static") : undefined,
+        top:
+          chromeMode === "full" && isNarrow
+            ? "calc(env(safe-area-inset-top, 0px) + 8px)"
+            : undefined,
+        zIndex: chromeMode === "full" && isNarrow ? 40 : undefined,
+        order: chromeMode === "full" ? (isNarrow ? 1 : 0) : undefined,
+      }}
+    >
+      <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
+        {mapRow?.map_image_url && (
+          <MapCanvas
+            ref={mapRef}
+            imageUrl={mapRow.map_image_url}
+            markers={realMarkers}
+            viewportHeight="100%"
+            initialScale={0.6}
+            minScale={0.1}
+            maxScale={3}
+            selectionMode="none"
+            showLabels={false}
+            renderMarker={(m) => (
+              <div
+                data-geometry-role="marker-visual"
+                style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  background: sampleSites.some((s) => s.id === m.id) ? "#ef4444" : "#0b5cff",
+                  border: "2px solid white",
+                }}
+                title={m.label}
+              />
+            )}
+          />
+        )}
       </div>
-      {loadError && <p style={{ color: "red" }}>Error: {loadError}</p>}
-      <div>isNarrow: {String(isNarrow)}</div>
-      <div
-        data-geometry-role="card"
-        style={{
-          border: "1px solid #ddd",
-          display: "flex",
-          flexDirection: "column",
-          height: isNarrow ? "60vh" : "78vh",
-          minHeight: 0,
-          marginTop: 8,
-        }}
-      >
-        <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
-          {mapRow?.map_image_url && (
-            <MapCanvas
-              ref={mapRef}
-              imageUrl={mapRow.map_image_url}
-              markers={realMarkers}
-              viewportHeight="100%"
-              initialScale={0.6}
-              minScale={0.1}
-              maxScale={3}
-              selectionMode="none"
-              showLabels={false}
-              renderMarker={(m) => (
-                <div
-                  data-geometry-role="marker-visual"
-                  style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: "50%",
-                    background: sampleSites.some((s) => s.id === m.id) ? "#ef4444" : "#0b5cff",
-                    border: "2px solid white",
-                  }}
-                  title={m.label}
-                />
-              )}
-            />
-          )}
+      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <button type="button" onClick={() => mapRef.current?.zoomIn()}>+</button>
+        <button type="button" onClick={() => mapRef.current?.zoomOut()}>-</button>
+        <button type="button" onClick={() => mapRef.current?.reset()}>Reset</button>
+        <button type="button" onClick={recompute} style={{ fontWeight: 700 }}>
+          Recompute readout ({refreshTick})
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ fontFamily: "monospace", fontSize: 12 }}>
+      {chromeMode === "full" && (
+        <>
+          {/* Sticky shell header stand-in -- app/admin/parking/page.tsx is
+              always rendered inside AdminShellAdapter's .shell-header,
+              which is itself position:sticky; top:0; z-index:30. A second,
+              lower-z-index sticky ancestor stacked against the map card's
+              OWN sticky positioning is exactly the kind of nested-sticky
+              situation WebKit has documented compositing quirks for, and
+              the "simple" harness never had an ancestor sticky element at
+              all. */}
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 30,
+              background: "#fff",
+              borderBottom: "1px solid #ddd",
+              padding: 16,
+            }}
+          >
+            Sticky header stand-in (mimics .shell-header)
+          </div>
+          <div style={{ padding: 16 }}>
+            {/* Filler matching the real page's own pre-grid content
+                (status alerts, mobile queue toggle) so there is enough
+                height to actually SCROLL past the sticky header on a
+                phone screen before reaching the map -- the real scroll
+                situation Parking's page always has and this harness
+                otherwise would not. */}
+            <div style={{ height: 220, background: "#eef", marginBottom: 16, padding: 8 }}>
+              Filler (mimics status alerts / mobile queue toggle) -- scroll
+              past this to reach the sticky map card below.
+            </div>
+          </div>
+        </>
+      )}
+
+      <div style={{ padding: chromeMode === "full" ? "0 16px 16px" : 16 }}>
+        <div>
+          mapId: {mapId} {mapRow ? `(${mapRow.name})` : "(loading...)"} -- chrome:{" "}
+          {chromeMode}{" "}
+          <a href={`?mapId=${mapId}&chrome=${chromeMode === "full" ? "simple" : "full"}`}>
+            (switch to {chromeMode === "full" ? "simple" : "full"})
+          </a>
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          <button type="button" onClick={() => mapRef.current?.zoomIn()}>+</button>
-          <button type="button" onClick={() => mapRef.current?.zoomOut()}>-</button>
-          <button type="button" onClick={() => mapRef.current?.reset()}>Reset</button>
-          <button type="button" onClick={recompute} style={{ fontWeight: 700 }}>
-            Recompute readout ({refreshTick})
-          </button>
-        </div>
+        {loadError && <p style={{ color: "red" }}>Error: {loadError}</p>}
+        <div>isNarrow: {String(isNarrow)}</div>
+
+        {chromeMode === "full" ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isNarrow ? "1fr" : "340px minmax(0, 1fr)",
+              gap: isNarrow ? 12 : 10,
+              alignItems: "start",
+              width: "100%",
+              marginTop: 8,
+            }}
+          >
+            <div style={{ order: isNarrow ? 2 : 0, background: "#eef", padding: 8, minHeight: 120 }}>
+              Filler (mimics the queue/attendee list panel)
+            </div>
+            {mapCard}
+          </div>
+        ) : (
+          <div style={{ marginTop: 8 }}>{mapCard}</div>
+        )}
       </div>
 
+      <div style={{ padding: chromeMode === "full" ? "0 16px 16px" : 16 }}>
       <h3 style={{ marginTop: 16 }}>Live per-site error readout (red markers above)</h3>
       <p>
         Tap &quot;Recompute readout&quot; after zooming/panning/rotating to
@@ -476,6 +564,7 @@ export function MapGeometryTestClient() {
       <pre style={{ whiteSpace: "pre-wrap", fontSize: 11 }}>
         {JSON.stringify(rawSnapshot, null, 2)}
       </pre>
+      </div>
     </div>
   );
 }

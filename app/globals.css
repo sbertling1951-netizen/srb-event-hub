@@ -1549,6 +1549,40 @@ textarea.app-control,
   }
 }
 
+/* ===== SHARED MAP ENGINE SURFACE PROTECTION ===== */
+/* Root cause of the Stage 2B iPhone-portrait marker/overlay misalignment
+   (confirmed by direct measurement, not theorized): the "MOBILE FORM
+   ALIGNMENT FIX" rule immediately above -- `.card div { max-width: 100%
+   !important }`, written for form-field alignment -- matches ANY <div>
+   descendant of a `.card`-classed container, with no way to scope it to
+   only the form elements it was meant for. Parking's map wrapper adopted
+   `className="card"` during its Central UI Standard migration (a
+   legitimate, correct adoption); GestureMapViewportV2's own internal
+   content div and MapCanvas's own inner wrapper div are exactly this
+   kind of unrelated <div> descendant. Both carry an explicit PIXEL width
+   (the natural image width, before the pan/zoom transform scales it) --
+   that is what every marker's percentage position is resolved against.
+   The ambient max-width reset clamped that width down to the flex
+   ancestor's own width while leaving <img> (not a div, unmatched by that
+   selector) rendering at its correct, unclamped size -- producing
+   non-uniform X/Y scaling for markers specifically while the map image
+   itself looked "normally positioned," worse the further a marker's
+   stored percentage was from the axis origin, and present only under
+   the same <900px viewport this reset (and Parking's portrait width)
+   share. It never affected desktop/iPad-wide layouts, and never affected
+   the image itself, matching every symptom of the real-device report.
+   .map-engine-surface.map-engine-surface (doubled purely to guarantee
+   higher specificity than `.card div`'s (0,1,1), independent of source
+   order, so this survives regardless of future edits to either rule) is
+   the shared map engine's own defense against this and any similarly
+   broad future reset, wherever it ends up mounted -- not a Parking-
+   specific fix. min-width is deliberately left alone: min-width:0 from
+   the rule above does not affect an explicit larger width and remains
+   the correct, existing behavior. */
+.map-engine-surface.map-engine-surface {
+  max-width: none !important;
+}
+
 /* ===== IPHONE ADMIN TOOL BUTTON DEFINITION ===== */
 @media (max-width: 899px) {
   .admin-tool-button {

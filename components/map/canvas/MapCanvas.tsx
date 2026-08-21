@@ -418,6 +418,12 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           onTap={handleViewportTap}
         >
           <div
+            // See GestureMapViewportV2's own contentRef div and the
+            // .map-engine-surface rule in app/globals.css: this div's
+            // explicit pixel width is exactly what an ambient `.card div
+            // { max-width: 100% !important }` reset would otherwise
+            // silently clamp, the same as its parent.
+            className="map-engine-surface"
             style={{
               position: "relative",
               width: natural.width,

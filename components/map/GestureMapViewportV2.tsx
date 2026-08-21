@@ -1160,6 +1160,18 @@ const GestureMapViewportV2 = forwardRef<
     >
       <div
         ref={contentRef}
+        // See the .map-engine-surface rule's own comment in
+        // app/globals.css: an ambient, unrelated `.card div { max-width:
+        // 100% !important }` reset (written for form-field alignment)
+        // matches ANY div descendant of a `.card`-classed container,
+        // including this one -- and since this div's own explicit pixel
+        // width is what the percentage-positioned marker layer resolves
+        // against, that reset silently clamps it to its flex ancestor's
+        // width while leaving its own <img> child (not a div, unaffected)
+        // rendering at the correct size. This class is the shared
+        // engine's own defense against that and any similar ambient
+        // reset, wherever it is mounted.
+        className="map-engine-surface"
         style={{
           position: "absolute",
           left: 0,

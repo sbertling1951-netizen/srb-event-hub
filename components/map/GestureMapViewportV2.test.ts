@@ -244,3 +244,62 @@ test("a ResizeObserver re-clamps (never re-fits or re-centers) the existing pan 
   );
   assert.doesNotMatch(fn, /fitScale/);
 });
+
+// --- Stage 2B: shared map engine surface protection ---------------------
+// Proven root cause (see task record for the full measurement, reproduced
+// directly in Chromium with the real Parking chrome structure replicated
+// -- no physical device needed to confirm this specific mechanism): the
+// pre-existing, unrelated "MOBILE FORM ALIGNMENT FIX" rule in
+// app/globals.css (`.card div { max-width: 100% !important }`, written
+// for form-field alignment) matches ANY <div> descendant of a
+// `.card`-classed container on narrow viewports -- including
+// GestureMapViewportV2's own contentRef div and MapCanvas's own inner
+// wrapper div, both of which carry an explicit PIXEL width (the natural
+// image width) that every marker's percentage position is resolved
+// against. Parking's map wrapper legitimately adopted className="card"
+// during its Central UI Standard migration; that ambient reset then
+// silently clamped these two divs' width to their flex ancestor's own
+// width, while their <img> child (not a div, unmatched by that selector)
+// kept rendering at its correct, unclamped size -- producing non-uniform
+// X/Y scaling for markers specifically, worse the farther a marker's
+// stored percentage was from the axis origin, only under the same
+// <900px viewport both that reset and Parking's portrait width share.
+
+const CSS_SOURCE = readFileSync(
+  fileURLToPath(new URL("../../app/globals.css", import.meta.url)),
+  "utf8",
+);
+
+const CANVAS_MAP_CANVAS_SOURCE = readFileSync(
+  fileURLToPath(new URL("./canvas/MapCanvas.tsx", import.meta.url)),
+  "utf8",
+);
+
+test("GestureMapViewportV2's contentRef div and MapCanvas's own inner wrapper div both carry the protective class", () => {
+  const refIndex = SOURCE.indexOf("ref={contentRef}");
+  assert.ok(refIndex >= 0, "expected to find contentRef's own div");
+  const styleIndex = SOURCE.indexOf("style={{", refIndex);
+  assert.ok(styleIndex > refIndex, "expected to find contentRef's own style prop");
+  assert.match(SOURCE.slice(refIndex, styleIndex), /className="map-engine-surface"/);
+  assert.match(
+    CANVAS_MAP_CANVAS_SOURCE,
+    /className="map-engine-surface"[\s\S]{0,120}style={{\s*\n\s*position: "relative",\s*\n\s*width: natural\.width,\s*\n\s*height: natural\.height,/,
+  );
+});
+
+test("globals.css restores max-width for .map-engine-surface with specificity that beats .card div regardless of source order", () => {
+  const cardDivIndex = CSS_SOURCE.indexOf(".card div");
+  assert.ok(cardDivIndex >= 0, "expected to find the .card div rule this protects against");
+
+  const protectionMatch = CSS_SOURCE.match(
+    /\.map-engine-surface\.map-engine-surface\s*\{\s*\n\s*max-width: none !important;\s*\n\s*\}/,
+  );
+  assert.ok(protectionMatch, "expected the doubled-class .map-engine-surface protection rule");
+
+  // A doubled class selector (0,2,0) beats a class+type selector like
+  // `.card div` (0,1,1) in the class-count position regardless of which
+  // rule appears first in the stylesheet -- this must not be quietly
+  // "fixed" back down to a single class, which would make the win
+  // dependent on source order again.
+  assert.match(protectionMatch![0], /\.map-engine-surface\.map-engine-surface/);
+});
