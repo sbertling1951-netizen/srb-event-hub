@@ -995,6 +995,115 @@ textarea.app-control,
   flex-wrap: wrap;
 }
 
+/* Automatically-sized, container-responsive Dialog variant for a form-
+   shaped body (Central UI Standard, Stage 3 -- admin-users migration).
+   Architectural rule this proves: available space determines layout,
+   device identity does not. Two prior approaches were tried and removed
+   here: hand-tuned fixed max-width/minmax pairs targeting one physical
+   iPad's exact geometry, then a manual Pointer Events resize handle
+   (not operable on a physical iPad). Both are gone. This is pure CSS:
+     - The shared base .app-dialog already gives every consumer
+       `width: 100%` of the backdrop's available flex space; this
+       modifier only lowers the ceiling that `width` is capped at, to
+       `min(1080px, calc(100vw - 32px))` -- so the rendered width is
+       always "as much of the available viewport as there is, up to
+       1080px, minus a safe 32px outer margin" (32px matches
+       .app-dialog-backdrop's own padding, --space-8 each side). No JS
+       ever sets an inline width/height on this element.
+     - Because this is a live CSS calculation, not a value computed once
+       in JS, the browser recomputes it on every layout pass for free --
+       rotation, browser-window resize, split-screen, fold/unfold, and
+       (via the dvh height rule below) the iOS software keyboard all just
+       work, with no resize/orientation event listener anywhere in this
+       page's own code.
+     - `container-type: inline-size` makes this element (not the
+       viewport, not a device breakpoint) the query context every
+       descendant's @container rule below measures against -- internal
+       layout (.app-permission-grid, .app-dialog-form-pair*) responds to
+       THIS element's own actual rendered width, so a rotation that
+       changes the calc() above automatically cascades into the correct
+       column count with no extra wiring.
+   Consumed only through Dialog's own documented className prop ("e.g. a
+   width override"), so this stays scoped to this one modifier class --
+   .app-dialog itself, and every other Dialog/ConfirmDialog consumer, is
+   untouched. */
+.app-dialog-form {
+  max-width: min(1080px, calc(100vw - 32px));
+  max-height: min(90vh, 90dvh);
+  container-type: inline-size;
+}
+
+@media (max-width: 899px) {
+  .app-dialog-form {
+    max-height: min(96vh, 96dvh);
+  }
+}
+
+/* Compact permission/checklist grid (Central UI Standard, Stage 3 --
+   admin-users density refinement). Pure CSS auto-fit/minmax -- no JS
+   breakpoint, no fixed device-matched threshold -- so column count is a
+   continuous function of .app-dialog-form's own actual rendered width
+   (not a handful of discrete @container steps): naturally 1 column on a
+   narrow workspace, 2 once there's room for two comfortable 260px-plus
+   columns, 3 once there's room for three, growing smoothly as the
+   Dialog is resized wider rather than jumping between hand-picked
+   breakpoints. 260px was checked against the longest existing labels
+   ("View Admin Dashboard", "Manage Announcements") -- do not lower it
+   without re-checking those labels for awkward wraps.
+   The row-gap is deliberately smaller than the general-purpose form-field
+   grids (--space-4) -- the "far more vertical whitespace than necessary"
+   real-device finding. It shrinks only the gap BETWEEN rows: Field's own
+   .app-field-checkable-label (app/globals.css, above) already enforces
+   the real --touch-target-min (45px) floor on every row regardless of
+   this grid's gap, so the touch target itself is completely untouched.
+   Column-gap is kept at the normal --space-4 so multi-column rows still
+   read as clearly separated. */
+.app-permission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-2) var(--space-4);
+}
+
+/* Paired-field row for the admin-users edit Dialog (Email/Display Name,
+   Privilege Group/Status): responds to the Dialog's own actual width via
+   @container, not the Shell's viewport-level isCompact signal -- a
+   resizable Dialog can be narrower or wider than what isCompact would
+   assume for the current viewport, so a viewport-level signal is the
+   wrong input for this decision (this is the "internal layout must
+   respond to dialog width, not viewport/device" requirement). 480px was
+   chosen as a plain readability threshold -- two ordinary text fields
+   each need roughly 220px+ to stay comfortable -- not a device match. */
+.app-dialog-form-pair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+}
+
+@container (min-width: 480px) {
+  .app-dialog-form-pair {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Same principle as .app-dialog-form-pair, for the Password field +
+   Send Reset Email button row, whose second column is a fixed-content
+   button rather than an equal field. The button's own presence/absence
+   (only an existing admin has one) stays a React conditional -- CSS only
+   decides whether an already-present second column sits beside the
+   first or stacks under it. */
+.app-dialog-form-pair-auto {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+  align-items: end;
+}
+
+@container (min-width: 480px) {
+  .app-dialog-form-pair-auto {
+    grid-template-columns: minmax(260px, 1fr) auto;
+  }
+}
+
 @keyframes app-dialog-enter {
   from {
     opacity: 0;

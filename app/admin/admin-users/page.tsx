@@ -1,16 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import {
-  type CSSProperties,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import { Dialog } from "@/components/ui/Dialog";
+import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSection } from "@/components/ui/PageSection";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
+import { isArchivedEventStatus } from "@/lib/eventStatus";
 import {
   canAccessEvent,
 } from "@/lib/getCurrentAdminAccess";
@@ -34,6 +37,7 @@ type EventRow = {
   name: string | null;
   start_date?: string | null;
   location?: string | null;
+  status?: string | null;
 };
 
 type PrivilegeGroup =
@@ -123,6 +127,123 @@ function formatPrivilegeGroup(value?: string | null) {
 
 const defaultGroup: PrivilegeGroup = "event_admin";
 
+// Pure, presentation-only classification of this page's own existing
+// status/error/save/reset confirmation text into an Alert tone -- never a
+// second source of any message itself (every setStatus/setSaveStatus/
+// setResetStatus call site is unchanged). Mirrors the same heuristic
+// already established for Vendor Requests (vendorRequestStatusTone) and
+// Announcements (announcementStatusTone). Failure-shaped substrings are
+// checked before success-shaped ones so a partial-failure message that
+// still starts with "Saved" (e.g. "Saved admin user, but event access
+// failed: ...") classifies as danger, not success.
+export function adminUserStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.includes("failed") ||
+    lower.startsWith("could not") ||
+    lower.includes("is required") ||
+    lower.includes("not set")
+  ) {
+    return "danger";
+  }
+
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+
+  if (lower.startsWith("saved") || lower.includes("sent") || lower.includes("password set")) {
+    return "success";
+  }
+
+  return "neutral";
+}
+
+// Current/historical grouping for the Event Access selector uses only
+// isArchivedEventStatus (lib/eventStatus.ts) -- the narrow, correct
+// predicate for "is this Event Past" -- never isActiveEventStatus, whose
+// "not active" negative space also contains Draft (a future, not-yet-
+// started Event) and Inactive, both of which are not Past. Archived
+// Events sort after everything else, stable within each group
+// (Array.prototype.sort is spec-guaranteed stable), so the existing
+// start_date-descending fetch order is preserved within both groups --
+// this only reorders across the two groups, it does not invent a second
+// ordering rule, and it never infers lifecycle from dates.
+export function orderEventsForAccessSelector<T extends { status?: string | null }>(
+  events: T[],
+): T[] {
+  return [...events].sort((a, b) => {
+    const aRank = isArchivedEventStatus(a.status) ? 1 : 0;
+    const bRank = isArchivedEventStatus(b.status) ? 1 : 0;
+    return aRank - bRank;
+  });
+}
+
+// public.events.status (Supabase) is the single source of truth for the
+// lifecycle label -- displayed verbatim, exactly as the sibling Events
+// admin page already does (app/admin/events/page.tsx: `Status: ${status}`
+// off `evt.status || "Draft"`), never collapsed through
+// isActiveEventStatus's boolean. Native <select> options can only carry
+// plain text (no colored LED is representable inside <option> across
+// browsers) -- this produces e.g. "Saint George — Access granted ·
+// Active" / "Amana27 — Access granted · Draft" / "Camp Margaritaville —
+// No access · Archived". The colored StatusBadge access indicator renders
+// separately, in the focused editor below the selector, where real
+// DOM/CSS is available; it never carries the lifecycle status itself.
+export function formatEventOptionLabel(
+  event: { id: string; name: string | null; status?: string | null },
+  assignedEventIds: string[],
+): string {
+  const name = event.name || "Untitled Event";
+  const accessLabel = assignedEventIds.includes(event.id) ? "Access granted" : "No access";
+  const statusLabel = event.status || "Draft";
+  return `${name} — ${accessLabel} · ${statusLabel}`;
+}
+
+// Deterministic initial Event Access focus (Part 6). One priority chain
+// serves both a brand-new admin (assignedEventIds is always []) and an
+// existing admin (assignedEventIds reflects their real assignments):
+//   1. a current/upcoming (not-Archived) event this admin already has access to
+//   2. otherwise another event this admin already has access to
+//   3. otherwise the first current/upcoming (not-Archived) available event
+//   4. otherwise the first available event
+// "Current/upcoming" here means !isArchivedEventStatus, the same narrow,
+// correct predicate the ordering above uses -- not isActiveEventStatus,
+// which would incorrectly treat a Draft (future) Event as not-current.
+// For a new admin, steps 1-2 can never match (empty assignment set), so
+// the chain naturally reduces to "first current/upcoming, else first
+// available" -- exactly the separate new-admin rule the task also asks
+// for, without a second implementation.
+export function pickInitialEventId(
+  orderedEvents: Array<{ id: string; status?: string | null }>,
+  assignedEventIds: string[],
+): string {
+  if (orderedEvents.length === 0) {
+    return "";
+  }
+
+  const assigned = new Set(assignedEventIds);
+
+  const currentAssigned = orderedEvents.find(
+    (event) => !isArchivedEventStatus(event.status) && assigned.has(event.id),
+  );
+  if (currentAssigned) {
+    return currentAssigned.id;
+  }
+
+  const anyAssigned = orderedEvents.find((event) => assigned.has(event.id));
+  if (anyAssigned) {
+    return anyAssigned.id;
+  }
+
+  const currentAvailable = orderedEvents.find((event) => !isArchivedEventStatus(event.status));
+  if (currentAvailable) {
+    return currentAvailable.id;
+  }
+
+  return orderedEvents[0].id;
+}
+
 export default function AdminUsersPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_admins">
@@ -150,16 +271,12 @@ function AdminUsersPageInner() {
   const [assignedEventIds, setAssignedEventIds] = useState<string[]>([]);
   const [currentAssignments, setCurrentAssignments] = useState<Array<{ id: string; event_id: string; role: string | null }>>([]);
   const [saveStatus, setSaveStatus] = useState("");
+  const [saving, setSaving] = useState(false);
   const [password, setPassword] = useState("");
   const [resetStatus, setResetStatus] = useState("");
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    function handleResize() { setIsMobile(window.innerWidth < 900); }
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  const [sendingReset, setSendingReset] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState("");
 
   useEffect(() => {
     if (!admin) return;
@@ -176,7 +293,7 @@ function AdminUsersPageInner() {
       { data: eventRows, error: eventError },
     ] = await Promise.all([
       supabase.from("admin_users").select("id, email, display_name, is_active, privilege_group, user_id").order("email", { ascending: true }),
-      supabase.from("events").select("id, name, start_date, location").order("start_date", { ascending: false }),
+      supabase.from("events").select("id, name, start_date, location, status").order("start_date", { ascending: false }),
     ]);
 
     if (adminError) { setError(adminError.message); setStatus("Could not load admin users."); setLoading(false); return; }
@@ -202,6 +319,25 @@ function AdminUsersPageInner() {
     [rows, selectedAdminId],
   );
 
+  // Current/upcoming events first, historical later (Part 4) -- see
+  // orderEventsForAccessSelector's own comment for why this uses only
+  // isArchivedEventStatus, not isActiveEventStatus.
+  const orderedEvents = useMemo(() => orderEventsForAccessSelector(events), [events]);
+
+  // Mirrors orderedEvents for use inside the async loadAssignedEvents
+  // continuation below, without adding orderedEvents to that effect's own
+  // dependency array (which only needs to react to selectedAdminId).
+  const orderedEventsRef = useRef(orderedEvents);
+  useEffect(() => {
+    orderedEventsRef.current = orderedEvents;
+  }, [orderedEvents]);
+
+  const focusedEvent = useMemo(
+    () => orderedEvents.find((event) => event.id === selectedEventId) || null,
+    [orderedEvents, selectedEventId],
+  );
+  const isFocusedEventAssigned = !!focusedEvent && assignedEventIds.includes(focusedEvent.id);
+
   useEffect(() => {
     if (!selectedRow) { return; }
     setEmail(selectedRow.email || "");
@@ -212,20 +348,52 @@ function AdminUsersPageInner() {
     setPassword("");
     setSaveStatus("");
     setResetStatus("");
-    void loadAssignedEvents(selectedRow.id);
   }, [selectedRow]);
+
+  // Event Access loading/initial-focus, deliberately keyed on
+  // selectedAdminId (a stable primitive) rather than selectedRow (a
+  // derived object recreated -- with a new reference -- every time `rows`
+  // refetches, including the refetch handleSave triggers after every
+  // save). Keying on selectedRow here would silently re-run this after
+  // every successful Save and discard the admin's current Event Access
+  // focus; keying on selectedAdminId means it only runs when the admin
+  // selection itself actually changes, so a completed Save (which never
+  // changes selectedAdminId for an existing admin) leaves the focused
+  // Event and the rest of assignedEventIds exactly as the admin left them.
+  useEffect(() => {
+    if (!selectedAdminId) {
+      // startNewAdmin() already reset these synchronously; this only
+      // guards a future call site that transitions selectedAdminId to ""
+      // some other way. selectedEventId itself is set synchronously by
+      // openNewAdminDialog and is intentionally left alone here.
+      setAssignedEventIds([]);
+      setCurrentAssignments([]);
+      return;
+    }
+
+    setSelectedEventId("");
+    void loadAssignedEvents(selectedAdminId).then((assignedIds) => {
+      setSelectedEventId(pickInitialEventId(orderedEventsRef.current, assignedIds));
+    });
+  }, [selectedAdminId]);
 
   // Direct SELECT remains appropriate here (Stage 11): this is a per-admin,
   // across-Events read under the existing admin_event_access RLS policies,
   // not a per-Event governor-management projection -- that shape is what
   // list_event_authority_assignments exists for, on the Event Staff page.
-  // No write happens in this function.
-  async function loadAssignedEvents(adminUserId: string) {
+  // No write happens in this function. Returns the freshly fetched event
+  // ids (in addition to its existing setState side effects, unchanged)
+  // so a caller that needs the just-loaded value synchronously -- the
+  // effect above -- doesn't have to read back a not-yet-committed React
+  // state value.
+  async function loadAssignedEvents(adminUserId: string): Promise<string[]> {
     const { data, error } = await supabase.from("admin_event_access").select("id,event_id,role").eq("admin_user_id", adminUserId);
-    if (error) { setAssignedEventIds([]); setCurrentAssignments([]); return; }
+    if (error) { setAssignedEventIds([]); setCurrentAssignments([]); return []; }
     const assignments = (data || []) as Array<{ id: string; event_id: string; role: string | null }>;
     setCurrentAssignments(assignments);
-    setAssignedEventIds(assignments.map((row) => row.event_id));
+    const assignedIds = assignments.map((row) => row.event_id);
+    setAssignedEventIds(assignedIds);
+    return assignedIds;
   }
 
   function startNewAdmin() {
@@ -240,6 +408,30 @@ function AdminUsersPageInner() {
     setPassword("");
     setSaveStatus("");
     setResetStatus("");
+  }
+
+  // Selecting a row (or New) now opens the canonical Dialog as the edit
+  // surface instead of populating an always-visible detail panel -- the
+  // underlying selection/reset logic (startNewAdmin, the selectedRow
+  // effect) is unchanged; only when the form becomes visible changes.
+  function openEditAdminDialog(adminId: string) {
+    setSelectedAdminId(adminId);
+    setDialogOpen(true);
+  }
+
+  function openNewAdminDialog() {
+    startNewAdmin();
+    // Synchronous (no assigned-events fetch is needed for a brand-new
+    // admin -- assignedEventIds is always [] here), so this is the final
+    // word on initial focus; the selectedAdminId effect's own reset
+    // branch (selectedAdminId is already "" or is about to become "")
+    // deliberately does not touch selectedEventId, so it can't race this.
+    setSelectedEventId(pickInitialEventId(orderedEvents, []));
+    setDialogOpen(true);
+  }
+
+  function closeAdminDialog() {
+    setDialogOpen(false);
   }
 
   function handlePrivilegeGroupChange(nextGroup: PrivilegeGroup) {
@@ -366,6 +558,7 @@ function AdminUsersPageInner() {
   }
 
   async function handleSave() {
+    setSaving(true);
     try {
       setSaveStatus("Saving...");
       const { adminUserId, authUserId, invitationSent, errorMessage } = await upsertAdminUser();
@@ -388,12 +581,15 @@ function AdminUsersPageInner() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not save admin user.";
       setSaveStatus(msg);
+    } finally {
+      setSaving(false);
     }
   }
 
   async function handleSendPasswordReset() {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) { setResetStatus("Email is required before sending a reset email."); return; }
+    setSendingReset(true);
     try {
       setResetStatus("Sending reset email...");
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, { redirectTo: typeof window !== "undefined" ? `${window.location.origin}/reset-password` : undefined });
@@ -402,151 +598,294 @@ function AdminUsersPageInner() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not send reset email.";
       setResetStatus(msg);
+    } finally {
+      setSendingReset(false);
     }
   }
 
   return (
-    <div style={{ display: "grid", gap: 18 }}>
-      <div className="card" style={{ padding: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div>
-            <h1 style={{ marginTop: 0, marginBottom: 8 }}>Admin Users</h1>
-            <div style={{ fontSize: 14, opacity: 0.8 }}>Default privilege groups with independent permission switches and event access.</div>
-          </div>
+    <div style={{ display: "grid", gap: "var(--space-8)", minWidth: 0 }}>
+      <PageSection variant="card">
+        <div className="app-row-between-wrap">
+          <p className="app-subtle-text" style={{ margin: 0 }}>
+            Default privilege groups with independent permission switches and event access.
+          </p>
           {admin?.isSuperAdmin ? (
-            <Link href="/admin/tenant-admins" style={tenantAdminLinkStyle}>
+            // A same-app route: kept as Next's <Link> (client-side transition)
+            // with the canonical .app-button class applied directly, rather
+            // than swapped to AppLinkButton -- AppLinkButton renders a bare
+            // <a>, which would silently drop client-side navigation here.
+            <Link href="/admin/tenant-admins" className="app-button">
               Tenant Admin Access
             </Link>
           ) : null}
         </div>
-      </div>
-      {status ? <div className="card" style={{ padding: 18 }}>{status}</div> : null}
-      {error ? <div style={errorBoxStyle}>{error}</div> : null}
-      <div style={{ display: "grid", gap: 18, gridTemplateColumns: isMobile ? "1fr" : "minmax(280px, 340px) 1fr" }}>
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-            <strong>Existing Admins — click one to edit</strong>
-            <button type="button" onClick={startNewAdmin} style={secondaryButtonStyle}>New</button>
-          </div>
-          {loading ? (
-            <div>Loading...</div>
-          ) : rows.length === 0 ? (
-            <div style={{ opacity: 0.8 }}>No admin users found.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {rows.map((row) => (
-                <button key={row.id} type="button" onClick={() => setSelectedAdminId(row.id)} style={{ ...listButtonStyle, borderColor: selectedAdminId === row.id ? "#111827" : "#ddd", background: selectedAdminId === row.id ? "#f8fafc" : "white" }}>
-                  <div style={{ fontWeight: 700 }}>{row.display_name || row.email}</div>
-                  <div style={{ fontSize: 13, opacity: 0.8 }}>{row.email}</div>
-                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{formatPrivilegeGroup(row.privilege_group)} • {row.is_active ? "active" : "inactive"}</div>
+      </PageSection>
+
+      {status ? <Alert tone={adminUserStatusTone(status)}>{status}</Alert> : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+
+      <PageSection variant="card">
+        <PageHeader
+          title="Existing Admins"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+          description="Select an admin user to edit them."
+          descriptionClassName="app-subtle-text"
+          actions={
+            <AppButton onClick={openNewAdminDialog} aria-haspopup="dialog">
+              New
+            </AppButton>
+          }
+        />
+
+        {loading ? (
+          <Alert tone="neutral">Loading admin users...</Alert>
+        ) : rows.length === 0 ? (
+          <Alert tone="neutral">No admin users found.</Alert>
+        ) : (
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            {rows.map((row) => {
+              const isSelected = selectedAdminId === row.id;
+              return (
+                <button
+                  key={row.id}
+                  type="button"
+                  onClick={() => openEditAdminDialog(row.id)}
+                  aria-haspopup="dialog"
+                  style={{
+                    textAlign: "left",
+                    width: "100%",
+                    minWidth: 0,
+                    padding: "var(--space-4) var(--space-5)",
+                    borderRadius: "var(--radius-medium)",
+                    border: `var(--border-width-default) solid ${isSelected ? "var(--color-text-primary)" : "var(--color-border-default)"}`,
+                    background: isSelected ? "var(--color-bg-muted)" : "var(--color-bg-panel)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div className="data-table-cell-primary">{row.display_name || row.email}</div>
+                  <div className="data-table-cell-meta">{row.email}</div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "var(--space-2)",
+                      marginTop: "var(--space-2)",
+                    }}
+                  >
+                    <span className="data-table-cell-meta">{formatPrivilegeGroup(row.privilege_group)}</span>
+                    <StatusBadge tone={row.is_active ? "success" : "neutral"}>
+                      {row.is_active ? "Active" : "Inactive"}
+                    </StatusBadge>
+                  </div>
                 </button>
-              ))}
-            </div>
-          )}
-        </div>
+              );
+            })}
+          </div>
+        )}
+      </PageSection>
 
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ marginBottom: 14 }}>
-            <div>
-              <h2 style={{ marginTop: 0, marginBottom: 6 }}>{selectedAdminId ? "Edit Admin User" : "New Admin User"}</h2>
-              <div style={{ fontSize: 14, opacity: 0.75 }}>{selectedAdminId ? "Update this admin user, privilege group, and event access." : "Create a new admin user and assign event access."}</div>
-            </div>
+      {/* Edit/Create surface (real-device follow-up): the master list and a
+          full form sharing one page forced excessive scrolling on every
+          device. The form now lives in the canonical Dialog -- same fields,
+          same business logic, same selectedAdminId semantics -- opened by
+          selecting a row or New, closed by Cancel/Escape/backdrop click.
+          app-dialog-form (app/globals.css) is a narrowly scoped width/height
+          modifier consumed through Dialog's own documented className escape
+          hatch; it does not touch the shared .app-dialog base rule any other
+          Dialog/ConfirmDialog consumer uses. */}
+      <Dialog
+        open={dialogOpen}
+        onClose={closeAdminDialog}
+        title={selectedAdminId ? "Edit Admin User" : "New Admin User"}
+        description={
+          selectedAdminId
+            ? "Update this admin user, privilege group, and event access."
+            : "Create a new admin user and assign event access."
+        }
+        className="app-dialog-form"
+        footer={
+          <>
+            <AppButton onClick={closeAdminDialog}>Cancel</AppButton>
+            <AppButton variant="primary" onClick={() => void handleSave()} loading={saving}>
+              {selectedAdminId ? "Save Changes" : "Create Admin User"}
+            </AppButton>
+          </>
+        }
+      >
+        <div style={{ display: "grid", gap: "var(--space-5)", minWidth: 0 }}>
+          <div className="app-dialog-form-pair">
+            <Field label="Email">
+              {(controlProps) => (
+                <Input {...controlProps} value={email} onChange={(e) => setEmail(e.target.value)} />
+              )}
+            </Field>
+            <Field label="Display Name">
+              {(controlProps) => (
+                <Input {...controlProps} value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+              )}
+            </Field>
           </div>
 
-          <div style={{ display: "grid", gap: 14 }}>
-            <div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" }}>
-              <div>
-                <label style={labelStyle}>Email</label>
-                <input value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Display Name</label>
-                <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputStyle} />
-              </div>
-            </div>
+          <div className="app-dialog-form-pair-auto">
+            <Field
+              label={selectedAdminId ? "Set New Password" : "Initial Password"}
+              help={
+                selectedAdminId
+                  ? "Only enter a password if you want to change it."
+                  : "Temporary password for first login."
+              }
+            >
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={selectedAdminId ? "Leave blank to keep existing password" : "Enter temporary password"}
+                />
+              )}
+            </Field>
+            {selectedAdminId ? (
+              <AppButton
+                variant="secondary"
+                onClick={() => void handleSendPasswordReset()}
+                loading={sendingReset}
+              >
+                Send Reset Email
+              </AppButton>
+            ) : null}
+          </div>
 
-            <div style={{ display: "grid", gap: 14, gridTemplateColumns: selectedAdminId ? "minmax(260px, 1fr) auto" : "1fr", alignItems: "end" }}>
-              <div>
-                <label style={labelStyle}>{selectedAdminId ? "Set New Password" : "Initial Password"}</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={selectedAdminId ? "Leave blank to keep existing password" : "Enter temporary password"} style={inputStyle} />
-                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{selectedAdminId ? "Only enter a password if you want to change it." : "Temporary password for first login."}</div>
-              </div>
-              {selectedAdminId ? <button type="button" onClick={handleSendPasswordReset} style={resetEmailButtonStyle}>Send Reset Email</button> : null}
-            </div>
+          {resetStatus ? <Alert tone={adminUserStatusTone(resetStatus)}>{resetStatus}</Alert> : null}
 
-            {resetStatus ? <div style={{ fontSize: 14, opacity: 0.85 }}>{resetStatus}</div> : null}
-
-            <div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" }}>
-              <div>
-                <label style={labelStyle}>Privilege Group</label>
-                <select value={privilegeGroup} onChange={(e) => handlePrivilegeGroupChange(e.target.value as PrivilegeGroup)} style={inputStyle}>
+          <div className="app-dialog-form-pair">
+            <Field label="Privilege Group">
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={privilegeGroup}
+                  onChange={(e) => handlePrivilegeGroupChange(e.target.value as PrivilegeGroup)}
+                >
                   <option value="super_admin">Super Admin</option>
                   <option value="event_admin">Event Admin</option>
                   <option value="checkin">Check-In</option>
                   <option value="parking">Parking</option>
                   <option value="content_admin">Content Admin</option>
                   <option value="read_only">Read Only</option>
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Status</label>
-                <label style={checkLabelStyle}>
-                  <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-                  <span>Active admin user</span>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <strong>Permissions</strong>
-              <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4, marginBottom: 12 }}>Permissions are derived from the selected privilege group. Use Event Staff for event-specific permission assignments.</div>
-              <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
-                {(Object.keys(PERMISSION_LABELS) as Array<keyof AdminPermissions>).map((key) => (
-                  <label key={key} style={permissionLabelStyle}>
-                    <input type="checkbox" checked={!!permissions[key]} readOnly aria-readonly="true" title="Permission is controlled by the selected privilege group" style={{ cursor: "not-allowed", opacity: 0.6 }} />
-                    <span>{PERMISSION_LABELS[key]}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <strong>Event Access</strong>
-              <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4, marginBottom: 12 }}>Super Admin automatically has access to all events. For other admins, select allowed events.</div>
-              {privilegeGroup === "super_admin" ? (
-                <div style={{ opacity: 0.8 }}>Super Admin automatically has access to all events.</div>
-              ) : events.length === 0 ? (
-                <div style={{ opacity: 0.8 }}>No events found.</div>
-              ) : (
-                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                  {events.map((event) => (
-                    <label key={event.id} style={permissionLabelStyle}>
-                      <input type="checkbox" checked={assignedEventIds.includes(event.id)} onChange={() => toggleAssignedEvent(event.id)} />
-                      <span>{event.name || "Untitled Event"}{event.location ? ` • ${event.location}` : ""}</span>
-                    </label>
-                  ))}
-                </div>
+                </Select>
               )}
-            </div>
-
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button type="button" onClick={handleSave} style={primaryButtonStyle}>{selectedAdminId ? "Save Changes" : "Create Admin User"}</button>
-              {saveStatus ? <span style={{ fontSize: 14 }}>{saveStatus}</span> : null}
+            </Field>
+            <div>
+              <span className="app-field-label" style={{ display: "block", marginBottom: "var(--space-2)" }}>
+                Status
+              </span>
+              <Checkbox
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                label="Active admin user"
+              />
             </div>
           </div>
+
+          <div>
+            <strong>Permissions</strong>
+            <p className="app-subtle-text" style={{ marginTop: "var(--space-1)", marginBottom: "var(--space-5)" }}>
+              Permissions are derived from the selected privilege group. Use Event Staff for event-specific permission assignments.
+            </p>
+            <div className="app-permission-grid">
+              {(Object.keys(PERMISSION_LABELS) as Array<keyof AdminPermissions>).map((key) => (
+                <Checkbox
+                  key={key}
+                  checked={!!permissions[key]}
+                  readOnly
+                  aria-readonly="true"
+                  title="Permission is controlled by the selected privilege group"
+                  style={{ cursor: "not-allowed", opacity: 0.6 }}
+                  label={PERMISSION_LABELS[key]}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <strong>Event Access</strong>
+            <p className="app-subtle-text" style={{ marginTop: "var(--space-1)", marginBottom: "var(--space-5)" }}>
+              Super Admin automatically has access to all events. For other admins, choose an Event below to view or change its access.
+            </p>
+            {privilegeGroup === "super_admin" ? (
+              <Alert tone="neutral">Super Admin automatically has access to all events.</Alert>
+            ) : orderedEvents.length === 0 ? (
+              <Alert tone="neutral">No events found.</Alert>
+            ) : (
+              <div style={{ display: "grid", gap: "var(--space-4)" }}>
+                <Field label="Event">
+                  {(controlProps) => (
+                    <Select
+                      {...controlProps}
+                      value={selectedEventId}
+                      onChange={(e) => setSelectedEventId(e.target.value)}
+                    >
+                      {orderedEvents.map((event) => (
+                        <option key={event.id} value={event.id}>
+                          {formatEventOptionLabel(event, assignedEventIds)}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+
+                {focusedEvent ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "var(--space-3)",
+                      padding: "var(--space-4)",
+                      border: "var(--border-width-default) solid var(--color-border-default)",
+                      borderRadius: "var(--radius-medium)",
+                      background: "var(--color-bg-panel)",
+                    }}
+                  >
+                    <div className="app-row-between-wrap">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="data-table-cell-primary" style={{ overflowWrap: "anywhere" }}>
+                          {focusedEvent.name || "Untitled Event"}
+                          {focusedEvent.location ? ` • ${focusedEvent.location}` : ""}
+                        </div>
+                        {/* Event lifecycle is a separate concept from admin
+                            access (Part 3) -- plain text, never the same
+                            green/yellow indicator used for access below.
+                            public.events.status is the single source of
+                            truth, shown verbatim (never collapsed through
+                            isActiveEventStatus's boolean), matching the
+                            exact "Status: X" pattern already established
+                            on the sibling Events admin page. */}
+                        <div className="data-table-cell-meta">Status: {focusedEvent.status || "Draft"}</div>
+                      </div>
+                      <StatusBadge tone={isFocusedEventAssigned ? "success" : "warning"}>
+                        {isFocusedEventAssigned ? "Access granted" : "No access"}
+                      </StatusBadge>
+                    </div>
+
+                    <Checkbox
+                      checked={isFocusedEventAssigned}
+                      onChange={() => toggleAssignedEvent(focusedEvent.id)}
+                      label="Grant access to this Event"
+                    />
+
+                    <p className="app-subtle-text" style={{ margin: 0 }}>
+                      Access role for this Event: {formatPrivilegeGroup(privilegeGroup)} (derived from the Privilege Group selected above).
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          {saveStatus ? <Alert tone={adminUserStatusTone(saveStatus)}>{saveStatus}</Alert> : null}
         </div>
-      </div>
+      </Dialog>
     </div>
   );
 }
-
-const labelStyle: CSSProperties = { display: "block", marginBottom: 6, fontWeight: 600 };
-const inputStyle: CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #ccc", background: "white", boxSizing: "border-box" };
-const primaryButtonStyle: CSSProperties = { minWidth: 150, padding: "12px 18px", borderRadius: 12, border: "none", background: "#111827", color: "#ffffff", WebkitTextFillColor: "#ffffff", fontWeight: 800, cursor: "pointer", boxShadow: "0 8px 18px rgba(15, 23, 42, 0.18)" };
-const secondaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 10, border: "1px solid #ccc", background: "white", color: "#111827", WebkitTextFillColor: "#111827", fontWeight: 700, cursor: "pointer" };
-const resetEmailButtonStyle: CSSProperties = { ...secondaryButtonStyle, minHeight: 42, border: "1px solid #93c5fd", background: "#eff6ff", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", boxShadow: "0 8px 18px rgba(37, 99, 235, 0.12)", whiteSpace: "nowrap" };
-const errorBoxStyle: CSSProperties = { padding: "10px 12px", borderRadius: 10, border: "1px solid #e2b4b4", background: "#fff3f3", color: "#8a1f1f" };
-const listButtonStyle: CSSProperties = { textAlign: "left", width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", background: "white", cursor: "pointer" };
-const checkLabelStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", minHeight: 42 };
-const permissionLabelStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", border: "1px solid #eee", borderRadius: 10 };
-const tenantAdminLinkStyle: CSSProperties = { ...secondaryButtonStyle, textDecoration: "none" };

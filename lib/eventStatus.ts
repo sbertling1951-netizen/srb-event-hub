@@ -83,6 +83,26 @@ export function isMemberVisibleEventStatus(status?: string | null): boolean {
   ].includes(normalized);
 }
 
+// Admin-side "is this status the archived/concluded one" check -- narrower
+// than isActiveEventStatus's own "not active" negative space, which also
+// contains "inactive" and "draft". That collapse is correct for
+// isActiveEventStatus's own purpose (admin-tools visibility: should this
+// Event currently drive active workflows), but it is NOT a safe stand-in
+// for "is this Event historical/past" -- a Draft Event is a *future*,
+// not-yet-started Event, not a past one, and collapsing it into the same
+// "not active" bucket as Archived produces an incorrect Past label
+// (found during the Admin Users Event Access migration, 2026-08-20:
+// Draft/Inactive Events were being labeled "Past event" alongside
+// genuinely archived ones). "archived" is the one status in the admin
+// Events form's own vocabulary (app/admin/events/page.tsx's Status
+// select: Active/Inactive/Archived/Draft) whose plain-English meaning is
+// unambiguously "concluded" -- this predicate checks only that, so a
+// lifecycle *label* or a current-vs-historical *ordering* decision built
+// on it does not misrepresent Draft/Inactive Events as Past.
+export function isArchivedEventStatus(status?: string | null): boolean {
+  return normalizeEventStatus(status) === "archived";
+}
+
 export type MemberVisibilityEventFields = {
   status?: string | null;
   is_active?: boolean | null;

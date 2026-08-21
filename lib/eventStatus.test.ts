@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   isActiveEventStatus,
+  isArchivedEventStatus,
   isMemberVisibleEvent,
   isMemberVisibleEventStatus,
   normalizeEventStatus,
@@ -45,6 +46,21 @@ test("isActiveEventStatus: Draft is not active", () => {
 
 test("isActiveEventStatus: an unrecognized custom status is not active (positive allowlist, not a denylist)", () => {
   assert.equal(isActiveEventStatus("Pending Review"), false);
+});
+
+test("isArchivedEventStatus: true only for 'archived', case/whitespace-insensitively -- narrower than isActiveEventStatus's negative space", () => {
+  assert.equal(isArchivedEventStatus("Archived"), true);
+  assert.equal(isArchivedEventStatus("  archived  "), true);
+  assert.equal(isArchivedEventStatus("ARCHIVED"), true);
+});
+
+test("isArchivedEventStatus: Draft and Inactive are NOT archived -- the exact collapse isActiveEventStatus makes (and this predicate must not repeat) for a Past/lifecycle label", () => {
+  assert.equal(isArchivedEventStatus("Draft"), false, "Draft is a future, not-yet-started Event, not Past");
+  assert.equal(isArchivedEventStatus("Inactive"), false);
+  assert.equal(isArchivedEventStatus("Active"), false);
+  assert.equal(isArchivedEventStatus(null), false);
+  assert.equal(isArchivedEventStatus(undefined), false);
+  assert.equal(isArchivedEventStatus(""), false);
 });
 
 test("isMemberVisibleEventStatus: visible unless the status matches a known excluded keyword", () => {
