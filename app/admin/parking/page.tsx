@@ -4,13 +4,21 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import PageNavigation from "@/components/layout/PageNavigation";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { ResponsiveList } from "@/components/ui/DataTable";
+import { Checkbox } from "@/components/ui/Field";
+import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
+import {
+  SearchField,
+  TableToolbar,
+  TableToolbarPrimaryRow,
+} from "@/components/ui/TableToolbar";
 import {
   readAdminAttendeeTarget,
   resolveAdminAttendeeTarget,
@@ -59,6 +67,21 @@ function newSitePlacementIdempotencyKey(): string {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+// Presentation only -- mirrors the exact marker colors renderMarker already
+// uses (green/blue/orange/red) so the legend and attendee-row badges stay
+// visually consistent with the specialized map surface without altering it.
+function arrivalPresentation(
+  status: string | null,
+): { label: string; tone: StatusBadgeTone } {
+  if (status === "parked") {
+    return { label: "Parked", tone: "danger" };
+  }
+  if (status === "arrived") {
+    return { label: "Arrived", tone: "warning" };
+  }
+  return { label: "Not arrived", tone: "info" };
 }
 
 type ActiveEvent = {
@@ -136,7 +159,7 @@ function ParkingAdminPageInner() {
   const searchParams = useSearchParams();
   const attendeeTarget = readAdminAttendeeTarget(searchParams);
   const mapViewportRef = useRef<MapCanvasHandle | null>(null);
-  const attendeeButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const attendeeButtonRefs = useRef<Record<string, HTMLLIElement | null>>({});
   const loadGenerationRef = useRef(0);
   const selectionFingerprintRef = useRef<ParkingSelectionFingerprint | null>(null);
   const selectedIdsRef = useRef({ attendeeId: "", siteId: "" });
@@ -1268,19 +1291,45 @@ function ParkingAdminPageInner() {
   }
 
   const actionPanel = (
-    <div style={{ border: "1px solid #bfdbfe", borderRadius: 10, background: "#eff6ff", padding: 12, display: "grid", gap: 6 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: "#1e3a8a", textTransform: "uppercase" }}>Placement action</div>
-      <div style={{ fontWeight: 800 }}>{placementAction.label}</div>
-      <div style={{ fontSize: 13, color: "#334155" }}>{placementAction.detail}</div>
-      {selectedAttendee && <div style={{ fontSize: 13 }}>Attendee: {`${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""}`.trim()} · Current: {selectedAttendeeSite || "Unassigned"}</div>}
-      {selectedSite && <div style={{ fontSize: 13 }}>Destination: {selectedSite.display_label || selectedSite.site_number} · {selectedSite.assigned_attendee_id ? "Occupied" : "Vacant"}</div>}
+    <div className="app-card-section" style={{ display: "grid", gap: "var(--space-2)" }}>
+      <div
+        className="app-subtle-text"
+        style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "var(--font-size-small)" }}
+      >
+        Placement action
+      </div>
+      <div style={{ fontWeight: 700 }}>{placementAction.label}</div>
+      <div className="app-subtle-text">{placementAction.detail}</div>
+      {selectedAttendee && (
+        <div style={{ fontSize: "var(--font-size-small)" }}>
+          Attendee: {`${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""}`.trim()} · Current: {selectedAttendeeSite || "Unassigned"}
+        </div>
+      )}
+      {selectedSite && (
+        <div style={{ fontSize: "var(--font-size-small)" }}>
+          Destination: {selectedSite.display_label || selectedSite.site_number} · {selectedSite.assigned_attendee_id ? "Occupied" : "Vacant"}
+        </div>
+      )}
       {placementAction.enabled && (
-        <AppButton variant={placementAction.label === "Review conflict" ? "warning" : "primary"} onClick={beginPlacement}>
+        <AppButton
+          variant={placementAction.label === "Review conflict" ? "danger" : "primary"}
+          onClick={beginPlacement}
+        >
           {placementAction.label === "Review conflict" ? "Review conflict" : placementAction.label}
         </AppButton>
       )}
-      {selectionStale && <AppButton variant="muted" onClick={() => { setSelectionStale(null); void loadPage(); }}>Reload current state</AppButton>}
-      {lastAction && <div role="status" style={{ fontSize: 13, color: "#166534" }}>{lastAction}</div>}
+      {selectionStale && (
+        <AppButton
+          variant="secondary"
+          onClick={() => {
+            setSelectionStale(null);
+            void loadPage();
+          }}
+        >
+          Reload current state
+        </AppButton>
+      )}
+      {lastAction && <Alert tone="success">{lastAction}</Alert>}
     </div>
   );
 
@@ -1288,13 +1337,10 @@ function ParkingAdminPageInner() {
 
   const queuePanel = (
     <div
+      className="card"
       style={{
-        border: "1px solid #ddd",
-        borderRadius: 10,
-        background: "white",
-        padding: 10,
         display: "grid",
-        gap: 8,
+        gap: "var(--space-3)",
         maxHeight: isNarrow ? "none" : "82vh",
         overflow: isNarrow ? "visible" : "auto",
       }}
@@ -1304,136 +1350,70 @@ function ParkingAdminPageInner() {
       </div>
       {actionPanel}
 
-      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          onClick={() => {
-            setSearch("");
-            setUnassignedOnly(false);
-            setShowArrivedOnly(false);
-            setShowParked(true);
-          }}
-          style={{
-            padding: "7px 11px",
-            borderRadius: 8,
-            border: "1px solid #cbd5e1",
-            background: "#ffffff",
-            color: "#111827",
-            cursor: "pointer",
-            fontWeight: 800,
-            boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          Show All Attendees
-        </button>
-      </div>
-
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 14,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={showLabels}
-            onChange={(e) => setShowLabels(e.target.checked)}
-          />
-          Show site labels
-        </label>
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 14,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={unassignedOnly}
-            onChange={(e) => setUnassignedOnly(e.target.checked)}
-          />
-          Unassigned only
-        </label>
-        {!isNarrow && (
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 14,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={showParked}
-              onChange={(e) => setShowParked(e.target.checked)}
-            />
-            Show parked
-          </label>
-        )}
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 14,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={showArrivedOnly}
-            onChange={(e) => setShowArrivedOnly(e.target.checked)}
-          />
-          Show arrived only
-        </label>
-      </div>
-
-      <div
-        style={{
-          border: "1px solid #eee",
-          borderRadius: 8,
-          padding: 10,
-          background: "#fafafa",
+      <AppButton
+        variant="secondary"
+        onClick={() => {
+          setSearch("");
+          setUnassignedOnly(false);
+          setShowArrivedOnly(false);
+          setShowParked(true);
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>Legend</div>
-        <div style={{ fontSize: 13, display: "grid", gap: 4 }}>
-          <div>
-            <span style={{ color: "green", fontWeight: 700 }}>●</span> Open
-          </div>
-          <div>
-            <span style={{ color: "#0b5cff", fontWeight: 700 }}>●</span>{" "}
-            Assigned / Not Arrived
-          </div>
-          <div>
-            <span style={{ color: "orange", fontWeight: 700 }}>●</span> Arrived
-          </div>
-          <div>
-            <span style={{ color: "red", fontWeight: 700 }}>●</span> Parked
-          </div>
-          <div>
-            <span style={{ color: "gold", fontWeight: 700 }}>●</span> Selected
-            Site
-          </div>
+        Show All Attendees
+      </AppButton>
+
+      <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
+        <Checkbox
+          checked={showLabels}
+          onChange={(e) => setShowLabels(e.target.checked)}
+          label="Show site labels"
+        />
+        <Checkbox
+          checked={unassignedOnly}
+          onChange={(e) => setUnassignedOnly(e.target.checked)}
+          label="Unassigned only"
+        />
+        {!isNarrow && (
+          <Checkbox
+            checked={showParked}
+            onChange={(e) => setShowParked(e.target.checked)}
+            label="Show parked"
+          />
+        )}
+        <Checkbox
+          checked={showArrivedOnly}
+          onChange={(e) => setShowArrivedOnly(e.target.checked)}
+          label="Show arrived only"
+        />
+      </div>
+
+      <div className="app-card-section">
+        <div style={{ fontWeight: 700, marginBottom: "var(--space-2)" }}>Legend</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)", alignItems: "center" }}>
+          <StatusBadge tone="success">Open</StatusBadge>
+          <StatusBadge tone="info">Assigned / Not Arrived</StatusBadge>
+          <StatusBadge tone="warning">Arrived</StatusBadge>
+          <StatusBadge tone="danger">Parked</StatusBadge>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              fontSize: "var(--font-size-small)",
+            }}
+          >
+            <span aria-hidden="true" style={{ color: "gold", fontWeight: 700 }}>
+              ●
+            </span>
+            Selected Site
+          </span>
         </div>
       </div>
 
       {!isNarrow && (
         <>
-          <div
-            style={{
-              border: "1px solid #eee",
-              borderRadius: 8,
-              padding: 10,
-              background: "#fafafa",
-            }}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>
+          <div className="app-card-section">
+            <div style={{ fontWeight: 700, marginBottom: "var(--space-2)" }}>
               Selected Attendee
             </div>
             {selectedAttendee ? (
@@ -1441,18 +1421,29 @@ function ParkingAdminPageInner() {
                 <div>
                   {selectedAttendee.pilot_first} {selectedAttendee.pilot_last}
                 </div>
-                <div style={{ fontSize: 13, color: "#555" }}>
+                <div className="app-subtle-text">
                   {selectedAttendee.coach_make || ""}{" "}
                   {selectedAttendee.coach_model || ""}
                 </div>
-                <div style={{ fontSize: 13, marginTop: 4 }}>
+                <div style={{ fontSize: "var(--font-size-small)", marginTop: "var(--space-2)" }}>
                   Current site: {siteLabelByAttendeeId.get(selectedAttendee.id) || "Unassigned"}
                 </div>
-                <div style={{ fontSize: 13 }}>
-                  Arrival: {selectedAttendee.arrival_status || "not_arrived"}
+                <div
+                  style={{
+                    fontSize: "var(--font-size-small)",
+                    marginTop: "var(--space-2)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--space-2)",
+                  }}
+                >
+                  Arrival:{" "}
+                  <StatusBadge tone={arrivalPresentation(selectedAttendee.arrival_status).tone}>
+                    {arrivalPresentation(selectedAttendee.arrival_status).label}
+                  </StatusBadge>
                 </div>
                 {latestMemberReportByAttendee[selectedAttendee.id] ? (
-                  <div style={{ fontSize: 12, color: "#78716c", marginTop: 6 }}>
+                  <div className="app-subtle-text" style={{ marginTop: "var(--space-3)" }}>
                     Member-reported site (evidence only):{" "}
                     {latestMemberReportByAttendee[selectedAttendee.id].raw_reported_value}
                     {latestMemberReportByAttendee[selectedAttendee.id]
@@ -1463,21 +1454,12 @@ function ParkingAdminPageInner() {
                 ) : null}
               </>
             ) : (
-              <div style={{ fontSize: 13, color: "#666" }}>
-                No attendee selected
-              </div>
+              <div className="app-subtle-text">No attendee selected</div>
             )}
           </div>
 
-          <div
-            style={{
-              border: "1px solid #eee",
-              borderRadius: 8,
-              padding: 10,
-              background: "#fafafa",
-            }}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>
+          <div className="app-card-section">
+            <div style={{ fontWeight: 700, marginBottom: "var(--space-2)" }}>
               Selected Site
             </div>
             {selectedSite ? (
@@ -1485,127 +1467,93 @@ function ParkingAdminPageInner() {
                 <div>
                   {selectedSite.display_label || selectedSite.site_number}
                 </div>
-                <div style={{ fontSize: 13, color: "#555" }}>
+                <div className="app-subtle-text">
                   {selectedSite.assigned_attendee_id ? "Occupied" : "Open"}
                 </div>
                 {selectedSite.assigned_attendee_id && !selectedAttendee && (
-                  <AppButton variant="muted" style={{ marginTop: 10 }} onClick={() => setClearConfirmation(selectedSite)}>
+                  <AppButton
+                    variant="danger"
+                    style={{ marginTop: "var(--space-3)" }}
+                    onClick={() => setClearConfirmation(selectedSite)}
+                  >
                     Clear site (correction)
                   </AppButton>
                 )}
               </>
             ) : (
-              <div style={{ fontSize: 13, color: "#666" }}>
-                No site selected
-              </div>
+              <div className="app-subtle-text">No site selected</div>
             )}
           </div>
         </>
       )}
 
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 5,
-          background: "white",
-          paddingTop: 8,
-          paddingBottom: 6,
-          marginTop: 4,
-          borderTop: "1px solid #e5e7eb",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 700,
-            color: "#555",
-            marginBottom: 4,
-          }}
-        >
-          Search / Assign
-        </div>
-        <input
-          type="text"
-          placeholder="Search attendee, coach, site, or status"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ width: "100%", padding: 8, boxSizing: "border-box" }}
-        />
-      </div>
+      <TableToolbar>
+        <TableToolbarPrimaryRow>
+          <SearchField
+            label="Search / assign"
+            id="parking-attendee-search"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search attendee, coach, site, or status"
+          />
+        </TableToolbarPrimaryRow>
+      </TableToolbar>
 
-      <div style={{ fontWeight: 700, marginTop: 4 }}>
+      <div style={{ fontWeight: 700 }}>
         {isNarrow ? "Active Check-In Queue" : "Attendees"}
       </div>
 
-      <div style={{ fontSize: 13, color: "#666" }}>
+      <p className="app-subtle-text" style={{ margin: 0 }}>
         Showing {visibleAttendees.length} of {attendees.length}
-      </div>
+      </p>
 
-      {visibleAttendees.map((attendee) => {
-        const selected = attendee.id === selectedAttendeeId;
+      {visibleAttendees.length === 0 ? (
+        <Alert tone="neutral">No attendees match the current filters.</Alert>
+      ) : (
+        <ResponsiveList
+          aria-label={isNarrow ? "Active check-in queue" : "Parking attendee queue"}
+        >
+          {visibleAttendees.map((attendee) => {
+            const selected = attendee.id === selectedAttendeeId;
+            const arrival = arrivalPresentation(attendee.arrival_status);
+            const siteLabel = siteLabelByAttendeeId.get(attendee.id);
 
-        return (
-          <div
-            key={attendee.id}
-            ref={(el) => {
-              attendeeButtonRefs.current[attendee.id] = el;
-            }}
-            role="button"
-            tabIndex={0}
-            onClick={() => selectAttendeeAndFocusSite(attendee.id)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.currentTarget.click();
-              }
-            }}
-            style={{
-              textAlign: "left",
-              padding: 10,
-              borderRadius: 8,
-              border: selected ? "1px solid #f0c36d" : "1px solid #eee",
-              background: selected ? "#ffeeba" : "white",
-              cursor: "pointer",
-            }}
-          >
-            <div style={{ fontWeight: 600 }}>
-              {attendee.pilot_first} {attendee.pilot_last}
-            </div>
-            <div style={{ fontSize: 13, color: "#555" }}>
-              {attendee.coach_make || ""} {attendee.coach_model || ""}
-            </div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>
-              {siteLabelByAttendeeId.get(attendee.id)
-                ? `Site ${siteLabelByAttendeeId.get(attendee.id)}`
-                : "Unassigned"}{" "}
-              ·{" "}
-              <span
-                style={{
-                  padding: "2px 6px",
-                  borderRadius: 6,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background:
-                    attendee.arrival_status === "parked"
-                      ? "#ffdddd"
-                      : attendee.arrival_status === "arrived"
-                        ? "#fff4cc"
-                        : "#e6f0ff",
-                  color:
-                    attendee.arrival_status === "parked"
-                      ? "#a10000"
-                      : attendee.arrival_status === "arrived"
-                        ? "#7a5a00"
-                        : "#0033aa",
+            return (
+              <li
+                key={attendee.id}
+                ref={(el) => {
+                  attendeeButtonRefs.current[attendee.id] = el;
                 }}
               >
-                {attendee.arrival_status || "not_arrived"}
-              </span>
-            </div>
-          </div>
-        );
-      })}
+                <button
+                  type="button"
+                  onClick={() => selectAttendeeAndFocusSite(attendee.id)}
+                  className={
+                    "responsive-list-item" +
+                    (selected ? " responsive-list-item-selected" : "")
+                  }
+                  style={{ width: "100%", textAlign: "left" }}
+                >
+                  <div className="responsive-list-item-header">
+                    <div className="responsive-list-item-title">
+                      {attendee.pilot_first} {attendee.pilot_last}
+                    </div>
+                    <StatusBadge tone={arrival.tone}>{arrival.label}</StatusBadge>
+                  </div>
+                  <div className="responsive-list-item-meta">
+                    <span>
+                      {[attendee.coach_make, attendee.coach_model]
+                        .filter(Boolean)
+                        .join(" ") || "No coach on file"}
+                    </span>
+                    <span>{siteLabel ? `Site ${siteLabel}` : "Unassigned"}</span>
+                  </div>
+                </button>
+              </li>
+            );
+          })}
+        </ResponsiveList>
+      )}
     </div>
   );
 
@@ -1651,90 +1599,43 @@ function ParkingAdminPageInner() {
         }
       `}</style>
 
-      <PageNavigation
-        homeHref="/admin/dashboard"
-        homeLabel="Dashboard"
-        parentHref="/admin/map-admin"
-        parentLabel="Map Admin"
-      />
-
-      <h1
-        style={{ marginTop: 0, marginBottom: 12, fontSize: isNarrow ? 30 : 40 }}
-      >
-        Parking Admin
-      </h1>
-
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 10,
-          marginBottom: 12,
-        }}
-      >
-        <div style={{ fontWeight: 700 }}>
-          {event?.name || "No active event"}
-        </div>
-        <div style={{ color: "#555" }}>{event?.location || ""}</div>
-        <div style={{ fontSize: 13, marginTop: 6 }}>Status: {status}</div>
-        {error ? (
-          <div style={{ fontSize: 13, marginTop: 6, color: "#8a1f1f" }}>
-            Error: {error}
-          </div>
-        ) : null}
-        {selectionStale ? (
-          <div style={{ fontSize: 13, marginTop: 6, color: "#8a1f1f" }}>
-            Review required: {selectionStale}
-          </div>
-        ) : null}
+      <div style={{ display: "grid", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
+        <Alert tone="neutral">{status}</Alert>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {selectionStale ? <Alert tone="warning">{selectionStale}</Alert> : null}
       </div>
 
       {isNarrow && (
-        <div
-          style={{
-            marginBottom: 12,
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-          }}
-        >
-          <button type="button" onClick={() => setShowQueuePanel((v) => !v)}>
+        <div style={{ marginBottom: "var(--space-4)" }}>
+          <AppButton variant="secondary" onClick={() => setShowQueuePanel((v) => !v)}>
             {showQueuePanel ? "Hide Queue" : "Show Queue"}
-          </button>
+          </AppButton>
         </div>
       )}
 
       {isNarrow && selectedAttendee && (
-        <div
-          style={{
-            position: "static",
-            width: "100%",
-            border: "1px solid #d6d6d6",
-            borderRadius: 12,
-            background: "rgba(255,255,255,0.96)",
-            backdropFilter: "blur(6px)",
-            boxShadow: "0 6px 16px rgba(0,0,0,0.22)",
-            padding: 12,
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>
+        <div className="card" style={{ width: "100%", marginBottom: "var(--space-4)" }}>
+          <div style={{ fontWeight: 700, marginBottom: "var(--space-2)" }}>
             {`${selectedAttendee.pilot_first || ""} ${selectedAttendee.pilot_last || ""}`.trim()}
           </div>
-          <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>
+          <div className="app-subtle-text" style={{ marginBottom: "var(--space-1)" }}>
             Current: {siteLabelByAttendeeId.get(selectedAttendee.id) || "Unassigned"}
           </div>
-          <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
+          <div className="app-subtle-text" style={{ marginBottom: "var(--space-3)" }}>
             Selected:{" "}
             {selectedSite
               ? selectedSite.display_label || selectedSite.site_number
               : "None"}
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <button type="button" onClick={() => { setSelectedAttendeeId(""); setSelectedSiteId(""); }}>
-              Clear selection
-            </button>
-          </div>
+          <AppButton
+            variant="secondary"
+            onClick={() => {
+              setSelectedAttendeeId("");
+              setSelectedSiteId("");
+            }}
+          >
+            Clear selection
+          </AppButton>
         </div>
       )}
 
@@ -1753,47 +1654,65 @@ function ParkingAdminPageInner() {
         )}
 
         <div
+          className="card"
           style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 4,
+            padding: "var(--space-1)",
             order: isNarrow ? 1 : 0,
             position: isNarrow ? "sticky" : "static",
             top: isNarrow
               ? "calc(env(safe-area-inset-top, 0px) + 8px)"
               : undefined,
             zIndex: isNarrow ? 40 : undefined,
+            // The card's own height is the same budget the map used to
+            // claim entirely for itself (viewportHeight, below). Zoom
+            // controls now live inside that same fixed budget as a
+            // flex sibling (flexShrink: 0, never clipped) instead of
+            // trailing the map in normal flow, where a canonical
+            // touch-target-height AppButton row could be pushed past
+            // the visible viewport at the wide/78vh layout. The map
+            // simply gives up whatever height the control row needs.
+            display: "flex",
+            flexDirection: "column",
+            height: isNarrow ? "60vh" : "78vh",
+            minHeight: 0,
           }}
         >
-          <MapCanvas
-            ref={mapViewportRef}
-            imageUrl={event?.map_image_url ?? null}
-            markers={markers}
-            viewportHeight={isNarrow ? "60vh" : "78vh"}
-            initialScale={defaultZoom}
-            minScale={0.1}
-            maxScale={3}
-            selectionMode="none"
-            showLabels={showLabels}
-            onMarkerTap={handleMarkerTap}
-            renderMarker={renderMarker}
-          />
+          <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
+            <MapCanvas
+              ref={mapViewportRef}
+              imageUrl={event?.map_image_url ?? null}
+              markers={markers}
+              viewportHeight="100%"
+              initialScale={defaultZoom}
+              minScale={0.1}
+              maxScale={3}
+              selectionMode="none"
+              showLabels={showLabels}
+              onMarkerTap={handleMarkerTap}
+              renderMarker={renderMarker}
+            />
+          </div>
           <div
-            style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}
+            style={{
+              display: "flex",
+              gap: "var(--space-2)",
+              flexWrap: "wrap",
+              marginTop: "var(--space-3)",
+              flexShrink: 0,
+            }}
           >
-            <button type="button" onClick={zoomOut}>
+            <AppButton variant="secondary" onClick={zoomOut} aria-label="Zoom out">
               −
-            </button>
-            <button type="button" onClick={zoomIn}>
+            </AppButton>
+            <AppButton variant="secondary" onClick={zoomIn} aria-label="Zoom in">
               +
-            </button>
-            <button type="button" onClick={resetZoom}>
+            </AppButton>
+            <AppButton variant="secondary" onClick={resetZoom}>
               Reset Zoom
-            </button>
-            <button type="button" onClick={recenterMap}>
+            </AppButton>
+            <AppButton variant="secondary" onClick={recenterMap}>
               Re-center Map
-            </button>
+            </AppButton>
           </div>
         </div>
       </div>
@@ -1804,7 +1723,11 @@ function ParkingAdminPageInner() {
 export default function ParkingAdminPage() {
   return (
     <AdminRouteGuard requiredTask="event.parking.manage">
-      <AdminShellAdapter pageTitle="Parking Admin" contentMode="full-bleed">
+      <AdminShellAdapter
+        pageTitle="Parking Admin"
+        contentMode="full-bleed"
+        backTarget={{ href: "/admin/map-admin", label: "Map Admin" }}
+      >
         <ParkingAdminPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
