@@ -516,6 +516,23 @@ const GestureMapViewportV2 = forwardRef<
     return () => observer.disconnect();
   }, [width, height]);
 
+  // The .map-engine-surface CSS rule (see app/globals.css) protects this
+  // div's width against ambient `max-width: 100% !important` resets via a
+  // doubled-class specificity bump, and that has been directly verified to
+  // win the cascade in Chromium against the exact real "MOBILE FORM
+  // ALIGNMENT FIX" rule it targets. On at least one real iPhone Safari
+  // session, though, the served-identical stylesheet did not produce that
+  // same result (measured live: computed max-width still resolved to the
+  // ambient 100% rule, clamping this div and desyncing every marker's
+  // percentage position from the image's unclamped size). Setting the
+  // property imperatively as `!important` inline style removes any
+  // dependency on cross-engine specificity/cascade agreement entirely --
+  // author inline `!important` outranks every external stylesheet rule,
+  // important or not, in every engine.
+  useEffect(() => {
+    contentRef.current?.style.setProperty("max-width", "none", "important");
+  }, []);
+
   // --- Gestures ---------------------------------------------------------
   // Bound via `target: viewportRef` (NOT spread onto the element) so that
   // @use-gesture attaches native non-passive listeners. This is what makes

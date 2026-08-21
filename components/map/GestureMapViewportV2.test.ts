@@ -303,3 +303,28 @@ test("globals.css restores max-width for .map-engine-surface with specificity th
   // dependent on source order again.
   assert.match(protectionMatch![0], /\.map-engine-surface\.map-engine-surface/);
 });
+
+// Stage 2D: the doubled-class CSS rule above was directly verified (via
+// getComputedStyle + a full matched-rule cascade walk) to correctly beat
+// `.card div` in Chromium, using the exact stylesheet served to the real
+// Parking page -- yet a real iPhone Safari session measured the ambient
+// `.card div { max-width: 100% !important }` rule winning anyway on that
+// same served stylesheet. Rather than depend on every engine agreeing on
+// doubled-class specificity, both divs also set max-width imperatively as
+// an inline `!important` declaration, which outranks every external
+// stylesheet rule (important or not) in every engine, by definition of
+// the CSS cascade -- independent of any specificity computation at all.
+test("both map-engine-surface divs also set max-width:none as an inline !important, independent of CSS specificity", () => {
+  assert.match(
+    SOURCE,
+    /contentRef\.current\?\.style\.setProperty\("max-width",\s*"none",\s*"important"\)/,
+  );
+  assert.match(
+    CANVAS_MAP_CANVAS_SOURCE,
+    /surfaceRef\.current\?\.style\.setProperty\("max-width",\s*"none",\s*"important"\)/,
+  );
+  // MapCanvas needs its own ref on that div (distinct from rootRef, which
+  // is the outer wrapper) to reach it for the imperative call.
+  assert.match(CANVAS_MAP_CANVAS_SOURCE, /const surfaceRef = useRef<HTMLDivElement \| null>\(null\)/);
+  assert.match(CANVAS_MAP_CANVAS_SOURCE, /ref={surfaceRef}[\s\S]{0,700}className="map-engine-surface"/);
+});

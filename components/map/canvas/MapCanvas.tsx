@@ -82,6 +82,7 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
   ) {
     const viewportRef = useRef<V2Handle | null>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
+    const surfaceRef = useRef<HTMLDivElement | null>(null);
     const appliedScaleRef = useRef(false);
 
     const [measuredNatural, setMeasuredNatural] = useState<Size>({
@@ -395,6 +396,13 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       );
     }, [onViewportChange, getTransform, viewportPixelSize, natural]);
 
+    // See GestureMapViewportV2's identical effect and its comment for why
+    // this is imperative inline !important rather than relying solely on
+    // the .map-engine-surface CSS class.
+    useEffect(() => {
+      surfaceRef.current?.style.setProperty("max-width", "none", "important");
+    }, []);
+
     const pendingLabel = useMemo(() => undefined, []); // page supplies via children if desired
 
     return (
@@ -418,11 +426,15 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           onTap={handleViewportTap}
         >
           <div
+            ref={surfaceRef}
             // See GestureMapViewportV2's own contentRef div and the
             // .map-engine-surface rule in app/globals.css: this div's
             // explicit pixel width is exactly what an ambient `.card div
             // { max-width: 100% !important }` reset would otherwise
-            // silently clamp, the same as its parent.
+            // silently clamp, the same as its parent. The class-based CSS
+            // rule is defense-in-depth; the imperative inline !important
+            // set below it (see the effect near the other refs) is what
+            // actually guarantees the override across engines.
             className="map-engine-surface"
             style={{
               position: "relative",
