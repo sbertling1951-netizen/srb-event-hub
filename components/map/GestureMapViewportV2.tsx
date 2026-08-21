@@ -40,6 +40,36 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * Whether a touchend should let the browser's native click-synthesis
+ * proceed (by skipping preventDefault) instead of the default cancel path
+ * every other touchend outcome still takes. True only for a genuine,
+ * unhurried single-finger tap -- never a drag, never a two-finger gesture
+ * -- whose end point sits over an interactive [data-marker-id] element.
+ * This is the exact, and only, contract MarkerLayer's onClick (or any
+ * other consumer's own click handler on a marker/label element) depends
+ * on to fire from a finger tap the same way it already fires from a mouse
+ * click. Pure and DOM-independent beyond the supplied target's own
+ * `closest` lookup, so it can be exercised directly by a test without a
+ * real browser's touch-to-click synthesis (which no DOM test environment
+ * implements).
+ */
+export function shouldAllowNativeClickThrough({
+  tapCandidate,
+  startedWithTwoTouches,
+  target,
+}: {
+  tapCandidate: boolean;
+  startedWithTwoTouches: boolean;
+  target: { closest(selector: string): unknown } | null | undefined;
+}): boolean {
+  return (
+    tapCandidate &&
+    !startedWithTwoTouches &&
+    !!target?.closest("[data-marker-id]")
+  );
+}
+
 function clampPan(
   x: number,
   y: number,
@@ -864,15 +894,14 @@ const GestureMapViewportV2 = forwardRef<
         }
       }}
       onTouchEnd={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
         if (e.touches.length < 2) {
           isPinchingRef.current = false;
           document.body.classList.remove("coach-map-pinching");
         }
 
         if (!viewportRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
           return;
         }
 
@@ -881,6 +910,27 @@ const GestureMapViewportV2 = forwardRef<
 
         const startedWithTwoTouches =
           viewportRef.current.dataset.touchCountStart === "2";
+
+        // See shouldAllowNativeClickThrough's own doc comment: this is the
+        // one case that must not cancel the browser's synthesized click,
+        // which is what silently broke finger-tap marker/label activation.
+        const endTouch = e.changedTouches[0];
+        const targetElement = endTouch
+          ? (document.elementFromPoint(
+              endTouch.clientX,
+              endTouch.clientY,
+            ) as Element | null)
+          : null;
+        const tapLandedOnInteractiveTarget = shouldAllowNativeClickThrough({
+          tapCandidate,
+          startedWithTwoTouches,
+          target: targetElement,
+        });
+
+        if (!tapLandedOnInteractiveTarget) {
+          e.preventDefault();
+        }
+        e.stopPropagation();
 
         if (!tapCandidate && !startedWithTwoTouches) {
           return;
