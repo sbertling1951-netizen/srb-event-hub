@@ -138,6 +138,11 @@ const GestureMapViewportV2 = forwardRef<
   const rafRef = useRef<number | null>(null);
   const animationRef = useRef<number | null>(null);
   const isPinchingRef = useRef(false);
+  // See useDrag's own callback for the full explanation: sticky for one
+  // drag gesture, true once that gesture has ever been concurrent with a
+  // second touch, so its own terminal event is skipped too even after
+  // the touch count has already dropped back to 1.
+  const dragSawMultiTouchRef = useRef(false);
 
   const momentumRef = useRef<{
     velocityX: number;
@@ -445,6 +450,72 @@ const GestureMapViewportV2 = forwardRef<
     renderTransform();
   }, [width, height, maxScale]);
 
+  // The centering effect above runs once for a given content size (its
+  // deps are the natural content width/height and maxScale, never the
+  // viewport's own rendered size), and every interactive gesture (drag,
+  // pinch, wheel, zoomIn/Out, reset) already re-reads the viewport's
+  // CURRENT clientWidth/clientHeight on every move -- but nothing
+  // previously observed the viewport element's own size changing on its
+  // own, e.g. a window resize or an orientation rotation with no
+  // subsequent touch interaction. The applied pan/scale would then remain
+  // exactly what it was for the OLD viewport size, silently inconsistent
+  // with the new one, until some future gesture happened to touch it.
+  // Confirmed by direct measurement (see task record): the transform is
+  // provably unchanged across a simulated portrait/landscape rotation
+  // with no reload, while a fresh mount in the new orientation computes a
+  // different, correctly-centered one. This re-clamps (not re-fits) the
+  // existing pan/scale into the new viewport's legal bounds using the
+  // same clampPan every gesture already uses -- it deliberately does not
+  // reset zoom or re-center, only pulls an now-out-of-bounds pan back to
+  // where dragging already would.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+
+    if (!viewport || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    let skippedInitial = false;
+
+    const observer = new ResizeObserver(() => {
+      if (!skippedInitial) {
+        // ResizeObserver reports once immediately on observe(); the
+        // useLayoutEffect above already established correct initial
+        // geometry for this same size, so this first callback is not a
+        // real subsequent resize and must not re-clamp over it.
+        skippedInitial = true;
+        return;
+      }
+
+      const vw = viewport.clientWidth;
+      const vh = viewport.clientHeight;
+
+      if (!vw || !vh) {
+        return;
+      }
+
+      const next = clampPan(
+        stateRef.current.x,
+        stateRef.current.y,
+        stateRef.current.scale,
+        vw,
+        vh,
+        width,
+        height,
+      );
+
+      if (next.x !== stateRef.current.x || next.y !== stateRef.current.y) {
+        stateRef.current.x = next.x;
+        stateRef.current.y = next.y;
+        renderTransform();
+      }
+    });
+
+    observer.observe(viewport);
+
+    return () => observer.disconnect();
+  }, [width, height]);
+
   // --- Gestures ---------------------------------------------------------
   // Bound via `target: viewportRef` (NOT spread onto the element) so that
   // @use-gesture attaches native non-passive listeners. This is what makes
@@ -461,17 +532,41 @@ const GestureMapViewportV2 = forwardRef<
       last,
       memo,
       event,
+      touches,
     }) => {
       if (gestureLockedRef.current) {
         return memo;
       }
 
-      const touchEvent = "touches" in event ? (event as TouchEvent) : null;
+      // Ignore this entire drag gesture if it was EVER concurrent with a
+      // second touch (a pinch), not merely whether exactly 2+ touches are
+      // down on THIS specific event. `touches` is @use-gesture's own
+      // globally-tracked finger count (backed by its controller's
+      // pointerIds/touchIds sets) -- correct, unlike the previous check,
+      // which read event.touches.length and was always 0 for this
+      // Pointer-Event-driven gesture (pointer: { touch: false } below),
+      // since a PointerEvent has no .touches property at all. But
+      // `touches` alone is still not enough: this recognizer starts
+      // tracking on the FIRST finger's own pointerdown (before a second
+      // finger arrives), and at the moment that SAME finger later lifts
+      // -- its own terminal `last` event -- the second finger is often
+      // still down, so `touches` has already dropped back to 1. That
+      // `last` event still carries this finger's full pinch-duration
+      // movement, and unconditionally launches a momentum glide from it,
+      // producing the reported post-pinch rightward transform jump.
+      // dragSawMultiTouchRef makes the multi-touch verdict sticky for the
+      // remainder of this one gesture (reset only when a fresh gesture's
+      // own `first` event arrives), so that terminal event is skipped too.
+      if (first) {
+        dragSawMultiTouchRef.current = touches >= 2;
+      } else if (touches >= 2) {
+        dragSawMultiTouchRef.current = true;
+      }
 
-      const touchCount = touchEvent?.touches?.length || 0;
-
-      // Ignore only ACTIVE multi-touch drags.
-      if (touchCount >= 2) {
+      if (dragSawMultiTouchRef.current) {
+        if (last) {
+          dragSawMultiTouchRef.current = false;
+        }
         return memo;
       }
 
@@ -945,26 +1040,42 @@ const GestureMapViewportV2 = forwardRef<
         }
 
         if (startedWithTwoTouches) {
-          const pointerX = touch.clientX - rect.left;
-          const pointerY = touch.clientY - rect.top;
+          // Only a genuine, near-stationary two-finger TAP (tapCandidate
+          // still true -- neither finger moved past the same 12px
+          // threshold onTouchMove already applies to single-finger taps)
+          // is this deliberate zoom-out shortcut. Without this guard, ANY
+          // two-finger gesture that started with two touches -- including
+          // an ordinary pinch-to-zoom, whose fingers necessarily move well
+          // past that threshold -- fell into this branch on release too,
+          // forcibly animating to currentScale/1.55 anchored at wherever
+          // the last lifting finger happened to be. usePinch already
+          // applies the correct, continuously-updated scale/pan for an
+          // actual pinch; this handler must not additionally reinterpret
+          // that gesture's release as a tap-to-zoom-out. This was the
+          // reported post-pinch rightward transform jump, worse the
+          // farther the preceding pinch had already zoomed.
+          if (tapCandidate) {
+            const pointerX = touch.clientX - rect.left;
+            const pointerY = touch.clientY - rect.top;
 
-          const currentScale = stateRef.current.scale;
-          const nextScale = clamp(currentScale / 1.55, minScale, maxScale);
+            const currentScale = stateRef.current.scale;
+            const nextScale = clamp(currentScale / 1.55, minScale, maxScale);
 
-          const mapX = (pointerX - stateRef.current.x) / currentScale;
-          const mapY = (pointerY - stateRef.current.y) / currentScale;
+            const mapX = (pointerX - stateRef.current.x) / currentScale;
+            const mapY = (pointerY - stateRef.current.y) / currentScale;
 
-          const next = clampPan(
-            pointerX - mapX * nextScale,
-            pointerY - mapY * nextScale,
-            nextScale,
-            viewportRef.current.clientWidth,
-            viewportRef.current.clientHeight,
-            width,
-            height,
-          );
+            const next = clampPan(
+              pointerX - mapX * nextScale,
+              pointerY - mapY * nextScale,
+              nextScale,
+              viewportRef.current.clientWidth,
+              viewportRef.current.clientHeight,
+              width,
+              height,
+            );
 
-          animateTo(next.x, next.y, nextScale, 120);
+            animateTo(next.x, next.y, nextScale, 120);
+          }
           viewportRef.current.dataset.tapCandidate = "false";
           viewportRef.current.dataset.touchCountStart = "0";
           return;

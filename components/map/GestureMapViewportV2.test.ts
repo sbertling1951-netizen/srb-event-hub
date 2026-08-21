@@ -134,13 +134,68 @@ test("shouldAllowNativeClickThrough is computed from tapCandidate, startedWithTw
   assert.match(fn, /document\.elementFromPoint\(\s*\n?\s*endTouch\.clientX,\s*\n?\s*endTouch\.clientY,?\s*\n?\s*\)/);
 });
 
-test("the two-finger tap-to-zoom, double-tap, and plain-empty-tap branches are structurally unchanged", () => {
-  assert.match(SOURCE, /nextScale = clamp\(\s*currentScale \/ 1\.55,\s*minScale,\s*maxScale,?\s*\)/);
+test("the double-tap and plain-empty-tap branches are structurally unchanged", () => {
   assert.match(SOURCE, /isDoubleTap = now - lastTapTime < 320/);
   assert.match(SOURCE, /console\.log\("MAP TAP", \{ mapX, mapY \}\)/);
 });
 
-test("useDrag/usePinch pan and pinch mechanics are untouched by this stage", () => {
+test("onTouchStart and onTouchMove (tap-candidate tracking) are untouched by this stage", () => {
+  assert.match(SOURCE, /viewportRef\.current\.dataset\.tapCandidate = "true";/);
+  assert.match(SOURCE, /if \(Math\.abs\(dx\) > 12 \|\| Math\.abs\(dy\) > 12\) \{\s*\n\s*viewportRef\.current\.dataset\.tapCandidate = "false";/);
+});
+
+// --- Stage 2: fast-pinch rightward-jump fix -----------------------------
+// Proven root cause (see task record for the full Playwright/CDP trace
+// against the live, unmodified engine): two independent defects, both in
+// this same onTouchEnd/useDrag path, that combine to corrupt the
+// transform on release of any two-finger gesture:
+//
+// 1. The "two-finger tap to zoom out" branch fired unconditionally for
+//    ANY gesture that started with two touches -- including an ordinary
+//    pinch, whose fingers necessarily move well past the tap-movement
+//    threshold -- forcibly animating to currentScale/1.55 anchored at
+//    wherever the last lifting finger happened to be, discarding
+//    usePinch's own already-correct scale/pan.
+// 2. useDrag's multi-touch guard checked event.touches.length, which is
+//    always 0 for this Pointer-Event-driven gesture (a PointerEvent has
+//    no .touches property), so it never actually skipped anything. Worse,
+//    even fixed to use @use-gesture's own correct `touches` count, a
+//    single per-event check still isn't enough: this recognizer starts
+//    tracking on the FIRST finger's own pointerdown (before a second
+//    finger arrives), and at the moment that SAME finger later lifts --
+//    its own terminal event -- the second finger is often still down, so
+//    `touches` has already dropped back to 1, letting a momentum glide
+//    launch from that finger's full pinch-duration velocity.
+
+test("the two-finger zoom-out animation only runs for a genuine tap (tapCandidate), not a real pinch", () => {
+  const fn = extractOnTouchEnd();
+  const branchStart = fn.indexOf("if (startedWithTwoTouches) {");
+  assert.ok(branchStart >= 0, "expected to find the startedWithTwoTouches branch");
+  const branch = fn.slice(branchStart);
+  assert.match(branch, /if \(startedWithTwoTouches\) \{\s*\n(?:\s*\/\/.*\n)*\s*if \(tapCandidate\) \{/);
+  assert.match(branch, /nextScale = clamp\(\s*currentScale \/ 1\.55,\s*minScale,\s*maxScale,?\s*\)/);
+  // The dataset resets and the early return must remain unconditional --
+  // both the tap-shortcut and the real-pinch case need a clean slate for
+  // the next gesture.
+  assert.match(
+    branch,
+    /\}\s*\n\s*viewportRef\.current\.dataset\.tapCandidate = "false";\s*\n\s*viewportRef\.current\.dataset\.touchCountStart = "0";\s*\n\s*return;/,
+  );
+});
+
+test("useDrag ignores its own gesture's terminal event if that gesture was ever concurrent with a second touch", () => {
+  assert.match(SOURCE, /const dragSawMultiTouchRef = useRef\(false\);/);
+  assert.match(
+    SOURCE,
+    /if \(first\) \{\s*\n\s*dragSawMultiTouchRef\.current = touches >= 2;\s*\n\s*\} else if \(touches >= 2\) \{\s*\n\s*dragSawMultiTouchRef\.current = true;\s*\n\s*\}/,
+  );
+  assert.match(
+    SOURCE,
+    /if \(dragSawMultiTouchRef\.current\) \{\s*\n\s*if \(last\) \{\s*\n\s*dragSawMultiTouchRef\.current = false;\s*\n\s*\}\s*\n\s*return memo;\s*\n\s*\}/,
+  );
+});
+
+test("useDrag/usePinch pan and pinch mechanics are otherwise untouched by this stage", () => {
   assert.match(SOURCE, /useDrag\(/);
   assert.match(SOURCE, /usePinch\(/);
   assert.match(
@@ -153,7 +208,39 @@ test("useDrag/usePinch pan and pinch mechanics are untouched by this stage", () 
   );
 });
 
-test("onTouchStart and onTouchMove (tap-candidate tracking) are untouched by this stage", () => {
-  assert.match(SOURCE, /viewportRef\.current\.dataset\.tapCandidate = "true";/);
-  assert.match(SOURCE, /if \(Math\.abs\(dx\) > 12 \|\| Math\.abs\(dy\) > 12\) \{\s*\n\s*viewportRef\.current\.dataset\.tapCandidate = "false";/);
+// --- Stage 2: stale-transform-on-resize/rotation fix --------------------
+// Proven root cause (see task record for exact before/after measurements
+// against the live, unmodified engine at real iPhone/iPad sizes): the
+// applied pan/scale was computed once, from the viewport's rendered size
+// at that moment, and never revisited when that size later changed on its
+// own (a window resize or an orientation rotation with no subsequent
+// touch interaction) -- confirmed by the transform staying byte-identical
+// across a simulated rotation, while a fresh mount in the new orientation
+// computed a different, correctly-centered one.
+
+test("the initial mount-centering effect keeps its original dependency array (natural content size and maxScale only, never viewport size)", () => {
+  assert.match(SOURCE, /\}, \[width, height, maxScale\]\);/);
+});
+
+test("a ResizeObserver re-clamps (never re-fits or re-centers) the existing pan when the viewport's own rendered size changes", () => {
+  const start = SOURCE.indexOf("useEffect(() => {\n    const viewport = viewportRef.current;\n\n    if (!viewport || typeof ResizeObserver");
+  assert.ok(start >= 0, "expected to find the resize-observer effect");
+  const end = SOURCE.indexOf("}, [width, height]);", start);
+  assert.ok(end > start, "expected to find the effect's own dependency array");
+  const fn = SOURCE.slice(start, end);
+
+  // Skips its own guaranteed initial callback -- the mount effect above
+  // already established correct geometry for the size at that point.
+  assert.match(fn, /if \(!skippedInitial\) \{\s*\n[\s\S]*?skippedInitial = true;\s*\n\s*return;\s*\n\s*\}/);
+
+  // Reads the CURRENT viewport size and the CURRENT stateRef scale/pan
+  // fresh at trigger time, via the same clampPan every gesture already
+  // uses -- never a fresh fitScale/recenter computation.
+  assert.match(fn, /const vw = viewport\.clientWidth;/);
+  assert.match(fn, /const vh = viewport\.clientHeight;/);
+  assert.match(
+    fn,
+    /clampPan\(\s*\n\s*stateRef\.current\.x,\s*\n\s*stateRef\.current\.y,\s*\n\s*stateRef\.current\.scale,\s*\n\s*vw,\s*\n\s*vh,\s*\n\s*width,\s*\n\s*height,\s*\n\s*\)/,
+  );
+  assert.doesNotMatch(fn, /fitScale/);
 });
