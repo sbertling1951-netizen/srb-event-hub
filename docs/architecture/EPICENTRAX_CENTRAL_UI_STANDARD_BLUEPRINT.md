@@ -627,6 +627,73 @@ RLS code.
 
 ---
 
+## 15. Proven Pattern (Stage 3 Evidence, 2026-08-20) — Available-Space-Driven Responsive Layout
+
+The `/admin/admin-users` Stage 3 migration (the first form-heavy proving
+ground, after `/admin/checklist`) went through several real-device
+iterations on how a canonical edit-workspace `Dialog` should size itself
+and reflow its internal form. Two approaches were tried and rejected
+before arriving at the one now accepted and merged; recording all three
+here so a future Dialog-based edit workspace does not have to
+re-discover the same lessons.
+
+**Rejected: fixed, device-tuned pixel constants.** Early passes hand-
+tuned a single `max-width` and a `minmax()` per-column threshold against
+one physical iPad's exact rendered geometry. This is fragile by
+construction — it silently mis-targets every other width (a different
+iPad model, split-screen, a resized desktop window) even when it happens
+to look right on the one device it was tuned against.
+
+**Rejected: native CSS `resize: both`, then a custom Pointer Events
+resize handle.** A user-driven resize handle (first the browser's native
+`resize` property, then a hand-built Pointer Events implementation once
+native `resize` proved not operable on a physical iPad) was built and
+verified working, but was itself removed once it became clear the
+workspace could size itself correctly without asking the user to
+manually intervene at all.
+
+**Accepted and proven: available space determines layout; device
+identity does not.**
+
+1. **Viewport-bounded automatic workspace sizing.** The edit-workspace
+   `Dialog` variant's width is a live CSS `calc()`/`min()` expression
+   against `100vw` (a safe outer margin subtracted, a sensible ceiling
+   applied for very large desktop displays), never a value computed once
+   in JS and never a fixed per-breakpoint constant. Height stays governed
+   by the existing `dvh`-based `max-height` rule. Because this is pure
+   CSS, the browser recomputes it on every layout pass for free —
+   rotation, browser/window resizing, split-screen, fold/unfold, and the
+   iOS software keyboard all reflow correctly with zero resize/
+   orientation event listeners in the page's own code.
+2. **`container-type: inline-size` on that same Dialog variant**, so its
+   own descendants query against its actual rendered width via
+   `@container`, never the viewport and never a device/UA signal. A grid
+   of many similar-sized items (the Permissions checkbox grid) uses plain
+   CSS Grid `auto-fit`/`minmax()` — continuous, not stepped, and already
+   inherently container-width-driven with no `@container` rule needed at
+   all. A small number of paired fields (Email/Display Name, Password/
+   Send Reset Email, Privilege Group/Status) uses one `@container
+   (min-width: …)` step to switch between stacked and side-by-side.
+
+Reference implementation: `app/admin/admin-users/page.tsx` and the
+`.app-dialog-form` / `.app-permission-grid` / `.app-dialog-form-pair*`
+rules in `app/globals.css`. Verified on physical iPad (portrait and
+landscape, including live rotation) and physical iPhone (portrait and
+landscape), in addition to desktop browser window resizing — approved
+and merged (`1c09220`, "Migrate admin users to central UI standard").
+
+**Guidance for the next Dialog-based edit workspace:** prefer a live CSS
+calculation over a JS-computed value wherever one exists. A JS-computed
+size needs explicit listeners to stay correct across rotation/resize/
+keyboard and is one more thing that can silently go stale on a given
+browser; the CSS equivalent is recomputed by the browser's own layout
+engine for free. Reach for `container-type`/`@container` before reaching
+for a viewport-level signal (a `useShellInterfaceCapabilities`-style
+hook, `window.innerWidth`, a device/UA check) whenever the layout
+decision is really about a container's own width, not the page's.
+
+---
+
 ## Scope Boundary
 
 This document is discovery and blueprint only. It authorizes no code
@@ -635,4 +702,7 @@ does not decide the `card`/`section` merge, the affirmative/destructive
 system choice, or the third-heading-tier question — each requires its
 own separately authorized Stage 2 decision, consistent with how
 `EPICENTRAX_ADMIN_UI_INVENTORY_AUDIT.md` scoped itself relative to its
-own eventual Stage 2/3.
+own eventual Stage 2/3. Part 15 above is a later, separate addition
+recording verified Stage 3 evidence — it documents what the checklist
+and admin-users migrations actually proved, not a revision of this
+document's own original discovery-only scope.
