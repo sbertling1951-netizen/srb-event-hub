@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
+import { MapCanvas, type MapCanvasHandle, MarkerDot, MarkerLabelChip } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { PublicEventChooser } from "@/components/public/PublicEventChooser";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
@@ -394,43 +394,14 @@ export default function PublicLocationsPage() {
 
       return (
         <>
-          <div
+          <MarkerDot
+            size={size}
+            color={color}
+            borderWidth={isNarrow ? 3 : 2}
+            emphasis={selected ? "selected" : undefined}
             title={loc.name}
-            style={{
-              width: size,
-              height: size,
-              borderRadius: "50%",
-              background: color,
-              border: isNarrow ? "3px solid white" : "2px solid white",
-              boxShadow: selected
-                ? "0 0 0 4px rgba(255,215,0,0.35), 0 1px 4px rgba(0,0,0,0.35)"
-                : "0 1px 4px rgba(0,0,0,0.35)",
-              padding: 0,
-              display: "block",
-              margin: "0 auto",
-            }}
           />
-
-          <div
-            style={{
-              marginTop: 4,
-              marginLeft: "auto",
-              marginRight: "auto",
-              background: "rgba(255,255,255,0.92)",
-              border: "1px solid rgba(0,0,0,0.2)",
-              borderRadius: 4,
-              fontSize: selected ? 12 : 10,
-              fontWeight: 700,
-              padding: selected ? "2px 6px" : "1px 4px",
-              color: "#111",
-              whiteSpace: "nowrap",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-              display: "table",
-              pointerEvents: "none",
-            }}
-          >
-            {loc.name}
-          </div>
+          <MarkerLabelChip text={loc.name} emphasized={selected} />
         </>
       );
     },

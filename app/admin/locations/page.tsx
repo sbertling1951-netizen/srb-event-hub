@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
+import { MapCanvas, type MapCanvasHandle, MarkerDot, MarkerLabelChip } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
@@ -343,41 +343,13 @@ function AdminLocationsPageInner() {
 
       return (
         <>
-          <div
+          <MarkerDot
+            size={60}
+            color={getMarkerColor(loc)}
+            borderWidth={isNarrow ? 3 : 2}
             title={loc.name}
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: "50%",
-              background: getMarkerColor(loc),
-              border: isNarrow ? "3px solid white" : "2px solid white",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
-              padding: 0,
-              display: "block",
-              margin: "0 auto",
-            }}
           />
-
-          <div
-            style={{
-              marginTop: 4,
-              marginLeft: "auto",
-              marginRight: "auto",
-              background: "rgba(255,255,255,0.92)",
-              border: "1px solid rgba(0,0,0,0.2)",
-              borderRadius: 4,
-              fontSize: 10,
-              fontWeight: 700,
-              padding: "1px 4px",
-              color: "#111",
-              whiteSpace: "nowrap",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-              display: "table",
-              pointerEvents: "none",
-            }}
-          >
-            {loc.name}
-          </div>
+          <MarkerLabelChip text={loc.name} />
         </>
       );
     },

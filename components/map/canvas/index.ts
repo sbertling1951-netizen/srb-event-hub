@@ -1,12 +1,19 @@
 // components/map/canvas/index.ts
-export { default as MapCanvas } from "./MapCanvas";
-export { MarkerLayer } from "./MarkerLayer";
 export { alignMarkers, distributeMarkers, nudgeMarkers } from "./alignment";
 export * as coords from "./coords";
-export { useSelection } from "./useSelection";
-export { useUndoStack } from "./useUndoStack";
-export { useMapInteraction } from "./useMapInteraction";
+export { default as MapCanvas } from "./MapCanvas";
+export { MarkerLayer } from "./MarkerLayer";
+export type { MarkerSpacingStats } from "./markerSizing";
+export {
+  computeNearestNeighborSpacingPx,
+  resolveDensityAwareMarkerSize,
+  SELECTED_SIZE_MULTIPLIER,
+} from "./markerSizing";
+export type { MarkerTone } from "./markerVisuals";
+export { MarkerDot, MarkerLabelChip, resolveMarkerTone } from "./markerVisuals";
 export type {
+  AlignAxis,
+  DistributeAxis,
   MapCanvasHandle,
   MapCanvasProps,
   MapMarker,
@@ -15,7 +22,8 @@ export type {
   MarkerPositionUpdate,
   Selection,
   SelectionMode,
-  AlignAxis,
-  DistributeAxis,
   ViewTransform,
 } from "./types";
+export { useMapInteraction } from "./useMapInteraction";
+export { useSelection } from "./useSelection";
+export { useUndoStack } from "./useUndoStack";

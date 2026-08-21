@@ -4,7 +4,15 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
+import {
+  computeNearestNeighborSpacingPx,
+  MapCanvas,
+  type MapCanvasHandle,
+  MarkerDot,
+  MarkerLabelChip,
+  resolveDensityAwareMarkerSize,
+  SELECTED_SIZE_MULTIPLIER,
+} from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
@@ -197,6 +205,28 @@ function ParkingAdminPageInner() {
   const [showParked, setShowParked] = useState(false);
   const [showArrivedOnly, setShowArrivedOnly] = useState(false);
   const [defaultZoom, setDefaultZoom] = useState(0.6);
+  // Probed independently of MapCanvas (which measures this internally for
+  // its own layout) purely to compute real marker density -- see
+  // components/map/canvas/markerSizing.ts. Falls back to MapCanvas's own
+  // 1200x800 default until the probe resolves, so markers render at a
+  // reasonable size immediately and correct once the real image loads.
+  const [mapNaturalSize, setMapNaturalSize] = useState({ width: 1200, height: 800 });
+
+  useEffect(() => {
+    if (!event?.map_image_url) {
+      return;
+    }
+    const probe = new Image();
+    probe.onload = () => {
+      if (probe.naturalWidth && probe.naturalHeight) {
+        setMapNaturalSize({ width: probe.naturalWidth, height: probe.naturalHeight });
+      }
+    };
+    probe.src = event.map_image_url;
+    if (probe.complete && probe.naturalWidth) {
+      setMapNaturalSize({ width: probe.naturalWidth, height: probe.naturalHeight });
+    }
+  }, [event?.map_image_url]);
 
   useEffect(() => {
     selectedIdsRef.current = {
@@ -682,19 +712,23 @@ function ParkingAdminPageInner() {
   }, [sites]);
 
   // Data-driven markers array for MapCanvas engine
-  const markers = useMemo<MapMarker[]>(
-    () =>
-      sites
-        .filter((s) => s.map_x !== null && s.map_y !== null)
-        .map((s) => ({
-          id: s.id || s.master_site_id,
-          xPct: s.map_x as number,
-          yPct: s.map_y as number,
-          label: s.display_label || s.site_number,
-          data: s,
-        })),
-    [sites],
-  );
+  const markers = useMemo<MapMarker[]>(() => {
+    const placed = sites.filter((s) => s.map_x !== null && s.map_y !== null);
+    const spacing = computeNearestNeighborSpacingPx(
+      placed.map((s) => ({ xPct: s.map_x as number, yPct: s.map_y as number })),
+      mapNaturalSize,
+    );
+    const size = resolveDensityAwareMarkerSize(spacing, { isNarrow });
+
+    return placed.map((s) => ({
+      id: s.id || s.master_site_id,
+      xPct: s.map_x as number,
+      yPct: s.map_y as number,
+      label: s.display_label || s.site_number,
+      size,
+      data: s,
+    }));
+  }, [sites, mapNaturalSize, isNarrow]);
 
   const filteredAttendees = useMemo(() => {
     const rawSearch = search.trim();
@@ -939,20 +973,10 @@ function ParkingAdminPageInner() {
 
       if (showLabels) {
         return (
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color,
-              background: "rgba(255,255,255,0.9)",
-              border: "1px solid rgba(0,0,0,0.2)",
-              borderRadius: 4,
-              padding: "1px 4px",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {site.display_label || site.site_number}
-          </div>
+          <MarkerLabelChip
+            text={site.display_label || site.site_number}
+            textColor={color}
+          />
         );
       }
 
@@ -968,34 +992,17 @@ function ParkingAdminPageInner() {
         title = `${site.display_label || site.site_number} - ${name}`;
       }
 
-      const circleSize = isSelected ? (isNarrow ? 44 : 32) : isNarrow ? 32 : 22;
-      const border = isNarrow ? "3px solid white" : "2px solid white";
-      const boxShadow = isSelected
-        ? "0 0 0 8px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(0,0,0,0.45)"
-        : "0 1px 4px rgba(0,0,0,0.35)";
-      const animation = isSelected
-        ? "parkingSelectedPulse 2.2s ease-in-out infinite"
-        : undefined;
+      const baseSize = marker.size ?? (isNarrow ? 32 : 22);
+      const circleSize = isSelected ? baseSize * SELECTED_SIZE_MULTIPLIER : baseSize;
 
       return (
-        <>
-          <div
-            title={title}
-            style={{
-              width: circleSize,
-              height: circleSize,
-              borderRadius: "50%",
-              background: color,
-              border,
-              boxShadow,
-              animation,
-              cursor: "pointer",
-              padding: 0,
-              display: "block",
-              margin: "0 auto",
-            }}
-          />
-        </>
+        <MarkerDot
+          size={circleSize}
+          color={color}
+          borderWidth={isNarrow ? 3 : 2}
+          emphasis={isSelected ? "selected" : undefined}
+          title={title}
+        />
       );
     },
     [siteById, selectedSiteId, attendeeById, isNarrow, showLabels],
