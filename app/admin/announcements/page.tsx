@@ -9,6 +9,7 @@ import { Alert, type AlertTone } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { RowActions } from "@/components/ui/RowActions";
@@ -124,20 +125,6 @@ export function announcementStatusTone(message: string): AlertTone {
     : "info";
 }
 
-const fieldLabelStyle: React.CSSProperties = {
-  display: "block",
-  fontWeight: 600,
-  marginBottom: "var(--space-2)",
-  fontSize: "var(--font-size-body)",
-  color: "var(--color-text-secondary)",
-};
-
-const checkboxLabelStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "var(--space-2)",
-};
-
 export default function AdminAnnouncementsPage() {
   return (
     <AdminRouteGuard requiredTask="event.announcements.manage">
@@ -155,6 +142,8 @@ function AdminAnnouncementsPageInner() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ title?: string; body?: string }>({});
+  const formSectionRef = useRef<HTMLDivElement | null>(null);
   const { isCompact } = useShellInterfaceCapabilities();
 
   const [loadingEvent, setLoadingEvent] = useState(true);
@@ -324,6 +313,7 @@ function AdminAnnouncementsPageInner() {
   function resetForm() {
     setForm(EMPTY_FORM);
     setEditingId(null);
+    setFieldErrors({});
   }
 
   function updateAnnouncement(
@@ -350,6 +340,7 @@ function AdminAnnouncementsPageInner() {
 
   function startEdit(item: Announcement) {
     setEditingId(item.id);
+    setFieldErrors({});
     setForm({
       title: item.title ?? "",
       body: item.body ?? "",
@@ -358,7 +349,7 @@ function AdminAnnouncementsPageInner() {
       is_published: !!item.is_published,
       expire_at: normalizeForInput(item.expire_at),
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    formSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function handleSave() {
@@ -367,15 +358,18 @@ function AdminAnnouncementsPageInner() {
       return;
     }
 
+    const nextFieldErrors: { title?: string; body?: string } = {};
     if (!form.title.trim()) {
-      showError("Title is required.");
-      return;
+      nextFieldErrors.title = "Title is required.";
     }
-
     if (!form.body.trim()) {
-      showError("Message is required.");
+      nextFieldErrors.body = "Message is required.";
+    }
+    if (nextFieldErrors.title || nextFieldErrors.body) {
+      setFieldErrors(nextFieldErrors);
       return;
     }
+    setFieldErrors({});
 
     setSaving(true);
     showStatus(
@@ -595,143 +589,21 @@ function AdminAnnouncementsPageInner() {
         onConfirm={() => closeConfirmDialog(true)}
       />
 
-      <section style={{ display: "grid", gap: "var(--space-4)" }}>
-        <PageHeader
-          title={editingId ? "Edit Announcement" : "New Announcement"}
-          headingLevel="h2"
-          titleClassName="app-section-title"
-        />
-
-        <PageSection variant="section">
-          <div style={{ display: "grid", gap: "var(--space-5)" }}>
-            {/* Non-steady-state only (Stage 3B §D): the canonical Admin
-                shell header now owns Event name/location/date range for
-                the normal resolved+authorized case, so this line shows
-                only what the shell cannot -- that a selection is still
-                loading, or that nothing is currently selected. The
-                specific access-denied reason remains the separate
-                `error` Alert below, unchanged. */}
-            {eventContextMessage ? (
-              <Alert tone="neutral">{eventContextMessage}</Alert>
-            ) : null}
-
-            {error ? <Alert tone="danger">{error}</Alert> : null}
-            {!error && status ? (
-              <Alert tone={announcementStatusTone(status)}>{status}</Alert>
-            ) : null}
-
-            <div>
-              <label style={fieldLabelStyle} htmlFor="announcement-title">
-                Title
-              </label>
-              <input
-                id="announcement-title"
-                value={form.title}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, title: e.target.value }))
-                }
-                placeholder="Announcement title"
-              />
-            </div>
-
-            <div>
-              <label style={fieldLabelStyle} htmlFor="announcement-body">
-                Message
-              </label>
-              <textarea
-                id="announcement-body"
-                value={form.body}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, body: e.target.value }))
-                }
-                placeholder="Write the announcement here..."
-                rows={6}
-              />
-            </div>
-
-            <div className="app-form-grid-2">
-              <div>
-                <label style={fieldLabelStyle} htmlFor="announcement-priority">
-                  Priority
-                </label>
-                <select
-                  id="announcement-priority"
-                  value={form.priority}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, priority: e.target.value }))
-                  }
-                >
-                  <option value="low">Low</option>
-                  <option value="normal">Normal</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={fieldLabelStyle} htmlFor="announcement-expire">
-                  Expire At
-                </label>
-                <input
-                  id="announcement-expire"
-                  type="datetime-local"
-                  value={form.expire_at}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, expire_at: e.target.value }))
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="app-flex-wrap-12">
-              <label style={checkboxLabelStyle}>
-                <input
-                  type="checkbox"
-                  checked={form.is_pinned}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      is_pinned: e.target.checked,
-                    }))
-                  }
-                />
-                Pin this announcement
-              </label>
-              <label style={checkboxLabelStyle}>
-                <input
-                  type="checkbox"
-                  checked={form.is_published}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      is_published: e.target.checked,
-                    }))
-                  }
-                />
-                Published
-              </label>
-            </div>
-
-            <div className="app-button-row">
-              <AppButton
-                variant="primary"
-                onClick={() => void handleSave()}
-                disabled={saving || !eventId}
-              >
-                {saving
-                  ? "Saving..."
-                  : editingId
-                    ? "Update Announcement"
-                    : "Create Announcement"}
-              </AppButton>
-
-              <AppButton onClick={resetForm} disabled={saving}>
-                {editingId ? "Cancel Edit" : "Clear"}
-              </AppButton>
-            </div>
-          </div>
-        </PageSection>
-      </section>
+      {/* Page context: lifted above both sections (rather than nested
+          inside the form, as before) so a status/error from a row action
+          (Publish/Pin/Delete) in the list below is immediately visible
+          without scrolling down to the form section. Non-steady-state
+          only (Stage 3B §D): the canonical Admin shell header now owns
+          Event name/location/date range for the normal resolved+
+          authorized case, so this line shows only what the shell cannot
+          -- that a selection is still loading, or that nothing is
+          currently selected. The specific access-denied reason remains
+          the separate `error` Alert below, unchanged. */}
+      {eventContextMessage ? <Alert tone="neutral">{eventContextMessage}</Alert> : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {!error && status ? (
+        <Alert tone={announcementStatusTone(status)}>{status}</Alert>
+      ) : null}
 
       <section style={{ display: "grid", gap: "var(--space-4)" }}>
         <PageHeader
@@ -839,6 +711,112 @@ function AdminAnnouncementsPageInner() {
             </tbody>
           </DataTable>
         )}
+      </section>
+
+      <section ref={formSectionRef} style={{ display: "grid", gap: "var(--space-4)" }}>
+        <PageHeader
+          title={editingId ? "Edit Announcement" : "New Announcement"}
+          headingLevel="h2"
+          titleClassName="app-section-title"
+        />
+
+        <PageSection variant="section">
+          <div style={{ display: "grid", gap: "var(--space-5)" }}>
+            <Field label="Title" required error={fieldErrors.title}>
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  value={form.title}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, title: e.target.value }))
+                  }
+                  placeholder="Announcement title"
+                />
+              )}
+            </Field>
+
+            <Field label="Message" required error={fieldErrors.body}>
+              {(controlProps) => (
+                <Textarea
+                  {...controlProps}
+                  value={form.body}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, body: e.target.value }))
+                  }
+                  placeholder="Write the announcement here..."
+                  rows={6}
+                />
+              )}
+            </Field>
+
+            <div className="app-form-grid-2">
+              <Field label="Priority">
+                {(controlProps) => (
+                  <Select
+                    {...controlProps}
+                    value={form.priority}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, priority: e.target.value }))
+                    }
+                  >
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </Select>
+                )}
+              </Field>
+
+              <Field label="Expire At" help="Optional -- leave blank for no expiration.">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    type="datetime-local"
+                    value={form.expire_at}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, expire_at: e.target.value }))
+                    }
+                  />
+                )}
+              </Field>
+            </div>
+
+            <div className="app-flex-wrap-12">
+              <Checkbox
+                label="Pin this announcement"
+                checked={form.is_pinned}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, is_pinned: e.target.checked }))
+                }
+              />
+              <Checkbox
+                label="Published"
+                checked={form.is_published}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, is_published: e.target.checked }))
+                }
+              />
+            </div>
+
+            <div className="app-button-row">
+              <AppButton
+                variant="primary"
+                onClick={() => void handleSave()}
+                disabled={saving || !eventId}
+              >
+                {saving
+                  ? "Saving..."
+                  : editingId
+                    ? "Update Announcement"
+                    : "Create Announcement"}
+              </AppButton>
+
+              <AppButton onClick={resetForm} disabled={saving}>
+                {editingId ? "Cancel Edit" : "Clear"}
+              </AppButton>
+            </div>
+          </div>
+        </PageSection>
       </section>
     </div>
   );

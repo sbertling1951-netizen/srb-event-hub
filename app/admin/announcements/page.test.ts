@@ -215,3 +215,67 @@ test("the destructive action alone uses the danger button variant -- routine row
   assert.equal((rowActionsBody.match(/variant="danger"/g) || []).length, 1);
   assert.equal(/variant="primary"/.test(rowActionsBody), false);
 });
+
+// -- Central UI Standard migration -----------------------------------------
+
+test("the list ('Existing Announcements') is the first page section, the Add/Edit form second -- per the preferred Admin workflow hierarchy", () => {
+  const listIdx = PAGE_SOURCE.indexOf('title="Existing Announcements"');
+  const formIdx = PAGE_SOURCE.indexOf(
+    'title={editingId ? "Edit Announcement" : "New Announcement"}',
+  );
+  assert.notEqual(listIdx, -1);
+  assert.notEqual(formIdx, -1);
+  assert.ok(listIdx < formIdx, "the announcement list must render before the create/edit form");
+});
+
+test("page-context status/error surfaces above both sections, not nested inside the form -- visible immediately after a row action in the list", () => {
+  const listIdx = PAGE_SOURCE.indexOf('title="Existing Announcements"');
+  const statusIdx = PAGE_SOURCE.indexOf("{!error && status ?");
+  assert.notEqual(statusIdx, -1);
+  assert.ok(statusIdx < listIdx, "status/error Alerts must render before the list section");
+});
+
+test("the Add/Edit form uses the canonical Field/Input/Select/Textarea/Checkbox primitives -- no raw form controls remain", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*Checkbox,\s*Field,\s*Input,\s*Select,\s*Textarea\s*\}\s*from\s*["']@\/components\/ui\/Field["']/,
+  );
+  assert.equal(/<input\b/.test(PAGE_SOURCE), false, "no raw <input> should remain");
+  assert.equal(/<textarea\b/.test(PAGE_SOURCE), false, "no raw <textarea> should remain");
+  assert.equal(/<select\b/.test(PAGE_SOURCE), false, "no raw <select> should remain");
+  assert.equal(/type="checkbox"/.test(PAGE_SOURCE), false, "no raw checkbox input should remain");
+
+  const formIdx = PAGE_SOURCE.indexOf(
+    'title={editingId ? "Edit Announcement" : "New Announcement"}',
+  );
+  const formSource = PAGE_SOURCE.slice(formIdx);
+  assert.match(formSource, /<Field label="Title" required error={fieldErrors\.title}>/);
+  assert.match(formSource, /<Field label="Message" required error={fieldErrors\.body}>/);
+  assert.match(formSource, /<Field label="Priority">/);
+  assert.match(formSource, /<Field label="Expire At" help="[^"]+">/);
+  assert.match(formSource, /<Checkbox\s+label="Pin this announcement"/);
+  assert.match(formSource, /<Checkbox\s+label="Published"/);
+});
+
+test("the page-local fieldLabelStyle/checkboxLabelStyle inline-style constants are gone -- labeling now comes from the shared Field/Checkbox primitives", () => {
+  assert.equal(/fieldLabelStyle/.test(PAGE_SOURCE), false);
+  assert.equal(/checkboxLabelStyle/.test(PAGE_SOURCE), false);
+});
+
+test("Title and Message required-field validation surfaces as a field-level error via Field's own error prop, not only a page-level Alert", () => {
+  assert.match(PAGE_SOURCE, /const \[fieldErrors, setFieldErrors\] = useState<\{ title\?: string; body\?: string \}>/);
+  assert.match(PAGE_SOURCE, /nextFieldErrors\.title = "Title is required\."/);
+  assert.match(PAGE_SOURCE, /nextFieldErrors\.body = "Message is required\."/);
+});
+
+test("editing an announcement scrolls the form section into view, not the page top -- the form now renders below the list", () => {
+  assert.equal(/window\.scrollTo/.test(PAGE_SOURCE), false);
+  assert.match(PAGE_SOURCE, /formSectionRef\.current\?\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)/);
+  assert.match(PAGE_SOURCE, /<section ref={formSectionRef}/);
+});
+
+test("resetForm also clears any pending field-level errors", () => {
+  const fnIdx = PAGE_SOURCE.indexOf("function resetForm()");
+  const fnBody = PAGE_SOURCE.slice(fnIdx, PAGE_SOURCE.indexOf("\n  }", fnIdx));
+  assert.match(fnBody, /setFieldErrors\(\{\}\)/);
+});
