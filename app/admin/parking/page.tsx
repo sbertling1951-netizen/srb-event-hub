@@ -31,6 +31,7 @@ import {
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
+import { ParkingMapDebugPanel } from "./ParkingMapDebugPanel";
 import {
   buildCanonicalParkingSnapshot,
   mayApplyParkingLoad,
@@ -158,6 +159,8 @@ function ParkingAdminPageInner() {
   const { isCompact: isNarrow } = useShellInterfaceCapabilities();
   const searchParams = useSearchParams();
   const attendeeTarget = readAdminAttendeeTarget(searchParams);
+  const mapDebugEnabled =
+    process.env.NODE_ENV !== "production" && searchParams.get("mapDebug") === "1";
   const mapViewportRef = useRef<MapCanvasHandle | null>(null);
   const attendeeButtonRefs = useRef<Record<string, HTMLLIElement | null>>({});
   const loadGenerationRef = useRef(0);
@@ -1716,6 +1719,8 @@ function ParkingAdminPageInner() {
           </div>
         </div>
       </div>
+
+      {mapDebugEnabled && <ParkingMapDebugPanel sites={sites} />}
     </div>
   );
 }
