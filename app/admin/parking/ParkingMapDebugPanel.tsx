@@ -384,6 +384,37 @@ export function ParkingMapDebugPanel({ sites }: { sites: ParkingSiteForDebug[] }
               ))}
             </tbody>
           </table>
+          <table style={{ borderCollapse: "collapse", marginBottom: 8, width: "100%" }}>
+            <tbody>
+              {[
+                ["image naturalWidth", snapshot.image.found ? String(snapshot.image.naturalWidth) : "not found"],
+                ["image naturalHeight", snapshot.image.found ? String(snapshot.image.naturalHeight) : "not found"],
+                ["image rect w,h", snapshot.image.found && snapshot.image.rect ? `${snapshot.image.rect.width.toFixed(1)}, ${snapshot.image.rect.height.toFixed(1)}` : "-"],
+                ["image computed w / max-w", snapshot.image.found && snapshot.image.computed ? `${snapshot.image.computed.width} / ${snapshot.image.computed["max-width"]}` : "-"],
+                ["contentRef inline w,h", snapshot.contentRef.found ? `${snapshot.contentRef.inlineWidth}, ${snapshot.contentRef.inlineHeight}` : "-"],
+                ["contentRef computed w / max-w", snapshot.contentRef.found && snapshot.contentRef.computed ? `${snapshot.contentRef.computed.width} / ${snapshot.contentRef.computed["max-width"]}` : "-"],
+                ["contentRef rect w,h", snapshot.contentRef.found && snapshot.contentRef.rect ? `${snapshot.contentRef.rect.width.toFixed(1)}, ${snapshot.contentRef.rect.height.toFixed(1)}` : "-"],
+                ["contentRef scaleX, scaleY", (() => {
+                  const cr = snapshot.contentRef;
+                  const dt = cr.found ? cr.decomposedTransform : null;
+                  return dt ? `${dt.scaleX?.toFixed(4)}, ${dt.scaleY?.toFixed(4)}` : "-";
+                })()],
+                ["contentRef tx, ty", (() => {
+                  const cr = snapshot.contentRef;
+                  const dt = cr.found ? cr.decomposedTransform : null;
+                  return dt ? `${dt.tx?.toFixed(1)}, ${dt.ty?.toFixed(1)}` : "-";
+                })()],
+                ["MapCanvas wrapper inline w,h", snapshot.mapCanvasWrapper.found ? `${snapshot.mapCanvasWrapper.inlineWidth}, ${snapshot.mapCanvasWrapper.inlineHeight}` : "-"],
+                ["MapCanvas wrapper computed w / max-w", snapshot.mapCanvasWrapper.found && snapshot.mapCanvasWrapper.computed ? `${snapshot.mapCanvasWrapper.computed.width} / ${snapshot.mapCanvasWrapper.computed["max-width"]}` : "-"],
+                ["viewport rect w,h", snapshot.outerViewport.found && snapshot.outerViewport.rect ? `${snapshot.outerViewport.rect.width.toFixed(1)}, ${snapshot.outerViewport.rect.height.toFixed(1)}` : "-"],
+              ].map(([label, value]) => (
+                <tr key={label}>
+                  <td style={{ border: "1px solid #ccc", padding: 3, fontWeight: 700 }}>{label}</td>
+                  <td style={{ border: "1px solid #ccc", padding: 3 }}>{value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <pre style={{ whiteSpace: "pre-wrap", maxHeight: 400, overflow: "auto" }}>
             {JSON.stringify(snapshot, null, 2)}
           </pre>
