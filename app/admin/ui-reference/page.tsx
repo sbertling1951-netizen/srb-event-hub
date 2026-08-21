@@ -4,6 +4,13 @@ import type { CSSProperties, ReactNode } from "react";
 import { useId, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import {
+  computeNearestNeighborSpacingPx,
+  MARKER_MIN_HIT_AREA_PX,
+  MarkerDot,
+  MarkerLabelChip,
+  resolveDensityAwareMarkerSize,
+} from "@/components/map/canvas";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { Alert } from "@/components/ui/Alert";
@@ -56,6 +63,7 @@ const TOC: Array<{ id: string; label: string }> = [
   { id: "action-hierarchy", label: "15. Button Hierarchy (✅ approved) & Row Actions (undecided)" },
   { id: "depth", label: "16. Button Depth / Tactile Treatment (prototype)" },
   { id: "overlays", label: "17. Dialog & Overlays (✅ approved)" },
+  { id: "map-markers", label: "18. Map Marker Standard (✅ approved)" },
 ];
 
 // ----------------------------------------------------------------------------
@@ -268,6 +276,76 @@ const STATUS_LABEL: Record<SampleStatus, string> = {
 
 const CATEGORY_OPTIONS: SampleCategory[] = ["vendor", "staff", "speaker", "volunteer", "guest"];
 const STATUS_OPTIONS: SampleStatus[] = ["new", "pending", "confirmed", "complete", "cancelled"];
+
+// ----------------------------------------------------------------------------
+// Synthetic marker-density demo data (Section 18). Deliberately NOT real
+// event/site data -- these coordinates only need to reproduce three
+// genuinely different real-world density regimes so the real, unmodified
+// resolveDensityAwareMarkerSize actually resolves three different sizes,
+// not values chosen to look right. All three share the same 200x140
+// "natural" coordinate space so their resolved sizes are directly
+// comparable and none can overflow a narrow viewport.
+//
+// Dense clusters into a narrow right-hand strip (visually the same shape
+// as Saint George's real site columns) rather than spreading evenly --
+// real Saint George's own 234 sites are not evenly spread across its
+// 606x806 image either; they are similarly clustered, which is exactly
+// why nearest-neighbor spacing (not average density over the whole
+// image) is the correct measurement.
+// ----------------------------------------------------------------------------
+
+type MarkerDensityDemo = {
+  key: string;
+  label: string;
+  description: string;
+  points: { xPct: number; yPct: number }[];
+};
+
+function gridPercentPoints(
+  cols: number,
+  rows: number,
+  xRange: [number, number],
+  yRange: [number, number],
+): { xPct: number; yPct: number }[] {
+  const points: { xPct: number; yPct: number }[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      points.push({
+        xPct: xRange[0] + (cols === 1 ? 0 : (c / (cols - 1)) * (xRange[1] - xRange[0])),
+        yPct: yRange[0] + (rows === 1 ? 0 : (r / (rows - 1)) * (yRange[1] - yRange[0])),
+      });
+    }
+  }
+  return points;
+}
+
+const MARKER_DEMO_NATURAL = { width: 200, height: 140 };
+
+const MARKER_DENSITY_DEMOS: MarkerDensityDemo[] = [
+  {
+    key: "dense",
+    label: "Dense",
+    description: "Clustered like Saint George's real 234-site map (~11 real native px median spacing) -- resolves to the legibility floor.",
+    points: gridPercentPoints(7, 6, [65, 95], [5, 95]),
+  },
+  {
+    key: "medium",
+    label: "Medium",
+    description: "A moderate, evenly spread grid -- more room than a dense site map, less than a sparse amenity layer.",
+    points: gridPercentPoints(8, 6, [8, 92], [8, 92]),
+  },
+  {
+    key: "sparse",
+    label: "Sparse",
+    description: "A handful of scattered points, typical of Locations' amenity markers (restrooms, dumpsters, registration) -- resolves to the readability ceiling.",
+    points: [
+      { xPct: 10, yPct: 15 },
+      { xPct: 90, yPct: 20 },
+      { xPct: 50, yPct: 85 },
+      { xPct: 15, yPct: 80 },
+    ],
+  },
+];
 
 export default function AdminUiReferencePage() {
   return (
@@ -2255,6 +2333,196 @@ export function AdminUiReferenceContent() {
           of this page&rsquo;s markup contract can (see <code className="ui-ref-code">Dialog.tsx</code>&rsquo;s own
           doc comment for why). Try it here: open it, press Tab repeatedly (focus should never leave the dialog),
           press Escape, and confirm focus returns to the button that opened it.
+        </p>
+      </RefSection>
+
+      {/* =================================================================
+          18. MAP MARKER STANDARD
+          ================================================================= */}
+      <RefSection
+        id="map-markers"
+        title="Map Marker Standard (✅ approved -- canonical foundation)"
+        description={
+          <>
+            <code className="ui-ref-code">MarkerDot</code> and{" "}
+            <code className="ui-ref-code">MarkerLabelChip</code> (
+            <code className="ui-ref-code">components/map/canvas/markerVisuals.tsx</code>), plus the density-aware
+            sizing in <code className="ui-ref-code">components/map/canvas/markerSizing.ts</code> -- the same real,
+            unmodified primitives and functions every migrated map page calls, not a reference-only reimplementation.
+          </>
+        }
+      >
+        <p style={{ margin: 0, fontSize: "var(--font-size-body)", lineHeight: "var(--line-height-relaxed)" }}>
+          Every map-canvas consumer used to hand-roll its own marker dot and label chip independently (sizes from
+          14px to 60px, inconsistent fonts/padding, no shared colors) with no awareness of how densely a given map's
+          real markers are actually packed. A marker&rsquo;s size lives in the same coordinate space as the map
+          image, so a fixed screen-px marker size is not merely wrong on a narrow viewport -- it is wrong at every
+          zoom level, on every device, because the ratio between marker size and real site spacing never changes
+          with scale. This is now a governed, canonical piece of the Central UI Standard: two separate contracts,
+          each with exactly one implementation.
+        </p>
+
+        <div className="ui-ref-compare-grid">
+          <div className="ui-ref-compare-card">
+            <strong>Visual geometry</strong>
+            <p className="app-subtle-text" style={{ margin: 0 }}>
+              What the marker looks like: visible size, shape, color/tone, label treatment, selected state,
+              density-aware sizing, and zoom/content-scale behavior. Governed centrally --{" "}
+              <code className="ui-ref-code">MarkerDot</code>/<code className="ui-ref-code">MarkerLabelChip</code>{" "}
+              decide the pixels.
+            </p>
+          </div>
+          <div className="ui-ref-compare-card">
+            <strong>Interaction geometry</strong>
+            <p className="app-subtle-text" style={{ margin: 0 }}>
+              How the marker is interacted with: touch/pointer hit area, tap reliability, focus/keyboard behavior,
+              gesture arbitration, tap-vs-drag. Untouched by this standard --{" "}
+              <code className="ui-ref-code">MarkerLayer.tsx</code> and{" "}
+              <code className="ui-ref-code">GestureMapViewportV2.tsx</code> own it exactly as before. A visually
+              small marker must never require a correspondingly small touch target -- see the hit-area example
+              below.
+            </p>
+          </div>
+        </div>
+
+        <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>Standard dot &amp; selected state</h3>
+        <div className="ui-ref-compare-grid">
+          <div className="ui-ref-compare-card" style={{ alignItems: "center", textAlign: "center" }}>
+            <MarkerDot size={22} tone="info" title="Standard marker" />
+            <span className="app-subtle-text">Standard (unselected)</span>
+          </div>
+          <div className="ui-ref-compare-card" style={{ alignItems: "center", textAlign: "center" }}>
+            <MarkerDot size={22} tone="info" emphasis="selected" title="Selected marker" />
+            <span className="app-subtle-text">Selected -- gold ring + pulse, the same accepted treatment Parking
+              uses on real hardware</span>
+          </div>
+          <div className="ui-ref-compare-card" style={{ alignItems: "center", textAlign: "center" }}>
+            <MarkerDot size={22} tone="success" title="Restroom" />
+            <MarkerLabelChip text="Restroom" />
+            <span className="app-subtle-text">Dot + label chip together, the Locations pattern</span>
+          </div>
+        </div>
+
+        <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>Semantic tone vocabulary</h3>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Colors resolve through the same <code className="ui-ref-code">StatusBadgeTone</code> vocabulary as{" "}
+          <a href="#status" className="app-button">
+            Status &amp; Semantic Treatments
+          </a>{" "}
+          -- a marker&rsquo;s <code className="ui-ref-code">danger</code> is the same red as a{" "}
+          <code className="ui-ref-code">StatusBadge</code> danger anywhere else in the app. This is the preferred
+          path for any new marker semantics.
+        </p>
+        <div className="ui-ref-swatch-grid">
+          {(["neutral", "info", "warning", "danger", "success"] as const).map((tone) => (
+            <div key={tone} className="ui-ref-swatch" style={{ display: "grid", placeItems: "center", padding: "var(--space-4)", gap: "var(--space-2)" }}>
+              <MarkerDot size={22} tone={tone} title={tone} />
+              <code className="ui-ref-code">{tone}</code>
+            </div>
+          ))}
+          <div className="ui-ref-swatch" style={{ display: "grid", placeItems: "center", padding: "var(--space-4)", gap: "var(--space-2)" }}>
+            <MarkerDot size={22} color="gold" title="Escape hatch" />
+            <code className="ui-ref-code">color=&quot;gold&quot;</code>
+          </div>
+        </div>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          The last swatch is the <code className="ui-ref-code">color</code> escape hatch -- an exact value that wins
+          over <code className="ui-ref-code">tone</code>, kept for genuinely specialized cases (Parking and
+          Locations both currently use it for their existing accepted &ldquo;selected&rdquo; gold swap, preserved
+          exactly rather than silently changed by this migration). New marker semantics should reach for a canonical
+          tone first; the escape hatch is not the default path.
+        </p>
+
+        <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>Density-aware sizing</h3>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Marker size derives from each map&rsquo;s own real nearest-neighbor site spacing, clamped to a legible
+          floor and a readability ceiling -- dense maps get smaller visible markers, sparse maps may get larger
+          ones, computed live below by the real, unmodified <code className="ui-ref-code">
+          computeNearestNeighborSpacingPx</code>/<code className="ui-ref-code">resolveDensityAwareMarkerSize</code>{" "}
+          against synthetic (not production) coordinates.
+        </p>
+        <div className="ui-ref-compare-grid">
+          {MARKER_DENSITY_DEMOS.map((demo) => {
+            const spacing = computeNearestNeighborSpacingPx(demo.points, MARKER_DEMO_NATURAL);
+            const size = resolveDensityAwareMarkerSize(spacing, { isNarrow: false });
+            return (
+              <div key={demo.key} className="ui-ref-compare-card">
+                <strong>{demo.label}</strong>
+                <div
+                  style={{
+                    position: "relative",
+                    width: MARKER_DEMO_NATURAL.width,
+                    height: MARKER_DEMO_NATURAL.height,
+                    maxWidth: "100%",
+                    background: "var(--color-bg-muted)",
+                    border: "var(--border-width-default) solid var(--color-border-default)",
+                    borderRadius: "var(--radius-medium)",
+                  }}
+                >
+                  {demo.points.map((p, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        position: "absolute",
+                        left: `${p.xPct}%`,
+                        top: `${p.yPct}%`,
+                        transform: "translate(-50%, -50%)",
+                      }}
+                    >
+                      <MarkerDot size={size} tone="info" />
+                    </div>
+                  ))}
+                </div>
+                <p className="app-subtle-text" style={{ margin: 0 }}>
+                  {demo.description} Resolved size: <strong>{size.toFixed(1)}px</strong> (native).
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>Visible marker vs. interaction target</h3>
+        <div className="ui-ref-compare-card" style={{ alignItems: "center", textAlign: "center", maxWidth: 320 }}>
+          <div style={{ position: "relative", display: "inline-block" }}>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                border: "2px dashed var(--color-border-strong)",
+                borderRadius: 8,
+                pointerEvents: "none",
+              }}
+            />
+            <MarkerDot size={8} tone="info" hitAreaSize={MARKER_MIN_HIT_AREA_PX} title="Dense-map marker" />
+          </div>
+          <p className="app-subtle-text" style={{ margin: 0 }}>
+            The visible dot above is 8px -- the same size a Saint-George-dense map resolves to. The dashed box is
+            the real, unmodified <code className="ui-ref-code">MARKER_MIN_HIT_AREA_PX</code> ({MARKER_MIN_HIT_AREA_PX}
+            px) invisible hit area <code className="ui-ref-code">MarkerDot</code> always renders around it --
+            shrinking a marker for legibility on a dense map never shrinks its tap target below a comfortable
+            minimum.
+          </p>
+        </div>
+
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          <strong>Canonical adoption:</strong> migrated onto this standard --{" "}
+          <a href="/admin/parking" className="app-button">
+            Parking
+          </a>
+          , <a href="/admin/locations" className="app-button">
+            Admin Locations
+          </a>
+          , and the public Locations page. Coach Map public (its own real-time occupied/viewer-assigned semantics)
+          and the Master Maps authoring tool (an editing workspace with marquee-select and delete, not a display
+          page) are deliberately not migrated yet -- a separate, future adoption, not an oversight.
+        </p>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          <strong>Central control:</strong> future map-canvas consumers must not independently redefine marker
+          diameter, shape, selected treatment, label-chip styling, or semantic colors. A page provides its own
+          business state (assigned/arrived, occupied/vacant, category); the shared marker visual system in{" "}
+          <code className="ui-ref-code">components/map/canvas/</code> decides how that state renders. This governs
+          marker <em>presentation</em> only -- map pan/zoom/drag gesture mechanics remain fully specialized per{" "}
+          <code className="ui-ref-code">EPICENTRAX_CENTRAL_UI_STANDARD_BLUEPRINT.md</code> §12.
         </p>
       </RefSection>
     </div>

@@ -10,7 +10,7 @@ export {
   SELECTED_SIZE_MULTIPLIER,
 } from "./markerSizing";
 export type { MarkerTone } from "./markerVisuals";
-export { MarkerDot, MarkerLabelChip, resolveMarkerTone } from "./markerVisuals";
+export { MARKER_MIN_HIT_AREA_PX, MarkerDot, MarkerLabelChip, resolveMarkerTone } from "./markerVisuals";
 export type {
   AlignAxis,
   DistributeAxis,

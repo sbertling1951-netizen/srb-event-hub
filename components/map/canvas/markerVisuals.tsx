@@ -45,7 +45,10 @@ function resolveMarkerColor(tone?: MarkerTone, color?: string): string {
   return TONE_COLOR[tone ?? "neutral"];
 }
 
-const MIN_HIT_AREA_PX = 32;
+/** Public so consumers/documentation can refer to the real value instead
+ * of a duplicated guess (see /admin/ui-reference's Map Marker Standard
+ * section). */
+export const MARKER_MIN_HIT_AREA_PX = 32;
 
 export function MarkerDot({
   size,
@@ -72,7 +75,7 @@ export function MarkerDot({
   title?: string;
 }) {
   const resolvedColor = resolveMarkerColor(tone, color);
-  const hitSize = Math.max(hitAreaSize ?? 0, size, MIN_HIT_AREA_PX);
+  const hitSize = Math.max(hitAreaSize ?? 0, size, MARKER_MIN_HIT_AREA_PX);
 
   return (
     <div

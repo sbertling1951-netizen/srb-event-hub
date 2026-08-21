@@ -554,6 +554,15 @@ its settings form, its confirmation prompts are ordinary UI and belong on
 the same system as everywhere else; only the map canvas itself stays
 specialized.
 
+**Refinement (2026-08-21, see §17):** the exclusion above is about map
+*interaction* — pan/zoom/drag gesture mechanics, tap-vs-drag arbitration,
+touch/pointer hit-testing. It is not about marker *visual* rendering. The
+marker dot/label a map canvas draws is presentation, the same category as
+the surrounding chrome, and now participates in the Central UI Standard
+via a shared Map Marker Standard (§17) — while every map canvas's own
+pan/zoom/drag/tap-arbitration code remains exactly as specialized and
+untouched as this section already describes.
+
 ---
 
 ## 13. Files Likely Created/Changed During Implementation
@@ -726,6 +735,63 @@ deliberately avoids.
 
 ---
 
+## 17. Proven Pattern (2026-08-21) — Shared Map Marker Visual Standard
+
+The Shared Map Engine workstream's Stage 3 (a separate effort from this
+blueprint's own staging, tracked in project memory, not numbered here)
+found that every consumer of the canonical `MapCanvas`/`MarkerLayer`
+engine — Parking, admin Locations, public Locations, Coach Map public,
+Master Maps authoring — independently hand-rolled its own marker dot and
+label chip, with inconsistent sizes (14–60px), fonts, and padding, and no
+awareness of how densely a given map's real markers are packed. On
+Parking's real, densely-packed Saint George map this was not merely
+inconsistent but visibly broken: a marker's size lives in the same
+coordinate space as the map image, so a fixed screen-px marker size is
+wrong by the same ratio at every zoom level, not just on narrow
+viewports.
+
+**Accepted and proven: two separate contracts, one implementation each.**
+
+1. **Visual geometry** — size, shape, color/tone, label treatment,
+   selected state, density-aware sizing, zoom/content-scale behavior.
+   Governed by `components/map/canvas/markerVisuals.tsx`
+   (`MarkerDot`/`MarkerLabelChip`) and
+   `components/map/canvas/markerSizing.ts`
+   (`computeNearestNeighborSpacingPx`/`resolveDensityAwareMarkerSize` —
+   real per-map nearest-neighbor spacing drives marker diameter, clamped
+   between a legibility floor and a readability ceiling). Colors resolve
+   through the existing `StatusBadgeTone` vocabulary (§7/`StatusBadge`)
+   so a marker's semantic color matches a `StatusBadge` of the same tone
+   anywhere else in the app; an exact-value `color` prop remains as a
+   deliberate escape hatch for genuinely specialized cases (e.g. the
+   existing accepted "selected" gold swap), not the default path.
+2. **Interaction geometry** — touch/pointer hit area, tap reliability,
+   focus/keyboard behavior, gesture arbitration, tap-vs-drag. Entirely
+   untouched: `MarkerLayer.tsx` and `GestureMapViewportV2.tsx` own this
+   exactly as before, per §12's exclusion. `MarkerDot` renders an
+   independent invisible hit-area wrapper (minimum ~32px) around the
+   visible dot, so a marker shrunk for legibility on a dense map never
+   shrinks its own tap target — achieved with zero changes to
+   `MarkerLayer.tsx`, since its click wrapper already inherits whatever
+   bounding box a page's `renderMarker` returns.
+
+Migrated onto this standard: `app/admin/parking/page.tsx`,
+`app/admin/locations/page.tsx`, `app/locations/page.tsx` — verified
+against real Saint George data (234 sites, 606×806 native px, ~11px real
+median nearest-neighbor spacing) that marker size now resolves to 8px,
+below the real spacing, versus the previous fixed 22–32px (2.9–4.7x too
+large). Coach Map public and the Master Maps authoring tool are
+deliberately not migrated — the former has its own real-time
+occupied/viewer-assigned semantics with no demonstrated density problem,
+the latter is an editing workspace (marquee-select, delete, primary-vs-
+selected) rather than a display page — both a later, separately
+authorized adoption, not an oversight.
+
+Reference implementation and live demonstration:
+`app/admin/ui-reference/page.tsx`, Section 18 ("Map Marker Standard").
+
+---
+
 ## Scope Boundary
 
 This document is discovery and blueprint only. It authorizes no code
@@ -734,7 +800,8 @@ does not decide the `card`/`section` merge, the affirmative/destructive
 system choice, or the third-heading-tier question — each requires its
 own separately authorized Stage 2 decision, consistent with how
 `EPICENTRAX_ADMIN_UI_INVENTORY_AUDIT.md` scoped itself relative to its
-own eventual Stage 2/3. Part 15 above is a later, separate addition
-recording verified Stage 3 evidence — it documents what the checklist
-and admin-users migrations actually proved, not a revision of this
-document's own original discovery-only scope.
+own eventual Stage 2/3. Parts 15–17 above are later, separate additions
+recording verified proven-pattern evidence — they document what the
+checklist, admin-users, Check-In, and Shared Map Engine migrations
+actually proved, not a revision of this document's own original
+discovery-only scope.

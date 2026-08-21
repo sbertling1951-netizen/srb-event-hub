@@ -522,3 +522,81 @@ test("no new StatusBadge tone or AppButton variant was invented to build this pa
     );
   }
 });
+
+// Section 18: Map Marker Standard -- uses the REAL shared marker
+// primitives/sizing functions, not a second reference-only marker
+// implementation. See components/map/canvas/markerSizing.ts and
+// markerVisuals.tsx.
+
+function sectionSource(id: string): string {
+  const start = source.indexOf(`id="${id}"`);
+  assert.ok(start >= 0, `expected to find a RefSection with id="${id}"`);
+  const nextSection = source.indexOf('RefSection', source.indexOf('</RefSection>', start));
+  return source.slice(start, nextSection > 0 ? nextSection : source.length);
+}
+
+test("the Map Marker Standard section renders as a real heading", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  assert.ok(html.includes("Map Marker Standard"));
+});
+
+test("the Map Marker Standard section imports the real shared marker primitives/sizing functions, not a page-local reimplementation", () => {
+  for (const name of [
+    "computeNearestNeighborSpacingPx",
+    "MARKER_MIN_HIT_AREA_PX",
+    "MarkerDot",
+    "MarkerLabelChip",
+    "resolveDensityAwareMarkerSize",
+  ]) {
+    assert.ok(source.includes(name), `expected an import/use of ${name}`);
+  }
+  assert.match(source, /from "@\/components\/map\/canvas"/);
+});
+
+test("the Map Marker Standard section contains no hand-rolled marker dot/label styling -- it only composes the real MarkerDot/MarkerLabelChip components", () => {
+  const section = sectionSource("map-markers");
+  assert.match(section, /<MarkerDot/);
+  assert.match(section, /<MarkerLabelChip/);
+  // A hand-rolled marker dot would need its own 50% border-radius circle;
+  // none should exist in this section's own JSX (MarkerDot owns that).
+  assert.equal(/borderRadius:\s*"50%"/.test(section), false);
+});
+
+test("all five canonical StatusBadgeTone values plus the color escape hatch are demonstrated as real MarkerDot tones", () => {
+  const section = sectionSource("map-markers");
+  for (const tone of ["neutral", "info", "warning", "danger", "success"]) {
+    assert.ok(section.includes(tone), `expected tone ${tone} to be demonstrated`);
+  }
+  assert.match(section, /color="gold"/);
+  assert.match(section, /escape hatch/i);
+});
+
+test("the three density demos resolve three genuinely different sizes via the real function, not hardcoded values -- dense clamps to the floor and sparse clamps to the ceiling", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  const resolvedSizes = [...html.matchAll(/Resolved size: <strong>([\d.]+)px<\/strong>/g)].map((m) =>
+    Number(m[1]),
+  );
+  assert.equal(resolvedSizes.length, 3, "expected exactly 3 density demo cards");
+  const [dense, medium, sparse] = resolvedSizes;
+  assert.ok(dense < medium, "dense must resolve smaller than medium");
+  assert.ok(medium < sparse, "medium must resolve smaller than sparse");
+  assert.equal(dense, 8, "dense synthetic spacing must clamp to the real legibility floor");
+  assert.equal(sparse, 22, "sparse synthetic spacing must clamp to the real readability ceiling");
+});
+
+test("the section documents visual geometry and interaction geometry as two separate contracts", () => {
+  const section = sectionSource("map-markers");
+  assert.match(section, /Visual geometry/);
+  assert.match(section, /Interaction geometry/);
+  assert.match(section, /MARKER_MIN_HIT_AREA_PX/);
+});
+
+test("canonical adoption names Parking and both Locations pages as migrated, and explicitly excludes Coach Map and Master Maps", () => {
+  const section = sectionSource("map-markers");
+  assert.match(section, /Parking/);
+  assert.match(section, /Admin Locations/);
+  assert.match(section, /public Locations/);
+  assert.match(section, /Coach Map/);
+  assert.match(section, /Master Maps/);
+  assert.match(section, /not migrated yet|deliberately not migrated/);
+});
