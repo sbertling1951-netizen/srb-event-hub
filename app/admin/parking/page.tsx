@@ -1717,10 +1717,10 @@ function ParkingAdminPageInner() {
               Re-center Map
             </AppButton>
           </div>
+
+          {mapDebugEnabled && <ParkingMapDebugPanel sites={sites} />}
         </div>
       </div>
-
-      {mapDebugEnabled && <ParkingMapDebugPanel sites={sites} />}
     </div>
   );
 }

@@ -287,7 +287,9 @@ export function ParkingMapDebugPanel({ sites }: { sites: ParkingSiteForDebug[] }
   }
 
   function recompute() {
-    setSnapshot(buildFullSnapshot(sampleSites));
+    const next = buildFullSnapshot(sampleSites);
+    setSnapshot(next);
+    (window as any).__parkingMapDebugSnapshot = next;
     if (outlinesOn) {
       applyOutlines();
     }
