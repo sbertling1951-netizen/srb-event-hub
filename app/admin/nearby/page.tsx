@@ -19,9 +19,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
-import { Page } from "@/components/ui/Page";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
+import { SearchField, TableToolbar, TableToolbarDisclosure, TableToolbarPrimaryRow } from "@/components/ui/TableToolbar";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -98,6 +104,14 @@ type EventPlaceForm = {
   lat: string;
   lng: string;
   is_hidden: boolean;
+};
+
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  danger: boolean;
 };
 
 const emptyStoredPlaceForm: StoredPlaceForm = {
@@ -185,34 +199,19 @@ function getCoordinateStatus(
   lat: number | null | undefined,
   lng: number | null | undefined,
   locationCode?: string | null,
-) {
+): { label: string; tone: StatusBadgeTone } {
   const hasCoordinates =
     lat !== null && lat !== undefined && lng !== null && lng !== undefined;
 
   if (!hasCoordinates) {
-    return {
-      label: "🟡 Needs Geocode",
-      background: "#fff7d6",
-      border: "1px solid #f0c36d",
-      color: "#7a5200",
-    };
+    return { label: "Needs Geocode", tone: "warning" };
   }
 
   if (locationCode?.trim()) {
-    return {
-      label: "🟢 Plus Code",
-      background: "#ecfdf3",
-      border: "1px solid #86efac",
-      color: "#166534",
-    };
+    return { label: "Plus Code", tone: "success" };
   }
 
-  return {
-    label: "🔵 GPS Ready",
-    background: "#e8f1ff",
-    border: "1px solid #93c5fd",
-    color: "#1d4ed8",
-  };
+  return { label: "GPS Ready", tone: "info" };
 }
 
 function SortableEventPlaceCard(props: {
@@ -287,30 +286,12 @@ function SortableEventPlaceCard(props: {
           {place.category || "Uncategorized"}
         </div>
 
-        <div
-          style={{
-            fontSize: 11,
-            background: coordinateStatus.background,
-            border: coordinateStatus.border,
-            color: coordinateStatus.color,
-            borderRadius: 999,
-            padding: "3px 8px",
-            display: "inline-flex",
-            width: "fit-content",
-            marginTop: 6,
-            fontWeight: 600,
-          }}
-        >
-          {coordinateStatus.label}
+        <div style={{ marginTop: 6, width: "fit-content" }}>
+          <StatusBadge tone={coordinateStatus.tone}>{coordinateStatus.label}</StatusBadge>
         </div>
 
         {place.address ? (
-          <div
-            style={{
-              fontSize: 12,
-              color: "#666",
-            }}
-          >
+          <div className="app-subtle-text" style={{ fontSize: 12 }}>
             {place.address}
           </div>
         ) : null}
@@ -359,52 +340,19 @@ function StoredPlaceCard(props: {
       >
         <div style={{ fontWeight: 700 }}>{place.name}</div>
 
-        {isDuplicate ? (
-          <div
-            style={{
-              fontSize: 11,
-              background: "#fee2e2",
-              border: "1px solid #fca5a5",
-              color: "#991b1b",
-              borderRadius: 999,
-              padding: "3px 8px",
-              fontWeight: 700,
-              whiteSpace: "nowrap",
-            }}
-          >
-            Duplicate
-          </div>
-        ) : null}
+        {isDuplicate ? <StatusBadge tone="danger">Duplicate</StatusBadge> : null}
       </div>
 
-      <div style={{ fontSize: 13, color: "#555" }}>
+      <div className="app-subtle-text" style={{ fontSize: 13 }}>
         {place.category || "Uncategorized"}
       </div>
 
-      <div
-        style={{
-          fontSize: 11,
-          background: coordinateStatus.background,
-          border: coordinateStatus.border,
-          color: coordinateStatus.color,
-          borderRadius: 999,
-          padding: "3px 8px",
-          display: "inline-flex",
-          width: "fit-content",
-          marginTop: 4,
-          fontWeight: 600,
-        }}
-      >
-        {coordinateStatus.label}
+      <div style={{ width: "fit-content" }}>
+        <StatusBadge tone={coordinateStatus.tone}>{coordinateStatus.label}</StatusBadge>
       </div>
 
       {place.address ? (
-        <div
-          style={{
-            fontSize: 12,
-            color: "#666",
-          }}
-        >
+        <div className="app-subtle-text" style={{ fontSize: 12 }}>
           {place.address}
         </div>
       ) : null}
@@ -414,8 +362,11 @@ function StoredPlaceCard(props: {
 
 export default function AdminNearbyPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_nearby">
-      <AdminShellAdapter pageTitle="Nearby Admin">
+    <AdminRouteGuard requiredTask="event.nearby.manage">
+      <AdminShellAdapter
+        pageTitle="Nearby Admin"
+        backTarget={{ href: "/admin/map-admin", label: "Map Admin" }}
+      >
         <AdminNearbyPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
@@ -426,6 +377,11 @@ function AdminNearbyPageInner() {
   const { admin } = useAdmin();
   const [adminEvent, setAdminEvent] = useState<ReturnType<typeof getCurrentAdminEvent>>(null);
   const [status, setStatus] = useState("Loading nearby admin...");
+
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const storedPlaceFormSectionRef = useRef<HTMLDivElement | null>(null);
+  const eventPlaceFormSectionRef = useRef<HTMLDivElement | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -528,7 +484,7 @@ function AdminNearbyPageInner() {
   const [bulkGeocoding, setBulkGeocoding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isNarrow, setIsNarrow] = useState(false);
+  const { isCompact } = useShellInterfaceCapabilities();
 
   const [googleQuery, setGoogleQuery] = useState("");
   const [googleRadius, setGoogleRadius] = useState("10");
@@ -564,20 +520,34 @@ function AdminNearbyPageInner() {
     setStatus(message);
   }
 
+  function requestConfirmation(dialog: Partial<ConfirmDialogState>) {
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(false);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmDialog({
+        title: dialog.title || "Confirm Action",
+        message: dialog.message || "Are you sure you want to continue?",
+        confirmLabel: dialog.confirmLabel || "Confirm",
+        cancelLabel: dialog.cancelLabel || "Cancel",
+        danger: !!dialog.danger,
+      });
+    });
+  }
+
+  function closeConfirmDialog(confirmed: boolean) {
+    confirmResolverRef.current?.(confirmed);
+    confirmResolverRef.current = null;
+    setConfirmDialog(null);
+  }
+
   function showError(message: string) {
     setError(message);
     setStatus("");
   }
 
-  useEffect(() => {
-    function handleResize() {
-      setIsNarrow(window.innerWidth < 1100);
-    }
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
   useEffect(() => {
     if (!admin) {
@@ -716,6 +686,9 @@ function AdminNearbyPageInner() {
       new Set(storedPlaces.map((p) => p.category).filter(Boolean)),
     ).sort();
   }, [storedPlaces]);
+
+  const storedPlacesActiveFilterCount =
+    (showMissingCoordsOnly ? 1 : 0) + (showDuplicatesOnly ? 1 : 0);
 
   const sortedEventPlaces = useMemo(() => {
     return [...eventPlaces].sort((a, b) => {
@@ -1063,9 +1036,12 @@ function AdminNearbyPageInner() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete stored area "${selectedArea.name}" and all of its places?`,
-    );
+    const confirmed = await requestConfirmation({
+      title: "Delete Stored Area",
+      message: `Delete stored area "${selectedArea.name}" and all of its places? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
     if (!confirmed) {
       return;
     }
@@ -1222,9 +1198,12 @@ function AdminNearbyPageInner() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete stored place "${storedForm.name}"?`,
-    );
+    const confirmed = await requestConfirmation({
+      title: "Delete Stored Place",
+      message: `Delete stored place "${storedForm.name}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
     if (!confirmed) {
       return;
     }
@@ -1270,9 +1249,12 @@ function AdminNearbyPageInner() {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Replace the current event nearby list with this stored area?",
-    );
+    const confirmed = await requestConfirmation({
+      title: "Replace Event Nearby List",
+      message: "Replace the current event nearby list with this stored area? This cannot be undone.",
+      confirmLabel: "Replace",
+      danger: true,
+    });
     if (!confirmed) {
       return;
     }
@@ -1683,7 +1665,12 @@ function AdminNearbyPageInner() {
       return;
     }
 
-    const confirmed = window.confirm(`Delete event place "${eventForm.name}"?`);
+    const confirmed = await requestConfirmation({
+      title: "Delete Event Place",
+      message: `Delete event place "${eventForm.name}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
     if (!confirmed) {
       return;
     }
@@ -1908,292 +1895,214 @@ function AdminNearbyPageInner() {
   }
 
   return (
-    <Page style={{ padding: 24, display: "grid", gap: 18 }}>
-      <div
-        className="app-button-row"
-        style={{
-          marginBottom: 18,
-          width: "100%",
-          maxWidth: 420,
-        }}
-      >
-        <button
-          type="button"
-          className="app-button app-button-full"
-          onClick={() => {
-            window.location.href = "/admin/dashboard";
-          }}
-          style={{
-            minHeight: 52,
-            fontSize: 16,
-          }}
-        >
-          ← Return to Dashboard
-        </button>
+    <div style={{ display: "grid", gap: "var(--space-10)" }}>
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title || "Confirm Action"}
+        message={confirmDialog?.message || "Are you sure you want to continue?"}
+        confirmLabel={confirmDialog?.confirmLabel || "Confirm"}
+        cancelLabel={confirmDialog?.cancelLabel || "Cancel"}
+        danger={!!confirmDialog?.danger}
+        onCancel={() => closeConfirmDialog(false)}
+        onConfirm={() => closeConfirmDialog(true)}
+      />
 
-        <button
-          type="button"
-          className="app-button app-button-full"
-          onClick={() => {
-            window.location.href = "/admin/map-admin";
-          }}
-          style={{
-            minHeight: 52,
-            fontSize: 16,
-          }}
-        >
-          ← Back to Map Admin
-        </button>
-      </div>
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {!error && status ? <Alert tone="neutral">{status}</Alert> : null}
 
-      {error ? (
-        <div
-          style={{
-            border: "1px solid #e2b4b4",
-            borderRadius: 10,
-            background: "#fff3f3",
-            color: "#8a1f1f",
-            padding: 12,
-          }}
-        >
-          {error}
+      <PageSection variant="section">
+        <PageHeader title="Nearby Admin" headingLevel="h1" titleClassName="app-section-title" />
+
+        <div style={{ display: "grid", gap: "var(--space-1)" }}>
+          <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+            Admin Working Event
+          </div>
+          <div>{adminEvent?.name || "No event selected"}</div>
+          <div className="app-subtle-text">{adminEvent?.location || ""}</div>
         </div>
-      ) : null}
-
-      <div className="app-card-section-muted">
-        <PageHeader
-          title="Nearby Admin"
-          headingLevel="h1"
-          titleClassName="app-section-title"
-        />
-
-        <div style={{ fontWeight: 700 }}>Admin Working Event</div>
-
-        <div>{adminEvent?.name || "No event selected"}</div>
-
-        <div style={{ color: "#555", marginTop: 4 }}>
-          {adminEvent?.location || ""}
-        </div>
-
-        <div className="app-subtle-text" style={{ marginTop: 8 }}>
-          {status}
-        </div>
-      </div>
+      </PageSection>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isNarrow ? "1fr" : "minmax(320px, 380px) 1fr",
-          gap: 18,
+          gridTemplateColumns: isCompact ? "1fr" : "minmax(320px, 380px) 1fr",
+          gap: "var(--space-5)",
           alignItems: "start",
         }}
       >
         <PageSection title="Stored Area Lists" titleStyle={{ margin: 0 }}>
           {loadingAreas ? (
-            <div>Loading stored areas...</div>
+            <Alert tone="neutral">Loading stored areas...</Alert>
           ) : (
-            <>
-              <select
-                value={selectedAreaId}
-                disabled={!admin || loadingAreas}
-                onChange={(e) => {
-                  setSelectedAreaId(e.target.value);
+            <div style={{ display: "grid", gap: "var(--space-4)" }}>
+              <Field label="Selected Area">
+                {(controlProps) => (
+                  <Select
+                    {...controlProps}
+                    value={selectedAreaId}
+                    disabled={!admin || loadingAreas}
+                    onChange={(e) => {
+                      setSelectedAreaId(e.target.value);
 
-                  setStoredCustomCategory("");
-                  setShowStoredCustomCategory(false);
+                      setStoredCustomCategory("");
+                      setShowStoredCustomCategory(false);
 
-                  setStoredForm(emptyStoredPlaceForm);
-                }}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 10,
-                  background: "#fff",
-                  fontSize: 14,
-                }}
-              >
-                <option value="">Select a stored area</option>
-                {storedAreas.map((area) => (
-                  <option key={area.id} value={area.id}>
-                    {area.name}
-                  </option>
-                ))}
-              </select>
+                      setStoredForm(emptyStoredPlaceForm);
+                    }}
+                  >
+                    <option value="">Select a stored area</option>
+                    {storedAreas.map((area) => (
+                      <option key={area.id} value={area.id}>
+                        {area.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
 
-              <input
-                value={areaName}
-                onChange={(e) => setAreaName(e.target.value)}
-                placeholder="Stored area name"
-                style={{ padding: 10 }}
-                disabled={!admin || savingArea}
-              />
+              <Field label="Area Name">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={areaName}
+                    onChange={(e) => setAreaName(e.target.value)}
+                    placeholder="Stored area name"
+                    disabled={!admin || savingArea}
+                  />
+                )}
+              </Field>
 
-              <textarea
-                value={areaDescription}
-                onChange={(e) => setAreaDescription(e.target.value)}
-                placeholder="Stored area description"
-                rows={3}
-                style={{ padding: 10, resize: "vertical" }}
-                disabled={!admin || savingArea}
-              />
+              <Field label="Area Description">
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    value={areaDescription}
+                    onChange={(e) => setAreaDescription(e.target.value)}
+                    placeholder="Stored area description"
+                    rows={3}
+                    disabled={!admin || savingArea}
+                  />
+                )}
+              </Field>
 
               {selectedArea?.google_last_run ? (
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "#666",
-                    background: "#f8f9fb",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 8,
-                    padding: 10,
-                  }}
-                >
-                  Last Google Search Run:{" "}
-                  {new Date(selectedArea.google_last_run).toLocaleString()}
-                </div>
+                <Alert tone="neutral">
+                  Last Google Search Run: {new Date(selectedArea.google_last_run).toLocaleString()}
+                </Alert>
               ) : null}
 
               <div className="app-button-row">
-                {" "}
-                <button
-                  type="button"
-                  onClick={() => void createStoredArea()}
-                  disabled={!admin || savingArea}
-                >
+                <AppButton onClick={() => void createStoredArea()} disabled={!admin || savingArea}>
                   New Stored Area
-                </button>
-                <button
-                  type="button"
+                </AppButton>
+                <AppButton
+                  variant="primary"
                   onClick={() => void updateStoredArea()}
                   disabled={!admin || !selectedAreaId || savingArea}
                 >
                   Save Area Changes
-                </button>
-                <button
-                  type="button"
+                </AppButton>
+                <AppButton
+                  variant="danger"
                   onClick={() => void deleteStoredArea()}
                   disabled={!admin || !selectedAreaId || savingArea}
                 >
                   Delete Area
-                </button>
+                </AppButton>
               </div>
 
-              <button
-                type="button"
-                onClick={() => void replaceEventListFromStored()}
-                disabled={
-                  !admin || !adminEvent?.id || !selectedAreaId || copyingToEvent
-                }
-              >
-                {copyingToEvent
-                  ? "Replacing Event List..."
-                  : "Replace Event Nearby from Stored Area"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void mergeStoredAreaIntoEvent()}
-                disabled={
-                  !admin || !adminEvent?.id || !selectedAreaId || copyingToEvent
-                }
-              >
-                {copyingToEvent
-                  ? "Merging Into Event..."
-                  : "Merge Stored Area Into Event Nearby"}
-              </button>
-            </>
+              <div className="app-button-row">
+                <AppButton
+                  onClick={() => void replaceEventListFromStored()}
+                  disabled={!admin || !adminEvent?.id || !selectedAreaId || copyingToEvent}
+                >
+                  {copyingToEvent ? "Replacing Event List..." : "Replace Event Nearby from Stored Area"}
+                </AppButton>
+                <AppButton
+                  onClick={() => void mergeStoredAreaIntoEvent()}
+                  disabled={!admin || !adminEvent?.id || !selectedAreaId || copyingToEvent}
+                >
+                  {copyingToEvent ? "Merging Into Event..." : "Merge Stored Area Into Event Nearby"}
+                </AppButton>
+              </div>
+            </div>
           )}
         </PageSection>
 
-        <div className="app-card-section" style={{ display: "grid", gap: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Stored Area Places</h2>
+        <PageSection variant="section">
+          <PageHeader
+            title="Stored Area Places"
+            headingLevel="h2"
+            titleClassName="app-section-title"
+            actions={
+              <AppButton
+                variant="secondary"
+                onClick={() => void bulkGeocodeStoredPlaces()}
+                disabled={!admin || bulkGeocoding || loadingStoredPlaces || storedPlaces.length === 0}
+              >
+                {bulkGeocoding ? "Bulk Geocoding..." : "Bulk Geocode Missing GPS"}
+              </AppButton>
+            }
+          />
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isNarrow
-                ? "1fr"
-                : "minmax(220px,1fr) 180px auto auto auto",
-              gap: 8,
-              marginBottom: 16,
-              alignItems: "center",
-            }}
-          >
-            <input
-              value={storedSearch}
-              onChange={(e) => setStoredSearch(e.target.value)}
-              placeholder="Search stored places"
-              style={{ padding: 10 }}
-            />
-
-            <select
-              value={storedCategoryFilter}
-              onChange={(e) => setStoredCategoryFilter(e.target.value)}
-              style={{ padding: 10 }}
-            >
-              <option value="All">All Categories</option>
-
-              {storedCategories.map((category) => (
-                <option key={category} value={category || ""}>
-                  {category}
-                </option>
-              ))}
-            </select>
-
-            <label
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                fontSize: 14,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={showMissingCoordsOnly}
-                onChange={(e) => setShowMissingCoordsOnly(e.target.checked)}
+          <TableToolbar>
+            <TableToolbarPrimaryRow>
+              <SearchField
+                label="Search"
+                value={storedSearch}
+                onChange={setStoredSearch}
+                id="stored-place-search"
+                placeholder="Search stored places"
               />
-              Missing Coordinates
-            </label>
 
-            <label
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                fontSize: 14,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={showDuplicatesOnly}
-                onChange={(e) => setShowDuplicatesOnly(e.target.checked)}
-              />
-              Duplicates
-            </label>
+              <div>
+                <label className="table-toolbar-label" htmlFor="stored-place-category-filter">
+                  Category
+                </label>
+                <select
+                  id="stored-place-category-filter"
+                  value={storedCategoryFilter}
+                  onChange={(e) => setStoredCategoryFilter(e.target.value)}
+                >
+                  <option value="All">All Categories</option>
+                  {storedCategories.map((category) => (
+                    <option key={category} value={category || ""}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </TableToolbarPrimaryRow>
 
-            <button
-              type="button"
-              className="app-button app-button-muted"
-              onClick={() => void bulkGeocodeStoredPlaces()}
-              disabled={
-                !admin ||
-                bulkGeocoding ||
-                loadingStoredPlaces ||
-                storedPlaces.length === 0
-              }
-            >
-              {bulkGeocoding ? "Bulk Geocoding..." : "Bulk Geocode Missing GPS"}
-            </button>
-          </div>
+            <TableToolbarDisclosure label="More filters" activeCount={storedPlacesActiveFilterCount}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+                <label style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={showMissingCoordsOnly}
+                    onChange={(e) => setShowMissingCoordsOnly(e.target.checked)}
+                  />
+                  Missing Coordinates
+                </label>
+                <label style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={showDuplicatesOnly}
+                    onChange={(e) => setShowDuplicatesOnly(e.target.checked)}
+                  />
+                  Duplicates
+                </label>
+              </div>
+            </TableToolbarDisclosure>
+          </TableToolbar>
 
           {!selectedAreaId ? (
-            <div>Select a stored area to manage its reusable places.</div>
+            <Alert tone="neutral">Select a stored area to manage its reusable places.</Alert>
           ) : (
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: isNarrow
+                gridTemplateColumns: isCompact
                   ? "1fr"
                   : "minmax(260px, 360px) 1fr",
                 gap: 18,
@@ -2209,9 +2118,9 @@ function AdminNearbyPageInner() {
                 }}
               >
                 {loadingStoredPlaces ? (
-                  <div>Loading stored places...</div>
+                  <Alert tone="neutral">Loading stored places...</Alert>
                 ) : sortedStoredPlaces.length === 0 ? (
-                  <div>No stored places found.</div>
+                  <Alert tone="neutral">No stored places found.</Alert>
                 ) : (
                   sortedStoredPlaces.map((place) => {
                     const selected = storedForm.id === place.id;
@@ -2240,218 +2149,218 @@ function AdminNearbyPageInner() {
                 )}
               </div>
 
-              <div style={{ display: "grid", gap: 8 }}>
-                <input
-                  data-stored-field="name"
-                  onFocus={() => rememberStoredFieldFocus("name")}
-                  value={storedForm.name}
-                  onChange={(e) =>
-                    setStoredForm((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                  placeholder="Place name"
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingStoredPlace}
-                />
-                <select
-                  data-stored-field="category"
-                  onFocus={() => rememberStoredFieldFocus("category")}
-                  value={
-                    showStoredCustomCategory
-                      ? "__custom__"
-                      : storedForm.category
-                  }
-                  onChange={(e) => {
-                    const nextValue = e.target.value;
+              <div ref={storedPlaceFormSectionRef} style={{ display: "grid", gap: "var(--space-3)" }}>
+                <Field label="Place Name">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      data-stored-field="name"
+                      onFocus={() => rememberStoredFieldFocus("name")}
+                      value={storedForm.name}
+                      onChange={(e) =>
+                        setStoredForm((prev) => ({ ...prev, name: e.target.value }))
+                      }
+                      placeholder="Place name"
+                      disabled={!admin || savingStoredPlace}
+                    />
+                  )}
+                </Field>
 
-                    if (nextValue === "__custom__") {
-                      setShowStoredCustomCategory(true);
-                      setStoredCustomCategory("");
-                      setStoredForm((prev) => ({ ...prev, category: "" }));
-                      return;
-                    }
+                <Field label="Category">
+                  {(controlProps) => (
+                    <Select
+                      {...controlProps}
+                      data-stored-field="category"
+                      onFocus={() => rememberStoredFieldFocus("category")}
+                      value={showStoredCustomCategory ? "__custom__" : storedForm.category}
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
 
-                    setShowStoredCustomCategory(false);
-                    setStoredCustomCategory("");
-                    setStoredForm((prev) => ({
-                      ...prev,
-                      category: nextValue,
-                    }));
-                  }}
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingStoredPlace}
-                >
-                  <option value="">Select category</option>
+                        if (nextValue === "__custom__") {
+                          setShowStoredCustomCategory(true);
+                          setStoredCustomCategory("");
+                          setStoredForm((prev) => ({ ...prev, category: "" }));
+                          return;
+                        }
 
-                  <option value="Restaurant">Restaurant</option>
-                  <option value="Fuel">Fuel</option>
-                  <option value="Grocery">Grocery</option>
-                  <option value="Shopping">Shopping</option>
-                  <option value="Medical">Medical</option>
-                  <option value="Pharmacy">Pharmacy</option>
-                  <option value="RV Service">RV Service</option>
-                  <option value="Attraction">Attraction</option>
-                  <option value="Other">Other</option>
-
-                  {storedForm.category &&
-                  ![
-                    "Restaurant",
-                    "Fuel",
-                    "Grocery",
-                    "Shopping",
-                    "Medical",
-                    "Pharmacy",
-                    "RV Service",
-                    "Attraction",
-                    "Other",
-                  ].includes(storedForm.category) ? (
-                    <option value={storedForm.category}>
-                      {storedForm.category}
-                    </option>
-                  ) : null}
-
-                  <option value="__custom__">+ Add new category...</option>
-                </select>
+                        setShowStoredCustomCategory(false);
+                        setStoredCustomCategory("");
+                        setStoredForm((prev) => ({ ...prev, category: nextValue }));
+                      }}
+                      disabled={!admin || savingStoredPlace}
+                    >
+                      <option value="">Select category</option>
+                      <option value="Restaurant">Restaurant</option>
+                      <option value="Fuel">Fuel</option>
+                      <option value="Grocery">Grocery</option>
+                      <option value="Shopping">Shopping</option>
+                      <option value="Medical">Medical</option>
+                      <option value="Pharmacy">Pharmacy</option>
+                      <option value="RV Service">RV Service</option>
+                      <option value="Attraction">Attraction</option>
+                      <option value="Other">Other</option>
+                      {storedForm.category &&
+                      ![
+                        "Restaurant",
+                        "Fuel",
+                        "Grocery",
+                        "Shopping",
+                        "Medical",
+                        "Pharmacy",
+                        "RV Service",
+                        "Attraction",
+                        "Other",
+                      ].includes(storedForm.category) ? (
+                        <option value={storedForm.category}>{storedForm.category}</option>
+                      ) : null}
+                      <option value="__custom__">+ Add new category...</option>
+                    </Select>
+                  )}
+                </Field>
 
                 {showStoredCustomCategory ? (
-                  <input
-                    data-stored-field="custom-category"
-                    onFocus={() => rememberStoredFieldFocus("custom-category")}
-                    value={storedCustomCategory}
-                    onChange={(e) => {
-                      const nextValue = e.target.value;
-                      setStoredCustomCategory(nextValue);
-                      setStoredForm((prev) => ({
-                        ...prev,
-                        category: nextValue.trim(),
-                      }));
-                    }}
-                    placeholder="Enter new category"
-                    style={{ padding: 10 }}
-                    disabled={!admin || savingStoredPlace}
-                  />
+                  <Field label="New Category">
+                    {(controlProps) => (
+                      <Input
+                        {...controlProps}
+                        data-stored-field="custom-category"
+                        onFocus={() => rememberStoredFieldFocus("custom-category")}
+                        value={storedCustomCategory}
+                        onChange={(e) => {
+                          const nextValue = e.target.value;
+                          setStoredCustomCategory(nextValue);
+                          setStoredForm((prev) => ({ ...prev, category: nextValue.trim() }));
+                        }}
+                        placeholder="Enter new category"
+                        disabled={!admin || savingStoredPlace}
+                      />
+                    )}
+                  </Field>
                 ) : null}
 
-                <input
-                  data-stored-field="address"
-                  onFocus={() => rememberStoredFieldFocus("address")}
-                  value={storedForm.address}
-                  onChange={(e) =>
-                    setStoredForm((prev) => ({
-                      ...prev,
-                      address: e.target.value,
-                    }))
-                  }
-                  placeholder="Address"
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingStoredPlace}
-                />
-                <input
-                  data-stored-field="phone"
-                  onFocus={() => rememberStoredFieldFocus("phone")}
-                  value={storedForm.phone}
-                  onChange={(e) =>
-                    setStoredForm((prev) => ({
-                      ...prev,
-                      phone: e.target.value,
-                    }))
-                  }
-                  placeholder="Phone"
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingStoredPlace}
-                />
-                <input
-                  data-stored-field="website"
-                  onFocus={() => rememberStoredFieldFocus("website")}
-                  value={storedForm.website}
-                  onChange={(e) =>
-                    setStoredForm((prev) => ({
-                      ...prev,
-                      website: e.target.value,
-                    }))
-                  }
-                  placeholder="Website"
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingStoredPlace}
-                />
-                <textarea
-                  data-stored-field="notes"
-                  onFocus={() => rememberStoredFieldFocus("notes")}
-                  value={storedForm.notes}
-                  onChange={(e) =>
-                    setStoredForm((prev) => ({
-                      ...prev,
-                      notes: e.target.value,
-                    }))
-                  }
-                  placeholder="Notes"
-                  rows={4}
-                  style={{ padding: 10, resize: "vertical" }}
-                  disabled={!admin || savingStoredPlace}
-                />
+                <Field label="Address">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      data-stored-field="address"
+                      onFocus={() => rememberStoredFieldFocus("address")}
+                      value={storedForm.address}
+                      onChange={(e) =>
+                        setStoredForm((prev) => ({ ...prev, address: e.target.value }))
+                      }
+                      placeholder="Address"
+                      disabled={!admin || savingStoredPlace}
+                    />
+                  )}
+                </Field>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
-                    gap: 8,
-                  }}
-                >
-                  <input
-                    data-stored-field="lat"
-                    onFocus={() => rememberStoredFieldFocus("lat")}
-                    value={storedForm.lat}
-                    onChange={(e) =>
-                      setStoredForm((prev) => ({
-                        ...prev,
-                        lat: e.target.value,
-                      }))
-                    }
-                    placeholder="Latitude"
-                    style={{ padding: 10 }}
-                    disabled={!admin || savingStoredPlace}
-                  />
-                  <input
-                    data-stored-field="lng"
-                    onFocus={() => rememberStoredFieldFocus("lng")}
-                    value={storedForm.lng}
-                    onChange={(e) =>
-                      setStoredForm((prev) => ({
-                        ...prev,
-                        lng: e.target.value,
-                      }))
-                    }
-                    placeholder="Longitude"
-                    style={{ padding: 10 }}
-                    disabled={!admin || savingStoredPlace}
-                  />
+                <Field label="Phone">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      data-stored-field="phone"
+                      onFocus={() => rememberStoredFieldFocus("phone")}
+                      value={storedForm.phone}
+                      onChange={(e) =>
+                        setStoredForm((prev) => ({ ...prev, phone: e.target.value }))
+                      }
+                      placeholder="Phone"
+                      disabled={!admin || savingStoredPlace}
+                    />
+                  )}
+                </Field>
+
+                <Field label="Website">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      data-stored-field="website"
+                      onFocus={() => rememberStoredFieldFocus("website")}
+                      value={storedForm.website}
+                      onChange={(e) =>
+                        setStoredForm((prev) => ({ ...prev, website: e.target.value }))
+                      }
+                      placeholder="Website"
+                      disabled={!admin || savingStoredPlace}
+                    />
+                  )}
+                </Field>
+
+                <Field label="Notes">
+                  {(controlProps) => (
+                    <Textarea
+                      {...controlProps}
+                      data-stored-field="notes"
+                      onFocus={() => rememberStoredFieldFocus("notes")}
+                      value={storedForm.notes}
+                      onChange={(e) =>
+                        setStoredForm((prev) => ({ ...prev, notes: e.target.value }))
+                      }
+                      placeholder="Notes"
+                      rows={4}
+                      disabled={!admin || savingStoredPlace}
+                    />
+                  )}
+                </Field>
+
+                <div className="app-form-grid-2">
+                  <Field label="Latitude">
+                    {(controlProps) => (
+                      <Input
+                        {...controlProps}
+                        data-stored-field="lat"
+                        onFocus={() => rememberStoredFieldFocus("lat")}
+                        value={storedForm.lat}
+                        onChange={(e) =>
+                          setStoredForm((prev) => ({ ...prev, lat: e.target.value }))
+                        }
+                        placeholder="Latitude"
+                        disabled={!admin || savingStoredPlace}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Longitude">
+                    {(controlProps) => (
+                      <Input
+                        {...controlProps}
+                        data-stored-field="lng"
+                        onFocus={() => rememberStoredFieldFocus("lng")}
+                        value={storedForm.lng}
+                        onChange={(e) =>
+                          setStoredForm((prev) => ({ ...prev, lng: e.target.value }))
+                        }
+                        placeholder="Longitude"
+                        disabled={!admin || savingStoredPlace}
+                      />
+                    )}
+                  </Field>
                 </div>
 
-                <input
-                  data-stored-field="location_code"
-                  onFocus={() => rememberStoredFieldFocus("location_code")}
-                  value={storedForm.location_code}
-                  onChange={(e) =>
-                    setStoredForm((prev) => ({
-                      ...prev,
-                      location_code: e.target.value,
-                    }))
-                  }
-                  placeholder="Location code"
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingStoredPlace}
-                />
+                <Field label="Location Code" help="Plus code, used to resolve coordinates if latitude/longitude are blank.">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      data-stored-field="location_code"
+                      onFocus={() => rememberStoredFieldFocus("location_code")}
+                      value={storedForm.location_code}
+                      onChange={(e) =>
+                        setStoredForm((prev) => ({ ...prev, location_code: e.target.value }))
+                      }
+                      placeholder="Location code"
+                      disabled={!admin || savingStoredPlace}
+                    />
+                  )}
+                </Field>
 
                 <div className="app-button-row">
-                  {" "}
-                  <button
-                    type="button"
+                  <AppButton
+                    variant="primary"
                     onClick={() => void saveStoredPlace()}
                     disabled={!admin || savingStoredPlace}
                   >
                     {storedForm.id ? "Update Stored Place" : "Add Stored Place"}
-                  </button>
-                  <button
-                    type="button"
+                  </AppButton>
+                  <AppButton
                     onClick={() => {
                       localStorage.removeItem("admin-nearby-draft");
 
@@ -2465,154 +2374,121 @@ function AdminNearbyPageInner() {
                     disabled={!admin || savingStoredPlace}
                   >
                     New Blank
-                  </button>
-                  <button
-                    type="button"
+                  </AppButton>
+                  <AppButton
                     onClick={() => void reGeocodeStoredPlace()}
                     disabled={!admin || savingStoredPlace || !storedForm.id}
                   >
                     Re-Geocode This Place
-                  </button>
-                  <button
-                    type="button"
+                  </AppButton>
+                  <AppButton
+                    variant="danger"
                     onClick={() => void deleteStoredPlace()}
                     disabled={!admin || !storedForm.id || savingStoredPlace}
                   >
                     Delete Stored Place
-                  </button>
+                  </AppButton>
                 </div>
               </div>
             </div>
           )}
-        </div>
+        </PageSection>
       </div>
 
-      <div className="app-card-section">
-        <div>
-          <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-            Google Nearby Search
-          </h2>
+      <PageSection variant="section">
+        <PageHeader
+          title="Google Nearby Search"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+          description="Search Google Places near the current admin event location and quickly add them into the stored nearby list."
+          descriptionClassName="app-subtle-text"
+        />
 
-          <div style={{ fontSize: 13, color: "#666" }}>
-            Search Google Places near the current admin event location and
-            quickly add them into the stored nearby list.
-          </div>
+        <div className="app-form-grid-2" style={{ alignItems: "end" }}>
+          <Field label="Search">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                value={googleQuery}
+                onChange={(e) => setGoogleQuery(e.target.value)}
+                placeholder="Search Google nearby (restaurants, fuel, grocery...)"
+                disabled={searchingGoogle}
+              />
+            )}
+          </Field>
+
+          <Field label="Radius (miles)">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                value={googleRadius}
+                onChange={(e) => setGoogleRadius(e.target.value)}
+                placeholder="Miles"
+                disabled={searchingGoogle}
+              />
+            )}
+          </Field>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: isNarrow
-              ? "1fr"
-              : "minmax(240px, 1fr) 120px auto",
-            gap: 10,
-            alignItems: "center",
-          }}
-        >
-          <input
-            value={googleQuery}
-            onChange={(e) => setGoogleQuery(e.target.value)}
-            placeholder="Search Google nearby (restaurants, fuel, grocery...)"
-            style={{ padding: 10 }}
-            disabled={searchingGoogle}
-          />
-
-          <input
-            value={googleRadius}
-            onChange={(e) => setGoogleRadius(e.target.value)}
-            placeholder="Miles"
-            style={{ padding: 10 }}
-            disabled={searchingGoogle}
-          />
-
-          <button
-            type="button"
+        <div className="app-button-row">
+          <AppButton
+            variant="primary"
             onClick={() => void searchGoogleNearby()}
             disabled={searchingGoogle}
           >
             {searchingGoogle ? "Searching..." : "Search Google"}
-          </button>
+          </AppButton>
         </div>
 
         {googleResults.length === 0 ? null : (
-          <div
-            style={{
-              display: "grid",
-              gap: 10,
-            }}
-          >
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
             {googleResults.map((place) => (
-              <div
-                key={place.id}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 10,
-                  padding: 12,
-                  background: "#fafafa",
-                  display: "grid",
-                  gap: 6,
-                }}
-              >
+              <div key={place.id} className="app-card-section" style={{ display: "grid", gap: "var(--space-2)" }}>
                 <div
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
-                    gap: 12,
+                    gap: "var(--space-3)",
                     alignItems: "start",
                     flexWrap: "wrap",
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: 700 }}>{place.name}</div>
-
-                    <div style={{ fontSize: 13, color: "#555" }}>
+                    <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+                      {place.name}
+                    </div>
+                    <div className="app-subtle-text" style={{ fontSize: 13 }}>
                       {place.category || "Unknown"}
                     </div>
                   </div>
 
-                  {place.rating ? (
-                    <div
-                      style={{
-                        fontSize: 13,
-                        background: "#fff7d6",
-                        border: "1px solid #f0c36d",
-                        borderRadius: 999,
-                        padding: "4px 10px",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      ⭐ {place.rating}
-                    </div>
-                  ) : null}
+                  {place.rating ? <StatusBadge tone="warning">⭐ {place.rating}</StatusBadge> : null}
                 </div>
 
                 {place.address ? (
-                  <div style={{ fontSize: 13, color: "#666" }}>
+                  <div className="app-subtle-text" style={{ fontSize: 13 }}>
                     {place.address}
                   </div>
                 ) : null}
 
-                {/* New metadata section below address */}
                 <div
                   style={{
                     display: "flex",
-                    gap: 8,
+                    gap: "var(--space-3)",
                     flexWrap: "wrap",
                     fontSize: 12,
-                    color: "#555",
                   }}
+                  className="app-subtle-text"
                 >
                   {place.phone ? <div>📞 {place.phone}</div> : null}
                   {place.website ? <div>🌐 Website Available</div> : null}
                   {place.lat !== null && place.lng !== null ? (
                     <div>
-                      📍 {Number(place.lat).toFixed(5)},{" "}
-                      {Number(place.lng).toFixed(5)}
+                      📍 {Number(place.lat).toFixed(5)}, {Number(place.lng).toFixed(5)}
                     </div>
                   ) : null}
                 </div>
 
-                {/* Google Maps link block before button wrapper */}
                 {(place.lat !== null && place.lng !== null) || place.address ? (
                   <a
                     href={
@@ -2622,26 +2498,15 @@ function AdminNearbyPageInner() {
                     }
                     target="_blank"
                     rel="noreferrer"
-                    style={{
-                      fontSize: 12,
-                      textDecoration: "none",
-                      background: "#eff6ff",
-                      border: "1px solid #93c5fd",
-                      color: "#1d4ed8",
-                      borderRadius: 999,
-                      padding: "5px 10px",
-                      width: "fit-content",
-                      fontWeight: 600,
-                    }}
+                    className="app-button"
+                    style={{ width: "fit-content" }}
                   >
                     Open Google Result in Maps
                   </a>
                 ) : null}
 
                 <div className="app-button-row">
-                  {" "}
-                  <button
-                    type="button"
+                  <AppButton
                     onClick={() => {
                       setStoredForm({
                         ...emptyStoredPlaceForm,
@@ -2662,9 +2527,9 @@ function AdminNearbyPageInner() {
                             : String(place.lng),
                       });
 
-                      window.scrollTo({
-                        top: 0,
+                      storedPlaceFormSectionRef.current?.scrollIntoView({
                         behavior: "smooth",
+                        block: "start",
                       });
 
                       showStatus(
@@ -2673,9 +2538,8 @@ function AdminNearbyPageInner() {
                     }}
                   >
                     Load Into Stored Place Editor
-                  </button>
-                  <button
-                    type="button"
+                  </AppButton>
+                  <AppButton
                     onClick={() => {
                       setEventForm({
                         ...emptyEventPlaceForm,
@@ -2696,74 +2560,69 @@ function AdminNearbyPageInner() {
                             : String(place.lng),
                       });
 
+                      eventPlaceFormSectionRef.current?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+
                       showStatus(
                         `Loaded "${place.name}" into the event place editor.`,
                       );
                     }}
                   >
                     Load Into Event Place Editor
-                  </button>
+                  </AppButton>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </PageSection>
 
-      <div className="app-card-section">
-        <h2 style={{ marginTop: 0 }}>Current Event Nearby Places</h2>
+      <PageSection variant="section">
+        <PageHeader title="Current Event Nearby Places" headingLevel="h2" titleClassName="app-section-title" />
 
         {!adminEvent?.id ? (
-          <div>No admin working event selected.</div>
+          <Alert tone="neutral">No admin working event selected.</Alert>
         ) : (
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isNarrow
-                ? "1fr"
-                : "minmax(260px, 360px) 1fr",
-              gap: 18,
+              gridTemplateColumns: isCompact ? "1fr" : "minmax(260px, 360px) 1fr",
+              gap: "var(--space-5)",
               alignItems: "start",
             }}
           >
+            {/* Drag-reorder list: its own specialized direct-manipulation
+                surface (dnd-kit), left entirely untouched per the Central
+                UI blueprint's own carve-out for this category of surface
+                (§12) -- only the card's internal presentation (below, in
+                SortableEventPlaceCard) adopts StatusBadge. */}
             <div
               style={{
                 display: "grid",
-                gap: 8,
+                gap: "var(--space-2)",
                 maxHeight: "70vh",
                 overflow: "auto",
               }}
             >
               {loadingEventPlaces ? (
-                <div>Loading current event nearby places...</div>
+                <Alert tone="neutral">Loading current event nearby places...</Alert>
               ) : sortedEventPlaces.length === 0 ? (
-                <div>
-                  No nearby places are currently assigned to this event.
-                </div>
+                <Alert tone="neutral">No nearby places are currently assigned to this event.</Alert>
               ) : (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext
                     items={sortedEventPlaces.map((place) => place.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div
-                      style={{
-                        display: "grid",
-                        gap: 8,
-                      }}
-                    >
+                    <div style={{ display: "grid", gap: "var(--space-2)" }}>
                       {sortedEventPlaces.map((place) => (
                         <SortableEventPlaceCard
                           key={place.id}
                           place={place}
                           selected={eventForm.id === place.id}
-                          onSelect={() =>
-                            setEventForm(eventFormFromPlace(place))
-                          }
+                          onSelect={() => setEventForm(eventFormFromPlace(place))}
                         />
                       ))}
                     </div>
@@ -2772,175 +2631,167 @@ function AdminNearbyPageInner() {
               )}
             </div>
 
-            <div style={{ display: "grid", gap: 8 }}>
-              <input
-                value={eventForm.name}
-                onChange={(e) =>
-                  setEventForm((prev) => ({ ...prev, name: e.target.value }))
-                }
-                placeholder="Event place name"
-                style={{ padding: 10 }}
-                disabled={!admin || savingEventPlace}
-              />
-              <input
-                value={eventForm.category}
-                onChange={(e) =>
-                  setEventForm((prev) => ({
-                    ...prev,
-                    category: e.target.value,
-                  }))
-                }
-                placeholder="Category"
-                style={{ padding: 10 }}
-                disabled={!admin || savingEventPlace}
-              />
-              <input
-                value={eventForm.address}
-                onChange={(e) =>
-                  setEventForm((prev) => ({ ...prev, address: e.target.value }))
-                }
-                placeholder="Address"
-                style={{ padding: 10 }}
-                disabled={!admin || savingEventPlace}
-              />
-              <input
-                value={eventForm.phone}
-                onChange={(e) =>
-                  setEventForm((prev) => ({ ...prev, phone: e.target.value }))
-                }
-                placeholder="Phone"
-                style={{ padding: 10 }}
-                disabled={!admin || savingEventPlace}
-              />
-              <input
-                value={eventForm.website}
-                onChange={(e) =>
-                  setEventForm((prev) => ({ ...prev, website: e.target.value }))
-                }
-                placeholder="Website"
-                style={{ padding: 10 }}
-                disabled={!admin || savingEventPlace}
-              />
-              <textarea
-                value={eventForm.notes}
-                onChange={(e) =>
-                  setEventForm((prev) => ({ ...prev, notes: e.target.value }))
-                }
-                placeholder="Notes"
-                rows={4}
-                style={{ padding: 10, resize: "vertical" }}
-                disabled={!admin || savingEventPlace}
-              />
+            <div ref={eventPlaceFormSectionRef} style={{ display: "grid", gap: "var(--space-3)" }}>
+              <Field label="Event Place Name">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={eventForm.name}
+                    onChange={(e) => setEventForm((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="Event place name"
+                    disabled={!admin || savingEventPlace}
+                  />
+                )}
+              </Field>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
-                  gap: 8,
-                }}
-              >
-                <input
-                  value={eventForm.lat}
-                  onChange={(e) =>
-                    setEventForm((prev) => ({
-                      ...prev,
-                      lat: e.target.value,
-                    }))
-                  }
-                  placeholder="Latitude"
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingEventPlace}
-                />
-                <input
-                  value={eventForm.lng}
-                  onChange={(e) =>
-                    setEventForm((prev) => ({
-                      ...prev,
-                      lng: e.target.value,
-                    }))
-                  }
-                  placeholder="Longitude"
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingEventPlace}
-                />
+              <Field label="Category">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={eventForm.category}
+                    onChange={(e) => setEventForm((prev) => ({ ...prev, category: e.target.value }))}
+                    placeholder="Category"
+                    disabled={!admin || savingEventPlace}
+                  />
+                )}
+              </Field>
+
+              <Field label="Address">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={eventForm.address}
+                    onChange={(e) => setEventForm((prev) => ({ ...prev, address: e.target.value }))}
+                    placeholder="Address"
+                    disabled={!admin || savingEventPlace}
+                  />
+                )}
+              </Field>
+
+              <Field label="Phone">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={eventForm.phone}
+                    onChange={(e) => setEventForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="Phone"
+                    disabled={!admin || savingEventPlace}
+                  />
+                )}
+              </Field>
+
+              <Field label="Website">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={eventForm.website}
+                    onChange={(e) => setEventForm((prev) => ({ ...prev, website: e.target.value }))}
+                    placeholder="Website"
+                    disabled={!admin || savingEventPlace}
+                  />
+                )}
+              </Field>
+
+              <Field label="Notes">
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    value={eventForm.notes}
+                    onChange={(e) => setEventForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Notes"
+                    rows={4}
+                    disabled={!admin || savingEventPlace}
+                  />
+                )}
+              </Field>
+
+              <div className="app-form-grid-2">
+                <Field label="Latitude">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={eventForm.lat}
+                      onChange={(e) => setEventForm((prev) => ({ ...prev, lat: e.target.value }))}
+                      placeholder="Latitude"
+                      disabled={!admin || savingEventPlace}
+                    />
+                  )}
+                </Field>
+                <Field label="Longitude">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={eventForm.lng}
+                      onChange={(e) => setEventForm((prev) => ({ ...prev, lng: e.target.value }))}
+                      placeholder="Longitude"
+                      disabled={!admin || savingEventPlace}
+                    />
+                  )}
+                </Field>
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
-                  gap: 8,
-                }}
-              >
-                <input
-                  value={eventForm.distance_miles}
-                  onChange={(e) =>
-                    setEventForm((prev) => ({
-                      ...prev,
-                      distance_miles: e.target.value,
-                    }))
-                  }
-                  placeholder="Miles"
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingEventPlace}
-                />
-                <input
-                  value={eventForm.location_code}
-                  onChange={(e) =>
-                    setEventForm((prev) => ({
-                      ...prev,
-                      location_code: e.target.value,
-                    }))
-                  }
-                  placeholder="Location code"
-                  style={{ padding: 10 }}
-                  disabled={!admin || savingEventPlace}
-                />
+              <div className="app-form-grid-2">
+                <Field label="Distance (miles)">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={eventForm.distance_miles}
+                      onChange={(e) =>
+                        setEventForm((prev) => ({ ...prev, distance_miles: e.target.value }))
+                      }
+                      placeholder="Miles"
+                      disabled={!admin || savingEventPlace}
+                    />
+                  )}
+                </Field>
+                <Field label="Location Code" help="Plus code, used to resolve coordinates if latitude/longitude are blank.">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={eventForm.location_code}
+                      onChange={(e) =>
+                        setEventForm((prev) => ({ ...prev, location_code: e.target.value }))
+                      }
+                      placeholder="Location code"
+                      disabled={!admin || savingEventPlace}
+                    />
+                  )}
+                </Field>
               </div>
 
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={eventForm.is_hidden}
-                  onChange={(e) =>
-                    setEventForm((prev) => ({
-                      ...prev,
-                      is_hidden: e.target.checked,
-                    }))
-                  }
-                  disabled={!admin || savingEventPlace}
-                />
-                Hidden from members
-              </label>
+              <Checkbox
+                label="Hidden from members"
+                checked={eventForm.is_hidden}
+                onChange={(e) => setEventForm((prev) => ({ ...prev, is_hidden: e.target.checked }))}
+                disabled={!admin || savingEventPlace}
+              />
 
               <div className="app-button-row">
-                {" "}
-                <button
-                  type="button"
+                <AppButton
+                  variant="primary"
                   onClick={() => void saveEventPlace()}
                   disabled={!admin || savingEventPlace}
                 >
                   {eventForm.id ? "Update Event Place" : "Add Event-Only Place"}
-                </button>
-                <button
-                  type="button"
+                </AppButton>
+                <AppButton
                   onClick={() => setEventForm(emptyEventPlaceForm)}
                   disabled={!admin || savingEventPlace}
                 >
                   New Blank
-                </button>
-                <button
-                  type="button"
+                </AppButton>
+                <AppButton
+                  variant="danger"
                   onClick={() => void deleteEventPlace()}
                   disabled={!admin || !eventForm.id || savingEventPlace}
                 >
                   Delete Event Place
-                </button>
+                </AppButton>
               </div>
             </div>
           </div>
         )}
-      </div>
-    </Page>
+      </PageSection>
+    </div>
   );
 }
