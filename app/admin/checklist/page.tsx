@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Checkbox } from "@/components/ui/Field";
+import { PageSection } from "@/components/ui/PageSection";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -82,6 +86,7 @@ function AdminChecklistPageInner() {
   const [storageKey, setStorageKey] = useState(STORAGE_KEY_BASE);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [loadedStorageKey, setLoadedStorageKey] = useState<string | null>(null);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   useEffect(() => {
     const syncStorageKey = () => {
@@ -146,95 +151,101 @@ function AdminChecklistPageInner() {
     }));
   }
 
-  function resetChecklist() {
-    const confirmed = window.confirm("Reset the full pre-rally checklist?");
-    if (!confirmed) {return;}
+  function confirmReset() {
     setChecked({});
+    setResetDialogOpen(false);
   }
 
   return (
-    <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
-      <div className="card" style={{ padding: 18 }}>
-        <p style={{ marginTop: 0, opacity: 0.8 }}>
+    <div style={{ display: "grid", gap: "var(--space-6)", minWidth: 0 }}>
+      <ConfirmDialog
+        open={resetDialogOpen}
+        title="Reset Checklist"
+        message="Reset the full pre-rally checklist? This clears every checked item on this device."
+        confirmLabel="Reset Checklist"
+        danger
+        onCancel={() => setResetDialogOpen(false)}
+        onConfirm={confirmReset}
+      />
+
+      <PageSection variant="card">
+        <p className="app-subtle-text" style={{ marginTop: 0 }}>
           Track your rally readiness from setup through departure.
         </p>
 
         <div
           style={{
             display: "grid",
-            gap: 12,
+            gap: "var(--space-4)",
             gridTemplateColumns:
               "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
-            marginTop: 14,
+            marginTop: "var(--space-5)",
           }}
         >
-          <div className="card">
+          <div>
             <strong>Total Items</strong>
-            <div style={{ fontSize: 28, marginTop: 6 }}>{totalItems}</div>
+            <div style={{ fontSize: 28, marginTop: "var(--space-2)" }}>{totalItems}</div>
           </div>
 
-          <div className="card">
+          <div>
             <strong>Completed</strong>
-            <div style={{ fontSize: 28, marginTop: 6 }}>{completedItems}</div>
+            <div style={{ fontSize: 28, marginTop: "var(--space-2)" }}>{completedItems}</div>
           </div>
 
-          <div className="card">
+          <div>
             <strong>Progress</strong>
-            <div style={{ fontSize: 28, marginTop: 6 }}>{percentComplete}%</div>
+            <div style={{ fontSize: 28, marginTop: "var(--space-2)" }}>{percentComplete}%</div>
           </div>
         </div>
 
-        <div style={{ marginTop: 16 }}>
-          <button onClick={resetChecklist}>Reset Checklist</button>
+        <div style={{ marginTop: "var(--space-6)" }}>
+          <AppButton variant="danger" onClick={() => setResetDialogOpen(true)}>
+            Reset Checklist
+          </AppButton>
         </div>
-      </div>
+      </PageSection>
 
       {CHECKLIST_SECTIONS.map((section, sectionIndex) => (
-        <div key={section.title} className="card" style={{ padding: 18 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 12 }}>{section.title}</h2>
-
-          <div style={{ display: "grid", gap: 10 }}>
+        <PageSection key={section.title} variant="section" title={section.title}>
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
             {section.items.map((item, itemIndex) => {
               const key = `${sectionIndex}-${itemIndex}`;
               const isDone = !!checked[key];
 
               return (
-                <label
+                <div
                   key={key}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 10,
                     minWidth: 0,
-                    padding: "10px 12px",
-                    border: "1px solid #ddd",
-                    borderRadius: 10,
-                    background: isDone ? "#f0fff4" : "#fff",
-                    cursor: "pointer",
+                    padding: "var(--space-3) var(--space-4)",
+                    border: "var(--border-width-default) solid var(--color-border-default)",
+                    borderRadius: "var(--radius-medium)",
+                    background: isDone
+                      ? "var(--color-status-success-bg)"
+                      : "var(--color-bg-panel)",
                   }}
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={isDone}
                     onChange={() => toggleItem(key)}
-                    style={{ marginTop: 3 }}
+                    label={
+                      <span
+                        style={{
+                          textDecoration: isDone ? "line-through" : "none",
+                          opacity: isDone ? 0.75 : 1,
+                          minWidth: 0,
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {item}
+                      </span>
+                    }
                   />
-
-                  <span
-                    style={{
-                      textDecoration: isDone ? "line-through" : "none",
-                      opacity: isDone ? 0.75 : 1,
-                      minWidth: 0,
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    {item}
-                  </span>
-                </label>
+                </div>
               );
             })}
           </div>
-        </div>
+        </PageSection>
       ))}
     </div>
   );
