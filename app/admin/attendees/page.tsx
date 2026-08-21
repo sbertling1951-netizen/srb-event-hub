@@ -524,6 +524,7 @@ function ReviewQueue(props: {
     <section style={{ display: "grid", gap: "var(--space-4)" }}>
       <PageHeader
         title="Review Queue"
+        titleId="attendees-review-queue-heading"
         headingLevel="h2"
         titleClassName="app-section-title"
         description={`Showing ${visibleReviewItems.length} of ${filteredReviewItems.length} flagged attendee${filteredReviewItems.length === 1 ? "" : "s"} · Status filter: ${dataStatusFilter === "all" ? "All Statuses" : dataStatusOptionLabel(dataStatusFilter)} · Participant type: ${participantTypeFilter === "all" ? "All Types" : participantTypeLabel(participantTypeFilter)}`}
@@ -535,7 +536,7 @@ function ReviewQueue(props: {
       ) : filteredReviewItems.length === 0 ? (
         <Alert tone="success">No flagged records for this Event.</Alert>
       ) : (
-        <ResponsiveList>
+        <ResponsiveList aria-labelledby="attendees-review-queue-heading">
           {visibleReviewItems.map((item) => {
             const attendee = item.attendee;
             const draftValue =
@@ -770,7 +771,7 @@ function AttendeeList(props: {
         : "No attendee records match your search or filters. Try clearing them."}
     </Alert>
   ) : isCompact ? (
-    <ResponsiveList>
+    <ResponsiveList aria-labelledby="attendees-list-heading">
       {visibleAttendees.map((attendee, index) => {
         const previousAttendee = index > 0 ? visibleAttendees[index - 1] : null;
         const currentSiteLabel = attendeeGroupSiteLabel(attendee, placementsByAttendeeId);
@@ -921,6 +922,7 @@ function AttendeeList(props: {
     <section style={{ display: "grid", gap: "var(--space-4)" }}>
       <PageHeader
         title="Attendee List"
+        titleId="attendees-list-heading"
         headingLevel="h2"
         titleClassName="app-section-title"
         description={`Showing ${visibleAttendees.length} of ${filteredAttendees.length} attendee${filteredAttendees.length === 1 ? "" : "s"}.`}

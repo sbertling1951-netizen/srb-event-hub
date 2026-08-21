@@ -907,12 +907,13 @@ function AdminVendorsPageInner() {
         <section style={{ display: "grid", gap: "var(--space-4)" }}>
           <PageHeader
             title="Needs Review"
+            titleId="vendors-needs-review-heading"
             headingLevel="h2"
             titleClassName="app-section-title"
             description={`Candidacy applications awaiting a decision for ${adminEvent.name}.`}
             descriptionClassName="app-subtle-text"
           />
-          <ResponsiveList>
+          <ResponsiveList aria-labelledby="vendors-needs-review-heading">
             {pendingApplications.map((app) => {
               const vendor = vendors.find((v) => v.id === app.vendor_id);
               if (!vendor) {
@@ -955,6 +956,7 @@ function AdminVendorsPageInner() {
       <section style={{ display: "grid", gap: "var(--space-4)" }}>
         <PageHeader
           title="Vendor Catalog"
+          titleId="vendors-catalog-heading"
           headingLevel="h2"
           titleClassName="app-section-title"
           description="Every vendor here is a known EpicentraX catalog vendor. Considering or admitting a vendor for the working Event never creates a duplicate vendor record and never affects any other Event."
@@ -971,7 +973,7 @@ function AdminVendorsPageInner() {
         {vendors.length === 0 ? (
           <Alert tone="neutral">No vendors in the catalog yet. Add one below.</Alert>
         ) : isCompact ? (
-          <ResponsiveList>
+          <ResponsiveList aria-labelledby="vendors-catalog-heading">
             {vendors.map((vendor) => {
               const eventVendor = eventVendorByVendorId.get(vendor.id);
               const application = applicationByVendorId.get(vendor.id);

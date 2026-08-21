@@ -736,6 +736,7 @@ function AdminAnnouncementsPageInner() {
       <section style={{ display: "grid", gap: "var(--space-4)" }}>
         <PageHeader
           title="Existing Announcements"
+          titleId="announcements-existing-heading"
           headingLevel="h2"
           titleClassName="app-section-title"
         />
@@ -745,7 +746,7 @@ function AdminAnnouncementsPageInner() {
         ) : sortedAnnouncements.length === 0 ? (
           <Alert tone="neutral">No announcements yet for this event.</Alert>
         ) : isCompact ? (
-          <ResponsiveList>
+          <ResponsiveList aria-labelledby="announcements-existing-heading">
             {sortedAnnouncements.map((announcement) => {
               const name = announcement.title || "Untitled";
               return (

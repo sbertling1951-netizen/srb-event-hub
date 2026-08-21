@@ -651,7 +651,7 @@ function VendorRequestsInner() {
         : "No vendor requests match your search or filters. Try clearing them."}
     </Alert>
   ) : isCompact ? (
-    <ResponsiveList>
+    <ResponsiveList aria-labelledby="vendor-requests-service-requests-heading">
       {filtered.map((r) => {
         const vendorName = vendorNameForRequest(r);
         const site = currentSiteForRequest(r);
@@ -887,6 +887,7 @@ function VendorRequestsInner() {
       <section style={{ display: "grid", gap: "var(--space-4)" }}>
         <PageHeader
           title="Service Requests"
+          titleId="vendor-requests-service-requests-heading"
           headingLevel="h2"
           titleClassName="app-section-title"
           description={`Showing ${filtered.length} request${filtered.length === 1 ? "" : "s"} • Total party count: ${totalGuests}.`}

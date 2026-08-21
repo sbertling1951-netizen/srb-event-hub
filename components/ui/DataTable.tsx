@@ -37,6 +37,20 @@ export function DataTable({ caption, children, className }: DataTableProps) {
 type ResponsiveListProps = {
   children: ReactNode;
   className?: string;
+  /**
+   * Accessible name for the list, forwarded verbatim as the native
+   * `aria-label` attribute -- the `ResponsiveList` equivalent of
+   * `DataTable`'s `caption`. Omit when `aria-labelledby` already
+   * names the list (e.g. a preceding section heading).
+   */
+  "aria-label"?: string;
+  /**
+   * Accessible name for the list, forwarded verbatim as the native
+   * `aria-labelledby` attribute, pointing at the `id` of an existing
+   * visible heading (e.g. `PageHeader`'s `titleId`) so the name isn't
+   * duplicated in a second, invisible string.
+   */
+  "aria-labelledby"?: string;
 };
 
 /**
@@ -48,11 +62,21 @@ type ResponsiveListProps = {
  * `list-style: none` is applied (app/globals.css). Callers render their
  * own `<li className="responsive-list-item">` rows as children.
  */
-export function ResponsiveList({ children, className }: ResponsiveListProps) {
+export function ResponsiveList({
+  children,
+  className,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+}: ResponsiveListProps) {
   const classes = ["responsive-list", className].filter(Boolean).join(" ");
 
   return (
-    <ul className={classes} role="list">
+    <ul
+      className={classes}
+      role="list"
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
+    >
       {children}
     </ul>
   );

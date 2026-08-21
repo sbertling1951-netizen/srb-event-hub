@@ -181,7 +181,17 @@ test("the desktop table uses the shared DataTable primitive with real column hea
 });
 
 test("the narrow-viewport presentation uses the shared ResponsiveList primitive, not a second bespoke card layout", () => {
-  assert.match(PAGE_SOURCE, /<ResponsiveList>/);
+  assert.match(
+    PAGE_SOURCE,
+    /<ResponsiveList aria-labelledby="announcements-existing-heading">/,
+  );
+});
+
+test("the ResponsiveList is named via aria-labelledby against the visible 'Existing Announcements' section heading", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /title="Existing Announcements"\s*\n\s*titleId="announcements-existing-heading"/,
+  );
 });
 
 test("Published/Draft, priority, and Pinned all render through the shared StatusBadge -- text is the sole carrier, never color alone", () => {

@@ -188,7 +188,7 @@ test("only the selected attendee owns the expanded action workspace", () => {
 });
 
 test("compact browse results remain keyboard-native buttons with identity confirmation", () => {
-  assert.match(source, /<ResponsiveList>/);
+  assert.match(source, /<ResponsiveList aria-label="Check-in attendees">/);
   assert.match(
     source,
     /<button[\s\S]{0,200}type="button"[\s\S]{0,200}onClick=\{\(\) => selectAttendee\(attendee\.id\)\}/,
@@ -228,7 +228,7 @@ test("the browse surface is DataTable at desktop width and ResponsiveList at com
     /import \{ DataTable, ResponsiveList \} from "@\/components\/ui\/DataTable";/,
   );
   assert.match(source, /isCompact \? \(/);
-  assert.match(source, /<ResponsiveList>/);
+  assert.match(source, /<ResponsiveList aria-label="Check-in attendees">/);
   assert.match(source, /<DataTable caption="Check-In attendee results">/);
   assert.equal(/navigator\.userAgent/.test(source), false);
   assert.equal(/window\.innerWidth/.test(source), false);

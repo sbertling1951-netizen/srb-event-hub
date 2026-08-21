@@ -694,6 +694,38 @@ decision is really about a container's own width, not the page's.
 
 ---
 
+## 16. Proven Pattern (Stage 3 Evidence, 2026-08-20) — DataTable + ResponsiveList Responsive Presentation, Now with Accessible Naming Parity
+
+The Check-In migration (`e97b55a`) became the second real consumer of the
+`DataTable`/`ResponsiveList` pairing already used by Attendees, proving it
+as a repeated pattern rather than a one-off:
+
+**For data collections that require tabular presentation at wider
+available widths and list presentation at narrower available widths,
+`DataTable` + `ResponsiveList` is the proven Central UI responsive
+pattern. Selection is driven by available space, not device identity.
+Both presentations must expose an appropriate accessible name for the
+same conceptual collection.**
+
+Proving Check-In out this way also exposed one narrow primitive gap:
+`DataTable` already had an accessible-naming mechanism (its required
+`caption` prop, rendered as a visually-hidden `<caption>`), but
+`ResponsiveList` had no equivalent — every existing consumer's compact
+list presentation was unnamed to assistive technology even where its
+`DataTable` sibling was named. `ResponsiveList` now accepts the native
+`aria-label`/`aria-labelledby` attributes directly (forwarded verbatim
+to its `<ul>`), not a proprietary naming prop — `aria-labelledby` for a
+list already following a visible section heading, `aria-label` where no
+such heading exists (Check-In's compact browse result list has none).
+This is semantic parity with `DataTable`, not syntactic parity: the two
+components' naming props are intentionally not identical in shape,
+because a `<table>`'s native `<caption>` and a `<ul>`'s ARIA name are
+each the standards-correct mechanism for their own element, and forcing
+one onto the other would be the proprietary abstraction this fix
+deliberately avoids.
+
+---
+
 ## Scope Boundary
 
 This document is discovery and blueprint only. It authorizes no code

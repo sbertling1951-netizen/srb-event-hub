@@ -770,6 +770,22 @@ test("the duplicated action rows are consolidated into one shared component, ref
   );
 });
 
+// --- 5. ResponsiveList accessible naming (Central UI Standard) -----------
+
+test("both ResponsiveList instances are named via aria-labelledby against their section's visible PageHeader", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /<ResponsiveList aria-labelledby="attendees-review-queue-heading">/);
+  assert.match(
+    source,
+    /title="Review Queue"\s*\n\s*titleId="attendees-review-queue-heading"/,
+  );
+
+  assert.match(source, /<ResponsiveList aria-labelledby="attendees-list-heading">/);
+  assert.match(source, /title="Attendee List"\s*\n\s*titleId="attendees-list-heading"/);
+});
+
 test("AttendeeActionRow: showBackToPending governs exactly the one legitimate difference between the two contexts", () => {
   const withBackToPending = renderToStaticMarkup(
     <AttendeeActionRow

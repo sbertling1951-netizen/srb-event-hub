@@ -144,8 +144,17 @@ test("the desktop table uses the shared DataTable primitive with real column hea
   }
 });
 
-test("the narrow-viewport presentation uses the shared ResponsiveList primitive", () => {
-  assert.match(PAGE_SOURCE, /<ResponsiveList>/);
+test("the narrow-viewport presentation uses the shared ResponsiveList primitive with an accessible name for each list", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<ResponsiveList aria-labelledby="vendors-needs-review-heading">/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /<ResponsiveList aria-labelledby="vendors-catalog-heading">/,
+  );
+  assert.match(PAGE_SOURCE, /title="Needs Review"\s*\n\s*titleId="vendors-needs-review-heading"/);
+  assert.match(PAGE_SOURCE, /title="Vendor Catalog"\s*\n\s*titleId="vendors-catalog-heading"/);
 });
 
 test("row actions carry a specific accessible name including the vendor's identity", () => {

@@ -58,9 +58,19 @@ test("responsive switching goes through the Shell's canonical compact-state sign
 });
 
 test("desktop renders DataTable and compact renders ResponsiveList, switched on isCompact -- neither is hidden via CSS", () => {
-  assert.match(source, /isCompact \? \(\s*<ResponsiveList>/);
+  assert.match(
+    source,
+    /isCompact \? \(\s*<ResponsiveList aria-labelledby="vendor-requests-service-requests-heading">/,
+  );
   assert.match(source, /<DataTable caption="Vendor service requests for the current Event">/);
   assert.equal(/display:\s*["']none["']/.test(source), false);
+});
+
+test("the compact ResponsiveList is named via aria-labelledby against the visible 'Service Requests' section heading", () => {
+  assert.match(
+    source,
+    /title="Service Requests"\s*\n\s*titleId="vendor-requests-service-requests-heading"/,
+  );
 });
 
 test("search and status filter are the always-visible TableToolbarPrimaryRow, not a disclosed/secondary control", () => {

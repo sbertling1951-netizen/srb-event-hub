@@ -94,3 +94,51 @@ test("ResponsiveList applies the shared responsive-list class", () => {
 
   assert.ok(html.includes('class="responsive-list"'));
 });
+
+test("ResponsiveList has no accessible name by default", () => {
+  const html = renderToStaticMarkup(
+    <ResponsiveList>
+      <li>Row</li>
+    </ResponsiveList>,
+  );
+
+  assert.ok(!html.includes("aria-label"));
+  assert.ok(!html.includes("aria-labelledby"));
+});
+
+test("ResponsiveList forwards aria-label as the list's accessible name", () => {
+  const html = renderToStaticMarkup(
+    <ResponsiveList aria-label="Check-in attendees">
+      <li>Row</li>
+    </ResponsiveList>,
+  );
+
+  assert.match(html, /<ul[^>]*aria-label="Check-in attendees"[^>]*>/);
+  assert.match(html, /<ul[^>]*role="list"[^>]*>/);
+});
+
+test("ResponsiveList forwards aria-labelledby to reference an existing heading", () => {
+  const html = renderToStaticMarkup(
+    <>
+      <h2 id="attendees-heading">Attendees</h2>
+      <ResponsiveList aria-labelledby="attendees-heading">
+        <li>Row</li>
+      </ResponsiveList>
+    </>,
+  );
+
+  assert.match(html, /<ul[^>]*aria-labelledby="attendees-heading"[^>]*>/);
+});
+
+test("ResponsiveList still renders exactly the item semantics and children it was given when named", () => {
+  const html = renderToStaticMarkup(
+    <ResponsiveList aria-label="Check-in attendees">
+      <li>First</li>
+      <li>Second</li>
+    </ResponsiveList>,
+  );
+
+  assert.match(html, /<ul[^>]*role="list"[^>]*>/);
+  assert.equal((html.match(/<li/g) || []).length, 2);
+  assert.ok(html.includes('class="responsive-list"'));
+});

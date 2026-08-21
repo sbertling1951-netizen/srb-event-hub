@@ -904,7 +904,7 @@ function AdminCheckinPageInner() {
         filteredAttendees.length === 0 ? (
           <Alert tone="neutral">No attendees found.</Alert>
         ) : isCompact ? (
-          <ResponsiveList>
+          <ResponsiveList aria-label="Check-in attendees">
             {filteredAttendees.map((attendee) => {
               const pilotName =
                 fullName(attendee.pilot_first, attendee.pilot_last) ||
