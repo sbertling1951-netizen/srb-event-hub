@@ -3322,11 +3322,35 @@ body.slideshow-view-mode .app-header-card {
      own computed width was STILL 798.77px, proving the demand came from
      a different sibling section entirely, not this section's own
      content (ruling out .ui-ref-compare-grid/.ui-ref-swatch-grid's own
-     formulas, already tried and confirmed NOT the cause). This is the
-     actual fix; the min-width(min(...)) changes to those two grids
-     remain as a real, independent, standards-correct hardening even
-     though they were not this bug's cause. */
+     formulas, already tried and confirmed NOT the cause). This was the
+     fix for the originally-reported defect. */
   min-width: 0;
+  /*
+   * Follow-on real-iPhone finding (a SEPARATE, residual overflow found
+   * after the fix above): .ui-ref-compare-grid's own
+   * repeat(auto-fit, minmax(min(X, 100%), 1fr)) column formula does not
+   * reliably resolve against true available width when deeply nested
+   * (confirmed: min-width:0 present in computed style on that grid and
+   * its children did not change its rendered width -- a WebKit
+   * intrinsic-sizing/percentage-in-minmax() quirk specific to this
+   * nesting depth, not the min-width:auto trap this file already fixed
+   * twice above). Containing the overflow AT THIS LEVEL instead --
+   * .ui-ref-section is proven reliably sized (confirmed 408px across
+   * every test in this investigation, unlike the grid whose own sizing
+   * was in question) -- guarantees no document-level leakage regardless
+   * of how wide any descendant grid renders itself, without depending on
+   * that grid's own uncertain sizing. overflow-y is explicitly `clip`,
+   * not left to default to `visible` -- CSS's overflow-pairing rule
+   * would otherwise force overflow-y to compute as `auto` too (the same
+   * mechanism the canonical shell workstream hit and fixed), which would
+   * make this section an unwanted second vertical scroll container.
+   * `clip` is safe here specifically because this section's height is
+   * always auto/content-driven, never constrained -- nothing can ever
+   * overflow it vertically for `clip` to visibly cut off.
+   */
+  overflow-x: auto;
+  overflow-y: clip;
+  max-width: 100%;
 }
 
 .ui-ref-swatch-grid {
@@ -3390,16 +3414,20 @@ body.slideshow-view-mode .app-header-card {
 
 .ui-ref-compare-grid {
   display: grid;
-  /* Root-cause note: real-iPhone diagnosis (see .ui-ref-section above)
-     found the actual defect was .ui-ref-section itself lacking
-     min-width:0 as a grid item -- not this grid's own column formula.
-     Fixing .ui-ref-section alone was sufficient and verified on device.
-     minmax(min(X, 100%), 1fr) below is kept anyway as real, independent
-     hardening against the same class of bug (already the proven pattern
-     in app/admin/dashboard/page.tsx's own grids) -- not itself the fix
-     for the reported defect. */
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: var(--space-5);
+  /* Correct, standards-compliant grid-item hygiene -- but real-iPhone
+     diagnosis found this grid's own column formula does not reliably
+     resolve against true available width when deeply nested (confirmed:
+     rendered width was unchanged with this present), so it is not
+     itself sufficient to prevent the "Button Depth" prototype section's
+     residual overflow. That overflow is contained at .ui-ref-section
+     instead (see its own comment) -- a more reliably-sized ancestor. */
+  min-width: 0;
+}
+
+.ui-ref-compare-grid > * {
+  min-width: 0;
 }
 
 .ui-ref-compare-card {
