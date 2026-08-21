@@ -1653,7 +1653,7 @@ function ParkingAdminPageInner() {
         }}
       >
         {(!isNarrow || showQueuePanel) && (
-          <div style={{ order: isNarrow ? 2 : 0 }}>{queuePanel}</div>
+          <div style={{ order: isNarrow ? 3 : 0 }}>{queuePanel}</div>
         )}
 
         <div
@@ -1717,9 +1717,13 @@ function ParkingAdminPageInner() {
               Re-center Map
             </AppButton>
           </div>
-
-          {mapDebugEnabled && <ParkingMapDebugPanel sites={sites} />}
         </div>
+
+        {mapDebugEnabled && (
+          <div style={{ order: isNarrow ? 2 : 0 }}>
+            <ParkingMapDebugPanel sites={sites} />
+          </div>
+        )}
       </div>
     </div>
   );
