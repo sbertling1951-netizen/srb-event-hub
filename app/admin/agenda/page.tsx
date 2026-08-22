@@ -666,6 +666,14 @@ function AdminAgendaPageInner() {
   const [editorExpanded, setEditorExpanded] = useState(false);
   const editorFormBodyRef = useRef<HTMLDivElement | null>(null);
   const editorToggleButtonRef = useRef<HTMLButtonElement | null>(null);
+  // 2026-08-21 follow-up: while compact AND expanded, the outer card is no
+  // longer sticky as a whole (a 1200px+ sticky card would re-obstruct the
+  // viewport) -- instead only this small header (title + Collapse) stays
+  // sticky, so Collapse is reachable without scrolling back to the top of
+  // a long form. Collapsed, and every !isCompact case, are unchanged: the
+  // outer PageSection itself is still the thing that's sticky there, so
+  // this header needs no positioning of its own.
+  const editorHeaderSticky = isCompact && editorExpanded;
   const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
   const [compactCalendarView, setCompactCalendarView] = useState(false);
   const useButtonReorder = isCompact && !forceDesktopDrag;
@@ -2592,24 +2600,39 @@ function AdminAgendaPageInner() {
               zIndex: 20,
             }}
           >
-            <PageHeader
-              headingLevel="h2"
-              titleStyle={{ margin: 0 }}
-              title={form.id ? `Editing: ${form.title || "Untitled Item"}` : "New Agenda Item"}
-              actions={
-                isCompact ? (
-                  <AppButton
-                    ref={editorToggleButtonRef}
-                    variant="tertiary"
-                    aria-expanded={editorExpanded}
-                    aria-controls="agenda-editor-form-body"
-                    onClick={() => setEditorExpanded((prev) => !prev)}
-                  >
-                    {editorExpanded ? "Collapse" : form.id ? "Edit" : "Expand"}
-                  </AppButton>
-                ) : undefined
+            <div
+              style={
+                editorHeaderSticky
+                  ? {
+                      position: "sticky",
+                      top: 12,
+                      zIndex: 20,
+                      background: "var(--color-bg-panel)",
+                      borderBottom: "var(--border-width-default) solid var(--color-border-default)",
+                      paddingBottom: "var(--space-3)",
+                    }
+                  : undefined
               }
-            />
+            >
+              <PageHeader
+                headingLevel="h2"
+                titleStyle={{ margin: 0 }}
+                title={form.id ? `Editing: ${form.title || "Untitled Item"}` : "New Agenda Item"}
+                actions={
+                  isCompact ? (
+                    <AppButton
+                      ref={editorToggleButtonRef}
+                      variant="tertiary"
+                      aria-expanded={editorExpanded}
+                      aria-controls="agenda-editor-form-body"
+                      onClick={() => setEditorExpanded((prev) => !prev)}
+                    >
+                      {editorExpanded ? "Collapse" : form.id ? "Edit" : "Expand"}
+                    </AppButton>
+                  ) : undefined
+                }
+              />
+            </div>
 
             <div style={{ display: "grid", gap: "var(--space-4)" }}>
               {form.id ? (

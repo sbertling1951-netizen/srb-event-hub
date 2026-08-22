@@ -512,3 +512,57 @@ test("collapsing the editor while a focused control is inside it moves focus to 
 test("no shared Disclosure/Collapsible primitive was invented -- this is a documented Agenda-local implementation, a candidate for later Central UI standardization", () => {
   assert.equal(/components\/ui\/(Disclosure|Collapsible|Accordion)/i.test(PAGE_SOURCE), false);
 });
+
+// -- Mobile editor escape-path fix (2026-08-21 follow-up) -----------------
+//
+// Real-device iPhone testing found Collapse itself became unreachable
+// once the user scrolled into the (very tall) expanded form -- the whole
+// editor card stopped being sticky the moment it expanded on a compact
+// width, so the Collapse control at its top scrolled away with everything
+// else. These tests lock in the fix: only a small header (title +
+// Collapse) stays sticky while compact+expanded; the full form body
+// remains normal-flow, and the outer card's own sticky behavior for every
+// other case (collapsed, and all of !isCompact) is untouched.
+
+test("a small header-only sticky region exists for the compact+expanded case, independent of the outer card's own sticky behavior", () => {
+  assert.match(PAGE_SOURCE, /const editorHeaderSticky = isCompact && editorExpanded;/);
+  assert.match(
+    PAGE_SOURCE,
+    /editorHeaderSticky\s*\n\s*\?\s*\{\s*\n\s*position: "sticky",/,
+  );
+});
+
+test("the outer editor PageSection's own sticky rule is unchanged from the prior fix -- still sticky whenever NOT (compact AND expanded)", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /position: isCompact && editorExpanded \? undefined : "sticky",/,
+  );
+});
+
+test("the sticky header has an opaque background and a bottom divider so it doesn't visually blend into the form scrolling beneath it", () => {
+  const styleBlockStart = PAGE_SOURCE.indexOf("editorHeaderSticky\n                  ? {");
+  assert.notEqual(styleBlockStart, -1);
+  const block = PAGE_SOURCE.slice(styleBlockStart, styleBlockStart + 400);
+  assert.match(block, /background: "var\(--color-bg-panel\)"/);
+  assert.match(block, /borderBottom: "var\(--border-width-default\) solid var\(--color-border-default\)"/);
+});
+
+test("the Collapse/Expand toggle's onClick performs a pure view-state flip only -- no setForm, no RPC call, no reset -- Collapse must never be a data action", () => {
+  const onClickIdx = PAGE_SOURCE.indexOf("onClick={() => setEditorExpanded((prev) => !prev)}");
+  assert.notEqual(onClickIdx, -1);
+  // The entire handler is this one expression -- nothing else runs.
+  assert.match(
+    PAGE_SOURCE.slice(onClickIdx, onClickIdx + 80),
+    /^onClick=\{\(\) => setEditorExpanded\(\(prev\) => !prev\)\}\s*\n\s*>/,
+  );
+});
+
+test("form field values are driven entirely by the persisted `form` state, never reset by the toggle -- dirty/uncommitted edits survive collapse and re-expand by construction (React state is untouched by a conditional-render toggle)", () => {
+  // The toggle handler and the Field/Input value bindings are disjoint --
+  // grep confirms no `setForm` call exists anywhere near the toggle.
+  const toggleButtonBlockStart = PAGE_SOURCE.indexOf("<AppButton\n                      ref={editorToggleButtonRef}");
+  const toggleButtonBlockEnd = PAGE_SOURCE.indexOf("</AppButton>", toggleButtonBlockStart);
+  assert.notEqual(toggleButtonBlockStart, -1);
+  const block = PAGE_SOURCE.slice(toggleButtonBlockStart, toggleButtonBlockEnd);
+  assert.equal(/setForm/.test(block), false);
+});
