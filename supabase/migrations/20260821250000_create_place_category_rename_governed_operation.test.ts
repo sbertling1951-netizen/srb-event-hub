@@ -265,20 +265,30 @@ test("statement is wrapped in a single transaction", () => {
 });
 
 // ---------------------------------------------------------------------------
-// UI scope guard: Stage C creates the governed capability only -- no
-// production page wires it up yet.
+// UI scope guard: at the time THIS migration was written (Stage C), no
+// production page wired this RPC up yet. Stage D (a later, separately
+// authorized workstream) adopted it on exactly one page --
+// app/admin/nearby-settings/page.tsx, whose own tests own the detailed
+// adoption assertions. This guard now checks the narrower, still-durable
+// claim: adoption stayed scoped to that one page.
 // ---------------------------------------------------------------------------
 
-test("no production page references rename_place_category or InlineEdit yet -- this migration ships no UI adoption", () => {
-  const pages = [
+test("rename_place_category/InlineEdit adoption stayed scoped to app/admin/nearby-settings/page.tsx -- Admin Nearby and Member Nearby remain untouched", () => {
+  const untouchedPages = [
     ["../../app/admin/nearby/page.tsx", "app/admin/nearby/page.tsx"],
-    ["../../app/admin/nearby-settings/page.tsx", "app/admin/nearby-settings/page.tsx"],
     ["../../app/member/nearby/page.tsx", "app/member/nearby/page.tsx"],
   ] as const;
 
-  for (const [relativePath, label] of pages) {
+  for (const [relativePath, label] of untouchedPages) {
     const source = readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
-    assert.equal(source.includes("rename_place_category"), false, `${label} should not reference rename_place_category yet`);
-    assert.equal(source.includes("InlineEdit"), false, `${label} should not reference InlineEdit yet`);
+    assert.equal(source.includes("rename_place_category"), false, `${label} should not reference rename_place_category`);
+    assert.equal(source.includes("InlineEdit"), false, `${label} should not reference InlineEdit`);
   }
+
+  const settingsSource = readFileSync(
+    fileURLToPath(new URL("../../app/admin/nearby-settings/page.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.ok(settingsSource.includes("rename_place_category"), "nearby-settings is the intended Stage D adoption site");
+  assert.ok(settingsSource.includes("InlineEdit"), "nearby-settings is the intended Stage D adoption site");
 });

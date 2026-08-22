@@ -792,7 +792,7 @@ Reference implementation and live demonstration:
 
 ---
 
-## 18. Prototype Pattern (2026-08-21) — Inline Edit (pending review, not yet adopted)
+## 18. Proven Pattern (2026-08-21) — Inline Edit (✅ approved, production-proven)
 
 A separate, explicitly authorized workstream (not part of this document's
 own Stage 2/3 sequence) built a canonical `InlineEdit` primitive
@@ -840,20 +840,28 @@ about what a valid value means — purely interaction/presentation, the
 same shared-shell-with-caller-owned-semantics split this document's own
 Dialog/ConfirmDialog pair (Part 7) already establishes.
 
-**Status: prototype, not yet approved for production.** Demonstrated on
+**Status: ✅ approved, production-proven.** Demonstrated on
 `/admin/ui-reference` (Section 19) with five real examples — a basic
 edit, an async/pending save, a validation failure, an always-failing
 async save, and a disabled/read-only instance — all built from the real,
-unmodified primitive, not a second implementation. Per this workstream's
-own explicit instruction, **no production page has been migrated onto
-it**: Nearby's "Groveries" typo, the case that originally motivated this
-primitive, is untouched. Adoption requires its own separate authorization
-after visual/behavioral review, the same gate this document's own Part 10
-sequence already applies to every other primitive here.
+unmodified primitive, not a second implementation. Visually/behaviorally
+approved (Pap, real iPhone and desktop) after that reference-only period,
+matching the same gate this document's own Part 10 sequence applies to
+every other primitive here.
+
+**First production adoption: `/admin/nearby-settings`** (Nearby Category
+Authority, Stage D, 2026-08-21) — the global `place_categories.label`
+rename affordance, gated to Platform/Super Admin, `onSave` calling only
+the governed `rename_place_category(p_category_id, p_new_label)` RPC (no
+direct table write from the client). The consuming page supplies only
+`value`/`validate`/`onSave`; every interaction/focus/keyboard/async-save
+behavior described above is the unmodified primitive, not a page-local
+reimplementation.
 
 Reference implementation: `components/ui/InlineEdit.tsx`,
 `components/ui/InlineEdit.test.tsx`, `app/admin/ui-reference/page.tsx`
-(Section 19, "Inline Edit").
+(Section 19, "Inline Edit"), `app/admin/nearby-settings/page.tsx` (first
+production consumer).
 
 ---
 
@@ -866,8 +874,7 @@ system choice, or the third-heading-tier question — each requires its
 own separately authorized Stage 2 decision, consistent with how
 `EPICENTRAX_ADMIN_UI_INVENTORY_AUDIT.md` scoped itself relative to its
 own eventual Stage 2/3. Parts 15–18 above are later, separate additions
-recording verified proven-pattern (or, for Part 18, prototype-pending-
-review) evidence — they document what the checklist, admin-users,
-Check-In, Shared Map Engine, and Inline Edit workstreams actually built
-or proved, not a revision of this document's own original discovery-only
-scope.
+recording verified proven-pattern evidence — they document what the
+checklist, admin-users, Check-In, Shared Map Engine, and Inline Edit
+workstreams actually built or proved, not a revision of this document's
+own original discovery-only scope.

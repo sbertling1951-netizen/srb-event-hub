@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { AppButton } from "@/components/ui/AppButton";
+import { InlineEdit } from "@/components/ui/InlineEdit";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAdmin } from "@/lib/adminContext";
@@ -179,6 +180,56 @@ function NearbySettingsPageInner() {
     setTimeout(() => setStatus(""), 2000);
   }
 
+  /**
+   * Maps the machine-readable strings rename_place_category raises
+   * (Nearby Category Authority Stage C) to human-readable text, without
+   * exposing raw Postgres error internals. Anything unrecognized falls
+   * back to a generic message rather than leaking database detail.
+   */
+  function describeRenameCategoryError(message: string): string {
+    switch (message) {
+      case "unauthorized":
+        return "You don't have permission to rename this category.";
+      case "duplicate_label":
+        return "Another category already has this name.";
+      case "category_not_found":
+        return "This category could not be found -- it may have changed. Refresh and try again.";
+      case "invalid_label":
+        return "Category name can't be empty.";
+      case "invalid_category_id":
+        return "Something went wrong identifying this category. Refresh and try again.";
+      default:
+        return "Could not rename this category. Please try again.";
+    }
+  }
+
+  /**
+   * InlineEdit's onSave for a category's global label (Nearby Category
+   * Authority Stage D). Calls ONLY the governed rename_place_category RPC
+   * -- no direct place_categories write, no nearby_master/
+   * event_nearby_places write (Stage C's RPC owns that transactional
+   * projection itself), no tenant context of any kind. Throwing here is
+   * what puts/keeps InlineEdit in its own recoverable error state -- see
+   * components/ui/InlineEdit.tsx.
+   */
+  async function renameCategory(categoryId: string, nextLabel: string) {
+    const trimmedLabel = nextLabel.trim();
+
+    const { error: rpcError } = await supabase.rpc("rename_place_category", {
+      p_category_id: categoryId,
+      p_new_label: trimmedLabel,
+    });
+
+    if (rpcError) {
+      throw new Error(describeRenameCategoryError(rpcError.message));
+    }
+
+    // Local state only -- id/code/sort_order untouched, no full reload.
+    setCategories((prev) =>
+      prev.map((category) => (category.id === categoryId ? { ...category, label: trimmedLabel } : category)),
+    );
+  }
+
   async function handleSearch() {
     if (!searchQuery.trim()) {
       setSearchResults([]);
@@ -327,53 +378,78 @@ function NearbySettingsPageInner() {
         </div>
       ) : null}
 
+      {/* Nearby Category Authority Stage D: rendered unconditionally --
+          global category naming (LEFT) does not depend on a selected
+          Tenant, only the Suppress/Include/Prioritize overrides (RIGHT)
+          do. Splitting this from "Add a Place" below (which stays
+          Tenant-gated) is the smallest presentation change that lets a
+          Super Admin rename a category without first picking a Tenant,
+          reported and confirmed before implementing. */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2 style={{ marginTop: 0 }}>Marker Types</h2>
+        <p style={{ fontSize: 13, opacity: 0.75 }}>
+          {selectedTenantId
+            ? "Default follows this Tenant's Tenant Type, then the platform baseline (included). Choose a preference to override that default for this Tenant only."
+            : "Select a Tenant above to configure Include/Suppress/Prioritize overrides for that Tenant."}
+          {isSuperAdmin
+            ? " Category names are global -- renaming one applies everywhere immediately."
+            : null}
+        </p>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          {categories.map((category) => {
+            const current = overrideByCategoryId.get(category.id) ?? null;
+            return (
+              <div
+                key={category.id}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  padding: "8px 0",
+                  borderBottom: "1px solid #eee",
+                }}
+              >
+                {isSuperAdmin ? (
+                  <InlineEdit
+                    label="Category name"
+                    value={category.label}
+                    onSave={(nextLabel) => renameCategory(category.id, nextLabel)}
+                    validate={(draft) => (draft.trim() ? undefined : "Category name can't be empty.")}
+                  />
+                ) : (
+                  <span>{category.label}</span>
+                )}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {selectedTenantId ? (
+                    (["suppress", "include", "prioritize"] as const).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        disabled={savingCategoryId === category.id}
+                        onClick={() => handleSetOverride(category.id, current === option ? null : option)}
+                        className={
+                          "nearby-segmented-option" + (current === option ? " active" : "")
+                        }
+                      >
+                        {option === "include" ? "Include" : option === "suppress" ? "Suppress" : "Prioritize"}
+                      </button>
+                    ))
+                  ) : (
+                    <span className="app-subtle-text" style={{ fontSize: 12 }}>
+                      Select a Tenant to configure
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {selectedTenantId ? (
-        <>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <h2 style={{ marginTop: 0 }}>Marker Types</h2>
-            <p style={{ fontSize: 13, opacity: 0.75 }}>
-              Default follows this Tenant&apos;s Tenant Type, then the
-              platform baseline (included). Choose a preference to override
-              that default for this Tenant only.
-            </p>
-
-            <div style={{ display: "grid", gap: 8 }}>
-              {categories.map((category) => {
-                const current = overrideByCategoryId.get(category.id) ?? null;
-                return (
-                  <div
-                    key={category.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      padding: "8px 0",
-                      borderBottom: "1px solid #eee",
-                    }}
-                  >
-                    <span>{category.label}</span>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {(["suppress", "include", "prioritize"] as const).map((option) => (
-                        <button
-                          key={option}
-                          type="button"
-                          disabled={savingCategoryId === category.id}
-                          onClick={() => handleSetOverride(category.id, current === option ? null : option)}
-                          className={
-                            "nearby-segmented-option" + (current === option ? " active" : "")
-                          }
-                        >
-                          {option === "include" ? "Include" : option === "suppress" ? "Suppress" : "Prioritize"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
           <div className="card">
             <h2 style={{ marginTop: 0 }}>Add a Place</h2>
             <p style={{ fontSize: 13, opacity: 0.75 }}>
@@ -499,7 +575,6 @@ function NearbySettingsPageInner() {
               </div>
             )}
           </div>
-        </>
       ) : null}
     </Page>
   );

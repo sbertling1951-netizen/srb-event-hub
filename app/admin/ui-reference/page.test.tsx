@@ -660,11 +660,16 @@ test("the disabled example passes disabled to the real InlineEdit component", ()
   assert.match(section, /<InlineEdit label="Locked category name" value="Archived Events" onSave=\{\(\) => \{\}\} disabled \/>/);
 });
 
-test("Nearby has not been adopted onto InlineEdit by this workstream -- the primitive stays reference-only until a separately authorized migration", () => {
+test("Admin Nearby (app/admin/nearby/page.tsx) has never adopted InlineEdit -- the Nearby Category Authority workstream's Stage D adoption went to app/admin/nearby-settings/page.tsx only", () => {
+  // The literal "Grocery"/"Groceries" text this test originally checked
+  // for was removed from this file by the later, separately authorized
+  // Nearby Category Authority Stage B (catalog-driven category selection
+  // replaced the hardcoded option list) -- unrelated to InlineEdit, so a
+  // stable structural marker is checked here instead of that now-gone text.
   const nearbySource = readFileSync(
     fileURLToPath(new URL("../nearby/page.tsx", import.meta.url)),
     "utf8",
   );
   assert.equal(/InlineEdit/.test(nearbySource), false);
-  assert.match(nearbySource, /Grocer(y|ies)/);
+  assert.match(nearbySource, /function AdminNearbyPageInner\(\)/);
 });
