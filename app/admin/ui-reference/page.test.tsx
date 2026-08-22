@@ -56,6 +56,7 @@ test("every shared primitive named in scope is actually imported from components
     '"@/components/ui/AppButton"',
     '"@/components/ui/ConfirmDialog"',
     '"@/components/ui/DataTable"',
+    '"@/components/ui/InlineEdit"',
     '"@/components/ui/PageHeader"',
     '"@/components/ui/PageSection"',
     '"@/components/ui/RowActions"',
@@ -599,4 +600,71 @@ test("canonical adoption names Parking and both Locations pages as migrated, and
   assert.match(section, /Coach Map/);
   assert.match(section, /Master Maps/);
   assert.match(section, /not migrated yet|deliberately not migrated/);
+});
+
+// Section 19: Inline Edit -- uses the REAL shared InlineEdit primitive
+// (components/ui/InlineEdit.tsx), not a page-local reimplementation.
+
+test("the Inline Edit section renders as a real heading, explicitly labeled a pending-review prototype", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  assert.ok(html.includes("Inline Edit (prototype -- pending review)"));
+});
+
+test("the Inline Edit section states the use/don't-use guidance and documents every interaction path", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  assert.ok(html.includes("Use InlineEdit for:"));
+  assert.ok(html.includes("Use a Dialog/form for:"));
+  assert.ok(html.includes("Tap/click the value"));
+  assert.ok(html.includes("Enter, or the visible Save button"));
+  assert.ok(html.includes("Escape, or the visible Cancel button"));
+  assert.ok(html.includes("no implicit save, ever"));
+});
+
+test("the section demonstrates all five required cases -- basic edit, async save, validation, async failure, and disabled -- via the real InlineEdit component", () => {
+  const section = sectionSource("inline-edit");
+  const inlineEditUses = (section.match(/<InlineEdit\b/g) || []).length;
+  assert.equal(inlineEditUses, 5, `expected exactly 5 InlineEdit instances, found ${inlineEditUses}`);
+
+  assert.match(section, /label="Category name"/);
+  assert.match(section, /label="Department label"/);
+  assert.match(section, /label="Meal category"/);
+  assert.match(section, /label="Storage room label"/);
+  assert.match(section, /label="Locked category name"/);
+
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  for (const value of ["Groceries", "Vendor Services", "Breakfast", "Storage Room", "Archived Events"]) {
+    assert.ok(html.includes(value), `expected the rendered output to include "${value}"`);
+  }
+});
+
+test("the validation example wires a real, non-empty-only validate function -- not a hard-coded category-specific rule inside InlineEdit itself", () => {
+  const section = sectionSource("inline-edit");
+  assert.match(
+    section,
+    /validate=\{\(draft\) => \(draft\.trim\(\) \? undefined : "This field can't be empty\."\)\}/,
+  );
+  assert.equal(/"Groceries"|"Breakfast"/.test(readFileSync(
+    fileURLToPath(new URL("../../../components/ui/InlineEdit.tsx", import.meta.url)),
+    "utf8",
+  )), false);
+});
+
+test("the async examples call real async onSave functions -- one resolves after a delay, the other always rejects to demonstrate the failure/retry path", () => {
+  assert.match(source, /async function saveDepartmentLabelAsync\(next: string\) \{/);
+  assert.match(source, /async function saveStorageLabelAlwaysFails\(\): Promise<void> \{/);
+  assert.match(source, /throw new Error\("Network error -- please try again\."\);/);
+});
+
+test("the disabled example passes disabled to the real InlineEdit component", () => {
+  const section = sectionSource("inline-edit");
+  assert.match(section, /<InlineEdit label="Locked category name" value="Archived Events" onSave=\{\(\) => \{\}\} disabled \/>/);
+});
+
+test("Nearby has not been adopted onto InlineEdit by this workstream -- the primitive stays reference-only until a separately authorized migration", () => {
+  const nearbySource = readFileSync(
+    fileURLToPath(new URL("../nearby/page.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.equal(/InlineEdit/.test(nearbySource), false);
+  assert.match(nearbySource, /Grocer(y|ies)/);
 });

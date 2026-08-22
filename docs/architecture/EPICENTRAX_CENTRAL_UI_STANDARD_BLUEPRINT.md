@@ -792,6 +792,71 @@ Reference implementation and live demonstration:
 
 ---
 
+## 18. Prototype Pattern (2026-08-21) — Inline Edit (pending review, not yet adopted)
+
+A separate, explicitly authorized workstream (not part of this document's
+own Stage 2/3 sequence) built a canonical `InlineEdit` primitive
+(`components/ui/InlineEdit.tsx`) for editing a single SIMPLE atomic value
+in place — surfaced while correcting the Nearby "Groveries" → "Groceries"
+category typo, where a full Edit → separate form → Save → return round
+trip was disproportionate to the size of the change.
+
+**Interaction contract.** Tap/click the display-mode value (a real
+`<button>`, not a clickable `<div>`) to enter edit mode: a canonical
+`Input` populated with the current value, focused and with its text
+selected, alongside always-visible Save and Cancel controls — never
+hidden behind hover, so touch parity with keyboard/mouse is automatic.
+Enter attempts Save; Escape is identical to clicking Cancel. Tab is left
+entirely alone — ordinary focus traversal, never an implicit save.
+**Blur/click-outside never saves, under any circumstance** — a data
+change must always be an explicit Save, the same "no implicit
+dismissal-triggered mutation" discipline this document's own Dialog
+(Part 7) already holds for closing an overlay.
+
+**Focus/accessibility.** The display-mode trigger's accessible name
+contains both the field's label and its current value (e.g. "Edit
+Category name: Groceries"), not just the label alone — WCAG 2.5.3 Label
+in Name, so voice-control users can target it by what they see. Save/
+Cancel are ordinary `AppButton`s, reachable and operable exactly like any
+other button on the page. Focus returns to the display-mode trigger after
+a successful Save or a Cancel; nothing is stolen while a save is pending
+or has failed.
+
+**Validation/async-save.** `validate` is a caller-supplied function
+returning an error string or `undefined` — InlineEdit owns none of the
+semantics of what "valid" means, only the announce/associate/block
+mechanics (`aria-invalid`/`aria-describedby`/`role="alert"`, the same
+discipline `Field` already established). `onSave` may be sync or async;
+InlineEdit shows the same `AppButton` `loading` state `ConfirmDialog`
+already uses while a save is pending, blocks a second concurrent Save via
+a synchronous ref guard (component state alone updates too late to stop a
+second click/Enter that arrives before the first `await` yields), and on
+rejection stays in edit mode with the draft and the error message intact.
+Cancel is inert while a save is in flight — closing the one race where a
+stale save could otherwise resolve on top of a since-started new edit.
+
+**What it does NOT own:** persistence, business validation, or anything
+about what a valid value means — purely interaction/presentation, the
+same shared-shell-with-caller-owned-semantics split this document's own
+Dialog/ConfirmDialog pair (Part 7) already establishes.
+
+**Status: prototype, not yet approved for production.** Demonstrated on
+`/admin/ui-reference` (Section 19) with five real examples — a basic
+edit, an async/pending save, a validation failure, an always-failing
+async save, and a disabled/read-only instance — all built from the real,
+unmodified primitive, not a second implementation. Per this workstream's
+own explicit instruction, **no production page has been migrated onto
+it**: Nearby's "Groveries" typo, the case that originally motivated this
+primitive, is untouched. Adoption requires its own separate authorization
+after visual/behavioral review, the same gate this document's own Part 10
+sequence already applies to every other primitive here.
+
+Reference implementation: `components/ui/InlineEdit.tsx`,
+`components/ui/InlineEdit.test.tsx`, `app/admin/ui-reference/page.tsx`
+(Section 19, "Inline Edit").
+
+---
+
 ## Scope Boundary
 
 This document is discovery and blueprint only. It authorizes no code
@@ -800,8 +865,9 @@ does not decide the `card`/`section` merge, the affirmative/destructive
 system choice, or the third-heading-tier question — each requires its
 own separately authorized Stage 2 decision, consistent with how
 `EPICENTRAX_ADMIN_UI_INVENTORY_AUDIT.md` scoped itself relative to its
-own eventual Stage 2/3. Parts 15–17 above are later, separate additions
-recording verified proven-pattern evidence — they document what the
-checklist, admin-users, Check-In, and Shared Map Engine migrations
-actually proved, not a revision of this document's own original
-discovery-only scope.
+own eventual Stage 2/3. Parts 15–18 above are later, separate additions
+recording verified proven-pattern (or, for Part 18, prototype-pending-
+review) evidence — they document what the checklist, admin-users,
+Check-In, Shared Map Engine, and Inline Edit workstreams actually built
+or proved, not a revision of this document's own original discovery-only
+scope.

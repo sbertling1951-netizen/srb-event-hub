@@ -19,6 +19,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { Dialog } from "@/components/ui/Dialog";
 import { Checkbox, Field, Input, Radio, Select, Textarea } from "@/components/ui/Field";
+import { InlineEdit } from "@/components/ui/InlineEdit";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { RowActions } from "@/components/ui/RowActions";
@@ -64,6 +65,7 @@ const TOC: Array<{ id: string; label: string }> = [
   { id: "depth", label: "16. Button Depth / Tactile Treatment (prototype)" },
   { id: "overlays", label: "17. Dialog & Overlays (✅ approved)" },
   { id: "map-markers", label: "18. Map Marker Standard (✅ approved)" },
+  { id: "inline-edit", label: "19. Inline Edit (prototype -- pending review)" },
 ];
 
 // ----------------------------------------------------------------------------
@@ -407,6 +409,31 @@ export function AdminUiReferenceContent() {
   // action set. Neither is persisted anywhere.
   const [depthConfirmOpen, setDepthConfirmOpen] = useState(false);
   const [depthToggle, setDepthToggle] = useState<"flat" | "3d">("flat");
+
+  // Section 19 demos only: one local value per InlineEdit example.
+  // InlineEdit never persists anything itself -- ordinary useState here is
+  // standing in for whatever a real caller's own save would be (a database
+  // write, an API call), exactly as this whole page's demo state does for
+  // every other primitive above.
+  const [demoGroceryCategory, setDemoGroceryCategory] = useState("Groceries");
+  const [demoDepartmentLabel, setDemoDepartmentLabel] = useState("Vendor Services");
+  const [demoMealCategory, setDemoMealCategory] = useState("Breakfast");
+  // No setter: this example's onSave always rejects (see
+  // saveStorageLabelAlwaysFails below), so the committed value never
+  // actually changes -- demonstrating that on purpose, not an oversight.
+  const [demoStorageLabel] = useState("Storage Room");
+
+  async function saveDepartmentLabelAsync(next: string) {
+    // A real ~700ms delay so the Save button's loading state is actually
+    // visible to a reviewer, not just theoretically present in the code.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    setDemoDepartmentLabel(next);
+  }
+
+  async function saveStorageLabelAlwaysFails(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    throw new Error("Network error -- please try again.");
+  }
 
   const demoActiveFilterCount = (demoCategory !== "all" ? 1 : 0) + (demoStatus !== "all" ? 1 : 0);
   const demoHasClearable = demoActiveFilterCount > 0 || demoSearch.trim() !== "";
@@ -2524,6 +2551,75 @@ export function AdminUiReferenceContent() {
           marker <em>presentation</em> only -- map pan/zoom/drag gesture mechanics remain fully specialized per{" "}
           <code className="ui-ref-code">EPICENTRAX_CENTRAL_UI_STANDARD_BLUEPRINT.md</code> §12.
         </p>
+      </RefSection>
+
+      {/* =================================================================
+          19. INLINE EDIT
+          ================================================================= */}
+      <RefSection
+        id="inline-edit"
+        title="Inline Edit (prototype -- pending review)"
+        description={
+          <>
+            <code className="ui-ref-code">components/ui/InlineEdit.tsx</code> -- the real, shared primitive for
+            editing a SIMPLE atomic value in place: tap/click the value, edit it, Enter or the visible Save
+            button commits, Escape or the visible Cancel button discards. Built for visual/behavioral review
+            before any production page adopts it -- Nearby&rsquo;s original &ldquo;Groveries&rdquo; typo, the
+            case that motivated this primitive, is untouched by this workstream.
+          </>
+        }
+      >
+        <p style={{ margin: 0, fontSize: "var(--font-size-body)", lineHeight: "var(--line-height-relaxed)" }}>
+          <strong>Use InlineEdit for:</strong> simple atomic values where the surrounding context should stay
+          visible -- category names, short labels, display names, short titles, simple numeric/order values.{" "}
+          <strong>Use a Dialog/form for:</strong> multi-field or consequential edits, anything destructive, or
+          anything needing a confirmation step.
+        </p>
+
+        <ul
+          className="app-subtle-text"
+          style={{ margin: 0, paddingLeft: "1.1em", display: "grid", gap: "var(--space-1)" }}
+        >
+          <li>Tap/click the value → enter edit mode</li>
+          <li>Enter, or the visible Save button → Save</li>
+          <li>Escape, or the visible Cancel button → Cancel</li>
+          <li>Blur / clicking outside the value → no implicit save, ever</li>
+        </ul>
+
+        <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>1. Basic text edit</h3>
+        <InlineEdit
+          label="Category name"
+          value={demoGroceryCategory}
+          onSave={(next) => setDemoGroceryCategory(next)}
+        />
+
+        <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>2. Another realistic value, async save</h3>
+        <InlineEdit label="Department label" value={demoDepartmentLabel} onSave={saveDepartmentLabelAsync} />
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Saves after a real ~700ms delay -- watch the Save button&rsquo;s loading state.
+        </p>
+
+        <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>3. Validation</h3>
+        <InlineEdit
+          label="Meal category"
+          value={demoMealCategory}
+          onSave={(next) => setDemoMealCategory(next)}
+          validate={(draft) => (draft.trim() ? undefined : "This field can't be empty.")}
+        />
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Required. Clear the value and press Save/Enter to see the validation error -- Save is blocked and the
+          draft is kept.
+        </p>
+
+        <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>4. Async failure / retry</h3>
+        <InlineEdit label="Storage room label" value={demoStorageLabel} onSave={saveStorageLabelAlwaysFails} />
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          This one always rejects (~500ms delay) -- Save, watch it fail, and confirm the draft and edit mode are
+          both preserved so you can retry or Cancel.
+        </p>
+
+        <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>5. Disabled / read-only</h3>
+        <InlineEdit label="Locked category name" value="Archived Events" onSave={() => {}} disabled />
       </RefSection>
     </div>
   );

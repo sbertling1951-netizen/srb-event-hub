@@ -780,6 +780,110 @@ textarea.app-control,
   overflow: auto;
 }
 
+/* ===== INLINE EDIT (Central UI Standard -- Inline Edit) =====
+   Backs components/ui/InlineEdit.tsx. Display mode must read primarily as
+   content, not as a permanently-visible input or a large button -- the
+   trigger inherits the surrounding font (`font: inherit`) and carries no
+   visible border/background at rest, only a low-contrast dashed underline
+   plus a low-opacity pencil icon as a discoverable, non-hover-dependent
+   edit affordance (hover/focus intensify both; neither is required to
+   discover it). The trigger's own box (min-height + horizontal padding)
+   still meets --touch-target-min, the same way the Map Marker Standard's
+   invisible hit area does for a small marker dot: the comfortable tap
+   target and the lightweight visible content are two separate contracts,
+   not one. */
+.app-inline-edit-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target-min);
+  max-width: 100%;
+  padding: 0 var(--space-2);
+  margin: 0 calc(var(--space-2) * -1);
+  border: none;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-inline-edit-trigger:disabled {
+  cursor: not-allowed;
+  color: var(--color-disabled-text);
+}
+
+.app-inline-edit-value {
+  overflow-wrap: anywhere;
+  border-bottom: 1px dashed var(--color-border-strong);
+}
+
+.app-inline-edit-trigger:disabled .app-inline-edit-value {
+  border-bottom-color: transparent;
+}
+
+.app-inline-edit-empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.app-inline-edit-icon {
+  flex: 0 0 auto;
+  opacity: 0.55;
+  color: var(--color-text-muted);
+}
+
+.app-inline-edit-trigger:hover:not(:disabled),
+.app-inline-edit-trigger:focus-visible {
+  background: var(--color-action-secondary-hover);
+}
+
+.app-inline-edit-trigger:hover:not(:disabled) .app-inline-edit-value,
+.app-inline-edit-trigger:focus-visible .app-inline-edit-value {
+  border-bottom-color: var(--color-action-primary-hover);
+}
+
+.app-inline-edit-trigger:hover:not(:disabled) .app-inline-edit-icon,
+.app-inline-edit-trigger:focus-visible .app-inline-edit-icon {
+  opacity: 1;
+  color: var(--color-action-primary-hover);
+}
+
+.app-inline-edit-trigger:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Edit mode: input + explicit Save/Cancel, always visible (never hidden
+   behind hover) so touch users have the same controls keyboard users do.
+   flex-wrap keeps this from ever forcing horizontal page overflow at
+   320/390px -- the input shrinks toward its min-width and the actions
+   wrap to their own row before anything scrolls. */
+.app-inline-edit-editing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+  max-width: 100%;
+}
+
+.app-inline-edit-input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.app-inline-edit-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.app-inline-edit-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 /* ===== SHARED LAYOUT + FORM UTILITIES ===== */
 .app-stack-8 {
   display: grid;
