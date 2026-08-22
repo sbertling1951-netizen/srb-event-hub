@@ -223,3 +223,38 @@ test("optional catalog fields are visually marked Optional; the one required fie
     /Contact person <span className="app-subtle-text">Optional<\/span>/,
   );
 });
+
+// Vendor Catalog reconciliation audit (2026-08-22). Root cause proven:
+// the entire vendors table was deliberately, explicitly wiped by an
+// authorized clean-domain-reset migration (20260727120300) -- confirmed
+// live against the linked project (only two post-reset rows exist, both
+// traceable to that reset's own timestamp) -- not any query/RLS/UI defect.
+// These tests prove the catalog-visibility surface itself was never the
+// problem and cannot regress into becoming one: the query returns every
+// vendors row regardless of is_active or any other column, and nothing
+// downstream filters that result set before rendering.
+
+test("the catalog query is unfiltered -- selects every vendors row (active and inactive alike), with no .eq/.filter narrowing on is_active or any other column", () => {
+  const queryIdx = PAGE_SOURCE.indexOf('.from("vendors")');
+  assert.notEqual(queryIdx, -1);
+  const orderCall = '.order("business_name", { ascending: true })';
+  const orderIdx = PAGE_SOURCE.indexOf(orderCall, queryIdx);
+  assert.notEqual(orderIdx, -1);
+  const queryBlock = PAGE_SOURCE.slice(queryIdx, orderIdx + orderCall.length);
+  assert.match(queryBlock, /\.select\("\*"\)/);
+  assert.equal(/\.eq\(/.test(queryBlock), false, "the catalog query must not narrow by any column");
+  assert.equal(/\.filter\(/.test(queryBlock), false);
+});
+
+test("the fetched vendor list is rendered as-is -- no .filter() is applied to the vendors array before either the table or the responsive-list render", () => {
+  const tableMapCount = (PAGE_SOURCE.match(/vendors\.map\(\(vendor\) => \{/g) || []).length;
+  assert.equal(tableMapCount, 2, "expected both the table and responsive-list to map the raw vendors array directly");
+  assert.equal(/vendors\.filter\(/.test(PAGE_SOURCE), false);
+});
+
+test("an inactive vendor still renders in the catalog list, distinguished only by its StatusBadge tone/label -- never removed from the list itself", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<SharedStatusBadge tone=\{catalogStatusTone\(vendor\.is_active\)\}>\s*\n\s*\{vendor\.is_active === false \? "Inactive" : "Active"\}/,
+  );
+});

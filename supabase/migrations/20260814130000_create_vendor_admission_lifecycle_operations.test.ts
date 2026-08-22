@@ -161,6 +161,42 @@ test("reject_vendor_event_candidacy never writes event_vendors and never touches
   assert.match(body, /cannot_reject_active_admission_use_revoke/);
 });
 
+// Vendor Catalog reconciliation audit (2026-08-22): confirms the canonical
+// retention rule -- "once a vendor is admitted into the catalog, later
+// Event-specific approval/rejection/non-selection must not silently remove
+// it" -- holds for BOTH mutation paths, not only reject. revoke_vendor_admission
+// only ever appends a new disposition and flips event_vendors.admission_state;
+// it must never write to, update, or delete from the vendors table itself.
+test("revoke_vendor_admission never writes, updates, or deletes anything on the vendors table -- Event-level revocation cannot remove or deactivate the canonical catalog record", () => {
+  const body = functionBody("revoke_vendor_admission");
+  assert.equal(/INSERT INTO public\.vendors\b/.test(body), false);
+  assert.equal(/UPDATE public\.vendors\b/.test(body), false);
+  assert.equal(/DELETE FROM public\.vendors\b/.test(body), false);
+  assert.equal(/\bvendors\.is_active\b/.test(body), false);
+});
+
+// Vendor Catalog reconciliation audit (2026-08-22): register/admit/reject
+// all require the vendor to already exist in the canonical catalog
+// (vendor_not_found) before any Event-level candidacy record can be
+// created -- catalog admission is structurally prior to, and independent
+// of, Event participation. This is also what prevents an Event-level
+// action from ever fabricating a phantom/duplicate catalog entry: there
+// is no code path in this migration that can create a vendors row.
+test("register/admit/reject all require the vendor to already exist in the catalog (vendor_not_found) -- Event-level actions can never create or substitute for a catalog admission", () => {
+  for (const name of ["register_vendor_event_candidacy", "admit_vendor_for_event", "reject_vendor_event_candidacy"]) {
+    const body = functionBody(name);
+    assert.match(
+      body,
+      /IF NOT EXISTS \(SELECT 1 FROM public\.vendors WHERE id = p_vendor_id\) THEN\s*\n\s*RAISE EXCEPTION 'vendor_not_found'/,
+      `${name} must guard on the vendor already existing in the catalog`,
+    );
+  }
+  // No function in this migration ever creates a vendors row -- catalog
+  // admission is exclusively the Admin Vendors page's own governed insert
+  // (vendors_insert_policy, RLS-gated on has_my_vendor_catalog_admin_authority()).
+  assert.equal(/INSERT INTO public\.vendors\b/.test(executableSql), false);
+});
+
 test("admit_vendor_for_event and revoke_vendor_admission lock the relevant row FOR UPDATE before reading current state", () => {
   for (const name of ["admit_vendor_for_event", "revoke_vendor_admission"]) {
     const body = functionBody(name);
