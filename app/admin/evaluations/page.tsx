@@ -1,10 +1,12 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageSection } from "@/components/ui/PageSection";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -258,157 +260,197 @@ function AdminEvaluationsPageInner() {
     started > 0 ? Math.round((completed / started) * 100) : 0;
 
   return (
-    <div style={{ display: "grid", gap: 24, minWidth: 0 }}>
-      <p className="text-gray-500" style={{ margin: 0 }}>
+    <div style={{ display: "grid", gap: "var(--space-6)", minWidth: 0 }}>
+      <p className="app-subtle-text" style={{ margin: 0 }}>
         Review attendee feedback, trends, suggestions, and event satisfaction.
       </p>
 
-      <div className="app-stack-8 gap-4 md:grid-cols-4" style={{ minWidth: 0 }}>
-        <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
-          <div className="text-sm text-gray-500">Started</div>
-          <div className="text-2xl font-semibold">
-            {loading ? "--" : started}
-          </div>
+      <div
+        style={{
+          display: "grid",
+          gap: "var(--space-4)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          minWidth: 0,
+        }}
+      >
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Started</div>
+          <div style={statValueStyle}>{loading ? "--" : started}</div>
         </div>
 
-        <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
-          <div className="text-sm text-gray-500">Completed</div>
-          <div className="text-2xl font-semibold">
-            {loading ? "--" : completed}
-          </div>
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Completed</div>
+          <div style={statValueStyle}>{loading ? "--" : completed}</div>
         </div>
 
-        <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
-          <div className="text-sm text-gray-500">Completion Rate</div>
-          <div className="text-2xl font-semibold">
-            {loading ? "--" : `${completionRate}%`}
-          </div>
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Completion Rate</div>
+          <div style={statValueStyle}>{loading ? "--" : `${completionRate}%`}</div>
         </div>
 
-        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-          <div className="text-sm text-gray-500">Last Submission</div>
-          <div className="text-sm font-semibold">{lastSubmission}</div>
+        <div style={{ ...statCardStyle, overflowWrap: "anywhere" }}>
+          <div style={statLabelStyle}>Last Submission</div>
+          <div className="data-table-cell-primary">{lastSubmission}</div>
         </div>
       </div>
 
-      <div className="app-stack-8 gap-6 lg:grid-cols-2" style={{ minWidth: 0 }}>
-        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-          <h2 className="text-lg font-semibold mb-3">Overall Impression</h2>
+      <div
+        style={{
+          display: "grid",
+          gap: "var(--space-5)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          minWidth: 0,
+        }}
+      >
+        <PageSection variant="card" title="Overall Impression">
           {Object.keys(overallRatings).length === 0 ? (
-            <p className="text-gray-500">No responses yet.</p>
+            <EmptyState message="No responses yet." />
           ) : (
-            <div className="space-y-2">
+            <div style={{ display: "grid", gap: "var(--space-2)" }}>
               {Object.entries(overallRatings).map(([label, count]) => (
-                <div key={label} className="border-b pb-1">
+                <div key={label} style={breakdownRowStyle}>
                   {label} ({count})
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </PageSection>
 
-        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-          <h2 className="text-lg font-semibold mb-3">Likelihood to Attend Again</h2>
+        <PageSection variant="card" title="Likelihood to Attend Again">
           {Object.keys(attendAgainRatings).length === 0 ? (
-            <p className="text-gray-500">No responses yet.</p>
+            <EmptyState message="No responses yet." />
           ) : (
-            <div className="space-y-2">
+            <div style={{ display: "grid", gap: "var(--space-2)" }}>
               {Object.entries(attendAgainRatings).map(([label, count]) => (
-                <div key={label} className="border-b pb-1">
+                <div key={label} style={breakdownRowStyle}>
                   {label} ({count})
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </PageSection>
       </div>
 
-      <div className="app-stack-8 gap-6 lg:grid-cols-2" style={{ minWidth: 0 }}>
-        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-          <h2 className="text-lg font-semibold mb-3">Most Valuable Parts of Event</h2>
+      <div
+        style={{
+          display: "grid",
+          gap: "var(--space-5)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          minWidth: 0,
+        }}
+      >
+        <PageSection variant="card" title="Most Valuable Parts of Event">
           {Object.keys(mostValuableCounts).length === 0 ? (
-            <p className="text-gray-500">No responses yet.</p>
+            <EmptyState message="No responses yet." />
           ) : (
-            <div className="space-y-2">
+            <div style={{ display: "grid", gap: "var(--space-2)" }}>
               {Object.entries(mostValuableCounts)
                 .sort((a, b) => b[1] - a[1])
                 .map(([label, count]) => (
-                  <div key={label} className="border-b pb-1">
+                  <div key={label} style={breakdownRowStyle}>
                     {label} ({count})
                   </div>
                 ))}
             </div>
           )}
-        </div>
+        </PageSection>
 
-        <div className="border rounded-lg p-4" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-          <h2 className="text-lg font-semibold mb-3">Future Topic Interests</h2>
+        <PageSection variant="card" title="Future Topic Interests">
           {Object.keys(futureInterestCounts).length === 0 ? (
-            <p className="text-gray-500">No responses yet.</p>
+            <EmptyState message="No responses yet." />
           ) : (
-            <div className="space-y-2">
+            <div style={{ display: "grid", gap: "var(--space-2)" }}>
               {Object.entries(futureInterestCounts)
                 .sort((a, b) => b[1] - a[1])
                 .map(([label, count]) => (
-                  <div key={label} className="border-b pb-1">
+                  <div key={label} style={breakdownRowStyle}>
                     {label} ({count})
                   </div>
                 ))}
             </div>
           )}
-        </div>
+        </PageSection>
       </div>
 
-      <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
-        <h2 className="text-lg font-semibold mb-3">
-          Favorite Memories ({favoriteMemories.length})
-        </h2>
+      <PageSection variant="card" title={`Favorite Memories (${favoriteMemories.length})`}>
         {favoriteMemories.length === 0 ? (
-          <p className="text-gray-500">No responses yet.</p>
+          <EmptyState message="No responses yet." />
         ) : (
-          <div className="space-y-3">
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
             {[...favoriteMemories].reverse().map((memory, index) => (
-              <div key={index} className="border rounded p-3 bg-gray-50" style={{ overflowWrap: "anywhere" }}>
+              <div key={index} style={quoteCardStyle}>
                 {memory}
               </div>
             ))}
           </div>
         )}
-      </div>
+      </PageSection>
 
-      <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
-        <h2 className="text-lg font-semibold mb-3">
-          Where Did We Miss The Mark? ({improvements.length})
-        </h2>
+      <PageSection variant="card" title={`Where Did We Miss The Mark? (${improvements.length})`}>
         {improvements.length === 0 ? (
-          <p className="text-gray-500">No responses yet.</p>
+          <EmptyState message="No responses yet." />
         ) : (
-          <div className="space-y-3">
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
             {[...improvements].reverse().map((item, index) => (
-              <div key={index} className="border rounded p-3 bg-gray-50" style={{ overflowWrap: "anywhere" }}>
+              <div key={index} style={quoteCardStyle}>
                 {item}
               </div>
             ))}
           </div>
         )}
-      </div>
+      </PageSection>
 
-      <div className="border rounded-lg p-4" style={{ minWidth: 0 }}>
-        <h2 className="text-lg font-semibold mb-3">
-          Additional Comments ({additionalComments.length})
-        </h2>
+      <PageSection variant="card" title={`Additional Comments (${additionalComments.length})`}>
         {additionalComments.length === 0 ? (
-          <p className="text-gray-500">No responses yet.</p>
+          <EmptyState message="No responses yet." />
         ) : (
-          <div className="space-y-3">
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
             {[...additionalComments].reverse().map((comment, index) => (
-              <div key={index} className="border rounded p-3 bg-gray-50" style={{ overflowWrap: "anywhere" }}>
+              <div key={index} style={quoteCardStyle}>
                 {comment}
               </div>
             ))}
           </div>
         )}
-      </div>
+      </PageSection>
     </div>
   );
 }
+
+// No shared "stat card"/"breakdown row"/"quote card" primitive exists yet
+// (each is a single-page need, not a repeated pattern across pages --
+// Development Standards' "no speculative abstraction"); kept page-local
+// but moved onto design tokens, matching every other migrated page's own
+// page-local inline styles (e.g. Events' healthCardStyle).
+const statCardStyle: CSSProperties = {
+  border: "var(--border-width-default) solid var(--color-border-default)",
+  borderRadius: "var(--radius-medium)",
+  padding: "var(--space-4)",
+  background: "var(--color-bg-muted)",
+  minWidth: 0,
+};
+
+const statLabelStyle: CSSProperties = {
+  fontSize: "var(--font-size-caption)",
+  color: "var(--color-text-secondary)",
+};
+
+const statValueStyle: CSSProperties = {
+  fontSize: "var(--font-size-section-title)",
+  fontWeight: "var(--font-weight-bold)" as unknown as number,
+  color: "var(--color-text-primary)",
+};
+
+const breakdownRowStyle: CSSProperties = {
+  borderBottom: "var(--border-width-default) solid var(--color-border-default)",
+  paddingBottom: "var(--space-1)",
+  overflowWrap: "anywhere",
+};
+
+const quoteCardStyle: CSSProperties = {
+  border: "var(--border-width-default) solid var(--color-border-default)",
+  borderRadius: "var(--radius-medium)",
+  padding: "var(--space-3)",
+  background: "var(--color-bg-muted)",
+  overflowWrap: "anywhere",
+};

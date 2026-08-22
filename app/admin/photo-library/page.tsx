@@ -1,8 +1,16 @@
 "use client";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import { Dialog } from "@/components/ui/Dialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Checkbox, Field, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { SearchField, TableToolbar, TableToolbarPrimaryRow } from "@/components/ui/TableToolbar";
 import {
   clearAdminPhotoCacheForUser,
   getAdminPhotoSignedUrl,
@@ -275,169 +283,89 @@ function PhotoLibraryPageInner() {
   }
 
   // Responsive grid styles
-  const gridStyle: React.CSSProperties = {
+  const gridStyle: CSSProperties = {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
-    gap: 16,
-    marginTop: 24,
+    gap: "var(--space-4)",
+    marginTop: "var(--space-6)",
     minWidth: 0,
-  };
-
-  // Card style
-  const cardStyle: React.CSSProperties = {
-    background: "#fff",
-    borderRadius: 8,
-    boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-    padding: 16,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    flex: "1 1 min(180px, 100%)",
-    minWidth: 0,
-    overflowWrap: "anywhere",
-  };
-
-  // Modal overlay styles
-  const modalOverlayStyle: React.CSSProperties = {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.4)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-  };
-  const modalContentStyle: React.CSSProperties = {
-    background: "#fff",
-    borderRadius: 8,
-    padding: 24,
-    maxWidth: 500,
-    width: "calc(100% - 32px)",
-    maxHeight: "calc(100dvh - 32px)",
-    overflowY: "auto",
-    boxSizing: "border-box",
-    minWidth: 0,
-    boxShadow: "0 2px 16px rgba(0,0,0,0.15)",
-    position: "relative",
   };
 
   return (
-    <div style={{ minWidth: 0 }}>
-      <div
-        style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}
-      >
-        <div style={cardStyle}>
-          <div style={{ fontWeight: 600, fontSize: 18 }}>{totalCount}</div>
-          <div style={{ color: "#666" }}>Total Photos</div>
-        </div>
-        <div style={cardStyle}>
-          <div style={{ fontWeight: 600, fontSize: 18 }}>{pendingCount}</div>
-          <div style={{ color: "#666" }}>Pending</div>
-        </div>
-        <div style={cardStyle}>
-          <div style={{ fontWeight: 600, fontSize: 18 }}>{approvedCount}</div>
-          <div style={{ color: "#666" }}>Approved</div>
-        </div>
-        <div style={cardStyle}>
-          <div style={{ fontWeight: 600, fontSize: 18 }}>{rejectedCount}</div>
-          <div style={{ color: "#666" }}>Rejected</div>
-        </div>
-        <div style={cardStyle}>
-          <div style={{ fontWeight: 600, fontSize: 18 }}>{featuredCount}</div>
-          <div style={{ color: "#666" }}>Featured</div>
-        </div>
-      </div>
-
+    <div style={{ display: "grid", gap: "var(--space-6)", minWidth: 0 }}>
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-          marginBottom: 16,
-          flexWrap: "wrap",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: "var(--space-4)",
           minWidth: 0,
         }}
       >
-        <input
-          type="text"
-          placeholder="Search by caption..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 4,
-            border: "1px solid #bbb",
-            width: "min(100%, 320px)",
-            minWidth: 0,
-            boxSizing: "border-box",
-          }}
-        />
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, minWidth: 0 }}>
-          {FILTERS.map((filter) => (
-            <button
-              key={filter.key}
-              style={{
-                padding: "6px 14px",
-                borderRadius: 4,
-                border:
-                  activeFilter === filter.key
-                    ? "2px solid #226"
-                    : "1px solid #bbb",
-                background: activeFilter === filter.key ? "#f0f2ff" : "#fafbfc",
-                fontWeight: activeFilter === filter.key ? 600 : 400,
-                cursor: "pointer",
-                outline: "none",
-              }}
-              onClick={() => setActiveFilter(filter.key)}
-            >
-              {filter.label}
-            </button>
-          ))}
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Total Photos</div>
+          <div style={statValueStyle}>{totalCount}</div>
+        </div>
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Pending</div>
+          <div style={statValueStyle}>{pendingCount}</div>
+        </div>
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Approved</div>
+          <div style={statValueStyle}>{approvedCount}</div>
+        </div>
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Rejected</div>
+          <div style={statValueStyle}>{rejectedCount}</div>
+        </div>
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Featured</div>
+          <div style={statValueStyle}>{featuredCount}</div>
         </div>
       </div>
 
+      <TableToolbar>
+        <TableToolbarPrimaryRow>
+          <SearchField
+            label="Search by caption"
+            placeholder="Search by caption..."
+            value={search}
+            onChange={setSearch}
+          />
+          <FormActions>
+            {FILTERS.map((filter) => (
+              <AppButton
+                key={filter.key}
+                variant={activeFilter === filter.key ? "primary" : "tertiary"}
+                aria-pressed={activeFilter === filter.key}
+                onClick={() => setActiveFilter(filter.key)}
+              >
+                {filter.label}
+              </AppButton>
+            ))}
+          </FormActions>
+        </TableToolbarPrimaryRow>
+      </TableToolbar>
+
       {loading ? (
-        <div style={{ textAlign: "center", marginTop: 48, color: "#888" }}>
-          Loading photos...
-        </div>
+        <LoadingState message="Loading photos..." />
       ) : error ? (
-        <div style={{ color: "red", marginTop: 32 }}>{error}</div>
+        <Alert tone="danger">{error}</Alert>
       ) : filteredPhotos.length === 0 ? (
-        <div style={{ textAlign: "center", marginTop: 64, color: "#888" }}>
-          No photos found.
-        </div>
+        <EmptyState message="No photos found." />
       ) : (
         <div style={gridStyle}>
           {filteredPhotos.map((photo) => (
-            <div
+            <button
               key={photo.id}
-              role="button"
-              tabIndex={0}
+              type="button"
+              onClick={() => openModal(photo)}
               aria-label={`View or edit photo: ${photo.admin_caption || photo.member_caption || photo.id}`}
               style={{
-                background: "#fafbfc",
-                borderRadius: 8,
-                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-                padding: 8,
-                cursor: "pointer",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
+                ...photoCardStyle,
                 border: photo.is_featured
-                  ? "2px solid #1c5"
-                  : "1px solid #e3e3e3",
-                position: "relative",
-                transition: "border-color 0.2s",
-                minWidth: 0,
+                  ? "2px solid var(--color-accent-success)"
+                  : "var(--border-width-default) solid var(--color-border-default)",
               }}
-              onClick={() => openModal(photo)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  openModal(photo);
-                }
-              }}
-              title="View / Edit"
             >
               {photo.thumbnailUrl ? (
                 <img
@@ -449,9 +377,9 @@ function PhotoLibraryPageInner() {
                     maxWidth: 180,
                     height: 120,
                     objectFit: "cover",
-                    borderRadius: 4,
-                    marginBottom: 8,
-                    background: "#eee",
+                    borderRadius: "var(--radius-small)",
+                    marginBottom: "var(--space-2)",
+                    background: "var(--color-bg-muted)",
                   }}
                 />
               ) : (
@@ -460,14 +388,14 @@ function PhotoLibraryPageInner() {
                     width: "100%",
                     maxWidth: 180,
                     height: 120,
-                    borderRadius: 4,
-                    marginBottom: 8,
-                    background: "#eee",
+                    borderRadius: "var(--radius-small)",
+                    marginBottom: "var(--space-2)",
+                    background: "var(--color-bg-muted)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "#888",
-                    fontSize: 12,
+                    color: "var(--color-text-secondary)",
+                    fontSize: "var(--font-size-caption)",
                   }}
                 >
                   No Thumbnail
@@ -475,10 +403,10 @@ function PhotoLibraryPageInner() {
               )}
               <div
                 style={{
-                  fontSize: 13,
-                  color: "#444",
-                  marginBottom: 2,
-                  fontWeight: 500,
+                  fontSize: "var(--font-size-body)",
+                  color: "var(--color-text-primary)",
+                  marginBottom: "var(--space-1)",
+                  fontWeight: "var(--font-weight-medium)" as unknown as number,
                   width: "100%",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -492,48 +420,52 @@ function PhotoLibraryPageInner() {
               </div>
               <div
                 style={{
-                  fontSize: 11,
-                  color: "#999",
-                  marginBottom: 4,
+                  fontSize: "var(--font-size-caption)",
+                  color: "var(--color-text-secondary)",
+                  marginBottom: "var(--space-1)",
                   fontFamily: "monospace",
                 }}
               >
                 {photo.id.slice(0, 8)}...
               </div>
-              <div style={{ fontSize: 12, color: "#888" }}>
+              <div style={{ fontSize: "var(--font-size-caption)", color: "var(--color-text-secondary)" }}>
                 {STATUS_LABELS[photo.photo_status]}
                 {photo.is_featured && (
                   <span
-                    style={{ color: "#1c5", marginLeft: 6, fontWeight: 600 }}
+                    style={{ color: "var(--color-accent-success)", marginLeft: "var(--space-2)", fontWeight: "var(--font-weight-bold)" as unknown as number }}
                   >
                     ★
                   </span>
                 )}
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}
 
-      {modalPhoto && (
-        <div style={modalOverlayStyle} onClick={closeModal}>
-          <div
-            style={modalContentStyle}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="photo-library-details-title"
-          >
-            <h2 id="photo-library-details-title" style={{ marginTop: 0, marginBottom: 12 }}>
-              Photo Details
-            </h2>
+      <Dialog
+        open={modalPhoto !== null}
+        onClose={closeModal}
+        title="Photo Details"
+        footer={
+          <>
+            <AppButton onClick={closeModal} disabled={saving}>
+              Close
+            </AppButton>
+            <AppButton variant="primary" onClick={() => void handleSave()} loading={saving}>
+              Save
+            </AppButton>
+          </>
+        }
+      >
+        {modalPhoto ? (
+          <div style={{ display: "grid", gap: "var(--space-4)", minWidth: 0 }}>
             <div
               style={{
-                marginBottom: 12,
-                padding: 8,
-                background: "#f7f7f7",
-                borderRadius: 4,
-                fontSize: 12,
+                padding: "var(--space-2) var(--space-3)",
+                background: "var(--color-bg-muted)",
+                borderRadius: "var(--radius-medium)",
+                fontSize: "var(--font-size-caption)",
               }}
             >
               <div style={{ overflowWrap: "anywhere" }}>
@@ -543,6 +475,7 @@ function PhotoLibraryPageInner() {
                 <strong>Featured Level:</strong> {modalPhoto.featured_level ?? 0}
               </div>
             </div>
+
             {modalPhoto.fullUrl || modalPhoto.thumbnailUrl ? (
               <img
                 src={modalPhoto.fullUrl || modalPhoto.thumbnailUrl}
@@ -551,159 +484,125 @@ function PhotoLibraryPageInner() {
                   width: "100%",
                   maxHeight: 260,
                   objectFit: "contain",
-                  borderRadius: 6,
-                  background: "#f3f3f3",
-                  marginBottom: 12,
+                  borderRadius: "var(--radius-medium)",
+                  background: "var(--color-bg-muted)",
                 }}
               />
             ) : null}
-            <div style={{ marginBottom: 12 }}>
-              <label
-                style={{ fontWeight: 500, display: "block", marginBottom: 4 }}
-              >
-                Status
-              </label>
-              <select
-                value={modalEdits.photo_status}
-                onChange={(e) => {
-                  const newStatus = e.target.value as Photo["photo_status"];
 
-                  setModalEdits((prev) => ({
-                    ...prev,
-                    photo_status: newStatus,
-                    featured_level:
-                      newStatus === "approved" ? prev.featured_level : 0,
-                  }));
-                }}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 4,
-                  border: "1px solid #bbb",
-                  minWidth: 120,
-                }}
-              >
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label
-                style={{ fontWeight: 500, display: "block", marginBottom: 4 }}
-              >
-                Member Caption
-              </label>
-              <textarea
-                value={modalEdits.member_caption ?? ""}
-                onChange={(e) =>
-                  updateModalEdits("member_caption", e.target.value)
-                }
-                style={{ width: "100%", boxSizing: "border-box" }}
-              />
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label
-                style={{ fontWeight: 500, display: "block", marginBottom: 4 }}
-              >
-                Admin Caption
-              </label>
-              <textarea
-                value={modalEdits.admin_caption ?? ""}
-                onChange={(e) =>
-                  updateModalEdits("admin_caption", e.target.value)
-                }
-                rows={2}
-                style={{
-                  width: "100%",
-                  borderRadius: 4,
-                  border: "1px solid #bbb",
-                  padding: 6,
-                  resize: "vertical",
-                  fontFamily: "inherit",
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 16 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={!!modalEdits.show_caption}
-                  onChange={(e) =>
-                    updateModalEdits("show_caption", e.target.checked)
-                  }
-                />
-                Show Caption
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={(modalEdits.featured_level ?? 0) > 0}
+            <Field label="Status">
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={modalEdits.photo_status}
                   onChange={(e) => {
-                    const checked = e.target.checked;
+                    const newStatus = e.target.value as Photo["photo_status"];
 
-                    // Compatibility mapping for this single checkbox:
-                    // unchecked -> featured_level 0, checked -> featured_level 1.
-                    // Levels 2/3 remain reachable only from Admin Photos'
-                    // dropdown; this preserves Photo Library's existing
-                    // single-checkbox UX unchanged.
                     setModalEdits((prev) => ({
                       ...prev,
-                      featured_level: checked ? 1 : 0,
-                      photo_status: checked
-                        ? "approved"
-                        : (prev.photo_status as Photo["photo_status"]),
+                      photo_status: newStatus,
+                      featured_level:
+                        newStatus === "approved" ? prev.featured_level : 0,
                     }));
                   }}
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </Select>
+              )}
+            </Field>
+
+            <Field label="Member Caption">
+              {(controlProps) => (
+                <Textarea
+                  {...controlProps}
+                  value={modalEdits.member_caption ?? ""}
+                  onChange={(e) =>
+                    updateModalEdits("member_caption", e.target.value)
+                  }
                 />
-                Featured
-              </label>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 12,
-                marginTop: 12,
-                justifyContent: "flex-end",
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                onClick={closeModal}
-                style={{
-                  padding: "7px 16px",
-                  borderRadius: 4,
-                  border: "1px solid #bbb",
-                  background: "#fafbfc",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  flex: "1 1 120px",
+              )}
+            </Field>
+
+            <Field label="Admin Caption">
+              {(controlProps) => (
+                <Textarea
+                  {...controlProps}
+                  value={modalEdits.admin_caption ?? ""}
+                  onChange={(e) =>
+                    updateModalEdits("admin_caption", e.target.value)
+                  }
+                  rows={2}
+                />
+              )}
+            </Field>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-5)" }}>
+              <Checkbox
+                label="Show Caption"
+                checked={!!modalEdits.show_caption}
+                onChange={(e) =>
+                  updateModalEdits("show_caption", e.target.checked)
+                }
+              />
+              <Checkbox
+                label="Featured"
+                checked={(modalEdits.featured_level ?? 0) > 0}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+
+                  // Compatibility mapping for this single checkbox:
+                  // unchecked -> featured_level 0, checked -> featured_level 1.
+                  // Levels 2/3 remain reachable only from Admin Photos'
+                  // dropdown; this preserves Photo Library's existing
+                  // single-checkbox UX unchanged.
+                  setModalEdits((prev) => ({
+                    ...prev,
+                    featured_level: checked ? 1 : 0,
+                    photo_status: checked
+                      ? "approved"
+                      : (prev.photo_status as Photo["photo_status"]),
+                  }));
                 }}
-                disabled={saving}
-              >
-                Close
-              </button>
-              <button
-                onClick={handleSave}
-                style={{
-                  padding: "7px 16px",
-                  borderRadius: 4,
-                  border: "1px solid #226",
-                  background: "#2255bb",
-                  color: "#fff",
-                  fontWeight: 600,
-                  cursor: saving ? "not-allowed" : "pointer",
-                  opacity: saving ? 0.7 : 1,
-                  flex: "1 1 120px",
-                }}
-                disabled={saving}
-              >
-                {saving ? "Saving..." : "Save"}
-              </button>
+              />
             </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </Dialog>
     </div>
   );
 }
+
+const statCardStyle: CSSProperties = {
+  border: "var(--border-width-default) solid var(--color-border-default)",
+  borderRadius: "var(--radius-medium)",
+  padding: "var(--space-4)",
+  background: "var(--color-bg-muted)",
+  minWidth: 0,
+};
+
+const statLabelStyle: CSSProperties = {
+  fontSize: "var(--font-size-caption)",
+  color: "var(--color-text-secondary)",
+};
+
+const statValueStyle: CSSProperties = {
+  fontSize: "var(--font-size-section-title)",
+  fontWeight: "var(--font-weight-bold)" as unknown as number,
+  color: "var(--color-text-primary)",
+};
+
+const photoCardStyle: CSSProperties = {
+  all: "unset",
+  cursor: "pointer",
+  boxSizing: "border-box",
+  background: "var(--color-bg-muted)",
+  borderRadius: "var(--radius-medium)",
+  padding: "var(--space-2)",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  minWidth: 0,
+  overflowWrap: "anywhere",
+};

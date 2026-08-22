@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@/components/ui/LoadingState";
 import type { VendorIntelligenceSummary } from "@/lib/vendorEventLifecycle";
 
 type Props = {
@@ -19,9 +20,7 @@ type Props = {
  */
 export default function VendorIntelligenceBadge({ summary, loading = false }: Props) {
   if (loading) {
-    return (
-      <span style={{ fontSize: 12, color: "#94a3b8" }}>Checking vendor intelligence...</span>
-    );
+    return <LoadingState message="Checking vendor intelligence..." />;
   }
 
   if (!summary || !summary.has_quality_concerns) {
@@ -37,13 +36,13 @@ export default function VendorIntelligenceBadge({ summary, loading = false }: Pr
       role="note"
       style={{
         display: "grid",
-        gap: 4,
-        fontSize: 12,
+        gap: "var(--space-1)",
+        fontSize: "var(--font-size-caption)",
         color: "#92400e",
         background: "#fffbeb",
         border: "1px solid #fde68a",
-        borderRadius: 10,
-        padding: "8px 10px",
+        borderRadius: "var(--radius-medium)",
+        padding: "var(--space-2) var(--space-3)",
       }}
     >
       <div style={{ fontWeight: 800 }}>⚠ Prior performance/quality concerns</div>

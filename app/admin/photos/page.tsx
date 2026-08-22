@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { AppButton } from "@/components/ui/AppButton";
+import { Dialog } from "@/components/ui/Dialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Checkbox, Field, Select, Textarea } from "@/components/ui/Field";
+import { PageSection } from "@/components/ui/PageSection";
 import {
   clearAdminPhotoCacheForUser,
   getAdminPhotoSignedUrl,
@@ -295,339 +300,218 @@ function AdminPhotosPageInner() {
 
   return (
     <>
-      <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(min(140px, 100%), 1fr))",
-            gap: 12,
-            minWidth: 0,
-          }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <strong>Submitted</strong>
-            <br />
-            {totalSubmitted}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <strong>Approved</strong>
-            <br />
-            {approvedCount}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <strong>Rejected</strong>
-            <br />
-            {rejectedCount}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <strong>Pending</strong>
-            <br />
-            {pendingCount}
-          </div>
-        </div>
-        <p style={{ opacity: 0.8 }}>
+      <div style={{ display: "grid", gap: "var(--space-6)", minWidth: 0 }}>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
           Click any photo to review, approve, or reject. Reviewed photos are
           removed from the queue.
         </p>
-        <div style={{ marginTop: 12, fontWeight: 600 }}>
-          {pendingCount} Remaining For Review
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-          <a
-            href="/admin/slideshow"
-            style={{
-              display: "inline-block",
-              padding: "8px 14px",
-              backgroundColor: "#2563eb",
-              color: "white",
-              borderRadius: 6,
-              textDecoration: "none",
-              fontWeight: 600,
-            }}
-          >
-            Launch Slideshow
-          </a>
-          <Link
-            href="/admin/photo-library"
-            style={{
-              display: "inline-block",
-              padding: "8px 14px",
-              backgroundColor: "#475569",
-              color: "white",
-              borderRadius: 6,
-              textDecoration: "none",
-              fontWeight: 600,
-            }}
-          >
-            Photo Library
-          </Link>
-        </div>
+
         <div
           style={{
             display: "grid",
-            gap: 16,
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: "var(--space-4)",
             minWidth: 0,
           }}
         >
-          {photos.map((photo) => (
-            <div
-              key={photo.id}
-              onClick={() => openModeration(photo)}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 8,
-                padding: 12,
-                cursor: "pointer",
-                transition: "box-shadow 0.2s ease",
-                minWidth: 0,
-                overflowWrap: "anywhere",
-              }}
-            >
-              {photo.imageUrl && (
-                <img
-                  loading="lazy"
-                  src={photo.imageUrl}
-                  alt="Uploaded photo"
-                  style={{
-                    width: 160,
-                    height: 160,
-                    objectFit: "cover",
-                    borderRadius: 8,
-                  }}
-                />
-              )}
-              <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>
-                Status: {photo.photo_status}
-              </div>
-              <div style={{ marginTop: 4 }}>
-                Uploaded: {new Date(photo.uploaded_at).toLocaleString()}
-              </div>
-              <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>
-                Caption:{" "}
-                {photo.admin_caption || photo.member_caption || "(none)"}
-              </div>
-              <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>
-                Member: {photo.member_name || "Unknown"}
-              </div>
-            </div>
-          ))}
+          <div style={statCardStyle}>
+            <div style={statLabelStyle}>Submitted</div>
+            <div style={statValueStyle}>{totalSubmitted}</div>
+          </div>
+          <div style={statCardStyle}>
+            <div style={statLabelStyle}>Approved</div>
+            <div style={statValueStyle}>{approvedCount}</div>
+          </div>
+          <div style={statCardStyle}>
+            <div style={statLabelStyle}>Rejected</div>
+            <div style={statValueStyle}>{rejectedCount}</div>
+          </div>
+          <div style={statCardStyle}>
+            <div style={statLabelStyle}>Pending</div>
+            <div style={statValueStyle}>{pendingCount}</div>
+          </div>
         </div>
-        {selectedPhoto && (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0,0,0,0.6)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 1000,
-            }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="photo-moderation-title"
-          >
-            <div
-              style={{
-                background: "white",
-                padding: 12,
-                borderRadius: 8,
-                maxWidth: 900,
-                width: "90%",
-                maxHeight: "90vh",
-                overflow: "auto",
-                minWidth: 0,
-                boxSizing: "border-box",
-              }}
-            >
-              <h2 id="photo-moderation-title">Photo Moderation</h2>
 
-              {selectedPhoto.reviewImageUrl ? (
-                <img
-                  src={selectedPhoto.reviewImageUrl}
-                  alt="Moderation"
-                  style={{
-                    width: "100%",
-                    maxHeight: "45vh",
-                    objectFit: "contain",
-                    borderRadius: 8,
-                  }}
-                />
-              ) : (
-                <div
-                  style={{
-                    height: 400,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "1px solid #ddd",
-                    borderRadius: 8,
-                    color: "#6b7280",
-                    fontWeight: 600,
-                  }}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-3)" }}>
+          <Link href="/admin/slideshow" className="app-button">
+            Launch Slideshow
+          </Link>
+          <Link href="/admin/photo-library" className="app-button">
+            Photo Library
+          </Link>
+        </div>
+
+        <PageSection variant="card" title={`${pendingCount} Remaining For Review`}>
+          {photos.length === 0 ? (
+            <EmptyState message="No photos are waiting for review right now." />
+          ) : (
+            <div style={{ display: "grid", gap: "var(--space-4)", minWidth: 0 }}>
+              {photos.map((photo) => (
+                <button
+                  key={photo.id}
+                  type="button"
+                  onClick={() => openModeration(photo)}
+                  aria-label={`Review photo uploaded by ${photo.member_name || "Unknown"}`}
+                  style={photoCardStyle}
                 >
-                  Loading next photo...
-                </div>
-              )}
+                  {photo.imageUrl && (
+                    <img
+                      loading="lazy"
+                      src={photo.imageUrl}
+                      alt=""
+                      style={{
+                        width: 160,
+                        height: 160,
+                        objectFit: "cover",
+                        borderRadius: "var(--radius-medium)",
+                      }}
+                    />
+                  )}
+                  <div style={{ marginTop: "var(--space-2)", overflowWrap: "anywhere" }}>
+                    Status: {photo.photo_status}
+                  </div>
+                  <div style={{ marginTop: "var(--space-1)" }}>
+                    Uploaded: {new Date(photo.uploaded_at).toLocaleString()}
+                  </div>
+                  <div style={{ marginTop: "var(--space-1)", overflowWrap: "anywhere" }}>
+                    Caption:{" "}
+                    {photo.admin_caption || photo.member_caption || "(none)"}
+                  </div>
+                  <div style={{ marginTop: "var(--space-1)", overflowWrap: "anywhere" }}>
+                    Member: {photo.member_name || "Unknown"}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </PageSection>
+      </div>
 
-              <div style={{ marginTop: 6, overflowWrap: "anywhere" }}>
-                <strong>Member:</strong>{" "}
-                {selectedPhoto.member_name || "Unknown"}
-              </div>
-
+      <Dialog
+        open={selectedPhoto !== null}
+        onClose={() => setSelectedPhoto(null)}
+        title="Photo Moderation"
+        className="app-dialog-wide"
+        footer={
+          selectedPhoto ? (
+            <>
+              <AppButton onClick={() => setSelectedPhoto(null)}>Cancel</AppButton>
+              <AppButton variant="danger" onClick={() => void rejectPhoto(selectedPhoto.id)}>
+                Reject
+              </AppButton>
+              <AppButton variant="primary" onClick={() => void approvePhoto(selectedPhoto.id)}>
+                Approve
+              </AppButton>
+            </>
+          ) : null
+        }
+      >
+        {selectedPhoto ? (
+          <div style={{ display: "grid", gap: "var(--space-4)", minWidth: 0 }}>
+            {selectedPhoto.reviewImageUrl ? (
+              <img
+                src={selectedPhoto.reviewImageUrl}
+                alt="Moderation"
+                style={{
+                  width: "100%",
+                  maxHeight: "45vh",
+                  objectFit: "contain",
+                  borderRadius: "var(--radius-medium)",
+                }}
+              />
+            ) : (
               <div
                 style={{
-                  marginTop: 12,
-                  padding: 10,
-                  background: "#f8fafc",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 8,
+                  height: 400,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "var(--border-width-default) solid var(--color-border-default)",
+                  borderRadius: "var(--radius-medium)",
+                  color: "var(--color-text-secondary)",
+                  fontWeight: "var(--font-weight-bold)" as unknown as number,
                 }}
               >
-                <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                  Member Caption
-                </div>
-                <div style={{ color: "#334155", overflowWrap: "anywhere" }}>
-                  {selectedPhoto.member_caption?.trim() ||
-                    "(No member caption provided)"}
-                </div>
+                Loading next photo...
               </div>
+            )}
 
-              <div style={{ marginTop: 6 }}>
-                <label>
-                  <strong>Admin Caption</strong>
-                </label>
-                <textarea
+            <div style={{ overflowWrap: "anywhere" }}>
+              <strong>Member:</strong> {selectedPhoto.member_name || "Unknown"}
+            </div>
+
+            <div
+              style={{
+                padding: "var(--space-3)",
+                background: "var(--color-bg-muted)",
+                border: "var(--border-width-default) solid var(--color-border-default)",
+                borderRadius: "var(--radius-medium)",
+              }}
+            >
+              <div style={{ fontWeight: "var(--font-weight-bold)" as unknown as number, marginBottom: "var(--space-1)" }}>
+                Member Caption
+              </div>
+              <div className="app-subtle-text" style={{ overflowWrap: "anywhere" }}>
+                {selectedPhoto.member_caption?.trim() ||
+                  "(No member caption provided)"}
+              </div>
+            </div>
+
+            <Field
+              label="Admin Caption"
+              help="Member captions require admin review before being shown in the slideshow. Admin caption may be used to replace or improve the submitted caption."
+            >
+              {(controlProps) => (
+                <Textarea
+                  {...controlProps}
                   value={captionText}
                   onChange={(e) => setCaptionText(e.target.value)}
                   rows={3}
-                  style={{ width: "100%", marginTop: 4, boxSizing: "border-box" }}
                 />
-              </div>
-              <div
-                style={{
-                  marginTop: 8,
-                  fontSize: 12,
-                  color: "#64748b",
-                }}
-              >
-                Member captions require admin review before being shown in the
-                slideshow. Admin caption may be used to replace or improve the
-                submitted caption.
-              </div>
+              )}
+            </Field>
 
-              <label style={{ display: "block", marginTop: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={showCaption}
-                  onChange={(e) => setShowCaption(e.target.checked)}
-                />{" "}
-                Show Caption In Slideshow
-              </label>
+            <Checkbox
+              label="Show Caption In Slideshow"
+              checked={showCaption}
+              onChange={(e) => setShowCaption(e.target.checked)}
+            />
 
-              <div style={{ marginTop: 12 }}>
-                <label>
-                  <strong>Featured Level</strong>
-                </label>
-                <select
+            <Field
+              label="Featured Level"
+              help="Level 0 = normal slideshow rotation. Levels 1-3 increase display frequency."
+            >
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
                   value={featuredLevel}
                   onChange={(e) => setFeaturedLevel(Number(e.target.value))}
-                  style={{
-                    display: "block",
-                    marginTop: 4,
-                    padding: "8px",
-                    minWidth: 220,
-                    maxWidth: "100%",
-                  }}
+                  style={{ maxWidth: 320 }}
                 >
                   <option value={0}>Level 0 - Normal Rotation</option>
                   <option value={1}>Level 1 - Featured</option>
                   <option value={2}>Level 2 - More Frequent</option>
                   <option value={3}>Level 3 - Highest Priority</option>
-                </select>
-              </div>
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 12,
-                  color: "#64748b",
-                }}
-              >
-                Level 0 = normal slideshow rotation. Levels 1-3 increase display
-                frequency.
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                  marginTop: 8,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => void approvePhoto(selectedPhoto.id)}
-                  style={{
-                    padding: "8px 14px",
-                    backgroundColor: "#16a34a",
-                    color: "white",
-                    border: "none",
-                    borderRadius: 4,
-                    flex: "1 1 110px",
-                  }}
-                >
-                  Approve
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void rejectPhoto(selectedPhoto.id)}
-                  style={{
-                    padding: "8px 14px",
-                    backgroundColor: "#dc2626",
-                    color: "white",
-                    border: "none",
-                    borderRadius: 4,
-                    flex: "1 1 110px",
-                  }}
-                >
-                  Reject
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedPhoto(null)}
-                  style={{
-                    padding: "8px 14px",
-                    backgroundColor: "#6b7280",
-                    color: "white",
-                    border: "none",
-                    borderRadius: 4,
-                    flex: "1 1 110px",
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+                </Select>
+              )}
+            </Field>
           </div>
-        )}
-      </div>
+        ) : null}
+      </Dialog>
+
       {toastMessage && (
         <div
           style={{
             position: "fixed",
-            bottom: 20,
-            right: 20,
-            background: "#111",
-            color: "white",
-            padding: "12px 16px",
-            borderRadius: 8,
+            bottom: "var(--space-5)",
+            right: "var(--space-5)",
+            background: "var(--color-text-primary)",
+            color: "var(--color-bg-surface)",
+            padding: "var(--space-3) var(--space-4)",
+            borderRadius: "var(--radius-medium)",
             display: "flex",
             flexWrap: "wrap",
-            gap: 12,
+            gap: "var(--space-3)",
             alignItems: "center",
             zIndex: 2000,
             maxWidth: "calc(100vw - 40px)",
@@ -635,22 +519,46 @@ function AdminPhotosPageInner() {
           }}
         >
           <span>{toastMessage}</span>
-          <button
-            type="button"
+          <AppButton
             onClick={() => void undoLastAction()}
-            style={{
-              background: "transparent",
-              border: "1px solid white",
-              color: "white",
-              borderRadius: 4,
-              cursor: "pointer",
-              padding: "4px 8px",
-            }}
+            style={{ background: "transparent", border: "1px solid var(--color-bg-surface)", color: "var(--color-bg-surface)" }}
           >
             Undo
-          </button>
+          </AppButton>
         </div>
       )}
     </>
   );
 }
+
+const statCardStyle: CSSProperties = {
+  border: "var(--border-width-default) solid var(--color-border-default)",
+  borderRadius: "var(--radius-medium)",
+  padding: "var(--space-4)",
+  background: "var(--color-bg-muted)",
+  minWidth: 0,
+};
+
+const statLabelStyle: CSSProperties = {
+  fontSize: "var(--font-size-caption)",
+  color: "var(--color-text-secondary)",
+};
+
+const statValueStyle: CSSProperties = {
+  fontSize: "var(--font-size-section-title)",
+  fontWeight: "var(--font-weight-bold)" as unknown as number,
+  color: "var(--color-text-primary)",
+};
+
+const photoCardStyle: CSSProperties = {
+  all: "unset",
+  cursor: "pointer",
+  display: "block",
+  width: "100%",
+  boxSizing: "border-box",
+  border: "var(--border-width-default) solid var(--color-border-default)",
+  borderRadius: "var(--radius-medium)",
+  padding: "var(--space-3)",
+  minWidth: 0,
+  overflowWrap: "anywhere",
+};

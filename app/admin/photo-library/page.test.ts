@@ -83,14 +83,86 @@ test("library rejects stale async loads and clears prior-user cache on auth chan
   assert.match(PAGE_SOURCE, /clearAdminPhotoCacheForUser/);
 });
 
-test("photo cards expose button semantics and activate with Enter or Space", () => {
-  assert.match(PAGE_SOURCE, /role="button"/);
-  assert.match(PAGE_SOURCE, /tabIndex=\{0\}/);
-  assert.match(PAGE_SOURCE, /event\.key === "Enter" \|\| event\.key === " "/);
-  assert.match(PAGE_SOURCE, /event\.preventDefault\(\);\s*openModal\(photo\);/);
+test("photo cards are real <button> elements -- native Enter/Space activation, keyboard focus, and accessible name, not a hand-rolled role=\"button\" div", () => {
+  assert.equal(/role="button"/.test(PAGE_SOURCE), false);
+  assert.equal(/tabIndex=\{0\}/.test(PAGE_SOURCE), false);
+  assert.equal(/event\.key === "Enter" \|\| event\.key === " "/.test(PAGE_SOURCE), false);
+  assert.match(
+    PAGE_SOURCE,
+    /<button\s*\n\s*key=\{photo\.id\}\s*\n\s*type="button"\s*\n\s*onClick=\{\(\) => openModal\(photo\)\}/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /aria-label=\{`View or edit photo: \$\{photo\.admin_caption \|\| photo\.member_caption \|\| photo\.id\}`\}/,
+  );
 });
 
 test("photo save failures use the page error channel instead of a browser alert", () => {
   assert.match(PAGE_SOURCE, /setError\(`Failed to save changes:/);
   assert.equal(/\balert\(/.test(PAGE_SOURCE), false);
+});
+
+// Admin Batch 3 Central UI Standard migration. The photo detail modal was
+// one of the ten hand-rolled role="dialog" implementations the blueprint's
+// Part 1 audit flagged as lacking Escape/focus-trap/return-focus, and the
+// search+filter row now adopts TableToolbar/SearchField -- explicitly
+// named in that primitive's own doc comment as an intended future
+// consumer ("Photos/Photo Library"). Run with:
+//   npx tsx --test app/admin/photo-library/page.test.ts
+
+test("the hand-rolled role=\"dialog\" photo-details overlay is gone -- the canonical Dialog primitive now owns focus trap, Escape, backdrop, and scroll lock", () => {
+  assert.match(PAGE_SOURCE, /import \{ Dialog \} from "@\/components\/ui\/Dialog";/);
+  assert.match(PAGE_SOURCE, /<Dialog\s*\n\s*open=\{modalPhoto !== null\}/);
+  assert.equal(/role="dialog"/.test(PAGE_SOURCE), false);
+  assert.equal(/aria-modal="true"/.test(PAGE_SOURCE), false);
+});
+
+test("Close/Save render as real AppButtons in the Dialog footer -- Save carries the busy/loading contract, not a hand-rolled disabled+opacity treatment", () => {
+  const footerIdx = PAGE_SOURCE.indexOf("footer={");
+  const footerEnd = PAGE_SOURCE.indexOf("}\n      >", footerIdx);
+  const footerBlock = PAGE_SOURCE.slice(footerIdx, footerEnd);
+  assert.match(footerBlock, /<AppButton onClick=\{closeModal\} disabled=\{saving\}>/);
+  assert.match(footerBlock, /variant="primary" onClick=\{\(\) => void handleSave\(\)\} loading=\{saving\}/);
+});
+
+test("the Status select, Member/Admin Caption textareas, and Show Caption/Featured checkboxes route through the canonical Field/Select/Textarea/Checkbox primitives", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*Checkbox,\s*Field,\s*Select,\s*Textarea\s*\}\s*from\s*["']@\/components\/ui\/Field["']/,
+  );
+  assert.match(PAGE_SOURCE, /<Field label="Status">/);
+  assert.match(PAGE_SOURCE, /<Field label="Member Caption">/);
+  assert.match(PAGE_SOURCE, /<Field label="Admin Caption">/);
+  assert.match(PAGE_SOURCE, /<Checkbox\s*\n\s*label="Show Caption"/);
+  assert.match(PAGE_SOURCE, /<Checkbox\s*\n\s*label="Featured"/);
+  assert.equal(/<select\b/.test(PAGE_SOURCE), false, "no raw <select> should remain in the photo details dialog");
+  assert.equal(/<textarea\b/.test(PAGE_SOURCE), false, "no raw <textarea> should remain in the photo details dialog");
+  assert.equal(/type="checkbox"/.test(PAGE_SOURCE), false, "no raw checkbox <input> should remain in the photo details dialog");
+});
+
+test("the Featured-checkbox status/level compatibility mapping comment and logic are untouched -- only the control's markup moved onto Checkbox", () => {
+  assert.match(PAGE_SOURCE, /\/\/ Compatibility mapping for this single checkbox:/);
+  assert.match(PAGE_SOURCE, /featured_level: checked \? 1 : 0,/);
+  assert.match(PAGE_SOURCE, /photo_status: checked\s*\n\s*\? "approved"/);
+});
+
+test("search and status/featured filtering adopt the canonical TableToolbar/SearchField -- the same primitive its own doc comment names Photo Library as an intended consumer of", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*SearchField,\s*TableToolbar,\s*TableToolbarPrimaryRow\s*\}\s*from\s*["']@\/components\/ui\/TableToolbar["']/,
+  );
+  assert.match(PAGE_SOURCE, /<TableToolbar>/);
+  assert.match(PAGE_SOURCE, /<SearchField\s*\n\s*label="Search by caption"/);
+  assert.equal(/<input\s*\n\s*type="text"/.test(PAGE_SOURCE), false);
+});
+
+test("the five filter chips (All/Pending/Approved/Rejected/Featured) render as real AppButtons with aria-pressed, matching the canonical toggle-filter pattern (Reports' own reportType chips)", () => {
+  assert.match(PAGE_SOURCE, /variant=\{activeFilter === filter\.key \? "primary" : "tertiary"\}/);
+  assert.match(PAGE_SOURCE, /aria-pressed=\{activeFilter === filter\.key\}/);
+});
+
+test("loading/error/empty states use the canonical LoadingState/Alert/EmptyState primitives instead of page-local hardcoded-color divs", () => {
+  assert.match(PAGE_SOURCE, /<LoadingState message="Loading photos\.\.\." \/>/);
+  assert.match(PAGE_SOURCE, /<Alert tone="danger">\{error\}<\/Alert>/);
+  assert.match(PAGE_SOURCE, /<EmptyState message="No photos found\." \/>/);
 });

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { FormActions } from "@/components/ui/FormActions";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -182,6 +184,12 @@ function AdminSlideshowPageInner() {
   >("all_approved");
   const [newDeckDurationSeconds, setNewDeckDurationSeconds] = useState(8);
   const [deckActionBusy, setDeckActionBusy] = useState(false);
+  // Archive/End confirmation now routes through the canonical ConfirmDialog
+  // instead of window.confirm -- same two consequential actions, same
+  // gating, only the presentation primitive changed.
+  const [archiveConfirmDeck, setArchiveConfirmDeck] =
+    useState<PresentationDeck | null>(null);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
   const [editDeckName, setEditDeckName] = useState("");
   const [editDeckDescription, setEditDeckDescription] = useState("");
@@ -477,13 +485,6 @@ function AdminSlideshowPageInner() {
 
   async function handleArchiveDeck(deck: PresentationDeck) {
     if (!eventId || deckActionBusy) {
-      return;
-    }
-    if (
-      !window.confirm(
-        `Archive "${deck.name}"? It will no longer be available to start a presentation.`,
-      )
-    ) {
       return;
     }
 
@@ -1037,14 +1038,7 @@ function AdminSlideshowPageInner() {
     if (!session || busy) {
       return;
     }
-    if (
-      !window.confirm(
-        "End this presentation for the audience? This cannot be undone -- you can start a new one afterward.",
-      )
-    ) {
-      return;
-    }
-    void runControl("end_presentation_session", "Ending presentation...", "");
+    setShowEndConfirm(true);
   }
 
   const isLive = session?.status === "live";
@@ -1191,9 +1185,9 @@ function AdminSlideshowPageInner() {
                               sec/slide
                             </label>
                           </div>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <FormActions>
                             <AppButton
-                              variant="start"
+                              variant="primary"
                               onClick={handleSaveEditDeck}
                               disabled={deckActionBusy || !editDeckName.trim()}
                             >
@@ -1206,7 +1200,7 @@ function AdminSlideshowPageInner() {
                             >
                               Cancel
                             </AppButton>
-                          </div>
+                          </FormActions>
                         </div>
                       </div>
                     ) : (
@@ -1253,7 +1247,7 @@ function AdminSlideshowPageInner() {
                             </div>
                           </span>
                         </label>
-                        <div style={{ display: "flex", gap: 8 }}>
+                        <FormActions>
                           <AppButton
                             variant="muted"
                             onClick={() => startEditDeck(deck)}
@@ -1263,28 +1257,21 @@ function AdminSlideshowPageInner() {
                           </AppButton>
                           <AppButton
                             variant="danger"
-                            onClick={() => handleArchiveDeck(deck)}
+                            onClick={() => setArchiveConfirmDeck(deck)}
                             disabled={deckActionBusy}
                           >
                             Archive
                           </AppButton>
-                        </div>
+                        </FormActions>
                       </div>
                     ),
                   )}
                 </div>
               )}
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: 16,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
+              <FormActions>
                 <AppButton
-                  variant="start"
+                  variant="primary"
                   onClick={handleStart}
                   disabled={
                     !selectedDeckId ||
@@ -1302,7 +1289,7 @@ function AdminSlideshowPageInner() {
                 >
                   {showCreateDeckForm ? "Cancel" : "+ Create New Deck"}
                 </AppButton>
-              </div>
+              </FormActions>
 
               {showCreateDeckForm ? (
                 <div
@@ -1381,7 +1368,7 @@ function AdminSlideshowPageInner() {
                     </div>
                     <div>
                       <AppButton
-                        variant="start"
+                        variant="primary"
                         onClick={handleCreateDeck}
                         disabled={deckActionBusy || !newDeckName.trim()}
                       >
@@ -1468,7 +1455,7 @@ function AdminSlideshowPageInner() {
                               </div>
                             ) : null}
                           </div>
-                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <FormActions>
                             <AppButton
                               variant="muted"
                               onClick={() => void moveManualDeckItem(item.id, -1)}
@@ -1493,7 +1480,7 @@ function AdminSlideshowPageInner() {
                             >
                               Remove
                             </AppButton>
-                          </div>
+                          </FormActions>
                         </div>
                       );
                     })}
@@ -1546,7 +1533,7 @@ function AdminSlideshowPageInner() {
                             </div>
                           </div>
                           <AppButton
-                            variant="start"
+                            variant="primary"
                             onClick={() => void addManualDeckPhoto(photo.id)}
                             disabled={manualDeckActionBusy}
                           >
@@ -1750,8 +1737,13 @@ function AdminSlideshowPageInner() {
           }}
         >
           {isPlaying ? (
+            // Pause is an ordinary, reversible control action -- not a
+            // destructive/termination step -- so it takes the same
+            // secondary treatment as Previous, per AppButton's own
+            // "stop" scoping (reserved for a Dialog/ConfirmDialog
+            // Confirm step only, never a general "stop/end this" button).
             <AppButton
-              variant="stop"
+              variant="secondary"
               onClick={handlePause}
               disabled={!isLive || busy}
             >
@@ -1759,7 +1751,7 @@ function AdminSlideshowPageInner() {
             </AppButton>
           ) : (
             <AppButton
-              variant="start"
+              variant="primary"
               onClick={handleResume}
               disabled={!isLive || busy}
             >
@@ -1789,6 +1781,39 @@ function AdminSlideshowPageInner() {
           </AppButton>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={archiveConfirmDeck !== null}
+        title="Archive deck?"
+        message={
+          archiveConfirmDeck
+            ? `Archive "${archiveConfirmDeck.name}"? It will no longer be available to start a presentation.`
+            : ""
+        }
+        danger
+        busy={deckActionBusy}
+        onConfirm={async () => {
+          const deck = archiveConfirmDeck;
+          if (deck) {
+            await handleArchiveDeck(deck);
+          }
+          setArchiveConfirmDeck(null);
+        }}
+        onCancel={() => setArchiveConfirmDeck(null)}
+      />
+
+      <ConfirmDialog
+        open={showEndConfirm}
+        title="End presentation?"
+        message="End this presentation for the audience? This cannot be undone -- you can start a new one afterward."
+        danger
+        busy={busy}
+        onConfirm={async () => {
+          setShowEndConfirm(false);
+          await runControl("end_presentation_session", "Ending presentation...", "");
+        }}
+        onCancel={() => setShowEndConfirm(false)}
+      />
     </div>
   );
 }

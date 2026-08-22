@@ -143,3 +143,30 @@ test("dead ad hoc button/table markup is removed -- rows use the shared AppButto
   assert.equal(/className="app-button app-button-muted"/.test(source), false);
   assert.match(source, /import \{ AppButton, AppLinkButton \} from "@\/components\/ui\/AppButton";/);
 });
+
+// -- Admin Batch 3: Central UI Standard completion touch-up -----------------
+
+test("loading and empty presentations use the canonical LoadingState/EmptyState primitives, not a hand-written neutral Alert", () => {
+  assert.match(
+    source,
+    /import\s*\{\s*EmptyState\s*\}\s*from\s*["']@\/components\/ui\/EmptyState["']/,
+  );
+  assert.match(
+    source,
+    /import\s*\{\s*LoadingState\s*\}\s*from\s*["']@\/components\/ui\/LoadingState["']/,
+  );
+  assert.match(source, /<LoadingState message="Loading vendor requests\.\.\." \/>/);
+  assert.match(
+    source,
+    /<EmptyState\s*\n\s*message=\{\s*\n\s*requests\.length === 0/,
+  );
+});
+
+test("the Service Requests header's Refresh/Export CSV actions render inside the canonical FormActions wrapper, not a raw app-button-row div", () => {
+  assert.match(
+    source,
+    /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
+  );
+  assert.match(source, /<FormActions>\s*\n\s*<AppButton onClick=\{\(\) => void loadRequests\(\)\}>Refresh<\/AppButton>/);
+  assert.equal(/className="app-button-row"/.test(source), false);
+});

@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import { Dialog } from "@/components/ui/Dialog";
+import { Field, Textarea } from "@/components/ui/Field";
+import { LoadingState } from "@/components/ui/LoadingState";
 import {
   listVendorDispositionReasonCodes,
   REASON_CLASSIFICATION_COLORS,
@@ -38,7 +43,6 @@ export default function VendorEventDecisionModal({
   onCancel,
   onConfirm,
 }: Props) {
-  const titleId = useId();
   const [reasonCodes, setReasonCodes] = useState<VendorDispositionReasonCode[]>([]);
   const [loadingReasons, setLoadingReasons] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -73,10 +77,6 @@ export default function VendorEventDecisionModal({
     return byClassification;
   }, [reasonCodes]);
 
-  if (!open) {
-    return null;
-  }
-
   const title = mode === "reject" ? "Reject candidacy" : "Revoke admission";
   const helperText =
     mode === "reject"
@@ -93,57 +93,38 @@ export default function VendorEventDecisionModal({
   }
 
   return (
-    <div
-      role="presentation"
-      onClick={busy ? undefined : onCancel}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        background: "rgba(15, 23, 42, 0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-        overflowY: "auto",
+    <Dialog
+      open={open}
+      onClose={() => {
+        if (!busy) {
+          onCancel();
+        }
       }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "min(560px, 100%)",
-          maxHeight: "90vh",
-          overflowY: "auto",
-          borderRadius: 18,
-          background: "#ffffff",
-          boxShadow: "0 24px 60px rgba(15, 23, 42, 0.28)",
-          padding: 22,
-          display: "grid",
-          gap: 14,
-        }}
-      >
-        <div>
-          <h2 id={titleId} style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
+      title={title}
+      description={helperText}
+      footer={
+        <>
+          <AppButton onClick={onCancel} disabled={busy}>
+            Cancel
+          </AppButton>
+          <AppButton
+            variant="stop"
+            onClick={handleConfirm}
+            loading={busy}
+            disabled={loadingReasons}
+          >
             {title}
-          </h2>
-          <p style={{ margin: "8px 0 0", fontSize: 14, lineHeight: 1.5, color: "#475569" }}>
-            {helperText}
-          </p>
-        </div>
-
-        {loadError ? (
-          <div role="alert" style={{ fontSize: 13, color: "#b91c1c" }}>
-            {loadError}
-          </div>
-        ) : null}
+          </AppButton>
+        </>
+      }
+    >
+      <div style={{ display: "grid", gap: "var(--space-4)", minWidth: 0 }}>
+        {loadError ? <Alert tone="danger">{loadError}</Alert> : null}
 
         {loadingReasons ? (
-          <div style={{ fontSize: 13, color: "#64748b" }}>Loading reason options...</div>
+          <LoadingState message="Loading reason options..." />
         ) : (
-          <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
             {(["operational_capacity", "performance_quality", "administrative_other"] as ReasonClassification[]).map(
               (classification) => {
                 const codes = grouped.get(classification) || [];
@@ -152,7 +133,7 @@ export default function VendorEventDecisionModal({
                 }
                 const colors = REASON_CLASSIFICATION_COLORS[classification];
                 return (
-                  <div key={classification} style={{ display: "grid", gap: 6 }}>
+                  <div key={classification} style={{ display: "grid", gap: "var(--space-2)" }}>
                     <div
                       style={{
                         display: "inline-flex",
@@ -170,7 +151,7 @@ export default function VendorEventDecisionModal({
                     >
                       {REASON_CLASSIFICATION_LABELS[classification]}
                     </div>
-                    <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ display: "grid", gap: "var(--space-2)" }}>
                       {codes.map((code) => (
                         <label
                           key={code.code}
@@ -206,62 +187,20 @@ export default function VendorEventDecisionModal({
           </div>
         )}
 
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>
-            Supporting detail (optional)
-          </span>
-          <textarea
-            value={reasonText}
-            onChange={(e) => setReasonText(e.target.value)}
-            rows={3}
-            placeholder="Additional context for this decision"
-            style={{ padding: 10, borderRadius: 10, border: "1px solid #d1d5db" }}
-          />
-        </label>
+        <Field label="Supporting detail (optional)">
+          {(controlProps) => (
+            <Textarea
+              {...controlProps}
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value)}
+              rows={3}
+              placeholder="Additional context for this decision"
+            />
+          )}
+        </Field>
 
-        {validationError ? (
-          <div role="alert" style={{ fontSize: 13, color: "#b91c1c" }}>
-            {validationError}
-          </div>
-        ) : null}
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            style={{
-              border: "1px solid #cbd5e1",
-              background: "#ffffff",
-              color: "#334155",
-              borderRadius: 12,
-              padding: "10px 14px",
-              fontWeight: 700,
-              cursor: busy ? "not-allowed" : "pointer",
-            }}
-          >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={busy || loadingReasons}
-            style={{
-              border: "none",
-              background: "#dc2626",
-              color: "#ffffff",
-              borderRadius: 12,
-              padding: "10px 14px",
-              fontWeight: 800,
-              cursor: busy ? "not-allowed" : "pointer",
-              opacity: busy ? 0.7 : 1,
-            }}
-          >
-            {busy ? "Working..." : title}
-          </button>
-        </div>
+        {validationError ? <Alert tone="danger">{validationError}</Alert> : null}
       </div>
-    </div>
+    </Dialog>
   );
 }

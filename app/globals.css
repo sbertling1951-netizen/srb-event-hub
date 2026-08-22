@@ -1205,6 +1205,13 @@ textarea.app-control,
   outline: none;
 }
 
+/* Width override for a Dialog whose content (e.g. an image preview) needs
+   more room than the default 460px confirm/form shape -- see the
+   `className` passthrough documented on components/ui/Dialog.tsx. */
+.app-dialog-wide {
+  max-width: 900px;
+}
+
 .app-dialog-title {
   margin: 0;
   font-size: var(--font-size-card-title);

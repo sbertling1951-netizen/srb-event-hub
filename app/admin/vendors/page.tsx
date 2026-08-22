@@ -11,6 +11,9 @@ import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewpo
 import { Alert, type AlertTone } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { RowActions } from "@/components/ui/RowActions";
@@ -163,19 +166,6 @@ export function vendorPageStatusTone(message: string): AlertTone {
   return "success";
 }
 
-const fieldLabelStyle: React.CSSProperties = {
-  display: "block",
-  fontWeight: 600,
-  marginBottom: "var(--space-2)",
-  fontSize: "var(--font-size-body)",
-  color: "var(--color-text-secondary)",
-};
-
-const optionalTagStyle: React.CSSProperties = {
-  fontWeight: 400,
-  fontSize: "var(--font-size-caption)",
-  color: "var(--color-text-muted)",
-};
 
 function AdminVendorsPageInner() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -750,95 +740,85 @@ function AdminVendorsPageInner() {
           <div style={subheadingStyle}>Event Presentation Metadata</div>
           {eventVendor ? (
             <div style={{ display: "grid", gap: "var(--space-3)" }}>
-              <label style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={!!eventVendor.is_featured}
-                  onChange={(e) =>
-                    void updateEventVendor(eventVendor, { is_featured: e.target.checked })
-                  }
-                />
-                Featured on dashboard slideshow
-              </label>
+              <Checkbox
+                checked={!!eventVendor.is_featured}
+                onChange={(e) =>
+                  void updateEventVendor(eventVendor, { is_featured: e.target.checked })
+                }
+                label="Featured on dashboard slideshow"
+              />
 
-              <label style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={eventVendor.is_visible_to_members !== false}
-                  onChange={(e) =>
-                    void updateEventVendor(eventVendor, {
-                      is_visible_to_members: e.target.checked,
-                    })
-                  }
-                />
-                Visible to members
-              </label>
+              <Checkbox
+                checked={eventVendor.is_visible_to_members !== false}
+                onChange={(e) =>
+                  void updateEventVendor(eventVendor, {
+                    is_visible_to_members: e.target.checked,
+                  })
+                }
+                label="Visible to members"
+              />
 
-              <div>
-                <label style={fieldLabelStyle} htmlFor={`event-vendor-action-${vendor.id}`}>
-                  Member action
-                </label>
-                <select
-                  id={`event-vendor-action-${vendor.id}`}
-                  value={eventVendor.action_type || "service_request"}
-                  onChange={(e) =>
-                    void updateEventVendor(eventVendor, {
-                      action_type: e.target.value as EventVendorMetadataUpdate["action_type"],
-                    })
-                  }
-                >
-                  <option value="service_request">Request Service in app</option>
-                  <option value="external_signup">Use signup/contact link</option>
-                  <option value="info_only">Info only</option>
-                </select>
-              </div>
+              <Field label="Member action">
+                {(controlProps) => (
+                  <Select
+                    {...controlProps}
+                    value={eventVendor.action_type || "service_request"}
+                    onChange={(e) =>
+                      void updateEventVendor(eventVendor, {
+                        action_type: e.target.value as EventVendorMetadataUpdate["action_type"],
+                      })
+                    }
+                  >
+                    <option value="service_request">Request Service in app</option>
+                    <option value="external_signup">Use signup/contact link</option>
+                    <option value="info_only">Info only</option>
+                  </Select>
+                )}
+              </Field>
 
-              <div>
-                <label style={fieldLabelStyle} htmlFor={`event-vendor-signup-${vendor.id}`}>
-                  Event signup/contact URL
-                </label>
-                <input
-                  id={`event-vendor-signup-${vendor.id}`}
-                  defaultValue={eventVendor.signup_url || ""}
-                  placeholder="https://..."
-                  onBlur={(e) =>
-                    void updateEventVendor(eventVendor, {
-                      signup_url: e.target.value.trim() || null,
-                    })
-                  }
-                />
-              </div>
+              <Field label="Event signup/contact URL">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    defaultValue={eventVendor.signup_url || ""}
+                    placeholder="https://..."
+                    onBlur={(e) =>
+                      void updateEventVendor(eventVendor, {
+                        signup_url: e.target.value.trim() || null,
+                      })
+                    }
+                  />
+                )}
+              </Field>
 
-              <div>
-                <label style={fieldLabelStyle} htmlFor={`event-vendor-order-${vendor.id}`}>
-                  Display order
-                </label>
-                <input
-                  id={`event-vendor-order-${vendor.id}`}
-                  defaultValue={String(eventVendor.display_order ?? 100)}
-                  onBlur={(e) =>
-                    void updateEventVendor(eventVendor, {
-                      display_order: Number(e.target.value) || 100,
-                    })
-                  }
-                />
-              </div>
+              <Field label="Display order">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    defaultValue={String(eventVendor.display_order ?? 100)}
+                    onBlur={(e) =>
+                      void updateEventVendor(eventVendor, {
+                        display_order: Number(e.target.value) || 100,
+                      })
+                    }
+                  />
+                )}
+              </Field>
 
-              <div>
-                <label style={fieldLabelStyle} htmlFor={`event-vendor-note-${vendor.id}`}>
-                  Event-specific vendor note
-                </label>
-                <textarea
-                  id={`event-vendor-note-${vendor.id}`}
-                  defaultValue={eventVendor.event_note || ""}
-                  rows={3}
-                  onBlur={(e) =>
-                    void updateEventVendor(eventVendor, {
-                      event_note: e.target.value.trim() || null,
-                    })
-                  }
-                />
-              </div>
+              <Field label="Event-specific vendor note">
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    defaultValue={eventVendor.event_note || ""}
+                    rows={3}
+                    onBlur={(e) =>
+                      void updateEventVendor(eventVendor, {
+                        event_note: e.target.value.trim() || null,
+                      })
+                    }
+                  />
+                )}
+              </Field>
             </div>
           ) : (
             <Alert tone="neutral">
@@ -971,7 +951,7 @@ function AdminVendorsPageInner() {
         ) : null}
 
         {vendors.length === 0 ? (
-          <Alert tone="neutral">No vendors in the catalog yet. Add one below.</Alert>
+          <EmptyState message="No vendors in the catalog yet. Add one below." />
         ) : isCompact ? (
           <ResponsiveList aria-labelledby="vendors-catalog-heading">
             {vendors.map((vendor) => {
@@ -1126,165 +1106,155 @@ function AdminVendorsPageInner() {
 
         <PageSection variant="section">
           <div style={{ display: "grid", gap: "var(--space-5)" }}>
-            <div>
-              <label style={fieldLabelStyle} htmlFor="vendor-business-name">
-                Business name
-              </label>
-              <input
-                id="vendor-business-name"
-                value={form.business_name}
-                onChange={(e) => setForm((p) => ({ ...p, business_name: e.target.value }))}
-                placeholder="Business name"
-              />
-            </div>
+            <Field label="Business name">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  value={form.business_name}
+                  onChange={(e) => setForm((p) => ({ ...p, business_name: e.target.value }))}
+                  placeholder="Business name"
+                />
+              )}
+            </Field>
 
-            <div>
-              <label style={fieldLabelStyle} htmlFor="vendor-contact-name">
-                Contact person <span style={optionalTagStyle}>Optional</span>
-              </label>
-              <input
-                id="vendor-contact-name"
-                value={form.contact_name}
-                onChange={(e) => setForm((p) => ({ ...p, contact_name: e.target.value }))}
-                placeholder="Contact person"
-              />
-            </div>
+            <Field label={<>Contact person <span className="app-subtle-text">Optional</span></>}>
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  value={form.contact_name}
+                  onChange={(e) => setForm((p) => ({ ...p, contact_name: e.target.value }))}
+                  placeholder="Contact person"
+                />
+              )}
+            </Field>
 
             <div className="app-form-grid-2">
-              <div>
-                <label style={fieldLabelStyle} htmlFor="vendor-email">
-                  Email <span style={optionalTagStyle}>Optional</span>
-                </label>
-                <input
-                  id="vendor-email"
-                  value={form.email}
-                  onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="Email"
-                />
-              </div>
-              <div>
-                <label style={fieldLabelStyle} htmlFor="vendor-phone">
-                  Phone / text number <span style={optionalTagStyle}>Optional</span>
-                </label>
-                <input
-                  id="vendor-phone"
-                  value={form.phone}
-                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                  placeholder="Phone / text number"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label style={fieldLabelStyle} htmlFor="vendor-website">
-                Website <span style={optionalTagStyle}>Optional</span>
-              </label>
-              <input
-                id="vendor-website"
-                value={form.website}
-                onChange={(e) => setForm((p) => ({ ...p, website: e.target.value }))}
-                placeholder="Website"
-              />
-            </div>
-
-            <div>
-              <div style={fieldLabelStyle}>
-                Vendor logo <span style={optionalTagStyle}>Optional</span>
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gap: "var(--space-3)",
-                  border: "var(--border-width-default) solid var(--color-border-default)",
-                  borderRadius: "var(--radius-medium)",
-                  background: "var(--color-bg-muted)",
-                  padding: "var(--space-4)",
-                }}
-              >
-                {form.logo_url ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)", flexWrap: "wrap" }}>
-                    <img
-                      src={form.logo_url}
-                      alt="Vendor logo preview"
-                      style={{
-                        maxWidth: 220,
-                        maxHeight: 90,
-                        objectFit: "contain",
-                        border: "var(--border-width-default) solid var(--color-border-default)",
-                        borderRadius: "var(--radius-small)",
-                        padding: "var(--space-2)",
-                        background: "var(--color-bg-elevated)",
-                      }}
-                    />
-                    <AppButton onClick={() => setForm((p) => ({ ...p, logo_url: "" }))} disabled={saving}>
-                      Remove Logo
-                    </AppButton>
-                  </div>
-                ) : (
-                  <div className="app-subtle-text">Upload a JPEG or PNG logo for this vendor.</div>
+              <Field label={<>Email <span className="app-subtle-text">Optional</span></>}>
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={form.email}
+                    onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                    placeholder="Email"
+                  />
                 )}
+              </Field>
+              <Field label={<>Phone / text number <span className="app-subtle-text">Optional</span></>}>
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={form.phone}
+                    onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                    placeholder="Phone / text number"
+                  />
+                )}
+              </Field>
+            </div>
 
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      void uploadVendorLogo(file);
-                    }
-                    e.currentTarget.value = "";
-                  }}
-                  disabled={saving}
+            <Field label={<>Website <span className="app-subtle-text">Optional</span></>}>
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  value={form.website}
+                  onChange={(e) => setForm((p) => ({ ...p, website: e.target.value }))}
+                  placeholder="Website"
                 />
-              </div>
-            </div>
+              )}
+            </Field>
 
-            <div>
-              <label style={fieldLabelStyle} htmlFor="vendor-description">
-                Business description <span style={optionalTagStyle}>Optional</span>
-              </label>
-              <textarea
-                id="vendor-description"
-                value={form.business_description}
-                onChange={(e) => setForm((p) => ({ ...p, business_description: e.target.value }))}
-                placeholder="Business description"
-                rows={5}
-              />
-            </div>
+            <Field label={<>Vendor logo <span className="app-subtle-text">Optional</span></>}>
+              {(controlProps) => (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "var(--space-3)",
+                    border: "var(--border-width-default) solid var(--color-border-default)",
+                    borderRadius: "var(--radius-medium)",
+                    background: "var(--color-bg-muted)",
+                    padding: "var(--space-4)",
+                  }}
+                >
+                  {form.logo_url ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)", flexWrap: "wrap" }}>
+                      <img
+                        src={form.logo_url}
+                        alt="Vendor logo preview"
+                        style={{
+                          maxWidth: 220,
+                          maxHeight: 90,
+                          objectFit: "contain",
+                          border: "var(--border-width-default) solid var(--color-border-default)",
+                          borderRadius: "var(--radius-small)",
+                          padding: "var(--space-2)",
+                          background: "var(--color-bg-elevated)",
+                        }}
+                      />
+                      <AppButton onClick={() => setForm((p) => ({ ...p, logo_url: "" }))} disabled={saving}>
+                        Remove Logo
+                      </AppButton>
+                    </div>
+                  ) : (
+                    <div className="app-subtle-text">Upload a JPEG or PNG logo for this vendor.</div>
+                  )}
 
-            <div>
-              <label style={fieldLabelStyle} htmlFor="vendor-contact-method">
-                Preferred contact method
-              </label>
-              <select
-                id="vendor-contact-method"
-                value={form.preferred_contact_method}
-                onChange={(e) => setForm((p) => ({ ...p, preferred_contact_method: e.target.value }))}
-              >
-                <option value="email">Email</option>
-                <option value="phone">Phone</option>
-                <option value="text">Text</option>
-                <option value="in_app">In-app request</option>
-              </select>
-            </div>
+                  <Input
+                    {...controlProps}
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        void uploadVendorLogo(file);
+                      }
+                      e.currentTarget.value = "";
+                    }}
+                    disabled={saving}
+                  />
+                </div>
+              )}
+            </Field>
 
-            <label style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={form.is_active}
-                onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))}
-              />
-              Vendor is active
-            </label>
+            <Field label={<>Business description <span className="app-subtle-text">Optional</span></>}>
+              {(controlProps) => (
+                <Textarea
+                  {...controlProps}
+                  value={form.business_description}
+                  onChange={(e) => setForm((p) => ({ ...p, business_description: e.target.value }))}
+                  placeholder="Business description"
+                  rows={5}
+                />
+              )}
+            </Field>
 
-            <div className="app-button-row">
+            <Field label="Preferred contact method">
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={form.preferred_contact_method}
+                  onChange={(e) => setForm((p) => ({ ...p, preferred_contact_method: e.target.value }))}
+                >
+                  <option value="email">Email</option>
+                  <option value="phone">Phone</option>
+                  <option value="text">Text</option>
+                  <option value="in_app">In-app request</option>
+                </Select>
+              )}
+            </Field>
+
+            <Checkbox
+              checked={form.is_active}
+              onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))}
+              label="Vendor is active"
+            />
+
+            <FormActions>
               <AppButton variant="primary" onClick={saveVendor} disabled={saving}>
                 {saving ? "Saving..." : "Save Vendor"}
               </AppButton>
               <AppButton onClick={startNew} disabled={saving}>
                 New Vendor
               </AppButton>
-            </div>
+            </FormActions>
           </div>
         </PageSection>
       </section>

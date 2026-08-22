@@ -685,3 +685,72 @@ test("Live-session exclusivity is unchanged: session_already_active still maps t
     /session_already_active:\s*\n\s*"A presentation is already live for this event\. End it before starting another\."/,
   );
 });
+
+// Admin Batch 3 Central UI Standard migration: retires the page's
+// variant="start"/variant="stop" legacy debt (the blueprint's own Part
+// 19/20 explicitly authorizes this exact mapping -- "start" to
+// "primary", the reserved "stop" fill only for Pause since Pause is not
+// destructive) and converts the two window.confirm() gates (Archive,
+// End) to the canonical ConfirmDialog. Engine/RPC/concurrency logic
+// above is untouched -- every test above this line still passes
+// unmodified. Run with:
+//   npx tsx --test app/admin/slideshow/page.test.ts
+
+test("variant=\"start\"/variant=\"stop\" are fully retired from this page -- the one remaining production consumer of the solid-fill pair for non-destructive confirmation is gone", () => {
+  assert.equal(/variant="start"/.test(PAGE_SOURCE), false);
+  assert.equal(/variant="stop"/.test(PAGE_SOURCE), false);
+});
+
+test("every former variant=\"start\" site (Save deck edit, Start/Restart, Create Deck, Add photo, Resume) now uses variant=\"primary\" -- the blueprint's own prescribed mapping for non-destructive confirmation", () => {
+  assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*onClick=\{handleSaveEditDeck\}/);
+  assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*onClick=\{handleStart\}/);
+  assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*onClick=\{handleCreateDeck\}/);
+  assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*onClick=\{\(\) => void addManualDeckPhoto\(photo\.id\)\}/);
+  assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*onClick=\{handleResume\}/);
+});
+
+test("Pause takes the ordinary secondary treatment, not the reserved \"stop\" fill -- it is a reversible control action (Resume immediately undoes it), matching AppButton's own \"stop\" scope note (\"never a general stop/end this action button\")", () => {
+  assert.match(PAGE_SOURCE, /variant="secondary"\s*\n\s*onClick=\{handlePause\}/);
+});
+
+test("Archive deck routes through the canonical ConfirmDialog instead of window.confirm, with the same governed archive_presentation_deck RPC gated behind it", () => {
+  assert.match(PAGE_SOURCE, /import ConfirmDialog from "@\/components\/ui\/ConfirmDialog";/);
+  assert.equal(/window\.confirm/.test(PAGE_SOURCE_NO_COMMENTS), false);
+  assert.match(PAGE_SOURCE, /open=\{archiveConfirmDeck !== null\}/);
+  assert.match(PAGE_SOURCE, /onClick=\{\(\) => setArchiveConfirmDeck\(deck\)\}/);
+  const dialogIdx = PAGE_SOURCE.indexOf("open={archiveConfirmDeck !== null}");
+  const dialogBody = PAGE_SOURCE.slice(dialogIdx, dialogIdx + 700);
+  assert.match(dialogBody, /danger/);
+  assert.match(dialogBody, /await handleArchiveDeck\(deck\)/);
+});
+
+test("End Presentation routes through the canonical ConfirmDialog instead of window.confirm, still gated behind the same session/busy checks and the same end_presentation_session RPC", () => {
+  assert.match(PAGE_SOURCE, /function handleEnd\(\) \{\s*\n\s*if \(!session \|\| busy\) \{\s*\n\s*return;\s*\n\s*\}\s*\n\s*setShowEndConfirm\(true\);\s*\n\s*\}/);
+  assert.match(PAGE_SOURCE, /open=\{showEndConfirm\}/);
+  const dialogIdx = PAGE_SOURCE.indexOf("open={showEndConfirm}");
+  const dialogBody = PAGE_SOURCE.slice(dialogIdx, dialogIdx + 700);
+  assert.match(dialogBody, /danger/);
+  assert.match(dialogBody, /runControl\("end_presentation_session", "Ending presentation\.\.\.", ""\)/);
+});
+
+test("archive/end confirmation copy is byte-identical to the original window.confirm prompts -- only the presentation primitive changed, not the wording", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /Archive "\$\{archiveConfirmDeck\.name\}"\? It will no longer be available to start a presentation\./,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /End this presentation for the audience\? This cannot be undone -- you can start a new one afterward\./,
+  );
+});
+
+test("repeated button-row divs adopt the canonical FormActions primitive instead of page-local flex-row styling", () => {
+  assert.match(PAGE_SOURCE, /import \{ FormActions \} from "@\/components\/ui\/FormActions";/);
+  assert.ok((PAGE_SOURCE.match(/<FormActions>/g) || []).length >= 4);
+});
+
+test("the specialized dark presenter-console background and status-color vocabulary are preserved -- the Central UI Standard's light-surface Alert/Field label tokens are not force-adopted where they would render illegibly (dark-on-dark) against this page's own black background", () => {
+  assert.match(PAGE_SOURCE, /background: "#111"/);
+  assert.match(PAGE_SOURCE, /color: "#4ade80"/);
+  assert.match(PAGE_SOURCE, /color: "#f87171"/);
+});

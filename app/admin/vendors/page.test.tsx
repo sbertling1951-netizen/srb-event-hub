@@ -183,10 +183,15 @@ test("the redundant 'Event: {name}' pill is gone -- the Canonical Shell header a
   assert.equal(/Event: \{adminEvent\?\.name/.test(PAGE_SOURCE), false);
 });
 
-test("Vendor Catalog identity form inputs carry real <label htmlFor> associations, not placeholder-only labeling", () => {
-  assert.match(PAGE_SOURCE, /htmlFor="vendor-business-name"/);
-  assert.match(PAGE_SOURCE, /htmlFor="vendor-email"/);
-  assert.match(PAGE_SOURCE, /htmlFor="vendor-contact-method"/);
+test("Vendor Catalog identity form inputs carry real label/control associations, not placeholder-only labeling -- now via the canonical Field primitive (generated id, not a fixed string), not a page-local htmlFor", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*Checkbox,\s*Field,\s*Input,\s*Select,\s*Textarea\s*\}\s*from\s*["']@\/components\/ui\/Field["']/,
+  );
+  assert.match(PAGE_SOURCE, /<Field label="Business name">/);
+  assert.match(PAGE_SOURCE, /Email <span className="app-subtle-text">Optional<\/span>/);
+  assert.match(PAGE_SOURCE, /<Field label="Preferred contact method">/);
+  assert.equal(/<input\b/.test(PAGE_SOURCE), false, "no raw <input> should remain in the catalog form");
 });
 
 test("the vendor currently loaded into the edit form is visually distinguished from the admitted/pinned accent -- a real capability carried forward, not dropped, from the pre-conversion page", () => {
@@ -197,8 +202,8 @@ test("the vendor currently loaded into the edit form is visually distinguished f
   );
 });
 
-test("distinct Alert states exist for an empty catalog and for no Event selected, using the shared Alert primitive", () => {
-  assert.match(PAGE_SOURCE, /<Alert tone="neutral">No vendors in the catalog yet\. Add one below\.<\/Alert>/);
+test("distinct empty/neutral states exist for an empty catalog and for no Event selected, using the canonical EmptyState/Alert primitives", () => {
+  assert.match(PAGE_SOURCE, /<EmptyState message="No vendors in the catalog yet\. Add one below\." \/>/);
   assert.match(
     PAGE_SOURCE,
     /No Event is selected -- Event relationship and admission actions are unavailable/,
@@ -206,12 +211,15 @@ test("distinct Alert states exist for an empty catalog and for no Event selected
 });
 
 test("optional catalog fields are visually marked Optional; the one required field (business name) is not", () => {
-  const businessNameFieldIdx = PAGE_SOURCE.indexOf('htmlFor="vendor-business-name"');
-  const businessNameLabelEnd = PAGE_SOURCE.indexOf("</label>", businessNameFieldIdx);
+  const businessNameFieldIdx = PAGE_SOURCE.indexOf('<Field label="Business name">');
+  const businessNameFieldEnd = PAGE_SOURCE.indexOf("</Field>", businessNameFieldIdx);
   assert.equal(
-    /Optional/.test(PAGE_SOURCE.slice(businessNameFieldIdx, businessNameLabelEnd)),
+    /Optional/.test(PAGE_SOURCE.slice(businessNameFieldIdx, businessNameFieldEnd)),
     false,
   );
 
-  assert.match(PAGE_SOURCE, /Contact person <span style=\{optionalTagStyle\}>Optional<\/span>/);
+  assert.match(
+    PAGE_SOURCE,
+    /Contact person <span className="app-subtle-text">Optional<\/span>/,
+  );
 });

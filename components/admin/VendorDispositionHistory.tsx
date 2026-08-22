@@ -1,5 +1,7 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingState } from "@/components/ui/LoadingState";
 import {
   REASON_CLASSIFICATION_COLORS,
   REASON_CLASSIFICATION_LABELS,
@@ -27,11 +29,11 @@ const DECISION_LABELS: Record<VendorEventDispositionRow["decision_type"], string
  */
 export default function VendorDispositionHistory({ dispositions, loading = false }: Props) {
   if (loading) {
-    return <div style={{ fontSize: 13, color: "#64748b" }}>Loading history...</div>;
+    return <LoadingState message="Loading history..." />;
   }
 
   if (dispositions.length === 0) {
-    return <div style={{ fontSize: 13, color: "#94a3b8" }}>No decisions recorded for this Event yet.</div>;
+    return <EmptyState message="No decisions recorded for this Event yet." />;
   }
 
   return (

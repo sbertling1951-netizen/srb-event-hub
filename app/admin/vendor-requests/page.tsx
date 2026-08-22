@@ -8,6 +8,9 @@ import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewpo
 import { Alert, type AlertTone } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { RowActions } from "@/components/ui/RowActions";
@@ -643,13 +646,15 @@ function VendorRequestsInner() {
   const isLoading = status === "Loading..." && requests.length === 0;
 
   const requestListBody = isLoading ? (
-    <Alert tone="neutral">Loading vendor requests...</Alert>
+    <LoadingState message="Loading vendor requests..." />
   ) : filtered.length === 0 ? (
-    <Alert tone="neutral">
-      {requests.length === 0
-        ? "No vendor requests have been submitted for this Event yet."
-        : "No vendor requests match your search or filters. Try clearing them."}
-    </Alert>
+    <EmptyState
+      message={
+        requests.length === 0
+          ? "No vendor requests have been submitted for this Event yet."
+          : "No vendor requests match your search or filters. Try clearing them."
+      }
+    />
   ) : isCompact ? (
     <ResponsiveList aria-labelledby="vendor-requests-service-requests-heading">
       {filtered.map((r) => {
@@ -893,12 +898,12 @@ function VendorRequestsInner() {
           description={`Showing ${filtered.length} request${filtered.length === 1 ? "" : "s"} • Total party count: ${totalGuests}.`}
           descriptionClassName="app-subtle-text"
           actions={
-            <div className="app-button-row">
+            <FormActions>
               <AppButton onClick={() => void loadRequests()}>Refresh</AppButton>
               <AppButton onClick={exportCsv} disabled={filtered.length === 0}>
                 Export CSV
               </AppButton>
-            </div>
+            </FormActions>
           }
         />
 
