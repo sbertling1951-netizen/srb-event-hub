@@ -40,10 +40,48 @@ test("mapAgendaRpcError renders known codes as friendly text", () => {
   );
 });
 
-test("mapAgendaRpcError falls through to the raw message for unknown codes", () => {
+test("mapAgendaRpcError never surfaces a raw/unmapped Postgres error message to the Admin -- it returns the caller's fallback instead (an internal implementation detail leaking into the UI, e.g. a trigger's own RAISE EXCEPTION text, is itself a defect)", () => {
+  const originalConsoleError = console.error;
+  const loggedArgs: unknown[][] = [];
+  console.error = (...args: unknown[]) => {
+    loggedArgs.push(args);
+  };
+  try {
+    assert.equal(
+      mapAgendaRpcError(new Error("some_unmapped_code"), "fallback"),
+      "fallback",
+    );
+    assert.equal(
+      mapAgendaRpcError(
+        new Error("agenda command ledger entries are immutable"),
+        "Could not add agenda item.",
+      ),
+      "Could not add agenda item.",
+    );
+  } finally {
+    console.error = originalConsoleError;
+  }
+  // Diagnostic detail is still reachable for developers via the console.
+  assert.ok(
+    loggedArgs.some((args) =>
+      args.some(
+        (arg) =>
+          typeof arg === "string" &&
+          arg.includes("agenda command ledger entries are immutable"),
+      ),
+    ),
+    "expected the raw unmapped message to still be logged for developer diagnosis",
+  );
+});
+
+test("mapAgendaRpcError renders the Lifecycle guard's two real remaining failure codes as friendly text, matching the app/admin/checkin/page.tsx precedent", () => {
   assert.equal(
-    mapAgendaRpcError(new Error("some_unmapped_code"), "fallback"),
-    "some_unmapped_code",
+    mapAgendaRpcError(new Error("event_archived"), "fallback"),
+    "This Event is archived and can no longer be modified.",
+  );
+  assert.equal(
+    mapAgendaRpcError(new Error("event_lifecycle_indeterminate"), "fallback"),
+    "This Event's lifecycle state could not be determined. Contact an administrator.",
   );
 });
 
@@ -602,4 +640,39 @@ test("AgendaTemplatePanel's two action rows use the canonical FormActions wrappe
 test("the printDayFilter select remains the one deliberate raw-<select> exception -- untouched, not swapped to the Field-wrapped Select component", () => {
   assert.equal((PAGE_SOURCE.match(/<select\b/g) || []).length, 1);
   assert.equal((PAGE_SOURCE.match(/<\/select>/g) || []).length, 1);
+});
+
+// -- Agenda create-failure fix: immutable-ledger regression (2026-08-22) --
+//
+// Root cause lived entirely in the RPC (see
+// supabase/migrations/20260822000000_repair_agenda_item_ledger_immutability_regression.sql
+// and its own .test.ts for the database-level proof); these tests cover
+// the two things this exact defect changed in the UI layer: the raw
+// internal error message must never reach an Admin again, and the
+// Recurring field's separately-flagged stale "after Amana" copy.
+
+test("create/update/delete_event_agenda_item calls are unchanged by this fix -- the UI still calls the same governed RPCs with the same parameters, never a raw table write", () => {
+  assert.match(PAGE_SOURCE, /supabase\.rpc\("create_event_agenda_item", \{/);
+  assert.match(PAGE_SOURCE, /supabase\.rpc\("update_event_agenda_item", \{/);
+  assert.match(PAGE_SOURCE, /supabase\.rpc\("delete_event_agenda_item", \{/);
+  assert.equal(/\.from\(["']agenda_command_ledger["']\)/.test(PAGE_SOURCE), false);
+  assert.equal(/\.from\(["']agenda_items["']\)\s*\.\s*(insert|update|delete|upsert)/.test(PAGE_SOURCE), false);
+});
+
+test("the Recurring field's user-facing help/title text no longer names Amana or promises a specific unlock milestone -- it states current capability neutrally", () => {
+  assert.match(PAGE_SOURCE, /help="Recurring item generation is not yet available\."/);
+  assert.match(PAGE_SOURCE, /title="Recurring agenda items are not yet supported\."/);
+  const recurringFieldStart = PAGE_SOURCE.indexOf('label="Recurring"');
+  const recurringFieldEnd = PAGE_SOURCE.indexOf("</Field>", recurringFieldStart);
+  const recurringFieldBlock = PAGE_SOURCE.slice(recurringFieldStart, recurringFieldEnd);
+  assert.equal(/Amana/.test(recurringFieldBlock), false);
+});
+
+test("the Recurring control remains the same inert placeholder (defaultValue, no onChange) -- this fix only corrects its wording, not its (non-)functionality", () => {
+  const recurringFieldStart = PAGE_SOURCE.indexOf('label="Recurring"');
+  assert.notEqual(recurringFieldStart, -1);
+  const recurringFieldEnd = PAGE_SOURCE.indexOf("</Field>", recurringFieldStart);
+  const recurringFieldBlock = PAGE_SOURCE.slice(recurringFieldStart, recurringFieldEnd);
+  assert.match(recurringFieldBlock, /defaultValue="none"/);
+  assert.equal(/onChange/.test(recurringFieldBlock), false);
 });

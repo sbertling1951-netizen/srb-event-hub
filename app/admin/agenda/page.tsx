@@ -452,16 +452,32 @@ const AGENDA_ERROR_MESSAGES: Record<string, string> = {
   empty_source_agenda: "This event has no agenda items to save as a template.",
   "item not found": "That agenda item no longer exists.",
   "wrong_event": "No admin working event selected, or it could not be found.",
+  // Lifecycle Mutation Enforcement Pilot (20260813170000) -- the one
+  // legitimate failure mode create/update/delete/reorder/import can
+  // still raise on an otherwise-valid request. Wording matches the
+  // existing app/admin/checkin/page.tsx precedent for the same two codes.
+  event_archived: "This Event is archived and can no longer be modified.",
+  event_lifecycle_indeterminate:
+    "This Event's lifecycle state could not be determined. Contact an administrator.",
 };
 
-// Exported for focused testing (app/admin/agenda/page.test.ts).
+// Exported for focused testing (app/admin/agenda/page.test.ts). Never
+// surfaces a raw/unmapped Postgres error message to the Admin -- an
+// internal implementation detail (e.g. a trigger's own RAISE EXCEPTION
+// text) leaking into the UI is itself a defect, not a diagnostic
+// feature. An unmapped code still reaches the browser console via
+// console.error for developer diagnosis; the Admin only ever sees a
+// known friendly message or the caller-supplied fallback.
 export function mapAgendaRpcError(err: unknown, fallback: string): string {
   const raw = err instanceof Error ? err.message : "";
   const mapped = AGENDA_ERROR_MESSAGES[raw];
   if (mapped) {
     return mapped;
   }
-  return raw || fallback;
+  if (raw) {
+    console.error("Unmapped Agenda RPC error:", raw);
+  }
+  return fallback;
 }
 
 export function isStaleAgendaVersionError(err: unknown): boolean {
@@ -2763,17 +2779,22 @@ function AdminAgendaPageInner() {
                   )}
                 </Field>
 
-                {/* Recurring Event Placeholder UI -- inert until after Amana;
-                    no onChange handler, matches its pre-migration behavior. */}
+                {/* Recurring Event Placeholder UI -- inert (no onChange
+                    handler, matches its pre-migration behavior); the
+                    capability itself does not exist yet anywhere in the
+                    backend. The prior "after Amana" copy named a specific
+                    past Event as the unlock milestone -- Amana has since
+                    concluded with no such capability delivered, so that
+                    wording was stale/inaccurate rather than merely dated. */}
                 <Field
                   label="Recurring"
-                  help="Recurring item generation will be enabled after Amana."
+                  help="Recurring item generation is not yet available."
                 >
                   {(controlProps) => (
                     <Select
                       {...controlProps}
                       defaultValue="none"
-                      title="Recurring agenda items will be implemented after Amana."
+                      title="Recurring agenda items are not yet supported."
                     >
                       <option value="none">Does Not Repeat</option>
                       <option value="daily">Daily</option>
