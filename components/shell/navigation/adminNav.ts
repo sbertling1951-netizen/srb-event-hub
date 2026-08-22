@@ -35,6 +35,23 @@ export function buildAdminNavSections(admin: AdminAccessResult | null): ShellNav
       label: "Attendees Management",
       href: "/admin/attendees",
     },
+    // /admin/imports itself gates on the governed event.imports.manage
+    // Task Authority (AdminRouteGuard requiredTask), not this legacy
+    // permission -- can_manage_imports is used here only as the nav
+    // model's existing best-fit visibility proxy, the same pattern
+    // already used for other Task-Authority-gated pages (Agenda,
+    // Photos) in this file. It is a purpose-built key, not an
+    // approximation: it already exists in the Permissions/Admin Users
+    // pages and is granted to exactly the same profile
+    // (event_admin, plus the super_admin bypass hasPermission always
+    // grants) that the page's own event.imports.manage task defaults
+    // to. The real, authoritative, per-Event check still happens at
+    // the route guard regardless of what this shows.
+    hasPermission(admin, "can_manage_imports") && {
+      id: "imports",
+      label: "Attendee Imports",
+      href: "/admin/imports",
+    },
     hasPermission(admin, "can_manage_checkin") && { id: "checkin", label: "Check-In", href: "/admin/checkin" },
     hasPermission(admin, "can_manage_parking") && { id: "parking", label: "Parking Admin", href: "/admin/parking" },
     hasPermission(admin, "can_manage_reports") && { id: "print", label: "Print Center", href: "/admin/print" },
