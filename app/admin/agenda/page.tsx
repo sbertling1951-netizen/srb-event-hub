@@ -656,6 +656,16 @@ function AdminAgendaPageInner() {
   // ("evaluate whether full desktop multi-column layout remains genuinely
   // useful... collapse... when columns become cramped"), not a shortcut.
   const showTwoColumnAgendaLayout = viewportClass === "wide";
+  // Agenda-local collapsible-editor disclosure (compact widths only --
+  // 2026-08-21 iPhone regression fix). No shared Disclosure/Collapsible
+  // primitive exists yet in components/ui; this is the smallest
+  // Agenda-local implementation for this fix, reported as a future
+  // Central UI standardization candidate rather than generalized here.
+  // Ignored entirely at !isCompact -- the wide/standard editor keeps its
+  // original always-expanded, always-sticky behavior unchanged.
+  const [editorExpanded, setEditorExpanded] = useState(false);
+  const editorFormBodyRef = useRef<HTMLDivElement | null>(null);
+  const editorToggleButtonRef = useRef<HTMLButtonElement | null>(null);
   const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
   const [compactCalendarView, setCompactCalendarView] = useState(false);
   const useButtonReorder = isCompact && !forceDesktopDrag;
@@ -746,6 +756,24 @@ function AdminAgendaPageInner() {
   useEffect(() => {
     activeEventRef.current = activeEvent;
   }, [activeEvent]);
+
+  // Move focus to the collapse/expand toggle whenever the compact editor
+  // auto-collapses (e.g. after a successful update) while focus was
+  // actively inside the form body about to be hidden -- never leave a
+  // focused control silently removed from the page.
+  useEffect(() => {
+    if (!isCompact || editorExpanded) {
+      return;
+    }
+    const activeEl = document.activeElement;
+    if (
+      editorFormBodyRef.current &&
+      activeEl instanceof Node &&
+      editorFormBodyRef.current.contains(activeEl)
+    ) {
+      editorToggleButtonRef.current?.focus();
+    }
+  }, [editorExpanded, isCompact]);
 
   const loadPage = useCallback(async () => {
     setLoading(true);
@@ -1108,6 +1136,14 @@ function AdminAgendaPageInner() {
         setStatus(`Added "${form.title.trim()}".`);
       }
 
+      // Collapse the compact editor after finishing an edit of an
+      // existing item (the user's likely next step is browsing the
+      // agenda), but not after a fresh Add -- keep it open so an admin
+      // adding several items in a row isn't forced to re-expand each time.
+      if (form.id) {
+        setEditorExpanded(false);
+      }
+
       setForm(emptyForm);
       void refreshAgendaData();
     } finally {
@@ -1153,6 +1189,7 @@ function AdminAgendaPageInner() {
 
     if (form.id === id) {
       setForm(emptyForm);
+      setEditorExpanded(false);
     }
 
     setItems((prev) => prev.filter((item) => item.id !== id));
@@ -2544,10 +2581,36 @@ function AdminAgendaPageInner() {
 
           <PageSection
             variant="section"
-            title={form.id ? `Editing: ${form.title || "Untitled Item"}` : "New Agenda Item"}
-            titleStyle={{ margin: 0 }}
-            style={{ position: "sticky", top: 12, zIndex: 20 }}
+            style={{
+              // Wide/standard: unchanged always-sticky, always-expanded
+              // editor. Compact: sticky only while collapsed (a small,
+              // helpful, always-reachable summary bar) -- never sticky
+              // while expanded, so a tall open editor scrolls away
+              // normally instead of re-pinning itself over the agenda.
+              position: isCompact && editorExpanded ? undefined : "sticky",
+              top: 12,
+              zIndex: 20,
+            }}
           >
+            <PageHeader
+              headingLevel="h2"
+              titleStyle={{ margin: 0 }}
+              title={form.id ? `Editing: ${form.title || "Untitled Item"}` : "New Agenda Item"}
+              actions={
+                isCompact ? (
+                  <AppButton
+                    ref={editorToggleButtonRef}
+                    variant="tertiary"
+                    aria-expanded={editorExpanded}
+                    aria-controls="agenda-editor-form-body"
+                    onClick={() => setEditorExpanded((prev) => !prev)}
+                  >
+                    {editorExpanded ? "Collapse" : form.id ? "Edit" : "Expand"}
+                  </AppButton>
+                ) : undefined
+              }
+            />
+
             <div style={{ display: "grid", gap: "var(--space-4)" }}>
               {form.id ? (
                 <div className="app-subtle-text">
@@ -2557,6 +2620,12 @@ function AdminAgendaPageInner() {
                 </div>
               ) : null}
 
+              {!isCompact || editorExpanded ? (
+              <div
+                id="agenda-editor-form-body"
+                ref={editorFormBodyRef}
+                style={{ display: "grid", gap: "var(--space-4)" }}
+              >
               <div
                 style={{
                   display: "grid",
@@ -2782,6 +2851,7 @@ function AdminAgendaPageInner() {
                     } else {
                       setForm(emptyForm);
                     }
+                    setEditorExpanded(true);
                   }}
                   disabled={saving}
                 >
@@ -2798,6 +2868,8 @@ function AdminAgendaPageInner() {
                   </AppButton>
                 ) : null}
               </div>
+              </div>
+              ) : null}
             </div>
           </PageSection>
 
@@ -3190,7 +3262,10 @@ function AdminAgendaPageInner() {
                                     setCalendarDraggingId(null);
                                     setCalendarDropPreview(null);
                                   }}
-                                  onClick={() => setForm(formFromItem(item))}
+                                  onClick={() => {
+                                    setForm(formFromItem(item));
+                                    setEditorExpanded(true);
+                                  }}
                                   style={{
                                     position: "absolute",
                                     top: block.top + 2,
@@ -3466,7 +3541,10 @@ function AdminAgendaPageInner() {
 
                       <button
                         type="button"
-                        onClick={() => setForm(formFromItem(item))}
+                        onClick={() => {
+                          setForm(formFromItem(item));
+                          setEditorExpanded(true);
+                        }}
                         style={{
                           textAlign: "left",
                           background: "transparent",

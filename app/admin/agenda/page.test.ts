@@ -434,3 +434,81 @@ test("AgendaImportPanel and AgendaTemplatePanel both import canonical Field/AppB
   assert.match(IMPORT_PANEL_SOURCE, /import \{ Field, Input \} from "@\/components\/ui\/Field";/);
   assert.match(IMPORT_PANEL_SOURCE, /type="file"/);
 });
+
+// -- iPhone collapsible-editor regression fix (2026-08-21) ----------------
+//
+// Real-device iPhone testing found the always-expanded, always-sticky
+// editor from the migration above dominated the narrow viewport. These
+// tests lock in the fix: a compact, Agenda-local disclosure gated on the
+// existing isCompact capability signal -- no new page-local viewport
+// listener, no change to desktop/standard behavior.
+
+test("no new page-local viewport-width listener was introduced -- the collapsible editor reuses the existing isCompact capability signal", () => {
+  const listenerCount = (PAGE_SOURCE.match(/addEventListener\(\s*["']resize["']/g) || []).length;
+  assert.equal(listenerCount, 0);
+  assert.match(PAGE_SOURCE, /const \[editorExpanded, setEditorExpanded\] = useState\(false\);/);
+});
+
+test("the editor toggle button only renders on compact widths, with a real accessible disclosure control", () => {
+  assert.match(PAGE_SOURCE, /actions=\{\s*isCompact \? \(/);
+  assert.match(PAGE_SOURCE, /aria-expanded=\{editorExpanded\}/);
+  assert.match(PAGE_SOURCE, /aria-controls="agenda-editor-form-body"/);
+  assert.match(PAGE_SOURCE, /id="agenda-editor-form-body"/);
+  assert.match(PAGE_SOURCE, /\{editorExpanded \? "Collapse" : form\.id \? "Edit" : "Expand"\}/);
+});
+
+test("the form body (Field/Input/Select/Textarea/AppButton row) only renders while expanded on compact widths -- wide/standard always renders it, matching the pre-fix behavior exactly", () => {
+  assert.match(PAGE_SOURCE, /\{!isCompact \|\| editorExpanded \? \(/);
+});
+
+test("the editor is sticky except while expanded on a compact width -- a tall open editor must scroll away normally, not stay pinned over the agenda", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /position: isCompact && editorExpanded \? undefined : "sticky",/,
+  );
+});
+
+test("selecting an agenda item (calendar block or list row) auto-expands the editor so it is immediately reachable", () => {
+  const selectCallSites = [...PAGE_SOURCE.matchAll(/setForm\(formFromItem\(item\)\);\s*\n\s*setEditorExpanded\(true\);/g)];
+  assert.equal(selectCallSites.length, 2, "expected both the calendar block and list row onClick to auto-expand");
+});
+
+test("New Blank auto-expands the editor (the user is about to start typing a new item)", () => {
+  // lastIndexOf, not indexOf -- the button's own onClick body contains an
+  // earlier comment ("// On New Blank, if a default category exists...")
+  // that also matches "New Blank" before the actual button label text.
+  const newBlankIdx = PAGE_SOURCE.lastIndexOf("New Blank");
+  const priorButtonStart = PAGE_SOURCE.lastIndexOf("<AppButton", newBlankIdx);
+  const block = PAGE_SOURCE.slice(priorButtonStart, newBlankIdx);
+  assert.match(block, /setEditorExpanded\(true\);/);
+});
+
+test("saving an existing item's update auto-collapses the editor (edit session complete); saving a brand-new item does not (so adding several in a row doesn't force re-expanding each time)", () => {
+  const saveItemStart = PAGE_SOURCE.indexOf("async function saveItem() {");
+  const saveItemEnd = PAGE_SOURCE.indexOf("\n  async function deleteItem(");
+  assert.notEqual(saveItemStart, -1);
+  assert.notEqual(saveItemEnd, -1);
+  const body = PAGE_SOURCE.slice(saveItemStart, saveItemEnd);
+  assert.match(body, /if \(form\.id\) \{\s*\n\s*setEditorExpanded\(false\);\s*\n\s*\}/);
+});
+
+test("deleting the item currently being edited also collapses the editor", () => {
+  const deleteItemStart = PAGE_SOURCE.indexOf("async function deleteItem(id: string) {");
+  const deleteItemEnd = PAGE_SOURCE.indexOf("\n  async function togglePublished(");
+  assert.notEqual(deleteItemStart, -1);
+  assert.notEqual(deleteItemEnd, -1);
+  const body = PAGE_SOURCE.slice(deleteItemStart, deleteItemEnd);
+  assert.match(
+    body,
+    /if \(form\.id === id\) \{\s*\n\s*setForm\(emptyForm\);\s*\n\s*setEditorExpanded\(false\);\s*\n\s*\}/,
+  );
+});
+
+test("collapsing the editor while a focused control is inside it moves focus to the toggle button, rather than silently dropping focus", () => {
+  assert.match(PAGE_SOURCE, /editorFormBodyRef\.current\.contains\(activeEl\)/);
+  assert.match(PAGE_SOURCE, /editorToggleButtonRef\.current\?\.focus\(\);/);
+});
+
+test("no shared Disclosure/Collapsible primitive was invented -- this is a documented Agenda-local implementation, a candidate for later Central UI standardization", () => {
+  assert.equal(/components\/ui\/(Disclosure|Collapsible|Accordion)/i.test(PAGE_SOURCE), false);
+});
