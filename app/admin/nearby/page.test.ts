@@ -190,10 +190,13 @@ test("event-context/authority behavior (canAccessEvent, getCurrentAdminEvent, su
 
 test("the draft-restore-focus mechanism (data-stored-field/rememberStoredFieldFocus) survives the Field migration unchanged", () => {
   assert.match(PAGE_SOURCE, /function rememberStoredFieldFocus\(/);
+  // "custom-category" is gone (Nearby Category Authority Stage B, Part 1
+  // -- the free-text custom-category escape hatch this field name
+  // belonged to was removed), not merely renamed.
+  assert.equal(PAGE_SOURCE.includes('"custom-category"'), false);
   const fieldNames = [
     "name",
     "category",
-    "custom-category",
     "address",
     "phone",
     "website",
@@ -211,8 +214,22 @@ test("the draft-restore-focus mechanism (data-stored-field/rememberStoredFieldFo
 });
 
 // -----------------------------------------------------------------------
-// Nearby Category Authority Stage A: category_id maintained on every
-// write/copy path, no rename capability, no member-facing change.
+// Nearby Category Authority Stage A (superseded parts removed): the
+// free-text normalized-code resolution Stage A added is gone, correctly
+// -- Stage B, Part 1 replaced it with direct catalog selection (below),
+// which needs no text normalization at all.
+// -----------------------------------------------------------------------
+
+test("Stage A's free-text resolution helpers (normalizeCategoryCode/resolveCategoryId/categoryIdByCode) are gone -- Stage B's direct category_id selection made them unnecessary", () => {
+  for (const needle of ["normalizeCategoryCode", "resolveCategoryId", "categoryIdByCode"]) {
+    assert.equal(PAGE_SOURCE.includes(needle), false, `expected ${needle} to have been removed`);
+  }
+});
+
+// -----------------------------------------------------------------------
+// Nearby Category Authority Stage B, Part 1: canonical catalog selection
+// for both Stored and Event Places -- category_id is the real selection
+// value, the free-text/custom-category escape hatch is gone.
 // -----------------------------------------------------------------------
 
 function functionBody(name: string): string {
@@ -221,13 +238,6 @@ function functionBody(name: string): string {
   const nextFn = PAGE_SOURCE.indexOf("\n  async function ", start + 1);
   return PAGE_SOURCE.slice(start, nextFn > 0 ? nextFn : PAGE_SOURCE.length);
 }
-
-test("the category-code normalizer matches the SQL migration's own normalization exactly (lowercase, non-alnum runs to underscore, trimmed)", () => {
-  assert.match(
-    PAGE_SOURCE,
-    /function normalizeCategoryCode\(text: string\): string \{\s*\n\s*return text\s*\n\s*\.trim\(\)\s*\n\s*\.toLowerCase\(\)\s*\n\s*\.replace\(\/\[\^a-z0-9\]\+\/g, "_"\)\s*\n\s*\.replace\(\/\^_\+\|_\+\$\/g, ""\);/,
-  );
-});
 
 test("place_categories is fetched read-only -- no insert/update/delete/upsert against it anywhere on this page", () => {
   const categoriesFetchIdx = PAGE_SOURCE.indexOf('.from("place_categories")');
@@ -241,44 +251,92 @@ test("no rename RPC, no InlineEdit adoption, and no automatic category creation 
   assert.equal(/INSERT INTO public\.place_categories|from\("place_categories"\)\s*\n\s*\.insert/.test(PAGE_SOURCE), false);
 });
 
-test("saveStoredPlace re-resolves category_id fresh from the current free-text category on every save -- editing the text can never leave category_id stale", () => {
+test("the free-text/custom-category escape hatch is completely gone -- no __custom__ sentinel, no 'Add new category' UI, no hardcoded 9-item option list", () => {
+  assert.equal(/__custom__/.test(PAGE_SOURCE), false);
+  assert.equal(/Add new category/.test(PAGE_SOURCE), false);
+  for (const legacyOption of ["Restaurant", "RV Service", "Attraction"]) {
+    assert.equal(
+      new RegExp(`<option value="${legacyOption}">${legacyOption}</option>`).test(PAGE_SOURCE),
+      false,
+      `expected the hardcoded <option value="${legacyOption}"> to be gone`,
+    );
+  }
+});
+
+test("both category selectors are catalog-driven: option value is a real category_id (placeCategories.id), option text is its label", () => {
+  const storedSelect = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf('value={storedForm.category_id}'),
+    PAGE_SOURCE.indexOf("</Select>", PAGE_SOURCE.indexOf('value={storedForm.category_id}')),
+  );
+  assert.match(
+    storedSelect,
+    /\{placeCategories\.map\(\(placeCategory\) => \(\s*\n\s*<option key=\{placeCategory\.id\} value=\{placeCategory\.id\}>\s*\n\s*\{placeCategory\.label\}/,
+  );
+
+  const eventSelect = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("value={eventForm.category_id}"),
+    PAGE_SOURCE.indexOf("</Select>", PAGE_SOURCE.indexOf("value={eventForm.category_id}")),
+  );
+  assert.match(
+    eventSelect,
+    /\{placeCategories\.map\(\(placeCategory\) => \(\s*\n\s*<option key=\{placeCategory\.id\} value=\{placeCategory\.id\}>\s*\n\s*\{placeCategory\.label\}/,
+  );
+});
+
+test("saveStoredPlace persists category_id directly from the selected value, and derives the legacy category text from the catalog label -- never independently editable", () => {
   const body = functionBody("saveStoredPlace");
+  assert.match(body, /category_id: storedForm\.category_id \|\| null,/);
   assert.match(body, /category: storedForm\.category\.trim\(\) \|\| null,/);
-  assert.match(body, /category_id: resolveCategoryId\(storedForm\.category\.trim\(\) \|\| null\),/);
   assert.match(PAGE_SOURCE, /\.from\("nearby_master"\)\s*\n\s*\.update\(payload\)/);
   assert.match(PAGE_SOURCE, /supabase\.from\("nearby_master"\)\.insert\(payload\)/);
 });
 
-test("saveEventPlace re-resolves category_id fresh from the current free-text category on every save", () => {
+test("saveEventPlace persists category_id directly from the selected value", () => {
   const body = functionBody("saveEventPlace");
+  assert.match(body, /category_id: eventForm\.category_id \|\| null,/);
   assert.match(body, /category: eventForm\.category\.trim\(\) \|\| null,/);
-  assert.match(body, /category_id: resolveCategoryId\(eventForm\.category\.trim\(\) \|\| null\),/);
+});
+
+test("selecting a category writes both category_id and the matching label as category text in the same state update, on both forms", () => {
+  const storedOnChange = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("value={storedForm.category_id}"),
+    PAGE_SOURCE.indexOf("disabled={!admin || savingStoredPlace}", PAGE_SOURCE.indexOf("value={storedForm.category_id}")),
+  );
+  assert.match(storedOnChange, /category_id: nextCategoryId,/);
+  assert.match(storedOnChange, /category: nextCategoryId \? categoryLabelById\.get\(nextCategoryId\) \|\| "" : "",/);
+
+  const eventOnChange = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("value={eventForm.category_id}"),
+    PAGE_SOURCE.indexOf("disabled={!admin || savingEventPlace}", PAGE_SOURCE.indexOf("value={eventForm.category_id}")),
+  );
+  assert.match(eventOnChange, /category_id: nextCategoryId,/);
+  assert.match(eventOnChange, /category: nextCategoryId \? categoryLabelById\.get\(nextCategoryId\) \|\| "" : "",/);
 });
 
 test("replaceEventListFromStored copies category_id directly from the source stored place -- never re-derives it from copied display text", () => {
   const body = functionBody("replaceEventListFromStored");
   assert.match(body, /"id,name,address,phone,category,category_id,description,link,location_code,lat,lng"/);
   assert.match(body, /category_id: place\.category_id \?\? null,/);
-  assert.equal(/resolveCategoryId/.test(body), false);
 });
 
 test("mergeStoredAreaIntoEvent copies category_id directly from the source stored place -- never re-derives it from copied display text", () => {
   const body = functionBody("mergeStoredAreaIntoEvent");
   assert.match(body, /"id,name,address,phone,category,category_id,description,link,location_code,lat,lng"/);
   assert.match(body, /category_id: place\.category_id \?\? null,/);
-  assert.equal(/resolveCategoryId/.test(body), false);
 });
 
-test("resolveCategoryId returns null for blank/unmatched free text rather than inventing a category -- category_id is never coerced to a fallback identity", () => {
-  const start = PAGE_SOURCE.indexOf("const resolveCategoryId = useCallback(");
-  assert.notEqual(start, -1);
-  const body = PAGE_SOURCE.slice(start, PAGE_SOURCE.indexOf("[categoryIdByCode],", start));
-  assert.match(body, /if \(!categoryText\) \{\s*\n\s*return null;/);
-  assert.match(body, /if \(!code\) \{\s*\n\s*return null;/);
-  assert.match(body, /return categoryIdByCode\.get\(code\) \?\? null;/);
+test("loadStoredPlaces and loadEventPlaces both select category_id, so an existing place's current category resolves directly by id, independent of legacy text/casing", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /"id,name,address,phone,category,category_id,description,link,location_code,lat,lng",\s*\n\s*\)\s*\n\s*\.eq\("area_id", areaId\)/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /"id,name,address,phone,website,category,category_id,notes,sort_order,is_hidden,distance_miles,location_code,lat,lng",/,
+  );
 });
 
-test("Stage A's new helpers/state are local to this page -- neither app/member/nearby/page.tsx nor app/admin/nearby-settings/page.tsx picked up any of this stage's logic", () => {
+test("Stage B's category state/helpers are local to this page -- neither app/member/nearby/page.tsx nor app/admin/nearby-settings/page.tsx picked up any of this stage's logic", () => {
   const memberSource = readFileSync(
     fileURLToPath(new URL("../../member/nearby/page.tsx", import.meta.url)),
     "utf8",
@@ -288,7 +346,7 @@ test("Stage A's new helpers/state are local to this page -- neither app/member/n
     "utf8",
   );
 
-  for (const needle of ["normalizeCategoryCode", "resolveCategoryId", "categoryIdByCode"]) {
+  for (const needle of ["categoryLabelById", "placeCategories"]) {
     assert.equal(memberSource.includes(needle), false, `member page should not reference ${needle}`);
     assert.equal(settingsSource.includes(needle), false, `nearby-settings page should not reference ${needle}`);
   }

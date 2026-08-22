@@ -53,6 +53,7 @@ type StoredPlace = {
   id: string;
   name: string;
   category: string | null;
+  category_id: string | null;
   address: string | null;
   phone: string | null;
   website: string | null;
@@ -66,6 +67,7 @@ type EventPlace = {
   id: string;
   name: string;
   category: string | null;
+  category_id: string | null;
   address: string | null;
   phone: string | null;
   website: string | null;
@@ -82,6 +84,7 @@ type StoredPlaceForm = {
   id: string;
   name: string;
   category: string;
+  category_id: string;
   address: string;
   phone: string;
   website: string;
@@ -95,6 +98,7 @@ type EventPlaceForm = {
   id: string;
   name: string;
   category: string;
+  category_id: string;
   address: string;
   phone: string;
   website: string;
@@ -124,6 +128,7 @@ const emptyStoredPlaceForm: StoredPlaceForm = {
   id: "",
   name: "",
   category: "",
+  category_id: "",
   address: "",
   phone: "",
   website: "",
@@ -137,6 +142,7 @@ const emptyEventPlaceForm: EventPlaceForm = {
   id: "",
   name: "",
   category: "",
+  category_id: "",
   address: "",
   phone: "",
   website: "",
@@ -166,28 +172,12 @@ function toNullableCoordinate(value: string): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-/**
- * Nearby Category Authority Stage A: the exact same normalization
- * 20260811120000_create_nearby_knowledge_tenant_curation_foundation.sql's
- * SQL backfill uses for public.place_categories.code (lowercase, runs of
- * non-alphanumeric characters collapsed to a single underscore, leading/
- * trailing underscores trimmed) -- kept in lockstep so a free-text
- * category value that resolves to a canonical category in the database
- * resolves to the same one here.
- */
-function normalizeCategoryCode(text: string): string {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
 function storedFormFromPlace(place: StoredPlace): StoredPlaceForm {
   return {
     id: place.id,
     name: place.name || "",
     category: place.category || "",
+    category_id: place.category_id || "",
     address: place.address || "",
     phone: place.phone || "",
     website: place.website || "",
@@ -203,6 +193,7 @@ function eventFormFromPlace(place: EventPlace): EventPlaceForm {
     id: place.id,
     name: place.name || "",
     category: place.category || "",
+    category_id: place.category_id || "",
     address: place.address || "",
     phone: place.phone || "",
     website: place.website || "",
@@ -422,36 +413,21 @@ function AdminNearbyPageInner() {
   const [storedPlaces, setStoredPlaces] = useState<StoredPlace[]>([]);
   const [eventPlaces, setEventPlaces] = useState<EventPlace[]>([]);
 
-  // Nearby Category Authority Stage A: the canonical catalog, fetched once
-  // so free-text category values can be resolved to a category_id on
-  // every write. Read-only here -- no rename, no category creation. A
-  // value with no match (e.g. an admin-typed custom category not yet in
-  // the catalog) resolves to null, which is why category_id stays a
-  // nullable FK rather than NOT NULL (see the Stage A migration's own
-  // header comment).
+  // Nearby Category Authority Stage B, Part 1: the canonical catalog,
+  // fetched once and used directly as the Stored/Event Place category
+  // selectors' option list (category_id is the selection value; label is
+  // what's displayed) -- replacing Stage A's free-text normalized-code
+  // resolution, which is no longer needed now that selection is by id,
+  // not typed text. No rename, no category creation -- read-only.
   const [placeCategories, setPlaceCategories] = useState<PlaceCategoryOption[]>([]);
 
-  const categoryIdByCode = useMemo(() => {
+  const categoryLabelById = useMemo(() => {
     const map = new Map<string, string>();
     for (const category of placeCategories) {
-      map.set(category.code, category.id);
+      map.set(category.id, category.label);
     }
     return map;
   }, [placeCategories]);
-
-  const resolveCategoryId = useCallback(
-    (categoryText: string | null): string | null => {
-      if (!categoryText) {
-        return null;
-      }
-      const code = normalizeCategoryCode(categoryText);
-      if (!code) {
-        return null;
-      }
-      return categoryIdByCode.get(code) ?? null;
-    },
-    [categoryIdByCode],
-  );
 
   const [storedForm, setStoredForm] =
     useState<StoredPlaceForm>(emptyStoredPlaceForm);
@@ -551,10 +527,6 @@ function AdminNearbyPageInner() {
 
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
 
-  const [storedCustomCategory, setStoredCustomCategory] = useState("");
-  const [showStoredCustomCategory, setShowStoredCustomCategory] =
-    useState(false);
-
   function resetAllState() {
     setAdminEvent(null);
     setStoredAreas([]);
@@ -565,8 +537,6 @@ function AdminNearbyPageInner() {
     setAreaDescription("");
     setStoredForm(emptyStoredPlaceForm);
     setEventForm(emptyEventPlaceForm);
-    setStoredCustomCategory("");
-    setShowStoredCustomCategory(false);
   }
 
   function showStatus(message: string) {
@@ -862,7 +832,7 @@ function AdminNearbyPageInner() {
       const { data, error } = await supabase
         .from("nearby_master")
         .select(
-          "id,name,address,phone,category,description,link,location_code,lat,lng",
+          "id,name,address,phone,category,category_id,description,link,location_code,lat,lng",
         )
         .eq("area_id", areaId)
         .order("name", { ascending: true });
@@ -875,6 +845,7 @@ function AdminNearbyPageInner() {
         id: row.id,
         name: row.name,
         category: row.category ?? null,
+        category_id: row.category_id ?? null,
         address: row.address ?? null,
         phone: row.phone ?? null,
         website: row.link ?? null,
@@ -905,7 +876,7 @@ function AdminNearbyPageInner() {
       const { data, error } = await supabase
         .from("event_nearby_places")
         .select(
-          "id,name,address,phone,website,category,notes,sort_order,is_hidden,distance_miles,location_code,lat,lng",
+          "id,name,address,phone,website,category,category_id,notes,sort_order,is_hidden,distance_miles,location_code,lat,lng",
         )
         .eq("event_id", eventId)
         .order("sort_order", { ascending: true })
@@ -935,10 +906,11 @@ function AdminNearbyPageInner() {
     void loadStoredAreas();
   }, [admin, loadStoredAreas]);
 
-  // Nearby Category Authority Stage A: background catalog prefetch. Not
-  // tied to any user action and never blocks saving a place -- a failed
-  // or empty fetch simply means resolveCategoryId() falls back to null
-  // for every value, the same outcome as before this stage existed.
+  // Nearby Category Authority Stage B: the Stored/Event Place category
+  // selectors' actual option source (Part 1) -- catalog-driven, no
+  // free-text/custom-category escape hatch. A failed or empty fetch
+  // simply leaves the selector showing only "Select category", never a
+  // silently invented option.
   useEffect(() => {
     if (!admin) {
       return;
@@ -1226,11 +1198,13 @@ function AdminNearbyPageInner() {
         name: storedForm.name.trim(),
         address: storedForm.address.trim() || null,
         phone: storedForm.phone.trim() || null,
+        // Nearby Category Authority Stage B: category_id is the selected
+        // catalog identity (the Select's own value); category (legacy
+        // free text) is a compatibility projection kept in lockstep with
+        // it by the Select's onChange, never independently editable, so
+        // it can never drift from category_id.
         category: storedForm.category.trim() || null,
-        // Re-resolved fresh from the current free-text category on every
-        // save (Stage A) -- never carried over from a prior category_id,
-        // so an edited category can never leave category_id stale.
-        category_id: resolveCategoryId(storedForm.category.trim() || null),
+        category_id: storedForm.category_id || null,
         description: storedForm.notes.trim() || null,
         link: storedForm.website.trim() || null,
         location_code: storedForm.location_code.trim() || null,
@@ -1687,10 +1661,10 @@ function AdminNearbyPageInner() {
         address: eventForm.address.trim() || null,
         phone: eventForm.phone.trim() || null,
         website: eventForm.website.trim() || null,
+        // Nearby Category Authority Stage B -- see saveStoredPlace()'s
+        // identical comment.
         category: eventForm.category.trim() || null,
-        // Re-resolved fresh from the current free-text category on every
-        // save (Stage A) -- see saveStoredPlace()'s identical comment.
-        category_id: resolveCategoryId(eventForm.category.trim() || null),
+        category_id: eventForm.category_id || null,
         notes: eventForm.notes.trim() || null,
         distance_miles: toNullableNumber(eventForm.distance_miles),
         location_code: eventForm.location_code.trim() || null,
@@ -2040,10 +2014,6 @@ function AdminNearbyPageInner() {
                     disabled={!admin || loadingAreas}
                     onChange={(e) => {
                       setSelectedAreaId(e.target.value);
-
-                      setStoredCustomCategory("");
-                      setShowStoredCustomCategory(false);
-
                       setStoredForm(emptyStoredPlaceForm);
                     }}
                   >
@@ -2263,77 +2233,36 @@ function AdminNearbyPageInner() {
                   )}
                 </Field>
 
+                {/* Nearby Category Authority Stage B, Part 1: canonical
+                    catalog selection only -- category_id is the real
+                    value; the free-text custom-category escape hatch is
+                    gone. No category is ever invented from typed text. */}
                 <Field label="Category">
                   {(controlProps) => (
                     <Select
                       {...controlProps}
                       data-stored-field="category"
                       onFocus={() => rememberStoredFieldFocus("category")}
-                      value={showStoredCustomCategory ? "__custom__" : storedForm.category}
+                      value={storedForm.category_id}
                       onChange={(e) => {
-                        const nextValue = e.target.value;
-
-                        if (nextValue === "__custom__") {
-                          setShowStoredCustomCategory(true);
-                          setStoredCustomCategory("");
-                          setStoredForm((prev) => ({ ...prev, category: "" }));
-                          return;
-                        }
-
-                        setShowStoredCustomCategory(false);
-                        setStoredCustomCategory("");
-                        setStoredForm((prev) => ({ ...prev, category: nextValue }));
+                        const nextCategoryId = e.target.value;
+                        setStoredForm((prev) => ({
+                          ...prev,
+                          category_id: nextCategoryId,
+                          category: nextCategoryId ? categoryLabelById.get(nextCategoryId) || "" : "",
+                        }));
                       }}
                       disabled={!admin || savingStoredPlace}
                     >
                       <option value="">Select category</option>
-                      <option value="Restaurant">Restaurant</option>
-                      <option value="Fuel">Fuel</option>
-                      <option value="Grocery">Grocery</option>
-                      <option value="Shopping">Shopping</option>
-                      <option value="Medical">Medical</option>
-                      <option value="Pharmacy">Pharmacy</option>
-                      <option value="RV Service">RV Service</option>
-                      <option value="Attraction">Attraction</option>
-                      <option value="Other">Other</option>
-                      {storedForm.category &&
-                      ![
-                        "Restaurant",
-                        "Fuel",
-                        "Grocery",
-                        "Shopping",
-                        "Medical",
-                        "Pharmacy",
-                        "RV Service",
-                        "Attraction",
-                        "Other",
-                      ].includes(storedForm.category) ? (
-                        <option value={storedForm.category}>{storedForm.category}</option>
-                      ) : null}
-                      <option value="__custom__">+ Add new category...</option>
+                      {placeCategories.map((placeCategory) => (
+                        <option key={placeCategory.id} value={placeCategory.id}>
+                          {placeCategory.label}
+                        </option>
+                      ))}
                     </Select>
                   )}
                 </Field>
-
-                {showStoredCustomCategory ? (
-                  <Field label="New Category">
-                    {(controlProps) => (
-                      <Input
-                        {...controlProps}
-                        data-stored-field="custom-category"
-                        onFocus={() => rememberStoredFieldFocus("custom-category")}
-                        value={storedCustomCategory}
-                        onChange={(e) => {
-                          const nextValue = e.target.value;
-                          setStoredCustomCategory(nextValue);
-                          setStoredForm((prev) => ({ ...prev, category: nextValue.trim() }));
-                        }}
-                        placeholder="Enter new category"
-                        disabled={!admin || savingStoredPlace}
-                      />
-                    )}
-                  </Field>
-                ) : null}
 
                 <Field label="Address">
                   {(controlProps) => (
@@ -2460,9 +2389,6 @@ function AdminNearbyPageInner() {
                   <AppButton
                     onClick={() => {
                       localStorage.removeItem("admin-nearby-draft");
-
-                      setStoredCustomCategory("");
-                      setShowStoredCustomCategory(false);
 
                       setStoredForm({
                         ...emptyStoredPlaceForm,
@@ -2741,15 +2667,31 @@ function AdminNearbyPageInner() {
                 )}
               </Field>
 
+              {/* Nearby Category Authority Stage B, Part 1: canonical
+                  catalog selection, same as the Stored Place form above --
+                  no free-text category input. */}
               <Field label="Category">
                 {(controlProps) => (
-                  <Input
+                  <Select
                     {...controlProps}
-                    value={eventForm.category}
-                    onChange={(e) => setEventForm((prev) => ({ ...prev, category: e.target.value }))}
-                    placeholder="Category"
+                    value={eventForm.category_id}
+                    onChange={(e) => {
+                      const nextCategoryId = e.target.value;
+                      setEventForm((prev) => ({
+                        ...prev,
+                        category_id: nextCategoryId,
+                        category: nextCategoryId ? categoryLabelById.get(nextCategoryId) || "" : "",
+                      }));
+                    }}
                     disabled={!admin || savingEventPlace}
-                  />
+                  >
+                    <option value="">Select category</option>
+                    {placeCategories.map((placeCategory) => (
+                      <option key={placeCategory.id} value={placeCategory.id}>
+                        {placeCategory.label}
+                      </option>
+                    ))}
+                  </Select>
                 )}
               </Field>
 

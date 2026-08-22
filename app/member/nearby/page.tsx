@@ -28,6 +28,16 @@ type Place = {
   phone: string | null;
   website: string | null;
   category: string | null;
+  // Nearby Category Authority Stage B, Part 3: canonical identity from
+  // the governed resolver. category_code is the stable machine identity
+  // all category LOGIC below keys on; category_label is the current
+  // human-facing name (used for display only). Either can be null for a
+  // place with no category assigned -- category_id is a nullable FK
+  // (Stage A) and legacy free-text `category` values that predate this
+  // stage's Admin catalog cutover may not resolve to a category.
+  category_id: string | null;
+  category_code: string | null;
+  category_label: string | null;
   notes: string | null;
   distance_miles: number | null;
   location_code: string | null;
@@ -55,32 +65,62 @@ type EventRow = {
   lng: number | null;
 };
 
-function getNearbyCardColor(category: string | null | undefined) {
-  const normalized = (category || "").trim().toLowerCase();
+// Nearby Category Authority Stage B, Part 4/5: canonical place_categories
+// codes (verified live -- see the Stage B report for exact query
+// evidence), not mutable labels. A future label rename (e.g. "Grocery" ->
+// "Groceries & Convenience") never touches this file, because nothing
+// here compares against a label.
+export const QUICK_PICK_CODES: { code: string; label: string; icon: string }[] = [
+  { code: "fuel", label: "Fuel", icon: "⛽" },
+  { code: "grocery", label: "Groceries", icon: "🛒" },
+  { code: "urgent_care", label: "Urgent Care", icon: "💊" },
+  { code: "pharmacy", label: "Pharmacy", icon: "💉" },
+];
+
+// The "emergency/service" grouping intentionally spans several distinct
+// catalog categories (this is the "concepts that intentionally encompass
+// several categories" case) -- an explicit set of codes, not a single
+// code and not a fuzzy label/substring match. Chosen to preserve the
+// exact real-world intent of the prior substring matchers
+// (["urgent","hospital","medical","pharmacy","fuel","gas","diesel","rv
+// service","service","repair"]): urgent_care/medical/medical_center/
+// hospital cover the "urgent/hospital/medical" intent; fuel covers "fuel/
+// gas/diesel"; rv_service/rv_repair cover "rv service/service/repair".
+// "hospital" and "rv_repair" have zero live usage today (verified) but
+// are kept so a future place created via the canonical Admin picker (Part
+// 1) with either category is correctly included without this list
+// needing to change.
+export const EMERGENCY_CATEGORY_CODES = [
+  "urgent_care",
+  "medical",
+  "medical_center",
+  "hospital",
+  "pharmacy",
+  "fuel",
+  "rv_service",
+  "rv_repair",
+];
+
+// Same live-verified-code discipline as above. Only codes with real live
+// usage get a distinct color (verified: exactly food/restaurant/fuel/
+// grocery/shopping/pharmacy/medical/urgent_care have ever had an exact-
+// match live category value under the pre-Stage-B label-keyed map this
+// replaces) -- "hospital" and "attraction" are kept as the same
+// forward-compatible exception as EMERGENCY_CATEGORY_CODES above.
+export function getNearbyCardColor(categoryCode: string | null | undefined) {
   const colorMap: Record<string, string> = {
     food: "#fef3c7",
     restaurant: "#fef3c7",
-    restaurants: "#fef3c7",
-    dining: "#fef3c7",
     fuel: "#fee2e2",
-    gas: "#fee2e2",
-    diesel: "#fee2e2",
     grocery: "#e0f2fe",
-    groceries: "#e0f2fe",
     shopping: "#ffedd5",
     pharmacy: "#ede9fe",
     medical: "#ffe4e6",
-    "urgent care": "#ffe4e6",
+    urgent_care: "#ffe4e6",
     hospital: "#ffe4e6",
     attraction: "#f5e8ff",
-    attractions: "#f5e8ff",
-    park: "#e0f2fe",
-    parks: "#e0f2fe",
-    service: "#f1f5f9",
-    services: "#f1f5f9",
-    nearby: "#f8fafc",
   };
-  return colorMap[normalized] || "#f8fafc";
+  return (categoryCode && colorMap[categoryCode]) || "#f8fafc";
 }
 
 function formatPhoneNumber(phone: string) {
@@ -314,85 +354,48 @@ function NearbyPageInner() {
     }
   }, []);
 
+  // Nearby Category Authority Stage B, Part 4/5: filter options are keyed
+  // by category_code (stable identity, used for the <select>'s value and
+  // for matchesCategory below) while displaying the current
+  // category_label. A place with no resolved category (category_code
+  // null) is excluded from the filter list -- there is nothing stable to
+  // filter by -- but remains visible under "All" via matchesCategory.
   const categoryOptions = useMemo(() => {
-    const categories = Array.from(
-      new Set(places.map((p) => p.category).filter(Boolean)),
-    ) as string[];
-    const preferredOrder = ["Fuel", "Urgent Care", "Pharmacy", "Groceries"];
-    const ordered = preferredOrder.filter((c) => categories.includes(c));
-    const remaining = categories
-      .filter((c) => !preferredOrder.includes(c))
-      .sort((a, b) => a.localeCompare(b));
-    return ["All", ...ordered, ...remaining];
+    const byCode = new Map<string, string>();
+    for (const place of places) {
+      if (place.category_code && !byCode.has(place.category_code)) {
+        byCode.set(place.category_code, place.category_label || place.category_code);
+      }
+    }
+    const preferredOrderCodes = QUICK_PICK_CODES.map((item) => item.code);
+    const ordered = preferredOrderCodes.filter((code) => byCode.has(code));
+    const remaining = Array.from(byCode.keys())
+      .filter((code) => !preferredOrderCodes.includes(code))
+      .sort((a, b) => (byCode.get(a) || a).localeCompare(byCode.get(b) || b));
+    return [
+      { code: "All", label: "All" },
+      ...[...ordered, ...remaining].map((code) => ({ code, label: byCode.get(code) || code })),
+    ];
   }, [places]);
 
   const closestPlaces = useMemo(() => {
-    function findClosest(matchers: string[]) {
+    function findClosest(code: string) {
       return places
-        .filter((place) => {
-          if (place.distance_miles === null) {
-            return false;
-          }
-
-          const category = (place.category || "").toLowerCase();
-
-          return matchers.some((matcher) =>
-            category.includes(matcher.toLowerCase()),
-          );
-        })
-        .sort((a, b) => {
-          return (a.distance_miles || 0) - (b.distance_miles || 0);
-        })[0];
+        .filter((place) => place.distance_miles !== null && place.category_code === code)
+        .sort((a, b) => (a.distance_miles || 0) - (b.distance_miles || 0))[0];
     }
 
-    return [
-      {
-        label: "Fuel",
-        icon: "⛽",
-        category: "Fuel",
-        place: findClosest(["fuel", "gas", "diesel"]),
-      },
-      {
-        label: "Groceries",
-        icon: "🛒",
-        category: "Groceries",
-        place: findClosest(["grocery", "groceries"]),
-      },
-      {
-        label: "Urgent Care",
-        icon: "💊",
-        category: "Urgent Care",
-        place: findClosest(["urgent", "medical", "hospital"]),
-      },
-      {
-        label: "Pharmacy",
-        icon: "💉",
-        category: "Pharmacy",
-        place: findClosest(["pharmacy"]),
-      },
-    ].filter((item) => item.place);
+    return QUICK_PICK_CODES.map((item) => ({
+      label: item.label,
+      icon: item.icon,
+      category: item.code,
+      place: findClosest(item.code),
+    })).filter((item) => item.place);
   }, [places]);
 
   const emergencyPlaces = useMemo(() => {
-    const emergencyMatchers = [
-      "urgent",
-      "hospital",
-      "medical",
-      "pharmacy",
-      "fuel",
-      "gas",
-      "diesel",
-      "rv service",
-      "service",
-      "repair",
-    ];
-
     return [...places]
-      .filter((place) => {
-        const category = (place.category || "").toLowerCase();
-
-        return emergencyMatchers.some((matcher) => category.includes(matcher));
-      })
+      .filter((place) => place.category_code && EMERGENCY_CATEGORY_CODES.includes(place.category_code))
       .sort((a, b) => {
         const aDistance = a.distance_miles ?? Number.MAX_SAFE_INTEGER;
         const bDistance = b.distance_miles ?? Number.MAX_SAFE_INTEGER;
@@ -404,8 +407,7 @@ function NearbyPageInner() {
   const filteredPlaces = useMemo(() => {
     const filtered = places.filter((place) => {
       const matchesCategory =
-        selectedCategory === "All" ||
-        (place.category || "") === selectedCategory;
+        selectedCategory === "All" || place.category_code === selectedCategory;
 
       const matchesSearch =
         !search.trim() ||
@@ -413,7 +415,7 @@ function NearbyPageInner() {
         String(place.address || "")
           .toLowerCase()
           .includes(search.trim().toLowerCase()) ||
-        String(place.category || "")
+        String(place.category_label || place.category || "")
           .toLowerCase()
           .includes(search.trim().toLowerCase());
 
@@ -462,10 +464,10 @@ function NearbyPageInner() {
           id: place.id,
           coordinate: { latitude: place.lat, longitude: place.lng },
           title: place.name,
-          category: place.category,
+          category: place.category_label || place.category,
           subtitle:
             [
-              place.category,
+              place.category_label || place.category,
               place.distance_miles !== null ? `${place.distance_miles} mi` : null,
             ]
               .filter(Boolean)
@@ -507,9 +509,9 @@ function NearbyPageInner() {
     });
   }
 
-  function selectQuickFind(category: string) {
-    setQuickFind(category);
-    setSelectedCategory(category);
+  function selectQuickFind(categoryCode: string) {
+    setQuickFind(categoryCode);
+    setSelectedCategory(categoryCode);
   }
 
   function selectViewMode(nextViewMode: "list" | "map") {
@@ -643,9 +645,9 @@ function NearbyPageInner() {
                 setQuickFind("");
               }}
             >
-              {categoryOptions.map((category) => (
-                <option key={category} value={category}>
-                  {category}
+              {categoryOptions.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.label}
                 </option>
               ))}
             </select>
@@ -836,9 +838,9 @@ function NearbyPageInner() {
                             <span aria-hidden="true"> &rsaquo;</span>
                           </div>
 
-                          {place.category ? (
+                          {place.category_label || place.category ? (
                             <div className="nearby-emergency-place-category">
-                              {place.category}
+                              {place.category_label || place.category}
                             </div>
                           ) : null}
                         </div>
@@ -889,7 +891,7 @@ function NearbyPageInner() {
             {filteredPlaces.map((place) => (
               <div
                 key={place.id}
-                data-category={place.category || "Other"}
+                data-category={place.category_label || place.category || "Other"}
                 className="nearby-place-card"
               >
                 <div
@@ -897,7 +899,7 @@ function NearbyPageInner() {
                   style={
                     {
                       "--nearby-topbar": sanitizeCardColor(
-                        getNearbyCardColor(place.category),
+                        getNearbyCardColor(place.category_code),
                       ),
                     } as React.CSSProperties
                   }
@@ -950,14 +952,14 @@ function NearbyPageInner() {
                       }}
                     >
                       {/* Category • X mi */}
-                      {(place.category || place.distance_miles !== null) && (
+                      {(place.category_label || place.category || place.distance_miles !== null) && (
                         <div style={{ color: "#666" }}>
-                          {place.category && (
+                          {(place.category_label || place.category) && (
                             <span className="nearby-place-category">
-                              {place.category}
+                              {place.category_label || place.category}
                             </span>
                           )}
-                          {place.category && place.distance_miles !== null && (
+                          {(place.category_label || place.category) && place.distance_miles !== null && (
                             <span
                               aria-hidden="true"
                               style={{ margin: "0 4px" }}
@@ -1121,7 +1123,7 @@ function NearbyPageInner() {
         subtitle={
           panelPlace
             ? [
-                panelPlace.category,
+                panelPlace.category_label || panelPlace.category,
                 panelPlace.distance_miles !== null
                   ? `${panelPlace.distance_miles} mi away`
                   : null,
