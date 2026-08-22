@@ -40,7 +40,7 @@ type PrintSettingsRow = {
   coach_plate_bg_url: string | null;
 };
 
-type AttendeeRow = {
+export type AttendeeRow = {
   id: string;
   event_id: string;
   entry_id: string | null;
@@ -220,7 +220,14 @@ function sameLastName(row: AttendeeRow) {
   );
 }
 
-function buildCoachPlateNameLines(row: AttendeeRow) {
+// Coach-plate name-line formatting. A shared-last-name couple keeps the
+// existing "Pilot & Copilot" / "LastName" structure (line2 rendered in
+// the smaller, subordinate style) exactly as before. A couple with
+// different last names -- or any other case not eligible for the shared
+// format -- gets one full-name line per person instead; `sameSurname`
+// tells the caller which style line2 should render with, since only the
+// shared-last-name case may use the smaller/subordinate treatment.
+export function buildCoachPlateNameLines(row: AttendeeRow) {
   const pilotFirst = toTitleCase(row.nickname || row.pilot_first || "");
   const pilotLast = toTitleCase(row.pilot_last || "");
 
@@ -233,6 +240,7 @@ function buildCoachPlateNameLines(row: AttendeeRow) {
     return {
       line1: `${pilotFirst} & ${copilotFirst}`,
       line2: pilotLast || copilotLast,
+      sameSurname: true,
     };
   }
 
@@ -241,12 +249,14 @@ function buildCoachPlateNameLines(row: AttendeeRow) {
       line1:
         [pilotFirst, pilotLast].filter(Boolean).join(" ").trim() || "Guest",
       line2: [copilotFirst, copilotLast].filter(Boolean).join(" ").trim(),
+      sameSurname: false,
     };
   }
 
   return {
     line1: "Guest",
     line2: "",
+    sameSurname: false,
   };
 }
 
@@ -1975,12 +1985,30 @@ top: 0 !important;
                       </div>
 
                       <div
-                        style={{
-                          fontSize: 64,
-                          fontWeight: 700,
-                          lineHeight: 1.05,
-                          color: coachPlateTextColor,
-                        }}
+                        style={
+                          !nameLines.sameSurname && nameLines.line2
+                            ? {
+                                // Different last names: this line is a
+                                // second person's full name, not a
+                                // shared surname -- it gets the same
+                                // large/bold treatment as line1, never
+                                // the smaller subordinate style. A blank
+                                // line2 (no second person at all) keeps
+                                // the original smaller style below --
+                                // there is no name to give equal
+                                // visual weight to.
+                                fontSize: 100,
+                                fontWeight: 900,
+                                lineHeight: 0.95,
+                                color: coachPlateTextColor,
+                              }
+                            : {
+                                fontSize: 64,
+                                fontWeight: 700,
+                                lineHeight: 1.05,
+                                color: coachPlateTextColor,
+                              }
+                        }
                       >
                         {nameLines.line2 || " "}
                       </div>

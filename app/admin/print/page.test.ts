@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { printStatusTone } from "@/app/admin/print/page";
+import {
+  type AttendeeRow,
+  buildCoachPlateNameLines,
+  printStatusTone,
+} from "@/app/admin/print/page";
 
 const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
 const source = readFileSync(sourcePath, "utf8");
@@ -259,4 +263,120 @@ test("printStatusTone classifies confirmation/loading/failure text correctly", (
   assert.equal(printStatusTone("Access denied."), "danger");
   assert.equal(printStatusTone("No admin working event selected."), "danger");
   assert.equal(printStatusTone("Failed to load print center."), "danger");
+});
+
+// Coach-plate name formatting correction. Same-last-name couples keep
+// the existing "Pilot & Copilot" / "LastName" structure exactly; a
+// couple with different last names now gets one full-name line per
+// person, and the render side (asserted via source-text below, since
+// this is the presentational half no exported function covers) gives
+// that second line the same large/bold treatment as the first --
+// never the smaller shared-surname style. Run with:
+//   npx tsx --test app/admin/print/page.test.ts
+
+function makeAttendeeRow(overrides: Partial<AttendeeRow>): AttendeeRow {
+  return {
+    id: "row-1",
+    event_id: "event-1",
+    entry_id: null,
+    email: null,
+    pilot_first: null,
+    pilot_last: null,
+    copilot_first: null,
+    copilot_last: null,
+    nickname: null,
+    copilot_nickname: null,
+    membership_number: null,
+    city: null,
+    state: null,
+    has_arrived: null,
+    is_first_timer: null,
+    coach_manufacturer: null,
+    coach_model: null,
+    coach_length: null,
+    is_active: true,
+    registration_status: "registered",
+    ...overrides,
+  };
+}
+
+test("same-last-name couple retains the existing First & First / shared-surname structure", () => {
+  const lines = buildCoachPlateNameLines(
+    makeAttendeeRow({
+      pilot_first: "Steve",
+      pilot_last: "Bertling",
+      copilot_first: "Jan",
+      copilot_last: "Bertling",
+    }),
+  );
+  assert.equal(lines.line1, "Steve & Jan");
+  assert.equal(lines.line2, "Bertling");
+  assert.equal(lines.sameSurname, true);
+});
+
+test("different-last-name couple renders two full-name lines", () => {
+  const lines = buildCoachPlateNameLines(
+    makeAttendeeRow({
+      pilot_first: "Gina",
+      pilot_last: "Britton",
+      copilot_first: "Karen",
+      copilot_last: "Kosakowski",
+    }),
+  );
+  assert.equal(lines.line1, "Gina Britton");
+  assert.equal(lines.line2, "Karen Kosakowski");
+  assert.equal(lines.sameSurname, false);
+});
+
+test("different-last-name second line is not rendered using the smaller shared-surname treatment", () => {
+  // buildCoachPlateNameLines only decides content + the sameSurname
+  // flag; the actual style split lives in the render JSX. Assert the
+  // render picks the same large/bold style as line1 whenever
+  // sameSurname is false and line2 has real content.
+  assert.match(
+    source,
+    /!nameLines\.sameSurname && nameLines\.line2\s*\n\s*\? \{\s*\n(?:[^{}]*\n)*?\s*fontSize: 100,\s*\n\s*fontWeight: 900,/,
+  );
+});
+
+test("capitalization/whitespace differences in equivalent surnames still use the same-last-name format", () => {
+  const lines = buildCoachPlateNameLines(
+    makeAttendeeRow({
+      pilot_first: "Steve",
+      pilot_last: "  BERTLING ",
+      copilot_first: "Jan",
+      copilot_last: "bertling",
+    }),
+  );
+  assert.equal(lines.sameSurname, true);
+  assert.equal(lines.line1, "Steve & Jan");
+  assert.equal(lines.line2, "Bertling");
+});
+
+test("missing second-person data preserves current supported behavior -- no invented name, no blank second line", () => {
+  const soloLines = buildCoachPlateNameLines(
+    makeAttendeeRow({ pilot_first: "Steve", pilot_last: "Bertling" }),
+  );
+  assert.equal(soloLines.line1, "Steve Bertling");
+  assert.equal(soloLines.line2, "");
+  assert.equal(soloLines.sameSurname, false);
+
+  const guestLines = buildCoachPlateNameLines(makeAttendeeRow({}));
+  assert.equal(guestLines.line1, "Guest");
+  assert.equal(guestLines.line2, "");
+  assert.equal(guestLines.sameSurname, false);
+});
+
+test("no Site # is introduced into coach-plate output", () => {
+  const coachPlateSectionStart = source.indexOf('className="coach-plate-sheet"');
+  const coachPlateSectionEnd = source.indexOf(
+    "export default function AdminPrintPage",
+  );
+  assert.notEqual(coachPlateSectionStart, -1);
+  assert.notEqual(coachPlateSectionEnd, -1);
+  const coachPlateSection = source.slice(
+    coachPlateSectionStart,
+    coachPlateSectionEnd,
+  );
+  assert.equal(/Site/.test(coachPlateSection), false);
 });
