@@ -6,6 +6,13 @@ type AlertProps = {
   tone?: AlertTone;
   children: ReactNode;
   className?: string;
+  /** Overrides the default decorative dot (e.g. a spinner for a loading
+   * message) -- still rendered `aria-hidden`; `children` remains the sole
+   * carrier of meaning either way. */
+  icon?: ReactNode;
+  /** Optional trailing action (e.g. "Clear filters" on an empty-state
+   * message). Rendered after the text, inside the same alert. */
+  action?: ReactNode;
 };
 
 const TONE_CLASS: Record<AlertTone, string> = {
@@ -18,8 +25,11 @@ const TONE_CLASS: Record<AlertTone, string> = {
 
 /**
  * Standard loading/empty/error/success/informational message treatment
- * (UI Phase 1). One consistent visual and semantic shape for every page
- * that previously rendered its own ad hoc status box.
+ * (UI Phase 1; `icon`/`action` added by the Central UI Standard so
+ * `EmptyState`/`LoadingState` can be thin wrappers around this one
+ * primitive instead of a second, competing container). One consistent
+ * visual and semantic shape for every page that previously rendered its
+ * own ad hoc status box.
  *
  * `danger` renders `role="alert"` (assistive technology interrupts to
  * announce it, appropriate for a failure surfacing after the page has
@@ -28,7 +38,7 @@ const TONE_CLASS: Record<AlertTone, string> = {
  * carried by color alone -- the icon is decorative (`aria-hidden`) and the
  * text content is the sole carrier of what happened.
  */
-export function Alert({ tone = "neutral", children, className }: AlertProps) {
+export function Alert({ tone = "neutral", children, className, icon, action }: AlertProps) {
   const classes = ["app-alert", TONE_CLASS[tone], className]
     .filter(Boolean)
     .join(" ");
@@ -40,8 +50,9 @@ export function Alert({ tone = "neutral", children, className }: AlertProps) {
       role={isDanger ? "alert" : "status"}
       aria-live={isDanger ? undefined : "polite"}
     >
-      <span className="app-alert-icon" aria-hidden="true" />
-      <span>{children}</span>
+      {icon ?? <span className="app-alert-icon" aria-hidden="true" />}
+      <span className="app-alert-message">{children}</span>
+      {action ? <span className="app-alert-action">{action}</span> : null}
     </div>
   );
 }

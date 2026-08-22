@@ -395,80 +395,81 @@ test("Table Row Actions layout (Treatments 1/2/3) is explicitly flagged as still
   assert.match(sectionSource, /which of Treatments 1-3 becomes the canonical table-row action layout/);
 });
 
-test("the Button Depth / Tactile Treatment section exists with a Canonical Flat vs. Modern 3D Candidate side-by-side, and is explicitly not approved", () => {
+test("the Button Tactile Treatment section is now approved/canonical -- no Flat vs. 3D comparison remains, since there is only one treatment", () => {
   const html = renderToStaticMarkup(<AdminUiReferenceContent />);
 
-  assert.ok(html.includes("Button Depth / Tactile Treatment (prototype)"));
-  assert.ok(html.includes("Canonical Flat (System 3)"));
-  assert.ok(html.includes("Modern 3D Candidate"));
-
-  const sectionSource = source.slice(source.indexOf('id="depth"'), source.indexOf("function depthClassName("));
-  assert.match(sectionSource, /Not approved -- this is\s*\n?\s*exploration, not a decision\./);
+  assert.ok(html.includes("Button Tactile Treatment (✅ approved -- canonical)"));
+  assert.equal(html.includes("Canonical Flat (System 3)"), false);
+  assert.equal(html.includes("Modern 3D Candidate"), false);
+  assert.equal(/Not approved -- this is/.test(html), false);
 });
 
-test("only the 3D column applies the reference-only depth classes -- the flat column renders the real variant classes with no ui-ref-3d modifier", () => {
+test("every button in Section 16 renders with its real, unmodified variant class only -- no reference-only ui-ref-3d modifier exists anywhere on this page", () => {
   const html = renderToStaticMarkup(<AdminUiReferenceContent />);
   const depthSection = html.slice(html.indexOf('id="depth"'), html.length);
-  const flatStart = depthSection.indexOf("Canonical Flat (System 3)");
-  const threeDStart = depthSection.indexOf("Modern 3D Candidate");
-  const flatHtml = depthSection.slice(flatStart, threeDStart);
-  const threeDHtml = depthSection.slice(threeDStart, depthSection.indexOf("Try it: flip one repeated action group"));
 
-  assert.equal(/ui-ref-3d/.test(flatHtml), false);
-  assert.match(flatHtml, /class="app-button app-button-primary"/);
-
-  assert.match(threeDHtml, /class="app-button app-button-primary ui-ref-3d ui-ref-3d-primary"/);
-  assert.match(threeDHtml, /class="app-button ui-ref-3d ui-ref-3d-ordinary"/);
-  assert.match(threeDHtml, /class="app-button app-button-danger ui-ref-3d ui-ref-3d-danger"/);
+  assert.equal(/ui-ref-3d/.test(html), false);
+  assert.match(depthSection, /class="app-button app-button-primary"/);
+  assert.match(depthSection, /class="app-button"/);
+  assert.match(depthSection, /class="app-button app-button-danger"/);
+  assert.match(depthSection, /class="app-button app-button-stop"/);
 });
 
-test("navigation/handoff (View in Parking) never receives a depth class, in either treatment -- it stays a link, not a tactile button", () => {
+test("navigation/handoff (View in Parking) renders as a plain a.app-button link, no tactile class", () => {
   const html = renderToStaticMarkup(<AdminUiReferenceContent />);
-  const depthSection = html.slice(
-    html.indexOf('id="depth"'),
-    html.indexOf("Try it: flip one repeated action group"),
-  );
+  const depthSection = html.slice(html.indexOf('id="depth"'), html.length);
 
-  const navLinkMatches = [...depthSection.matchAll(/<a class="([^"]*)" href="#tables">View in Parking/g)];
-  assert.ok(navLinkMatches.length >= 2, "expected View in Parking to appear in both the flat and 3D columns");
-  for (const match of navLinkMatches) {
-    assert.equal(match[1], "app-button");
-  }
+  const navLinkMatch = depthSection.match(/<a class="([^"]*)" href="#tables">View in Parking/);
+  assert.ok(navLinkMatch, "expected View in Parking to render");
+  assert.equal(navLinkMatch![1], "app-button");
 });
 
-test("the destructive-confirmation exhibit uses variant=\"stop\" (the solid fill) in both columns, and the flat column wires the real, unmodified ConfirmDialog -- the 3D column only shows a static equivalent", () => {
-  const sectionSource = source.slice(source.indexOf('id="depth"'), source.indexOf("function depthClassName("));
+test("the destructive-confirmation exhibit uses variant=\"stop\" (the solid fill) and wires exactly one real, unmodified ConfirmDialog", () => {
+  const sectionSource = source.slice(source.indexOf('id="depth"'), source.indexOf("17. DIALOG"));
 
-  assert.match(sectionSource, /<DepthStopExample depth="flat" \/>/);
-  assert.match(sectionSource, /<DepthStopExample depth="3d" \/>/);
-  assert.match(sectionSource, /ConfirmDialog itself is untouched; this is what its/);
+  assert.match(sectionSource, /<DepthStopExample \/>/);
 
   const confirmDialogUses = (sectionSource.match(/<ConfirmDialog\s/g) || []).length;
-  assert.equal(confirmDialogUses, 1, "expected exactly one real ConfirmDialog instance in Section 16 (the flat column's)");
+  assert.equal(confirmDialogUses, 1, "expected exactly one real ConfirmDialog instance in Section 16");
 
   const stopFn = source.slice(source.indexOf("function DepthStopExample("), source.indexOf("function DepthTableRowActions("));
   assert.match(stopFn, /variant="stop"/);
 });
 
-test("the depth prototype CSS gates hover elevation to real pointer devices, uses :active for press feedback on both mouse and touch, respects prefers-reduced-motion, and flattens fully when disabled", () => {
+test("the tactile treatment CSS lives on the real .app-button/.app-button-primary/.app-button-danger/.app-button-stop rules, gates hover elevation to real pointer devices, uses :active for press feedback, and respects prefers-reduced-motion", () => {
   const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
-  const depthBlock = cssSource.slice(
-    cssSource.indexOf("Button Depth / Tactile Treatment prototype"),
-    cssSource.length,
-  );
 
-  assert.match(depthBlock, /@media \(hover: hover\) and \(pointer: fine\) \{/);
-  assert.match(depthBlock, /:active:not\(:disabled\)/);
-  assert.match(depthBlock, /@media \(prefers-reduced-motion: reduce\) \{/);
-  assert.match(depthBlock, /\.app-button-primary\.ui-ref-3d-primary:disabled,/);
-  assert.match(depthBlock, /box-shadow: none;\s*\n\s*transform: none;/);
+  // No reference-only prototype class survives as an actual CSS selector
+  // (a passing historical mention in a comment is fine and expected).
+  const cssWithoutComments = cssSource.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.equal(/\.ui-ref-3d[-\w]*\s*[.{,]/.test(cssWithoutComments), false);
+
+  const hoverGates = (cssSource.match(/@media \(hover: hover\) and \(pointer: fine\) \{/g) || []).length;
+  assert.ok(hoverGates >= 4, "expected a pointer-gated hover rule for ordinary/primary/danger/stop");
+
+  assert.match(cssSource, /button\.app-button:active:not\(:disabled\) \{/);
+  assert.match(cssSource, /button\.app-button-primary:active:not\(:disabled\) \{/);
+  assert.match(cssSource, /button\.app-button-danger:active:not\(:disabled\) \{/);
+  assert.match(cssSource, /button\.app-button-stop:active:not\(:disabled\) \{/);
+
+  assert.match(cssSource, /@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.app-button \{\s*\n\s*transition: none;/);
+
   // Colored tints reuse the exact rgba() values already used elsewhere in
   // this file (.app-button-primary/.app-button-stop), not new colors.
-  assert.match(depthBlock, /rgba\(59, 130, 246,/);
-  assert.match(depthBlock, /rgba\(220, 38, 38,/);
+  assert.match(cssSource, /rgba\(59, 130, 246,/);
+  assert.match(cssSource, /rgba\(220, 38, 38,/);
 });
 
-test("components/ui/AppButton.tsx and components/ui/ConfirmDialog.tsx contain no reference-only classes -- the canonical shared primitives are untouched by this prototype", () => {
+test("disabled always wins over the tactile treatment -- the existing .app-button:disabled rule (box-shadow: none) is more specific than any single-class variant rule, so no separate disabled override was needed", () => {
+  const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
+  const disabledBlock = cssSource.slice(
+    cssSource.indexOf(".app-button:disabled,"),
+    cssSource.indexOf(".app-button-primary,"),
+  );
+  assert.match(disabledBlock, /box-shadow: none;/);
+});
+
+test("components/ui/AppButton.tsx and components/ui/ConfirmDialog.tsx contain no reference-only classes -- the tactile treatment lives entirely in app/globals.css's own selectors, not a component change", () => {
   const appButtonSource = readFileSync(
     fileURLToPath(new URL("../../../components/ui/AppButton.tsx", import.meta.url)),
     "utf8",
@@ -481,9 +482,10 @@ test("components/ui/AppButton.tsx and components/ui/ConfirmDialog.tsx contain no
   assert.equal(/ui-ref-3d|ui-ref-legacy|ui-ref-scale/.test(confirmDialogSource), false);
 });
 
-test("the local Canonical/3D toggle re-renders the real, full sample roster (including Casey) at whichever depth is selected, and is never persisted", () => {
-  const sectionSource = source.slice(source.indexOf('id="depth"'), source.indexOf("function depthClassName("));
-  assert.match(sectionSource, /<DepthTableRowActions depth=\{depthToggle\} records=\{SAMPLE_RECORDS\} \/>/);
+test("Section 16 still demonstrates the real, full sample roster (including Casey) via DataTable row actions, with no depth prop/toggle left over", () => {
+  const sectionSource = source.slice(source.indexOf('id="depth"'), source.indexOf("17. DIALOG"));
+  assert.match(sectionSource, /<DepthTableRowActions records=\{SAMPLE_RECORDS\} \/>/);
+  assert.equal(/depthToggle/.test(source), false);
   assert.equal(/localStorage/.test(sectionSource), false);
 
   const html = renderToStaticMarkup(<AdminUiReferenceContent />);
@@ -605,9 +607,10 @@ test("canonical adoption names Parking and both Locations pages as migrated, and
 // Section 19: Inline Edit -- uses the REAL shared InlineEdit primitive
 // (components/ui/InlineEdit.tsx), not a page-local reimplementation.
 
-test("the Inline Edit section renders as a real heading, explicitly labeled a pending-review prototype", () => {
+test("the Inline Edit section renders as a real heading, labeled approved and production-proven, and names its first production adoption", () => {
   const html = renderToStaticMarkup(<AdminUiReferenceContent />);
-  assert.ok(html.includes("Inline Edit (prototype -- pending review)"));
+  assert.ok(html.includes("Inline Edit (✅ approved -- production-proven)"));
+  assert.ok(html.includes("/admin/nearby-settings"));
 });
 
 test("the Inline Edit section states the use/don't-use guidance and documents every interaction path", () => {
@@ -672,4 +675,49 @@ test("Admin Nearby (app/admin/nearby/page.tsx) has never adopted InlineEdit -- t
   );
   assert.equal(/InlineEdit/.test(nearbySource), false);
   assert.match(nearbySource, /function AdminNearbyPageInner\(\)/);
+});
+
+// Section 11 (updated): Empty/Loading/Error States now uses the real
+// EmptyState/LoadingState primitives, not bare Alert for the first three
+// examples.
+
+test("Section 11 is approved and uses the real EmptyState/LoadingState components -- not a second hand-rolled empty/loading treatment", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  assert.ok(html.includes("Empty, Loading, and Error States (✅ approved)"));
+
+  const section = sectionSource("states");
+  assert.match(section, /<EmptyState message="No records have been submitted for this Event yet\." \/>/);
+  assert.match(section, /<LoadingState message="Loading records\.\.\." \/>/);
+  // Error states remain plain Alert -- no EmptyState/LoadingState misuse
+  // for a failure, which is a different concept.
+  assert.match(section, /<Alert tone="danger">We couldn&rsquo;t load these records\. Please try again\.<\/Alert>/);
+});
+
+test("the EmptyState action example renders a real AppButton and visibly changes the message when clicked (local state, no timer)", () => {
+  const section = sectionSource("states");
+  assert.match(section, /action=\{<AppButton onClick=\{\(\) => setDemoStatesFiltersCleared\(true\)\}>Clear filters<\/AppButton>\}/);
+  assert.equal(/setTimeout/.test(section), false);
+
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  assert.ok(html.includes("Try clearing them."));
+  assert.ok(html.includes("app-alert-action"));
+});
+
+// Section 20: Form Actions -- the canonical name for the existing
+// app-button-row Save/Cancel grouping.
+
+test("the Form Actions section renders as a real heading and demonstrates the real FormActions component wrapping real AppButtons", () => {
+  const html = renderToStaticMarkup(<AdminUiReferenceContent />);
+  assert.ok(html.includes("Form Actions (✅ approved)"));
+
+  const section = sectionSource("form-actions");
+  assert.match(section, /<FormActions>\s*\n\s*<AppButton>Cancel<\/AppButton>\s*\n\s*<AppButton variant="primary">Save<\/AppButton>\s*\n\s*<\/FormActions>/);
+  assert.match(section, /<AppButton variant="danger">Delete Draft<\/AppButton>/);
+
+  assert.match(html, /class="app-button-row"><button[^>]*>Cancel<\/button><button[^>]*app-button-primary[^>]*>Save/);
+});
+
+test("FormActions owns no button-variant logic of its own -- the destructive example still uses variant=\"danger\" (quiet/outlined), not a solid fill, matching System 3", () => {
+  const section = sectionSource("form-actions");
+  assert.equal(/variant="stop"/.test(section), false);
 });

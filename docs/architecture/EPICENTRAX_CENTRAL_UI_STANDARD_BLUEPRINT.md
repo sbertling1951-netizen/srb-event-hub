@@ -1,7 +1,15 @@
 # EpicentraX Central UI/UX Standard — Discovery and Blueprint
 
-**Status:** Proposed — Discovery and Blueprint only
-**Date:** August 20, 2026
+**Status:** Discovery/Blueprint (Parts 1–14) complete and superseded by
+events — Stage 2 (primitives/tokens/reference) and Stage 3 (incremental
+page migration) both authorized and substantially executed since this
+document's original August 20 writing; see Parts 15–20 for the proven-
+pattern record, and Part 19 specifically for the 2026-08-22 pass that
+closed this document's own remaining Part 7/8/14 open items. Parts 1–14
+below are preserved as originally written (the discovery evidence, not a
+live checklist) — read Part 19 first for what is actually current.
+**Date:** August 20, 2026 (Parts 1–14); Parts 15–20 added through
+August 22, 2026
 
 **Scope:** This document inventories EpicentraX's existing shared UI
 infrastructure, records where it is inconsistent or duplicated, and
@@ -865,16 +873,163 @@ production consumer).
 
 ---
 
+## 19. Central UI Standard Completion Pass (2026-08-22)
+
+A dedicated audit-and-close pass, explicitly separate from any page
+migration: re-inventoried every open item this document itself recorded
+(Parts 1–14) plus everything Parts 15–18 had since proven and closing every
+genuine small gap found, and left everything else exactly as it already
+worked. No production page was migrated in this pass; no business logic,
+authority, RPC, RLS, or schema was touched.
+
+**Audited and confirmed already governed (no action needed):** page/
+section/card hierarchy (`card` vs. `app-card-section`, resolved and
+documented on `PageSection.tsx` itself since Stage 2 — Part 14's own
+"decision, not just cleanup" concern is closed); Mid-Size typography/
+spacing tokens (Part 8, approved 2026-08-19); primary/destructive/
+confirm/navigation action semantics (System 3, approved 2026-08-19);
+form controls and validation/error presentation (`Field`/`Input`/
+`Select`/`Textarea`/`Checkbox`/`Radio`, Stage 2); `Dialog`/`ConfirmDialog`
+and destructive confirmation (Stage 2, Part 17); `DataTable`/
+`ResponsiveList`/`RowActions`/`TableToolbar` (Stage 2/3, Parts 15–16,
+including the `SearchField` default-`id` fix Part 5/14 flagged);
+`StatusBadge`/`Alert` tone vocabularies; touch-target/keyboard/focus
+accessibility (`--touch-target-min`, `Dialog`'s focus trap, `InlineEdit`'s
+own contract); responsive behavior desktop→tablet→phone (the available-
+space-driven pattern, Part 15); map markers (Part 17).
+
+**New shared primitives added (genuine gaps, confirmed against Part 7's
+own floor before building anything):**
+
+- **`FormActions`** (`components/ui/FormActions.tsx`) — the canonical
+  name for the Save/Cancel grouping most forms already hand-write inline
+  as `<div className="app-button-row">`. A one-line wrapper around that
+  same existing layout class, not a new layout system — it owns no
+  button logic; callers still choose which `AppButton` variants belong
+  in it.
+- **`EmptyState`/`LoadingState`** (`components/ui/EmptyState.tsx`,
+  `LoadingState.tsx`) — replacing the ~20 hand-written empty-state
+  paragraphs and ~40 hand-written `"Loading X..."` strings Part 1 found.
+  Built differently than Part 7 originally proposed: rather than two new
+  standalone containers, `Alert` (UI Phase 1) already owned exactly this
+  "loading/empty/error" territory by its own doc comment and was already
+  being used directly for it on the reference page — so `Alert` gained
+  two small, additive, optional props (`icon` to override its default
+  dot, `action` for a trailing recovery button) and `EmptyState`/
+  `LoadingState` are thin wrappers over it, not a second competing
+  status container. `LoadingState` reuses `AppButton`'s own spinner
+  (`.app-button-spinner`), not a second spinner. Error states remain
+  plain `Alert tone="danger"` — an error is a different concept from
+  empty/loading, so it gets no dedicated wrapper.
+
+**Refined into the central standard (Part 4's "not glossy, cartoonish,
+or strongly beveled" bar, evaluated and met):**
+
+- **Button Tactile Treatment** (formerly Section 16's own prototype,
+  explicitly "not approved — exploration, not a decision") is now
+  canonical, promoted directly into `.app-button`/`.app-button-primary`/
+  `.app-button-danger`/`.app-button-stop` in `app/globals.css` — every
+  button in the app already has it; there is no longer a separate opt-in
+  class or a "flat vs. 3D" comparison to render, so Section 16's own
+  structure collapsed from a two-column comparison into one canonical
+  demonstration. Deliberately conservative in scope: only the
+  interaction states (hover elevation, gated to `hover: hover` and
+  `pointer: fine` so touch never gets a "stuck hover"; `:active` press
+  depression, working identically for mouse and touch) gained depth.
+  Primary and Stop's resting appearance gained a single restrained inset
+  highlight line (both already carried a resting shadow before this
+  pass — a small refinement of an already-elevated surface, not a new
+  one). Ordinary/tertiary and Destructive-initiation's resting
+  appearance is **unchanged** — still fully flat/ghost until interacted
+  with, deliberately not extended to match the prototype's own resting-
+  state ordinary treatment, so the just-approved (2026-08-19) System 3
+  "quiet until interacted with" default look is not quietly redefined
+  for all 77 files using `.app-button`. `secondary`/`success`/`warning`/
+  `start` were not extended with this treatment — only the four variants
+  the original prototype actually built and demonstrated were promoted;
+  extending further would be a new, unreviewed design decision, not a
+  promotion of an existing one. Disabled always wins (the existing
+  `.app-button:disabled` rule's higher specificity already suppresses
+  any variant's box-shadow with no new rule needed) and motion respects
+  `prefers-reduced-motion`.
+
+**Documentation-only decisions closed, no code migrated:**
+
+- **Third heading tier** (Part 3/8/14, explicitly "genuinely
+  unresolved"): retired, not promoted. Repository-wide search found no
+  real page using the 13px/700 "subsection" style outside the one
+  historical reference-page mention — the two tiers that already exist
+  (Section Title, Label) are sufficient; a future page that needs a
+  heading between them should use one of those two, not invent a third
+  value.
+- **Category/type badge** (Part 2/4, the reference page's own "five
+  hardcoded hex pairs" sample): confirmed still correctly deliberate,
+  not an oversight — `StatusBadge`'s 5-tone vocabulary was already
+  intentionally scoped to lifecycle status, not arbitrary-cardinality
+  category/type labels, in UI Phase 4. A genuine second categorical data
+  source has appeared since (Nearby's `place_categories` catalog, 35
+  real categories, Nearby Category Authority Stages A–D) but it does not
+  render as a colored pill/badge anywhere — plain text, a `Select`
+  option, and a page-specific card color, never a badge — so the "wait
+  for a real second badge-shaped consumer" bar this document's own Part
+  2 set has still not been met. Guidance recorded for whoever needs one
+  next: `StatusBadge tone="neutral"` (text-only, no per-value color),
+  never a new hardcoded hex-per-category system.
+- **Affirmative/destructive single system** (Part 4/8/14): the tinted-
+  pill system was already the de facto majority pattern; this pass adds
+  the one thing still missing — an explicit scope boundary on `"stop"`
+  itself (`components/ui/AppButton.tsx`'s own doc comment): reserved
+  exclusively for a Dialog/ConfirmDialog Confirm step, never a general
+  "stop/end this" action button. `app/admin/slideshow/page.tsx`'s
+  `variant="start"`/`variant="stop"` sites (7 total) are the one
+  remaining production consumer of the solid pair for a non-destructive-
+  confirmation meaning — a known, explicitly out-of-scope-for-this-pass
+  migration debt, not touched here (see Part 20 below).
+
+**Explicitly left open, with reasons (not gaps this pass could close
+safely):**
+
+- **"Pinned" vs. "selected" row state** (Part 2): `DataTable`/
+  `ResponsiveList` remain deliberately thin and own neither concept —
+  whatever inconsistency exists lives in page-local `<tr>`/row styling
+  this pass did not exhaustively survey across every consumer. Closing
+  it would risk exactly the "globally restyle working pages" this pass
+  was instructed not to do without first identifying every real
+  consumer's current behavior.
+- **Table Row Actions layout** (Part 15, Section 15 Part B): still three
+  undecided treatments on the reference page: no new evidence this pass
+  found changes that.
+- **"Add/create" pattern, "approve/reject" semantic** (Part 4): still no
+  single documented pattern; both remain `EPICENTRAX_ADMIN_UI_INVENTORY_AUDIT.md`-adjacent
+  navigation/ownership questions, not component-system gaps this
+  document's own Part 2 scope covers.
+
+## 20. Known Legacy Debt for a Future Page Migration
+
+Recorded here, not touched by this pass, per its own "no page migration"
+boundary:
+
+- `app/admin/slideshow/page.tsx`'s `variant="start"`/`variant="stop"`
+  (Part 19 above) should migrate to `variant="primary"` (or a real
+  `ConfirmDialog` for the one destructive "Stop" action, if stopping a
+  running slideshow genuinely warrants confirmation) the next time that
+  page is otherwise touched.
+
+---
+
 ## Scope Boundary
 
-This document is discovery and blueprint only. It authorizes no code
-change, migrates no page, builds no component, and edits no CSS rule. It
-does not decide the `card`/`section` merge, the affirmative/destructive
-system choice, or the third-heading-tier question — each requires its
-own separately authorized Stage 2 decision, consistent with how
+Parts 1–14 above are preserved exactly as originally written: the
+document was discovery/blueprint only at that point, authorized no code
+change, and left the `card`/`section` merge, the affirmative/destructive
+system choice, and the third-heading-tier question each as its own
+separately-authorized future decision, consistent with how
 `EPICENTRAX_ADMIN_UI_INVENTORY_AUDIT.md` scoped itself relative to its
-own eventual Stage 2/3. Parts 15–18 above are later, separate additions
-recording verified proven-pattern evidence — they document what the
-checklist, admin-users, Check-In, Shared Map Engine, and Inline Edit
-workstreams actually built or proved, not a revision of this document's
-own original discovery-only scope.
+own eventual Stage 2/3. Parts 15–20 above are later, separate additions
+recording verified proven-pattern evidence and (Part 19 specifically)
+closing those three open questions with real evidence, once separately
+authorized to do so — they document what the checklist, admin-users,
+Check-In, Shared Map Engine, Inline Edit, and Central UI Standard
+Completion workstreams actually built, proved, or decided, not a
+retroactive rewrite of this document's own original discovery-only Parts
+1–14.

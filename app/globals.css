@@ -340,11 +340,47 @@ button.app-button {
   gap: var(--space-2);
   box-shadow: none;
   touch-action: manipulation;
+  /* Tactile Treatment (Central UI Standard, promoted from the
+     /admin/ui-reference Section 16 prototype): every button transitions
+     transform/box-shadow/background so hover elevation and the pressed-
+     state depression below read as a smooth physical response, not a
+     snap. Reduced-motion override immediately follows this rule. */
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-button {
+    transition: none;
+  }
 }
 
 .app-button:hover:not(:disabled) {
   background: var(--color-bg-muted);
   border-color: var(--color-border-default);
+}
+
+/* Ordinary/tertiary hover elevation and pressed-state depression
+   (Central UI Standard, promoted from the Section 16 prototype).
+   `button.app-button` (not the bare `.app-button` class) so an
+   AppLinkButton with no variant -- a real link, not a button, per the
+   comment below -- never receives this tactile treatment; its own
+   a.app-button rules are untouched. Hover elevation is gated to real
+   pointer devices so touch never gets a "stuck hover" shadow; :active
+   (press) works identically for mouse and touch. The resting/ghost
+   appearance is deliberately left unchanged -- only the two interaction
+   states gain depth, not the just-approved System 3 "quiet until
+   interacted with" default look. */
+@media (hover: hover) and (pointer: fine) {
+  button.app-button:hover:not(:disabled) {
+    box-shadow: var(--shadow-medium);
+    transform: translateY(-1px);
+  }
+}
+
+button.app-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+  background: var(--color-bg-muted);
 }
 
 /* Navigation/handoff (View in Parking, View in Check-In, ...): an
@@ -392,6 +428,12 @@ button.app-button:disabled,
   box-shadow: none;
 }
 
+/* Rest-state shadow now includes a single flat inset highlight line
+   (Central UI Standard, promoted from the Section 16 prototype) --
+   Primary is the one surface meant to draw the eye, so it is the most
+   elevated at rest, not just on interaction. Not a gradient sweep or a
+   bevel: one translucent-white 1px inset line plus the same blue-tinted
+   ambient shadow this rule already had. */
 .app-button-primary,
 button.app-button-primary,
 a.app-button-primary {
@@ -399,7 +441,9 @@ a.app-button-primary {
   background: var(--color-action-primary);
   background-image: none;
   color: var(--color-text-on-primary) !important;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 5px rgba(59, 130, 246, 0.3);
   -webkit-text-fill-color: var(--color-text-on-primary) !important;
 }
 
@@ -407,7 +451,21 @@ a.app-button-primary {
 a.app-button-primary:hover {
   background: var(--color-action-primary-hover);
   border-color: var(--color-action-primary-hover);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 5px rgba(59, 130, 246, 0.3);
+}
+
+/* Pointer-only hover lift, layered on top of the color-change hover
+   rule above (element-scoped to `button` so a.app-button-primary, a real
+   link, never lifts). */
+@media (hover: hover) and (pointer: fine) {
+  button.app-button-primary:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      0 4px 10px rgba(59, 130, 246, 0.35);
+    transform: translateY(-1px);
+  }
 }
 
 .app-button-primary:active:not(:disabled),
@@ -415,6 +473,15 @@ button.app-button-primary:active:not(:disabled),
 a.app-button-primary:active {
   background: var(--color-action-primary-active);
   border-color: var(--color-action-primary-active);
+}
+
+/* Pressed-state physical depression: compresses inward (inset shadow,
+   no outer glow) and nudges down 1px -- the deliberate, most-elevated
+   surface visibly "gives" under press, without changing what the button
+   means or where it sits in the action hierarchy. */
+button.app-button-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.25);
 }
 
 .app-button-success,
@@ -445,6 +512,23 @@ a.app-button-danger {
 a.app-button-danger:hover {
   background: var(--color-status-error-bg);
   border-color: var(--color-action-destructive-hover);
+}
+
+/* Destructive initiation stays visually flat at rest -- zero shadow,
+   matching the "restrained/outlined until confirmed" rule above exactly
+   -- and only gains depth once a pointer is asking "what is this"
+   (hover) or committing (press), never before (Central UI Standard,
+   promoted from the Section 16 prototype). */
+@media (hover: hover) and (pointer: fine) {
+  button.app-button-danger:hover:not(:disabled) {
+    box-shadow: 0 2px 6px rgba(220, 38, 38, 0.2);
+    transform: translateY(-1px);
+  }
+}
+
+button.app-button-danger:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(220, 38, 38, 0.18);
 }
 
 
@@ -498,6 +582,12 @@ a.app-button-start:hover {
    belongs (System 3). Used by ConfirmDialog's own Confirm action when
    `danger` is set; not intended for a row/page-level "initiate delete"
    button (that's variant="danger" above, quiet until confirmed). */
+/* Rest-state shadow includes the same single inset highlight line as
+   Primary (Central UI Standard, promoted from the Section 16 prototype)
+   -- this is the one moment a solid destructive fill exists at all
+   (ConfirmDialog's own Confirm step), so its depth should read as "the
+   final, weighty action," the most deliberate press-feedback of any
+   variant. */
 .app-button-stop,
 button.app-button-stop,
 a.app-button-stop {
@@ -506,13 +596,29 @@ a.app-button-stop {
   background-image: none;
   color: var(--color-text-on-primary) !important;
   -webkit-text-fill-color: var(--color-text-on-primary) !important;
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 3px 7px rgba(220, 38, 38, 0.35);
 }
 
 .app-button-stop:hover:not(:disabled),
 a.app-button-stop:hover {
   background: #b91c1c;
   border-color: #b91c1c;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.app-button-stop:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      0 5px 12px rgba(220, 38, 38, 0.4);
+    transform: translateY(-1px);
+  }
+}
+
+button.app-button-stop:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.3);
 }
 
 .app-button-row {
@@ -992,6 +1098,7 @@ textarea.app-control,
    omitting a tone class leaves the neutral base style. */
 .app-alert {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
@@ -1012,6 +1119,27 @@ textarea.app-control,
   margin-top: 6px;
   border-radius: 50%;
   background: currentColor;
+}
+
+/* A caller-supplied icon override (Central UI Standard -- LoadingState's
+   spinner is the first real consumer) sits in the same slot as the
+   default dot above; nudged down to sit against the message's first
+   line the same way the dot's own margin-top does. */
+.app-alert > .app-button-spinner {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.app-alert-message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* EmptyState's optional recovery action (e.g. "Clear filters") -- wraps
+   onto its own line at narrow widths rather than forcing the alert to
+   overflow. */
+.app-alert-action {
+  flex-shrink: 0;
 }
 
 .app-alert-info {
@@ -3686,10 +3814,11 @@ body.slideshow-view-mode .app-header-card {
   /* Correct, standards-compliant grid-item hygiene -- but real-iPhone
      diagnosis found this grid's own column formula does not reliably
      resolve against true available width when deeply nested (confirmed:
-     rendered width was unchanged with this present), so it is not
-     itself sufficient to prevent the "Button Depth" prototype section's
-     residual overflow. That overflow is contained at .ui-ref-section
-     instead (see its own comment) -- a more reliably-sized ancestor. */
+     rendered width was unchanged with this present, originally diagnosed
+     on the now-promoted-to-canonical Section 16 comparison), so it is not
+     itself sufficient to prevent residual overflow in a deeply-nested
+     consumer. That overflow is contained at .ui-ref-section instead (see
+     its own comment) -- a more reliably-sized ancestor. */
   min-width: 0;
 }
 
@@ -3807,133 +3936,8 @@ a.ui-ref-legacy-danger {
   text-decoration: none !important;
 }
 
-/* ---- Button Depth / Tactile Treatment prototype (reference-only, Section 16) ----
-   A subtle 3D/tactile alternative surface for the SAME approved System 3
-   semantics -- depth/interaction feel only, never a meaning change. Each
-   rule pairs a real AppButton variant class with its own reference-only
-   depth class (e.g. .app-button-primary.ui-ref-3d-primary); .app-button/
-   .app-button-* themselves are never touched, and none of this is used
-   outside /admin/ui-reference. Colored shadow tints reuse the exact
-   rgba() values .app-button-primary/.app-button-stop already use
-   elsewhere in this file, not new colors. Hover elevation is gated to
-   real pointer devices (hover:hover + pointer:fine) so touch never gets
-   a "stuck hover"; :active (press/compress) works identically for mouse
-   and touch. Motion is disabled under prefers-reduced-motion. Navigation/
-   handoff (a.app-button) intentionally receives no depth class anywhere
-   on the reference page -- it is a link, not a button, and stays that
-   way in both the flat and 3D comparison. */
-.ui-ref-3d {
-  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
-  transform: translateY(0);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ui-ref-3d {
-    transition: none;
-  }
-}
-
-/* Ordinary/secondary: still the most subordinate of the four -- a faint
-   neutral surface (the existing --shadow-small/-medium tokens, not a new
-   color) and the smallest lift of any variant, so it keeps receding next
-   to Primary even once both have some depth. */
-.app-button.ui-ref-3d-ordinary {
-  background: var(--color-bg-elevated);
-  border-color: var(--color-border-default);
-  box-shadow: var(--shadow-small);
-}
-
-.app-button.ui-ref-3d-ordinary:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: none;
-  background: var(--color-bg-muted);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .app-button.ui-ref-3d-ordinary:hover:not(:disabled) {
-    box-shadow: var(--shadow-medium);
-    transform: translateY(-1px);
-  }
-}
-
-/* Primary: the most elevated surface -- it is the one action meant to
-   draw the eye. The tint (rgba(59,130,246,...)) is the exact value
-   .app-button-primary's own box-shadow already uses; the inset top
-   highlight is a single flat translucent-white line, not a gradient
-   sweep, kept deliberately minimal. */
-.app-button-primary.ui-ref-3d-primary {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 2px 5px rgba(59, 130, 246, 0.3);
-}
-
-.app-button-primary.ui-ref-3d-primary:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.25);
-  background: var(--color-action-primary-active);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .app-button-primary.ui-ref-3d-primary:hover:not(:disabled) {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.28),
-      0 4px 10px rgba(59, 130, 246, 0.35);
-    transform: translateY(-1px);
-  }
-}
-
-/* Destructive initiation: stays visually flat at rest -- no shadow at
-   all -- matching the approved "restrained/outlined until confirmed"
-   rule exactly. Depth only appears on hover/focus (a real pointer is
-   asking "what is this"), never before. */
-.app-button-danger.ui-ref-3d-danger {
-  box-shadow: none;
-}
-
-.app-button-danger.ui-ref-3d-danger:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: inset 0 1px 2px rgba(220, 38, 38, 0.18);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .app-button-danger.ui-ref-3d-danger:hover:not(:disabled) {
-    box-shadow: 0 2px 6px rgba(220, 38, 38, 0.2);
-    transform: translateY(-1px);
-  }
-}
-
-/* Destructive confirmation (ConfirmDialog's Confirm button only, when
-   danger is set): the most deliberate press-feedback of any variant --
-   this is the one moment a solid destructive fill exists at all, so its
-   depth should read as "this is the final, weighty action." Tint reuses
-   .app-button-stop's own existing rgba(220,38,38,...) shadow value. */
-.app-button-stop.ui-ref-3d-stop {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 3px 7px rgba(220, 38, 38, 0.35);
-}
-
-.app-button-stop.ui-ref-3d-stop:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.3);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .app-button-stop.ui-ref-3d-stop:hover:not(:disabled) {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.24),
-      0 5px 12px rgba(220, 38, 38, 0.4);
-    transform: translateY(-1px);
-  }
-}
-
-/* Disabled always wins over any variant's depth -- higher specificity
-   than the (class + class) box-shadow rules above, not !important, so a
-   disabled 3D button reads as unambiguously flat/non-interactive. */
-.app-button-primary.ui-ref-3d-primary:disabled,
-.app-button.ui-ref-3d-ordinary:disabled,
-.app-button-danger.ui-ref-3d-danger:disabled,
-.app-button-stop.ui-ref-3d-stop:disabled {
-  box-shadow: none;
-  transform: none;
-}
+/* Button Tactile Treatment (Section 16) was promoted from a reference-
+   only .ui-ref-3d-* prototype comparison directly into the canonical
+   .app-button/.app-button-primary/.app-button-danger/.app-button-stop
+   rules above (Central UI Standard) -- see those rules' own comments.
+   There is no longer a separate prototype class set to maintain here. */

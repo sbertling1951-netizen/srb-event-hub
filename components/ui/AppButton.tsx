@@ -19,6 +19,17 @@ import {
  * action buttons should use `"primary"` going forward (color communicates
  * urgency/destructiveness, not decoration) -- these three remain only for
  * existing call sites and are not part of the canonical hierarchy.
+ *
+ * `"stop"` is canonical but narrowly scoped (Central UI Standard): the
+ * one solid destructive fill, reserved exclusively for a Dialog/
+ * ConfirmDialog Confirm step when `danger` is set -- never a general
+ * "stop/end this" action button (e.g. ending a running process), which
+ * should use `"secondary"`/`"tertiary"` like any other ordinary action.
+ * `app/admin/slideshow/page.tsx`'s own `variant="stop"` predates this
+ * scoping and both it and its paired `variant="start"` sites are known,
+ * unmigrated legacy consumers -- tracked for a future page migration,
+ * not touched by this pass (see the Central UI Standard blueprint,
+ * "Legacy debt intentionally not touched").
  */
 type ButtonVariant =
   | "default"

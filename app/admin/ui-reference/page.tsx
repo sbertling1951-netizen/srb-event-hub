@@ -18,8 +18,11 @@ import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { Dialog } from "@/components/ui/Dialog";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Radio, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import { InlineEdit } from "@/components/ui/InlineEdit";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { RowActions } from "@/components/ui/RowActions";
@@ -57,15 +60,16 @@ const TOC: Array<{ id: string; label: string }> = [
   { id: "alerts", label: "8. Alerts & Feedback" },
   { id: "containers", label: "9. Cards / Containers / Sections" },
   { id: "actions", label: "10. Action Rows" },
-  { id: "states", label: "11. Empty / Loading / Error States" },
+  { id: "states", label: "11. Empty / Loading / Error States (✅ approved)" },
   { id: "responsive", label: "12. Responsive Review" },
   { id: "device", label: "13. Device & Layout Preferences" },
   { id: "scale", label: "14. Mid-Size UI Scale (✅ approved)" },
   { id: "action-hierarchy", label: "15. Button Hierarchy (✅ approved) & Row Actions (undecided)" },
-  { id: "depth", label: "16. Button Depth / Tactile Treatment (prototype)" },
+  { id: "depth", label: "16. Button Tactile Treatment (✅ approved)" },
   { id: "overlays", label: "17. Dialog & Overlays (✅ approved)" },
   { id: "map-markers", label: "18. Map Marker Standard (✅ approved)" },
-  { id: "inline-edit", label: "19. Inline Edit (prototype -- pending review)" },
+  { id: "inline-edit", label: "19. Inline Edit (✅ approved -- production-proven)" },
+  { id: "form-actions", label: "20. Form Actions (✅ approved)" },
 ];
 
 // ----------------------------------------------------------------------------
@@ -382,6 +386,11 @@ export function AdminUiReferenceContent() {
   const [demoStatus, setDemoStatus] = useState<SampleStatus | "all">("all");
   const [demoShowNotes, setDemoShowNotes] = useState(true);
 
+  // Section 11 demo only: whether the EmptyState action example has been
+  // clicked, so the "Clear filters" button visibly does something real
+  // with plain synchronous state, no timer or extra hook. Not persisted.
+  const [demoStatesFiltersCleared, setDemoStatesFiltersCleared] = useState(false);
+
   // Section 13 demo only: a LOCAL, fake "preferred view" control. No such
   // control exists anywhere in the real app today -- see the section body.
   const [demoPreferredView, setDemoPreferredView] = useState<"automatic" | "table" | "list">("automatic");
@@ -402,13 +411,9 @@ export function AdminUiReferenceContent() {
   // ConfirmDialog, via its own open state separate from Section 3's.
   const [system3ConfirmOpen, setSystem3ConfirmOpen] = useState(false);
 
-  // Section 16 demos only: a second, independent ConfirmDialog trigger
-  // (the real, unmodified component -- illustrates canonical destructive
-  // confirmation next to the 3D candidate's static equivalent), and a
-  // local-only Canonical/3D Candidate toggle for the repeated table-row
-  // action set. Neither is persisted anywhere.
+  // Section 16 demo only: a second, independent ConfirmDialog trigger (the
+  // real, unmodified component), not persisted anywhere.
   const [depthConfirmOpen, setDepthConfirmOpen] = useState(false);
-  const [depthToggle, setDepthToggle] = useState<"flat" | "3d">("flat");
 
   // Section 19 demos only: one local value per InlineEdit example.
   // InlineEdit never persists anything itself -- ordinary useState here is
@@ -701,12 +706,14 @@ export function AdminUiReferenceContent() {
           Mid-Size UI Scale approval, not the <code className="ui-ref-code">--font-weight-bold</code> (800) shown in
           the token row above -- changing that is a real visual decision this stage did not make.
         </p>
-        <Observation>
-          The &ldquo;subsection&rdquo; style and the field-label style are visually almost the same size and weight
-          but are not the same values (13px/700 vs. 14px/600) -- there is no single documented third heading tier
-          between Section Title and Label, and no shared class for either; both are page-local inline styles copied
-          between pages by hand.
-        </Observation>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          <strong>Resolved (Central UI Standard):</strong> the &ldquo;subsection&rdquo; style (13px/700) is retired,
+          not promoted to a third heading tier -- repository-wide search found no real page using it outside this
+          one historical mention; the two tiers that already exist (Section Title via{" "}
+          <code className="ui-ref-code">PageHeader</code>/<code className="ui-ref-code">PageSection</code>, and
+          Label via <code className="ui-ref-code">Field</code>) are sufficient. A page that previously hand-copied
+          the 13px/700 style should use one of those two instead, not a third value.
+        </p>
       </RefSection>
 
       {/* =================================================================
@@ -1378,12 +1385,19 @@ export function AdminUiReferenceContent() {
           <AppButton variant="primary">Email Vendor</AppButton>
         </div>
 
-        <Observation>
-          Status, category, and action are visually distinct today (pill vs. pill vs. button) -- but the category
-          badge is five hardcoded hex pairs with no shared component, no tone vocabulary, and no reuse mechanism.
-          If a second categorical use case ever appears elsewhere, this is the moment to decide whether it deserves
-          a shared primitive of its own.
-        </Observation>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          <strong>Resolved (Central UI Standard):</strong> still no shared category/type badge primitive, and
+          still deliberate, not an oversight -- the sample above remains five hardcoded hex pairs, reference-only,
+          never a real component. A genuine second categorical data source has since appeared (Nearby&rsquo;s{" "}
+          <code className="ui-ref-code">place_categories</code> catalog, 35 real categories), but it does not
+          render as a colored pill/badge anywhere -- plain text in a list, an option in a canonical{" "}
+          <code className="ui-ref-code">Select</code>, and (a page-specific, not central, concern) a per-category
+          card color on Member Nearby. The bar this section&rsquo;s own question set -- a real second
+          <em> badge</em>-shaped consumer -- still has not been met. Guidance for whoever needs one next:
+          arbitrary-cardinality category/type labels should use <code className="ui-ref-code">StatusBadge
+          tone=&quot;neutral&quot;</code> (plain, text-carries-meaning, no per-value color), not a new hardcoded
+          hex-per-category system like this prototype&rsquo;s own.
+        </p>
       </RefSection>
 
       {/* =================================================================
@@ -1502,13 +1516,30 @@ export function AdminUiReferenceContent() {
           ================================================================= */}
       <RefSection
         id="states"
-        title="Empty, Loading, and Error States"
-        description="Controlled examples -- not real backend failures."
+        title="Empty, Loading, and Error States (✅ approved)"
+        description={
+          <>
+            Controlled examples -- not real backend failures. <code className="ui-ref-code">EmptyState</code> and{" "}
+            <code className="ui-ref-code">LoadingState</code> (Central UI Standard) are thin wrappers around the
+            existing <code className="ui-ref-code">Alert</code> primitive -- not a second, competing status
+            container -- replacing the ~20 hand-written empty-state paragraphs and ~40 hand-written
+            &ldquo;Loading X...&rdquo; strings elsewhere in the app. Error states remain plain{" "}
+            <code className="ui-ref-code">Alert tone=&quot;danger&quot;</code> -- an error is not an empty/loading
+            state, so no dedicated component was added for it.
+          </>
+        }
       >
         <div style={{ display: "grid", gap: "var(--space-3)" }}>
-          <Alert tone="neutral">No records have been submitted for this Event yet.</Alert>
-          <Alert tone="neutral">No records match your search or filters. Try clearing them.</Alert>
-          <Alert tone="info">Loading records...</Alert>
+          <EmptyState message="No records have been submitted for this Event yet." />
+          <EmptyState
+            message={
+              demoStatesFiltersCleared
+                ? "Filters cleared -- change them again to see this message return."
+                : "No records match your search or filters. Try clearing them."
+            }
+            action={<AppButton onClick={() => setDemoStatesFiltersCleared(true)}>Clear filters</AppButton>}
+          />
+          <LoadingState message="Loading records..." />
           <Alert tone="danger">We couldn&rsquo;t load these records. Please try again.</Alert>
           <Alert tone="danger">You do not have access to this workspace.</Alert>
         </div>
@@ -2197,64 +2228,46 @@ export function AdminUiReferenceContent() {
       </RefSection>
 
       {/* =================================================================
-          16. BUTTON DEPTH / TACTILE TREATMENT (PROTOTYPE)
+          16. BUTTON TACTILE TREATMENT (✅ APPROVED)
           ================================================================= */}
       <RefSection
         id="depth"
-        title="Button Depth / Tactile Treatment (prototype)"
-        description="A reference-only exploration of a subtle modern 3D/tactile surface for the SAME approved System 3 semantics -- depth and interaction feel only, never a meaning change. Not approved; the canonical .app-button/AppButton/AppLinkButton/ConfirmDialog are untouched."
+        title="Button Tactile Treatment (✅ approved -- canonical)"
+        description="Subtle hover elevation and a pressed-state physical depression, promoted directly into .app-button/.app-button-primary/.app-button-danger/.app-button-stop -- every button in the app already has this; there is no separate opt-in class or a second treatment to compare against. Depth/interaction feel only, never a meaning change -- the approved System 3 action hierarchy below is completely unchanged."
       >
         <Alert tone="info">
-          Question: does modest physical depth make controls easier to recognize as interactive, more satisfying with
-          mouse/trackpad, more tactile on touch, and easier to distinguish from status badges -- without looking
-          dated, glossy, or game-like? Hover elevation only applies on real pointer devices (
-          <code className="ui-ref-code">hover: hover</code> + <code className="ui-ref-code">pointer: fine</code>);
-          press/compress works identically for mouse and touch via <code className="ui-ref-code">:active</code>.
+          Hover (a real pointer device) and press/click any button below to feel it -- a static screenshot cannot
+          show this. Hover elevation only applies on real pointer devices (
+          <code className="ui-ref-code">hover: hover</code> + <code className="ui-ref-code">pointer: fine</code>, so
+          touch never gets a &ldquo;stuck hover&rdquo;); press/compress works identically for mouse and touch via{" "}
+          <code className="ui-ref-code">:active</code>. Motion respects{" "}
+          <code className="ui-ref-code">prefers-reduced-motion</code>. Disabled always wins -- a disabled button
+          never lifts or compresses.
         </Alert>
 
-        <div className="ui-ref-compare-grid">
-          <PageSection variant="section">
-            <PageHeader
-              title="Canonical Flat (System 3)"
-              headingLevel="h3"
-              titleStyle={{ fontSize: "var(--font-size-card-title)" }}
-            />
-            <div style={{ display: "grid", gap: "var(--space-5)" }}>
-              <DepthActionRow depth="flat" onCancelClick={() => setDepthConfirmOpen(true)} />
-              <div>
-                <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
-                  Destructive confirmation (ConfirmDialog&rsquo;s Confirm button)
-                </div>
-                <DepthStopExample depth="flat" />
+        <PageSection variant="section">
+          <PageHeader
+            title="Action hierarchy"
+            headingLevel="h3"
+            titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+          />
+          <div style={{ display: "grid", gap: "var(--space-5)" }}>
+            <DepthActionRow onCancelClick={() => setDepthConfirmOpen(true)} />
+            <div>
+              <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
+                Destructive confirmation (ConfirmDialog&rsquo;s Confirm button) -- the most deliberate press-feedback
+                of any variant, reserved for this one moment
               </div>
-              <DepthTableRowActions depth="flat" records={SAMPLE_RECORDS.slice(0, 2)} />
+              <DepthStopExample />
             </div>
-          </PageSection>
-
-          <PageSection variant="section">
-            <PageHeader
-              title="Modern 3D Candidate"
-              headingLevel="h3"
-              titleStyle={{ fontSize: "var(--font-size-card-title)" }}
-            />
-            <div style={{ display: "grid", gap: "var(--space-5)" }}>
-              <DepthActionRow depth="3d" />
-              <div>
-                <div className="app-subtle-text" style={{ marginBottom: "var(--space-2)" }}>
-                  Destructive confirmation -- static example (ConfirmDialog itself is untouched; this is what its
-                  Confirm button would look like with the depth class added)
-                </div>
-                <DepthStopExample depth="3d" />
-              </div>
-              <DepthTableRowActions depth="3d" records={SAMPLE_RECORDS.slice(0, 2)} />
-            </div>
-          </PageSection>
-        </div>
+            <DepthTableRowActions records={SAMPLE_RECORDS} />
+          </div>
+        </PageSection>
 
         <ConfirmDialog
           open={depthConfirmOpen}
           title="Cancel this registration?"
-          message="Reference-page demo only -- confirming here does not change any real data. This is the real, unmodified ConfirmDialog (canonical flat) -- see the note above about why the 3D column shows a static equivalent instead."
+          message="Reference-page demo only -- confirming here does not change any real data. This is the real, unmodified ConfirmDialog, which already carries this same tactile treatment on its own Confirm/Cancel buttons."
           confirmLabel="Cancel Registration"
           cancelLabel="Keep Registration"
           danger
@@ -2262,45 +2275,13 @@ export function AdminUiReferenceContent() {
           onCancel={() => setDepthConfirmOpen(false)}
         />
 
-        <PageSection variant="section">
-          <PageHeader
-            title="Try it: flip one repeated action group"
-            headingLevel="h3"
-            titleStyle={{ fontSize: "var(--font-size-card-title)" }}
-            description="Local-only toggle, not persisted -- compare the two treatments on the same table without navigating away."
-            descriptionClassName="app-subtle-text"
-          />
-          <fieldset style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: "var(--space-2)" }}>
-            <legend className="table-toolbar-label" style={{ padding: 0 }}>
-              Row actions treatment
-            </legend>
-            {(["flat", "3d"] as const).map((mode) => (
-              <label key={mode} style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
-                <input
-                  type="radio"
-                  name="ref-depth-toggle"
-                  checked={depthToggle === mode}
-                  onChange={() => setDepthToggle(mode)}
-                />
-                {mode === "flat" ? "Canonical Flat (System 3)" : "Modern 3D Candidate"}
-              </label>
-            ))}
-          </fieldset>
-          <div style={{ marginTop: "var(--space-4)" }}>
-            <DepthTableRowActions depth={depthToggle} records={SAMPLE_RECORDS} />
-          </div>
-        </PageSection>
-
-        <Observation>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
           Depth/interaction feel only -- no semantic meaning changed: Primary is still the one solid, most-elevated
-          action; Ordinary is still the quietest of the four (smallest lift, even with a faint surface added);
-          Destructive still shows zero shadow at rest and only gains depth on hover, never before; Destructive
-          confirmation still only ever appears inside ConfirmDialog&rsquo;s Confirm step; Navigation/handoff stays a
-          link in both columns, with no depth class applied at all. Compare for yourself: obviously clickable?
-          polished or dated? does Primary still dominate appropriately? does Destructive still stay restrained until
-          confirmation? does it hold up with several buttons together in RowActions? Not approved -- this is
-          exploration, not a decision.
-        </Observation>
+          action; Ordinary is still the quietest of the four, unchanged at rest -- only its hover/press states gained
+          depth; Destructive still shows zero shadow at rest and only gains depth on hover/press, never before;
+          Destructive confirmation still only ever appears inside ConfirmDialog&rsquo;s Confirm step; Navigation/
+          handoff stays a link, with none of this treatment applied at all.
+        </p>
       </RefSection>
 
       {/* =================================================================
@@ -2558,14 +2539,15 @@ export function AdminUiReferenceContent() {
           ================================================================= */}
       <RefSection
         id="inline-edit"
-        title="Inline Edit (prototype -- pending review)"
+        title="Inline Edit (✅ approved -- production-proven)"
         description={
           <>
             <code className="ui-ref-code">components/ui/InlineEdit.tsx</code> -- the real, shared primitive for
             editing a SIMPLE atomic value in place: tap/click the value, edit it, Enter or the visible Save
-            button commits, Escape or the visible Cancel button discards. Built for visual/behavioral review
-            before any production page adopts it -- Nearby&rsquo;s original &ldquo;Groveries&rdquo; typo, the
-            case that motivated this primitive, is untouched by this workstream.
+            button commits, Escape or the visible Cancel button discards. Visually/behaviorally approved (real
+            iPhone and desktop) and already in production on{" "}
+            <code className="ui-ref-code">/admin/nearby-settings</code> (global category-name rename, Platform/
+            Super Admin only) -- see the Central UI Standard blueprint Part 18 for the full adoption record.
           </>
         }
       >
@@ -2620,6 +2602,54 @@ export function AdminUiReferenceContent() {
 
         <h3 style={{ margin: 0, fontSize: "var(--font-size-body)" }}>5. Disabled / read-only</h3>
         <InlineEdit label="Locked category name" value="Archived Events" onSave={() => {}} disabled />
+      </RefSection>
+
+      {/* =================================================================
+          20. FORM ACTIONS
+          ================================================================= */}
+      <RefSection
+        id="form-actions"
+        title="Form Actions (✅ approved)"
+        description={
+          <>
+            <code className="ui-ref-code">components/ui/FormActions.tsx</code> -- the canonical name for the
+            Save/Cancel (or similar) grouping most forms already hand-write inline as{" "}
+            <code className="ui-ref-code">&lt;div className=&quot;app-button-row&quot;&gt;</code>. Same layout,
+            same class, now with a documented name -- it owns no button logic of its own, so callers still choose
+            which <code className="ui-ref-code">AppButton</code> variants belong here and in what order.
+          </>
+        }
+      >
+        <PageSection variant="section">
+          <PageHeader
+            title="Ordinary form -- Cancel, then Save"
+            headingLevel="h3"
+            titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+          />
+          <FormActions>
+            <AppButton>Cancel</AppButton>
+            <AppButton variant="primary">Save</AppButton>
+          </FormActions>
+        </PageSection>
+
+        <PageSection variant="section">
+          <PageHeader
+            title="A destructive form -- Cancel, then a quiet destructive initiation"
+            headingLevel="h3"
+            titleStyle={{ fontSize: "var(--font-size-card-title)" }}
+            description="The destructive action itself still stays outlined/quiet here (System 3) -- FormActions only groups the row; it never changes what each button means."
+            descriptionClassName="app-subtle-text"
+          />
+          <FormActions>
+            <AppButton>Cancel</AppButton>
+            <AppButton variant="danger">Delete Draft</AppButton>
+          </FormActions>
+        </PageSection>
+
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Wraps at narrow widths (the same <code className="ui-ref-code">.app-button-row</code> flex-wrap every
+          existing consumer already relies on) -- try this section at 320/390px.
+        </p>
       </RefSection>
     </div>
   );
@@ -3129,54 +3159,40 @@ function OperationalHandoffExample() {
 }
 
 // ----------------------------------------------------------------------------
-// Button Depth / Tactile Treatment (Section 16). Every element below is the
-// real AppButton/AppLinkButton/DataTable/RowActions/StatusBadge, extended
-// only through AppButton's own className prop with the reference-only
-// .ui-ref-3d-* classes defined in app/globals.css -- components/ui/* itself
-// is never touched. Navigation/handoff never receives a depth class, at
-// either treatment.
+// Button Tactile Treatment (Section 16). The hover-elevation/pressed-
+// depression this section used to demonstrate as an opt-in `.ui-ref-3d-*`
+// className comparison is now baked directly into .app-button/
+// .app-button-primary/.app-button-danger/.app-button-stop themselves
+// (Central UI Standard) -- every element below is the real, unmodified
+// AppButton/AppLinkButton/DataTable/RowActions/StatusBadge with no
+// reference-only class at all. Navigation/handoff never gains any depth
+// treatment (a.app-button has none of the new rules).
 // ----------------------------------------------------------------------------
 
-function depthClassName(depth: "flat" | "3d", variantClass: string): string | undefined {
-  return depth === "3d" ? `ui-ref-3d ${variantClass}` : undefined;
-}
-
 /** Save (primary) / Edit (ordinary) / Cancel Registration (danger) / Save (disabled) / View in Parking (nav). */
-function DepthActionRow({ depth, onCancelClick }: { depth: "flat" | "3d"; onCancelClick?: () => void }) {
+function DepthActionRow({ onCancelClick }: { onCancelClick?: () => void }) {
   return (
     <div className="app-button-row">
-      <AppButton variant="primary" className={depthClassName(depth, "ui-ref-3d-primary")}>
-        Save
-      </AppButton>
-      <AppButton className={depthClassName(depth, "ui-ref-3d-ordinary")}>Edit</AppButton>
-      <AppButton
-        variant="danger"
-        className={depthClassName(depth, "ui-ref-3d-danger")}
-        onClick={onCancelClick}
-      >
+      <AppButton variant="primary">Save</AppButton>
+      <AppButton>Edit</AppButton>
+      <AppButton variant="danger" onClick={onCancelClick}>
         Cancel Registration
       </AppButton>
-      <AppButton disabled className={depthClassName(depth, "ui-ref-3d-ordinary")}>
-        Save
-      </AppButton>
+      <AppButton disabled>Save</AppButton>
       <AppLinkButton href="#tables">View in Parking →</AppLinkButton>
     </div>
   );
 }
 
 /** The solid destructive-confirmation treatment, standalone (variant="stop"). */
-function DepthStopExample({ depth }: { depth: "flat" | "3d" }) {
-  return (
-    <AppButton variant="stop" className={depthClassName(depth, "ui-ref-3d-stop")}>
-      Cancel Registration
-    </AppButton>
-  );
+function DepthStopExample() {
+  return <AppButton variant="stop">Cancel Registration</AppButton>;
 }
 
-/** A representative table-row action set (Contact/Edit/Cancel) at the given depth treatment. */
-function DepthTableRowActions({ depth, records }: { depth: "flat" | "3d"; records: SampleRecord[] }) {
+/** A representative table-row action set (Contact/Edit/Cancel). */
+function DepthTableRowActions({ records }: { records: SampleRecord[] }) {
   return (
-    <DataTable caption={`Representative row actions (${depth === "3d" ? "3D candidate" : "canonical flat"})`}>
+    <DataTable caption="Representative row actions">
       <thead>
         <tr>
           <th scope="col">Name</th>
@@ -3196,22 +3212,12 @@ function DepthTableRowActions({ depth, records }: { depth: "flat" | "3d"; record
             </td>
             <td>
               <RowActions>
-                <AppButton
-                  variant="primary"
-                  className={depthClassName(depth, "ui-ref-3d-primary")}
-                  aria-label={`Contact ${r.name}`}
-                >
+                <AppButton variant="primary" aria-label={`Contact ${r.name}`}>
                   Contact
                 </AppButton>
-                <AppButton className={depthClassName(depth, "ui-ref-3d-ordinary")} aria-label={`Edit ${r.name}`}>
-                  Edit
-                </AppButton>
+                <AppButton aria-label={`Edit ${r.name}`}>Edit</AppButton>
                 {r.status !== "cancelled" ? (
-                  <AppButton
-                    variant="danger"
-                    className={depthClassName(depth, "ui-ref-3d-danger")}
-                    aria-label={`Cancel ${r.name}'s request`}
-                  >
+                  <AppButton variant="danger" aria-label={`Cancel ${r.name}'s request`}>
                     Cancel
                   </AppButton>
                 ) : null}
