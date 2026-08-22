@@ -258,3 +258,179 @@ test("page reads application history via the governed RPC and renders it compact
   assert.match(PAGE_SOURCE, /read_agenda_template_application_history/);
   assert.match(PAGE_SOURCE, /applicationHistory/);
 });
+
+// -- Central UI Standard migration (UI/workflow-layout only) -------------
+//
+// The tests above lock in Agenda's governance/data behavior and must keep
+// passing byte-for-byte unmodified through this migration. These new tests
+// cover the UI-layer change: canonical primitive adoption, the two-pane
+// responsive workflow layout, and that the specialized calendar
+// drag/resize + button/drag-handle reorder surfaces were left untouched.
+
+test("every canonical Central UI primitive is imported", () => {
+  for (const importPath of [
+    '"@/components/shell/useShellViewport"',
+    '"@/components/ui/Alert"',
+    '"@/components/ui/AppButton"',
+    '"@/components/ui/ConfirmDialog"',
+    '"@/components/ui/Field"',
+    '"@/components/ui/PageHeader"',
+    '"@/components/ui/PageSection"',
+    '"@/components/ui/StatusBadge"',
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(importPath), `expected an import from ${importPath}`);
+  }
+});
+
+test("the page-local isMobile/MOBILE_BREAKPOINT resize-listener state is gone -- replaced by the shared useShellInterfaceCapabilities() hook", () => {
+  assert.equal(/isMobile/.test(PAGE_SOURCE), false);
+  assert.equal(/MOBILE_BREAKPOINT/.test(PAGE_SOURCE), false);
+  assert.equal(/addEventListener\(\s*["']resize["']/.test(PAGE_SOURCE), false);
+  assert.match(
+    PAGE_SOURCE,
+    /const \{ isCompact, viewportClass \} = useShellInterfaceCapabilities\(\);/,
+  );
+});
+
+test("the shell wrapper has a back target to the Dashboard, replacing the hand-rolled 'Return to Dashboard' button", () => {
+  assert.match(PAGE_SOURCE, /AdminShellAdapter/);
+  assert.match(
+    PAGE_SOURCE,
+    /backTarget=\{\{ href: "\/admin\/dashboard", label: "Dashboard" \}\}/,
+  );
+  assert.equal(/Return to Dashboard/.test(PAGE_SOURCE), false);
+  assert.equal(/window\.location\.href = "\/admin\/dashboard"/.test(PAGE_SOURCE), false);
+});
+
+test("no raw form controls remain in the New/Edit Item form -- every input/select/textarea/checkbox there goes through Field/Input/Select/Textarea/Checkbox", () => {
+  const formStart = PAGE_SOURCE.indexOf('title={form.id ? `Editing:');
+  const formEnd = PAGE_SOURCE.indexOf("</PageSection>", formStart);
+  assert.notEqual(formStart, -1);
+  assert.notEqual(formEnd, -1);
+  const formBlock = PAGE_SOURCE.slice(formStart, formEnd);
+
+  assert.equal(/<input\b/.test(formBlock), false);
+  assert.equal(/<select\b/.test(formBlock), false);
+  assert.equal(/<textarea\b/.test(formBlock), false);
+  assert.match(formBlock, /<Checkbox\s+label="Published"/);
+});
+
+test("the printDayFilter utility control is the one documented raw <select> exception, matching the Nearby migration's own toolbar-filter precedent", () => {
+  const rawSelects = PAGE_SOURCE.match(/<select\b/g) || [];
+  assert.equal(rawSelects.length, 1, "expected exactly one raw <select> (the print day filter)");
+  assert.match(PAGE_SOURCE, /aria-label="Filter print by day"/);
+});
+
+test("the two-pane responsive workflow grid only activates at the shell's 'wide' tier -- empirically, 'standard' width (900-1199px, e.g. 1024px) leaves too little real content width for two panes once the shell's own sidebar/padding is accounted for", () => {
+  assert.match(PAGE_SOURCE, /const showTwoColumnAgendaLayout = viewportClass === "wide";/);
+  assert.match(
+    PAGE_SOURCE,
+    /gridTemplateColumns: showTwoColumnAgendaLayout \? "minmax\(300px, 360px\) 1fr" : "1fr"/,
+  );
+});
+
+test("the Catalog & Templates pane reorders after the Event Agenda working pane whenever the single-column layout is active, via CSS order, not a UA/orientation branch", () => {
+  assert.match(PAGE_SOURCE, /order: showTwoColumnAgendaLayout \? 0 : 1/);
+  assert.equal(/navigator\.userAgent/.test(PAGE_SOURCE), false);
+  assert.equal(/orientation/i.test(PAGE_SOURCE), false);
+});
+
+test("the Published/Hidden item pill renders through the shared StatusBadge, not a hand-rolled pill", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<StatusBadge tone=\{item\.is_published \? "success" : "neutral"\}>/,
+  );
+  assert.match(PAGE_SOURCE, /<StatusBadge tone="info">Editing<\/StatusBadge>/);
+});
+
+test("delete-initiating buttons use the danger variant; Save/Update actions use primary", () => {
+  for (const label of ["Delete Selected", "Delete"]) {
+    const idx = PAGE_SOURCE.lastIndexOf(label);
+    assert.notEqual(idx, -1, `expected to find button label "${label}"`);
+    const nearby = PAGE_SOURCE.slice(Math.max(0, idx - 300), idx);
+    assert.match(nearby, /variant="danger"/);
+  }
+  assert.match(TEMPLATE_PANEL_SOURCE, /variant="danger"[\s\S]{0,300}Replace Event Agenda From Template/);
+});
+
+test("deleteItem's existing ConfirmDialog/requestConfirmation() gate is unchanged -- the UI migration did not add or remove a confirmation step", () => {
+  const deleteFnIdx = PAGE_SOURCE.indexOf("async function deleteItem(id: string) {");
+  assert.notEqual(deleteFnIdx, -1);
+  const body = PAGE_SOURCE.slice(deleteFnIdx, deleteFnIdx + 400);
+  assert.match(body, /await requestConfirmation\(\{/);
+  assert.match(body, /danger: true/);
+});
+
+test("the calendar's native HTML5 drag/resize engine is completely untouched -- same handler names, same dataTransfer-based mechanism, per the Central UI blueprint's direct-manipulation carve-out", () => {
+  for (const needle of [
+    "function handleCalendarDragStart(",
+    "function handleCalendarDragOver(",
+    "function handleCalendarColumnDrop(",
+    "function beginCalendarStartResize(",
+    "function beginCalendarEndResize(",
+    "async function resizeAgendaItemStartTime(",
+    "async function resizeAgendaItemEndTime(",
+    "async function moveAgendaItemToCalendarSlot(",
+    "calendarResizeDragRef",
+    "onDragStart={(e) =>\n                                    handleCalendarDragStart(e, item.id)",
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(needle), `expected calendar mechanism "${needle}" to remain untouched`);
+  }
+});
+
+test("the button-reorder (touch) and native drag-handle (desktop) list-reorder mechanisms are both preserved, with explicit accessible names added to the button-reorder controls", () => {
+  for (const needle of [
+    "function moveItemUp(",
+    "function moveItemDown(",
+    "function handleDragStart(",
+    "function handleDrop(",
+    "const useButtonReorder = isCompact && !forceDesktopDrag;",
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(needle), `expected reorder mechanism "${needle}" to remain untouched`);
+  }
+  assert.match(PAGE_SOURCE, /aria-label="Move item up"/);
+  assert.match(PAGE_SOURCE, /aria-label="Move item down"/);
+});
+
+test("every governed Agenda RPC name and the agenda_items/agenda_categories table names are still present verbatim -- zero data-behavior drift from the UI migration", () => {
+  for (const needle of [
+    'from("agenda_items")',
+    'from("agenda_categories")',
+    "get_event_agenda_version",
+    "create_event_agenda_item",
+    "update_event_agenda_item",
+    "delete_event_agenda_item",
+    "reorder_event_agenda_items",
+    "list_available_agenda_templates",
+    "save_event_agenda_as_tenant_template",
+    "apply_agenda_template_to_event",
+    "replace_agenda_from_template",
+    "read_agenda_template_application_history",
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(needle), `expected ${needle} to be retained`);
+  }
+});
+
+test("AgendaTemplatePanel no longer takes an isMobile prop -- it always stacks vertically now that it lives in the page's own narrow Catalog column", () => {
+  assert.equal(/isMobile/.test(TEMPLATE_PANEL_SOURCE), false);
+  assert.equal(/isMobile=\{isMobile\}/.test(PAGE_SOURCE), false);
+  assert.match(TEMPLATE_PANEL_SOURCE, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);
+});
+
+test("AgendaImportPanel and AgendaTemplatePanel both import canonical Field/AppButton primitives -- no hand-rolled inline style objects remain", () => {
+  const IMPORT_PANEL_SOURCE = readFileSync(
+    fileURLToPath(
+      new URL(
+        "../../../components/admin/agenda/AgendaImportPanel.tsx",
+        import.meta.url,
+      ),
+    ),
+    "utf8",
+  );
+
+  for (const source of [TEMPLATE_PANEL_SOURCE, IMPORT_PANEL_SOURCE]) {
+    assert.equal(/const \w+Style = \{/.test(source), false);
+  }
+  assert.match(IMPORT_PANEL_SOURCE, /import \{ Field, Input \} from "@\/components\/ui\/Field";/);
+  assert.match(IMPORT_PANEL_SOURCE, /type="file"/);
+});

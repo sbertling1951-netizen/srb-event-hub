@@ -1,5 +1,9 @@
 "use client";
 
+import { AppButton } from "@/components/ui/AppButton";
+import { Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { PageSection } from "@/components/ui/PageSection";
+
 type ActiveEvent = {
   id: string;
   name: string;
@@ -20,7 +24,6 @@ type AgendaTemplate = {
 };
 
 type Props = {
-  isMobile: boolean;
   activeEvent: ActiveEvent | null;
   itemCount: number;
   templates: AgendaTemplate[];
@@ -38,9 +41,12 @@ type Props = {
   onReplaceFromTemplate: () => Promise<void>;
 };
 
+// Stacked, not side-by-side: this panel now lives inside the Agenda page's
+// narrow "Catalog & Templates" column (see app/admin/agenda/page.tsx), so a
+// two-up layout would leave each half too cramped to use -- the outer page
+// grid is what now provides the wide/narrow responsive split.
 export default function AgendaTemplatePanel(props: Props) {
   const {
-    isMobile,
     activeEvent,
     itemCount,
     templates,
@@ -59,128 +65,93 @@ export default function AgendaTemplatePanel(props: Props) {
   } = props;
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-        gap: 20,
-        marginBottom: 20,
-        alignItems: "start",
-      }}
-    >
-      <div style={panelStyle}>
-        <div>
-          <div style={titleStyle}>Save Agenda Template</div>
-          <div style={helpStyle}>
+    <div style={{ display: "grid", gap: "var(--space-5)" }}>
+      <PageSection title="Save Agenda Template" titleStyle={{ margin: 0 }}>
+        <div style={{ display: "grid", gap: "var(--space-4)" }}>
+          <p className="app-subtle-text" style={{ margin: 0 }}>
             Save this event schedule as a reusable template.
+          </p>
+
+          <Field label="Template Name">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                value={newTemplateName}
+                onChange={(e) => setNewTemplateName(e.target.value)}
+                placeholder="e.g. Spring Rally Standard Agenda"
+                disabled={savingTemplate}
+              />
+            )}
+          </Field>
+
+          <Field label="Description" help="Optional template notes or description.">
+            {(controlProps) => (
+              <Textarea
+                {...controlProps}
+                value={newTemplateDescription}
+                onChange={(e) => setNewTemplateDescription(e.target.value)}
+                placeholder="Optional template notes or description"
+                rows={3}
+                disabled={savingTemplate}
+              />
+            )}
+          </Field>
+
+          <div className="app-button-row">
+            <AppButton
+              variant="primary"
+              onClick={() => void onSaveTemplate()}
+              disabled={savingTemplate || !activeEvent || itemCount === 0}
+            >
+              {savingTemplate ? "Saving Template..." : "Save Current Agenda as Template"}
+            </AppButton>
           </div>
         </div>
+      </PageSection>
 
-        <input
-          value={newTemplateName}
-          onChange={(e) => setNewTemplateName(e.target.value)}
-          placeholder="Template name, e.g. Spring Rally Standard Agenda"
-          style={inputStyle}
-          disabled={savingTemplate}
-        />
-
-        <textarea
-          value={newTemplateDescription}
-          onChange={(e) => setNewTemplateDescription(e.target.value)}
-          placeholder="Optional template notes or description"
-          style={textareaStyle}
-          disabled={savingTemplate}
-        />
-
-        <button
-          type="button"
-          onClick={() => void onSaveTemplate()}
-          disabled={savingTemplate || !activeEvent || itemCount === 0}
-          style={{ width: "fit-content" }}
-        >
-          {savingTemplate
-            ? "Saving Template..."
-            : "Save Current Agenda as Template"}
-        </button>
-      </div>
-
-      <div style={panelStyle}>
-        <div>
-          <div style={titleStyle}>Use Saved Template</div>
-          <div style={helpStyle}>
+      <PageSection title="Use Saved Template" titleStyle={{ margin: 0 }}>
+        <div style={{ display: "grid", gap: "var(--space-4)" }}>
+          <p className="app-subtle-text" style={{ margin: 0 }}>
             Apply an existing reusable agenda template to this event, or
             replace this event&apos;s agenda with one.
+          </p>
+
+          <Field label="Template">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+              >
+                <option value="">Select template</option>
+                {templates.map((template) => (
+                  <option key={template.revision_id} value={template.revision_id}>
+                    {template.source_scope === "platform" ? "Platform: " : "Tenant: "}
+                    {template.title} (rev {template.revision_number})
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+
+          <div className="app-button-row">
+            <AppButton
+              onClick={() => void onApplyTemplate()}
+              disabled={applyingTemplate || replacingFromTemplate}
+            >
+              {applyingTemplate ? "Applying..." : "Apply Template to Event"}
+            </AppButton>
+
+            <AppButton
+              variant="danger"
+              onClick={() => void onReplaceFromTemplate()}
+              disabled={applyingTemplate || replacingFromTemplate}
+            >
+              {replacingFromTemplate ? "Replacing..." : "Replace Event Agenda From Template"}
+            </AppButton>
           </div>
         </div>
-
-        <select
-          value={selectedTemplateId}
-          onChange={(e) => setSelectedTemplateId(e.target.value)}
-          style={inputStyle}
-        >
-          <option value="">Select template</option>
-          {templates.map((template) => (
-            <option key={template.revision_id} value={template.revision_id}>
-              {template.source_scope === "platform" ? "Platform: " : "Tenant: "}
-              {template.title} (rev {template.revision_number})
-            </option>
-          ))}
-        </select>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={() => void onApplyTemplate()}
-            disabled={applyingTemplate || replacingFromTemplate}
-          >
-            {applyingTemplate ? "Applying…" : "Apply Template to Event"}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => void onReplaceFromTemplate()}
-            disabled={applyingTemplate || replacingFromTemplate}
-          >
-            {replacingFromTemplate
-              ? "Replacing…"
-              : "Replace Event Agenda From Template"}
-          </button>
-        </div>
-      </div>
+      </PageSection>
     </div>
   );
 }
-
-const panelStyle = {
-  border: "1px solid #ddd",
-  borderRadius: 10,
-  background: "white",
-  padding: 16,
-  display: "grid",
-  gap: 14,
-  height: "100%",
-};
-
-const titleStyle = {
-  fontWeight: 800,
-  fontSize: 18,
-};
-
-const helpStyle = {
-  fontSize: 13,
-  color: "#666",
-  marginTop: 4,
-};
-
-const inputStyle = {
-  width: "100%",
-  boxSizing: "border-box" as const,
-  padding: 8,
-};
-
-const textareaStyle = {
-  width: "100%",
-  boxSizing: "border-box" as const,
-  padding: "7px 8px",
-  minHeight: 48,
-};

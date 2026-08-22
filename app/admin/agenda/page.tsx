@@ -9,7 +9,14 @@ import AgendaImportPanel from "@/components/admin/agenda/AgendaImportPanel";
 import AgendaTemplatePanel from "@/components/admin/agenda/AgendaTemplatePanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSection } from "@/components/ui/PageSection";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
@@ -118,7 +125,6 @@ type ConfirmDialogState = {
   danger: boolean;
 };
 
-const MOBILE_BREAKPOINT = 900;
 const AGENDA_SLOT_MINUTES = 15;
 const AGENDA_SLOT_HEIGHT = 28;
 const AGENDA_DAY_START_MINUTES = 7 * 60;
@@ -639,10 +645,20 @@ function AdminAgendaPageInner() {
   // has_event_task_authority's semantics itself -- it only asks the
   // existing governed resolver the one question it needs answered.
   const [hasAgendaAccess, setHasAgendaAccess] = useState<boolean | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const { isCompact, viewportClass } = useShellInterfaceCapabilities();
+  // The two-pane Catalog/Working-pane split only earns its keep at the
+  // shell's "wide" tier (>=1200px). Measured with the real shell chrome
+  // (persistent sidebar + content padding) in place, "standard" width
+  // (900-1199px, e.g. 1024px tablet landscape) leaves so little real
+  // width for the two panes together that the working pane's own content
+  // overflows -- collapsing it to the same single-column stack as
+  // "compact" is the workflow-driven choice the migration brief asks for
+  // ("evaluate whether full desktop multi-column layout remains genuinely
+  // useful... collapse... when columns become cramped"), not a shortcut.
+  const showTwoColumnAgendaLayout = viewportClass === "wide";
   const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
   const [compactCalendarView, setCompactCalendarView] = useState(false);
-  const useButtonReorder = isMobile && !forceDesktopDrag;
+  const useButtonReorder = isCompact && !forceDesktopDrag;
   const [templates, setTemplates] = useState<AgendaTemplate[]>([]);
   const [applicationHistory, setApplicationHistory] = useState<AgendaTemplateApplication[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -922,17 +938,6 @@ function AdminAgendaPageInner() {
     );
     await refreshAgendaData();
   }
-
-  useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    }
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
   useEffect(() => {
     if (!admin) {
@@ -2395,20 +2400,20 @@ function AdminAgendaPageInner() {
 
   if (hasAgendaAccess === false) {
     return (
-      <div style={{ padding: 24 }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>
-          No Agenda access for this event
-        </div>
-        <div style={{ color: "#555" }}>
-          {status ||
-            "You do not have Agenda view or manage authority for the current admin working event."}
-        </div>
+      <div style={{ display: "grid", gap: "var(--space-10)" }}>
+        <PageSection variant="section">
+          <PageHeader title="No Agenda access for this event" headingLevel="h1" />
+          <Alert tone="danger">
+            {status ||
+              "You do not have Agenda view or manage authority for the current admin working event."}
+          </Alert>
+        </PageSection>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ display: "grid", gap: "var(--space-10)" }}>
       <ConfirmDialog
         open={!!confirmDialog}
         title={confirmDialog?.title || "Confirm Action"}
@@ -2419,1390 +2424,1232 @@ function AdminAgendaPageInner() {
         onCancel={() => closeConfirmDialog(false)}
         onConfirm={() => closeConfirmDialog(true)}
       />
-      <div
-        style={{
-          marginBottom: 16,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 10,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            window.location.href = "/admin/dashboard";
-          }}
-          style={{
-            padding: isMobile ? "12px 16px" : "8px 12px",
-            borderRadius: 12,
-            border: "1px solid #cbd5e1",
-            background: "#fff",
-            cursor: "pointer",
-            width: isMobile ? "100%" : "auto",
-            minHeight: 48,
-            fontSize: isMobile ? 16 : 14,
-            fontWeight: 700,
-          }}
-        >
-          ← Return to Dashboard
-        </button>
-      </div>
-      <h1>Admin Agenda</h1>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: isMobile
-            ? "1fr"
-            : "repeat(auto-fit, minmax(180px, auto))",
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setAgendaMode("items")}
-          style={{
-            padding: isMobile ? "14px 16px" : "10px 14px",
-            borderRadius: 12,
-            border: agendaMode === "items" ? "none" : "1px solid #cbd5e1",
-            background: agendaMode === "items" ? "#111827" : "white",
-            color: agendaMode === "items" ? "white" : "#111827",
-            WebkitTextFillColor: agendaMode === "items" ? "white" : "#111827",
-            textShadow:
-              agendaMode === "items" ? "0 1px 1px rgba(0,0,0,0.45)" : "none",
-            fontWeight: 700,
-            minHeight: 48,
-            fontSize: isMobile ? 16 : 14,
-            cursor: "pointer",
-          }}
-        >
-          Agenda Items
-        </button>
 
-        <button
-          type="button"
-          onClick={() => setAgendaMode("import")}
-          style={{
-            padding: isMobile ? "14px 16px" : "10px 14px",
-            borderRadius: 12,
-            border: agendaMode === "import" ? "none" : "1px solid #cbd5e1",
-            background: agendaMode === "import" ? "#111827" : "white",
-            color: agendaMode === "import" ? "white" : "#111827",
-            WebkitTextFillColor: agendaMode === "import" ? "white" : "#111827",
-            textShadow:
-              agendaMode === "import" ? "0 1px 1px rgba(0,0,0,0.45)" : "none",
-            fontWeight: 700,
-            minHeight: 48,
-            fontSize: isMobile ? 16 : 14,
-            cursor: "pointer",
-          }}
-        >
-          Import Agenda
-        </button>
+      <PageSection variant="section">
+        <PageHeader title="Admin Agenda" headingLevel="h1" titleClassName="app-section-title" />
 
-        {/* Manage Categories button */}
-        <button
-          type="button"
-          onClick={() => {
-            window.location.href = "/admin/agenda/categories";
-          }}
-          style={{
-            padding: isMobile ? "14px 16px" : "10px 14px",
-            borderRadius: 12,
-            border: "1px solid #cbd5e1",
-            background: "white",
-            color: "#111827",
-            WebkitTextFillColor: "#111827",
-            textShadow: "none",
-            fontWeight: 700,
-            minHeight: 48,
-            fontSize: isMobile ? 16 : 14,
-            cursor: "pointer",
-          }}
-        >
-          Manage Categories
-        </button>
-      </div>
-      {error ? (
         <div
           style={{
-            border: "1px solid #e2b4b4",
-            borderRadius: 10,
-            background: "#fff3f3",
-            color: "#8a1f1f",
-            padding: 12,
-            marginBottom: 12,
+            display: "flex",
+            gap: "var(--space-2)",
+            flexWrap: "wrap",
+            marginBottom: "var(--space-4)",
           }}
         >
-          {error}
-        </div>
-      ) : null}
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-          marginBottom: 20,
-        }}
-      >
-        <div style={{ fontWeight: 700 }}>
-          {activeEvent?.name || "No admin working event selected"}
-        </div>
-        <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
-          {loading ? "Loading agenda data..." : status}
-        </div>
-        <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
-          Agenda version: {agendaVersion}
-        </div>
-      </div>
-      <AgendaImportPanel
-        agendaMode={agendaMode}
-        activeEvent={activeEvent}
-        importBusy={importBusy}
-        importStatus={importStatus}
-        onImportFile={handleAgendaImportFile}
-      />
-      <AgendaTemplatePanel
-        isMobile={isMobile}
-        activeEvent={activeEvent}
-        itemCount={items.length}
-        templates={templates}
-        selectedTemplateId={selectedTemplateId}
-        newTemplateName={newTemplateName}
-        newTemplateDescription={newTemplateDescription}
-        savingTemplate={savingTemplate}
-        applyingTemplate={applyingTemplate}
-        replacingFromTemplate={replacingFromTemplate}
-        setSelectedTemplateId={setSelectedTemplateId}
-        setNewTemplateName={setNewTemplateName}
-        setNewTemplateDescription={setNewTemplateDescription}
-        onSaveTemplate={saveCurrentAgendaAsTemplate}
-        onApplyTemplate={applyTemplateToEvent}
-        onReplaceFromTemplate={replaceEventFromTemplate}
-      />
+          <AppButton
+            variant={agendaMode === "items" ? "primary" : "tertiary"}
+            aria-pressed={agendaMode === "items"}
+            onClick={() => setAgendaMode("items")}
+          >
+            Agenda Items
+          </AppButton>
 
-      {applicationHistory.length > 0 && (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 14,
-            marginBottom: 20,
-            fontSize: 12,
-            color: "#555",
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 6, color: "#333" }}>
-            Recent template activity
+          <AppButton
+            variant={agendaMode === "import" ? "primary" : "tertiary"}
+            aria-pressed={agendaMode === "import"}
+            onClick={() => setAgendaMode("import")}
+          >
+            Import Agenda
+          </AppButton>
+
+          <AppButton
+            variant="tertiary"
+            onClick={() => {
+              window.location.href = "/admin/agenda/categories";
+            }}
+          >
+            Manage Categories
+          </AppButton>
+        </div>
+
+        <div style={{ display: "grid", gap: "var(--space-1)" }}>
+          <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+            {activeEvent?.name || "No admin working event selected"}
           </div>
-          {applicationHistory.map((entry) => (
-            <div key={entry.application_id} style={{ marginTop: 4 }}>
-              {entry.operation === "replace" ? "Replaced" : "Applied"} agenda (
-              {entry.copied_item_count} item
-              {entry.copied_item_count === 1 ? "" : "s"}
-              {entry.operation === "replace"
-                ? `, ${entry.replaced_item_count} removed`
-                : ""}
-              ) &mdash; {new Date(entry.applied_at).toLocaleString()}
-            </div>
-          ))}
+          <div className="app-subtle-text">
+            {loading ? "Loading agenda data..." : status}
+          </div>
+          <div className="app-subtle-text">Agenda version: {agendaVersion}</div>
         </div>
-      )}
+      </PageSection>
+
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr",
-          gap: 20,
+          gridTemplateColumns: showTwoColumnAgendaLayout ? "minmax(300px, 360px) 1fr" : "1fr",
+          gap: "var(--space-5)",
           alignItems: "start",
         }}
       >
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 12,
-            display: "grid",
-            gap: 8,
-            position: "sticky",
-            top: 12,
-            zIndex: 20,
-            alignSelf: "start",
-          }}
-        >
-          <div style={{ fontWeight: 800, fontSize: 15 }}>
-            {form.id
-              ? `✏️ Editing: ${form.title || "Untitled Item"}`
-              : "➕ New Agenda Item"}
-          </div>
-          {form.id ? (
-            <div
-              style={{
-                fontSize: 12,
-                color: "#475569",
-                marginTop: -2,
-                marginBottom: 4,
-              }}
-            >
-              {form.category || "No Category"} • {form.agenda_date || "No Date"}
-              {form.start_time ? ` • ${form.start_time}` : ""}
-              {form.end_time ? ` – ${form.end_time}` : ""}
-            </div>
-          ) : null}
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile
-                ? "1fr"
-                : "repeat(4, minmax(180px, 1fr))",
-              gap: 8,
-              alignItems: "start",
-            }}
-          >
-            <input
-              value={form.title}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, title: e.target.value }))
-              }
-              placeholder="Title"
-              style={{ padding: "7px 8px" }}
-            />
-
-            <input
-              value={form.location}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, location: e.target.value }))
-              }
-              placeholder="Location"
-              style={{ padding: "7px 8px" }}
-            />
-
-            <input
-              value={form.speaker}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, speaker: e.target.value }))
-              }
-              placeholder="Speaker"
-              style={{ padding: "7px 8px" }}
-            />
-
-            {/* CATEGORY SELECT */}
-            <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 12, color: "#555" }}>Category</span>
-              <select
-                value={form.category}
-                onChange={(e) => {
-                  const selected = e.target.value;
-
-                  if (selected === "__manage__") {
-                    window.location.href = "/admin/agenda/categories";
-                    return;
-                  }
-
-                  const found = agendaCategories.find(
-                    (cat) => cat.name === selected,
-                  );
-
-                  setForm((prev) => ({
-                    ...prev,
-                    category: selected,
-                    color: found ? found.color : "",
-                  }));
-                }}
-                style={{ padding: "7px 8px" }}
-              >
-                <option value="">-- Select Category --</option>
-
-                {agendaCategories.map((cat) => (
-                  <option key={cat.name} value={cat.name}>
-                    {cat.name}
-                  </option>
-                ))}
-
-                <option disabled>────────────────</option>
-
-                <option value="__manage__">➕ Add / Manage Categories…</option>
-              </select>
-            </label>
-
-            {/* COLOR INPUT REMOVED */}
-
-            <input
-              value={form.external_id}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, external_id: e.target.value }))
-              }
-              placeholder="External ID (optional)"
-              style={{ padding: "7px 8px" }}
-            />
-
-            <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 12, color: "#555" }}>Date</span>
-              <input
-                type="date"
-                value={form.agenda_date}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, agenda_date: e.target.value }))
-                }
-                style={{ padding: "7px 8px" }}
-              />
-            </label>
-
-            {/* Recurring Event Placeholder UI */}
-            <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 12, color: "#555" }}>Recurring</span>
-              <select
-                defaultValue="none"
-                style={{ padding: "7px 8px" }}
-                title="Recurring agenda items will be implemented after Amana."
-              >
-                <option value="none">Does Not Repeat</option>
-                <option value="daily">Daily</option>
-                <option value="weekdays">Weekdays</option>
-                <option value="weekly">Weekly</option>
-                <option value="custom">Custom…</option>
-              </select>
-              <span style={{ fontSize: 11, color: "#888" }}>
-                Recurring item generation will be enabled after Amana.
-              </span>
-            </label>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-              }}
-            >
-              <label style={{ display: "grid", gap: 3 }}>
-                <span style={{ fontSize: 12, color: "#555" }}>Start</span>
-                <input
-                  type="time"
-                  value={form.start_time}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, start_time: e.target.value }))
-                  }
-                  style={{ padding: "7px 8px" }}
-                />
-              </label>
-
-              <label style={{ display: "grid", gap: 3 }}>
-                <span style={{ fontSize: 12, color: "#555" }}>End</span>
-                <input
-                  type="time"
-                  value={form.end_time}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, end_time: e.target.value }))
-                  }
-                  style={{ padding: "7px 8px" }}
-                />
-              </label>
-            </div>
-
-            <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 12, color: "#555" }}>Sort</span>
-              <input
-                value={form.sort_order}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, sort_order: e.target.value }))
-                }
-                placeholder="Sort"
-                style={{ padding: "7px 8px" }}
-              />
-            </label>
-
-            <label
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                paddingTop: isMobile ? 0 : 24,
-                whiteSpace: "nowrap",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={form.is_published}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    is_published: e.target.checked,
-                  }))
-                }
-              />
-              Published
-            </label>
-          </div>
-
-          <textarea
-            value={form.description}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, description: e.target.value }))
-            }
-            placeholder="Description"
-            rows={2}
-            style={{ padding: "7px 8px", minHeight: 48 }}
+        {/* Catalog & Templates pane -- reusable agenda templates, not a
+            per-item edit surface. Ordered after the working pane on
+            compact widths so Event Agenda stays the primary workflow. */}
+        <div style={{ display: "grid", gap: "var(--space-5)", order: showTwoColumnAgendaLayout ? 0 : 1 }}>
+          <AgendaTemplatePanel
+            activeEvent={activeEvent}
+            itemCount={items.length}
+            templates={templates}
+            selectedTemplateId={selectedTemplateId}
+            newTemplateName={newTemplateName}
+            newTemplateDescription={newTemplateDescription}
+            savingTemplate={savingTemplate}
+            applyingTemplate={applyingTemplate}
+            replacingFromTemplate={replacingFromTemplate}
+            setSelectedTemplateId={setSelectedTemplateId}
+            setNewTemplateName={setNewTemplateName}
+            setNewTemplateDescription={setNewTemplateDescription}
+            onSaveTemplate={saveCurrentAgendaAsTemplate}
+            onApplyTemplate={applyTemplateToEvent}
+            onReplaceFromTemplate={replaceEventFromTemplate}
           />
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={() => void saveItem()}
-              disabled={saving}
-            >
-              {form.id ? "Update Item" : "Add Item"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                // On New Blank, if a default category exists, set it
-                const defaultCat = agendaCategories.find(
-                  (cat) => cat.is_default,
-                );
-                if (defaultCat) {
-                  setForm({
-                    ...emptyForm,
-                    category: defaultCat.name,
-                    color: defaultCat.color,
-                  });
-                } else {
-                  setForm(emptyForm);
-                }
-              }}
-              disabled={saving}
-            >
-              New Blank
-            </button>
-
-            {form.id ? (
-              <button
-                type="button"
-                onClick={() => void deleteItem(form.id)}
-                disabled={saving}
-              >
-                Delete Selected
-              </button>
-            ) : null}
-          </div>
+          {applicationHistory.length > 0 && (
+            <PageSection title="Recent Template Activity" titleStyle={{ margin: 0 }}>
+              <div style={{ display: "grid", gap: "var(--space-2)" }} className="app-subtle-text">
+                {applicationHistory.map((entry) => (
+                  <div key={entry.application_id}>
+                    {entry.operation === "replace" ? "Replaced" : "Applied"} agenda (
+                    {entry.copied_item_count} item
+                    {entry.copied_item_count === 1 ? "" : "s"}
+                    {entry.operation === "replace"
+                      ? `, ${entry.replaced_item_count} removed`
+                      : ""}
+                    ) &mdash; {new Date(entry.applied_at).toLocaleString()}
+                  </div>
+                ))}
+              </div>
+            </PageSection>
+          )}
         </div>
 
+        {/* Event Agenda working pane -- the primary workflow: import (when
+            active), the edit/detail form attached to the active selection,
+            the filter/reorder toolbar, the calendar, and the item list. */}
         <div
           style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            overflow: "hidden",
+            display: "grid",
+            gap: "var(--space-5)",
+            minWidth: 0,
           }}
         >
-          <div
-            style={{
-              padding: 12,
-              borderBottom: "1px solid #eee",
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
+          <AgendaImportPanel
+            agendaMode={agendaMode}
+            activeEvent={activeEvent}
+            importBusy={importBusy}
+            importStatus={importStatus}
+            onImportFile={handleAgendaImportFile}
+          />
+
+          <PageSection
+            variant="section"
+            title={form.id ? `Editing: ${form.title || "Untitled Item"}` : "New Agenda Item"}
+            titleStyle={{ margin: 0 }}
+            style={{ position: "sticky", top: 12, zIndex: 20 }}
           >
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {categories.map((category) => {
-                const cat = agendaCategories.find(
-                  (c) =>
-                    c.name.trim().toLowerCase() ===
-                    category.trim().toLowerCase(),
-                );
-
-                console.log("BUTTON:", category, "MATCH:", cat);
-
-                const bgColor =
-                  category === "All" ? "#ffffff" : cat?.color || "#f3f4f6";
-
-                const selected = filterCategory === category;
-
-                return (
-                  <button
-                    key={category}
-                    type="button"
-                    onClick={() => setFilterCategory(category)}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: 999,
-                      border: selected
-                        ? "2px solid #1d4ed8"
-                        : "1px solid #d1d5db",
-                      background: bgColor,
-                      cursor: "pointer",
-                      fontSize: 13,
-                      fontWeight: selected ? 700 : 500,
-                      boxShadow: selected
-                        ? "0 0 0 2px rgba(37,99,235,0.15)"
-                        : "none",
-                      transition: "all .15s ease",
-                    }}
-                  >
-                    {category}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setForceDesktopDrag((prev) => !prev)}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  background: forceDesktopDrag ? "#dbeafe" : "white",
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-              >
-                {forceDesktopDrag ? "Desktop Drag On" : "Desktop Drag Off"}
-              </button>
-              <select
-                value={printDayFilter}
-                onChange={(e) => setPrintDayFilter(e.target.value)}
-              >
-                <option value="all">All Days</option>
-
-                {calendarDays.map((day) => (
-                  <option key={day} value={day}>
-                    {formatAgendaDate(day)}
-                  </option>
-                ))}
-              </select>
-              <button type="button" onClick={handlePrintAgenda}>
-                Print
-              </button>
-              <button
-                type="button"
-                onClick={() => void saveOrder()}
-                disabled={savingOrder}
-              >
-                {savingOrder ? "Saving Order..." : "Save Order"}
-              </button>
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: "10px 14px",
-              fontSize: 12,
-              color: "#666",
-              borderBottom: "1px solid #eee",
-            }}
-          >
-            {useButtonReorder
-              ? 'Button reorder mode: use ↑ and ↓, then click "Save Order".'
-              : 'Desktop drag mode: drag rows by ☰, then click "Save Order".'}
-          </div>
-
-          <div
-            style={{
-              margin: 12,
-              border: "1px solid #d1d5db",
-              borderRadius: 12,
-              background: "#ffffff",
-              overflow: "auto",
-            }}
-          >
-            <div
-              style={{
-                padding: 14,
-                borderBottom: "1px solid #e5e7eb",
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 10,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 900, fontSize: 18 }}>
-                  Visual Agenda Editor
+            <div style={{ display: "grid", gap: "var(--space-4)" }}>
+              {form.id ? (
+                <div className="app-subtle-text">
+                  {form.category || "No Category"} • {form.agenda_date || "No Date"}
+                  {form.start_time ? ` • ${form.start_time}` : ""}
+                  {form.end_time ? ` – ${form.end_time}` : ""}
                 </div>
-                <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-                  Click, drag, resize, and edit agenda items visually. Changes
-                  are synchronized with the properties panel and the agenda list
-                  below.
-                </div>
-              </div>
+              ) : null}
 
-              <button
-                type="button"
-                onClick={() => setCompactCalendarView((prev) => !prev)}
-                style={{
-                  padding: "7px 10px",
-                  borderRadius: 999,
-                  border: "1px solid #cbd5e1",
-                  background: compactCalendarView ? "#e0f2fe" : "#ffffff",
-                  color: "#0f172a",
-                  fontSize: 12,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {compactCalendarView ? "Compact View On" : "Compact View Off"}
-              </button>
-            </div>
-
-            {calendarDays.length === 0 ? (
-              <div style={{ padding: 16, color: "#666" }}>
-                Add agenda dates and start times to begin visually editing your
-                event schedule.
-              </div>
-            ) : (
               <div
                 style={{
-                  minWidth: compactCalendarView
-                    ? Math.max(720, calendarDays.length * 180)
-                    : Math.max(820, calendarDays.length * 260),
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: "var(--space-4)",
+                  alignItems: "start",
                 }}
               >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: compactCalendarView
-                      ? `76px repeat(${calendarDays.length}, minmax(170px, 1fr))`
-                      : `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
-                    position: "sticky",
-                    top: 0,
-                    zIndex: 4,
-                    background: "#f8fafc",
-                    borderBottom: "1px solid #e5e7eb",
-                  }}
-                >
-                  <div style={{ padding: 10, fontWeight: 800 }}>Time</div>
-                  {calendarDays.map((day) => (
-                    <div
-                      key={day}
-                      style={{
-                        padding: 10,
-                        fontWeight: 900,
-                        borderLeft: "1px solid #e5e7eb",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "flex-start",
-                        gap: 2,
+                <Field label="Title">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={form.title}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, title: e.target.value }))
+                      }
+                      placeholder="Title"
+                    />
+                  )}
+                </Field>
+
+                <Field label="Location">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={form.location}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, location: e.target.value }))
+                      }
+                      placeholder="Location"
+                    />
+                  )}
+                </Field>
+
+                <Field label="Speaker">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={form.speaker}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, speaker: e.target.value }))
+                      }
+                      placeholder="Speaker"
+                    />
+                  )}
+                </Field>
+
+                <Field label="Category">
+                  {(controlProps) => (
+                    <Select
+                      {...controlProps}
+                      value={form.category}
+                      onChange={(e) => {
+                        const selected = e.target.value;
+
+                        if (selected === "__manage__") {
+                          window.location.href = "/admin/agenda/categories";
+                          return;
+                        }
+
+                        const found = agendaCategories.find(
+                          (cat) => cat.name === selected,
+                        );
+
+                        setForm((prev) => ({
+                          ...prev,
+                          category: selected,
+                          color: found ? found.color : "",
+                        }));
                       }}
                     >
-                      <span
+                      <option value="">-- Select Category --</option>
+
+                      {agendaCategories.map((cat) => (
+                        <option key={cat.name} value={cat.name}>
+                          {cat.name}
+                        </option>
+                      ))}
+
+                      <option disabled>────────────────</option>
+
+                      <option value="__manage__">➕ Add / Manage Categories…</option>
+                    </Select>
+                  )}
+                </Field>
+
+                <Field label="External ID" help="Optional">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={form.external_id}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, external_id: e.target.value }))
+                      }
+                      placeholder="External ID (optional)"
+                    />
+                  )}
+                </Field>
+
+                <Field label="Date">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      type="date"
+                      value={form.agenda_date}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, agenda_date: e.target.value }))
+                      }
+                    />
+                  )}
+                </Field>
+
+                {/* Recurring Event Placeholder UI -- inert until after Amana;
+                    no onChange handler, matches its pre-migration behavior. */}
+                <Field
+                  label="Recurring"
+                  help="Recurring item generation will be enabled after Amana."
+                >
+                  {(controlProps) => (
+                    <Select
+                      {...controlProps}
+                      defaultValue="none"
+                      title="Recurring agenda items will be implemented after Amana."
+                    >
+                      <option value="none">Does Not Repeat</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekdays">Weekdays</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="custom">Custom…</option>
+                    </Select>
+                  )}
+                </Field>
+
+                <Field label="Start">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      type="time"
+                      value={form.start_time}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, start_time: e.target.value }))
+                      }
+                    />
+                  )}
+                </Field>
+
+                <Field label="End">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      type="time"
+                      value={form.end_time}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, end_time: e.target.value }))
+                      }
+                    />
+                  )}
+                </Field>
+
+                <Field label="Sort">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={form.sort_order}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, sort_order: e.target.value }))
+                      }
+                      placeholder="Sort"
+                    />
+                  )}
+                </Field>
+
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <Checkbox
+                    label="Published"
+                    checked={form.is_published}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        is_published: e.target.checked,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <Field label="Description">
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    value={form.description}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, description: e.target.value }))
+                    }
+                    placeholder="Description"
+                    rows={2}
+                  />
+                )}
+              </Field>
+
+              <div className="app-button-row">
+                <AppButton
+                  variant="primary"
+                  onClick={() => void saveItem()}
+                  disabled={saving}
+                >
+                  {saving ? "Saving..." : form.id ? "Update Item" : "Add Item"}
+                </AppButton>
+
+                <AppButton
+                  variant="tertiary"
+                  onClick={() => {
+                    // On New Blank, if a default category exists, set it
+                    const defaultCat = agendaCategories.find(
+                      (cat) => cat.is_default,
+                    );
+                    if (defaultCat) {
+                      setForm({
+                        ...emptyForm,
+                        category: defaultCat.name,
+                        color: defaultCat.color,
+                      });
+                    } else {
+                      setForm(emptyForm);
+                    }
+                  }}
+                  disabled={saving}
+                >
+                  New Blank
+                </AppButton>
+
+                {form.id ? (
+                  <AppButton
+                    variant="danger"
+                    onClick={() => void deleteItem(form.id)}
+                    disabled={saving}
+                  >
+                    Delete Selected
+                  </AppButton>
+                ) : null}
+              </div>
+            </div>
+          </PageSection>
+
+          <PageSection variant="section">
+            <div style={{ display: "grid", gap: "var(--space-3)" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "var(--space-2)",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                  {categories.map((category) => {
+                    const cat = agendaCategories.find(
+                      (c) =>
+                        c.name.trim().toLowerCase() ===
+                        category.trim().toLowerCase(),
+                    );
+
+                    const bgColor =
+                      category === "All" ? "#ffffff" : cat?.color || "#f3f4f6";
+
+                    const selected = filterCategory === category;
+
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setFilterCategory(category)}
                         style={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          color: "#64748b",
-                          letterSpacing: "0.02em",
-                          lineHeight: "1.2",
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: selected
+                            ? "2px solid #1d4ed8"
+                            : "1px solid #d1d5db",
+                          background: bgColor,
+                          cursor: "pointer",
+                          fontSize: 13,
+                          fontWeight: selected ? 700 : 500,
+                          boxShadow: selected
+                            ? "0 0 0 2px rgba(37,99,235,0.15)"
+                            : "none",
+                          transition: "all .15s ease",
                         }}
                       >
-                        {new Date(`${day}T00:00:00`).toLocaleDateString([], {
-                          weekday: "long",
-                        })}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: "#111827",
-                          lineHeight: "1.25",
-                        }}
-                      >
-                        {formatAgendaDate(day)}
-                      </span>
-                    </div>
-                  ))}
+                        {category}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: compactCalendarView
-                      ? `76px repeat(${calendarDays.length}, minmax(170px, 1fr))`
-                      : `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
-                    minHeight: calendarGridHeight,
+                    display: "flex",
+                    gap: "var(--space-2)",
+                    alignItems: "center",
+                    flexWrap: "wrap",
                   }}
                 >
+                  <AppButton
+                    variant="tertiary"
+                    aria-pressed={forceDesktopDrag}
+                    onClick={() => setForceDesktopDrag((prev) => !prev)}
+                  >
+                    {forceDesktopDrag ? "Desktop Drag On" : "Desktop Drag Off"}
+                  </AppButton>
+
+                  <select
+                    aria-label="Filter print by day"
+                    value={printDayFilter}
+                    onChange={(e) => setPrintDayFilter(e.target.value)}
+                    className="app-control"
+                  >
+                    <option value="all">All Days</option>
+
+                    {calendarDays.map((day) => (
+                      <option key={day} value={day}>
+                        {formatAgendaDate(day)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <AppButton variant="tertiary" onClick={handlePrintAgenda}>
+                    Print
+                  </AppButton>
+
+                  <AppButton
+                    variant="primary"
+                    onClick={() => void saveOrder()}
+                    disabled={savingOrder}
+                  >
+                    {savingOrder ? "Saving Order..." : "Save Order"}
+                  </AppButton>
+                </div>
+              </div>
+
+              <p className="app-subtle-text" style={{ margin: 0 }}>
+                {useButtonReorder
+                  ? 'Button reorder mode: use ↑ and ↓, then click "Save Order".'
+                  : 'Desktop drag mode: drag rows by ☰, then click "Save Order".'}
+              </p>
+            </div>
+          </PageSection>
+
+          <PageSection title="Visual Agenda Editor" titleStyle={{ margin: 0 }}>
+            <div style={{ display: "grid", gap: "var(--space-3)" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "var(--space-2)",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <p className="app-subtle-text" style={{ margin: 0 }}>
+                  Click, drag, resize, and edit agenda items visually. Changes
+                  are synchronized with the properties panel and the agenda
+                  list below.
+                </p>
+
+                <AppButton
+                  variant="tertiary"
+                  aria-pressed={compactCalendarView}
+                  onClick={() => setCompactCalendarView((prev) => !prev)}
+                >
+                  {compactCalendarView ? "Compact View On" : "Compact View Off"}
+                </AppButton>
+              </div>
+
+              {/* Calendar grid below: native HTML5 drag-and-drop (move +
+                  resize) is a specialized direct-manipulation surface
+                  (Central UI blueprint Part 12 carve-out) and is left
+                  completely untouched -- only the outer section chrome
+                  above this comment was migrated. */}
+              <div
+                style={{
+                  border: "1px solid #d1d5db",
+                  borderRadius: 12,
+                  background: "#ffffff",
+                  overflow: "auto",
+                }}
+              >
+                {calendarDays.length === 0 ? (
+                  <div style={{ padding: 16, color: "#666" }}>
+                    Add agenda dates and start times to begin visually editing
+                    your event schedule.
+                  </div>
+                ) : (
                   <div
                     style={{
-                      position: "relative",
-                      height: calendarGridHeight,
-                      background: "#f8fafc",
-                      borderRight: "1px solid #e5e7eb",
+                      minWidth: compactCalendarView
+                        ? Math.max(720, calendarDays.length * 180)
+                        : Math.max(820, calendarDays.length * 260),
                     }}
                   >
-                    {calendarTimeSlots.slice(0, -1).map((slot) => (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: compactCalendarView
+                          ? `76px repeat(${calendarDays.length}, minmax(170px, 1fr))`
+                          : `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 4,
+                        background: "#f8fafc",
+                        borderBottom: "1px solid #e5e7eb",
+                      }}
+                    >
+                      <div style={{ padding: 10, fontWeight: 800 }}>Time</div>
+                      {calendarDays.map((day) => (
+                        <div
+                          key={day}
+                          style={{
+                            padding: 10,
+                            fontWeight: 900,
+                            borderLeft: "1px solid #e5e7eb",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "flex-start",
+                            gap: 2,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              color: "#64748b",
+                              letterSpacing: "0.02em",
+                              lineHeight: "1.2",
+                            }}
+                          >
+                            {new Date(`${day}T00:00:00`).toLocaleDateString([], {
+                              weekday: "long",
+                            })}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 16,
+                              fontWeight: 800,
+                              color: "#111827",
+                              lineHeight: "1.25",
+                            }}
+                          >
+                            {formatAgendaDate(day)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: compactCalendarView
+                          ? `76px repeat(${calendarDays.length}, minmax(170px, 1fr))`
+                          : `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
+                        minHeight: calendarGridHeight,
+                      }}
+                    >
                       <div
-                        key={slot}
-                        style={{
-                          height: AGENDA_SLOT_HEIGHT,
-                          borderTop:
-                            slot % 60 === 0
-                              ? "1px solid #cbd5e1"
-                              : "1px solid transparent",
-                          borderBottom: "1px solid #eef2f7",
-                          padding: "2px 8px",
-                          fontSize: slot % 60 === 0 ? 12 : 10,
-                          fontWeight: slot % 60 === 0 ? 800 : 500,
-                          color: slot % 60 === 0 ? "#334155" : "#94a3b8",
-                        }}
-                      >
-                        {slot % 60 === 0 ? formatCalendarSlot(slot) : ""}
-                      </div>
-                    ))}
-                  </div>
-
-                  {calendarDays.map((day, dayIdx) => {
-                    const dayItems = filteredItems.filter(
-                      (item) => item.agenda_date === day,
-                    );
-
-                    const blocks = buildAgendaCalendarBlocks(
-                      dayItems,
-                      calendarRange.start,
-                    );
-
-                    // Alternate background color by column index
-                    const columnBg = dayIdx % 2 === 0 ? "#ffffff" : "#f8fafc";
-
-                    return (
-                      <div
-                        key={day}
-                        data-agenda-calendar-day={day}
-                        onDragOver={(e) => handleCalendarDragOver(e, day)}
-                        onDragLeave={() => setCalendarDropPreview(null)}
-                        onDrop={(e) => handleCalendarColumnDrop(e, day)}
                         style={{
                           position: "relative",
                           height: calendarGridHeight,
-                          borderLeft: "1px solid #e5e7eb",
-                          background: columnBg,
+                          background: "#f8fafc",
+                          borderRight: "1px solid #e5e7eb",
                         }}
                       >
                         {calendarTimeSlots.slice(0, -1).map((slot) => (
                           <div
-                            key={`${day}-${slot}`}
+                            key={slot}
                             style={{
                               height: AGENDA_SLOT_HEIGHT,
                               borderTop:
                                 slot % 60 === 0
-                                  ? "1px solid #dbe4ef"
+                                  ? "1px solid #cbd5e1"
                                   : "1px solid transparent",
-                              borderBottom: "1px solid #f1f5f9",
-                              background: "transparent",
+                              borderBottom: "1px solid #eef2f7",
+                              padding: "2px 8px",
+                              fontSize: slot % 60 === 0 ? 12 : 10,
+                              fontWeight: slot % 60 === 0 ? 800 : 500,
+                              color: slot % 60 === 0 ? "#334155" : "#94a3b8",
                             }}
-                          />
+                          >
+                            {slot % 60 === 0 ? formatCalendarSlot(slot) : ""}
+                          </div>
                         ))}
+                      </div>
 
-                        {calendarDropPreview?.day === day ? (
+                      {calendarDays.map((day, dayIdx) => {
+                        const dayItems = filteredItems.filter(
+                          (item) => item.agenda_date === day,
+                        );
+
+                        const blocks = buildAgendaCalendarBlocks(
+                          dayItems,
+                          calendarRange.start,
+                        );
+
+                        // Alternate background color by column index
+                        const columnBg = dayIdx % 2 === 0 ? "#ffffff" : "#f8fafc";
+
+                        return (
                           <div
+                            key={day}
+                            data-agenda-calendar-day={day}
+                            onDragOver={(e) => handleCalendarDragOver(e, day)}
+                            onDragLeave={() => setCalendarDropPreview(null)}
+                            onDrop={(e) => handleCalendarColumnDrop(e, day)}
                             style={{
-                              position: "absolute",
-                              top:
-                                Math.floor(
-                                  (calendarDropPreview.minutes -
-                                    calendarRange.start) /
-                                    AGENDA_SLOT_MINUTES,
-                                ) * AGENDA_SLOT_HEIGHT,
-                              left: 0,
-                              right: 0,
-                              height: 0,
-                              borderTop: "3px solid #2563eb",
-                              boxShadow: "0 0 0 2px rgba(37,99,235,0.18)",
-                              pointerEvents: "none",
-                              zIndex: 5,
+                              position: "relative",
+                              height: calendarGridHeight,
+                              borderLeft: "1px solid #e5e7eb",
+                              background: columnBg,
                             }}
                           >
-                            <div
-                              style={{
-                                position: "absolute",
-                                right: 8,
-                                top: -24,
-                                background: "#2563eb",
-                                color: "#ffffff",
-                                WebkitTextFillColor: "#ffffff",
-                                fontSize: 11,
-                                fontWeight: 900,
-                                padding: "3px 7px",
-                                borderRadius: 999,
-                              }}
-                            >
-                              {minutesToTime(calendarDropPreview.minutes)}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {calendarResizePreview ? (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top:
-                                Math.floor(
-                                  (calendarResizePreview.minutes -
-                                    calendarRange.start) /
-                                    AGENDA_SLOT_MINUTES,
-                                ) * AGENDA_SLOT_HEIGHT,
-                              left: 0,
-                              right: 0,
-                              height: 0,
-                              borderTop: "3px dashed #16a34a",
-                              boxShadow: "0 0 0 2px rgba(22,163,74,0.14)",
-                              pointerEvents: "none",
-                              zIndex: 6,
-                            }}
-                          >
-                            <div
-                              style={{
-                                position: "absolute",
-                                right: 8,
-                                top: -24,
-                                background: "#16a34a",
-                                color: "#ffffff",
-                                WebkitTextFillColor: "#ffffff",
-                                fontSize: 11,
-                                fontWeight: 900,
-                                padding: "3px 7px",
-                                borderRadius: 999,
-                              }}
-                            >
-                              {calendarResizeDragRef.current?.edge === "start"
-                                ? "Starts"
-                                : "Ends"}{" "}
-                              {minutesToTime(calendarResizePreview.minutes)}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {blocks.map((block) => {
-                          const item = block.item;
-                          const isSelected = form.id === item.id;
-                          const laneWidth = 100 / block.laneCount;
-                          const left = block.lane * laneWidth;
-
-                          return (
-                            <button
-                              key={item.id}
-                              type="button"
-                              draggable
-                              onDragStart={(e) =>
-                                handleCalendarDragStart(e, item.id)
-                              }
-                              onDragEnd={() => {
-                                setCalendarDraggingId(null);
-                                setCalendarDropPreview(null);
-                              }}
-                              onClick={() => setForm(formFromItem(item))}
-                              style={{
-                                position: "absolute",
-                                top: block.top + 2,
-                                left: `calc(${left}% + 4px)`,
-                                width: `calc(${laneWidth}% - 8px)`,
-                                height: block.height,
-
-                                borderTop: isSelected
-                                  ? "3px solid #2563eb"
-                                  : "1px solid rgba(15,23,42,0.16)",
-
-                                borderRight: isSelected
-                                  ? "3px solid #2563eb"
-                                  : "1px solid rgba(15,23,42,0.16)",
-
-                                borderBottom: isSelected
-                                  ? "3px solid #2563eb"
-                                  : "1px solid rgba(15,23,42,0.16)",
-
-                                borderLeft: `6px solid ${getAgendaColor(
-                                  item.category || "",
-                                  item.color || "",
-                                )}`,
-
-                                borderRadius: 10,
-                                background: isSelected ? "#eff6ff" : "#ffffff",
-                                color: "#111827",
-                                textAlign: "left",
-                                padding: "16px 8px 16px",
-                                cursor: "pointer",
-                                overflow: "hidden",
-
-                                boxShadow: isSelected
-                                  ? "0 0 0 3px rgba(37,99,235,.25), 0 6px 16px rgba(0,0,0,.15)"
-                                  : calendarDraggingId === item.id
-                                    ? "0 0 0 3px rgba(96,165,250,.35)"
-                                    : "0 2px 8px rgba(15,23,42,.10)",
-
-                                transform: isSelected
-                                  ? "scale(1.02)"
-                                  : "scale(1)",
-
-                                transition: "all .15s ease",
-
-                                zIndex: isSelected ? 20 : block.lane + 1,
-                              }}
-                              title="Drag to move. Click to edit. Drag top/bottom handles to change time."
-                            >
-                              <span
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  beginCalendarStartResize(e, item);
+                            {calendarTimeSlots.slice(0, -1).map((slot) => (
+                              <div
+                                key={`${day}-${slot}`}
+                                style={{
+                                  height: AGENDA_SLOT_HEIGHT,
+                                  borderTop:
+                                    slot % 60 === 0
+                                      ? "1px solid #dbe4ef"
+                                      : "1px solid transparent",
+                                  borderBottom: "1px solid #f1f5f9",
+                                  background: "transparent",
                                 }}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                }}
-                                draggable={false}
+                              />
+                            ))}
+
+                            {calendarDropPreview?.day === day ? (
+                              <div
                                 style={{
                                   position: "absolute",
-                                  left: 12,
-                                  right: 12,
-                                  top: 4,
-                                  height: 8,
-                                  borderRadius: 999,
-                                  background: "rgba(37,99,235,0.24)",
-                                  cursor: "ns-resize",
-                                  zIndex: 7,
-                                }}
-                                title="Drag to change start time"
-                              />
-
-                              <div style={{ fontWeight: 900, fontSize: 12 }}>
-                                {item.title}
-                              </div>
-
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  color: "#475569",
-                                  marginTop: 3,
+                                  top:
+                                    Math.floor(
+                                      (calendarDropPreview.minutes -
+                                        calendarRange.start) /
+                                        AGENDA_SLOT_MINUTES,
+                                    ) * AGENDA_SLOT_HEIGHT,
+                                  left: 0,
+                                  right: 0,
+                                  height: 0,
+                                  borderTop: "3px solid #2563eb",
+                                  boxShadow: "0 0 0 2px rgba(37,99,235,0.18)",
+                                  pointerEvents: "none",
+                                  zIndex: 5,
                                 }}
                               >
-                                {formatAgendaTime(
-                                  item.start_time,
-                                  item.end_time,
-                                )}
-                              </div>
-
-                              <div
-                                style={{
-                                  fontSize: 10,
-                                  color: "#64748b",
-                                  fontWeight: 800,
-                                  marginTop: 2,
-                                }}
-                              >
-                                {formatDurationLabel(
-                                  agendaDurationMinutes(item),
-                                )}
-                              </div>
-
-                              {item.location ? (
                                 <div
                                   style={{
+                                    position: "absolute",
+                                    right: 8,
+                                    top: -24,
+                                    background: "#2563eb",
+                                    color: "#ffffff",
+                                    WebkitTextFillColor: "#ffffff",
                                     fontSize: 11,
-                                    color: "#334155",
-                                    marginTop: 3,
+                                    fontWeight: 900,
+                                    padding: "3px 7px",
+                                    borderRadius: 999,
                                   }}
                                 >
-                                  📍 {item.location}
+                                  {minutesToTime(calendarDropPreview.minutes)}
                                 </div>
-                              ) : null}
+                              </div>
+                            ) : null}
 
-                              <span
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  beginCalendarEndResize(e, item);
-                                }}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                }}
-                                draggable={false}
+                            {calendarResizePreview ? (
+                              <div
                                 style={{
                                   position: "absolute",
-                                  left: 12,
-                                  right: 12,
-                                  bottom: 4,
-                                  height: 8,
-                                  borderRadius: 999,
-                                  background: "rgba(22,163,74,0.28)",
-                                  cursor: "ns-resize",
-                                  zIndex: 7,
+                                  top:
+                                    Math.floor(
+                                      (calendarResizePreview.minutes -
+                                        calendarRange.start) /
+                                        AGENDA_SLOT_MINUTES,
+                                    ) * AGENDA_SLOT_HEIGHT,
+                                  left: 0,
+                                  right: 0,
+                                  height: 0,
+                                  borderTop: "3px dashed #16a34a",
+                                  boxShadow: "0 0 0 2px rgba(22,163,74,0.14)",
+                                  pointerEvents: "none",
+                                  zIndex: 6,
                                 }}
-                                title="Drag to change end time"
-                              />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
+                              >
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    right: 8,
+                                    top: -24,
+                                    background: "#16a34a",
+                                    color: "#ffffff",
+                                    WebkitTextFillColor: "#ffffff",
+                                    fontSize: 11,
+                                    fontWeight: 900,
+                                    padding: "3px 7px",
+                                    borderRadius: 999,
+                                  }}
+                                >
+                                  {calendarResizeDragRef.current?.edge === "start"
+                                    ? "Starts"
+                                    : "Ends"}{" "}
+                                  {minutesToTime(calendarResizePreview.minutes)}
+                                </div>
+                              </div>
+                            ) : null}
 
-          {filteredItems.length === 0 ? (
-            <div style={{ padding: 16, color: "#666" }}>
-              No agenda items found.
+                            {blocks.map((block) => {
+                              const item = block.item;
+                              const isSelected = form.id === item.id;
+                              const laneWidth = 100 / block.laneCount;
+                              const left = block.lane * laneWidth;
+
+                              return (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  draggable
+                                  onDragStart={(e) =>
+                                    handleCalendarDragStart(e, item.id)
+                                  }
+                                  onDragEnd={() => {
+                                    setCalendarDraggingId(null);
+                                    setCalendarDropPreview(null);
+                                  }}
+                                  onClick={() => setForm(formFromItem(item))}
+                                  style={{
+                                    position: "absolute",
+                                    top: block.top + 2,
+                                    left: `calc(${left}% + 4px)`,
+                                    width: `calc(${laneWidth}% - 8px)`,
+                                    height: block.height,
+
+                                    borderTop: isSelected
+                                      ? "3px solid #2563eb"
+                                      : "1px solid rgba(15,23,42,0.16)",
+
+                                    borderRight: isSelected
+                                      ? "3px solid #2563eb"
+                                      : "1px solid rgba(15,23,42,0.16)",
+
+                                    borderBottom: isSelected
+                                      ? "3px solid #2563eb"
+                                      : "1px solid rgba(15,23,42,0.16)",
+
+                                    borderLeft: `6px solid ${getAgendaColor(
+                                      item.category || "",
+                                      item.color || "",
+                                    )}`,
+
+                                    borderRadius: 10,
+                                    background: isSelected ? "#eff6ff" : "#ffffff",
+                                    color: "#111827",
+                                    textAlign: "left",
+                                    padding: "16px 8px 16px",
+                                    cursor: "pointer",
+                                    overflow: "hidden",
+
+                                    boxShadow: isSelected
+                                      ? "0 0 0 3px rgba(37,99,235,.25), 0 6px 16px rgba(0,0,0,.15)"
+                                      : calendarDraggingId === item.id
+                                        ? "0 0 0 3px rgba(96,165,250,.35)"
+                                        : "0 2px 8px rgba(15,23,42,.10)",
+
+                                    transform: isSelected
+                                      ? "scale(1.02)"
+                                      : "scale(1)",
+
+                                    transition: "all .15s ease",
+
+                                    zIndex: isSelected ? 20 : block.lane + 1,
+                                  }}
+                                  title="Drag to move. Click to edit. Drag top/bottom handles to change time."
+                                >
+                                  <span
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      beginCalendarStartResize(e, item);
+                                    }}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }}
+                                    draggable={false}
+                                    style={{
+                                      position: "absolute",
+                                      left: 12,
+                                      right: 12,
+                                      top: 4,
+                                      height: 8,
+                                      borderRadius: 999,
+                                      background: "rgba(37,99,235,0.24)",
+                                      cursor: "ns-resize",
+                                      zIndex: 7,
+                                    }}
+                                    title="Drag to change start time"
+                                  />
+
+                                  <div style={{ fontWeight: 900, fontSize: 12 }}>
+                                    {item.title}
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      fontSize: 11,
+                                      color: "#475569",
+                                      marginTop: 3,
+                                    }}
+                                  >
+                                    {formatAgendaTime(
+                                      item.start_time,
+                                      item.end_time,
+                                    )}
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      fontSize: 10,
+                                      color: "#64748b",
+                                      fontWeight: 800,
+                                      marginTop: 2,
+                                    }}
+                                  >
+                                    {formatDurationLabel(
+                                      agendaDurationMinutes(item),
+                                    )}
+                                  </div>
+
+                                  {item.location ? (
+                                    <div
+                                      style={{
+                                        fontSize: 11,
+                                        color: "#334155",
+                                        marginTop: 3,
+                                      }}
+                                    >
+                                      📍 {item.location}
+                                    </div>
+                                  ) : null}
+
+                                  <span
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      beginCalendarEndResize(e, item);
+                                    }}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }}
+                                    draggable={false}
+                                    style={{
+                                      position: "absolute",
+                                      left: 12,
+                                      right: 12,
+                                      bottom: 4,
+                                      height: 8,
+                                      borderRadius: 999,
+                                      background: "rgba(22,163,74,0.28)",
+                                      cursor: "ns-resize",
+                                      zIndex: 7,
+                                    }}
+                                    title="Drag to change end time"
+                                  />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          ) : (
-            <div
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 12,
-                background: "white",
-                marginTop: 16,
-                overflow: "hidden",
-              }}
-            >
-              <div style={{ padding: 14, fontWeight: 700 }}>
-                Agenda Items ({filteredItems.length})
-              </div>
+          </PageSection>
 
-              {printableAgendaItems.map((item) => {
-                const isSelected = form.id === item.id;
-                return (
-                  <div
-                    key={item.id}
-                    onDragOver={!useButtonReorder ? handleDragOver : undefined}
-                    onDrop={
-                      !useButtonReorder ? () => handleDrop(item.id) : undefined
-                    }
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: useButtonReorder
-                        ? isMobile
-                          ? "1fr"
-                          : "72px 1fr auto"
-                        : isMobile
-                          ? "1fr"
-                          : "52px 1fr auto",
-                      gap: 12,
-                      padding: isMobile ? 16 : 14,
-                      borderTop: "1px solid #eee",
-                      background: isSelected
-                        ? "#dbeafe"
-                        : draggedId === item.id
-                          ? "#f8fafc"
-                          : "white",
-                      borderLeft: `${isSelected ? 8 : 6}px solid ${getAgendaColor(
-                        item.category || "",
-                        item.color || "",
-                      )}`,
-                      boxShadow: isSelected
-                        ? "inset 0 0 0 2px #2563eb"
-                        : "none",
-                      transition: "all .15s ease",
-                    }}
-                  >
+          <PageSection
+            title={filteredItems.length === 0 ? "Agenda Items" : `Agenda Items (${filteredItems.length})`}
+            titleStyle={{ margin: 0 }}
+          >
+            {filteredItems.length === 0 ? (
+              <Alert tone="neutral">No agenda items found.</Alert>
+            ) : (
+              <div style={{ display: "grid" }}>
+                {printableAgendaItems.map((item) => {
+                  const isSelected = form.id === item.id;
+                  return (
                     <div
+                      key={item.id}
+                      onDragOver={!useButtonReorder ? handleDragOver : undefined}
+                      onDrop={
+                        !useButtonReorder ? () => handleDrop(item.id) : undefined
+                      }
                       style={{
                         display: "grid",
-                        gap: 6,
-                        alignContent: "start",
-                        justifyItems: "center",
-                        gridAutoFlow: isMobile ? "column" : "row",
-                        justifyContent: isMobile ? "start" : "center",
+                        gridTemplateColumns: useButtonReorder
+                          ? isCompact
+                            ? "1fr"
+                            : "72px 1fr auto"
+                          : isCompact
+                            ? "1fr"
+                            : "52px 1fr auto",
+                        gap: 12,
+                        padding: isCompact ? 16 : 14,
+                        borderTop: "1px solid #eee",
+                        background: isSelected
+                          ? "#dbeafe"
+                          : draggedId === item.id
+                            ? "#f8fafc"
+                            : "white",
+                        borderLeft: `${isSelected ? 8 : 6}px solid ${getAgendaColor(
+                          item.category || "",
+                          item.color || "",
+                        )}`,
+                        boxShadow: isSelected
+                          ? "inset 0 0 0 2px #2563eb"
+                          : "none",
+                        transition: "all .15s ease",
                       }}
                     >
-                      {useButtonReorder ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => moveItemUp(item.id)}
-                            disabled={printableAgendaItems[0]?.id === item.id}
-                            style={{
-                              padding: "6px 8px",
-                              minWidth: 40,
-                              cursor:
-                                printableAgendaItems[0]?.id === item.id
-                                  ? "default"
-                                  : "pointer",
-                            }}
-                            title="Move up"
-                          >
-                            ↑
-                          </button>
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: 6,
+                          alignContent: "start",
+                          justifyItems: "center",
+                          gridAutoFlow: isCompact ? "column" : "row",
+                          justifyContent: isCompact ? "start" : "center",
+                        }}
+                      >
+                        {useButtonReorder ? (
+                          <>
+                            <button
+                              type="button"
+                              aria-label="Move item up"
+                              onClick={() => moveItemUp(item.id)}
+                              disabled={printableAgendaItems[0]?.id === item.id}
+                              style={{
+                                padding: "6px 8px",
+                                minWidth: 40,
+                                cursor:
+                                  printableAgendaItems[0]?.id === item.id
+                                    ? "default"
+                                    : "pointer",
+                              }}
+                              title="Move up"
+                            >
+                              ↑
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => moveItemDown(item.id)}
-                            disabled={
-                              printableAgendaItems[
-                                printableAgendaItems.length - 1
-                              ]?.id === item.id
-                            }
-                            style={{
-                              padding: "6px 8px",
-                              minWidth: 40,
-                              cursor:
+                            <button
+                              type="button"
+                              aria-label="Move item down"
+                              onClick={() => moveItemDown(item.id)}
+                              disabled={
                                 printableAgendaItems[
                                   printableAgendaItems.length - 1
                                 ]?.id === item.id
-                                  ? "default"
-                                  : "pointer",
+                              }
+                              style={{
+                                padding: "6px 8px",
+                                minWidth: 40,
+                                cursor:
+                                  printableAgendaItems[
+                                    printableAgendaItems.length - 1
+                                  ]?.id === item.id
+                                    ? "default"
+                                    : "pointer",
+                              }}
+                              title="Move down"
+                            >
+                              ↓
+                            </button>
+                          </>
+                        ) : (
+                          <div
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, item.id)}
+                            onDragEnd={() => setDraggedId(null)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 20,
+                              color: "#666",
+                              cursor: "grab",
+                              userSelect: "none",
+                              width: 40,
+                              height: 40,
                             }}
-                            title="Move down"
+                            title="Drag to reorder"
                           >
-                            ↓
-                          </button>
-                        </>
-                      ) : (
+                            ☰
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setForm(formFromItem(item))}
+                        style={{
+                          textAlign: "left",
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          cursor: "pointer",
+                          display: "grid",
+                          gap: 6,
+                        }}
+                      >
                         <div
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, item.id)}
-                          onDragEnd={() => setDraggedId(null)}
                           style={{
                             display: "flex",
+                            gap: 10,
                             alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: 20,
-                            color: "#666",
-                            cursor: "grab",
-                            userSelect: "none",
-                            width: 40,
-                            height: 40,
-                          }}
-                          title="Drag to reorder"
-                        >
-                          ☰
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setForm(formFromItem(item))}
-                      style={{
-                        textAlign: "left",
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer",
-                        display: "grid",
-                        gap: 6,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 10,
-                          alignItems: "center",
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontWeight: 800,
-                            fontSize: isMobile ? 16 : 15,
-                            color: "#111827",
+                            flexWrap: "wrap",
                           }}
                         >
-                          {item.title}
-                        </div>
-
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 800,
-                            padding: "4px 8px",
-                            borderRadius: 999,
-                            background: item.is_published
-                              ? "#dcfce7"
-                              : "#fee2e2",
-                            color: item.is_published ? "#166534" : "#991b1b",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {item.is_published ? "Published" : "Hidden"}
-                        </div>
-                        {isSelected ? (
                           <div
                             style={{
-                              fontSize: 11,
                               fontWeight: 800,
-                              padding: "4px 8px",
-                              borderRadius: 999,
-                              background: "#2563eb",
-                              color: "white",
-                              whiteSpace: "nowrap",
+                              fontSize: isCompact ? 16 : 15,
+                              color: "#111827",
                             }}
                           >
-                            ✏️ Editing
+                            {item.title}
                           </div>
-                        ) : null}
-                      </div>
 
-                      <div
-                        style={{
-                          fontSize: 13,
-                          color: "#475569",
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <span>{formatAgendaDate(item.agenda_date)}</span>
-                        <span>•</span>
-                        <span>
-                          {formatAgendaTime(item.start_time, item.end_time)}
-                        </span>
-                        <span>•</span>
-                        <span>
-                          {formatDurationLabel(agendaDurationMinutes(item))}
-                        </span>
-                      </div>
+                          <StatusBadge tone={item.is_published ? "success" : "neutral"}>
+                            {item.is_published ? "Published" : "Hidden"}
+                          </StatusBadge>
 
-                      {item.location ? (
+                          {isSelected ? <StatusBadge tone="info">Editing</StatusBadge> : null}
+                        </div>
+
                         <div
                           style={{
                             fontSize: 13,
-                            color: "#334155",
+                            color: "#475569",
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
                           }}
                         >
-                          📍 {item.location}
+                          <span>{formatAgendaDate(item.agenda_date)}</span>
+                          <span>•</span>
+                          <span>
+                            {formatAgendaTime(item.start_time, item.end_time)}
+                          </span>
+                          <span>•</span>
+                          <span>
+                            {formatDurationLabel(agendaDurationMinutes(item))}
+                          </span>
                         </div>
-                      ) : null}
 
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          alignItems: "center",
-                        }}
-                      >
-                        <span
+                        {item.location ? (
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: "#334155",
+                            }}
+                          >
+                            📍 {item.location}
+                          </div>
+                        ) : null}
+
+                        <div
                           style={{
-                            fontSize: 12,
-                            fontWeight: 700,
-                            padding: "4px 8px",
-                            borderRadius: 999,
-                            background: "#f1f5f9",
-                            color: "#334155",
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
                           }}
                         >
-                          {item.category || "No category"}
-                        </span>
-
-                        {item.speaker ? (
                           <span
                             style={{
                               fontSize: 12,
-                              color: "#475569",
+                              fontWeight: 700,
+                              padding: "4px 8px",
+                              borderRadius: 999,
+                              background: "#f1f5f9",
+                              color: "#334155",
                             }}
                           >
-                            Speaker: {item.speaker}
+                            {item.category || "No category"}
                           </span>
-                        ) : null}
-                      </div>
 
-                      {item.description ? (
-                        <div
-                          style={{
-                            fontSize: 13,
-                            color: "#555",
-                            lineHeight: 1.45,
-                          }}
-                        >
-                          {item.description}
+                          {item.speaker ? (
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "#475569",
+                              }}
+                            >
+                              Speaker: {item.speaker}
+                            </span>
+                          ) : null}
                         </div>
-                      ) : null}
 
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 10,
-                          flexWrap: "wrap",
-                          alignItems: "center",
-                          marginTop: 2,
-                        }}
-                      >
+                        {item.description ? (
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: "#555",
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            {item.description}
+                          </div>
+                        ) : null}
+
                         <div
                           style={{
                             display: "flex",
+                            gap: 10,
+                            flexWrap: "wrap",
                             alignItems: "center",
-                            gap: 8,
+                            marginTop: 2,
                           }}
                         >
-                          <span
+                          <div
                             style={{
-                              width: 14,
-                              height: 14,
-                              borderRadius: 999,
-                              background: item.color || "#cbd5e1",
-                              border: "1px solid rgba(0,0,0,0.15)",
-                              display: "inline-block",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
                             }}
-                          />
+                          >
+                            <span
+                              style={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: 999,
+                                background: item.color || "#cbd5e1",
+                                border: "1px solid rgba(0,0,0,0.15)",
+                                display: "inline-block",
+                              }}
+                            />
+
+                            <span style={{ fontSize: 12, color: "#777" }}>
+                              {item.color || "Auto Color"}
+                            </span>
+                          </div>
 
                           <span style={{ fontSize: 12, color: "#777" }}>
-                            {item.color || "Auto Color"}
+                            Sort: {item.sort_order ?? "—"}
                           </span>
+
+                          {item.source ? (
+                            <span style={{ fontSize: 12, color: "#777" }}>
+                              Source: {item.source}
+                            </span>
+                          ) : null}
                         </div>
+                      </button>
 
-                        <span style={{ fontSize: 12, color: "#777" }}>
-                          Sort: {item.sort_order ?? "—"}
-                        </span>
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: 8,
+                          alignContent: "start",
+                          gridTemplateColumns: isCompact ? "1fr 1fr" : "1fr",
+                        }}
+                      >
+                        <AppButton
+                          variant="tertiary"
+                          onClick={() => void togglePublished(item)}
+                        >
+                          {item.is_published ? "Unpublish" : "Publish"}
+                        </AppButton>
 
-                        {item.source ? (
-                          <span style={{ fontSize: 12, color: "#777" }}>
-                            Source: {item.source}
-                          </span>
-                        ) : null}
+                        <AppButton
+                          variant="danger"
+                          onClick={() => void deleteItem(item.id)}
+                        >
+                          Delete
+                        </AppButton>
                       </div>
-                    </button>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gap: 8,
-                        alignContent: "start",
-                        gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void togglePublished(item)}
-                        style={{
-                          minHeight: 42,
-                        }}
-                      >
-                        {item.is_published ? "Unpublish" : "Publish"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => void deleteItem(item.id)}
-                        style={{
-                          minHeight: 42,
-                        }}
-                      >
-                        Delete
-                      </button>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </PageSection>
         </div>
       </div>
     </div>
@@ -3818,11 +3665,12 @@ export default function AdminAgendaPage() {
   // Task Authority check (hasAgendaAccess), not a role-name permission.
   return (
     <AdminRouteGuard>
-      <AdminShellAdapter pageTitle="Admin Agenda">
+      <AdminShellAdapter
+        pageTitle="Admin Agenda"
+        backTarget={{ href: "/admin/dashboard", label: "Dashboard" }}
+      >
         <AdminAgendaPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
-
-// Automatically set default category/color on first mount or emptyForm reset
