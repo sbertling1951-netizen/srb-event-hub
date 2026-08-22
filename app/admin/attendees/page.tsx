@@ -54,6 +54,10 @@ import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { RowActions } from "@/components/ui/RowActions";
@@ -400,13 +404,13 @@ export function QuickActionBar(props: {
   // two independently sticky bars at the same viewport offset was the
   // kind of scattered, uncoordinated chrome this pass exists to remove.
   return (
-    <div className="app-button-row">
+    <FormActions>
       <AppButton variant="primary" onClick={onAddAttendee} disabled={!canEdit}>
         + Add Attendee
       </AppButton>
 
       <AppButton onClick={onRefresh}>Refresh</AppButton>
-    </div>
+    </FormActions>
   );
 }
 
@@ -532,8 +536,11 @@ function ReviewQueue(props: {
       />
 
       {loading ? (
-        <Alert tone="neutral">Loading review queue...</Alert>
+        <LoadingState message="Loading review queue..." />
       ) : filteredReviewItems.length === 0 ? (
+        // Success tone deliberately preserved (not EmptyState, which is
+        // fixed at tone="neutral") -- an empty review queue is good news
+        // worth a green signal, not a routine "nothing here" state.
         <Alert tone="success">No flagged records for this Event.</Alert>
       ) : (
         <ResponsiveList aria-labelledby="attendees-review-queue-heading">
@@ -587,25 +594,23 @@ function ReviewQueue(props: {
                 </Alert>
 
                 <div className="app-form-grid-2">
-                  <div>
-                    <label style={labelStyle} htmlFor={`correct-member-number-${attendee.id}`}>
-                      Correct Member Number
-                    </label>
-                    <input
-                      id={`correct-member-number-${attendee.id}`}
-                      value={draftValue}
-                      onChange={(e) => onDraftChange(attendee.id, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !saving) {
-                          e.preventDefault();
-                          void onSaveMembership(item);
-                        }
-                      }}
-                      placeholder="Must begin with F or C"
-                      style={inputStyle}
-                      disabled={saving || !canEdit}
-                    />
-                  </div>
+                  <Field label="Correct Member Number">
+                    {(controlProps) => (
+                      <Input
+                        {...controlProps}
+                        value={draftValue}
+                        onChange={(e) => onDraftChange(attendee.id, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !saving) {
+                            e.preventDefault();
+                            void onSaveMembership(item);
+                          }
+                        }}
+                        placeholder="Must begin with F or C"
+                        disabled={saving || !canEdit}
+                      />
+                    )}
+                  </Field>
 
                   <div style={{ alignSelf: "end" }}>
                     <AppButton
@@ -763,13 +768,15 @@ function AttendeeList(props: {
   }
 
   const body = loading ? (
-    <Alert tone="neutral">Loading attendee records...</Alert>
+    <LoadingState message="Loading attendee records..." />
   ) : visibleAttendees.length === 0 ? (
-    <Alert tone="neutral">
-      {totalAttendeesCount === 0
-        ? "No attendees are registered for this Event yet."
-        : "No attendee records match your search or filters. Try clearing them."}
-    </Alert>
+    <EmptyState
+      message={
+        totalAttendeesCount === 0
+          ? "No attendees are registered for this Event yet."
+          : "No attendee records match your search or filters. Try clearing them."
+      }
+    />
   ) : isCompact ? (
     <ResponsiveList aria-labelledby="attendees-list-heading">
       {visibleAttendees.map((attendee, index) => {
@@ -1118,21 +1125,22 @@ export function AttendeeRecordWorkspace(props: {
     label: string;
   }) {
     return (
-      <div key={String(field.key)}>
-        <label style={labelStyle}>{field.label}</label>
-        <input
-          value={String(state[field.key] ?? "")}
-          onChange={(e) =>
-            onChange(
-              field.key,
-              field.key === "membership_number"
-                ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
-                : (e.target.value as AttendeeEditorState[typeof field.key]),
-            )
-          }
-          style={inputStyle}
-        />
-      </div>
+      <Field key={String(field.key)} label={field.label}>
+        {(controlProps) => (
+          <Input
+            {...controlProps}
+            value={String(state[field.key] ?? "")}
+            onChange={(e) =>
+              onChange(
+                field.key,
+                field.key === "membership_number"
+                  ? (e.target.value.toUpperCase() as AttendeeEditorState[typeof field.key])
+                  : (e.target.value as AttendeeEditorState[typeof field.key]),
+              )
+            }
+          />
+        )}
+      </Field>
     );
   }
 
@@ -1476,65 +1484,70 @@ export function AttendeeRecordWorkspace(props: {
               alignItems: "end",
             }}
           >
-            <div>
-              <label style={labelStyle}>Participant First Name</label>
-              <input
-                style={inputStyle}
-                placeholder="First name"
-                value={state.additional_first_name}
-                onChange={(e) =>
-                  onChange("additional_first_name", e.target.value)
-                }
-              />
-            </div>
+            <Field label="Participant First Name">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  placeholder="First name"
+                  value={state.additional_first_name}
+                  onChange={(e) =>
+                    onChange("additional_first_name", e.target.value)
+                  }
+                />
+              )}
+            </Field>
 
-            <div>
-              <label style={labelStyle}>Participant Last Name</label>
-              <input
-                style={inputStyle}
-                placeholder="Last name"
-                value={state.additional_last_name}
-                onChange={(e) =>
-                  onChange("additional_last_name", e.target.value)
-                }
-              />
-            </div>
+            <Field label="Participant Last Name">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  placeholder="Last name"
+                  value={state.additional_last_name}
+                  onChange={(e) =>
+                    onChange("additional_last_name", e.target.value)
+                  }
+                />
+              )}
+            </Field>
 
-            <div>
-              <label style={labelStyle}>Participant Nickname</label>
-              <input
-                style={inputStyle}
-                placeholder="Nickname"
-                value={state.additional_nickname}
-                onChange={(e) =>
-                  onChange("additional_nickname", e.target.value)
-                }
-              />
-            </div>
+            <Field label="Participant Nickname">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  placeholder="Nickname"
+                  value={state.additional_nickname}
+                  onChange={(e) =>
+                    onChange("additional_nickname", e.target.value)
+                  }
+                />
+              )}
+            </Field>
 
-            <div>
-              <label style={labelStyle}>Participant Email</label>
-              <input
-                style={inputStyle}
-                placeholder="Email address"
-                value={state.additional_email}
-                onChange={(e) =>
-                  onChange("additional_email", e.target.value)
-                }
-              />
-            </div>
+            <Field label="Participant Email">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  placeholder="Email address"
+                  value={state.additional_email}
+                  onChange={(e) =>
+                    onChange("additional_email", e.target.value)
+                  }
+                />
+              )}
+            </Field>
 
-            <div>
-              <label style={labelStyle}>Participant Cell Phone</label>
-              <input
-                style={inputStyle}
-                placeholder="Cell phone (optional)"
-                value={state.additional_cell_phone}
-                onChange={(e) =>
-                  onChange("additional_cell_phone", e.target.value)
-                }
-              />
-            </div>
+            <Field label="Participant Cell Phone">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  placeholder="Cell phone (optional)"
+                  value={state.additional_cell_phone}
+                  onChange={(e) =>
+                    onChange("additional_cell_phone", e.target.value)
+                  }
+                />
+              )}
+            </Field>
           </div>
         ) : null}
         {hasAdditionalNow ? (
@@ -1587,91 +1600,65 @@ export function AttendeeRecordWorkspace(props: {
           {SECTION_TEXT_FIELDS.coach.map(renderTextField)}
         </div>
         <div style={{ marginTop: 14 }}>
-          <label style={labelStyle}>Special Events Raw</label>
-          <textarea
-            value={state.special_events_raw}
-            onChange={(e) => onChange("special_events_raw", e.target.value)}
-            style={textareaStyle}
-            rows={3}
-          />
+          <Field label="Special Events Raw">
+            {(controlProps) => (
+              <Textarea
+                {...controlProps}
+                value={state.special_events_raw}
+                onChange={(e) => onChange("special_events_raw", e.target.value)}
+                rows={3}
+              />
+            )}
+          </Field>
         </div>
         <div
           style={{
             marginTop: 14,
             display: "grid",
-            gap: 8,
+            gap: "var(--space-2)",
             gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
           }}
         >
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.wants_to_volunteer}
-              onChange={(e) =>
-                onChange("wants_to_volunteer", e.target.checked)
-              }
-            />
-            Volunteer
-          </label>
+          <Checkbox
+            checked={state.wants_to_volunteer}
+            onChange={(e) => onChange("wants_to_volunteer", e.target.checked)}
+            label="Volunteer"
+          />
 
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.is_first_timer}
-              onChange={(e) => onChange("is_first_timer", e.target.checked)}
-            />
-            First Timer
-          </label>
+          <Checkbox
+            checked={state.is_first_timer}
+            onChange={(e) => onChange("is_first_timer", e.target.checked)}
+            label="First Timer"
+          />
 
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.share_with_attendees}
-              onChange={(e) =>
-                onChange("share_with_attendees", e.target.checked)
-              }
-            />
-            Share With Attendees
-          </label>
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.include_in_headcount}
-              onChange={(e) =>
-                onChange("include_in_headcount", e.target.checked)
-              }
-            />
-            Include In Headcount
-          </label>
+          <Checkbox
+            checked={state.share_with_attendees}
+            onChange={(e) => onChange("share_with_attendees", e.target.checked)}
+            label="Share With Attendees"
+          />
+          <Checkbox
+            checked={state.include_in_headcount}
+            onChange={(e) => onChange("include_in_headcount", e.target.checked)}
+            label="Include In Headcount"
+          />
 
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.needs_name_tag}
-              onChange={(e) => onChange("needs_name_tag", e.target.checked)}
-            />
-            Needs Name Tag
-          </label>
+          <Checkbox
+            checked={state.needs_name_tag}
+            onChange={(e) => onChange("needs_name_tag", e.target.checked)}
+            label="Needs Name Tag"
+          />
 
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.needs_coach_plate}
-              onChange={(e) =>
-                onChange("needs_coach_plate", e.target.checked)
-              }
-            />
-            Needs Coach Plate
-          </label>
+          <Checkbox
+            checked={state.needs_coach_plate}
+            onChange={(e) => onChange("needs_coach_plate", e.target.checked)}
+            label="Needs Coach Plate"
+          />
 
-          <label style={checkLabelStyle}>
-            <input
-              type="checkbox"
-              checked={state.needs_parking}
-              onChange={(e) => onChange("needs_parking", e.target.checked)}
-            />
-            Needs Parking
-          </label>
+          <Checkbox
+            checked={state.needs_parking}
+            onChange={(e) => onChange("needs_parking", e.target.checked)}
+            label="Needs Parking"
+          />
         </div>
       </div>
 
@@ -1695,96 +1682,89 @@ export function AttendeeRecordWorkspace(props: {
             alignItems: "end",
           }}
         >
-          <div>
-            <label style={labelStyle}>Registration Capacity</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button
-                type="button"
-                style={secondaryButtonStyle}
-                onClick={() => {
-                  onChange(
-                    "registration_capacity",
-                    Math.max(1, state.registration_capacity - 1) as any,
-                  );
-                  onChange("registration_capacity_was_unset", false);
-                }}
+          <Field label="Registration Capacity">
+            {(controlProps) => (
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                <AppButton
+                  onClick={() => {
+                    onChange(
+                      "registration_capacity",
+                      Math.max(1, state.registration_capacity - 1) as any,
+                    );
+                    onChange("registration_capacity_was_unset", false);
+                  }}
+                >
+                  −
+                </AppButton>
+                <Input
+                  {...controlProps}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={state.registration_capacity}
+                  onChange={(e) => {
+                    onChange(
+                      "registration_capacity",
+                      Math.max(1, Number(e.target.value) || 1) as any,
+                    );
+                    onChange("registration_capacity_was_unset", false);
+                  }}
+                  style={{ width: 70, textAlign: "center" }}
+                />
+                <AppButton
+                  onClick={() => {
+                    onChange(
+                      "registration_capacity",
+                      (state.registration_capacity + 1) as any,
+                    );
+                    onChange("registration_capacity_was_unset", false);
+                  }}
+                >
+                  +
+                </AppButton>
+              </div>
+            )}
+          </Field>
+          <Field label="Participant Type">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={state.participant_type}
+                onChange={(e) => onChange("participant_type", e.target.value)}
               >
-                −
-              </button>
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={state.registration_capacity}
-                onChange={(e) => {
-                  onChange(
-                    "registration_capacity",
-                    Math.max(1, Number(e.target.value) || 1) as any,
-                  );
-                  onChange("registration_capacity_was_unset", false);
-                }}
-                style={{
-                  ...inputStyle,
-                  width: 70,
-                  textAlign: "center",
-                }}
-              />
-              <button
-                type="button"
-                style={secondaryButtonStyle}
-                onClick={() => {
-                  onChange(
-                    "registration_capacity",
-                    (state.registration_capacity + 1) as any,
-                  );
-                  onChange("registration_capacity_was_unset", false);
-                }}
-              >
-                +
-              </button>
-            </div>
-          </div>
-          <div>
-            <label style={labelStyle}>Participant Type</label>
-            <select
-              value={state.participant_type}
-              onChange={(e) => onChange("participant_type", e.target.value)}
-              style={inputStyle}
-            >
-              {PARTICIPANT_TYPE_OPTIONS.filter(
-                (option) => option !== "all",
-              ).map((option) => (
-                <option key={option} value={option}>
-                  {participantTypeLabel(option)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>Data Status</label>
-            <select
-              value={state.data_status}
-              onChange={(e) => onChange("data_status", e.target.value)}
-              style={inputStyle}
-            >
-              {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
-                (option) => (
+                {PARTICIPANT_TYPE_OPTIONS.filter(
+                  (option) => option !== "all",
+                ).map((option) => (
                   <option key={option} value={option}>
-                    {dataStatusOptionLabel(option)}
+                    {participantTypeLabel(option)}
                   </option>
-                ),
-              )}
-            </select>
-          </div>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Data Status">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={state.data_status}
+                onChange={(e) => onChange("data_status", e.target.value)}
+              >
+                {DATA_STATUS_OPTIONS.filter((option) => option !== "all").map(
+                  (option) => (
+                    <option key={option} value={option}>
+                      {dataStatusOptionLabel(option)}
+                    </option>
+                  ),
+                )}
+              </Select>
+            )}
+          </Field>
           <div>
-            <label style={checkLabelStyle}>
-              <input
-                type="checkbox"
-                checked={state.is_active}
-                onChange={(e) => onChange("is_active", e.target.checked)}
-              />
-              Active Record
-            </label>
+            <Checkbox
+              checked={state.is_active}
+              onChange={(e) => onChange("is_active", e.target.checked)}
+              label="Active Record"
+            />
           </div>
         </div>
 
@@ -1806,14 +1786,17 @@ export function AttendeeRecordWorkspace(props: {
               {state.registration_capacity_original ?? "unset"}).
             </div>
             <div style={{ marginTop: 10 }}>
-              <label style={labelStyle}>Note (optional)</label>
-              <input
-                value={state.capacity_increase_note}
-                onChange={(e) =>
-                  onChange("capacity_increase_note", e.target.value)
-                }
-                style={inputStyle}
-              />
+              <Field label="Note (optional)">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={state.capacity_increase_note}
+                    onChange={(e) =>
+                      onChange("capacity_increase_note", e.target.value)
+                    }
+                  />
+                )}
+              </Field>
             </div>
           </div>
         )}
@@ -1821,10 +1804,10 @@ export function AttendeeRecordWorkspace(props: {
 
       <div style={sectionStyle}>
         {sectionHeading("notes", "Notes")}
-        <textarea
+        <Textarea
+          aria-label="Notes"
           value={state.notes}
           onChange={(e) => onChange("notes", e.target.value)}
-          style={textareaStyle}
           rows={4}
         />
       </div>
@@ -3877,52 +3860,6 @@ created_at
   );
 }
 
-// UI Phase 4: token-driven values only -- every one of these constants is
-// referenced by `style={...}` from dozens of call sites throughout this
-// file (the roster list, the review queue, the record workspace), so
-// tokenizing the values here brings the whole page onto the shared
-// design system without needing to touch each call site individually.
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: "var(--space-2)",
-  fontWeight: 600,
-  fontSize: "var(--font-size-body)",
-  color: "var(--color-text-secondary)",
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "var(--space-4)",
-  borderRadius: "var(--radius-medium)",
-  border: "var(--border-width-default) solid var(--color-border-strong)",
-  background: "var(--color-bg-elevated)",
-  color: "var(--color-text-primary)",
-  fontSize: "var(--font-size-body)",
-};
-
-const textareaStyle: CSSProperties = {
-  ...inputStyle,
-  resize: "vertical",
-};
-
-const checkLabelStyle: CSSProperties = {
-  display: "flex",
-  gap: "var(--space-3)",
-  alignItems: "center",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  minHeight: "var(--touch-target-min)",
-  padding: "var(--space-4) 18px",
-  borderRadius: "var(--radius-medium)",
-  border: "var(--border-width-default) solid var(--color-border-strong)",
-  background: "var(--color-bg-elevated)",
-  color: "var(--color-text-primary)",
-  WebkitTextFillColor: "var(--color-text-primary)",
-  fontWeight: 700,
-  lineHeight: 1.2,
-  cursor: "pointer",
-};
 
 const summaryCardStyle: CSSProperties = {
   padding: "var(--space-6)",

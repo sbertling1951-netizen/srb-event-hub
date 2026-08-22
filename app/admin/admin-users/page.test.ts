@@ -530,3 +530,25 @@ test("pickInitialEventId is deterministic: repeated calls with the same inputs r
   assert.equal(first, second);
   assert.equal(first, "draft-evt");
 });
+
+// -- Admin Batch 2: Central UI Standard completion touch-up -----------------
+
+test("loading and empty presentations use the canonical LoadingState/EmptyState primitives, not a hand-written neutral Alert", () => {
+  assert.match(
+    source,
+    /import\s*\{\s*EmptyState\s*\}\s*from\s*["']@\/components\/ui\/EmptyState["']/,
+  );
+  assert.match(
+    source,
+    /import\s*\{\s*LoadingState\s*\}\s*from\s*["']@\/components\/ui\/LoadingState["']/,
+  );
+  assert.match(source, /<LoadingState message="Loading admin users\.\.\." \/>/);
+  assert.match(source, /<EmptyState message="No admin users found\." \/>/);
+  assert.match(source, /<EmptyState message="No events found\." \/>/);
+  // The "Super Admin automatically has access" line is informational, not
+  // an empty-collection state -- it correctly stays a plain Alert.
+  assert.match(
+    source,
+    /<Alert tone="neutral">Super Admin automatically has access to all events\.<\/Alert>/,
+  );
+});

@@ -1,16 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import {
-  type CSSProperties,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import { Dialog } from "@/components/ui/Dialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
+import { RowActions } from "@/components/ui/RowActions";
 import { useAdmin } from "@/lib/adminContext";
 import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
@@ -388,6 +391,34 @@ function sortRowsForPrint(rows: AttendeeRow[], sortType: SortType) {
   return sorted;
 }
 
+// Pure, presentation-only classification of this page's own existing
+// `status` confirmation/guidance text into an Alert tone -- never a second
+// source of any message itself (every setStatus call site is unchanged).
+// Mirrors the same heuristic already established for Announcements/Admin
+// Users/Locations/Master Maps/Events/Event Staff/Reports.
+export function printStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.startsWith("failed to") ||
+    lower.startsWith("access denied") ||
+    lower.startsWith("no events available") ||
+    lower.startsWith("no admin working event")
+  ) {
+    return "danger";
+  }
+
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+
+  if (lower.startsWith("loaded")) {
+    return "success";
+  }
+
+  return "neutral";
+}
+
 function AdminPrintPageInner() {
   const [event, setEvent] = useState<EventRow | null>(null);
   const [availableEvents, setAvailableEvents] = useState<EventRow[]>([]);
@@ -407,21 +438,7 @@ function AdminPrintPageInner() {
   const [manualAttendees, setManualAttendees] = useState<AttendeeRow[]>([]);
   const { tenant } = useTenant();
 
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 900);
-    }
-
-    handleResize();
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, []);
+  const { isCompact: isMobile } = useShellInterfaceCapabilities();
 
   const [printMode, setPrintMode] = useState<PrintMode>("name_tags");
   const [printFilter, setPrintFilter] = useState<PrintFilter>("all");
@@ -957,29 +974,39 @@ function AdminPrintPageInner() {
   return (
     <div
       style={{
+        padding: "var(--space-6)",
         display: "grid",
-        gap: 18,
+        gap: "var(--space-5)",
         minWidth: 0,
       }}
     >
+      {/* Print Center intentionally renders without AdminShellAdapter --
+          window.print()'s `body * { visibility: hidden }` rule (below)
+          must hide every DOM node except .print-area with nothing else
+          interposed, so this page owns its own minimal "no-print"
+          navigation instead of the canonical shell chrome. Central UI
+          Standard primitives are still used throughout the controls
+          region for exactly that reason -- this is a deliberate,
+          print-driven exception to the shell requirement, not an
+          oversight. */}
       <nav
         aria-label="Print Center navigation"
         className="no-print"
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 16,
+          gap: "var(--space-4)",
           flexWrap: "wrap",
         }}
       >
-        <Link href="/admin/dashboard" style={navigationLinkStyle}>
+        <Link href="/admin/dashboard" className="app-button">
           ← Dashboard
         </Link>
-        <Link href="/admin/reports" style={navigationLinkStyle}>
+        <Link href="/admin/reports" className="app-button">
           Reports
         </Link>
         {canManagePrintSettings ? (
-          <Link href="/admin/print-settings" style={navigationLinkStyle}>
+          <Link href="/admin/print-settings" className="app-button">
             Print Settings
           </Link>
         ) : null}
@@ -1095,232 +1122,209 @@ top: 0 !important;
 
   }
 `}</style>
-      <div className="card no-print" style={{ padding: 18 }}>
-        {" "}
-        <div style={{ fontSize: 14, opacity: 0.8 }}>
+      <div className="no-print">
+        <PageSection variant="card">
+        <p className="app-subtle-text" style={{ margin: 0 }}>
           {event?.name || "No event selected"}
           {event?.location ? ` • ${event.location}` : ""}
           {dateRange ? ` • ${dateRange}` : ""}
-        </div>
-        {canSelectPrintEvent ? (
-          <div style={{ marginTop: 14, maxWidth: 520 }}>
-            <label style={labelStyle}>Print Event</label>
-            <select
-              value={selectedEventId}
-              onChange={(e) =>
-                void handleSelectedPrintEventChange(e.target.value)
-              }
-              style={inputStyle}
-              disabled={loading || availableEvents.length === 0}
-            >
-              {availableEvents.map((eventRow) => {
-                const eventLabelParts = [
-                  eventRow.name || "Unnamed Event",
-                  eventRow.venue_name || eventRow.location || "",
-                  formatDateRange(eventRow.start_date, eventRow.end_date),
-                ].filter(Boolean);
+        </p>
 
-                return (
-                  <option key={eventRow.id} value={eventRow.id}>
-                    {eventLabelParts.join(" • ")}
-                  </option>
-                );
-              })}
-            </select>
-            <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
-              Super Admin can select any event to print. Event Admins remain
-              locked to their assigned working event.
-            </div>
+        {canSelectPrintEvent ? (
+          <div style={{ marginTop: "var(--space-4)", maxWidth: 520 }}>
+            <Field
+              label="Print Event"
+              help="Super Admin can select any event to print. Event Admins remain locked to their assigned working event."
+            >
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={selectedEventId}
+                  onChange={(e) =>
+                    void handleSelectedPrintEventChange(e.target.value)
+                  }
+                  disabled={loading || availableEvents.length === 0}
+                >
+                  {availableEvents.map((eventRow) => {
+                    const eventLabelParts = [
+                      eventRow.name || "Unnamed Event",
+                      eventRow.venue_name || eventRow.location || "",
+                      formatDateRange(eventRow.start_date, eventRow.end_date),
+                    ].filter(Boolean);
+
+                    return (
+                      <option key={eventRow.id} value={eventRow.id}>
+                        {eventLabelParts.join(" • ")}
+                      </option>
+                    );
+                  })}
+                </Select>
+              )}
+            </Field>
           </div>
         ) : null}
-        <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
-        {flashMessage ? (
-          <div style={flashMessageStyle}>{flashMessage}</div>
+
+        {status ? (
+          <div style={{ marginTop: "var(--space-3)" }}>
+            <Alert tone={printStatusTone(status)}>{status}</Alert>
+          </div>
         ) : null}
-        {error ? <div style={errorBoxStyle}>{error}</div> : null}
+        {flashMessage ? (
+          <div style={{ marginTop: "var(--space-3)" }}>
+            <Alert tone="info">{flashMessage}</Alert>
+          </div>
+        ) : null}
+        {error ? (
+          <div style={{ marginTop: "var(--space-3)" }}>
+            <Alert tone="danger">{error}</Alert>
+          </div>
+        ) : null}
+        </PageSection>
       </div>
-      <div className="card no-print" style={{ padding: 18 }}>
+
+      <div className="no-print">
+        <PageSection variant="card">
         <div
           style={{
             display: "grid",
-            gap: 14,
+            gap: "var(--space-4)",
             gridTemplateColumns: isMobile
               ? "1fr"
               : "repeat(auto-fit, minmax(220px, 1fr))",
             alignItems: "end",
           }}
         >
-          <div>
-            <label style={labelStyle}>Print Type</label>
-            <select
-              value={printMode}
-              onChange={(e) => setPrintMode(e.target.value as PrintMode)}
-              style={inputStyle}
-            >
-              <option value="name_tags">Name Tags</option>
-              <option value="coach_plates">Coach Plates</option>
-            </select>
-          </div>
+          <Field label="Print Type">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={printMode}
+                onChange={(e) => setPrintMode(e.target.value as PrintMode)}
+              >
+                <option value="name_tags">Name Tags</option>
+                <option value="coach_plates">Coach Plates</option>
+              </Select>
+            )}
+          </Field>
 
-          <div>
-            <label style={labelStyle}>Filter</label>
-            <select
-              value={printFilter}
-              onChange={(e) => setPrintFilter(e.target.value as PrintFilter)}
-              style={inputStyle}
-            >
-              <option value="all">All Active Registrations</option>
-              <option value="arrived">Arrived Only</option>
-              <option value="first_timers">First Timers Only</option>
-            </select>
-          </div>
+          <Field label="Filter">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={printFilter}
+                onChange={(e) => setPrintFilter(e.target.value as PrintFilter)}
+              >
+                <option value="all">All Active Registrations</option>
+                <option value="arrived">Arrived Only</option>
+                <option value="first_timers">First Timers Only</option>
+              </Select>
+            )}
+          </Field>
 
-          <div>
-            <label style={labelStyle}>Sort</label>
-            <select
-              value={sortType}
-              onChange={(e) => setSortType(e.target.value as SortType)}
-              style={inputStyle}
-            >
-              <option value="alpha">Alphabetical</option>
-              <option value="first_timers_first_alpha">
-                First Timers, Then Returnees
-              </option>
-              <option value="returnees_first_alpha">
-                Returnees, Then First Timers
-              </option>
-            </select>
-          </div>
+          <Field label="Sort">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={sortType}
+                onChange={(e) => setSortType(e.target.value as SortType)}
+              >
+                <option value="alpha">Alphabetical</option>
+                <option value="first_timers_first_alpha">
+                  First Timers, Then Returnees
+                </option>
+                <option value="returnees_first_alpha">
+                  Returnees, Then First Timers
+                </option>
+              </Select>
+            )}
+          </Field>
 
-          <div>
-            <label style={labelStyle}>Font Color</label>
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                alignItems: "center",
-                minHeight: 42,
-              }}
-            >
-              <input
-                type="color"
-                value={activeTextColor}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  if (printMode === "name_tags") {
-                    setNameTagTextColor(next);
-                  } else {
-                    setCoachPlateTextColor(next);
-                  }
-                }}
+          <Field label="Font Color">
+            {(controlProps) => (
+              <div
                 style={{
-                  width: 52,
-                  height: 42,
-                  padding: 0,
-                  border: "1px solid #ccc",
-                  borderRadius: 8,
-                  background: "white",
-                  cursor: "pointer",
+                  display: "flex",
+                  gap: "var(--space-3)",
+                  alignItems: "center",
+                  minHeight: 42,
                 }}
-              />
-              <div style={{ fontSize: 13, color: "#555" }}>
-                {activeTextColor}
+              >
+                <Input
+                  {...controlProps}
+                  type="color"
+                  value={activeTextColor}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (printMode === "name_tags") {
+                      setNameTagTextColor(next);
+                    } else {
+                      setCoachPlateTextColor(next);
+                    }
+                  }}
+                  style={{ width: 52, height: 42, padding: 0, cursor: "pointer" }}
+                />
+                <div className="app-subtle-text">{activeTextColor}</div>
               </div>
-            </div>
-          </div>
+            )}
+          </Field>
 
-          <div style={{ display: "grid", gap: 8, alignItems: "end" }}>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={includeInactive}
-                onChange={(e) => setIncludeInactive(e.target.checked)}
-              />
-              Include inactive attendees
-            </label>
+          <div style={{ display: "grid", gap: "var(--space-2)", alignItems: "end" }}>
+            <Checkbox
+              checked={includeInactive}
+              onChange={(e) => setIncludeInactive(e.target.checked)}
+              label="Include inactive attendees"
+            />
 
             {printMode === "name_tags" ? (
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={showFirstTimerOnNameTags}
-                  onChange={(e) =>
-                    setShowFirstTimerOnNameTags(e.target.checked)
-                  }
-                />
-                Print FIRST TIMER on name tags
-              </label>
+              <Checkbox
+                checked={showFirstTimerOnNameTags}
+                onChange={(e) => setShowFirstTimerOnNameTags(e.target.checked)}
+                label="Print FIRST TIMER on name tags"
+              />
             ) : null}
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "end",
-              gap: 10,
-              flexWrap: "wrap",
-              width: "100%",
-              minWidth: 0,
-            }}
-          >
-            <button
-              type="button"
-              onClick={selectAllFiltered}
-              style={secondaryButtonStyle}
-            >
+          <FormActions>
+            <AppButton onClick={selectAllFiltered}>
               Select All Filtered
-            </button>
-            <button
-              type="button"
-              onClick={clearSelected}
-              style={secondaryButtonStyle}
-            >
+            </AppButton>
+            <AppButton onClick={clearSelected}>
               Clear Selected
-            </button>
-            <button
-              type="button"
-              onClick={() => createManualEntry("name_tag")}
-              style={secondaryButtonStyle}
-            >
+            </AppButton>
+            <AppButton onClick={() => createManualEntry("name_tag")}>
               Create Name Tag
-            </button>
-            <button
-              type="button"
-              onClick={() => createManualEntry("coach_plate")}
-              style={secondaryButtonStyle}
-            >
+            </AppButton>
+            <AppButton onClick={() => createManualEntry("coach_plate")}>
               Create Coach Plate
-            </button>
-            <button
-              type="button"
+            </AppButton>
+            <AppButton
+              variant="primary"
               onClick={handlePrint}
-              style={primaryButtonStyle}
               disabled={printableRows.length === 0}
             >
               Print
-            </button>
-          </div>
+            </AppButton>
+          </FormActions>
         </div>
 
-        <div style={{ marginTop: 14, fontSize: 13, color: "#666" }}>
+        <p className="app-subtle-text" style={{ marginTop: "var(--space-4)" }}>
           Print queue contains {printableRows.length} of{" "}
           {sortedFilteredAttendees.length} filtered attendees.
           {printMode === "name_tags"
             ? ` This will print ${printableNameTags.length} name tag${printableNameTags.length === 1 ? "" : "s"} on ${printableNameTagSheetCount} Avery 5164 sheet${printableNameTagSheetCount === 1 ? "" : "s"}.`
             : ""}
-        </div>
+        </p>
+        </PageSection>
       </div>
-      <div className="card no-print" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Who Will Print</h2>
 
+      <div className="no-print">
+        <PageSection variant="card" title="Who Will Print">
         {loading ? (
-          <div>Loading...</div>
+          <LoadingState message="Loading..." />
         ) : sortedFilteredAttendees.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>
-            No attendees found for this filter.
-          </div>
+          <EmptyState message="No attendees found for this filter." />
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
             {sortedFilteredAttendees.map((row) => {
               const pilot = displayPilotName(row) || "Unnamed";
               const copilot = displayCopilotName(row);
@@ -1331,30 +1335,31 @@ top: 0 !important;
                   style={{
                     display: "flex",
                     flexDirection: isMobile ? "column" : "row",
-                    gap: 10,
+                    gap: "var(--space-3)",
                     alignItems: isMobile ? "stretch" : "start",
-                    padding: "10px 12px",
-                    border: "1px solid #ddd",
-                    borderRadius: 10,
+                    padding: "var(--space-3)",
+                    border: "var(--border-width-default) solid var(--color-border-default)",
+                    borderRadius: "var(--radius-medium)",
                     background: row.id.startsWith("manual-")
                       ? "#fff7ed"
                       : selectedIds.includes(row.id)
-                        ? "#f8fafc"
-                        : "white",
+                        ? "var(--color-bg-muted)"
+                        : "var(--color-bg-panel)",
                   }}
                 >
                   <input
                     type="checkbox"
                     checked={selectedIds.includes(row.id)}
                     onChange={() => toggleSelected(row.id)}
+                    aria-label={`Select ${pilot} for the print queue`}
                     style={{ marginTop: 3 }}
                   />
                   <div>
-                    <div style={{ fontWeight: 700 }}>
+                    <div className="data-table-cell-primary">
                       {pilot}
                       {copilot ? ` / ${copilot}` : ""}
                     </div>
-                    <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
+                    <div className="data-table-cell-meta" style={{ marginTop: "var(--space-1)" }}>
                       Site: {canonicalSiteLabelByAttendeeId.get(row.id) || "—"}
                       {row.membership_number
                         ? ` • Member #: ${row.membership_number}`
@@ -1363,29 +1368,19 @@ top: 0 !important;
                       {row.is_first_timer ? " • First Timer" : ""}
                       {row.id.startsWith("manual-") ? " • Manual" : ""}
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "end",
-                        gap: 10,
-                        flexWrap: "wrap",
-                        width: "100%",
-                        minWidth: 0,
-                      }}
-                    >
-                      <button
-                        type="button"
+                    <RowActions>
+                      <AppButton
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           openPrintEditor(row.id);
                         }}
-                        style={secondaryButtonStyle}
                       >
                         Edit For Print
-                      </button>
-                      <button
-                        type="button"
+                      </AppButton>
+                      <AppButton
+                        variant={selectedIds.includes(row.id) ? "primary" : "default"}
+                        aria-pressed={selectedIds.includes(row.id)}
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -1395,301 +1390,76 @@ top: 0 !important;
                             addToPrintQueue(row.id);
                           }
                         }}
-                        style={
-                          selectedIds.includes(row.id)
-                            ? activeSecondaryButtonStyle
-                            : secondaryButtonStyle
-                        }
                       >
                         {selectedIds.includes(row.id)
                           ? "In Print Queue"
                           : "Add To Print Queue"}
-                      </button>
-                      <button
-                        type="button"
+                      </AppButton>
+                      <AppButton
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           printOnlyAttendee(row.id);
                         }}
-                        style={secondaryButtonStyle}
                       >
                         Print This Only
-                      </button>
+                      </AppButton>
                       {row.id.startsWith("manual-") ? (
-                        <button
-                          type="button"
+                        <AppButton
+                          variant="danger"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             removeManualEntry(row.id);
                           }}
-                          style={secondaryButtonStyle}
                         >
                           Delete Manual
-                        </button>
+                        </AppButton>
                       ) : null}
-                    </div>
+                    </RowActions>
                   </div>
                 </div>
               );
             })}
           </div>
         )}
+        </PageSection>
       </div>
-      {editPreviewRow ? (
-        <div
-          className="no-print"
-          style={printEditorOverlayStyle}
-          onClick={() => setEditAttendeeId(null)}
-        >
-          <div
-            className="card"
-            style={printEditorModalStyle}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "start",
-                marginBottom: 14,
-              }}
-            >
-              <div>
-                <h2 style={{ marginTop: 0, marginBottom: 12 }}>Print Editor</h2>
-                <div style={{ fontSize: 14, opacity: 0.8 }}>
-                  {editPreviewRow.id.startsWith("manual-")
-                    ? "Manual print entry"
-                    : "Session-only print overrides for"}{" "}
-                  {displayPilotName(editPreviewRow) || "Guest"}
-                  {displayCopilotName(editPreviewRow)
-                    ? ` / ${displayCopilotName(editPreviewRow)}`
-                    : ""}
-                </div>
-                <div style={{ fontSize: 13, color: "#666", marginTop: 8 }}>
-                  Edits stay in this session and remain in the current print
-                  queue until you clear or print them.
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setEditAttendeeId(null)}
-                style={secondaryButtonStyle}
-              >
-                Close
-              </button>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gap: 14,
-                gridTemplateColumns: isMobile
-                  ? "1fr"
-                  : "repeat(auto-fit, minmax(220px, 1fr))",
-              }}
-            >
-              <div>
-                <label style={labelStyle}>Pilot First</label>
-                <input
-                  value={editPreviewRow.pilot_first || ""}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "pilot_first",
-                      toTitleCase(e.target.value),
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Pilot Last</label>
-                <input
-                  value={editPreviewRow.pilot_last || ""}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "pilot_last",
-                      toTitleCase(e.target.value),
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Pilot Nickname</label>
-                <input
-                  value={editPreviewRow.nickname || ""}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "nickname",
-                      toTitleCase(e.target.value),
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Co-Pilot First</label>
-                <input
-                  value={editPreviewRow.copilot_first || ""}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "copilot_first",
-                      toTitleCase(e.target.value),
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Co-Pilot Last</label>
-                <input
-                  value={editPreviewRow.copilot_last || ""}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "copilot_last",
-                      toTitleCase(e.target.value),
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Co-Pilot Nickname</label>
-                <input
-                  value={editPreviewRow.copilot_nickname || ""}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "copilot_nickname",
-                      toTitleCase(e.target.value),
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Member Number</label>
-                <input
-                  value={editPreviewRow.membership_number || ""}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "membership_number",
-                      e.target.value,
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>City</label>
-                <input
-                  value={editPreviewRow.city || ""}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "city",
-                      toTitleCase(e.target.value),
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>State</label>
-                <input
-                  value={normalizeStateCode(editPreviewRow.state)}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "state",
-                      normalizeStateCode(e.target.value),
-                    )
-                  }
-                  maxLength={2}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "end",
-                gap: 10,
-                flexWrap: "wrap",
-                width: "100%",
-                minWidth: 0,
-              }}
-            >
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={!!editPreviewRow.is_first_timer}
-                  onChange={(e) =>
-                    updatePrintOverride(
-                      editPreviewRow.id,
-                      "is_first_timer",
-                      e.target.checked,
-                    )
-                  }
-                />
-                First Timer for print
-              </label>
-
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(editPreviewRow.id)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      addToPrintQueue(editPreviewRow.id);
-                    } else {
-                      removeFromPrintQueue(editPreviewRow.id);
-                    }
-                  }}
-                />
-                Keep in print queue
-              </label>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "end",
-                gap: 10,
-                flexWrap: "wrap",
-                width: "100%",
-                minWidth: 0,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => clearPrintOverride(editPreviewRow.id)}
-                style={secondaryButtonStyle}
-              >
+      <Dialog
+        open={!!editPreviewRow}
+        onClose={() => setEditAttendeeId(null)}
+        className="no-print"
+        title="Print Editor"
+        description={
+          editPreviewRow ? (
+            <>
+              {editPreviewRow.id.startsWith("manual-")
+                ? "Manual print entry"
+                : "Session-only print overrides for"}{" "}
+              {displayPilotName(editPreviewRow) || "Guest"}
+              {displayCopilotName(editPreviewRow)
+                ? ` / ${displayCopilotName(editPreviewRow)}`
+                : ""}
+              <br />
+              Edits stay in this session and remain in the current print
+              queue until you clear or print them.
+            </>
+          ) : undefined
+        }
+        footer={
+          editPreviewRow ? (
+            <>
+              <AppButton onClick={() => clearPrintOverride(editPreviewRow.id)}>
                 Clear Overrides
-              </button>
+              </AppButton>
               {editPreviewRow.id.startsWith("manual-") ? (
-                <button
-                  type="button"
-                  onClick={() => removeManualEntry(editPreviewRow.id)}
-                  style={secondaryButtonStyle}
-                >
+                <AppButton onClick={() => removeManualEntry(editPreviewRow.id)}>
                   Delete Manual Entry
-                </button>
+                </AppButton>
               ) : null}
-              <button
-                type="button"
+              <AppButton
+                variant={selectedIds.includes(editPreviewRow.id) ? "primary" : "default"}
+                aria-pressed={selectedIds.includes(editPreviewRow.id)}
                 onClick={() => {
                   if (selectedIds.includes(editPreviewRow.id)) {
                     removeFromPrintQueue(editPreviewRow.id);
@@ -1697,38 +1467,201 @@ top: 0 !important;
                     addToPrintQueue(editPreviewRow.id);
                   }
                 }}
-                style={
-                  selectedIds.includes(editPreviewRow.id)
-                    ? activeSecondaryButtonStyle
-                    : secondaryButtonStyle
-                }
               >
                 {selectedIds.includes(editPreviewRow.id)
                   ? "In Print Queue"
                   : "Add To Print Queue"}
-              </button>
-              <button
-                type="button"
-                onClick={() => printOnlyAttendee(editPreviewRow.id)}
-                style={secondaryButtonStyle}
-              >
+              </AppButton>
+              <AppButton onClick={() => printOnlyAttendee(editPreviewRow.id)}>
                 Print This Only
-              </button>
-              <button
-                type="button"
+              </AppButton>
+              <AppButton
+                variant="primary"
                 onClick={() => setEditAttendeeId(null)}
-                style={
-                  editHasUnsavedChanges
-                    ? dirtyPrimaryButtonStyle
-                    : primaryButtonStyle
-                }
               >
                 {editHasUnsavedChanges ? "Save Changes" : "Close"}
-              </button>
+              </AppButton>
+            </>
+          ) : undefined
+        }
+      >
+        {editPreviewRow ? (
+          <div style={{ display: "grid", gap: "var(--space-5)", minWidth: 0 }}>
+            <div
+              style={{
+                display: "grid",
+                gap: "var(--space-4)",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "repeat(auto-fit, minmax(220px, 1fr))",
+              }}
+            >
+              <Field label="Pilot First">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={editPreviewRow.pilot_first || ""}
+                    onChange={(e) =>
+                      updatePrintOverride(
+                        editPreviewRow.id,
+                        "pilot_first",
+                        toTitleCase(e.target.value),
+                      )
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="Pilot Last">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={editPreviewRow.pilot_last || ""}
+                    onChange={(e) =>
+                      updatePrintOverride(
+                        editPreviewRow.id,
+                        "pilot_last",
+                        toTitleCase(e.target.value),
+                      )
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="Pilot Nickname">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={editPreviewRow.nickname || ""}
+                    onChange={(e) =>
+                      updatePrintOverride(
+                        editPreviewRow.id,
+                        "nickname",
+                        toTitleCase(e.target.value),
+                      )
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="Co-Pilot First">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={editPreviewRow.copilot_first || ""}
+                    onChange={(e) =>
+                      updatePrintOverride(
+                        editPreviewRow.id,
+                        "copilot_first",
+                        toTitleCase(e.target.value),
+                      )
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="Co-Pilot Last">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={editPreviewRow.copilot_last || ""}
+                    onChange={(e) =>
+                      updatePrintOverride(
+                        editPreviewRow.id,
+                        "copilot_last",
+                        toTitleCase(e.target.value),
+                      )
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="Co-Pilot Nickname">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={editPreviewRow.copilot_nickname || ""}
+                    onChange={(e) =>
+                      updatePrintOverride(
+                        editPreviewRow.id,
+                        "copilot_nickname",
+                        toTitleCase(e.target.value),
+                      )
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="Member Number">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={editPreviewRow.membership_number || ""}
+                    onChange={(e) =>
+                      updatePrintOverride(
+                        editPreviewRow.id,
+                        "membership_number",
+                        e.target.value,
+                      )
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="City">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={editPreviewRow.city || ""}
+                    onChange={(e) =>
+                      updatePrintOverride(
+                        editPreviewRow.id,
+                        "city",
+                        toTitleCase(e.target.value),
+                      )
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="State">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={normalizeStateCode(editPreviewRow.state)}
+                    onChange={(e) =>
+                      updatePrintOverride(
+                        editPreviewRow.id,
+                        "state",
+                        normalizeStateCode(e.target.value),
+                      )
+                    }
+                    maxLength={2}
+                  />
+                )}
+              </Field>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "end", gap: "var(--space-3)", flexWrap: "wrap" }}>
+              <Checkbox
+                checked={!!editPreviewRow.is_first_timer}
+                onChange={(e) =>
+                  updatePrintOverride(
+                    editPreviewRow.id,
+                    "is_first_timer",
+                    e.target.checked,
+                  )
+                }
+                label="First Timer for print"
+              />
+
+              <Checkbox
+                checked={selectedIds.includes(editPreviewRow.id)}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    addToPrintQueue(editPreviewRow.id);
+                  } else {
+                    removeFromPrintQueue(editPreviewRow.id);
+                  }
+                }}
+                label="Keep in print queue"
+              />
             </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </Dialog>
       <div
         className="print-area"
         style={{
@@ -2074,104 +2007,6 @@ top: 0 !important;
     </div>
   );
 }
-
-const printEditorOverlayStyle: CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(17, 24, 39, 0.7)",
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "center",
-  padding: "12px",
-  overflowY: "auto",
-  overflowX: "hidden",
-  zIndex: 99999,
-};
-
-const printEditorModalStyle: CSSProperties = {
-  width: "min(100%, 980px)",
-  maxWidth: "100%",
-  maxHeight: "calc(100vh - 24px)",
-  overflowY: "auto",
-  overflowX: "hidden",
-  padding: 18,
-  margin: "0 auto",
-  boxShadow: "0 24px 60px rgba(0, 0, 0, 0.35)",
-  border: "1px solid #d1d5db",
-  minWidth: 0,
-  boxSizing: "border-box",
-};
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: 6,
-  fontWeight: 600,
-};
-
-const navigationLinkStyle: CSSProperties = {
-  color: "#111827",
-  fontWeight: 700,
-  textDecoration: "none",
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#111827",
-  color: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-const dirtyPrimaryButtonStyle: CSSProperties = {
-  ...primaryButtonStyle,
-  background: "#d97706",
-  boxShadow: "0 0 0 3px rgba(217, 119, 6, 0.2)",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const activeSecondaryButtonStyle: CSSProperties = {
-  ...secondaryButtonStyle,
-  background: "#dcfce7",
-  border: "1px solid #16a34a",
-  color: "#166534",
-};
-
-const flashMessageStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #bfdbfe",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontSize: 13,
-  fontWeight: 600,
-};
-
-const errorBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #e2b4b4",
-  background: "#fff3f3",
-  color: "#8a1f1f",
-};
 
 export default function AdminPrintPage() {
   return (

@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  type CSSProperties,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
 import ReportControlsPanel from "@/components/admin/reports/ReportControlsPanel";
@@ -22,7 +15,11 @@ import ReportsSummaryCards from "@/components/admin/reports/ReportsSummaryCards"
 import SavedPresetsCard from "@/components/admin/reports/SavedPresetsCard";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
-import { Page } from "@/components/ui/Page";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import { Field, Select } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { PageSection } from "@/components/ui/PageSection";
 import { useAdmin } from "@/lib/adminContext";
 import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
@@ -315,6 +312,54 @@ function sortRosterRows(rows: RosterRow[], sortType: SortType) {
     }
   });
 }
+
+// Pure, presentation-only classification of this page's own existing
+// `status` confirmation/guidance text into an Alert tone -- never a second
+// source of any message itself (every setStatus call site is unchanged).
+// Mirrors the same heuristic already established for Announcements/Admin
+// Users/Locations/Master Maps/Events/Event Staff.
+export function reportsStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.startsWith("could not") ||
+    lower.startsWith("access denied") ||
+    lower.startsWith("no admin event selected") ||
+    lower.startsWith("enter a preset name")
+  ) {
+    return "danger";
+  }
+
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+
+  if (
+    lower.startsWith("reports ready") ||
+    lower.startsWith("saved report preset") ||
+    lower.startsWith("applied report preset") ||
+    lower.startsWith("report preset deleted")
+  ) {
+    return "success";
+  }
+
+  return "neutral";
+}
+
+const REPORT_TYPE_OPTIONS: Array<{ value: ReportType; label: string }> = [
+  { value: "all_attendees", label: "All Attendees" },
+  { value: "household_contact_sheet", label: "Contact Sheet" },
+  { value: "arrived", label: "Arrived" },
+  { value: "not_arrived", label: "Not Arrived" },
+  { value: "parking_assignments", label: "Parking Assignments" },
+  { value: "unassigned_parking_needed", label: "Needs Parking" },
+  { value: "first_timers", label: "First Timers" },
+  { value: "volunteers", label: "Volunteers" },
+  { value: "vendors", label: "Vendors" },
+  { value: "staff_hosts_helpers", label: "Staff / Speakers" },
+  { value: "activity_summary", label: "Activity Summary" },
+  { value: "activity_roster", label: "Activity Roster" },
+];
 
 export default function AdminReportsPage() {
   return (
@@ -1199,136 +1244,53 @@ function AdminReportsPageInner() {
   }
 
   return (
-    <Page style={{ display: "grid", gap: 18, minWidth: 0 }}>
-      <div className="card" style={{ padding: 18 }}>
+    <div style={{ padding: "var(--space-6)", display: "grid", gap: "var(--space-5)", minWidth: 0 }}>
+      <PageSection variant="card">
+        {status ? <Alert tone={reportsStatusTone(status)}>{status}</Alert> : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
 
-          {status ? (
-            <div style={{ marginBottom: 12, fontSize: 14 }}>{status}</div>
-          ) : null}
+        <FormActions>
+          <AppButton
+            variant={showReportMenu ? "primary" : "tertiary"}
+            aria-expanded={showReportMenu}
+            onClick={() => setShowReportMenu((v) => !v)}
+          >
+            {showReportMenu ? "▼ Select Report" : "▶ Select Report"}
+          </AppButton>
+        </FormActions>
 
-          {error ? <div style={errorBoxStyle}>{error}</div> : null}
+        {showReportMenu ? (
+          <PageSection variant="section" title="Reports">
+            <FormActions>
+              {REPORT_TYPE_OPTIONS.map((option) => (
+                <AppButton
+                  key={option.value}
+                  variant={reportType === option.value ? "primary" : "tertiary"}
+                  aria-pressed={reportType === option.value}
+                  onClick={() => setReportType(option.value)}
+                >
+                  {option.label}
+                </AppButton>
+              ))}
+            </FormActions>
 
-          <div style={{ marginBottom: 12 }}>
-            <button
-              className="btn"
-              onClick={() => setShowReportMenu((v) => !v)}
-            >
-              {showReportMenu ? "▼ Select Report" : "▶ Select Report"}
-            </button>
-          </div>
-
-          {showReportMenu ? (
-            <div className="card" style={{ padding: 18, marginBottom: 12 }}>
-              <h3 style={{ marginTop: 0 }}>Reports</h3>
-
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                  marginTop: 12,
-                  marginBottom: 18,
-                }}
+            <FormActions>
+              <AppButton
+                variant={showControls ? "primary" : "tertiary"}
+                aria-expanded={showControls}
+                onClick={() => setShowControls((v) => !v)}
               >
-                <button
-                  className="btn"
-                  onClick={() => setReportType("all_attendees")}
-                >
-                  All Attendees
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("household_contact_sheet")}
-                >
-                  Contact Sheet
-                </button>
+                {showControls ? "▼ Report Controls" : "▶ Report Controls"}
+              </AppButton>
+            </FormActions>
 
-                <button
-                  className="btn"
-                  onClick={() => setReportType("arrived")}
-                >
-                  Arrived
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("not_arrived")}
-                >
-                  Not Arrived
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("parking_assignments")}
-                >
-                  Parking Assignments
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("unassigned_parking_needed")}
-                >
-                  Needs Parking
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("first_timers")}
-                >
-                  First Timers
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("volunteers")}
-                >
-                  Volunteers
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("vendors")}
-                >
-                  Vendors
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("staff_hosts_helpers")}
-                >
-                  Staff / Speakers
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("activity_summary")}
-                >
-                  Activity Summary
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setReportType("activity_roster")}
-                >
-                  Activity Roster
-                </button>
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <button
-                  className="btn"
-                  onClick={() => setShowControls((v) => !v)}
-                >
-                  {showControls ? "▼ Report Controls" : "▶ Report Controls"}
-                </button>
-              </div>
-
-              {showControls ? (
-                <>
-                  {reportType === "activity_roster" ? (
-                    <div style={{ marginBottom: 16 }}>
-                      <label
-                        style={{
-                          display: "block",
-                          fontWeight: 600,
-                          marginBottom: 6,
-                        }}
-                      >
-                        Activity
-                      </label>
-                      <select
-                        className="app-form-input"
+            {showControls ? (
+              <>
+                {reportType === "activity_roster" ? (
+                  <Field label="Activity">
+                    {(controlProps) => (
+                      <Select
+                        {...controlProps}
                         value={selectedActivity}
                         onChange={(e) => setSelectedActivity(e.target.value)}
                       >
@@ -1341,48 +1303,53 @@ function AdminReportsPageInner() {
                             {activity.activityName}
                           </option>
                         ))}
-                      </select>
-                    </div>
-                  ) : null}
-                  <ReportControlsPanel
-                    reportType={reportType}
-                    setReportType={setReportType}
-                    sortType={sortType}
-                    setSortType={setSortType}
-                    participantTypeFilter={participantTypeFilter}
-                    setParticipantTypeFilter={setParticipantTypeFilter}
-                    dataStatusFilter={dataStatusFilter}
-                    setDataStatusFilter={setDataStatusFilter}
-                    loading={loading}
-                    canExport={canExport}
-                    onExportCsv={handleExportCsv}
-                    onExportXlsx={handleExportXlsx}
-                    presetName={presetName}
-                    setPresetName={setPresetName}
-                    onSavePreset={handleSavePreset}
-                    reportPackType={reportPackType}
-                    setReportPackType={setReportPackType}
-                    onPrintPack={handlePrintPack}
-                  />
-                </>
-              ) : null}
-
-              <div style={{ marginTop: 12 }}>
-                <SavedPresetsCard
-                  presets={savedPresets}
-                  onApply={handleApplyPreset}
-                  onDelete={handleDeletePreset}
+                      </Select>
+                    )}
+                  </Field>
+                ) : null}
+                <ReportControlsPanel
+                  reportType={reportType}
+                  setReportType={setReportType}
+                  sortType={sortType}
+                  setSortType={setSortType}
+                  participantTypeFilter={participantTypeFilter}
+                  setParticipantTypeFilter={setParticipantTypeFilter}
+                  dataStatusFilter={dataStatusFilter}
+                  setDataStatusFilter={setDataStatusFilter}
+                  loading={loading}
+                  canExport={canExport}
+                  onExportCsv={handleExportCsv}
+                  onExportXlsx={handleExportXlsx}
+                  presetName={presetName}
+                  setPresetName={setPresetName}
+                  onSavePreset={handleSavePreset}
+                  reportPackType={reportPackType}
+                  setReportPackType={setReportPackType}
+                  onPrintPack={handlePrintPack}
                 />
-              </div>
-            </div>
-          ) : null}
-      </div>
+              </>
+            ) : null}
 
-      <div style={{ marginBottom: 12 }}>
-        <button className="btn" onClick={() => setShowSummary((v) => !v)}>
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <SavedPresetsCard
+                presets={savedPresets}
+                onApply={handleApplyPreset}
+                onDelete={handleDeletePreset}
+              />
+            </div>
+          </PageSection>
+        ) : null}
+      </PageSection>
+
+      <FormActions>
+        <AppButton
+          variant={showSummary ? "primary" : "tertiary"}
+          aria-expanded={showSummary}
+          onClick={() => setShowSummary((v) => !v)}
+        >
           {showSummary ? "▼ Hide Summary" : "▶ Summary"}
-        </button>
-      </div>
+        </AppButton>
+      </FormActions>
 
       {showSummary ? (
         <ReportsSummaryCards
@@ -1409,15 +1376,6 @@ function AdminReportsPageInner() {
         activitySummaryRows={activitySummaryRows}
         sortedRosterRows={sortedRosterRows}
       />
-    </Page>
+    </div>
   );
 }
-
-const errorBoxStyle: CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #fecaca",
-  background: "#fef2f2",
-  color: "#b91c1c",
-  marginBottom: 12,
-};

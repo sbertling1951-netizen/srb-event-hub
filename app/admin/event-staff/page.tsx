@@ -1,9 +1,19 @@
 "use client";
 
-import { type CSSProperties, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Checkbox, Field, Select } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
+import { RowActions } from "@/components/ui/RowActions";
+import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
   setCurrentAdminEvent,
@@ -13,7 +23,6 @@ import {
   canAccessEvent,
   hasPermission,
 } from "@/lib/getCurrentAdminAccess";
-import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
 type EventRow = {
@@ -133,6 +142,49 @@ function describeRpcError(err: any): string {
   return `Request failed: ${msg}`;
 }
 
+// Pure, presentation-only classification of this page's own existing
+// `status` confirmation/guidance text into an Alert tone -- never a second
+// source of any message itself (every setStatus call site is unchanged).
+// Mirrors the same heuristic already established for Announcements/Admin
+// Users/Locations/Master Maps/Events.
+export function eventStaffStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.startsWith("could not") ||
+    lower.startsWith("failed to") ||
+    lower.startsWith("request failed") ||
+    lower.startsWith("access denied") ||
+    lower.startsWith("you do not have") ||
+    lower.startsWith("you are not authorized") ||
+    lower.startsWith("you cannot") ||
+    lower.startsWith("that is not") ||
+    lower.startsWith("that administrator is not") ||
+    lower.startsWith("this event") ||
+    lower.startsWith("this assignment no longer exists") ||
+    lower.startsWith("choose an admin user") ||
+    lower.startsWith("no admin working event") ||
+    lower.startsWith("no working event")
+  ) {
+    return "danger";
+  }
+
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+
+  if (
+    lower.startsWith("loaded") ||
+    lower.startsWith("event staff added") ||
+    lower.startsWith("profile updated") ||
+    lower.endsWith("removed from event staff.")
+  ) {
+    return "success";
+  }
+
+  return "neutral";
+}
+
 function EventStaffPageInner() {
   const { admin } = useAdmin();
   const [event, setEvent] = useState<EventRow | null>(null);
@@ -151,6 +203,7 @@ function EventStaffPageInner() {
   const [newAdminUserId, setNewAdminUserId] = useState("");
   const [newProfile, setNewProfile] = useState<CanonicalProfile>("view_only");
   const [adding, setAdding] = useState(false);
+  const [pendingRemoveRow, setPendingRemoveRow] = useState<StaffRow | null>(null);
 
   useEffect(() => {
     if (!admin) return;
@@ -377,10 +430,14 @@ function EventStaffPageInner() {
     }
   }
 
-  async function handleRemoveRow(row: StaffRow) {
+  function requestRemoveRow(row: StaffRow) {
     if (!event?.id || !row.canGovern) { return; }
-    const confirmed = window.confirm(`Remove ${row.displayName || row.email} from this event staff list?`);
-    if (!confirmed) { return; }
+    setPendingRemoveRow(row);
+  }
+
+  async function handleRemoveRow(row: StaffRow) {
+    setPendingRemoveRow(null);
+    if (!event?.id || !row.canGovern) { return; }
     try {
       setBusyAccessId(row.accessId);
       setError(null);
@@ -403,155 +460,233 @@ function EventStaffPageInner() {
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 16 }}>
-      <div style={cardStyle}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Event Staff</h1>
-        <div style={{ fontWeight: 700, marginBottom: 10 }}>Working event: {event?.name || "No working event selected"}</div>
-        <div style={{ maxWidth: 420 }}>
-          <label style={labelStyle}>Select Event</label>
-          <select value={selectedEventId} onChange={(e) => void handleEventChange(e.target.value)} style={inputStyle} disabled={loading || events.length === 0}>
-            <option value="">Select event</option>
-            {events.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name || "Untitled Event"}{item.start_date ? ` • ${item.start_date}` : ""}{item.location ? ` • ${item.location}` : ""}
-              </option>
-            ))}
-          </select>
+    <div style={{ padding: "var(--space-6)", display: "grid", gap: "var(--space-4)" }}>
+      <ConfirmDialog
+        open={!!pendingRemoveRow}
+        title="Remove Event Staff"
+        message={`Remove ${pendingRemoveRow?.displayName || pendingRemoveRow?.email || "this admin"} from this event staff list?`}
+        confirmLabel="Remove"
+        danger
+        busy={!!pendingRemoveRow && busyAccessId === pendingRemoveRow.accessId}
+        onCancel={() => setPendingRemoveRow(null)}
+        onConfirm={() => void handleRemoveRow(pendingRemoveRow!)}
+      />
+
+      <PageSection variant="card">
+        <div style={{ display: "grid", gap: "var(--space-3)" }}>
+          <p className="app-subtle-text" style={{ margin: 0, fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+            Working event: {event?.name || "No working event selected"}
+          </p>
+
+          <Field label="Select Event">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={selectedEventId}
+                onChange={(e) => void handleEventChange(e.target.value)}
+                disabled={loading || events.length === 0}
+              >
+                <option value="">Select event</option>
+                {events.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name || "Untitled Event"}{item.start_date ? ` • ${item.start_date}` : ""}{item.location ? ` • ${item.location}` : ""}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+
+          {event?.location ? <p className="app-subtle-text" style={{ margin: 0 }}>{event.location}</p> : null}
+          {dateRange ? <p className="app-subtle-text" style={{ margin: 0 }}>{dateRange}</p> : null}
+          {status ? <Alert tone={eventStaffStatusTone(status)}>{status}</Alert> : null}
         </div>
-        {event?.location ? <div style={{ color: "#555", marginTop: 4 }}>{event.location}</div> : null}
-        {dateRange ? <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>{dateRange}</div> : null}
-        <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>{status}</div>
-      </div>
+      </PageSection>
 
-      {error ? <div style={errorBoxStyle}>{error}</div> : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
-      <div style={cardStyle}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Add Existing Admin</h2>
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "end" }}>
-          <div>
-            <label style={labelStyle}>Admin User</label>
-            <select value={newAdminUserId} onChange={(e) => setNewAdminUserId(e.target.value)} style={inputStyle} disabled={adding}>
-              <option value="">Select admin user</option>
-              {availableAdmins.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.display_name || a.email}{a.display_name ? ` • ${a.email}` : ""}{a.privilege_group ? ` • ${formatPrivilegeGroup(a.privilege_group)}` : ""}
-                </option>
-              ))}
-            </select>
-            {availableAdmins.length === 0 ? <div style={{ marginTop: 8, fontSize: 13, color: "#666" }}>No available existing admin users to add for this event.</div> : null}
+      <PageSection variant="card" title="Add Existing Admin">
+        <div style={{ display: "grid", gap: "var(--space-3)" }}>
+          <div className="app-form-grid-2">
+            <Field
+              label="Admin User"
+              help={availableAdmins.length === 0 ? "No available existing admin users to add for this event." : undefined}
+            >
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={newAdminUserId}
+                  onChange={(e) => setNewAdminUserId(e.target.value)}
+                  disabled={adding}
+                >
+                  <option value="">Select admin user</option>
+                  {availableAdmins.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.display_name || a.email}{a.display_name ? ` • ${a.email}` : ""}{a.privilege_group ? ` • ${formatPrivilegeGroup(a.privilege_group)}` : ""}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+
+            <Field label="Canonical Profile">
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={newProfile}
+                  onChange={(e) => setNewProfile(e.target.value as CanonicalProfile)}
+                  disabled={adding}
+                >
+                  {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                </Select>
+              )}
+            </Field>
           </div>
-          <div>
-            <label style={labelStyle}>Canonical Profile</label>
-            <select value={newProfile} onChange={(e) => setNewProfile(e.target.value as CanonicalProfile)} style={inputStyle} disabled={adding}>
-              {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-            </select>
-          </div>
-          <button type="button" onClick={() => void handleAddStaff()} disabled={adding || !newAdminUserId || !event?.id} style={primaryButtonStyle}>
-            {adding ? "Adding..." : "Add Staff"}
-          </button>
-        </div>
-      </div>
 
-      <div style={cardStyle}>
-        <div style={{ marginBottom: 12 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 6 }}>Assigned Event Staff</h2>
-          <div style={{ fontSize: 13, color: "#666" }}>{rows.length} assignment{rows.length === 1 ? "" : "s"} for this event. Super Admins are not listed here because they automatically have access to all events.</div>
+          <FormActions>
+            <AppButton
+              variant="primary"
+              onClick={() => void handleAddStaff()}
+              disabled={adding || !newAdminUserId || !event?.id}
+            >
+              {adding ? "Adding..." : "Add Staff"}
+            </AppButton>
+          </FormActions>
         </div>
+      </PageSection>
+
+      <PageSection
+        variant="card"
+        title="Assigned Event Staff"
+        titleStyle={{ marginBottom: "var(--space-1)" }}
+      >
+        <p className="app-subtle-text" style={{ marginTop: 0, marginBottom: "var(--space-4)" }}>
+          {rows.length} assignment{rows.length === 1 ? "" : "s"} for this event. Super Admins are not listed here because they automatically have access to all events.
+        </p>
+
         {loading ? (
-          <div>Loading...</div>
+          <LoadingState message="Loading event staff..." />
         ) : !event ? (
-          <div style={{ opacity: 0.8 }}>Select an event to view staff.</div>
+          <EmptyState message="Select an event to view staff." />
         ) : rows.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No event staff assigned yet.</div>
+          <EmptyState message="No event staff assigned yet." />
         ) : (
-          <div style={{ display: "grid", gap: 14 }}>
+          <div style={{ display: "grid", gap: "var(--space-4)" }}>
             {rows.map((row) => {
               const profileEntry = profileCatalog.find((p) => p.profile_key === row.pendingProfileChoice);
               const profileDefaultKeys = new Set(profileEntry?.profile_default_task_keys || []);
               const rowBusy = busyAccessId === row.accessId;
               return (
-                <div key={row.accessId} style={staffCardStyle}>
-                  <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "end", width: "100%" }}>
+                <div
+                  key={row.accessId}
+                  style={{
+                    border: "var(--border-width-default) solid var(--color-border-default)",
+                    borderRadius: "var(--radius-medium)",
+                    background: "var(--color-bg-muted)",
+                    padding: "var(--space-4)",
+                  }}
+                >
+                  <div className="app-permission-grid" style={{ alignItems: "end", width: "100%" }}>
                     <div>
-                      <div style={{ fontWeight: 700 }}>{row.displayName || row.email}</div>
-                      <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>{row.email}</div>
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>Base group: {formatPrivilegeGroup(row.privilegeGroup)}</div>
-                      {!row.canGovern ? <div style={{ fontSize: 12, color: "#8a1f1f", marginTop: 4 }}>This is your own assignment -- self-elevation is not permitted.</div> : null}
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Canonical Profile</label>
-                      <div style={{ fontSize: 13, marginBottom: 6 }}>Current: <strong>{EVENT_ROLE_OPTIONS.find((o) => o.value === row.canonicalProfile)?.label || row.canonicalProfile}</strong></div>
-                      <select value={row.pendingProfileChoice} onChange={(e) => updatePendingProfileChoice(row.accessId, e.target.value as CanonicalProfile)} style={inputStyle} disabled={rowBusy || !row.canGovern}>
-                        {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-                      </select>
-                      {row.pendingProfileChoice !== row.canonicalProfile ? (
-                        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                          <button type="button" onClick={() => void handleChangeProfile(row, "reset_to_defaults")} disabled={rowBusy || !row.canGovern} style={secondaryButtonStyle}>
-                            {rowBusy ? "Working..." : "Apply: Reset to Defaults"}
-                          </button>
-                          <button type="button" onClick={() => void handleChangeProfile(row, "preserve_exceptions")} disabled={rowBusy || !row.canGovern} style={secondaryButtonStyle}>
-                            {rowBusy ? "Working..." : "Apply: Preserve Current Grants"}
-                          </button>
-                        </div>
+                      <div className="data-table-cell-primary">{row.displayName || row.email}</div>
+                      <div className="data-table-cell-meta" style={{ marginTop: "var(--space-1)" }}>{row.email}</div>
+                      <div className="data-table-cell-meta" style={{ marginTop: "var(--space-1)" }}>Base group: {formatPrivilegeGroup(row.privilegeGroup)}</div>
+                      {!row.canGovern ? (
+                        <p style={{ fontSize: "var(--font-size-caption)", color: "var(--color-status-error)", marginTop: "var(--space-1)" }}>
+                          This is your own assignment -- self-elevation is not permitted.
+                        </p>
                       ) : null}
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
-                      <button type="button" onClick={() => void handleRemoveRow(row)} disabled={rowBusy || !row.canGovern} style={secondaryButtonStyle}>
+                    <Field
+                      label="Canonical Profile"
+                      help={
+                        <>
+                          Current:{" "}
+                          <strong>{EVENT_ROLE_OPTIONS.find((o) => o.value === row.canonicalProfile)?.label || row.canonicalProfile}</strong>
+                        </>
+                      }
+                    >
+                      {(controlProps) => (
+                        <Select
+                          {...controlProps}
+                          value={row.pendingProfileChoice}
+                          onChange={(e) => updatePendingProfileChoice(row.accessId, e.target.value as CanonicalProfile)}
+                          disabled={rowBusy || !row.canGovern}
+                        >
+                          {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                        </Select>
+                      )}
+                    </Field>
+                    <RowActions>
+                      <AppButton
+                        onClick={() => void requestRemoveRow(row)}
+                        disabled={rowBusy || !row.canGovern}
+                      >
                         {rowBusy && busyTaskKey === null ? "Removing..." : "Remove"}
-                      </button>
-                    </div>
+                      </AppButton>
+                    </RowActions>
                   </div>
 
-                  <div style={{ marginTop: 14 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 4 }}>Current Explicit Grants</div>
-                    <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
-                      These are the tasks this assignment actually has authority for right now. An unchecked task is not granted, even if the profile below would normally include it as a default.
+                  {row.pendingProfileChoice !== row.canonicalProfile ? (
+                    <div className="app-flex-wrap-12" style={{ marginTop: "var(--space-3)" }}>
+                      <AppButton
+                        variant="primary"
+                        onClick={() => void handleChangeProfile(row, "reset_to_defaults")}
+                        disabled={rowBusy || !row.canGovern}
+                      >
+                        {rowBusy ? "Working..." : "Apply: Reset to Defaults"}
+                      </AppButton>
+                      <AppButton
+                        onClick={() => void handleChangeProfile(row, "preserve_exceptions")}
+                        disabled={rowBusy || !row.canGovern}
+                      >
+                        {rowBusy ? "Working..." : "Apply: Preserve Current Grants"}
+                      </AppButton>
                     </div>
-                    <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+                  ) : null}
+
+                  <div style={{ marginTop: "var(--space-4)" }}>
+                    <strong>Current Explicit Grants</strong>
+                    <p className="app-subtle-text" style={{ marginTop: "var(--space-1)", marginBottom: "var(--space-3)" }}>
+                      These are the tasks this assignment actually has authority for right now. An unchecked task is not granted, even if the profile below would normally include it as a default.
+                    </p>
+                    <div className="app-permission-grid">
                       {taskCatalog.map((task) => {
                         const checked = row.explicitGrantKeys.has(task.task_key);
                         const isDefaultForPendingProfile = profileDefaultKeys.has(task.task_key);
                         return (
-                          <label key={task.task_key} style={permissionLabelStyle}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={rowBusy || !row.canGovern}
-                              onChange={(e) => void handleToggleTask(row, task.task_key, e.target.checked)}
-                            />
-                            <span>
-                              {task.description}
-                              {isDefaultForPendingProfile ? <span style={{ color: "#888" }}> (profile default)</span> : null}
-                            </span>
-                          </label>
+                          <Checkbox
+                            key={task.task_key}
+                            checked={checked}
+                            disabled={rowBusy || !row.canGovern}
+                            onChange={(e) => void handleToggleTask(row, task.task_key, e.target.checked)}
+                            label={
+                              <>
+                                {task.description}
+                                {isDefaultForPendingProfile ? (
+                                  <span className="app-subtle-text"> (profile default)</span>
+                                ) : null}
+                              </>
+                            }
+                          />
                         );
                       })}
                     </div>
                   </div>
 
                   {profileEntry ? (
-                    <div style={{ marginTop: 12, fontSize: 12, color: "#666" }}>
+                    <p className="app-subtle-text" style={{ marginTop: "var(--space-3)", marginBottom: 0 }}>
                       <strong>{profileEntry.display_name}</strong> profile defaults (reference only, not current authority): {profileEntry.profile_default_task_keys.length === 0 ? "none" : profileEntry.profile_default_task_keys.join(", ")}
-                    </div>
+                    </p>
                   ) : null}
                 </div>
               );
             })}
           </div>
         )}
-      </div>
+      </PageSection>
     </div>
   );
 }
-
-const cardStyle: CSSProperties = { border: "1px solid #ddd", borderRadius: 10, background: "white", padding: 18 };
-const staffCardStyle: CSSProperties = { border: "1px solid #ddd", borderRadius: 10, background: "#fafafa", padding: 14 };
-const labelStyle: CSSProperties = { display: "block", marginBottom: 6, fontWeight: 600 };
-const inputStyle: CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #ccc", background: "white" };
-const primaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 10, border: "none", background: "#111827", color: "white", fontWeight: 700, cursor: "pointer" };
-const secondaryButtonStyle: CSSProperties = { padding: "10px 14px", borderRadius: 10, border: "1px solid #ccc", background: "white", fontWeight: 700, cursor: "pointer" };
-const errorBoxStyle: CSSProperties = { border: "1px solid #e2b4b4", borderRadius: 10, background: "#fff3f3", color: "#8a1f1f", padding: 12 };
-const permissionLabelStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", border: "1px solid #eee", borderRadius: 10, background: "white", width: "100%", minWidth: 0, overflowWrap: "anywhere" };
 
 export default function EventStaffPage() {
   return (

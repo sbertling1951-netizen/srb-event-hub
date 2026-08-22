@@ -16,6 +16,7 @@ import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox } from "@/components/ui/Field";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
@@ -902,7 +903,7 @@ function AdminCheckinPageInner() {
 
       {!selectedAttendee ? (
         filteredAttendees.length === 0 ? (
-          <Alert tone="neutral">No attendees found.</Alert>
+          <EmptyState message="No attendees found." />
         ) : isCompact ? (
           <ResponsiveList aria-label="Check-in attendees">
             {filteredAttendees.map((attendee) => {

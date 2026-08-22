@@ -3,8 +3,25 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { reportsStatusTone } from "@/app/admin/reports/page";
+
 const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
 const source = readFileSync(sourcePath, "utf8");
+
+const controlsSourcePath = fileURLToPath(
+  new URL("../../../components/admin/reports/ReportControlsPanel.tsx", import.meta.url),
+);
+const controlsSource = readFileSync(controlsSourcePath, "utf8");
+
+const panelSourcePath = fileURLToPath(
+  new URL("../../../components/admin/reports/ReportsPanel.tsx", import.meta.url),
+);
+const panelSource = readFileSync(panelSourcePath, "utf8");
+
+const presetsSourcePath = fileURLToPath(
+  new URL("../../../components/admin/reports/SavedPresetsCard.tsx", import.meta.url),
+);
+const presetsSource = readFileSync(presetsSourcePath, "utf8");
 
 test("Reports has one guarded canonical render path", () => {
   assert.ok(source.includes('AdminRouteGuard requiredTask="event.reports.view"'));
@@ -265,4 +282,87 @@ test("canonicalSiteLabelByAttendeeId derives only from parking_sites.assigned_at
     source,
     /const canonicalSiteLabelByAttendeeId = useMemo\(\(\) => \{\s*const labels = new Map<string, string>\(\);\s*for \(const site of parkingSites\) \{\s*if \(site\.assigned_attendee_id\) \{\s*labels\.set\(site\.assigned_attendee_id, siteLabel\(site\)\);/,
   );
+});
+
+// -- Admin Batch 2: Central UI Standard migration ---------------------------
+
+test("the legacy <Page> wrapper and undefined .btn class are gone -- every button/panel routes through the canonical primitives", () => {
+  assert.equal(/from "@\/components\/ui\/Page"/.test(source), false);
+  assert.equal(/className="btn"/.test(source), false);
+  assert.match(
+    source,
+    /import\s*\{\s*AppButton\s*\}\s*from\s*["']@\/components\/ui\/AppButton["']/,
+  );
+  assert.match(
+    source,
+    /import\s*\{\s*PageSection\s*\}\s*from\s*["']@\/components\/ui\/PageSection["']/,
+  );
+});
+
+test("no raw <button>/<select> remain in the page or its ReportControlsPanel/ReportsPanel/SavedPresetsCard sub-components", () => {
+  for (const [name, src] of [
+    ["page.tsx", source],
+    ["ReportControlsPanel.tsx", controlsSource],
+    ["ReportsPanel.tsx", panelSource],
+    ["SavedPresetsCard.tsx", presetsSource],
+  ] as const) {
+    assert.equal(/<button\b/.test(src), false, `${name} should have no raw <button>`);
+    assert.equal(/<select\b/.test(src), false, `${name} should have no raw <select>`);
+  }
+});
+
+test("the report-type picker and disclosure toggles use AppButton with real pressed/expanded state, replacing the ▶/▼-prefixed unstyled .btn buttons", () => {
+  assert.match(source, /aria-pressed=\{reportType === option\.value\}/);
+  assert.match(source, /aria-expanded=\{showReportMenu\}/);
+  assert.match(source, /aria-expanded=\{showControls\}/);
+  assert.match(source, /aria-expanded=\{showSummary\}/);
+});
+
+test("ReportsPanel's activity_summary and roster tables render through the canonical DataTable primitive, not a hand-rolled <table>", () => {
+  assert.match(
+    panelSource,
+    /import\s*\{\s*DataTable\s*\}\s*from\s*["']@\/components\/ui\/DataTable["']/,
+  );
+  assert.equal((panelSource.match(/<DataTable caption=\{reportTitle\}>/g) || []).length, 2);
+  assert.equal(/<table\b/.test(panelSource), false);
+});
+
+test("loading/empty presentations across ReportsPanel/ReportsSummaryCards/SavedPresetsCard use the canonical LoadingState/EmptyState primitives", () => {
+  assert.match(
+    panelSource,
+    /import\s*\{\s*EmptyState\s*\}\s*from\s*["']@\/components\/ui\/EmptyState["']/,
+  );
+  assert.match(
+    panelSource,
+    /import\s*\{\s*LoadingState\s*\}\s*from\s*["']@\/components\/ui\/LoadingState["']/,
+  );
+  assert.match(panelSource, /<LoadingState message="Loading\.\.\." \/>/);
+  assert.match(panelSource, /<EmptyState message="No activity rows found\." \/>/);
+  assert.match(panelSource, /<EmptyState message="No rows found for this report\." \/>/);
+  assert.match(presetsSource, /<EmptyState message="No saved report presets yet\." \/>/);
+});
+
+test("SavedPresetsCard's Apply/Delete render inside RowActions, with Delete alone using the danger variant", () => {
+  assert.match(
+    presetsSource,
+    /import\s*\{\s*RowActions\s*\}\s*from\s*["']@\/components\/ui\/RowActions["']/,
+  );
+  const rowActionsIdx = presetsSource.indexOf("<RowActions>");
+  const rowActionsBlock = presetsSource.slice(rowActionsIdx, presetsSource.indexOf("</RowActions>", rowActionsIdx));
+  assert.match(rowActionsBlock, /<AppButton onClick=\{\(\) => onApply\(preset\)\}>Apply<\/AppButton>/);
+  assert.match(rowActionsBlock, /variant="danger"/);
+});
+
+test("reportsStatusTone classifies confirmation/loading/failure text correctly", () => {
+  assert.equal(reportsStatusTone("Reports ready."), "success");
+  assert.equal(reportsStatusTone('Saved report preset "My Preset".'), "success");
+  assert.equal(reportsStatusTone('Applied report preset "My Preset".'), "success");
+  assert.equal(reportsStatusTone("Report preset deleted."), "success");
+
+  assert.equal(reportsStatusTone("Loading reports..."), "info");
+
+  assert.equal(reportsStatusTone("Could not load attendees."), "danger");
+  assert.equal(reportsStatusTone("Access denied."), "danger");
+  assert.equal(reportsStatusTone("No admin event selected."), "danger");
+  assert.equal(reportsStatusTone("Enter a preset name first."), "danger");
 });

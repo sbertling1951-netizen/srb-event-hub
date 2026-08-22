@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { printStatusTone } from "@/app/admin/print/page";
+
 const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
 const source = readFileSync(sourcePath, "utf8");
 
@@ -178,4 +180,83 @@ test("Print Settings link authority re-checks on every Admin working-Event chang
 test("printing itself (window.print) remains ungated, unchanged -- Print Center's own view/print action was never a distinct manage-level capability", () => {
   assert.match(source, /function handlePrint\(\) \{\s*\n\s*window\.print\(\);\s*\n\s*\}/);
   assert.match(source, /function printOnlyAttendee\(attendeeId: string\) \{/);
+});
+
+// -- Admin Batch 2: Central UI Standard migration ---------------------------
+
+test("the print-area's printed content and print CSS are untouched by the UI migration -- same className, same @media print rules, same sheet/card markup", () => {
+  assert.match(source, /className="print-area"/);
+  assert.match(source, /className="name-tag-sheets"/);
+  assert.match(source, /className="name-tag-sheet"/);
+  assert.match(source, /className="coach-plate-card"/);
+  assert.match(source, /@media print \{/);
+  assert.match(source, /\.print-area, \.print-area \* \{/);
+});
+
+test("the controls region uses the canonical Field/Select/Input/Checkbox primitives -- no raw form control remains outside the print-area", () => {
+  const printAreaIdx = source.indexOf('className="print-area"');
+  const controlsSource = source.slice(0, printAreaIdx);
+  assert.equal(/<select\b/.test(controlsSource), false);
+  assert.equal(/<textarea\b/.test(controlsSource), false);
+  assert.match(
+    source,
+    /import\s*\{\s*Checkbox,\s*Field,\s*Input,\s*Select\s*\}\s*from\s*["']@\/components\/ui\/Field["']/,
+  );
+});
+
+test("the hand-rolled print-editor overlay is now the canonical Dialog primitive", () => {
+  assert.match(source, /import \{ Dialog \} from "@\/components\/ui\/Dialog";/);
+  assert.match(source, /<Dialog\s*\n\s*open=\{!!editPreviewRow\}/);
+  assert.equal(/printEditorOverlayStyle/.test(source), false);
+  assert.equal(/printEditorModalStyle/.test(source), false);
+});
+
+test("the print-editor Dialog still performs the exact same override/queue/delete calls -- only the modal shell changed", () => {
+  const dialogIdx = source.indexOf("<Dialog");
+  const dialogEnd = source.indexOf("</Dialog>", dialogIdx);
+  const dialogBlock = source.slice(dialogIdx, dialogEnd);
+  for (const needle of [
+    "updatePrintOverride(",
+    "clearPrintOverride(editPreviewRow.id)",
+    "removeManualEntry(editPreviewRow.id)",
+    "addToPrintQueue(editPreviewRow.id)",
+    "removeFromPrintQueue(editPreviewRow.id)",
+    "printOnlyAttendee(editPreviewRow.id)",
+  ]) {
+    assert.ok(dialogBlock.includes(needle), `Dialog block must retain ${needle}`);
+  }
+});
+
+test("no raw <button> remains outside the print-area -- every control action uses AppButton", () => {
+  const printAreaIdx = source.indexOf('className="print-area"');
+  const controlsSource = source.slice(0, printAreaIdx);
+  assert.equal(/<button\b/.test(controlsSource), false);
+});
+
+test("navigation links use the canonical .app-button class via Link (client-side transition preserved), not a page-local navigationLinkStyle", () => {
+  assert.equal(/navigationLinkStyle/.test(source), false);
+  assert.match(source, /<Link href="\/admin\/dashboard" className="app-button">/);
+  assert.match(source, /<Link href="\/admin\/reports" className="app-button">/);
+});
+
+test("the page-local isMobile resize listener is gone -- replaced by the shared useShellInterfaceCapabilities() hook", () => {
+  assert.equal(/addEventListener\("resize"/.test(source), false);
+  assert.equal(/window\.innerWidth/.test(source), false);
+  assert.match(
+    source,
+    /const \{ isCompact: isMobile \} = useShellInterfaceCapabilities\(\);/,
+  );
+});
+
+test("loading/empty presentation in the Who Will Print list uses the canonical LoadingState/EmptyState primitives", () => {
+  assert.match(source, /<LoadingState message="Loading\.\.\." \/>/);
+  assert.match(source, /<EmptyState message="No attendees found for this filter\." \/>/);
+});
+
+test("printStatusTone classifies confirmation/loading/failure text correctly", () => {
+  assert.equal(printStatusTone("Loaded 12 attendees."), "success");
+  assert.equal(printStatusTone("Loading print center..."), "info");
+  assert.equal(printStatusTone("Access denied."), "danger");
+  assert.equal(printStatusTone("No admin working event selected."), "danger");
+  assert.equal(printStatusTone("Failed to load print center."), "danger");
 });

@@ -1,3 +1,5 @@
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageSection } from "@/components/ui/PageSection";
 import type { CanonicalEventOperationalSummary } from "@/lib/eventOperationalSummary";
 
 type BreakdownRow = {
@@ -44,6 +46,11 @@ function operationalSummaryText(
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+const quickListRowStyle = {
+  borderTop: "var(--border-width-default) solid var(--color-border-default)",
+  paddingTop: "var(--space-2)",
+};
+
 export default function ReportsSummaryCards({
   registrationTypeBreakdown,
   dataStatusBreakdown,
@@ -61,28 +68,23 @@ export default function ReportsSummaryCards({
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: "var(--space-5)",
         gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
       }}
     >
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 10 }}>
-          Registration Type Breakdown
-        </h2>
-
+      <PageSection variant="card" title="Registration Type Breakdown" titleStyle={{ marginBottom: "var(--space-3)" }}>
         {registrationTypeBreakdown.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No registration data found.</div>
+          <EmptyState message="No registration data found." />
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
             {registrationTypeBreakdown.map((row) => (
               <div
                 key={row.label}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
-                  gap: 12,
-                  borderTop: "1px solid #eee",
-                  paddingTop: 8,
+                  gap: "var(--space-3)",
+                  ...quickListRowStyle,
                 }}
               >
                 <span style={{ textTransform: "capitalize" }}>{row.label}</span>
@@ -91,25 +93,21 @@ export default function ReportsSummaryCards({
             ))}
           </div>
         )}
-      </div>
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 10 }}>
-          Data Status Breakdown
-        </h2>
+      </PageSection>
 
+      <PageSection variant="card" title="Data Status Breakdown" titleStyle={{ marginBottom: "var(--space-3)" }}>
         {dataStatusBreakdown.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No data status records found.</div>
+          <EmptyState message="No data status records found." />
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
             {dataStatusBreakdown.map((row) => (
               <div
                 key={row.label}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
-                  gap: 12,
-                  borderTop: "1px solid #eee",
-                  paddingTop: 8,
+                  gap: "var(--space-3)",
+                  ...quickListRowStyle,
                 }}
               >
                 <span style={{ textTransform: "capitalize" }}>{row.label}</span>
@@ -118,32 +116,25 @@ export default function ReportsSummaryCards({
             ))}
           </div>
         )}
-      </div>
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 10 }}>
-          Unassigned Parking Needed
-        </h2>
-        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
+      </PageSection>
+
+      <PageSection variant="card" title="Unassigned Parking Needed" titleStyle={{ marginBottom: "var(--space-2)" }}>
+        <p className="app-subtle-text" style={{ marginTop: 0, marginBottom: "var(--space-3)" }}>
           {operationalSummaryText(
             operationalSummary,
             operationalSummaryError,
             (summary) => summary.activeNeedsParkingUnplaced,
             "active registration",
           )}
-        </div>
+        </p>
         {unassignedParkingRows.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>
-            No unassigned parking-needed attendees.
-          </div>
+          <EmptyState message="No unassigned parking-needed attendees." />
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
             {unassignedParkingRows.slice(0, 12).map((row, index) => (
-              <div
-                key={`${row.pilot}-${row.email}-${index}`}
-                style={quickListRowStyle}
-              >
+              <div key={`${row.pilot}-${row.email}-${index}`} style={quickListRowStyle}>
                 <strong>{row.pilot || "Unnamed"}</strong>
-                <div style={quickListMetaStyle}>
+                <div className="data-table-cell-meta">
                   {row.email || "No email"}
                   {row.cityState ? ` • ${row.cityState}` : ""}
                 </div>
@@ -151,28 +142,25 @@ export default function ReportsSummaryCards({
             ))}
           </div>
         )}
-      </div>
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 10 }}>Arrived</h2>
-        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
+      </PageSection>
+
+      <PageSection variant="card" title="Arrived" titleStyle={{ marginBottom: "var(--space-2)" }}>
+        <p className="app-subtle-text" style={{ marginTop: 0, marginBottom: "var(--space-3)" }}>
           {operationalSummaryText(
             operationalSummary,
             operationalSummaryError,
             (summary) => summary.activeArrived,
             "active registration",
           )}
-        </div>
+        </p>
         {arrivedRows.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No attendees are marked arrived.</div>
+          <EmptyState message="No attendees are marked arrived." />
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
             {arrivedRows.slice(0, 12).map((row, index) => (
-              <div
-                key={`${row.pilot}-${row.email}-${index}`}
-                style={quickListRowStyle}
-              >
+              <div key={`${row.pilot}-${row.email}-${index}`} style={quickListRowStyle}>
                 <strong>{row.pilot || "Unnamed"}</strong>
-                <div style={quickListMetaStyle}>
+                <div className="data-table-cell-meta">
                   {row.site ? `Site ${row.site}` : "No site assigned"}
                   {row.email ? ` • ${row.email}` : ""}
                 </div>
@@ -180,28 +168,25 @@ export default function ReportsSummaryCards({
             ))}
           </div>
         )}
-      </div>
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 10 }}>Not Arrived</h2>
-        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
+      </PageSection>
+
+      <PageSection variant="card" title="Not Arrived" titleStyle={{ marginBottom: "var(--space-2)" }}>
+        <p className="app-subtle-text" style={{ marginTop: 0, marginBottom: "var(--space-3)" }}>
           {operationalSummaryText(
             operationalSummary,
             operationalSummaryError,
             (summary) => summary.activeNotArrived,
             "active registration",
           )}
-        </div>
+        </p>
         {notArrivedRows.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>All attendees are marked arrived.</div>
+          <EmptyState message="All attendees are marked arrived." />
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
             {notArrivedRows.slice(0, 12).map((row, index) => (
-              <div
-                key={`${row.pilot}-${row.email}-${index}`}
-                style={quickListRowStyle}
-              >
+              <div key={`${row.pilot}-${row.email}-${index}`} style={quickListRowStyle}>
                 <strong>{row.pilot || "Unnamed"}</strong>
-                <div style={quickListMetaStyle}>
+                <div className="data-table-cell-meta">
                   {row.site ? `Site ${row.site}` : "No site assigned"}
                   {row.email ? ` • ${row.email}` : ""}
                 </div>
@@ -209,24 +194,21 @@ export default function ReportsSummaryCards({
             ))}
           </div>
         )}
-      </div>
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 10 }}>First Timers</h2>
-        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
+      </PageSection>
+
+      <PageSection variant="card" title="First Timers" titleStyle={{ marginBottom: "var(--space-2)" }}>
+        <p className="app-subtle-text" style={{ marginTop: 0, marginBottom: "var(--space-3)" }}>
           {firstTimerCount} attendee
           {firstTimerCount === 1 ? "" : "s"}
-        </div>
+        </p>
         {firstTimerRows.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No first timers found.</div>
+          <EmptyState message="No first timers found." />
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
             {firstTimerRows.slice(0, 12).map((row, index) => (
-              <div
-                key={`${row.pilot}-${row.email}-${index}`}
-                style={quickListRowStyle}
-              >
+              <div key={`${row.pilot}-${row.email}-${index}`} style={quickListRowStyle}>
                 <strong>{row.pilot || "Unnamed"}</strong>
-                <div style={quickListMetaStyle}>
+                <div className="data-table-cell-meta">
                   {row.cityState || "No city/state"}
                   {row.email ? ` • ${row.email}` : ""}
                 </div>
@@ -234,28 +216,21 @@ export default function ReportsSummaryCards({
             ))}
           </div>
         )}
-      </div>
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 10 }}>
-          Vendors / Staff / Speakers / Hosts
-        </h2>
-        <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
+      </PageSection>
+
+      <PageSection variant="card" title="Vendors / Staff / Speakers / Hosts" titleStyle={{ marginBottom: "var(--space-2)" }}>
+        <p className="app-subtle-text" style={{ marginTop: 0, marginBottom: "var(--space-3)" }}>
           {vendorStaffCount} attendee
           {vendorStaffCount === 1 ? "" : "s"}
-        </div>
+        </p>
         {vendorStaffRows.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>
-            No vendor or staff-type attendees found.
-          </div>
+          <EmptyState message="No vendor or staff-type attendees found." />
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: "var(--space-2)" }}>
             {vendorStaffRows.slice(0, 12).map((row, index) => (
-              <div
-                key={`${row.pilot}-${row.email}-${index}`}
-                style={quickListRowStyle}
-              >
+              <div key={`${row.pilot}-${row.email}-${index}`} style={quickListRowStyle}>
                 <strong>{row.pilot || "Unnamed"}</strong>
-                <div style={quickListMetaStyle}>
+                <div className="data-table-cell-meta">
                   {row.participantType}
                   {row.site ? ` • Site ${row.site}` : ""}
                 </div>
@@ -263,17 +238,7 @@ export default function ReportsSummaryCards({
             ))}
           </div>
         )}
-      </div>
+      </PageSection>
     </div>
   );
 }
-const quickListRowStyle = {
-  borderTop: "1px solid #eee",
-  paddingTop: 8,
-};
-
-const quickListMetaStyle = {
-  fontSize: 13,
-  color: "#666",
-  marginTop: 2,
-};

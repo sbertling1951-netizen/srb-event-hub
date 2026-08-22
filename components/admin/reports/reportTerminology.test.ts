@@ -24,7 +24,7 @@ const panelSource = readSource("./ReportsPanel.tsx");
 const exportSource = readSource("./reportExport.ts");
 
 test("ReportControlsPanel's filter label says Registration Type, not Participant Type", () => {
-  assert.match(controlsSource, /<label style=\{labelStyle\}>Registration Type<\/label>/);
+  assert.match(controlsSource, /<Field label="Registration Type">/);
   assert.ok(!controlsSource.includes("Participant Type"));
 });
 

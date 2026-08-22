@@ -351,3 +351,54 @@ test("Stage B's category state/helpers are local to this page -- neither app/mem
     assert.equal(settingsSource.includes(needle), false, `nearby-settings page should not reference ${needle}`);
   }
 });
+
+// -- Admin Batch 2: Central UI Standard completion touch-up -----------------
+
+test("every form action row uses the canonical FormActions wrapper, not a raw app-button-row div", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
+  );
+  assert.equal(/className="app-button-row"/.test(PAGE_SOURCE), false);
+  const formActionsCount = (PAGE_SOURCE.match(/<FormActions>/g) || []).length;
+  assert.ok(formActionsCount >= 6, `expected at least 6 FormActions usages, found ${formActionsCount}`);
+});
+
+test("the external 'Open Google Result in Maps' link uses AppLinkButton, not a raw <a className=\"app-button\">", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*AppButton,\s*AppLinkButton\s*\}\s*from\s*["']@\/components\/ui\/AppButton["']/,
+  );
+  const linkButtonIdx = PAGE_SOURCE.indexOf("<AppLinkButton");
+  assert.notEqual(linkButtonIdx, -1);
+  const linkButtonBlock = PAGE_SOURCE.slice(linkButtonIdx, linkButtonIdx + 600);
+  assert.match(linkButtonBlock, /target="_blank"/);
+  assert.match(linkButtonBlock, /Open Google Result in Maps/);
+  assert.equal(/className="app-button"/.test(PAGE_SOURCE), false);
+});
+
+test("loading and empty presentations for stored/event places use the canonical LoadingState/EmptyState primitives", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*EmptyState\s*\}\s*from\s*["']@\/components\/ui\/EmptyState["']/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*LoadingState\s*\}\s*from\s*["']@\/components\/ui\/LoadingState["']/,
+  );
+  assert.match(PAGE_SOURCE, /<LoadingState message="Loading stored areas\.\.\." \/>/);
+  assert.match(PAGE_SOURCE, /<LoadingState message="Loading stored places\.\.\." \/>/);
+  assert.match(PAGE_SOURCE, /<EmptyState message="No stored places found\." \/>/);
+  assert.match(PAGE_SOURCE, /<EmptyState message="No admin working event selected\." \/>/);
+  assert.match(PAGE_SOURCE, /<LoadingState message="Loading current event nearby places\.\.\." \/>/);
+  assert.match(
+    PAGE_SOURCE,
+    /<EmptyState message="No nearby places are currently assigned to this event\." \/>/,
+  );
+  // Guidance/informational text (not a loading or empty-collection state)
+  // correctly stays a plain Alert.
+  assert.match(
+    PAGE_SOURCE,
+    /<Alert tone="neutral">Select a stored area to manage its reusable places\.<\/Alert>/,
+  );
+});

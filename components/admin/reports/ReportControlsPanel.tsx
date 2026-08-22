@@ -1,4 +1,6 @@
-import { type CSSProperties } from "react";
+import { AppButton } from "@/components/ui/AppButton";
+import { Field, Input, Select } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 
 export type ReportType =
   | "all_attendees"
@@ -55,28 +57,7 @@ type Props = {
   onPrintPack: () => void;
 };
 
-export default function ReportControlsPanel(props: {
-  reportType: ReportType;
-  setReportType: (value: ReportType) => void;
-  sortType: SortType;
-  setSortType: (value: SortType) => void;
-  participantTypeFilter: ParticipantTypeFilter;
-  setParticipantTypeFilter: (value: ParticipantTypeFilter) => void;
-  dataStatusFilter: DataStatusFilter;
-  setDataStatusFilter: (value: DataStatusFilter) => void;
-  loading: boolean;
-  canExport: boolean;
-  onExportCsv: () => void;
-  onExportXlsx: () => void;
-  presetName: string;
-  setPresetName: (value: string) => void;
-  onSavePreset: () => void;
-  reportPackType: "parking_ops" | "checkin_ops" | "hospitality_ops";
-  setReportPackType: (
-    value: "parking_ops" | "checkin_ops" | "hospitality_ops",
-  ) => void;
-  onPrintPack: () => void;
-}) {
+export default function ReportControlsPanel(props: Props) {
   const {
     reportType,
     setReportType,
@@ -102,218 +83,145 @@ export default function ReportControlsPanel(props: {
     <div
       style={{
         display: "grid",
-        gap: 14,
+        gap: "var(--space-4)",
         gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        marginTop: 12,
+        marginTop: "var(--space-3)",
       }}
     >
-      <div>
-        <label style={labelStyle}>Report Type</label>
-        <select
-          value={reportType}
-          onChange={(e) => setReportType(e.target.value as ReportType)}
-          style={inputStyle}
-        >
-          <option value="all_attendees">All Attendees</option>
-          <option value="household_contact_sheet">
-            Household Contact Sheet
-          </option>
-          <option value="arrived">Arrived</option>
-          <option value="not_arrived">Not Arrived</option>
-          <option value="first_timers">First Timers</option>
-          <option value="volunteers">Volunteers</option>
-          <option value="vendors">Vendors</option>
-          <option value="staff_hosts_helpers">Staff / Hosts / Helpers</option>
-          <option value="parking_assignments">Parking Assignments</option>
-          <option value="unassigned_parking_needed">
-            Needs Parking / Unassigned
-          </option>
-          <option value="activity_summary">Activity Summary</option>
-          <option value="activity_roster">Activity Roster</option>
-        </select>
-      </div>
+      <Field label="Report Type">
+        {(controlProps) => (
+          <Select
+            {...controlProps}
+            value={reportType}
+            onChange={(e) => setReportType(e.target.value as ReportType)}
+          >
+            <option value="all_attendees">All Attendees</option>
+            <option value="household_contact_sheet">
+              Household Contact Sheet
+            </option>
+            <option value="arrived">Arrived</option>
+            <option value="not_arrived">Not Arrived</option>
+            <option value="first_timers">First Timers</option>
+            <option value="volunteers">Volunteers</option>
+            <option value="vendors">Vendors</option>
+            <option value="staff_hosts_helpers">Staff / Hosts / Helpers</option>
+            <option value="parking_assignments">Parking Assignments</option>
+            <option value="unassigned_parking_needed">
+              Needs Parking / Unassigned
+            </option>
+            <option value="activity_summary">Activity Summary</option>
+            <option value="activity_roster">Activity Roster</option>
+          </Select>
+        )}
+      </Field>
 
-      <div>
-        <label style={labelStyle}>Sort</label>
-        <select
-          value={sortType}
-          onChange={(e) => setSortType(e.target.value as SortType)}
-          style={inputStyle}
-          disabled={reportType === "activity_summary"}
-        >
-          <option value="name_asc">Last Name A–Z</option>
-          <option value="name_desc">Last Name Z–A</option>
-          <option value="site_asc">Site 0–9 / A–Z</option>
-          <option value="site_desc">Site 9–0 / Z–A</option>
-        </select>
-      </div>
+      <Field label="Sort">
+        {(controlProps) => (
+          <Select
+            {...controlProps}
+            value={sortType}
+            onChange={(e) => setSortType(e.target.value as SortType)}
+            disabled={reportType === "activity_summary"}
+          >
+            <option value="name_asc">Last Name A–Z</option>
+            <option value="name_desc">Last Name Z–A</option>
+            <option value="site_asc">Site 0–9 / A–Z</option>
+            <option value="site_desc">Site 9–0 / Z–A</option>
+          </Select>
+        )}
+      </Field>
 
-      <div>
-        <label style={labelStyle}>Registration Type</label>
-        <select
-          value={participantTypeFilter}
-          onChange={(e) =>
-            setParticipantTypeFilter(e.target.value as ParticipantTypeFilter)
-          }
-          style={inputStyle}
-        >
-          <option value="all">All Types</option>
-          <option value="attendee">Attendee</option>
-          <option value="vendor">Vendor</option>
-          <option value="staff">Staff</option>
-          <option value="speaker">Speaker</option>
-          <option value="volunteer">Volunteer</option>
-          <option value="event_host">Event Host</option>
-        </select>
-      </div>
+      <Field label="Registration Type">
+        {(controlProps) => (
+          <Select
+            {...controlProps}
+            value={participantTypeFilter}
+            onChange={(e) =>
+              setParticipantTypeFilter(e.target.value as ParticipantTypeFilter)
+            }
+          >
+            <option value="all">All Types</option>
+            <option value="attendee">Attendee</option>
+            <option value="vendor">Vendor</option>
+            <option value="staff">Staff</option>
+            <option value="speaker">Speaker</option>
+            <option value="volunteer">Volunteer</option>
+            <option value="event_host">Event Host</option>
+          </Select>
+        )}
+      </Field>
 
-      <div>
-        <label style={labelStyle}>Data Status</label>
-        <select
-          value={dataStatusFilter}
-          onChange={(e) =>
-            setDataStatusFilter(e.target.value as DataStatusFilter)
-          }
-          style={inputStyle}
-        >
-          <option value="all">All Statuses</option>
-          <option value="pending">Pending</option>
-          <option value="corrected">Corrected</option>
-          <option value="reviewed">Reviewed</option>
-          <option value="locked">Locked</option>
-        </select>
-      </div>
+      <Field label="Data Status">
+        {(controlProps) => (
+          <Select
+            {...controlProps}
+            value={dataStatusFilter}
+            onChange={(e) =>
+              setDataStatusFilter(e.target.value as DataStatusFilter)
+            }
+          >
+            <option value="all">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="corrected">Corrected</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="locked">Locked</option>
+          </Select>
+        )}
+      </Field>
 
-      <div>
-        <label style={labelStyle}>Report Pack</label>
-        <select
-          value={reportPackType}
-          onChange={(e) =>
-            setReportPackType(
-              e.target.value as
-                | "parking_ops"
-                | "checkin_ops"
-                | "hospitality_ops",
-            )
-          }
-          style={inputStyle}
-        >
-          <option value="parking_ops">Parking Operations Pack</option>
-          <option value="checkin_ops">Check-In Pack</option>
-          <option value="hospitality_ops">Hospitality Pack</option>
-        </select>
-      </div>
+      <Field label="Report Pack">
+        {(controlProps) => (
+          <Select
+            {...controlProps}
+            value={reportPackType}
+            onChange={(e) =>
+              setReportPackType(
+                e.target.value as
+                  | "parking_ops"
+                  | "checkin_ops"
+                  | "hospitality_ops",
+              )
+            }
+          >
+            <option value="parking_ops">Parking Operations Pack</option>
+            <option value="checkin_ops">Check-In Pack</option>
+            <option value="hospitality_ops">Hospitality Pack</option>
+          </Select>
+        )}
+      </Field>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          alignItems: "end",
-          flexWrap: "wrap",
-        }}
-      >
-        <button
-          type="button"
-          onClick={onExportCsv}
-          style={secondaryButtonStyle}
-          disabled={loading || !canExport}
-        >
+      <FormActions>
+        <AppButton onClick={onExportCsv} disabled={loading || !canExport}>
           Export CSV
-        </button>
+        </AppButton>
 
-        <button
-          type="button"
-          onClick={onExportXlsx}
-          style={primaryButtonStyle}
-          disabled={loading || !canExport}
-        >
+        <AppButton variant="primary" onClick={onExportXlsx} disabled={loading || !canExport}>
           Export XLSX
-        </button>
+        </AppButton>
 
-        <button
-          type="button"
-          onClick={() => window.print()}
-          style={secondaryButtonStyle}
-        >
-          Print
-        </button>
-        <button
-          type="button"
-          onClick={onPrintPack}
-          style={secondaryButtonStyle}
-          disabled={loading}
-        >
+        <AppButton onClick={() => window.print()}>Print</AppButton>
+
+        <AppButton onClick={onPrintPack} disabled={loading}>
           Print Pack
-        </button>
-      </div>
+        </AppButton>
+      </FormActions>
 
-      <div>
-        <label style={labelStyle}>Preset Name</label>
-        <input
-          value={presetName}
-          onChange={(e) => setPresetName(e.target.value)}
-          style={inputStyle}
-          placeholder="Save current report settings"
-        />
-      </div>
+      <Field label="Preset Name">
+        {(controlProps) => (
+          <Input
+            {...controlProps}
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            placeholder="Save current report settings"
+          />
+        )}
+      </Field>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          alignItems: "end",
-          flexWrap: "wrap",
-        }}
-      >
-        <button
-          type="button"
-          onClick={onSavePreset}
-          style={secondaryButtonStyle}
-          disabled={loading}
-        >
+      <FormActions>
+        <AppButton onClick={onSavePreset} disabled={loading}>
           Save Preset
-        </button>
-      </div>
+        </AppButton>
+      </FormActions>
     </div>
   );
 }
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: 6,
-  fontWeight: 600,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  color: "#111827",
-  WebkitTextFillColor: "#111827",
-  boxSizing: "border-box",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#111827",
-  color: "#ffffff",
-  WebkitTextFillColor: "#ffffff",
-  fontWeight: 700,
-  lineHeight: 1.2,
-  cursor: "pointer",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "#ffffff",
-  color: "#111827",
-  WebkitTextFillColor: "#111827",
-  fontWeight: 700,
-  lineHeight: 1.2,
-  cursor: "pointer",
-};

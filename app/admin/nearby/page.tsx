@@ -21,9 +21,12 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { Alert } from "@/components/ui/Alert";
-import { AppButton } from "@/components/ui/AppButton";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
@@ -2003,7 +2006,7 @@ function AdminNearbyPageInner() {
       >
         <PageSection title="Stored Area Lists" titleStyle={{ margin: 0 }}>
           {loadingAreas ? (
-            <Alert tone="neutral">Loading stored areas...</Alert>
+            <LoadingState message="Loading stored areas..." />
           ) : (
             <div style={{ display: "grid", gap: "var(--space-4)" }}>
               <Field label="Selected Area">
@@ -2058,7 +2061,7 @@ function AdminNearbyPageInner() {
                 </Alert>
               ) : null}
 
-              <div className="app-button-row">
+              <FormActions>
                 <AppButton onClick={() => void createStoredArea()} disabled={!admin || savingArea}>
                   New Stored Area
                 </AppButton>
@@ -2076,9 +2079,9 @@ function AdminNearbyPageInner() {
                 >
                   Delete Area
                 </AppButton>
-              </div>
+              </FormActions>
 
-              <div className="app-button-row">
+              <FormActions>
                 <AppButton
                   onClick={() => void replaceEventListFromStored()}
                   disabled={!admin || !adminEvent?.id || !selectedAreaId || copyingToEvent}
@@ -2091,7 +2094,7 @@ function AdminNearbyPageInner() {
                 >
                   {copyingToEvent ? "Merging Into Event..." : "Merge Stored Area Into Event Nearby"}
                 </AppButton>
-              </div>
+              </FormActions>
             </div>
           )}
         </PageSection>
@@ -2185,9 +2188,9 @@ function AdminNearbyPageInner() {
                 }}
               >
                 {loadingStoredPlaces ? (
-                  <Alert tone="neutral">Loading stored places...</Alert>
+                  <LoadingState message="Loading stored places..." />
                 ) : sortedStoredPlaces.length === 0 ? (
-                  <Alert tone="neutral">No stored places found.</Alert>
+                  <EmptyState message="No stored places found." />
                 ) : (
                   sortedStoredPlaces.map((place) => {
                     const selected = storedForm.id === place.id;
@@ -2378,7 +2381,7 @@ function AdminNearbyPageInner() {
                   )}
                 </Field>
 
-                <div className="app-button-row">
+                <FormActions>
                   <AppButton
                     variant="primary"
                     onClick={() => void saveStoredPlace()}
@@ -2411,7 +2414,7 @@ function AdminNearbyPageInner() {
                   >
                     Delete Stored Place
                   </AppButton>
-                </div>
+                </FormActions>
               </div>
             </div>
           )}
@@ -2453,7 +2456,7 @@ function AdminNearbyPageInner() {
           </Field>
         </div>
 
-        <div className="app-button-row">
+        <FormActions>
           <AppButton
             variant="primary"
             onClick={() => void searchGoogleNearby()}
@@ -2461,7 +2464,7 @@ function AdminNearbyPageInner() {
           >
             {searchingGoogle ? "Searching..." : "Search Google"}
           </AppButton>
-        </div>
+        </FormActions>
 
         {googleResults.length === 0 ? null : (
           <div style={{ display: "grid", gap: "var(--space-3)" }}>
@@ -2513,7 +2516,7 @@ function AdminNearbyPageInner() {
                 </div>
 
                 {(place.lat !== null && place.lng !== null) || place.address ? (
-                  <a
+                  <AppLinkButton
                     href={
                       place.lat !== null && place.lng !== null
                         ? `https://www.google.com/maps?q=${place.lat},${place.lng}`
@@ -2521,14 +2524,13 @@ function AdminNearbyPageInner() {
                     }
                     target="_blank"
                     rel="noreferrer"
-                    className="app-button"
                     style={{ width: "fit-content" }}
                   >
                     Open Google Result in Maps
-                  </a>
+                  </AppLinkButton>
                 ) : null}
 
-                <div className="app-button-row">
+                <FormActions>
                   <AppButton
                     onClick={() => {
                       setStoredForm({
@@ -2595,7 +2597,7 @@ function AdminNearbyPageInner() {
                   >
                     Load Into Event Place Editor
                   </AppButton>
-                </div>
+                </FormActions>
               </div>
             ))}
           </div>
@@ -2606,7 +2608,7 @@ function AdminNearbyPageInner() {
         <PageHeader title="Current Event Nearby Places" headingLevel="h2" titleClassName="app-section-title" />
 
         {!adminEvent?.id ? (
-          <Alert tone="neutral">No admin working event selected.</Alert>
+          <EmptyState message="No admin working event selected." />
         ) : (
           <div
             style={{
@@ -2630,9 +2632,9 @@ function AdminNearbyPageInner() {
               }}
             >
               {loadingEventPlaces ? (
-                <Alert tone="neutral">Loading current event nearby places...</Alert>
+                <LoadingState message="Loading current event nearby places..." />
               ) : sortedEventPlaces.length === 0 ? (
-                <Alert tone="neutral">No nearby places are currently assigned to this event.</Alert>
+                <EmptyState message="No nearby places are currently assigned to this event." />
               ) : (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext
@@ -2805,7 +2807,7 @@ function AdminNearbyPageInner() {
                 disabled={!admin || savingEventPlace}
               />
 
-              <div className="app-button-row">
+              <FormActions>
                 <AppButton
                   variant="primary"
                   onClick={() => void saveEventPlace()}
@@ -2826,7 +2828,7 @@ function AdminNearbyPageInner() {
                 >
                   Delete Event Place
                 </AppButton>
-              </div>
+              </FormActions>
             </div>
           </div>
         )}

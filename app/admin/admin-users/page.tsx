@@ -8,7 +8,9 @@ import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter
 import { Alert, type AlertTone } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { Dialog } from "@/components/ui/Dialog";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -640,9 +642,9 @@ function AdminUsersPageInner() {
         />
 
         {loading ? (
-          <Alert tone="neutral">Loading admin users...</Alert>
+          <LoadingState message="Loading admin users..." />
         ) : rows.length === 0 ? (
-          <Alert tone="neutral">No admin users found.</Alert>
+          <EmptyState message="No admin users found." />
         ) : (
           <div style={{ display: "grid", gap: "var(--space-3)" }}>
             {rows.map((row) => {
@@ -817,7 +819,7 @@ function AdminUsersPageInner() {
             {privilegeGroup === "super_admin" ? (
               <Alert tone="neutral">Super Admin automatically has access to all events.</Alert>
             ) : orderedEvents.length === 0 ? (
-              <Alert tone="neutral">No events found.</Alert>
+              <EmptyState message="No events found." />
             ) : (
               <div style={{ display: "grid", gap: "var(--space-4)" }}>
                 <Field label="Event">

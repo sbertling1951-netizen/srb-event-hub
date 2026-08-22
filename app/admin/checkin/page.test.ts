@@ -464,3 +464,13 @@ test("Parking authority remains separate: no placement task or permission is int
   assert.equal(/event\.parking\.manage/.test(source), false);
   assert.equal(/can_assign_parking|can_manage_parking/.test(source), false);
 });
+
+// -- Admin Batch 2: Central UI Standard completion touch-up -----------------
+
+test("the empty browse-result state uses the canonical EmptyState primitive, not a hand-written neutral Alert", () => {
+  assert.match(
+    source,
+    /import\s*\{\s*EmptyState\s*\}\s*from\s*["']@\/components\/ui\/EmptyState["']/,
+  );
+  assert.match(source, /<EmptyState message="No attendees found\." \/>/);
+});

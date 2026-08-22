@@ -624,7 +624,10 @@ test("AttendeeRecordWorkspace: edit mode renders the mutable form (editBody) and
     source.indexOf("const primaryActions ="),
   );
 
-  assert.ok(editBodySource.includes("<input"));
+  // Central UI Standard migration: form fields now route through the
+  // canonical Field/Input primitives rather than a raw <input>.
+  assert.ok(editBodySource.includes("<Input"));
+  assert.ok(editBodySource.includes("<Field "));
 
   const primaryActionsSource = source.slice(
     source.indexOf("const primaryActions ="),
@@ -1358,4 +1361,77 @@ test("Check-In/Parking ownership remains intact: no Arrival or placement mutatio
   assert.equal(/arrival_status:/.test(payload), false);
   assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/checkin", state\.id\)/);
   assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
+});
+
+// -- Admin Batch 2: Central UI Standard migration ---------------------------
+
+test("the record editor's genuine form fields (household/contact/location/coach/registration/notes) route through Field/Input/Select/Textarea/Checkbox -- toolbar filters and the row-select button stay their own established, tested exceptions", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /import\s*\{\s*Checkbox,\s*Field,\s*Input,\s*Select,\s*Textarea\s*\}\s*from\s*["']@\/components\/ui\/Field["']/,
+  );
+
+  const editBodySource = source.slice(
+    source.indexOf("const editBody = ("),
+    source.indexOf("const primaryActions ="),
+  );
+  assert.equal(/<input\b/.test(editBodySource), false);
+  assert.equal(/<select\b/.test(editBodySource), false);
+  assert.equal(/<textarea\b/.test(editBodySource), false);
+  assert.match(editBodySource, /<Checkbox\b/);
+  assert.match(editBodySource, /<Select\b/);
+
+  // The five toolbar filter <select>s and the one "More filters" checkbox
+  // remain deliberately raw, matching this page's own established
+  // TableToolbar filter convention (cited as precedent by both Nearby's
+  // and Agenda's own migrations).
+  const toolbarSource = source.slice(source.indexOf("<TableToolbar>"), source.indexOf("</TableToolbar>"));
+  assert.equal((toolbarSource.match(/<select\b/g) || []).length, 5);
+  assert.equal((toolbarSource.match(/type="checkbox"/g) || []).length, 1);
+});
+
+test("QuickActionBar's Add Attendee/Refresh row uses the canonical FormActions wrapper, not a raw app-button-row div", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
+  );
+  assert.match(source, /<FormActions>\s*\n\s*<AppButton variant="primary" onClick=\{onAddAttendee\}/);
+  assert.equal(/className="app-button-row"/.test(source), false);
+});
+
+test("loading/empty presentation in the roster list and review queue uses the canonical LoadingState/EmptyState primitives, except the deliberately-preserved success-toned empty review queue", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(
+    source,
+    /import\s*\{\s*EmptyState\s*\}\s*from\s*["']@\/components\/ui\/EmptyState["']/,
+  );
+  assert.match(
+    source,
+    /import\s*\{\s*LoadingState\s*\}\s*from\s*["']@\/components\/ui\/LoadingState["']/,
+  );
+  assert.match(source, /<LoadingState message="Loading review queue\.\.\." \/>/);
+  assert.match(source, /<LoadingState message="Loading attendee records\.\.\." \/>/);
+  assert.match(
+    source,
+    /<EmptyState\s*\n\s*message=\{\s*\n\s*totalAttendeesCount === 0/,
+  );
+  // Deliberately still a plain Alert (not EmptyState, which is fixed at
+  // tone="neutral") -- an empty review queue is good news.
+  assert.match(source, /<Alert tone="success">No flagged records for this Event\.<\/Alert>/);
+});
+
+test("the hand-rolled per-participant-type badge colors remain page-local -- a second real category-badge consumer, still not promoted to a shared primitive (no shared tone vocabulary fits arbitrary-cardinality type coloring)", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  assert.match(source, /function participantTypeBadgeStyle\(/);
+  assert.equal((source.match(/participantTypeBadgeStyle\(/g) || []).length >= 4, true);
 });
