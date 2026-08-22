@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { eventAdminStatusTone } from "@/app/admin/events/page";
+
 // Focused tests for the Event Context Invariant
 // (docs/architecture/ADR-006 Event Context Architecture.md), written
 // against the Amana -> Branson production defect. This page's loadPage
@@ -137,7 +139,7 @@ test("changing the Event Filter (status-filter picker) no longer clears the shar
 });
 
 test("the 'New Event' button no longer clears the shared working Event -- it only resets this page's own form state", () => {
-  const buttonIdx = PAGE_SOURCE.indexOf(">\n          New Event\n");
+  const buttonIdx = PAGE_SOURCE.indexOf(">\n              New Event\n");
   assert.notEqual(buttonIdx, -1);
   const onClickIdx = PAGE_SOURCE.lastIndexOf("onClick={() => {", buttonIdx);
   assert.notEqual(onClickIdx, -1);
@@ -666,4 +668,133 @@ test("existing-Event update/create request payloads and RLS-facing table access 
 
 test("Event-membership (canAccessEvent) remains as a page-local per-row check, unrelated to the migrated route permission", () => {
   assert.match(PAGE_SOURCE, /canAccessEvent\(admin, form\.id\)/);
+});
+
+// -- Admin Batch 1: Central UI Standard migration ---------------------------
+
+test("no raw form controls remain -- every input/select routes through the canonical Field/Input/Select primitives", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*Field,\s*Input,\s*Select\s*\}\s*from\s*["']@\/components\/ui\/Field["']/,
+  );
+  const sourceWithoutLineComments = PAGE_SOURCE.replace(/\/\/.*$/gm, "");
+  assert.equal(/<input\b/.test(sourceWithoutLineComments), false, "no raw <input> should remain");
+  assert.equal(/<select\b/.test(sourceWithoutLineComments), false, "no raw <select> should remain");
+  for (const label of [
+    "Event Filter",
+    "Select Event",
+    "Event Name",
+    "Location",
+    "Latitude",
+    "Longitude",
+    "Start Date",
+    "End Date",
+    "Event Code",
+    "Status",
+    "Selected Master Map",
+    "Selected Stored Nearby List",
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(`label="${label}"`), `expected a Field for "${label}"`);
+  }
+});
+
+test("no raw <button> remains -- every action uses AppButton, and same-app navigation uses AppLinkButton", () => {
+  assert.equal(/<button\b/.test(PAGE_SOURCE), false);
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*AppButton,\s*AppLinkButton\s*\}\s*from\s*["']@\/components\/ui\/AppButton["']/,
+  );
+  assert.match(PAGE_SOURCE, /<AppLinkButton href="\/admin\/master-maps">Master Maps<\/AppLinkButton>/);
+  assert.match(PAGE_SOURCE, /<AppLinkButton href="\/admin\/nearby">Nearby<\/AppLinkButton>/);
+  assert.match(PAGE_SOURCE, /<AppLinkButton href="\/admin\/dashboard">Dashboard<\/AppLinkButton>/);
+});
+
+test("the page-local 'Return to Dashboard' button is gone -- the canonical shell backTarget now owns that affordance", () => {
+  assert.equal(/Return to Dashboard/.test(PAGE_SOURCE), false);
+  assert.equal(/function openDashboard\(\)/.test(PAGE_SOURCE), false);
+  assert.match(
+    PAGE_SOURCE,
+    /backTarget=\{\{ href: "\/admin\/dashboard", label: "Dashboard" \}\}/,
+  );
+});
+
+test("the duplicate in-body 'Event Admin' <h1> is gone -- the canonical shell header (pageTitle) is the page's only h1", () => {
+  assert.equal(/<h1[^>]*>Event Admin<\/h1>/.test(PAGE_SOURCE), false);
+  assert.match(PAGE_SOURCE, /<AdminShellAdapter\s*\n\s*pageTitle="Event Admin"/);
+});
+
+test("Select Event, Event Details, and Event Assignments render through the canonical PageSection primitive", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*PageSection\s*\}\s*from\s*["']@\/components\/ui\/PageSection["']/,
+  );
+  assert.match(PAGE_SOURCE, /<PageSection variant="card" title="Select Event">/);
+  assert.match(PAGE_SOURCE, /<PageSection variant="card" title="Event Details">/);
+  assert.match(PAGE_SOURCE, /<PageSection variant="card" title="Event Assignments">/);
+});
+
+test("Event Health status and Coordinates Loaded render through the shared StatusBadge, not a hand-rolled colored pill", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*StatusBadge\s*\}\s*from\s*["']@\/components\/ui\/StatusBadge["']/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /<StatusBadge tone=\{isActiveEventStatus\(selectedEvent\.status\) \? "success" : "warning"\}>/,
+  );
+  assert.match(PAGE_SOURCE, /<StatusBadge tone="success">📍 Coordinates Loaded<\/StatusBadge>/);
+});
+
+test("loading and error presentation uses the canonical LoadingState/Alert primitives", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*LoadingState\s*\}\s*from\s*["']@\/components\/ui\/LoadingState["']/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /<LoadingState message="Loading events, maps, and nearby lists\.\.\." \/>/,
+  );
+  assert.match(PAGE_SOURCE, /\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
+});
+
+test("New Event/Clone Event render inside the canonical FormActions wrapper", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
+  );
+  const formActionsCount = (PAGE_SOURCE.match(/<FormActions>/g) || []).length;
+  assert.ok(formActionsCount >= 2, `expected at least 2 FormActions usages, found ${formActionsCount}`);
+});
+
+test("eventAdminStatusTone classifies confirmation/loading/failure text correctly", () => {
+  assert.equal(eventAdminStatusTone("Updated event \"Saint George\" to Active."), "success");
+  assert.equal(eventAdminStatusTone("Created event \"Saint George\"."), "success");
+  assert.equal(eventAdminStatusTone("Cloned event \"Saint George Copy\"."), "success");
+  assert.equal(eventAdminStatusTone("Saved event assignments."), "success");
+  assert.equal(eventAdminStatusTone("Coordinates loaded."), "success");
+  assert.equal(eventAdminStatusTone("Event admin ready."), "success");
+
+  assert.equal(eventAdminStatusTone("Loading events, maps, and nearby lists..."), "info");
+  assert.equal(eventAdminStatusTone("Cloning event..."), "info");
+
+  assert.equal(
+    eventAdminStatusTone("Your previously selected event is no longer available. Choose one above."),
+    "warning",
+  );
+  assert.equal(
+    eventAdminStatusTone(
+      "Working event \"Amana\" is not shown under this filter. Select a listed event below to change it, or adjust the filter to find it.",
+    ),
+    "warning",
+  );
+
+  assert.equal(eventAdminStatusTone("Access denied."), "danger");
+  assert.equal(eventAdminStatusTone("Failed to save event."), "danger");
+  assert.equal(eventAdminStatusTone("Enter an event name."), "danger");
+  assert.equal(
+    eventAdminStatusTone(
+      "New event creation is temporarily unavailable while secure tenant ownership is being completed. Existing events may still be edited.",
+    ),
+    "danger",
+  );
 });

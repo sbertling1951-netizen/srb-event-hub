@@ -5,6 +5,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Field, Input } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
+import { RowActions } from "@/components/ui/RowActions";
+import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -12,6 +24,57 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
+
+// Pure, presentation-only classification of this page's own existing
+// `status` confirmation/guidance text into an Alert tone -- never a second
+// source of any message itself (every setStatus call site is unchanged).
+// Mirrors the same heuristic already established for Announcements
+// (announcementStatusTone) and Admin Users (adminUserStatusTone). A
+// partial-failure message (e.g. "Draft created, but could not load source
+// markers") is checked before any success-shaped prefix so it classifies
+// as danger, not success.
+export function masterMapStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.startsWith("could not") ||
+    lower.includes(", but ") ||
+    lower.includes("failed") ||
+    lower.includes("invalid") ||
+    lower.includes("missing") ||
+    lower.includes("access denied") ||
+    lower.includes("no admin access") ||
+    lower.includes("choose a replacement image first")
+  ) {
+    return "danger";
+  }
+
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+
+  if (
+    lower.startsWith("archived map") ||
+    lower.startsWith("restored") ||
+    lower.startsWith("replaced") ||
+    lower.startsWith("deleted archived map") ||
+    lower.startsWith("map opening scale settings saved")
+  ) {
+    return "success";
+  }
+
+  return "neutral";
+}
+
+const MAP_STATUS_TONE: Record<MasterMapRow["status"], StatusBadgeTone> = {
+  published: "success",
+  draft: "warning",
+  archived: "neutral",
+};
+
+function masterMapStatusLabel(status: MasterMapRow["status"]) {
+  return status === "published" ? "Published" : status === "draft" ? "Draft" : "Archived";
+}
 
 type MasterMapRow = {
   id: string;
@@ -83,24 +146,12 @@ function MasterMapsPageInner() {
   const [loading, setLoading] = useState(true);
   const [savingScales, setSavingScales] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const [pendingArchiveMap, setPendingArchiveMap] = useState<MasterMapRow | null>(null);
+  const [pendingDeleteMap, setPendingDeleteMap] = useState<MasterMapRow | null>(null);
+  const { isCompact: isMobile } = useShellInterfaceCapabilities();
 
   const { admin } = useAdmin();
   const canManageMaps = !!admin;
-
-  useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 900);
-    }
-
-    handleResize();
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, []);
 
   useEffect(() => {
     document.body.classList.add("admin-map-workspace");
@@ -378,13 +429,7 @@ function MasterMapsPageInner() {
   }
 
   async function handleArchiveMap(map: MasterMapRow) {
-    const confirmed = window.confirm(
-      `Archive this map?\n\n${map.name}\n\nIt will be moved out of the active list and can be restored later.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
+    setPendingArchiveMap(null);
 
     try {
       if (!admin) {
@@ -589,13 +634,7 @@ function MasterMapsPageInner() {
   }
 
   async function handleDeleteArchivedMap(map: MasterMapRow) {
-    const confirmed = window.confirm(
-      `Delete this archived map permanently?\n\n${map.name}\n\nThis will also delete its stored site markers.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
+    setPendingDeleteMap(null);
 
     try {
       if (!admin) {
@@ -665,524 +704,338 @@ function MasterMapsPageInner() {
     void loadMasterMaps();
   }, [loadMasterMaps, loading]);
 
-  return (
-    <div style={{ padding: 24 }}>
-      <p style={{ marginTop: 0 }}>Create and maintain protected campground map templates.</p>
-
-      {error ? (
-        <div
-          style={{
-            border: "1px solid #e2b4b4",
-            borderRadius: 10,
-            background: "#fff3f3",
-            color: "#8a1f1f",
-            padding: 12,
-            marginBottom: 16,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
-
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "white",
-          padding: 14,
-          display: "grid",
-          gap: 12,
-          marginBottom: 20,
-        }}
-      >
-        <div style={{ fontWeight: 700, fontSize: 18 }}>
-          Map Opening Scale Settings
-        </div>
-
-        <div style={{ fontSize: 14, color: "#555" }}>
-          Selected admin event: <strong>{selectedEventName || "None"}</strong>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-          }}
-        >
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Coach Map</span>
-            <input
-              type="number"
-              step="0.05"
-              min="0.25"
-              max="3"
-              value={coachMapOpenScale}
-              onChange={(e) => setCoachMapOpenScale(e.target.value)}
-              style={{ padding: 8 }}
-              disabled={!canManageMaps}
-            />
-          </label>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Parking Admin Map</span>
-            <input
-              type="number"
-              step="0.05"
-              min="0.25"
-              max="3"
-              value={parkingMapOpenScale}
-              onChange={(e) => setParkingMapOpenScale(e.target.value)}
-              style={{ padding: 8 }}
-              disabled={!canManageMaps}
-            />
-          </label>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Locations Map</span>
-            <input
-              type="number"
-              step="0.05"
-              min="0.25"
-              max="3"
-              value={locationsMapOpenScale}
-              onChange={(e) => setLocationsMapOpenScale(e.target.value)}
-              style={{ padding: 8 }}
-              disabled={!canManageMaps}
-            />
-          </label>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={() => void saveMapScales()}
-            disabled={!canManageMaps || loading || savingScales}
-          >
-            {savingScales ? "Saving..." : "Save Map Scale Settings"}
-          </button>
-        </div>
-
-        <div style={{ fontSize: 12, color: "#666" }}>
-          Suggested starting values are usually between <strong>0.45</strong>{" "}
-          and <strong>0.75</strong>. Reset Zoom on each map can be tied to these
-          saved values.
-        </div>
-      </div>
-
-      <div
-        style={{ marginBottom: 16, display: "flex", gap: 10, flexWrap: "wrap" }}
-      >
-        {!showArchived && (
-          <Link href="/admin/master-maps/new">
-            <button disabled={!canManageMaps}>Create New Master Map</button>
-          </Link>
+  // Shared between the desktop DataTable's actions cell and the
+  // narrow-viewport ResponsiveList card -- one render path, two layouts
+  // (Central UI Standard, matching the pattern already established on
+  // Announcements). Correctly branches on `showArchived` in both
+  // presentations; the prior hand-duplicated mobile card markup always
+  // rendered Edit Map/Archive regardless of `showArchived`, a real,
+  // narrow pre-existing bug this shared render path incidentally fixes
+  // by construction (see closeout finding).
+  function renderRowActions(map: MasterMapRow) {
+    return (
+      <div style={{ display: "grid", gap: "var(--space-2)", minWidth: 0 }}>
+        {showArchived ? (
+          <RowActions>
+            <AppButton
+              onClick={() => void handleRestoreMap(map)}
+              disabled={restoringMapId === map.id || !canManageMaps}
+              aria-label={`Restore "${map.name}"`}
+            >
+              {restoringMapId === map.id ? "Restoring..." : "Restore"}
+            </AppButton>
+            <AppButton
+              variant="danger"
+              onClick={() => setPendingDeleteMap(map)}
+              disabled={deletingMapId === map.id || !canManageMaps}
+              aria-label={`Delete "${map.name}"`}
+            >
+              {deletingMapId === map.id ? "Deleting..." : "Delete"}
+            </AppButton>
+          </RowActions>
+        ) : (
+          <RowActions>
+            <AppButton
+              onClick={() => void handleEditMap(map)}
+              disabled={openingMapId === map.id || !canManageMaps}
+              aria-label={`Edit "${map.name}"`}
+            >
+              {openingMapId === map.id ? "Opening..." : "Edit Map"}
+            </AppButton>
+            <AppButton
+              onClick={() => setPendingArchiveMap(map)}
+              disabled={archivingMapId === map.id || !canManageMaps}
+              aria-label={`Archive "${map.name}"`}
+            >
+              {archivingMapId === map.id ? "Archiving..." : "Archive"}
+            </AppButton>
+          </RowActions>
         )}
 
-        <button type="button" onClick={() => setShowArchived((prev) => !prev)}>
-          {showArchived
-            ? "← Back to Active Maps"
-            : `View Archived Maps (${archivedMaps.length})`}
-        </button>
-      </div>
-
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "white",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: 12,
-            fontWeight: 700,
-            borderBottom: "1px solid #eee",
-            background: "#fafafa",
-          }}
+        <Field
+          label="Replace Image"
+          help={
+            replaceImageFiles[map.id]
+              ? `Selected: ${replaceImageFiles[map.id]?.name}`
+              : "Choose a new image file to enable Replace Image."
+          }
         >
-          {showArchived ? "Archived Maps" : "Active Maps"}
-        </div>
-
-        {!isMobile ? (
-          <>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "220px 2.8fr 1.8fr 2fr 1fr 0.9fr 2.6fr",
-                gap: 12,
-                padding: 12,
-                fontWeight: 700,
-                borderBottom: "1px solid #eee",
+          {(controlProps) => (
+            <Input
+              {...controlProps}
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                setReplaceImageFiles((prev) => ({
+                  ...prev,
+                  [map.id]: file,
+                }));
               }}
-            >
-              <div>Preview</div>
-              <div>Name</div>
-              <div>Park</div>
-              <div>Location</div>
-              <div>Status</div>
-              <div>Sites</div>
-              <div>Actions</div>
-            </div>
+              disabled={replacingImageMapId === map.id || !canManageMaps}
+            />
+          )}
+        </Field>
 
-            {visibleMaps.map((map) => (
-              <div
-                key={map.id}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "220px 2.8fr 1.8fr 2fr 1fr 0.9fr 2.6fr",
-                  gap: 12,
-                  padding: 20,
-                  borderBottom: "1px solid #eee",
-                  alignItems: "center",
-                }}
-              >
-                <div style={{ display: "grid", gap: 6 }}>
-                  {map.map_image_url ? (
-                    <>
-                      <img
-                        src={map.map_image_url}
-                        alt={map.name}
-                        width={220}
-                        height={145}
-                        onLoad={(e) => {
-                          const img = e.currentTarget;
-                          setImageSizes((prev) => ({
-                            ...prev,
-                            [map.id]: {
-                              width: img.naturalWidth,
-                              height: img.naturalHeight,
-                            },
-                          }));
-                        }}
-                        style={{
-                          width: 220,
-                          height: 145,
-                          objectFit: "cover",
-                          borderRadius: 8,
-                          border: "1px solid #ddd",
-                          display: "block",
-                        }}
-                      />
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#666",
-                          textAlign: "center",
-                        }}
-                      >
-                        {imageSizes[map.id]
-                          ? `${imageSizes[map.id].width} × ${imageSizes[map.id].height}`
-                          : "Loading..."}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div
-                        style={{
-                          width: 220,
-                          height: 145,
-                          borderRadius: 8,
-                          border: "1px solid #ddd",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#666",
-                          fontSize: 12,
-                        }}
-                      >
-                        No Image
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#666",
-                          textAlign: "center",
-                        }}
-                      >
-                        No dimensions
-                      </div>
-                    </>
-                  )}
-                </div>
-                <div
-                  style={{
-                    fontWeight: 700,
-                    fontSize: 24,
-                    lineHeight: 1.2,
-                  }}
-                >
-                  {map.name}
-                </div>
-                <div style={{ fontSize: 18 }}>{map.park_name || "—"}</div>
-                <div style={{ fontSize: 18 }}>{map.location || "—"}</div>
-                <div>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      padding: "6px 12px",
-                      borderRadius: 999,
-                      fontSize: 15,
-                      fontWeight: 700,
-                      background:
-                        map.status === "published"
-                          ? "#dcfce7"
-                          : map.status === "draft"
-                            ? "#fef3c7"
-                            : "#e5e7eb",
-                      color:
-                        map.status === "published"
-                          ? "#166534"
-                          : map.status === "draft"
-                            ? "#92400e"
-                            : "#374151",
-                    }}
-                  >
-                    {map.status === "published"
-                      ? "Published"
-                      : map.status === "draft"
-                        ? "Draft"
-                        : "Archived"}
-                  </span>
-                </div>
-                <div>{map.site_count}</div>
+        <AppButton
+          onClick={() => void handleReplaceMapImage(map)}
+          disabled={
+            replacingImageMapId === map.id ||
+            !canManageMaps ||
+            !replaceImageFiles[map.id]
+          }
+        >
+          {replacingImageMapId === map.id ? "Replacing Image..." : "Replace Image"}
+        </AppButton>
+      </div>
+    );
+  }
 
-                {showArchived ? (
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 4,
-                      minWidth: 0,
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        onClick={() => void handleRestoreMap(map)}
-                        disabled={restoringMapId === map.id || !canManageMaps}
-                      >
-                        {restoringMapId === map.id ? "Restoring..." : "Restore"}
-                      </button>
+  return (
+    <div style={{ padding: "var(--space-6)", display: "grid", gap: "var(--space-5)" }}>
+      <ConfirmDialog
+        open={!!pendingArchiveMap}
+        title="Archive Map"
+        message={`Archive "${pendingArchiveMap?.name ?? ""}"? It will be moved out of the active list and can be restored later.`}
+        confirmLabel="Archive"
+        busy={archivingMapId === pendingArchiveMap?.id}
+        onCancel={() => setPendingArchiveMap(null)}
+        onConfirm={() => void handleArchiveMap(pendingArchiveMap!)}
+      />
 
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteArchivedMap(map)}
-                        disabled={deletingMapId === map.id || !canManageMaps}
-                        style={{
-                          background: "#fff1f2",
-                          color: "#991b1b",
-                          border: "1px solid #dc2626",
-                          borderRadius: 8,
-                          padding: "8px 10px",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {deletingMapId === map.id ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
+      <ConfirmDialog
+        open={!!pendingDeleteMap}
+        title="Delete Archived Map"
+        message={`Delete "${pendingDeleteMap?.name ?? ""}" permanently? This will also delete its stored site markers.`}
+        confirmLabel="Delete"
+        danger
+        busy={deletingMapId === pendingDeleteMap?.id}
+        onCancel={() => setPendingDeleteMap(null)}
+        onConfirm={() => void handleDeleteArchivedMap(pendingDeleteMap!)}
+      />
 
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        setReplaceImageFiles((prev) => ({
-                          ...prev,
-                          [map.id]: file,
-                        }));
-                      }}
-                      disabled={
-                        replacingImageMapId === map.id || !canManageMaps
-                      }
-                      style={{ fontSize: 12, maxWidth: 180 }}
-                    />
+      <p className="app-subtle-text" style={{ margin: 0 }}>
+        Create and maintain protected campground map templates.
+      </p>
 
-                    <div
-                      style={{ fontSize: 11, color: "#666", lineHeight: 1.2 }}
-                    >
-                      {replaceImageFiles[map.id]
-                        ? `Selected: ${replaceImageFiles[map.id]?.name}`
-                        : "Choose a new image file to enable Replace Image."}
-                    </div>
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
-                    <button
-                      type="button"
-                      onClick={() => void handleReplaceMapImage(map)}
-                      disabled={
-                        replacingImageMapId === map.id ||
-                        !canManageMaps ||
-                        !replaceImageFiles[map.id]
-                      }
-                    >
-                      {replacingImageMapId === map.id
-                        ? "Replacing Image..."
-                        : "Replace Image"}
-                    </button>
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 4,
-                      minWidth: 0,
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        onClick={() => void handleEditMap(map)}
-                        disabled={openingMapId === map.id || !canManageMaps}
-                      >
-                        {openingMapId === map.id ? "Opening..." : "Edit Map"}
-                      </button>
+      <PageSection variant="card" title="Map Opening Scale Settings">
+        <div style={{ display: "grid", gap: "var(--space-4)" }}>
+          <p className="app-subtle-text" style={{ margin: 0 }}>
+            Selected admin event: <strong>{selectedEventName || "None"}</strong>
+          </p>
 
-                      <button
-                        type="button"
-                        onClick={() => void handleArchiveMap(map)}
-                        disabled={archivingMapId === map.id || !canManageMaps}
-                        style={{
-                          background: "#fff7ed",
-                          color: "#9a3412",
-                          border: "1px solid #ea580c",
-                          borderRadius: 8,
-                          padding: "8px 10px",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {archivingMapId === map.id ? "Archiving..." : "Archive"}
-                      </button>
-                    </div>
-
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        setReplaceImageFiles((prev) => ({
-                          ...prev,
-                          [map.id]: file,
-                        }));
-                      }}
-                      disabled={
-                        replacingImageMapId === map.id || !canManageMaps
-                      }
-                      style={{ fontSize: 12, maxWidth: 180 }}
-                    />
-
-                    <div
-                      style={{ fontSize: 11, color: "#666", lineHeight: 1.2 }}
-                    >
-                      {replaceImageFiles[map.id]
-                        ? `Selected: ${replaceImageFiles[map.id]?.name}`
-                        : "Choose a new image file to enable Replace Image."}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => void handleReplaceMapImage(map)}
-                      disabled={
-                        replacingImageMapId === map.id ||
-                        !canManageMaps ||
-                        !replaceImageFiles[map.id]
-                      }
-                    >
-                      {replacingImageMapId === map.id
-                        ? "Replacing Image..."
-                        : "Replace Image"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {visibleMaps.length === 0 && (
-              <div style={{ padding: 14, color: "#666" }}>
-                {showArchived
-                  ? "No archived maps found."
-                  : "No active maps found."}
-              </div>
-            )}
-          </>
-        ) : (
           <div
             style={{
               display: "grid",
-              gap: 14,
-              padding: 14,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: "var(--space-4)",
             }}
           >
-            {visibleMaps.map((map) => (
-              <div
-                key={map.id}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 14,
-                  padding: 14,
-                  display: "grid",
-                  gap: 10,
-                  background: "#fff",
-                }}
-              >
-                <div style={{ fontWeight: 800, fontSize: 18 }}>{map.name}</div>
+            <Field label="Coach Map">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  type="number"
+                  step="0.05"
+                  min="0.25"
+                  max="3"
+                  value={coachMapOpenScale}
+                  onChange={(e) => setCoachMapOpenScale(e.target.value)}
+                  disabled={!canManageMaps}
+                />
+              )}
+            </Field>
 
-                <div>
-                  <strong>Park:</strong> {map.park_name || "—"}
-                </div>
-                <div>
-                  <strong>Location:</strong> {map.location || "—"}
-                </div>
-                <div>
-                  <strong>Status:</strong> {map.status}
-                </div>
-                <div>
-                  <strong>Sites:</strong> {map.site_count}
-                </div>
+            <Field label="Parking Admin Map">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  type="number"
+                  step="0.05"
+                  min="0.25"
+                  max="3"
+                  value={parkingMapOpenScale}
+                  onChange={(e) => setParkingMapOpenScale(e.target.value)}
+                  disabled={!canManageMaps}
+                />
+              )}
+            </Field>
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => void handleEditMap(map)}
-                    disabled={openingMapId === map.id || !canManageMaps}
-                  >
-                    {openingMapId === map.id ? "Opening..." : "Edit Map"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void handleArchiveMap(map)}
-                    disabled={archivingMapId === map.id || !canManageMaps}
-                  >
-                    {archivingMapId === map.id ? "Archiving..." : "Archive"}
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {visibleMaps.length === 0 && (
-              <div style={{ color: "#666" }}>
-                {showArchived
-                  ? "No archived maps found."
-                  : "No active maps found."}
-              </div>
-            )}
+            <Field label="Locations Map">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  type="number"
+                  step="0.05"
+                  min="0.25"
+                  max="3"
+                  value={locationsMapOpenScale}
+                  onChange={(e) => setLocationsMapOpenScale(e.target.value)}
+                  disabled={!canManageMaps}
+                />
+              )}
+            </Field>
           </div>
+
+          <FormActions>
+            <AppButton
+              variant="primary"
+              onClick={() => void saveMapScales()}
+              disabled={!canManageMaps || loading || savingScales}
+            >
+              {savingScales ? "Saving..." : "Save Map Scale Settings"}
+            </AppButton>
+          </FormActions>
+
+          <p className="app-subtle-text" style={{ margin: 0, fontSize: "var(--font-size-caption)" }}>
+            Suggested starting values are usually between <strong>0.45</strong>{" "}
+            and <strong>0.75</strong>. Reset Zoom on each map can be tied to these
+            saved values.
+          </p>
+        </div>
+      </PageSection>
+
+      <div className="app-flex-wrap-12">
+        {!showArchived &&
+          (canManageMaps ? (
+            // A same-app route: kept as Next's <Link> (client-side
+            // transition) with the canonical .app-button class applied
+            // directly, matching the established Admin Users precedent --
+            // AppLinkButton renders a bare <a>, which would silently drop
+            // client-side navigation here.
+            <Link href="/admin/master-maps/new" className="app-button">
+              Create New Master Map
+            </Link>
+          ) : (
+            <AppButton disabled>Create New Master Map</AppButton>
+          ))}
+
+        <AppButton onClick={() => setShowArchived((prev) => !prev)}>
+          {showArchived
+            ? "← Back to Active Maps"
+            : `View Archived Maps (${archivedMaps.length})`}
+        </AppButton>
+      </div>
+
+      <PageSection variant="card" title={showArchived ? "Archived Maps" : "Active Maps"}>
+        {loading ? (
+          <LoadingState message="Loading master maps..." />
+        ) : visibleMaps.length === 0 ? (
+          <EmptyState message={showArchived ? "No archived maps found." : "No active maps found."} />
+        ) : isMobile ? (
+          <ResponsiveList aria-label={showArchived ? "Archived master maps" : "Active master maps"}>
+            {visibleMaps.map((map) => (
+              <li key={map.id} className="responsive-list-item">
+                <div className="responsive-list-item-header">
+                  <div className="responsive-list-item-title">{map.name}</div>
+                  <StatusBadge tone={MAP_STATUS_TONE[map.status]}>
+                    {masterMapStatusLabel(map.status)}
+                  </StatusBadge>
+                </div>
+
+                <div className="responsive-list-item-meta">
+                  <span>Park: {map.park_name || "—"}</span>
+                  <span>Location: {map.location || "—"}</span>
+                  <span>Sites: {map.site_count}</span>
+                </div>
+
+                {renderRowActions(map)}
+              </li>
+            ))}
+          </ResponsiveList>
+        ) : (
+          <DataTable caption={showArchived ? "Archived master maps" : "Active master maps"}>
+            <thead>
+              <tr>
+                <th scope="col">Preview</th>
+                <th scope="col">Name</th>
+                <th scope="col">Park</th>
+                <th scope="col">Location</th>
+                <th scope="col">Status</th>
+                <th scope="col">Sites</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleMaps.map((map) => (
+                <tr key={map.id}>
+                  <td>
+                    {map.map_image_url ? (
+                      <div style={{ display: "grid", gap: "var(--space-1)" }}>
+                        <img
+                          src={map.map_image_url}
+                          alt={map.name}
+                          width={220}
+                          height={145}
+                          onLoad={(e) => {
+                            const img = e.currentTarget;
+                            setImageSizes((prev) => ({
+                              ...prev,
+                              [map.id]: {
+                                width: img.naturalWidth,
+                                height: img.naturalHeight,
+                              },
+                            }));
+                          }}
+                          style={{
+                            width: 220,
+                            height: 145,
+                            objectFit: "cover",
+                            borderRadius: "var(--radius-medium)",
+                            border: "var(--border-width-default) solid var(--color-border-default)",
+                            display: "block",
+                          }}
+                        />
+                        <div className="data-table-cell-meta" style={{ textAlign: "center" }}>
+                          {imageSizes[map.id]
+                            ? `${imageSizes[map.id].width} × ${imageSizes[map.id].height}`
+                            : "Loading..."}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: "grid", gap: "var(--space-1)" }}>
+                        <div
+                          style={{
+                            width: 220,
+                            height: 145,
+                            borderRadius: "var(--radius-medium)",
+                            border: "var(--border-width-default) solid var(--color-border-default)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                          className="data-table-cell-meta"
+                        >
+                          No Image
+                        </div>
+                        <div className="data-table-cell-meta" style={{ textAlign: "center" }}>
+                          No dimensions
+                        </div>
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <div className="data-table-cell-primary">{map.name}</div>
+                  </td>
+                  <td className="data-table-cell-meta">{map.park_name || "—"}</td>
+                  <td className="data-table-cell-meta">{map.location || "—"}</td>
+                  <td>
+                    <StatusBadge tone={MAP_STATUS_TONE[map.status]}>
+                      {masterMapStatusLabel(map.status)}
+                    </StatusBadge>
+                  </td>
+                  <td>{map.site_count}</td>
+                  <td>{renderRowActions(map)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
         )}
 
-        <p style={{ marginTop: 20 }}>
-          <strong>Status:</strong> {loading ? "Loading..." : status}
-        </p>
-      </div>
+        {status ? <Alert tone={masterMapStatusTone(status)}>{status}</Alert> : null}
+      </PageSection>
     </div>
   );
 }

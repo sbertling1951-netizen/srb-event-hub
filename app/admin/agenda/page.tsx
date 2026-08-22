@@ -13,7 +13,9 @@ import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewpo
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -2849,7 +2851,7 @@ function AdminAgendaPageInner() {
                 )}
               </Field>
 
-              <div className="app-button-row">
+              <FormActions>
                 <AppButton
                   variant="primary"
                   onClick={() => void saveItem()}
@@ -2890,7 +2892,7 @@ function AdminAgendaPageInner() {
                     Delete Selected
                   </AppButton>
                 ) : null}
-              </div>
+              </FormActions>
               </div>
               ) : null}
             </div>
@@ -3446,7 +3448,7 @@ function AdminAgendaPageInner() {
             titleStyle={{ margin: 0 }}
           >
             {filteredItems.length === 0 ? (
-              <Alert tone="neutral">No agenda items found.</Alert>
+              <EmptyState message="No agenda items found." />
             ) : (
               <div style={{ display: "grid" }}>
                 {printableAgendaItems.map((item) => {

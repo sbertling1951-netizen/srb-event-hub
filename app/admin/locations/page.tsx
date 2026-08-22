@@ -6,6 +6,15 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { MapCanvas, type MapCanvasHandle, MarkerDot, MarkerLabelChip } from "@/components/map/canvas";
 import type { MapMarker } from "@/components/map/canvas/types";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Field, Input, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -13,6 +22,42 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
+
+// Pure, presentation-only classification of this page's own existing
+// `status` confirmation/guidance text into an Alert tone -- never a second
+// source of any message itself (every setStatus call site is unchanged).
+// Mirrors the same heuristic already established for Announcements
+// (announcementStatusTone) and Admin Users (adminUserStatusTone).
+export function locationStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.startsWith("could not") ||
+    lower.includes("invalid") ||
+    lower.includes("enter a location name") ||
+    lower.includes("click place on map") ||
+    lower.includes("no location selected") ||
+    lower.includes("no admin event selected")
+  ) {
+    return "danger";
+  }
+
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+
+  if (
+    lower.startsWith("updated") ||
+    lower.startsWith("created") ||
+    lower.startsWith("deleted") ||
+    lower.startsWith("placed") ||
+    lower.startsWith("loaded")
+  ) {
+    return "success";
+  }
+
+  return "neutral";
+}
 
 type AdminEventContext = {
   id: string | null;
@@ -54,7 +99,7 @@ function AdminLocationsPageInner() {
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading...");
-  const [isNarrow, setIsNarrow] = useState(false);
+  const { isCompact: isNarrow } = useShellInterfaceCapabilities();
 
   const [formId, setFormId] = useState("");
   const [formName, setFormName] = useState("");
@@ -64,6 +109,7 @@ function AdminLocationsPageInner() {
   const [formX, setFormX] = useState("");
   const [formY, setFormY] = useState("");
   const [isPlacing, setIsPlacing] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -72,16 +118,6 @@ function AdminLocationsPageInner() {
   const mapRef = useRef<MapCanvasHandle | null>(null);
 
   const { admin } = useAdmin();
-
-  useEffect(() => {
-    function handleResize() {
-      setIsNarrow(window.innerWidth < 900);
-    }
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
   const loadLocationIntoForm = useCallback((location: EventLocation) => {
     setFormId(location.id);
@@ -440,16 +476,17 @@ function AdminLocationsPageInner() {
     }
   }
 
-  async function deleteLocation() {
+  function requestDeleteLocation() {
     if (!formId) {
       setStatus("No location selected to delete.");
       return;
     }
 
-    const confirmed = window.confirm(`Delete "${formName}"?`);
-    if (!confirmed) {
-      return;
-    }
+    setConfirmDeleteOpen(true);
+  }
+
+  async function deleteLocation() {
+    setConfirmDeleteOpen(false);
 
     try {
       setDeleting(true);
@@ -478,143 +515,135 @@ function AdminLocationsPageInner() {
   }
 
   return (
-    <div style={{ padding: isNarrow ? 12 : 24 }}>
-      {error ? (
-        <div
-          style={{
-            border: "1px solid #e2b4b4",
-            borderRadius: 10,
-            background: "#fff3f3",
-            color: "#8a1f1f",
-            padding: 12,
-            marginBottom: 12,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
+    <div style={{ padding: isNarrow ? "var(--space-3)" : "var(--space-6)", display: "grid", gap: "var(--space-4)" }}>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete Location"
+        message={`Delete "${formName}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+        onCancel={() => setConfirmDeleteOpen(false)}
+        onConfirm={() => void deleteLocation()}
+      />
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-          marginBottom: 16,
-        }}
-      >
-        <div style={{ fontWeight: 700 }}>
-          {event?.name || "No admin working event selected"}
-        </div>
-        <div style={{ color: "#555" }}>{event?.location || ""}</div>
-        <div style={{ fontSize: 13, marginTop: 6 }}>
-          Status: {loading ? "Loading..." : status}
-        </div>
-      </div>
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+
+      {/* Event name/location is already owned by the canonical Admin shell
+          header (Central UI Standard, matching Announcements' own precedent)
+          -- this only shows what the shell cannot: loading, no selection,
+          or this page's own save/placement status. */}
+      {loading ? (
+        <LoadingState message="Loading..." />
+      ) : !event ? (
+        <EmptyState message={status || "No admin working event selected. Choose one on the Admin Dashboard."} />
+      ) : status ? (
+        <Alert tone={locationStatusTone(status)}>{status}</Alert>
+      ) : null}
 
       <div
         style={{
           display: "grid",
           gridTemplateColumns: isNarrow ? "1fr" : "360px minmax(0, 1fr)",
-          gap: 20,
+          gap: "var(--space-5)",
           alignItems: "start",
         }}
       >
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 14,
-            display: "grid",
-            gap: 12,
-          }}
-        >
-          <div style={{ fontWeight: 700 }}>Location Editor</div>
+        <PageSection variant="card" title="Location Editor">
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            <Field label="Search Locations">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  type="text"
+                  placeholder="Search existing locations"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              )}
+            </Field>
 
-          <input
-            type="text"
-            placeholder="Search existing locations"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ padding: 8 }}
-          />
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={resetForm}>
-              New
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const next = !isPlacing;
-                setIsPlacing(next);
-              }}
-              style={{
-                background: isPlacing ? "#0b5cff" : undefined,
-                color: isPlacing ? "white" : undefined,
-              }}
-            >
-              {isPlacing ? "Placing..." : "Place on Map"}
-            </button>
-          </div>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            <input
-              type="text"
-              placeholder="Location name"
-              value={formName}
-              onChange={(e) => setFormName(e.target.value)}
-              style={{ padding: 8 }}
-            />
-            <input
-              type="text"
-              placeholder="Category"
-              value={formCategory}
-              onChange={(e) => setFormCategory(e.target.value)}
-              style={{ padding: 8 }}
-            />
-            <textarea
-              placeholder="Description"
-              value={formDescription}
-              onChange={(e) => setFormDescription(e.target.value)}
-              rows={4}
-              style={{ padding: 8, resize: "vertical" }}
-            />
-            <input
-              type="number"
-              placeholder="Priority"
-              value={formPriority}
-              onChange={(e) => setFormPriority(e.target.value)}
-              style={{ padding: 8 }}
-            />
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-              }}
-            >
-              <input
-                type="number"
-                placeholder="X"
-                value={formX}
-                onChange={(e) => setFormX(e.target.value)}
-                style={{ padding: 8 }}
-              />
-              <input
-                type="number"
-                placeholder="Y"
-                value={formY}
-                onChange={(e) => setFormY(e.target.value)}
-                style={{ padding: 8 }}
-              />
+            <div className="app-flex-wrap-12">
+              <AppButton onClick={resetForm}>New</AppButton>
+              <AppButton
+                variant={isPlacing ? "primary" : "tertiary"}
+                aria-pressed={isPlacing}
+                onClick={() => setIsPlacing((prev) => !prev)}
+              >
+                {isPlacing ? "Placing..." : "Place on Map"}
+              </AppButton>
             </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
+            <Field label="Location Name">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  type="text"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                />
+              )}
+            </Field>
+
+            <Field label="Category">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  type="text"
+                  value={formCategory}
+                  onChange={(e) => setFormCategory(e.target.value)}
+                />
+              )}
+            </Field>
+
+            <Field label="Description">
+              {(controlProps) => (
+                <Textarea
+                  {...controlProps}
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  rows={4}
+                />
+              )}
+            </Field>
+
+            <Field label="Priority">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  type="number"
+                  value={formPriority}
+                  onChange={(e) => setFormPriority(e.target.value)}
+                />
+              )}
+            </Field>
+
+            <div className="app-form-grid-2">
+              <Field label="X">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    type="number"
+                    value={formX}
+                    onChange={(e) => setFormX(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Y">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    type="number"
+                    value={formY}
+                    onChange={(e) => setFormY(e.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+
+            <FormActions>
+              <AppButton
+                variant="primary"
                 onClick={() => void saveLocation()}
                 disabled={saving}
               >
@@ -625,84 +654,73 @@ function AdminLocationsPageInner() {
                   : formId
                     ? "Update Location"
                     : "Save Location"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void deleteLocation()}
+              </AppButton>
+              <AppButton
+                variant="danger"
+                onClick={requestDeleteLocation}
                 disabled={!formId || deleting}
               >
                 {deleting ? "Deleting..." : "Delete"}
-              </button>
+              </AppButton>
+            </FormActions>
+
+            <strong>Existing Locations</strong>
+
+            <div
+              style={{
+                display: "grid",
+                gap: "var(--space-2)",
+                maxHeight: isNarrow ? "none" : "45vh",
+                overflow: "auto",
+              }}
+            >
+              {filteredLocations.length === 0 ? (
+                <EmptyState message="No locations found." />
+              ) : (
+                filteredLocations.map((location) => {
+                  const selected = location.id === selectedLocationId;
+
+                  return (
+                    <button
+                      key={location.id}
+                      type="button"
+                      onClick={() => handleLocationClick(location)}
+                      style={{
+                        textAlign: "left",
+                        padding: "var(--space-3)",
+                        borderRadius: "var(--radius-medium)",
+                        border: `var(--border-width-default) solid ${selected ? "var(--color-text-primary)" : "var(--color-border-default)"}`,
+                        background: selected ? "var(--color-bg-muted)" : "var(--color-bg-panel)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div className="data-table-cell-primary">{location.name}</div>
+                      <div className="data-table-cell-meta">
+                        {location.category || "Uncategorized"}
+                      </div>
+                      <div className="data-table-cell-meta" style={{ marginTop: "var(--space-1)" }}>
+                        X: {location.map_x ?? "—"} · Y: {location.map_y ?? "—"}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
+        </PageSection>
 
-          <div style={{ fontWeight: 700, marginTop: 8 }}>
-            Existing Locations
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gap: 8,
-              maxHeight: isNarrow ? "none" : "45vh",
-              overflow: "auto",
-            }}
-          >
-            {filteredLocations.length === 0 ? (
-              <div style={{ fontSize: 13, color: "#666" }}>
-                No locations found.
-              </div>
-            ) : (
-              filteredLocations.map((location) => {
-                const selected = location.id === selectedLocationId;
-
-                return (
-                  <button
-                    key={location.id}
-                    type="button"
-                    onClick={() => handleLocationClick(location)}
-                    style={{
-                      textAlign: "left",
-                      padding: 10,
-                      borderRadius: 8,
-                      border: selected ? "1px solid #f0c36d" : "1px solid #eee",
-                      background: selected ? "#fff7d6" : "white",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600 }}>{location.name}</div>
-                    <div style={{ fontSize: 13, color: "#555" }}>
-                      {location.category || "Uncategorized"}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      X: {location.map_x ?? "—"} · Y: {location.map_y ?? "—"}
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 12,
-          }}
-        >
+        <PageSection variant="card">
           <div
             style={{
               height: isNarrow ? "60vh" : "82vh",
               minHeight: isNarrow ? 320 : 420,
-              border: "1px solid #ddd",
-              background: "#f2f2f2",
+              border: "var(--border-width-default) solid var(--color-border-default)",
+              background: "var(--color-bg-muted)",
               overflow: "hidden",
               touchAction: "none",
               position: "relative",
               width: "100%",
-              borderRadius: 10,
+              borderRadius: "var(--radius-medium)",
             }}
           >
             <MapCanvas
@@ -746,23 +764,23 @@ function AdminLocationsPageInner() {
           {selectedLocation && (
             <div
               style={{
-                marginTop: 12,
-                padding: 10,
-                border: "1px solid #eee",
-                borderRadius: 8,
-                background: "#fafafa",
+                marginTop: "var(--space-3)",
+                padding: "var(--space-3)",
+                border: "var(--border-width-default) solid var(--color-border-default)",
+                borderRadius: "var(--radius-medium)",
+                background: "var(--color-bg-muted)",
               }}
             >
-              <div style={{ fontWeight: 700 }}>{selectedLocation.name}</div>
-              <div style={{ fontSize: 13, color: "#555" }}>
+              <div className="data-table-cell-primary">{selectedLocation.name}</div>
+              <div className="data-table-cell-meta">
                 {selectedLocation.category || "Uncategorized"}
               </div>
-              <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
+              <div className="data-table-cell-meta" style={{ marginTop: "var(--space-1)" }}>
                 {selectedLocation.description || ""}
               </div>
             </div>
           )}
-        </div>
+        </PageSection>
       </div>
     </div>
   );

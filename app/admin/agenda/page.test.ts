@@ -566,3 +566,40 @@ test("form field values are driven entirely by the persisted `form` state, never
   const block = PAGE_SOURCE.slice(toggleButtonBlockStart, toggleButtonBlockEnd);
   assert.equal(/setForm/.test(block), false);
 });
+
+// -- Admin Batch 1: Central UI Standard completion touch-up -----------------
+
+test("the New/Edit Item form's Save/New Blank/Delete row uses the canonical FormActions wrapper, not a raw app-button-row div", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
+  );
+  const formStart = PAGE_SOURCE.indexOf('title={form.id ? `Editing:');
+  const formEnd = PAGE_SOURCE.indexOf("</PageSection>", formStart);
+  const formBlock = PAGE_SOURCE.slice(formStart, formEnd);
+  assert.match(formBlock, /<FormActions>/);
+  assert.equal(/className="app-button-row"/.test(formBlock), false);
+});
+
+test("the empty agenda-items list uses the canonical EmptyState primitive, not a hand-written neutral Alert", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*EmptyState\s*\}\s*from\s*["']@\/components\/ui\/EmptyState["']/,
+  );
+  assert.match(PAGE_SOURCE, /<EmptyState message="No agenda items found\." \/>/);
+});
+
+test("AgendaTemplatePanel's two action rows use the canonical FormActions wrapper, not a raw app-button-row div", () => {
+  assert.match(
+    TEMPLATE_PANEL_SOURCE,
+    /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
+  );
+  const formActionsCount = (TEMPLATE_PANEL_SOURCE.match(/<FormActions>/g) || []).length;
+  assert.equal(formActionsCount, 2);
+  assert.equal(/className="app-button-row"/.test(TEMPLATE_PANEL_SOURCE), false);
+});
+
+test("the printDayFilter select remains the one deliberate raw-<select> exception -- untouched, not swapped to the Field-wrapped Select component", () => {
+  assert.equal((PAGE_SOURCE.match(/<select\b/g) || []).length, 1);
+  assert.equal((PAGE_SOURCE.match(/<\/select>/g) || []).length, 1);
+});

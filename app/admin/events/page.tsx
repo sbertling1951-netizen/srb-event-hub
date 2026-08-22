@@ -1,9 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
+import { Field, Input, Select } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -127,6 +134,50 @@ function persistEventStatusFilter(filter: EventStatusFilter) {
   }
 
   window.localStorage.setItem(EVENT_STATUS_FILTER_STORAGE_KEY, filter);
+}
+
+// Pure, presentation-only classification of this page's own existing
+// `status` confirmation/guidance text into an Alert tone -- never a second
+// source of any message itself (every setStatus call site is unchanged).
+// Mirrors the same heuristic already established for Announcements/Admin
+// Users/Locations/Master Maps.
+export function eventAdminStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.includes("failed") ||
+    lower.startsWith("access denied") ||
+    lower.startsWith("enter an event name") ||
+    lower.startsWith("select an event first") ||
+    lower.startsWith("no coordinates found") ||
+    lower === NEW_EVENT_CREATION_UNAVAILABLE.toLowerCase()
+  ) {
+    return "danger";
+  }
+
+  if (
+    lower.includes("no longer available") ||
+    lower.includes("is not shown under this filter")
+  ) {
+    return "warning";
+  }
+
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+
+  if (
+    lower.startsWith("updated event") ||
+    lower.startsWith("created event") ||
+    lower.startsWith("cloned event") ||
+    lower.startsWith("saved event assignments") ||
+    lower.startsWith("coordinates loaded") ||
+    lower.startsWith("event admin ready")
+  ) {
+    return "success";
+  }
+
+  return "neutral";
 }
 
 function filterForStatus(status: string | null | undefined): EventStatusFilter {
@@ -745,294 +796,226 @@ function EventAdminPageInner() {
     }
   }
 
-  function openDashboard() {
-    window.location.href = "/admin/dashboard";
-  }
-
-  function openMasterMaps() {
-    window.location.href = "/admin/master-maps";
-  }
-
-  function openNearbyAdmin() {
-    window.location.href = "/admin/nearby";
-  }
-
   return (
-    <div style={{ padding: 24, display: "grid", gap: 18 }}>
-      <div style={{ marginBottom: -6 }}>
-        <button
-          type="button"
-          onClick={openDashboard}
-          style={{
-            padding: "7px 11px",
-            borderRadius: 8,
-            border: "1px solid #cbd5e1",
-            background: "#ffffff",
-            color: "#111827",
-            cursor: "pointer",
-            fontWeight: 800,
-            boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          ← Return to Dashboard
-        </button>
-      </div>
+    <div style={{ padding: "var(--space-6)", display: "grid", gap: "var(--space-5)" }}>
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
-      {error ? (
-        <div
-          style={{
-            border: "1px solid #e2b4b4",
-            borderRadius: 10,
-            background: "#fff3f3",
-            color: "#8a1f1f",
-            padding: 12,
-          }}
-        >
-          {error}
-        </div>
+      {/* The page title itself is already owned by the canonical Admin
+          shell header (pageTitle="Event Admin" below); this only shows
+          this page's own load/save/selection status. */}
+      {loading ? (
+        <LoadingState message="Loading events, maps, and nearby lists..." />
+      ) : status ? (
+        <Alert tone={eventAdminStatusTone(status)}>{status}</Alert>
       ) : null}
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-        }}
-      >
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Event Admin</h1>
-        <div style={{ fontWeight: 700 }}>Status</div>
-        <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>
-          {loading ? "Loading..." : status}
-        </div>
-      </div>
+      <PageSection variant="card" title="Select Event">
+        <div style={{ display: "grid", gap: "var(--space-4)" }}>
+          <p className="app-subtle-text" style={{ margin: 0 }}>
+            Working event:{" "}
+            <strong>
+              {canonicalWorkingEvent?.name ||
+                canonicalWorkingEvent?.eventName ||
+                "No working event selected"}
+            </strong>
+          </p>
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "white",
-          padding: 14,
-          display: "grid",
-          gap: 12,
-        }}
-      >
-        <div style={{ fontWeight: 700 }}>Select Event</div>
-        <div style={{ fontSize: 13, color: "#475569" }}>
-          Working event:{" "}
-          <strong>
-            {canonicalWorkingEvent?.name ||
-              canonicalWorkingEvent?.eventName ||
-              "No working event selected"}
-          </strong>
-        </div>
-
-        <label style={{ display: "grid", gap: 6, maxWidth: 260 }}>
-          Event Filter
-          <select
-            value={eventStatusFilter}
-            onChange={(e) => {
-              const nextFilter = e.target.value as EventStatusFilter;
-              // ADR-006 §4: this filter is presentation/discovery logic
-              // for this page's own list -- it must never touch the
-              // shared Admin working Event. loadPage() re-runs on this
-              // dependency change and re-derives selectedEventId from
-              // the (unchanged) shared context against the new filtered
-              // list. Persisted here -- an explicit picker choice -- so
-              // it survives navigation/remount; the two programmatic
-              // filter changes inside saveEvent() are NOT persisted,
-              // since flipping the filter to keep a just-saved/created
-              // Event visible is not the admin explicitly choosing a
-              // filter to remember.
-              setEventStatusFilter(nextFilter);
-              persistEventStatusFilter(nextFilter);
-              setEvents([]);
-              setSelectedEventId("");
-              setForm(emptyForm);
-              setSelectedMasterMapId("");
-              setSelectedNearbyListId("");
-              setStatus("Loading filtered events...");
-            }}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              background: "#fff",
-              fontSize: 14,
-            }}
-          >
-            {admin?.isSuperAdmin ? (
-              <>
-                <option value="active">Active events</option>
-                <option value="inactive">Inactive events</option>
-                <option value="archived">Archived events</option>
-                <option value="draft">Draft events</option>
-                <option value="all">All events</option>
-              </>
-            ) : (
-              <>
-                <option value="active">Active events</option>
-              </>
+          <Field label="Event Filter">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={eventStatusFilter}
+                onChange={(e) => {
+                  const nextFilter = e.target.value as EventStatusFilter;
+                  // ADR-006 §4: this filter is presentation/discovery logic
+                  // for this page's own list -- it must never touch the
+                  // shared Admin working Event. loadPage() re-runs on this
+                  // dependency change and re-derives selectedEventId from
+                  // the (unchanged) shared context against the new filtered
+                  // list. Persisted here -- an explicit picker choice -- so
+                  // it survives navigation/remount; the two programmatic
+                  // filter changes inside saveEvent() are NOT persisted,
+                  // since flipping the filter to keep a just-saved/created
+                  // Event visible is not the admin explicitly choosing a
+                  // filter to remember.
+                  setEventStatusFilter(nextFilter);
+                  persistEventStatusFilter(nextFilter);
+                  setEvents([]);
+                  setSelectedEventId("");
+                  setForm(emptyForm);
+                  setSelectedMasterMapId("");
+                  setSelectedNearbyListId("");
+                  setStatus("Loading filtered events...");
+                }}
+              >
+                {admin?.isSuperAdmin ? (
+                  <>
+                    <option value="active">Active events</option>
+                    <option value="inactive">Inactive events</option>
+                    <option value="archived">Archived events</option>
+                    <option value="draft">Draft events</option>
+                    <option value="all">All events</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="active">Active events</option>
+                  </>
+                )}
+              </Select>
             )}
-          </select>
-        </label>
+          </Field>
 
-        <select
-          value={selectedEventId}
-          onChange={(e) => {
-            const newId = e.target.value;
-            setSelectedEventId(newId);
-            setError(null);
+          <Field label="Select Event">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={selectedEventId}
+                onChange={(e) => {
+                  const newId = e.target.value;
+                  setSelectedEventId(newId);
+                  setError(null);
 
-            const evt = events.find((row) => row.id === newId) || null;
-            setWorkspaceEvent(evt);
-            setStatus(
-              evt
-                ? `Working event changed to ${evt.name || "Untitled event"}.`
-                : "No event selected.",
-            );
-          }}
-          disabled={loading}
-          style={{
-            padding: "10px 12px",
-            border: "1px solid #cbd5e1",
-            borderRadius: 10,
-            background: "#fff",
-            fontSize: 14,
-          }}
-        >
-          <option value="">
-            {events.length === 0
-              ? "No events match this filter"
-              : "Select an event"}
-          </option>
-          {events.map((evt) => (
-            <option key={evt.id} value={evt.id}>
-              {formatEventLabel(evt)}
-            </option>
-          ))}
-        </select>
+                  const evt = events.find((row) => row.id === newId) || null;
+                  setWorkspaceEvent(evt);
+                  setStatus(
+                    evt
+                      ? `Working event changed to ${evt.name || "Untitled event"}.`
+                      : "No event selected.",
+                  );
+                }}
+                disabled={loading}
+              >
+                <option value="">
+                  {events.length === 0
+                    ? "No events match this filter"
+                    : "Select an event"}
+                </option>
+                {events.map((evt) => (
+                  <option key={evt.id} value={evt.id}>
+                    {formatEventLabel(evt)}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
 
-        <button
-          type="button"
-          onClick={() => {
-            // ADR-006 §2.3: opening a blank creation form is page-local
-            // editing state, not an Event selection -- it must not clear
-            // the shared Admin working Event.
-            setSelectedEventId("");
-            setForm(emptyForm);
-            setSelectedMasterMapId("");
-            setSelectedNearbyListId("");
-            setError(null);
-            setStatus("Creating a new event.");
-          }}
-          style={{ width: "fit-content" }}
-        >
-          New Event
-        </button>
-        <button
-          type="button"
-          disabled={!selectedEvent}
-          onClick={async () => {
-            if (!selectedEvent) {
-              setStatus("Select an event first.");
-              return;
-            }
+          <FormActions>
+            <AppButton
+              onClick={() => {
+                // ADR-006 §2.3: opening a blank creation form is page-local
+                // editing state, not an Event selection -- it must not clear
+                // the shared Admin working Event.
+                setSelectedEventId("");
+                setForm(emptyForm);
+                setSelectedMasterMapId("");
+                setSelectedNearbyListId("");
+                setError(null);
+                setStatus("Creating a new event.");
+              }}
+            >
+              New Event
+            </AppButton>
 
-            if (blockNewEventCreation()) {
-              return;
-            }
+            <AppButton
+              disabled={!selectedEvent}
+              onClick={async () => {
+                if (!selectedEvent) {
+                  setStatus("Select an event first.");
+                  return;
+                }
 
-            const newName = window.prompt(
-              "New event name",
-              `${selectedEvent.name || "Event"} Copy`,
-            );
+                if (blockNewEventCreation()) {
+                  return;
+                }
 
-            if (!newName) {
-              return;
-            }
+                const newName = window.prompt(
+                  "New event name",
+                  `${selectedEvent.name || "Event"} Copy`,
+                );
 
-            const newCode = window.prompt(
-              "New event code",
-              `${selectedEvent.event_code || "COPY"}-COPY`,
-            );
+                if (!newName) {
+                  return;
+                }
 
-            if (!newCode) {
-              return;
-            }
+                const newCode = window.prompt(
+                  "New event code",
+                  `${selectedEvent.event_code || "COPY"}-COPY`,
+                );
 
-            try {
-              setStatus("Cloning event...");
-              setError(null);
+                if (!newCode) {
+                  return;
+                }
 
-              const { data: createdEvent, error: createError } = await supabase
-                .from("events")
-                .insert({
-                  name: newName.trim(),
-                  location: selectedEvent.location || null,
-                  start_date: selectedEvent.start_date || null,
-                  end_date: selectedEvent.end_date || null,
-                  event_code: newCode.trim(),
-                  status: "Draft",
-                  is_active: false,
-                  visible_to_members: false,
-                  lat: selectedEvent.lat || null,
-                  lng: selectedEvent.lng || null,
-                })
-                .select(
-                  "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
-                )
-                .single();
+                try {
+                  setStatus("Cloning event...");
+                  setError(null);
 
-              if (createError) {
-                throw createError;
-              }
+                  const { data: createdEvent, error: createError } = await supabase
+                    .from("events")
+                    .insert({
+                      name: newName.trim(),
+                      location: selectedEvent.location || null,
+                      start_date: selectedEvent.start_date || null,
+                      end_date: selectedEvent.end_date || null,
+                      event_code: newCode.trim(),
+                      status: "Draft",
+                      is_active: false,
+                      visible_to_members: false,
+                      lat: selectedEvent.lat || null,
+                      lng: selectedEvent.lng || null,
+                    })
+                    .select(
+                      "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
+                    )
+                    .single();
 
-              if (!createdEvent?.id) {
-                throw new Error("Failed to create cloned event.");
-              }
+                  if (createError) {
+                    throw createError;
+                  }
 
-              await supabase.from("event_map_settings").upsert({
-                event_id: createdEvent.id,
-                selected_master_map_id: selectedMasterMapId || null,
-              });
+                  if (!createdEvent?.id) {
+                    throw new Error("Failed to create cloned event.");
+                  }
 
-              await supabase
-                .from("events")
-                .update({
-                  selected_nearby_area_id: selectedNearbyListId || null,
-                })
-                .eq("id", createdEvent.id);
+                  await supabase.from("event_map_settings").upsert({
+                    event_id: createdEvent.id,
+                    selected_master_map_id: selectedMasterMapId || null,
+                  });
 
-              const clonedEvent = createdEvent as EventRow;
+                  await supabase
+                    .from("events")
+                    .update({
+                      selected_nearby_area_id: selectedNearbyListId || null,
+                    })
+                    .eq("id", createdEvent.id);
 
-              setEvents((prev) => [clonedEvent, ...prev]);
-              setSelectedEventId(clonedEvent.id);
+                  const clonedEvent = createdEvent as EventRow;
 
-              setWorkspaceEvent(clonedEvent);
+                  setEvents((prev) => [clonedEvent, ...prev]);
+                  setSelectedEventId(clonedEvent.id);
 
-              setStatus(`Cloned event "${newName}".`);
-            } catch (err: any) {
-              console.error("clone event error:", err);
-              setError(err?.message || "Failed to clone event.");
-              setStatus(err?.message || "Failed to clone event.");
-            }
-          }}
-          style={{
-            width: "fit-content",
-            marginLeft: 10,
-          }}
-        >
-          Clone Event
-        </button>
-      </div>
+                  setWorkspaceEvent(clonedEvent);
+
+                  setStatus(`Cloned event "${newName}".`);
+                } catch (err: any) {
+                  console.error("clone event error:", err);
+                  setError(err?.message || "Failed to clone event.");
+                  setStatus(err?.message || "Failed to clone event.");
+                }
+              }}
+            >
+              Clone Event
+            </AppButton>
+          </FormActions>
+        </div>
+      </PageSection>
 
       <div
         style={{
           display: "grid",
           gridTemplateColumns:
             "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
-          gap: 18,
+          gap: "var(--space-5)",
           alignItems: "start",
           width: "100%",
           maxWidth: "100%",
@@ -1040,55 +1023,27 @@ function EventAdminPageInner() {
         }}
       >
         {selectedEvent ? (
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              background: "#ffffff",
-              padding: 16,
-              display: "grid",
-              gap: 14,
-            }}
-          >
+          <PageSection variant="card">
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: 12,
+                gap: "var(--space-3)",
                 flexWrap: "wrap",
+                marginBottom: "var(--space-4)",
               }}
             >
               <div>
                 <h2 style={{ margin: 0 }}>Event Health</h2>
-
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: "#666",
-                    marginTop: 4,
-                  }}
-                >
+                <p className="app-subtle-text" style={{ marginTop: "var(--space-1)", marginBottom: 0 }}>
                   Pre-flight checklist for this event.
-                </div>
+                </p>
               </div>
 
-              <div
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  background: isActiveEventStatus(selectedEvent.status)
-                    ? "#dcfce7"
-                    : "#fef3c7",
-                  color: isActiveEventStatus(selectedEvent.status)
-                    ? "#166534"
-                    : "#92400e",
-                  fontSize: 12,
-                  fontWeight: 800,
-                }}
-              >
+              <StatusBadge tone={isActiveEventStatus(selectedEvent.status) ? "success" : "warning"}>
                 {selectedEvent.status || "Draft"}
-              </div>
+              </StatusBadge>
             </div>
 
             <div
@@ -1096,7 +1051,7 @@ function EventAdminPageInner() {
                 display: "grid",
                 gridTemplateColumns:
                   "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
-                gap: 12,
+                gap: "var(--space-3)",
               }}
             >
               <div style={healthCardStyle}>
@@ -1159,332 +1114,284 @@ function EventAdminPageInner() {
                 </div>
               </div>
             </div>
-          </div>
+          </PageSection>
         ) : null}
 
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 14,
-            display: "grid",
-            gap: 10,
-          }}
-        >
-          <h2 style={{ marginTop: 0 }}>Event Details</h2>
+        <PageSection variant="card" title="Event Details">
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            <Field label="Event Name">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  placeholder="Event name"
+                />
+              )}
+            </Field>
 
-          <input
-            value={form.name}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, name: e.target.value }))
-            }
-            placeholder="Event name"
-            style={{ padding: 10 }}
-          />
+            <Field label="Location">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  value={form.location}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, location: e.target.value }))
+                  }
+                  placeholder="Location"
+                />
+              )}
+            </Field>
 
-          <input
-            value={form.location}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, location: e.target.value }))
-            }
-            placeholder="Location"
-            style={{ padding: 10 }}
-          />
+            <div>
+              <AppButton
+                onClick={async () => {
+                  if (!form.location.trim()) {
+                    setStatus("Enter a location first.");
+                    return;
+                  }
 
-          <button
-            type="button"
-            onClick={async () => {
-              if (!form.location.trim()) {
-                setStatus("Enter a location first.");
-                return;
-              }
+                  try {
+                    setStatus("Looking up coordinates...");
 
-              try {
-                setStatus("Looking up coordinates...");
+                    const response = await fetch(
+                      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(form.location)}`,
+                    );
 
-                const response = await fetch(
-                  `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(form.location)}`,
-                );
+                    const results = await response.json();
 
-                const results = await response.json();
+                    if (!results?.length) {
+                      setStatus("No coordinates found.");
+                      return;
+                    }
 
-                if (!results?.length) {
-                  setStatus("No coordinates found.");
-                  return;
-                }
+                    const first = results[0];
 
-                const first = results[0];
+                    setForm((prev) => ({
+                      ...prev,
+                      lat: first.lat,
+                      lng: first.lon,
+                    }));
 
-                setForm((prev) => ({
-                  ...prev,
-                  lat: first.lat,
-                  lng: first.lon,
-                }));
+                    setStatus("Coordinates loaded.");
+                  } catch (err) {
+                    console.error(err);
+                    setStatus("Coordinate lookup failed.");
+                  }
+                }}
+              >
+                Auto Fill Coordinates
+              </AppButton>
 
-                setStatus("Coordinates loaded.");
-              } catch (err) {
-                console.error(err);
-                setStatus("Coordinate lookup failed.");
-              }
-            }}
-            style={{ width: "fit-content" }}
-          >
-            Auto Fill Coordinates
-          </button>
-          {form.lat && form.lng ? (
+              {form.lat && form.lng ? (
+                <div style={{ marginTop: "var(--space-2)" }}>
+                  <StatusBadge tone="success">📍 Coordinates Loaded</StatusBadge>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="app-form-grid-2">
+              <Field label="Latitude">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={form.lat}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, lat: e.target.value }))
+                    }
+                    placeholder="37.1104805"
+                  />
+                )}
+              </Field>
+
+              <Field label="Longitude">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={form.lng}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, lng: e.target.value }))
+                    }
+                    placeholder="-113.5769339"
+                  />
+                )}
+              </Field>
+            </div>
+
+            <div className="app-form-grid-2">
+              <Field label="Start Date">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    type="date"
+                    value={form.start_date}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, start_date: e.target.value }))
+                    }
+                  />
+                )}
+              </Field>
+
+              <Field label="End Date">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    type="date"
+                    value={form.end_date}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, end_date: e.target.value }))
+                    }
+                  />
+                )}
+              </Field>
+            </div>
+
+            <Field label="Event Code">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  value={form.event_code}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      event_code: e.target.value,
+                    }))
+                  }
+                  placeholder="Example: AMANA26"
+                />
+              )}
+            </Field>
+
+            <Field label="Status">
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={form.status}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, status: e.target.value }))
+                  }
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Archived">Archived</option>
+                  <option value="Draft">Draft</option>
+                </Select>
+              )}
+            </Field>
+
+            <FormActions>
+              <AppButton
+                variant="primary"
+                onClick={() => void saveEvent()}
+                disabled={savingEvent}
+              >
+                {savingEvent
+                  ? "Saving..."
+                  : form.id
+                    ? "Update Event"
+                    : "Create Event"}
+              </AppButton>
+            </FormActions>
+          </div>
+        </PageSection>
+
+        <PageSection variant="card" title="Event Assignments">
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            <Field label="Selected Master Map">
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={selectedMasterMapId}
+                  onChange={(e) => setSelectedMasterMapId(e.target.value)}
+                  disabled={!selectedEventId}
+                >
+                  <option value="">No master map selected</option>
+                  {masterMaps.map((map) => (
+                    <option key={map.id} value={map.id}>
+                      {map.name || map.id}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+
+            <Field label="Selected Stored Nearby List">
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={selectedNearbyListId}
+                  onChange={(e) => setSelectedNearbyListId(e.target.value)}
+                  disabled={!selectedEventId}
+                >
+                  <option value="">No stored nearby list selected</option>
+                  {nearbyLists.map((list) => (
+                    <option key={list.id} value={list.id}>
+                      {list.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+
             <div
               style={{
-                width: "fit-content",
-                padding: "4px 10px",
-                borderRadius: 999,
-                background: "#dcfce7",
-                color: "#166534",
-                fontSize: 12,
-                fontWeight: 700,
-                marginTop: 4,
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: "var(--space-3)",
+                marginTop: "var(--space-1)",
               }}
             >
-              📍 Coordinates Loaded
+              <AppLinkButton href="/admin/master-maps">Master Maps</AppLinkButton>
+              <AppLinkButton href="/admin/nearby">Nearby</AppLinkButton>
+
+              <AppButton
+                variant="primary"
+                onClick={() => void saveAssignments()}
+                disabled={!selectedEventId || savingAssignments}
+              >
+                {savingAssignments ? "Saving..." : "Save Assignments"}
+              </AppButton>
+
+              <AppLinkButton href="/admin/dashboard">Dashboard</AppLinkButton>
             </div>
-          ) : null}
-
-          <label>
-            Latitude
-            <input
-              value={form.lat}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, lat: e.target.value }))
-              }
-              placeholder="37.1104805"
-              style={{ padding: 10, display: "block", width: "100%" }}
-            />
-          </label>
-
-          <label>
-            Longitude
-            <input
-              value={form.lng}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, lng: e.target.value }))
-              }
-              placeholder="-113.5769339"
-              style={{ padding: 10, display: "block", width: "100%" }}
-            />
-          </label>
-
-          <label>
-            Start Date
-            <input
-              type="date"
-              value={form.start_date}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, start_date: e.target.value }))
-              }
-              style={{ padding: 10, display: "block", width: "100%" }}
-            />
-          </label>
-
-          <label>
-            End Date
-            <input
-              type="date"
-              value={form.end_date}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, end_date: e.target.value }))
-              }
-              style={{ padding: 10, display: "block", width: "100%" }}
-            />
-          </label>
-          <label style={{ display: "grid", gap: 4 }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Event Code</span>
-
-            <input
-              value={form.event_code}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  event_code: e.target.value,
-                }))
-              }
-              placeholder="Example: AMANA26"
-              style={{ padding: 8 }}
-            />
-          </label>
-
-          <label>
-            Status
-            <select
-              value={form.status}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, status: e.target.value }))
-              }
-              style={{ padding: 10, display: "block", width: "100%" }}
-            >
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-              <option value="Archived">Archived</option>
-              <option value="Draft">Draft</option>
-            </select>
-          </label>
-
-          <button
-            type="button"
-            onClick={() => void saveEvent()}
-            disabled={savingEvent}
-            style={{ width: "fit-content" }}
-          >
-            {savingEvent
-              ? "Saving..."
-              : form.id
-                ? "Update Event"
-                : "Create Event"}
-          </button>
-        </div>
-
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 14,
-            display: "grid",
-            gap: 12,
-          }}
-        >
-          <h2 style={{ marginTop: 0 }}>Event Assignments</h2>
-
-          <div style={{ fontWeight: 700, fontSize: 14 }}>
-            Selected Master Map
           </div>
-          <select
-            value={selectedMasterMapId}
-            onChange={(e) => setSelectedMasterMapId(e.target.value)}
-            disabled={!selectedEventId}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              background: "#fff",
-              fontSize: 14,
-            }}
-          >
-            <option value="">No master map selected</option>
-            {masterMaps.map((map) => (
-              <option key={map.id} value={map.id}>
-                {map.name || map.id}
-              </option>
-            ))}
-          </select>
-
-          <div style={{ fontWeight: 700, fontSize: 14, marginTop: 6 }}>
-            Selected Stored Nearby List
-          </div>
-          <select
-            value={selectedNearbyListId}
-            onChange={(e) => setSelectedNearbyListId(e.target.value)}
-            disabled={!selectedEventId}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              background: "#fff",
-              fontSize: 14,
-            }}
-          >
-            <option value="">No stored nearby list selected</option>
-            {nearbyLists.map((list) => (
-              <option key={list.id} value={list.id}>
-                {list.name}
-              </option>
-            ))}
-          </select>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: 10,
-              marginTop: 6,
-            }}
-          >
-            <button
-              type="button"
-              onClick={openMasterMaps}
-              style={gridButtonStyle}
-            >
-              Master Maps
-            </button>
-
-            <button
-              type="button"
-              onClick={openNearbyAdmin}
-              style={gridButtonStyle}
-            >
-              Nearby
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void saveAssignments()}
-              disabled={!selectedEventId || savingAssignments}
-              style={gridButtonStyle}
-            >
-              {savingAssignments ? "Saving..." : "Save Assignments"}
-            </button>
-
-            <button
-              type="button"
-              onClick={openDashboard}
-              style={gridButtonStyle}
-            >
-              Dashboard
-            </button>
-          </div>
-        </div>
+        </PageSection>
       </div>
     </div>
   );
 }
 
-const healthCardStyle: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 10,
-  padding: 14,
-  background: "#f8fafc",
+// No shared "stat/health card" primitive exists yet (a single-page need,
+// not a repeated pattern -- Development Standards' "no speculative
+// abstraction"); kept page-local but moved onto design tokens instead of
+// literal hex/px values, matching every other migrated inline style below.
+const healthCardStyle: CSSProperties = {
+  border: "var(--border-width-default) solid var(--color-border-default)",
+  borderRadius: "var(--radius-medium)",
+  padding: "var(--space-3)",
+  background: "var(--color-bg-muted)",
   display: "grid",
-  gap: 6,
+  gap: "var(--space-1)",
 };
 
-const healthTitleStyle: React.CSSProperties = {
-  fontSize: 13,
+const healthTitleStyle: CSSProperties = {
+  fontSize: "var(--font-size-caption)",
   fontWeight: 700,
-  color: "#6b7280",
+  color: "var(--color-text-secondary)",
 };
 
-const healthValueStyle: React.CSSProperties = {
-  fontSize: 18,
+const healthValueStyle: CSSProperties = {
+  fontSize: "var(--font-size-card-title)",
   fontWeight: 800,
-  color: "#111827",
+  color: "var(--color-text-primary)",
 };
 
-const healthSubtleStyle: React.CSSProperties = {
-  fontSize: 12,
-  color: "#6b7280",
+const healthSubtleStyle: CSSProperties = {
+  fontSize: "var(--font-size-caption)",
+  color: "var(--color-text-secondary)",
   lineHeight: 1.4,
-};
-
-const gridButtonStyle: React.CSSProperties = {
-  width: "100%",
-  minHeight: 46,
-  padding: "10px 12px",
-  borderRadius: 8,
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#111827",
-  cursor: "pointer",
-  fontWeight: 800,
-  boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
 };
 
 export default function EventAdminPage() {
@@ -1504,7 +1411,10 @@ export default function EventAdminPage() {
     // reachability check than the RLS boundary already enforces, never a
     // widening of it.
     <AdminRouteGuard requiredTask="event.definition.manage">
-      <AdminShellAdapter pageTitle="Event Admin">
+      <AdminShellAdapter
+        pageTitle="Event Admin"
+        backTarget={{ href: "/admin/dashboard", label: "Dashboard" }}
+      >
         <EventAdminPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

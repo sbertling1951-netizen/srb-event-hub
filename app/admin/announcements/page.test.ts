@@ -279,3 +279,37 @@ test("resetForm also clears any pending field-level errors", () => {
   const fnBody = PAGE_SOURCE.slice(fnIdx, PAGE_SOURCE.indexOf("\n  }", fnIdx));
   assert.match(fnBody, /setFieldErrors\(\{\}\)/);
 });
+
+// -- Admin Batch 1 migration: LoadingState/EmptyState/FormActions ----------
+
+test("loading and empty presentations use the canonical LoadingState/EmptyState primitives, not a hand-written neutral Alert", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*EmptyState\s*\}\s*from\s*["']@\/components\/ui\/EmptyState["']/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*LoadingState\s*\}\s*from\s*["']@\/components\/ui\/LoadingState["']/,
+  );
+  assert.match(PAGE_SOURCE, /<LoadingState message="Loading selected event\.\.\." \/>/);
+  assert.match(PAGE_SOURCE, /<EmptyState message="No event selected\." \/>/);
+  assert.match(PAGE_SOURCE, /<LoadingState message="Loading announcements\.\.\." \/>/);
+  assert.match(
+    PAGE_SOURCE,
+    /<EmptyState message="No announcements yet for this event\." \/>/,
+  );
+  assert.equal(
+    /<Alert tone="neutral">Loading/.test(PAGE_SOURCE),
+    false,
+    "no hand-written neutral loading Alert should remain",
+  );
+});
+
+test("the create/edit form's Save/Cancel row uses the canonical FormActions wrapper, not a raw app-button-row div", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
+  );
+  assert.match(PAGE_SOURCE, /<FormActions>/);
+  assert.equal(/className="app-button-row"/.test(PAGE_SOURCE), false);
+});

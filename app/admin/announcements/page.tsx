@@ -9,7 +9,10 @@ import { Alert, type AlertTone } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { RowActions } from "@/components/ui/RowActions";
@@ -570,12 +573,6 @@ function AdminAnnouncementsPageInner() {
     );
   }
 
-  const eventContextMessage = loadingEvent
-    ? "Loading selected event..."
-    : !currentEvent
-      ? "No event selected."
-      : null;
-
   return (
     <div style={{ display: "grid", gap: "var(--space-10)" }}>
       <ConfirmDialog
@@ -599,7 +596,11 @@ function AdminAnnouncementsPageInner() {
           -- that a selection is still loading, or that nothing is
           currently selected. The specific access-denied reason remains
           the separate `error` Alert below, unchanged. */}
-      {eventContextMessage ? <Alert tone="neutral">{eventContextMessage}</Alert> : null}
+      {loadingEvent ? (
+        <LoadingState message="Loading selected event..." />
+      ) : !currentEvent ? (
+        <EmptyState message="No event selected." />
+      ) : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {!error && status ? (
         <Alert tone={announcementStatusTone(status)}>{status}</Alert>
@@ -614,9 +615,9 @@ function AdminAnnouncementsPageInner() {
         />
 
         {loadingAnnouncements ? (
-          <Alert tone="neutral">Loading announcements...</Alert>
+          <LoadingState message="Loading announcements..." />
         ) : sortedAnnouncements.length === 0 ? (
-          <Alert tone="neutral">No announcements yet for this event.</Alert>
+          <EmptyState message="No announcements yet for this event." />
         ) : isCompact ? (
           <ResponsiveList aria-labelledby="announcements-existing-heading">
             {sortedAnnouncements.map((announcement) => {
@@ -798,7 +799,7 @@ function AdminAnnouncementsPageInner() {
               />
             </div>
 
-            <div className="app-button-row">
+            <FormActions>
               <AppButton
                 variant="primary"
                 onClick={() => void handleSave()}
@@ -814,7 +815,7 @@ function AdminAnnouncementsPageInner() {
               <AppButton onClick={resetForm} disabled={saving}>
                 {editingId ? "Cancel Edit" : "Clear"}
               </AppButton>
-            </div>
+            </FormActions>
           </div>
         </PageSection>
       </section>

@@ -2,6 +2,7 @@
 
 import { AppButton } from "@/components/ui/AppButton";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import { PageSection } from "@/components/ui/PageSection";
 
 type ActiveEvent = {
@@ -97,7 +98,7 @@ export default function AgendaTemplatePanel(props: Props) {
             )}
           </Field>
 
-          <div className="app-button-row">
+          <FormActions>
             <AppButton
               variant="primary"
               onClick={() => void onSaveTemplate()}
@@ -105,7 +106,7 @@ export default function AgendaTemplatePanel(props: Props) {
             >
               {savingTemplate ? "Saving Template..." : "Save Current Agenda as Template"}
             </AppButton>
-          </div>
+          </FormActions>
         </div>
       </PageSection>
 
@@ -134,7 +135,7 @@ export default function AgendaTemplatePanel(props: Props) {
             )}
           </Field>
 
-          <div className="app-button-row">
+          <FormActions>
             <AppButton
               onClick={() => void onApplyTemplate()}
               disabled={applyingTemplate || replacingFromTemplate}
@@ -149,7 +150,7 @@ export default function AgendaTemplatePanel(props: Props) {
             >
               {replacingFromTemplate ? "Replacing..." : "Replace Event Agenda From Template"}
             </AppButton>
-          </div>
+          </FormActions>
         </div>
       </PageSection>
     </div>
