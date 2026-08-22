@@ -29,3 +29,9 @@ All mutation operations require an authenticated caller, `event.imports.manage` 
 ## Legacy compatibility
 
 The legacy `event_import_rows` table and the client-orchestrated `/admin/imports` attendee workflow remain unchanged in Stage 1. They are not the new staging system and are not retired or repurposed here. A later attendee-domain commit stage must migrate the workflow deliberately.
+
+## Stage 2 attendee interpretation contract
+
+`lib/attendeeImportContract.ts` is a pure, database-free adapter for future staging. It normalizes historical aliases and preferred Co-Pilot headings into a typed candidate; retains Additional Attendees only as reference text; reports imported capacity separately from the Pilot/structured-Co-Pilot minimum; and never carries Person, participation, arrival, or parking state. Structural errors fail validation, while file-internal duplicate identifiers and external email/entry-ID target disagreement are review evidence, never identity decisions.
+
+Its SHA-256 fingerprint covers the stable normalized candidate (including activities and reference-only source text), with deterministic object-key ordering. It is source-row provenance/idempotency evidence—not canonical attendee identity. Stage 3 must combine the staged row/run identity with attendee-domain authority and resolved domain evidence before deciding a commit idempotency key or any canonical mutation.
