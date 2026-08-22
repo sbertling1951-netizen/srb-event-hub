@@ -106,6 +106,12 @@ type EventPlaceForm = {
   is_hidden: boolean;
 };
 
+type PlaceCategoryOption = {
+  id: string;
+  code: string;
+  label: string;
+};
+
 type ConfirmDialogState = {
   title: string;
   message: string;
@@ -158,6 +164,23 @@ function toNullableCoordinate(value: string): number | null {
   }
   const parsed = Number(trimmed);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Nearby Category Authority Stage A: the exact same normalization
+ * 20260811120000_create_nearby_knowledge_tenant_curation_foundation.sql's
+ * SQL backfill uses for public.place_categories.code (lowercase, runs of
+ * non-alphanumeric characters collapsed to a single underscore, leading/
+ * trailing underscores trimmed) -- kept in lockstep so a free-text
+ * category value that resolves to a canonical category in the database
+ * resolves to the same one here.
+ */
+function normalizeCategoryCode(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function storedFormFromPlace(place: StoredPlace): StoredPlaceForm {
@@ -398,6 +421,37 @@ function AdminNearbyPageInner() {
 
   const [storedPlaces, setStoredPlaces] = useState<StoredPlace[]>([]);
   const [eventPlaces, setEventPlaces] = useState<EventPlace[]>([]);
+
+  // Nearby Category Authority Stage A: the canonical catalog, fetched once
+  // so free-text category values can be resolved to a category_id on
+  // every write. Read-only here -- no rename, no category creation. A
+  // value with no match (e.g. an admin-typed custom category not yet in
+  // the catalog) resolves to null, which is why category_id stays a
+  // nullable FK rather than NOT NULL (see the Stage A migration's own
+  // header comment).
+  const [placeCategories, setPlaceCategories] = useState<PlaceCategoryOption[]>([]);
+
+  const categoryIdByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const category of placeCategories) {
+      map.set(category.code, category.id);
+    }
+    return map;
+  }, [placeCategories]);
+
+  const resolveCategoryId = useCallback(
+    (categoryText: string | null): string | null => {
+      if (!categoryText) {
+        return null;
+      }
+      const code = normalizeCategoryCode(categoryText);
+      if (!code) {
+        return null;
+      }
+      return categoryIdByCode.get(code) ?? null;
+    },
+    [categoryIdByCode],
+  );
 
   const [storedForm, setStoredForm] =
     useState<StoredPlaceForm>(emptyStoredPlaceForm);
@@ -881,6 +935,34 @@ function AdminNearbyPageInner() {
     void loadStoredAreas();
   }, [admin, loadStoredAreas]);
 
+  // Nearby Category Authority Stage A: background catalog prefetch. Not
+  // tied to any user action and never blocks saving a place -- a failed
+  // or empty fetch simply means resolveCategoryId() falls back to null
+  // for every value, the same outcome as before this stage existed.
+  useEffect(() => {
+    if (!admin) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("place_categories")
+          .select("id,code,label")
+          .eq("is_active", true)
+          .order("sort_order");
+
+        if (error) {
+          throw error;
+        }
+
+        setPlaceCategories((data || []) as PlaceCategoryOption[]);
+      } catch (err) {
+        console.error("loadPlaceCategories error:", err);
+      }
+    })();
+  }, [admin]);
+
   useEffect(() => {
     if (!admin) {
       return;
@@ -1145,6 +1227,10 @@ function AdminNearbyPageInner() {
         address: storedForm.address.trim() || null,
         phone: storedForm.phone.trim() || null,
         category: storedForm.category.trim() || null,
+        // Re-resolved fresh from the current free-text category on every
+        // save (Stage A) -- never carried over from a prior category_id,
+        // so an edited category can never leave category_id stale.
+        category_id: resolveCategoryId(storedForm.category.trim() || null),
         description: storedForm.notes.trim() || null,
         link: storedForm.website.trim() || null,
         location_code: storedForm.location_code.trim() || null,
@@ -1266,7 +1352,7 @@ function AdminNearbyPageInner() {
       const { data: sourceRows, error: sourceError } = await supabase
         .from("nearby_master")
         .select(
-          "id,name,address,phone,category,description,link,location_code,lat,lng",
+          "id,name,address,phone,category,category_id,description,link,location_code,lat,lng",
         )
         .eq("area_id", selectedAreaId)
         .order("name", { ascending: true });
@@ -1314,6 +1400,10 @@ function AdminNearbyPageInner() {
           phone: place.phone ?? null,
           website: place.link ?? null,
           category: place.category ?? null,
+          // Copied directly from the source stored place's own resolved
+          // identity (Stage A) -- never re-derived from copied display
+          // text when a canonical source category_id already exists.
+          category_id: place.category_id ?? null,
           notes: place.description ?? null,
           sort_order: index + 1,
           is_hidden: false,
@@ -1372,7 +1462,7 @@ function AdminNearbyPageInner() {
       const { data: sourceRows, error: sourceError } = await supabase
         .from("nearby_master")
         .select(
-          "id,name,address,phone,category,description,link,location_code,lat,lng",
+          "id,name,address,phone,category,category_id,description,link,location_code,lat,lng",
         )
         .eq("area_id", selectedAreaId)
         .order("name", { ascending: true });
@@ -1424,6 +1514,10 @@ function AdminNearbyPageInner() {
           phone: place.phone ?? null,
           website: place.link ?? null,
           category: place.category ?? null,
+          // Copied directly from the source stored place's own resolved
+          // identity (Stage A) -- see replaceEventListFromStored()'s
+          // identical comment.
+          category_id: place.category_id ?? null,
           notes: place.description ?? null,
           sort_order: eventPlaces.length + payload.length + 1,
           is_hidden: false,
@@ -1594,6 +1688,9 @@ function AdminNearbyPageInner() {
         phone: eventForm.phone.trim() || null,
         website: eventForm.website.trim() || null,
         category: eventForm.category.trim() || null,
+        // Re-resolved fresh from the current free-text category on every
+        // save (Stage A) -- see saveStoredPlace()'s identical comment.
+        category_id: resolveCategoryId(eventForm.category.trim() || null),
         notes: eventForm.notes.trim() || null,
         distance_miles: toNullableNumber(eventForm.distance_miles),
         location_code: eventForm.location_code.trim() || null,

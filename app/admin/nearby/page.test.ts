@@ -209,3 +209,87 @@ test("the draft-restore-focus mechanism (data-stored-field/rememberStoredFieldFo
     );
   }
 });
+
+// -----------------------------------------------------------------------
+// Nearby Category Authority Stage A: category_id maintained on every
+// write/copy path, no rename capability, no member-facing change.
+// -----------------------------------------------------------------------
+
+function functionBody(name: string): string {
+  const start = PAGE_SOURCE.indexOf(`async function ${name}(`);
+  assert.ok(start >= 0, `expected to find async function ${name}(`);
+  const nextFn = PAGE_SOURCE.indexOf("\n  async function ", start + 1);
+  return PAGE_SOURCE.slice(start, nextFn > 0 ? nextFn : PAGE_SOURCE.length);
+}
+
+test("the category-code normalizer matches the SQL migration's own normalization exactly (lowercase, non-alnum runs to underscore, trimmed)", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /function normalizeCategoryCode\(text: string\): string \{\s*\n\s*return text\s*\n\s*\.trim\(\)\s*\n\s*\.toLowerCase\(\)\s*\n\s*\.replace\(\/\[\^a-z0-9\]\+\/g, "_"\)\s*\n\s*\.replace\(\/\^_\+\|_\+\$\/g, ""\);/,
+  );
+});
+
+test("place_categories is fetched read-only -- no insert/update/delete/upsert against it anywhere on this page", () => {
+  const categoriesFetchIdx = PAGE_SOURCE.indexOf('.from("place_categories")');
+  assert.notEqual(categoriesFetchIdx, -1);
+  assert.equal(/\.from\("place_categories"\)\s*\n\s*\.(insert|update|upsert|delete)\(/.test(PAGE_SOURCE), false);
+});
+
+test("no rename RPC, no InlineEdit adoption, and no automatic category creation anywhere on this page", () => {
+  assert.equal(/rename_place_category/.test(PAGE_SOURCE), false);
+  assert.equal(/InlineEdit/.test(PAGE_SOURCE), false);
+  assert.equal(/INSERT INTO public\.place_categories|from\("place_categories"\)\s*\n\s*\.insert/.test(PAGE_SOURCE), false);
+});
+
+test("saveStoredPlace re-resolves category_id fresh from the current free-text category on every save -- editing the text can never leave category_id stale", () => {
+  const body = functionBody("saveStoredPlace");
+  assert.match(body, /category: storedForm\.category\.trim\(\) \|\| null,/);
+  assert.match(body, /category_id: resolveCategoryId\(storedForm\.category\.trim\(\) \|\| null\),/);
+  assert.match(PAGE_SOURCE, /\.from\("nearby_master"\)\s*\n\s*\.update\(payload\)/);
+  assert.match(PAGE_SOURCE, /supabase\.from\("nearby_master"\)\.insert\(payload\)/);
+});
+
+test("saveEventPlace re-resolves category_id fresh from the current free-text category on every save", () => {
+  const body = functionBody("saveEventPlace");
+  assert.match(body, /category: eventForm\.category\.trim\(\) \|\| null,/);
+  assert.match(body, /category_id: resolveCategoryId\(eventForm\.category\.trim\(\) \|\| null\),/);
+});
+
+test("replaceEventListFromStored copies category_id directly from the source stored place -- never re-derives it from copied display text", () => {
+  const body = functionBody("replaceEventListFromStored");
+  assert.match(body, /"id,name,address,phone,category,category_id,description,link,location_code,lat,lng"/);
+  assert.match(body, /category_id: place\.category_id \?\? null,/);
+  assert.equal(/resolveCategoryId/.test(body), false);
+});
+
+test("mergeStoredAreaIntoEvent copies category_id directly from the source stored place -- never re-derives it from copied display text", () => {
+  const body = functionBody("mergeStoredAreaIntoEvent");
+  assert.match(body, /"id,name,address,phone,category,category_id,description,link,location_code,lat,lng"/);
+  assert.match(body, /category_id: place\.category_id \?\? null,/);
+  assert.equal(/resolveCategoryId/.test(body), false);
+});
+
+test("resolveCategoryId returns null for blank/unmatched free text rather than inventing a category -- category_id is never coerced to a fallback identity", () => {
+  const start = PAGE_SOURCE.indexOf("const resolveCategoryId = useCallback(");
+  assert.notEqual(start, -1);
+  const body = PAGE_SOURCE.slice(start, PAGE_SOURCE.indexOf("[categoryIdByCode],", start));
+  assert.match(body, /if \(!categoryText\) \{\s*\n\s*return null;/);
+  assert.match(body, /if \(!code\) \{\s*\n\s*return null;/);
+  assert.match(body, /return categoryIdByCode\.get\(code\) \?\? null;/);
+});
+
+test("Stage A's new helpers/state are local to this page -- neither app/member/nearby/page.tsx nor app/admin/nearby-settings/page.tsx picked up any of this stage's logic", () => {
+  const memberSource = readFileSync(
+    fileURLToPath(new URL("../../member/nearby/page.tsx", import.meta.url)),
+    "utf8",
+  );
+  const settingsSource = readFileSync(
+    fileURLToPath(new URL("../nearby-settings/page.tsx", import.meta.url)),
+    "utf8",
+  );
+
+  for (const needle of ["normalizeCategoryCode", "resolveCategoryId", "categoryIdByCode"]) {
+    assert.equal(memberSource.includes(needle), false, `member page should not reference ${needle}`);
+    assert.equal(settingsSource.includes(needle), false, `nearby-settings page should not reference ${needle}`);
+  }
+});
