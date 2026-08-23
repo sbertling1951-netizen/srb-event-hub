@@ -28,6 +28,7 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { AGENDA_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 import { buildImportsHref } from "@/lib/importTypeRouting";
 import { supabase } from "@/lib/supabase";
 
@@ -182,7 +183,7 @@ function buildExternalId(form: AgendaForm) {
   ].join("-");
 }
 
-function normalizeImportHeaderKey(value: string) {
+export function normalizeImportHeaderKey(value: string) {
   return value
     .replace(/\u00A0/g, " ")
     .replace(/[\r\n\t]+/g, " ")
@@ -191,7 +192,7 @@ function normalizeImportHeaderKey(value: string) {
     .toLowerCase();
 }
 
-function getImportField(row: AgendaImportRow, names: string[]) {
+export function getImportField(row: AgendaImportRow, names: string[]) {
   const normalizedRow: Record<string, unknown> = {};
 
   Object.keys(row).forEach((key) => {
@@ -208,12 +209,12 @@ function getImportField(row: AgendaImportRow, names: string[]) {
   return undefined;
 }
 
-function normalizeImportText(value: unknown) {
+export function normalizeImportText(value: unknown) {
   const trimmed = String(value ?? "").trim();
   return trimmed ? trimmed : null;
 }
 
-function normalizeImportNumber(value: unknown) {
+export function normalizeImportNumber(value: unknown) {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) {
     return null;
@@ -222,7 +223,7 @@ function normalizeImportNumber(value: unknown) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function normalizeImportDate(value: unknown) {
+export function normalizeImportDate(value: unknown) {
   if (value === undefined || value === null) {
     return null;
   }
@@ -278,7 +279,7 @@ function excelTimeNumberToHHMM(value: number) {
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
-function normalizeImportTimeOnly(value: unknown) {
+export function normalizeImportTimeOnly(value: unknown) {
   if (value === undefined || value === null || String(value).trim() === "") {
     return null;
   }
@@ -316,11 +317,55 @@ function normalizeImportTimeOnly(value: unknown) {
   return null;
 }
 
-function yesNoToBool(value: unknown) {
+export function yesNoToBool(value: unknown) {
   const raw = String(value ?? "")
     .trim()
     .toLowerCase();
   return raw === "yes" || raw === "y" || raw === "true" || raw === "1";
+}
+
+// Agenda's shipped XLSX templates intentionally keep a title and short
+// instruction row above the actual field headings. Locate that canonical
+// heading row from the same contract that documents the live aliases, rather
+// than accidentally treating workbook row 1 as headers.
+export function findAgendaWorkbookHeaderRow(
+  worksheet: XLSX.WorkSheet,
+): number {
+  const worksheetRows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+    header: 1,
+    defval: "",
+    raw: false,
+  });
+  const requiredFields = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.filter(
+    (field) => field.required,
+  );
+
+  return worksheetRows.findIndex((row) => {
+    const headings = new Set(
+      row.map((value) => normalizeImportHeaderKey(String(value ?? ""))),
+    );
+
+    return requiredFields.every((field) =>
+      field.aliases.some((alias) =>
+        headings.has(normalizeImportHeaderKey(alias)),
+      ),
+    );
+  });
+}
+
+export function parseAgendaWorkbookWorksheet(
+  worksheet: XLSX.WorkSheet,
+): AgendaImportRow[] {
+  const headerRow = findAgendaWorkbookHeaderRow(worksheet);
+
+  return XLSX.utils.sheet_to_json<AgendaImportRow>(worksheet, {
+    // Preserve ordinary XLSX imports whose headings are already on row 1.
+    // The contract lookup above only changes the range when it positively
+    // recognizes an Agenda header row after title/instruction content.
+    range: headerRow >= 0 ? headerRow : 0,
+    defval: "",
+    raw: false,
+  });
 }
 
 function parseAgendaRowsFromWorkbook(file: File): Promise<AgendaImportRow[]> {
@@ -337,12 +382,7 @@ function parseAgendaRowsFromWorkbook(file: File): Promise<AgendaImportRow[]> {
 
         const workbook = XLSX.read(data, { type: "array" });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<AgendaImportRow>(worksheet, {
-          defval: "",
-          raw: false,
-        });
-
-        resolve(rows);
+        resolve(parseAgendaWorkbookWorksheet(worksheet));
       } catch (err) {
         reject(err);
       }

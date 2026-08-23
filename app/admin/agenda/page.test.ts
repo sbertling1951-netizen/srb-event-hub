@@ -3,7 +3,21 @@ import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { isStaleAgendaVersionError, mapAgendaRpcError } from "@/app/admin/agenda/page";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
+
+import {
+  findAgendaWorkbookHeaderRow,
+  getImportField,
+  isStaleAgendaVersionError,
+  mapAgendaRpcError,
+  normalizeImportDate,
+  normalizeImportText,
+  normalizeImportTimeOnly,
+  parseAgendaWorkbookWorksheet,
+  yesNoToBool,
+} from "@/app/admin/agenda/page";
+import { AGENDA_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 
 // Focused tests for the Admin Agenda governed UI cutover (Agenda
 // Consumer Migration Stages 2A and 2B). Run with:
@@ -22,6 +36,137 @@ const TEMPLATE_PANEL_SOURCE = readFileSync(
   ),
   "utf8",
 );
+
+function agendaTemplatePath(filename: string) {
+  return fileURLToPath(
+    new URL(`../../../public/templates/agenda/${filename}`, import.meta.url),
+  );
+}
+
+const AGENDA_HEADINGS = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.map(
+  (field) => field.preferredHeading,
+);
+
+function agendaAliases(key: string) {
+  const field = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.find(
+    (candidate) => candidate.key === key,
+  );
+  assert.ok(field, `missing Agenda contract field: ${key}`);
+  return field.aliases;
+}
+
+function normalizeAgendaSampleRow(row: Record<string, unknown>) {
+  return {
+    title: normalizeImportText(getImportField(row, agendaAliases("title"))),
+    description: normalizeImportText(
+      getImportField(row, agendaAliases("description")),
+    ),
+    location: normalizeImportText(
+      getImportField(row, agendaAliases("location")),
+    ),
+    speaker: normalizeImportText(
+      getImportField(row, agendaAliases("speaker")),
+    ),
+    agenda_date: normalizeImportDate(
+      getImportField(row, agendaAliases("agenda_date")),
+    ),
+    start_time: normalizeImportTimeOnly(
+      getImportField(row, agendaAliases("start_time")),
+    ),
+    end_time: normalizeImportTimeOnly(
+      getImportField(row, agendaAliases("end_time")),
+    ),
+    category: normalizeImportText(
+      getImportField(row, agendaAliases("category")),
+    ),
+    color: normalizeImportText(getImportField(row, agendaAliases("color"))),
+    is_published: yesNoToBool(
+      getImportField(row, agendaAliases("is_published")),
+    ),
+  };
+}
+
+// -- Shipped Agenda template assets -----------------------------------
+//
+// These exercise the exact worksheet parser used by the live Agenda page.
+// The title and instruction rows are intentionally retained in XLSX; the
+// parser must deliberately locate the contract-defined header row.
+
+test("Agenda blank XLSX: the live worksheet parser finds canonical headings without leaking title/instruction keys", () => {
+  const workbook = XLSX.readFile(
+    agendaTemplatePath("agenda_import_template_blank_with_speaker.xlsx"),
+  );
+  const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+  assert.equal(findAgendaWorkbookHeaderRow(worksheet), 3);
+  const rows = parseAgendaWorkbookWorksheet(worksheet);
+
+  for (const row of rows) {
+    assert.ok(
+      Object.keys(row).every((key) => AGENDA_HEADINGS.includes(key)),
+      `unexpected Agenda XLSX key: ${JSON.stringify(row)}`,
+    );
+  }
+  assert.equal(
+    rows.some((row) =>
+      Object.keys(row).some((key) => key.startsWith("FCOC Agenda Import")),
+    ),
+    false,
+  );
+});
+
+test("Agenda sample XLSX: the live worksheet parser reaches the normalized import shape", () => {
+  const workbook = XLSX.readFile(
+    agendaTemplatePath("agenda_import_template_sample_with_speaker.xlsx"),
+  );
+  const rows = parseAgendaWorkbookWorksheet(workbook.Sheets[workbook.SheetNames[0]]);
+  const sample = normalizeAgendaSampleRow(rows[0]);
+
+  assert.deepEqual(sample, {
+    title: "Welcome & Opening Remarks",
+    description: "Kickoff for all attendees with overview of the event schedule.",
+    location: "Camp Margaritaville Resort",
+    speaker: "Steve Bertling",
+    agenda_date: "2026-04-22",
+    start_time: "09:00",
+    end_time: "09:30",
+    category: "General",
+    color: "#DBEAFE",
+    is_published: true,
+  });
+});
+
+test("Agenda CSV templates retain the canonical header contract and sample mapping", () => {
+  const blank = Papa.parse<Record<string, string>>(
+    readFileSync(
+      agendaTemplatePath("agenda_import_template_blank_with_speaker.csv"),
+      "utf8",
+    ),
+    { header: true, skipEmptyLines: true, transformHeader: (header) => header.replace(/^\uFEFF/, "").trim() },
+  );
+  assert.deepEqual(blank.meta.fields, AGENDA_HEADINGS);
+
+  const sample = Papa.parse<Record<string, string>>(
+    readFileSync(
+      agendaTemplatePath("agenda_import_template_sample_with_speaker.csv"),
+      "utf8",
+    ),
+    { header: true, skipEmptyLines: true, transformHeader: (header) => header.replace(/^\uFEFF/, "").trim() },
+  );
+  assert.deepEqual(sample.meta.fields, AGENDA_HEADINGS);
+  assert.deepEqual(normalizeAgendaSampleRow(sample.data[0]), {
+    title: "Welcome & Opening Remarks",
+    description: "Kickoff for all attendees with overview of the event schedule.",
+    location: "Camp Margaritaville Resort",
+    speaker: "Steve Bertling",
+    agenda_date: "2026-04-22",
+    start_time: "09:00",
+    end_time: "09:30",
+    category: "General",
+    color: "#DBEAFE",
+    is_published: true,
+  });
+});
 
 // -- Error mapping ----------------------------------------------------
 
