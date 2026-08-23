@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   type AgendaImportRowResult,
+  getEffectiveAgendaImportCandidate,
+  getEffectiveAgendaImportIssues,
   summarizeAgendaImportRows,
 } from "./agendaImportOrchestration";
 
@@ -175,6 +177,48 @@ test("summary reports persisted Agenda row states and abandonment without guessi
     abandoned: 0,
     unresolvedOpen: 0,
   });
+});
+
+test("effective Agenda projection uses the latest governed correction candidate and its paired issues without mutating original evidence", () => {
+  const originalCandidate = { title: "original" } as AgendaImportRowResult["candidate"];
+  const correctedCandidate = { title: "Corrected" } as AgendaImportRowResult["candidate"];
+  const originalIssues = [
+    { code: "missing_agenda_date", message: "old", severity: "error" as const },
+  ];
+  const correctedIssues = [
+    {
+      code: "missing_agenda_start_time",
+      message: "current",
+      severity: "error" as const,
+    },
+  ];
+  const importRow: AgendaImportRowResult = {
+    rowId: crypto.randomUUID(),
+    sourceRowNumber: 2,
+    candidate: originalCandidate,
+    issues: originalIssues,
+    rowState: "validation_failed",
+    canonicalAgendaItemId: null,
+    commitError: null,
+    abandonedAt: null,
+    abandonedByAuthUserId: null,
+    abandonmentReasonCode: null,
+    correctionRevision: 1,
+    correctionCount: 1,
+    latestCorrectedCandidate: correctedCandidate,
+    latestCorrectionIssues: correctedIssues,
+    latestCorrectedByAuthUserId: crypto.randomUUID(),
+    latestCorrectedAt: new Date().toISOString(),
+  };
+
+  assert.equal(getEffectiveAgendaImportCandidate(importRow), correctedCandidate);
+  assert.equal(getEffectiveAgendaImportIssues(importRow), correctedIssues);
+  assert.equal(importRow.candidate, originalCandidate);
+  assert.equal(importRow.issues, originalIssues);
+
+  importRow.latestCorrectedCandidate = null;
+  assert.equal(getEffectiveAgendaImportCandidate(importRow), originalCandidate);
+  assert.equal(getEffectiveAgendaImportIssues(importRow), originalIssues);
 });
 
 test("correctAgendaImportRow submits exactly the recomputed candidate/validation outcome plus a fencing revision to the governed RPC", () => {

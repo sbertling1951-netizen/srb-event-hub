@@ -23,11 +23,12 @@ import {
   type AgendaImportCorrectionReasonCode,
   type AgendaImportRowResult,
   correctAgendaImportRow,
+  getEffectiveAgendaImportCandidate,
   interpretAgendaCorrection,
 } from "@/lib/agendaImportOrchestration";
 import { describeLifecycleError } from "@/lib/importLifecycleOrchestration";
 
-type EditableFields = {
+export type AgendaEditRowFields = {
   Title: string;
   Description: string;
   Location: string;
@@ -41,9 +42,27 @@ type EditableFields = {
   "Sort Order": string;
 };
 
+export type AgendaImportCategoryOption = {
+  name: string;
+  color: string;
+};
+
+export function resolveAgendaImportCategorySelection(
+  selectedCategory: string,
+  categoryOptions: readonly AgendaImportCategoryOption[],
+) {
+  const configuredCategory = categoryOptions.find(
+    (category) => category.name === selectedCategory,
+  );
+  return {
+    category: selectedCategory,
+    color: configuredCategory?.color ?? "",
+  };
+}
+
 function fieldsFromCandidate(
   candidate: AgendaImportRowResult["candidate"],
-): EditableFields {
+): AgendaEditRowFields {
   return {
     Title: candidate.title ?? "",
     Description: candidate.description ?? "",
@@ -59,10 +78,17 @@ function fieldsFromCandidate(
   };
 }
 
+export function getAgendaEditRowFields(
+  row: AgendaImportRowResult,
+): AgendaEditRowFields {
+  return fieldsFromCandidate(getEffectiveAgendaImportCandidate(row));
+}
+
 export type AgendaEditRowDialogProps = {
   open: boolean;
   row: AgendaImportRowResult;
   eventDateContext: AgendaImportEventDateContext;
+  categoryOptions: readonly AgendaImportCategoryOption[];
   onCancel: () => void;
   onSaved: (message: string) => void | Promise<void>;
   onError: (message: string) => void;
@@ -72,12 +98,13 @@ export function AgendaEditRowDialog({
   open,
   row,
   eventDateContext,
+  categoryOptions,
   onCancel,
   onSaved,
   onError,
 }: AgendaEditRowDialogProps) {
-  const [fields, setFields] = useState<EditableFields>(() =>
-    fieldsFromCandidate(row.latestCorrectedCandidate ?? row.candidate),
+  const [fields, setFields] = useState<AgendaEditRowFields>(() =>
+    getAgendaEditRowFields(row),
   );
   const [reasonCode, setReasonCode] =
     useState<AgendaImportCorrectionReasonCode>("data_entry_error");
@@ -90,7 +117,7 @@ export function AgendaEditRowDialog({
     if (!open) {
       return;
     }
-    setFields(fieldsFromCandidate(row.latestCorrectedCandidate ?? row.candidate));
+    setFields(getAgendaEditRowFields(row));
     setReasonCode("data_entry_error");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, row.rowId, row.correctionRevision]);
@@ -117,8 +144,14 @@ export function AgendaEditRowDialog({
     },
   );
   const willBeValid = interpretation.validation_state === "valid";
+  const categoryIsUnresolved =
+    fields.Category !== "" &&
+    !categoryOptions.some((category) => category.name === fields.Category);
 
-  function update<K extends keyof EditableFields>(key: K, value: EditableFields[K]) {
+  function update<K extends keyof AgendaEditRowFields>(
+    key: K,
+    value: AgendaEditRowFields[K],
+  ) {
     setFields((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -200,7 +233,14 @@ export function AgendaEditRowDialog({
           )}
         </Field>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(100%, 12rem), 1fr))",
+            gap: "var(--space-3)",
+          }}
+        >
           <Field label="Location">
             {(controlProps) => (
               <Input
@@ -223,7 +263,14 @@ export function AgendaEditRowDialog({
           </Field>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--space-3)" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(100%, 12rem), 1fr))",
+            gap: "var(--space-3)",
+          }}
+        >
           <Field label="Agenda Date" required help="e.g. 11/4/26, 11/4, or 2026-11-04">
             {(controlProps) => (
               <Input
@@ -256,24 +303,64 @@ export function AgendaEditRowDialog({
           </Field>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--space-3)" }}>
-          <Field label="Category">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(100%, 12rem), 1fr))",
+            gap: "var(--space-3)",
+          }}
+        >
+          <Field
+            label="Category"
+            help={
+              categoryIsUnresolved
+                ? `Imported category “${fields.Category}” is not configured. Choose a configured category to resolve it, or leave it unchanged.`
+                : "Choose from the same configured Agenda categories used by the Agenda editor."
+            }
+          >
             {(controlProps) => (
-              <Input
+              <Select
                 {...controlProps}
                 value={fields.Category}
                 disabled={saving}
-                onChange={(e) => update("Category", e.target.value)}
-              />
+                onChange={(e) => {
+                  const selection = resolveAgendaImportCategorySelection(
+                    e.target.value,
+                    categoryOptions,
+                  );
+                  setFields((previous) => ({
+                    ...previous,
+                    Category: selection.category,
+                    Color: selection.color,
+                  }));
+                }}
+              >
+                <option value="">-- Select Category --</option>
+                {categoryIsUnresolved ? (
+                  <option value={fields.Category}>
+                    Imported: {fields.Category} (not configured)
+                  </option>
+                ) : null}
+                {categoryOptions.map((category) => (
+                  <option key={category.name} value={category.name}>
+                    {category.name}
+                  </option>
+                ))}
+              </Select>
             )}
           </Field>
-          <Field label="Color" help="Hex, e.g. #DBEAFE">
+          <Field
+            label="Category color"
+            help="The selected configured category supplies this value; it is not a separate override."
+          >
             {(controlProps) => (
               <Input
                 {...controlProps}
                 value={fields.Color}
-                disabled={saving}
-                onChange={(e) => update("Color", e.target.value)}
+                placeholder="No color set"
+                readOnly
+                aria-readonly="true"
               />
             )}
           </Field>

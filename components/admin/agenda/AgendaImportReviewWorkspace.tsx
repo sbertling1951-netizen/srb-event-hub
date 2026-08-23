@@ -20,6 +20,8 @@ import {
   type AgendaImportRowResult,
   type AgendaImportRunResult,
   deleteAgendaImportRow,
+  getEffectiveAgendaImportCandidate,
+  getEffectiveAgendaImportIssues,
   summarizeAgendaImportRows,
 } from "@/lib/agendaImportOrchestration";
 import {
@@ -28,7 +30,10 @@ import {
   type ImportRunLifecycleStatus,
 } from "@/lib/importLifecycleOrchestration";
 
-import { AgendaEditRowDialog } from "./AgendaEditRowDialog";
+import {
+  AgendaEditRowDialog,
+  type AgendaImportCategoryOption,
+} from "./AgendaEditRowDialog";
 
 // Re-exported for existing external callers (this module was their
 // original home before lib/agendaImportMessages.ts was split out to avoid
@@ -81,7 +86,7 @@ function abandonmentReasonLabel(code: string | null) {
 }
 
 function AgendaCandidateDetails({ row }: { row: AgendaImportRowResult }) {
-  const candidate = row.candidate;
+  const candidate = getEffectiveAgendaImportCandidate(row);
 
   return (
     <div style={{ display: "grid", gap: "var(--space-2)", minWidth: 0 }}>
@@ -98,7 +103,7 @@ function AgendaCandidateDetails({ row }: { row: AgendaImportRowResult }) {
         {candidate.end_time ? `–${candidate.end_time}` : ""}
       </div>
       <div className="app-subtle-text">
-        Category: {candidate.category || "None"} · Location: {candidate.location || "None"}
+        Category: {candidate.category || "None"} · Color: {candidate.color || "None"} · Location: {candidate.location || "None"}
         {candidate.speaker ? ` · Speaker: ${candidate.speaker}` : ""}
       </div>
       <div className="app-subtle-text">
@@ -115,10 +120,11 @@ function AgendaCandidateDetails({ row }: { row: AgendaImportRowResult }) {
 
 function AgendaRowOutcome({ row }: { row: AgendaImportRowResult }) {
   const status = getAgendaImportRowStatus(row);
+  const currentIssues = getEffectiveAgendaImportIssues(row);
   const messages = row.abandonedAt
     ? [abandonmentReasonLabel(row.abandonmentReasonCode)]
     : row.rowState === "validation_failed"
-      ? row.issues.map((issue) => describeAgendaValidationIssue(issue.code))
+      ? currentIssues.map((issue) => describeAgendaValidationIssue(issue.code))
       : row.rowState === "commit_failed"
         ? [describeAgendaCommitFailure(row.commitError?.code ?? null)]
         : [];
@@ -150,12 +156,14 @@ function AgendaRowAction({
   row,
   runStatus,
   eventDateContext,
+  categoryOptions,
   onRowsChanged,
   onError,
 }: {
   row: AgendaImportRowResult;
   runStatus: ImportRunLifecycleStatus;
   eventDateContext: AgendaImportEventDateContext;
+  categoryOptions: readonly AgendaImportCategoryOption[];
   onRowsChanged: (message: string) => void | Promise<void>;
   onError: (message: string) => void;
 }) {
@@ -176,6 +184,7 @@ function AgendaRowAction({
     runStatus !== "finalized" &&
     row.abandonedAt === null &&
     row.rowState !== "committed";
+  const candidate = getEffectiveAgendaImportCandidate(row);
 
   async function handleDelete() {
     setDeleting(true);
@@ -197,7 +206,7 @@ function AgendaRowAction({
       {canEdit ? (
         <AppButton
           variant="secondary"
-          aria-label={`Edit source row ${row.sourceRowNumber}: ${row.candidate.title || "Untitled Agenda row"}`}
+          aria-label={`Edit source row ${row.sourceRowNumber}: ${candidate.title || "Untitled Agenda row"}`}
           onClick={() => setEditOpen(true)}
         >
           Edit Row
@@ -206,7 +215,7 @@ function AgendaRowAction({
       {canDelete ? (
         <AppButton
           variant="danger"
-          aria-label={`Delete source row ${row.sourceRowNumber}: ${row.candidate.title || "Untitled Agenda row"}`}
+          aria-label={`Delete source row ${row.sourceRowNumber}: ${candidate.title || "Untitled Agenda row"}`}
           onClick={() => setDeleteOpen(true)}
         >
           Delete Row
@@ -217,6 +226,7 @@ function AgendaRowAction({
           open={editOpen}
           row={row}
           eventDateContext={eventDateContext}
+          categoryOptions={categoryOptions}
           onCancel={() => setEditOpen(false)}
           onSaved={async (message) => {
             setEditOpen(false);
@@ -246,6 +256,7 @@ type AgendaImportReviewWorkspaceProps = {
   compact: boolean;
   committing: boolean;
   eventDateContext: AgendaImportEventDateContext;
+  categoryOptions: readonly AgendaImportCategoryOption[];
   onRowsChanged: (message: string) => void | Promise<void>;
   onCommit: () => void | Promise<void>;
   onFinalized: (result: {
@@ -262,6 +273,7 @@ export function AgendaImportReviewWorkspace({
   compact,
   committing,
   eventDateContext,
+  categoryOptions,
   onRowsChanged,
   onCommit,
   onFinalized,
@@ -391,7 +403,7 @@ export function AgendaImportReviewWorkspace({
                     <AgendaRowOutcome row={row} />
                   </div>
                   <AgendaCandidateDetails row={row} />
-                  <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} onRowsChanged={onRowsChanged} onError={onError} />
+                  <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} categoryOptions={categoryOptions} onRowsChanged={onRowsChanged} onError={onError} />
                 </li>
               ))}
             </ResponsiveList>
@@ -416,7 +428,7 @@ export function AgendaImportReviewWorkspace({
                       <AgendaRowOutcome row={row} />
                     </td>
                     <td>
-                      <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} onRowsChanged={onRowsChanged} onError={onError} />
+                      <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} categoryOptions={categoryOptions} onRowsChanged={onRowsChanged} onError={onError} />
                     </td>
                   </tr>
                 ))}

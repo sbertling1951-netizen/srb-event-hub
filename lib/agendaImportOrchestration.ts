@@ -108,6 +108,25 @@ export type AgendaImportRunSummary = {
   unresolvedOpen: number;
 };
 
+/**
+ * Resolve the operator's current working candidate without altering the
+ * immutable staged source evidence. Once a governed correction exists, its
+ * latest candidate is the sole current presentation/editing overlay; before
+ * that, the original normalized candidate remains current.
+ */
+export function getEffectiveAgendaImportCandidate(
+  row: AgendaImportRowResult,
+): AgendaImportCandidate {
+  return row.latestCorrectedCandidate ?? row.candidate;
+}
+
+/** Current validation evidence paired with getEffectiveAgendaImportCandidate. */
+export function getEffectiveAgendaImportIssues(
+  row: AgendaImportRowResult,
+): AgendaImportIssue[] {
+  return row.latestCorrectedCandidate ? row.latestCorrectionIssues : row.issues;
+}
+
 type AgendaBatchAttempt = Pick<
   AgendaImportRunResult,
   "batchOutcome" | "importedCount" | "newVersion" | "orchestrationError"

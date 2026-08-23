@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  getAgendaEditRowFields,
+  resolveAgendaImportCategorySelection,
+} from "@/components/admin/agenda/AgendaEditRowDialog";
+import {
   AgendaImportReviewWorkspace,
   describeAgendaCommitFailure,
   describeAgendaValidationIssue,
@@ -66,6 +70,12 @@ const EVENT_DATE_CONTEXT = {
   event_end_date: "2026-09-03",
 };
 
+const CATEGORY_OPTIONS = [
+  { name: "General", color: "#DBEAFE" },
+  { name: "Meal", color: "#FDE68A" },
+  { name: "Seminar", color: "#DCFCE7" },
+];
+
 function run(rows: AgendaImportRowResult[]): AgendaImportRunResult {
   return {
     runId: "00000000-0000-4000-8000-000000000001",
@@ -91,6 +101,7 @@ function renderWorkspace(
       compact={options.compact ?? false}
       committing={false}
       eventDateContext={EVENT_DATE_CONTEXT}
+      categoryOptions={CATEGORY_OPTIONS}
       onRowsChanged={noop}
       onCommit={noop}
       onFinalized={noop}
@@ -131,6 +142,7 @@ test("renders recognizable normalized Agenda fields, preserving explicit false a
     "09:00",
     "09:45",
     "General",
+    "#DBEAFE",
     "Main Hall",
     "Alex Rivera",
     "Sort order: 0",
@@ -140,6 +152,151 @@ test("renders recognizable normalized Agenda fields, preserving explicit false a
     assert.ok(html.includes(value), value);
   }
   assert.doesNotMatch(html, /normalized_candidate|\{&quot;title&quot;/);
+});
+
+test("renders the latest valid correction as the effective working row and hides stale original candidate and validation guidance", () => {
+  const correctedCandidate: AgendaImportRowResult["candidate"] = {
+    source_row_number: 2,
+    title: "Dinner",
+    description: "Corrected evening meal",
+    location: "Garden Pavilion",
+    speaker: "Jordan Lee",
+    agenda_date: "2026-11-04",
+    start_time: "17:00",
+    end_time: "19:00",
+    category: "Meal",
+    color: "#FDE68A",
+    is_published: true,
+    sort_order: 12,
+    external_id: "dinner-2026-11-04-17-00",
+  };
+  const html = renderWorkspace([
+    row({
+      candidate: {
+        ...row().candidate,
+        title: "original lowercase meal",
+        agenda_date: null,
+        start_time: null,
+        end_time: null,
+        external_id: null,
+      },
+      issues: [
+        { code: "missing_agenda_date", message: "Date missing", severity: "error" },
+        {
+          code: "missing_agenda_start_time",
+          message: "Start time missing",
+          severity: "error",
+        },
+      ],
+      correctionCount: 1,
+      correctionRevision: 1,
+      latestCorrectedCandidate: correctedCandidate,
+      latestCorrectionIssues: [],
+    }),
+  ]);
+
+  for (const currentValue of [
+    "Dinner",
+    "Corrected evening meal",
+    "Garden Pavilion",
+    "Jordan Lee",
+    "2026-11-04",
+    "17:00",
+    "19:00",
+    "Meal",
+    "#FDE68A",
+    "Published: Yes",
+    "Sort order: 12",
+    "dinner-2026-11-04-17-00",
+  ]) {
+    assert.ok(html.includes(currentValue), currentValue);
+  }
+  assert.doesNotMatch(html, /original lowercase meal/);
+  assert.doesNotMatch(html, /Date missing/);
+  assert.doesNotMatch(html, /Start time is missing/);
+  assert.doesNotMatch(html, /No external identity could be derived/);
+  assert.match(html, />Ready to Import</);
+});
+
+test("a latest invalid correction renders its current values and issues, not the obsolete original failure", () => {
+  const invalidCorrection = {
+    ...row().candidate,
+    title: "Current Corrected Title",
+    agenda_date: "2026-11-04",
+    start_time: null,
+    external_id: null,
+  };
+  const html = renderWorkspace([
+    row({
+      rowState: "validation_failed",
+      issues: [
+        { code: "missing_agenda_date", message: "old", severity: "error" },
+      ],
+      correctionCount: 1,
+      correctionRevision: 2,
+      latestCorrectedCandidate: invalidCorrection,
+      latestCorrectionIssues: [
+        {
+          code: "missing_agenda_start_time",
+          message: "current",
+          severity: "error",
+        },
+      ],
+    }),
+  ]);
+
+  assert.match(html, /Current Corrected Title/);
+  assert.match(html, /Start Time is missing/);
+  assert.doesNotMatch(html, /Date is missing/);
+});
+
+test("Edit Row reopens from the latest effective candidate, not immutable original evidence", () => {
+  const correctedCandidate = {
+    ...row().candidate,
+    title: "Latest Operator Edit",
+    agenda_date: "2026-11-04",
+    start_time: "17:00",
+  };
+  const fields = getAgendaEditRowFields(
+    row({
+      correctionCount: 2,
+      correctionRevision: 2,
+      latestCorrectedCandidate: correctedCandidate,
+    }),
+  );
+
+  assert.equal(fields.Title, "Latest Operator Edit");
+  assert.equal(fields["Agenda Date"], "2026-11-04");
+  assert.equal(fields["Start Time"], "17:00");
+});
+
+test("governed category selection owns color changes and unknown imported categories are preserved until deliberate selection", () => {
+  assert.deepEqual(resolveAgendaImportCategorySelection("Meal", CATEGORY_OPTIONS), {
+    category: "Meal",
+    color: "#FDE68A",
+  });
+  assert.deepEqual(resolveAgendaImportCategorySelection("Seminar", CATEGORY_OPTIONS), {
+    category: "Seminar",
+    color: "#DCFCE7",
+  });
+  assert.deepEqual(resolveAgendaImportCategorySelection("Imported Custom", CATEGORY_OPTIONS), {
+    category: "Imported Custom",
+    color: "",
+  });
+
+  const dialogSource = readFileSync(
+    fileURLToPath(new URL("./AgendaEditRowDialog.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.match(dialogSource, /Imported: \{fields\.Category\} \(not configured\)/);
+  assert.match(dialogSource, /label="Category color"/);
+  assert.match(dialogSource, /readOnly/);
+  assert.match(
+    dialogSource,
+    /repeat\(auto-fit, minmax\(min\(100%, 12rem\), 1fr\)\)/,
+  );
+  assert.doesNotMatch(dialogSource, /gridTemplateColumns: "1fr 1fr/);
+  assert.doesNotMatch(dialogSource, /update\("Color"/);
 });
 
 test("maps deterministic validation codes to friendly correction guidance", () => {
@@ -330,5 +487,6 @@ test("the Edit Row dialog itself is the sole editor, calls the governed correcti
   );
   assert.match(dialogSource, /correctAgendaImportRow/);
   assert.match(dialogSource, /interpretAgendaCorrection/);
+  assert.match(dialogSource, /getEffectiveAgendaImportCandidate/);
   assert.doesNotMatch(dialogSource, /supabase|\.rpc\(|\.from\(/);
 });

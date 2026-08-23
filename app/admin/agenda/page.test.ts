@@ -722,6 +722,15 @@ test("AgendaImportPanel and AgendaTemplatePanel both import canonical Field/AppB
   assert.match(IMPORT_PANEL_SOURCE, /type="file"/);
 });
 
+test("Agenda import correction reuses the normal editor's canonical active category read and passes those same options into review", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /\.from\("agenda_categories"\)[\s\S]*?\.select\("name,color,is_default,is_active"\)[\s\S]*?\.eq\("is_active", true\)/,
+  );
+  assert.match(PAGE_SOURCE, /<AgendaImportReviewWorkspace[\s\S]*?categoryOptions=\{agendaCategories\}/);
+  assert.match(IMPORT_REVIEW_SOURCE, /categoryOptions=\{categoryOptions\}/);
+});
+
 // -- iPhone collapsible-editor regression fix (2026-08-21) ----------------
 //
 // Real-device iPhone testing found the always-expanded, always-sticky

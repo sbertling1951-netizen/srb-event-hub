@@ -2636,6 +2636,7 @@ function AdminAgendaPageInner() {
                 event_start_date: activeEvent?.start_date ?? null,
                 event_end_date: activeEvent?.end_date ?? null,
               }}
+              categoryOptions={agendaCategories}
               onRowsChanged={refreshAgendaImportRun}
               onCommit={commitCurrentAgendaImportRun}
               onFinalized={handleAgendaImportFinalized}
