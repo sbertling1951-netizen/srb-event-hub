@@ -133,14 +133,15 @@ test("agenda contract: required fields match the real live validation (Title, Ag
 
 // ---- Vendors: contract-only, truthfully not yet executable ---------------
 
-test("vendor contract: uses the canonical Vendor workspace vocabulary, not the retired Imports Vendor Library's inconsistent fields", () => {
+test("vendor contract: includes the complete governed Event-Vendor metadata vocabulary without reviving the retired global-name field", () => {
   const keys = VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.map((f) => f.key);
   assert.ok(keys.includes("business_name"));
   assert.ok(keys.includes("is_featured"));
   assert.ok(keys.includes("is_visible_to_members"));
-  // The retired duplicate's own vocabulary must not appear.
+  assert.ok(keys.includes("show_on_member_dashboard"));
+  assert.ok(keys.includes("allow_service_requests"));
+  // The retired duplicate's global identity field must not appear.
   assert.equal(keys.includes("name"), false);
-  assert.equal(keys.includes("show_on_member_dashboard"), false);
   assert.equal(keys.includes("logo_url"), false);
 });
 
@@ -171,6 +172,14 @@ test("vendor contract: Display Order is included and matches the real, editable 
   const field = VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.find((f) => f.key === "display_order")!;
   assert.equal(field.preferredHeading, "Display Order");
   assert.match(VENDORS_PAGE_SOURCE, /display_order: Number\(e\.target\.value\)/);
+});
+
+test("vendor contract: dashboard and service-request flags are supported by the governed Event-Vendor metadata API", () => {
+  const lifecycleSource = readFileSync(fileURLToPath(new URL("./vendorEventLifecycle.ts", import.meta.url)), "utf8");
+  for (const key of ["show_on_member_dashboard", "allow_service_requests"]) {
+    assert.ok(VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.some((field) => field.key === key));
+    assert.match(lifecycleSource, new RegExp(`${key}: boolean`));
+  }
 });
 
 test("vendor contract: no field claims logo_url (storage-managed, explicitly excluded)", () => {

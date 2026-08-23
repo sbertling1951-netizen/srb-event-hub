@@ -177,6 +177,7 @@ const VENDOR_SAMPLE_ROWS: Record<string, string>[] = [
     business_description: "Mobile coach washing and detailing at your site.", preferred_contact_method: "email",
     admit_to_event: "Yes", is_featured: "No", is_visible_to_members: "Yes", action_type: "service_request",
     signup_url: "", booth_location: "Row C, Site 14", event_note: "Requested power hookup near booth.", display_order: "100",
+    show_on_member_dashboard: "Yes", allow_service_requests: "No",
   },
   {
     business_name: "Trailhead Outfitters", contact_name: "Sam Okafor", email: "sam@trailheadoutfitters.example.com",
@@ -184,6 +185,7 @@ const VENDOR_SAMPLE_ROWS: Record<string, string>[] = [
     business_description: "Gear rental and guided day hikes.", preferred_contact_method: "in_app",
     admit_to_event: "Yes", is_featured: "Yes", is_visible_to_members: "Yes", action_type: "external_signup",
     signup_url: "https://trailheadoutfitters.example.com/book", booth_location: "", event_note: "", display_order: "200",
+    show_on_member_dashboard: "Yes", allow_service_requests: "Yes",
   },
 ];
 

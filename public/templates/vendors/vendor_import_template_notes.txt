@@ -16,6 +16,8 @@ Signup URL
 Booth Location
 Event Note
 Display Order
+Show on Member Dashboard
+Allow Service Requests
 
 Required:
 - Business Name
@@ -36,5 +38,7 @@ Field-by-field notes:
 - Booth Location (optional, text): Per-event booth/site location. Maps to the governed event_vendors.booth_location field.
 - Event Note (optional, text): Per-event admin note. Maps to event_vendors.event_note.
 - Display Order (optional, integer): Per-event display order. Maps to event_vendors.display_order (default 100 if blank).
+- Show on Member Dashboard (optional, boolean_yes_no): Per-event dashboard-display flag. Maps to the governed event_vendors.show_on_member_dashboard field. Blank preserves the existing Event-Vendor value when Stage 5B execution is implemented.
+- Allow Service Requests (optional, boolean_yes_no): Per-event service-request flag. Maps to the governed event_vendors.allow_service_requests field. Blank preserves the existing Event-Vendor value when Stage 5B execution is implemented.
 
 The sample template can be used as the model for either XLSX or CSV imports.

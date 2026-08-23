@@ -160,6 +160,8 @@ export const VENDOR_IMPORT_TEMPLATE_CONTRACT: ImportTemplateContract = {
     { key: "booth_location", preferredHeading: "Booth Location", aliases: ["Booth Location"], required: false, format: "text", instructions: "Per-event booth/site location. Maps to the governed event_vendors.booth_location field.", sample: "Row C, Site 14" },
     { key: "event_note", preferredHeading: "Event Note", aliases: ["Event Note"], required: false, format: "text", instructions: "Per-event admin note. Maps to event_vendors.event_note.", sample: "Requested power hookup near booth." },
     { key: "display_order", preferredHeading: "Display Order", aliases: ["Display Order"], required: false, format: "integer", instructions: "Per-event display order. Maps to event_vendors.display_order (default 100 if blank).", sample: "100" },
+    { key: "show_on_member_dashboard", preferredHeading: "Show on Member Dashboard", aliases: ["Show on Member Dashboard"], required: false, format: "boolean_yes_no", instructions: "Per-event dashboard-display flag. Maps to the governed event_vendors.show_on_member_dashboard field. Blank preserves the existing Event-Vendor value when Stage 5B execution is implemented.", sample: "Yes" },
+    { key: "allow_service_requests", preferredHeading: "Allow Service Requests", aliases: ["Allow Service Requests"], required: false, format: "boolean_yes_no", instructions: "Per-event service-request flag. Maps to the governed event_vendors.allow_service_requests field. Blank preserves the existing Event-Vendor value when Stage 5B execution is implemented.", sample: "No" },
   ],
 };
 
