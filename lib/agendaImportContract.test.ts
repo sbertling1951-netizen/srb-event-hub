@@ -29,6 +29,10 @@ const CONTRACT_SOURCE = readFileSync(
   fileURLToPath(new URL("./agendaImportContract.ts", import.meta.url)),
   "utf8",
 );
+const ORCHESTRATION_SOURCE = readFileSync(
+  fileURLToPath(new URL("./agendaImportOrchestration.ts", import.meta.url)),
+  "utf8",
+);
 
 function templatePath(filename: string) {
   return fileURLToPath(
@@ -327,16 +331,26 @@ test("shipped CSV and XLSX sample rows produce equivalent normalized candidates"
   assert.deepEqual(sampleCandidate(csv.data[0]), sampleCandidate(xlsxRows[0]));
 });
 
-test("page delegates normalization once and retains exactly one governed Agenda import RPC batch", () => {
-  assert.equal((PAGE_SOURCE.match(/interpretAgendaImportRows\(rows\)/g) || []).length, 1);
+test("Stage B page delegates exactly one unchanged Stage A normalization pass before one governed staged batch", () => {
+  assert.equal((PAGE_SOURCE.match(/interpretAgendaImportRows\(rows\)/g) || []).length, 0);
+  assert.equal(
+    (ORCHESTRATION_SOURCE.match(/interpretAgendaImportRows\(rows\)/g) || []).length,
+    1,
+  );
   assert.equal((PAGE_SOURCE.match(/function normalizeImport/g) || []).length, 0);
   assert.equal((CONTRACT_SOURCE.match(/function interpretAgendaImportRow\(/g) || []).length, 1);
   assert.equal(
     (PAGE_SOURCE.match(/\.rpc\(\s*["']import_event_agenda_items["']/g) || []).length,
+    0,
+  );
+  assert.equal(ORCHESTRATION_SOURCE.includes("import_event_agenda_items"), false);
+  assert.equal(
+    (ORCHESTRATION_SOURCE.match(/\.rpc\(\s*["']commit_agenda_import_run["']/g) || [])
+      .length,
     1,
   );
-  assert.match(PAGE_SOURCE, /p_rows: payloads/);
-  assert.match(PAGE_SOURCE, /p_expected_agenda_version: agendaVersionRef\.current/);
+  assert.match(PAGE_SOURCE, /runGovernedAgendaImport\(/);
+  assert.match(PAGE_SOURCE, /expectedAgendaVersion: agendaVersionRef\.current/);
   assert.match(PAGE_SOURCE, /endsWith\("\.xlsx"\) \|\| lowerName\.endsWith\("\.xls"\)/);
 });
 

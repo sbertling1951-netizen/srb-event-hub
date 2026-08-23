@@ -391,7 +391,7 @@ function AgendaImportDoor() {
         </div>
         <p className="app-subtle-text" style={{ margin: 0 }}>
           Agenda import is owned by the Agenda module and uses one governed implementation
-          (parsing, validation, and the governed <code>import_event_agenda_items</code> commit RPC).
+          (Stage A parsing/validation, governed candidate staging, and one atomic version-fenced Agenda batch commit).
           This door opens that same workflow -- it is not a second importer.
         </p>
         <AppLinkButton variant="primary" href="/admin/agenda?mode=import">

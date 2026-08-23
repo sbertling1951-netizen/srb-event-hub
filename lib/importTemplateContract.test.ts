@@ -86,13 +86,18 @@ const AGENDA_CONTRACT_SOURCE = readFileSync(
   fileURLToPath(new URL("./agendaImportContract.ts", import.meta.url)),
   "utf8",
 );
+const AGENDA_ORCHESTRATION_SOURCE = readFileSync(
+  fileURLToPath(new URL("./agendaImportOrchestration.ts", import.meta.url)),
+  "utf8",
+);
 
 test("agenda contract: the pure interpreter derives its aliases from the shared template contract", () => {
   assert.match(
     AGENDA_CONTRACT_SOURCE,
     /AGENDA_IMPORT_TEMPLATE_CONTRACT\.fields\.map/,
   );
-  assert.match(AGENDA_PAGE_SOURCE, /interpretAgendaImportRows\(rows\)/);
+  assert.match(AGENDA_ORCHESTRATION_SOURCE, /interpretAgendaImportRows\(rows\)/);
+  assert.doesNotMatch(AGENDA_PAGE_SOURCE, /interpretAgendaImportRows\(rows\)/);
 });
 
 test("agenda contract: exactly one importer implementation exists -- no second parseAgendaImportFile/getImportField elsewhere", () => {

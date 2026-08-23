@@ -6,6 +6,12 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
+import { ActiveRunsPanel } from "@/app/admin/imports/ActiveRunsPanel";
+import { ImportHistoryPanel } from "@/app/admin/imports/ImportHistoryPanel";
+import {
+  AbandonRowButton,
+  RunLifecycleActions,
+} from "@/app/admin/imports/RunLifecycleActions";
 import AgendaImportPanel from "@/components/admin/agenda/AgendaImportPanel";
 import AgendaTemplatePanel from "@/components/admin/agenda/AgendaTemplatePanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -14,6 +20,7 @@ import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewpo
 import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { FormActions } from "@/components/ui/FormActions";
@@ -28,11 +35,18 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { getAgendaColor } from "@/lib/agendaColors";
 import {
-  interpretAgendaImportRows,
   parseAgendaWorkbookWorksheet,
   type RawAgendaImportRow,
 } from "@/lib/agendaImportContract";
+import {
+  type AgendaImportRunResult,
+  recoverAgendaImportRun,
+  retryAgendaImportBatchCommit,
+  runGovernedAgendaImport,
+  summarizeAgendaImportRows,
+} from "@/lib/agendaImportOrchestration";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
 import { buildImportsHref } from "@/lib/importTypeRouting";
 import { supabase } from "@/lib/supabase";
 
@@ -123,6 +137,56 @@ type AgendaTemplateApplication = {
 };
 
 type AgendaAdminMode = "items" | "import";
+
+function activeAgendaImportRunStorageKey(eventId: string) {
+  return `epicentrax:agenda-import-run:${eventId}`;
+}
+
+function loadActiveAgendaImportRunId(eventId: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return localStorage.getItem(activeAgendaImportRunStorageKey(eventId));
+}
+
+function saveActiveAgendaImportRunId(eventId: string, runId: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (runId) {
+    localStorage.setItem(activeAgendaImportRunStorageKey(eventId), runId);
+  } else {
+    localStorage.removeItem(activeAgendaImportRunStorageKey(eventId));
+  }
+}
+
+function agendaRunResultFromRecovery(
+  recovered: Awaited<ReturnType<typeof recoverAgendaImportRun>>,
+): AgendaImportRunResult {
+  const committed = recovered.rows.filter(
+    (row) => row.rowState === "committed",
+  ).length;
+  const hasCommitFailure = recovered.rows.some(
+    (row) => row.rowState === "commit_failed",
+  );
+  const hasPendingCommit = recovered.rows.some(
+    (row) => row.rowState === "approved" && row.abandonedAt === null,
+  );
+
+  return {
+    ...recovered,
+    batchOutcome: hasCommitFailure
+      ? "commit_failed"
+      : hasPendingCommit
+        ? "pending_commit"
+        : committed
+          ? "already_committed"
+          : "no_eligible_rows",
+    importedCount: committed,
+    newVersion: null,
+    orchestrationError: null,
+  };
+}
 
 type ConfirmDialogState = {
   title: string;
@@ -293,6 +357,8 @@ function moveItem<T>(arr: T[], fromIndex: number, toIndex: number) {
 const AGENDA_ERROR_MESSAGES: Record<string, string> = {
   unauthorized:
     "You do not have Agenda management authority for this event.",
+  not_authorized:
+    "You do not have the required Imports and Agenda authority for this event.",
   unauthorized_event_agenda:
     "You do not have Event agenda management authority for this event.",
   unauthorized_tenant_template:
@@ -318,6 +384,13 @@ const AGENDA_ERROR_MESSAGES: Record<string, string> = {
   event_archived: "This Event is archived and can no longer be modified.",
   event_lifecycle_indeterminate:
     "This Event's lifecycle state could not be determined. Contact an administrator.",
+  import_run_not_agenda: "That import run is not an Agenda run.",
+  import_run_not_committable:
+    "That Agenda import run can no longer be committed.",
+  agenda_import_run_staging_incomplete:
+    "The source file was not fully staged. Abandon this run and start a new import.",
+  agenda_import_run_has_unresolved_rows:
+    "Resolve or abandon every open row before committing this Agenda batch.",
 };
 
 // Exported for focused testing (app/admin/agenda/page.test.ts). Never
@@ -575,6 +648,16 @@ function AdminAgendaPageInner() {
     "No agenda import file selected.",
   );
   const [importBusy, setImportBusy] = useState(false);
+  const [agendaImportRun, setAgendaImportRun] =
+    useState<AgendaImportRunResult | null>(null);
+  const [agendaImportRunStatus, setAgendaImportRunStatus] =
+    useState<ImportRunLifecycleStatus | null>(null);
+  const [resumingAgendaImportRunId, setResumingAgendaImportRunId] = useState<
+    string | null
+  >(null);
+  const [retryingAgendaImport, setRetryingAgendaImport] = useState(false);
+  const [agendaImportRunsReloadToken, setAgendaImportRunsReloadToken] =
+    useState(0);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(
     null,
   );
@@ -901,6 +984,54 @@ function AdminAgendaPageInner() {
       unsubscribe();
     };
   }, [admin, loadPage, loadTemplates, loadApplicationHistory, loadAgendaCategories]);
+
+  // The browser stores only a run-id locator. Persisted candidates, row
+  // states, commit results, and lifecycle status always come back through
+  // the governed recovery RPC.
+  useEffect(() => {
+    if (!activeEvent?.id) {
+      setAgendaImportRun(null);
+      setAgendaImportRunStatus(null);
+      return;
+    }
+
+    const storedRunId = loadActiveAgendaImportRunId(activeEvent.id);
+    if (!storedRunId) {
+      setAgendaImportRun(null);
+      setAgendaImportRunStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const recovered = await recoverAgendaImportRun(storedRunId);
+        if (cancelled) {
+          return;
+        }
+        if (recovered.eventId !== activeEvent.id) {
+          throw new Error("not_authorized");
+        }
+        const result = agendaRunResultFromRecovery(recovered);
+        setAgendaImportRun(result);
+        setAgendaImportRunStatus(result.status);
+        setImportStatus(
+          `Recovered Agenda import run from ${result.sourceFilename || "a prior session"}.`,
+        );
+      } catch (err) {
+        console.error("Could not recover Agenda import run", err);
+        if (!cancelled) {
+          saveActiveAgendaImportRunId(activeEvent.id, null);
+          setAgendaImportRun(null);
+          setAgendaImportRunStatus(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEvent?.id]);
 
   function moveItemUp(id: string) {
     setItems((prev) => {
@@ -2134,116 +2265,160 @@ function AdminAgendaPageInner() {
         return;
       }
 
-      // The pure contract is the only Agenda import normalization pass. The
-      // browser remains responsible only for file I/O and for submitting one
-      // already-classified batch through the existing governed RPC.
-      const interpretations = interpretAgendaImportRows(rows);
-      const rejectedRows = interpretations.filter(
-        (interpretation) =>
-          interpretation.validation_state === "validation_failed",
-      );
-      const importWarnings = rejectedRows.flatMap((interpretation) =>
-        interpretation.issues.map(
-          (issue) =>
-            `Row ${interpretation.candidate.source_row_number}: ${issue.message}`,
-        ),
-      );
-      const payloads = interpretations.flatMap((interpretation) => {
-        if (interpretation.validation_state !== "valid") {
-          return [];
-        }
+      setImportStatus(`Creating governed Agenda import run for ${activeEvent.name}...`);
 
-        const candidate = interpretation.candidate;
-        return [
-          {
-            event_id: activeEvent.id,
-            external_id: candidate.external_id,
-            title: candidate.title,
-            description: candidate.description,
-            location: candidate.location,
-            speaker: candidate.speaker,
-            category: candidate.category,
-            color: candidate.color,
-            agenda_date: candidate.agenda_date,
-            start_time: candidate.start_time,
-            end_time: candidate.end_time,
-            is_published: candidate.is_published,
-            sort_order: candidate.sort_order,
-            source: "import",
-          },
-        ];
+      // Stage A interpretation occurs exactly once inside this orchestration.
+      // It then persists every valid or invalid candidate through the generic
+      // governed staging RPCs before invoking the sole Agenda batch commit.
+      const result = await runGovernedAgendaImport({
+        eventId: activeEvent.id,
+        sourceFilename: file.name,
+        rows,
+        expectedAgendaVersion: agendaVersionRef.current,
       });
+      setAgendaImportRun(result);
+      setAgendaImportRunStatus(result.status);
+      saveActiveAgendaImportRunId(activeEvent.id, result.runId);
+      setAgendaImportRunsReloadToken((token) => token + 1);
 
-      if (!payloads.length) {
-        const warningMessage =
-          importWarnings.length > 0
-            ? importWarnings.join(" | ")
-            : "No valid rows found.";
-
-        setImportStatus(`Import failed. ${warningMessage}`);
-        showError(`Import failed. ${warningMessage}`);
-        return;
+      if (typeof result.newVersion === "number") {
+        setAgendaVersion(result.newVersion);
+      }
+      if (result.batchOutcome === "committed") {
+        await refreshAgendaData();
       }
 
-      setImportStatus(
-        `Importing ${payloads.length} valid rows into ${activeEvent.name}...`,
-      );
+      const summary = summarizeAgendaImportRows(result.rows);
+      const message =
+        `Staged ${summary.processed} row${summary.processed === 1 ? "" : "s"}: ` +
+        `${summary.committed} committed, ${summary.validationFailed} failed validation, ` +
+        `${summary.commitFailed} failed to commit.`;
+      setImportStatus(message);
 
-      // One atomic governed import command for the whole parsed batch --
-      // never a direct .upsert() against agenda_items. A single
-      // malformed row (caught above during client-side parsing, and
-      // re-validated server-side) fails the entire batch rather than
-      // partially updating local UI.
-      const { data: importResult, error: importError } = await supabase.rpc(
-        "import_event_agenda_items",
-        {
-          p_event_id: activeEvent.id,
-          p_expected_agenda_version: agendaVersionRef.current,
-          p_rows: payloads,
-        },
-      );
-
-      if (importError) {
-        if (isStaleAgendaVersionError(new Error(importError.message))) {
-          await reconcileAfterStaleVersion();
-          return;
-        }
-        throw new Error(
-          mapAgendaRpcError(new Error(importError.message), "Bulk import failed."),
-        );
-      }
-
-      const importedCount =
-        (importResult as Array<{ imported_count: number; new_version: number }> | null)?.[0]
-          ?.imported_count ?? payloads.length;
-      const newVersion = (importResult as Array<{ new_version: number }> | null)?.[0]
-        ?.new_version;
-      if (typeof newVersion === "number") {
-        setAgendaVersion(newVersion);
-      }
-
-      void refreshAgendaData();
-      setAgendaMode("items");
-
-      if (importWarnings.length > 0) {
-        setImportStatus(
-          `Agenda import completed with warnings. Imported ${importedCount} rows. Skipped ${rejectedRows.length} rows. ${importWarnings.join(" | ")}`,
-        );
-      } else {
-        setImportStatus(
-          `Agenda import complete for ${activeEvent.name}. ${importedCount} rows imported or updated.`,
+      if (result.batchOutcome === "orchestration_failed") {
+        showError(
+          result.orchestrationError ||
+            "The Agenda import could not record a governed commit outcome.",
         );
       }
     } catch (err) {
       console.error(err);
-
-      const message = err instanceof Error ? err.message : "Unknown error";
-
-      setImportStatus(`Import failed: ${message}`);
-      showError(`Import failed: ${message}`);
+      const message = mapAgendaRpcError(
+        err instanceof Error ? err : new Error("agenda_import_failed"),
+        "Agenda import could not be completed.",
+      );
+      setImportStatus(message);
+      showError(message);
     } finally {
       setImportBusy(false);
     }
+  }
+
+  async function resumeAgendaImportRun(runId: string) {
+    if (!activeEvent?.id) {
+      return;
+    }
+    setResumingAgendaImportRunId(runId);
+    try {
+      const recovered = await recoverAgendaImportRun(runId);
+      if (recovered.eventId !== activeEvent.id) {
+        throw new Error("not_authorized");
+      }
+      const result = agendaRunResultFromRecovery(recovered);
+      setAgendaImportRun(result);
+      setAgendaImportRunStatus(result.status);
+      saveActiveAgendaImportRunId(activeEvent.id, result.runId);
+      setImportStatus(
+        `Resumed Agenda import run from ${result.sourceFilename || "a prior session"}.`,
+      );
+    } catch (err) {
+      console.error("Could not resume Agenda import run", err);
+      showError(
+        mapAgendaRpcError(
+          err instanceof Error ? err : new Error("agenda_resume_failed"),
+          "Could not resume that Agenda import run.",
+        ),
+      );
+    } finally {
+      setResumingAgendaImportRunId(null);
+    }
+  }
+
+  async function retryAgendaImportRun() {
+    if (!agendaImportRun) {
+      return;
+    }
+    setRetryingAgendaImport(true);
+    try {
+      const result = await retryAgendaImportBatchCommit(agendaImportRun.runId);
+      setAgendaImportRun(result);
+      setAgendaImportRunStatus(result.status);
+      if (typeof result.newVersion === "number") {
+        setAgendaVersion(result.newVersion);
+      }
+      if (result.batchOutcome === "committed") {
+        await refreshAgendaData();
+      }
+      setImportStatus(
+        result.batchOutcome === "committed"
+          ? `Agenda batch retry committed ${result.importedCount} row${result.importedCount === 1 ? "" : "s"}.`
+          : "Agenda batch retry did not commit; the persisted run state is shown below.",
+      );
+    } catch (err) {
+      console.error("Could not retry Agenda import run", err);
+      showError("Could not retry the governed Agenda batch.");
+    } finally {
+      setRetryingAgendaImport(false);
+    }
+  }
+
+  function handleAgendaImportRowAbandoned(
+    rowId: string,
+    overlay: {
+      abandonedAt: string;
+      abandonedByAuthUserId: string;
+      abandonmentReasonCode: string;
+    },
+  ) {
+    setAgendaImportRun((current) =>
+      current
+        ? {
+            ...current,
+            rows: current.rows.map((row) =>
+              row.rowId === rowId ? { ...row, ...overlay } : row,
+            ),
+          }
+        : current,
+    );
+  }
+
+  async function refreshAgendaImportRunAfterAbandonment() {
+    if (!agendaImportRun) {
+      return;
+    }
+    try {
+      const recovered = await recoverAgendaImportRun(agendaImportRun.runId);
+      setAgendaImportRun(agendaRunResultFromRecovery(recovered));
+      setAgendaImportRunStatus(recovered.status);
+      setImportStatus("Remaining open Agenda import rows were abandoned.");
+    } catch (err) {
+      console.error("Could not refresh Agenda import run", err);
+      showError("Rows were abandoned, but their current state could not be reloaded.");
+    }
+  }
+
+  function handleAgendaImportFinalized(result: {
+    status: ImportRunLifecycleStatus;
+    finalizedAt: string | null;
+    finalizedByAuthUserId: string | null;
+  }) {
+    setAgendaImportRunStatus(result.status);
+    setImportStatus("This Agenda import run was finalized and moved to Import History.");
+    if (activeEvent?.id) {
+      saveActiveAgendaImportRunId(activeEvent.id, null);
+    }
+    setAgendaImportRun(null);
+    setAgendaImportRunsReloadToken((token) => token + 1);
   }
 
   if (hasAgendaAccess === false) {
@@ -2398,6 +2573,175 @@ function AdminAgendaPageInner() {
             importStatus={importStatus}
             onImportFile={handleAgendaImportFile}
           />
+
+          {agendaMode === "import" && activeEvent?.id ? (
+            <ActiveRunsPanel
+              eventId={activeEvent.id}
+              importType="agenda"
+              onResume={(runId) => void resumeAgendaImportRun(runId)}
+              resumingRunId={resumingAgendaImportRunId}
+              reloadToken={agendaImportRunsReloadToken}
+            />
+          ) : null}
+
+          {agendaMode === "import" && agendaImportRun ? (
+            <PageSection title="Governed Import Results" titleStyle={{ margin: 0 }}>
+              <div className="app-subtle-text" style={{ fontSize: 13, marginBottom: 14 }}>
+                Run {agendaImportRun.runId}
+                {agendaImportRun.sourceFilename
+                  ? ` • ${agendaImportRun.sourceFilename}`
+                  : ""}
+              </div>
+
+              {agendaImportRunStatus ? (
+                <RunLifecycleActions
+                  runId={agendaImportRun.runId}
+                  status={agendaImportRunStatus}
+                  rows={agendaImportRun.rows}
+                  onStagingClosed={(nextStatus) => {
+                    setAgendaImportRunStatus(nextStatus);
+                    setAgendaImportRun((current) =>
+                      current ? { ...current, status: nextStatus } : current,
+                    );
+                    setImportStatus(
+                      "Source staging is closed. This Agenda run is ready for review.",
+                    );
+                  }}
+                  onOpenRowsAbandoned={() =>
+                    void refreshAgendaImportRunAfterAbandonment()
+                  }
+                  onFinalized={handleAgendaImportFinalized}
+                  onError={(message) => showError(message)}
+                />
+              ) : null}
+
+              {(() => {
+                const summary = summarizeAgendaImportRows(agendaImportRun.rows);
+                const staleFailure = agendaImportRun.rows.some(
+                  (row) =>
+                    row.commitError?.code === "agenda_commit_stale_version",
+                );
+                const canRetry =
+                  !staleFailure &&
+                  (summary.commitFailed > 0 ||
+                    summary.approvedPendingCommit > 0);
+                return (
+                  <>
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 10,
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(140px, 1fr))",
+                        marginBottom: 16,
+                      }}
+                    >
+                      {[
+                        { label: "Processed", value: summary.processed },
+                        { label: "Committed", value: summary.committed },
+                        {
+                          label: "Validation Failed",
+                          value: summary.validationFailed,
+                        },
+                        { label: "Commit Failed", value: summary.commitFailed },
+                        { label: "Abandoned", value: summary.abandoned },
+                      ].map((tile) => (
+                        <div
+                          key={tile.label}
+                          className="app-card-section"
+                          style={{ padding: 12 }}
+                        >
+                          <div className="app-subtle-text" style={{ fontSize: 12 }}>
+                            {tile.label}
+                          </div>
+                          <div style={{ fontSize: 22, fontWeight: 800 }}>
+                            {tile.value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {canRetry ? (
+                      <div className="app-button-row" style={{ marginBottom: 12 }}>
+                        <AppButton
+                          variant="secondary"
+                          onClick={() => void retryAgendaImportRun()}
+                          disabled={retryingAgendaImport}
+                          loading={retryingAgendaImport}
+                        >
+                          Retry Atomic Batch
+                        </AppButton>
+                      </div>
+                    ) : null}
+
+                    {staleFailure ? (
+                      <Alert tone="warning">
+                        This run's Agenda version is stale. Abandon its remaining
+                        open rows and start a new import after reviewing the current
+                        Agenda.
+                      </Alert>
+                    ) : null}
+                  </>
+                );
+              })()}
+
+              <DataTable caption="Agenda governed import results">
+                <thead>
+                  <tr>
+                    <th>Row</th>
+                    <th>Title</th>
+                    <th>External ID</th>
+                    <th>State</th>
+                    <th>Detail</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agendaImportRun.rows.map((row) => (
+                    <tr key={row.rowId}>
+                      <td>{row.sourceRowNumber}</td>
+                      <td>{row.candidate?.title || "—"}</td>
+                      <td>{row.candidate?.external_id || "—"}</td>
+                      <td>
+                        <StatusBadge
+                          tone={
+                            row.rowState === "committed"
+                              ? "success"
+                              : row.rowState === "validation_failed" ||
+                                  row.rowState === "commit_failed"
+                                ? "danger"
+                                : "warning"
+                          }
+                        >
+                          {row.rowState.replaceAll("_", " ")}
+                        </StatusBadge>
+                      </td>
+                      <td>
+                        {row.commitError?.message ||
+                          row.issues.map((issue) => issue.message).join("; ") ||
+                          "—"}
+                      </td>
+                      <td>
+                        <AbandonRowButton
+                          row={row}
+                          onAbandoned={handleAgendaImportRowAbandoned}
+                          onError={(message) => showError(message)}
+                        />
+                        {row.rowState === "committed" ||
+                        row.rowState === "validation_failed"
+                          ? "—"
+                          : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </DataTable>
+            </PageSection>
+          ) : null}
+
+          {agendaMode === "import" && activeEvent?.id ? (
+            <ImportHistoryPanel eventId={activeEvent.id} importType="agenda" />
+          ) : null}
 
           <PageSection
             variant="section"

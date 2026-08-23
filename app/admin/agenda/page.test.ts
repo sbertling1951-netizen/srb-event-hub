@@ -34,6 +34,12 @@ const TEMPLATE_PANEL_SOURCE = readFileSync(
   ),
   "utf8",
 );
+const IMPORT_ORCHESTRATION_SOURCE = readFileSync(
+  fileURLToPath(
+    new URL("../../../lib/agendaImportOrchestration.ts", import.meta.url),
+  ),
+  "utf8",
+);
 
 function agendaTemplatePath(filename: string) {
   return fileURLToPath(
@@ -242,7 +248,6 @@ const REQUIRED_RPC_CALLS = [
   "update_event_agenda_item",
   "delete_event_agenda_item",
   "reorder_event_agenda_items",
-  "import_event_agenda_items",
   "save_event_agenda_as_tenant_template",
   "apply_agenda_template_to_event",
   "replace_agenda_from_template",
@@ -277,6 +282,35 @@ test("admin agenda page calls every required governed RPC", () => {
       `expected a call to ${rpcName}`,
     );
   }
+});
+
+test("Agenda import browser path uses governed staging plus one batch commit and has no direct legacy import RPC", () => {
+  assert.match(PAGE_SOURCE, /runGovernedAgendaImport/);
+  assert.equal(PAGE_SOURCE.includes('"import_event_agenda_items"'), false);
+  assert.match(IMPORT_ORCHESTRATION_SOURCE, /"create_import_run"/);
+  assert.match(IMPORT_ORCHESTRATION_SOURCE, /"stage_import_run_row"/);
+  assert.match(IMPORT_ORCHESTRATION_SOURCE, /"set_import_run_row_review_state"/);
+  assert.equal(
+    (IMPORT_ORCHESTRATION_SOURCE.match(/"commit_agenda_import_run"/g) || []).length,
+    1,
+  );
+  assert.equal(IMPORT_ORCHESTRATION_SOURCE.includes("import_event_agenda_items"), false);
+});
+
+test("Agenda mounts the existing generic active/resume/lifecycle/History surfaces without a parallel lifecycle", () => {
+  assert.match(PAGE_SOURCE, /<ActiveRunsPanel[\s\S]*?importType="agenda"/);
+  assert.match(PAGE_SOURCE, /recoverAgendaImportRun/);
+  assert.match(PAGE_SOURCE, /<RunLifecycleActions/);
+  assert.match(PAGE_SOURCE, /<AbandonRowButton/);
+  assert.match(
+    PAGE_SOURCE,
+    /<ImportHistoryPanel eventId=\{activeEvent\.id\} importType="agenda"/,
+  );
+  assert.match(PAGE_SOURCE, /epicentrax:agenda-import-run:/);
+  assert.doesNotMatch(
+    `${PAGE_SOURCE}\n${IMPORT_ORCHESTRATION_SOURCE}`,
+    /create_agenda_import_lifecycle|list_active_agenda_import_runs|finalize_agenda_import_run/,
+  );
 });
 
 // Strips // line comments before checking for a code-level reference, so
