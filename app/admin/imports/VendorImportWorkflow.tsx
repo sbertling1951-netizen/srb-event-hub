@@ -25,6 +25,7 @@ import {
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
 import { supabase } from "@/lib/supabase";
 import {
   classifyVendorFileAmbiguities,
@@ -43,7 +44,10 @@ import {
   vendorReviewRequiresIdentityWork,
 } from "@/lib/vendorImportOrchestration";
 
+import { ActiveRunsPanel } from "./ActiveRunsPanel";
 import { TemplateDownloadList,type TemplateFile } from "./importDoorTemplates";
+import { ImportHistoryPanel } from "./ImportHistoryPanel";
+import { AbandonRowButton, RunLifecycleActions } from "./RunLifecycleActions";
 
 type VendorEventOption = {
   id: string;
@@ -134,7 +138,10 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
 
   const [importing, setImporting] = useState(false);
   const [runResult, setRunResult] = useState<VendorImportRunResult | null>(null);
+  const [runStatus, setRunStatus] = useState<ImportRunLifecycleStatus | null>(null);
   const [retryingRowId, setRetryingRowId] = useState<string | null>(null);
+  const [resumingRunId, setResumingRunId] = useState<string | null>(null);
+  const [activeRunsReloadToken, setActiveRunsReloadToken] = useState(0);
 
   const [status, setStatus] = useState("Select a target Event, then load a CSV or XLSX file to begin.");
   const [error, setError] = useState<string | null>(null);
@@ -208,16 +215,21 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
   }, [admin, adminLoading]);
 
   // Reload recovery: only the run ID is a browser locator. Stage 1.1
-  // revalidates authority and returns the actual persisted row states.
+  // revalidates authority and returns the actual persisted row states
+  // (including the run's own lifecycle status -- see recovered.run.status
+  // below -- so this single governed call is sufficient; no separate
+  // view-gated status lookup is needed to resume).
   useEffect(() => {
     if (!selectedEventId) {
       setRunResult(null);
+      setRunStatus(null);
       return;
     }
 
     const storedRunId = loadActiveVendorRunId(selectedEventId);
     if (!storedRunId) {
       setRunResult(null);
+      setRunStatus(null);
       return;
     }
 
@@ -234,12 +246,14 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
           sourceFilename: recovered.run.sourceFilename,
           rows: recovered.rows,
         });
+        setRunStatus(recovered.run.status as ImportRunLifecycleStatus);
         setStatus(`Recovered Vendor import run from ${recovered.run.sourceFilename || "a prior session"}.`);
       } catch (err) {
         console.error("VendorImportWorkflow: could not recover import run", err);
         if (!cancelled) {
           saveActiveVendorRunId(selectedEventId, null);
           setRunResult(null);
+          setRunStatus(null);
         }
       }
     })();
@@ -248,6 +262,34 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
       cancelled = true;
     };
   }, [selectedEventId]);
+
+  // Explicit resume from the Active Runs panel -- same governed recovery
+  // path as the mount effect above, triggered by an admin's choice rather
+  // than a stored locator.
+  async function handleResumeRun(runId: string) {
+    if (!selectedEventId) {
+      return;
+    }
+    setResumingRunId(runId);
+    setError(null);
+    try {
+      const recovered = await recoverVendorImportRun(runId);
+      setRunResult({
+        runId: recovered.run.id,
+        eventId: recovered.run.eventId,
+        sourceFilename: recovered.run.sourceFilename,
+        rows: recovered.rows,
+      });
+      setRunStatus(recovered.run.status as ImportRunLifecycleStatus);
+      saveActiveVendorRunId(selectedEventId, runId);
+      setStatus(`Resumed Vendor import run from ${recovered.run.sourceFilename || "a prior session"}.`);
+    } catch (err: any) {
+      console.error("VendorImportWorkflow: could not resume import run", err);
+      setError(err?.message || "Could not resume import run.");
+    } finally {
+      setResumingRunId(null);
+    }
+  }
 
   const eventChangedSinceLoad =
     !!previews.length && !!loadedForEventId && !!selectedEventId && loadedForEventId !== selectedEventId;
@@ -270,6 +312,7 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
     setStatus(`Reading ${file.name}...`);
     setFileName(file.name);
     setRunResult(null);
+    setRunStatus(null);
     saveActiveVendorRunId(selectedEventId, null);
 
     try {
@@ -320,6 +363,7 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
     setImporting(true);
     setError(null);
     setRunResult(null);
+    setRunStatus(null);
     setStatus("Creating governed Vendor import run...");
 
     try {
@@ -330,7 +374,9 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
       });
 
       setRunResult(result);
+      setRunStatus("staging");
       saveActiveVendorRunId(selectedEventId, result.runId);
+      setActiveRunsReloadToken((t) => t + 1);
 
       const summary = summarizeVendorImportRows(result.rows);
       const eventLabel = availableEvents.find((e) => e.id === selectedEventId)?.name || "the selected Event";
@@ -380,6 +426,55 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
     } finally {
       setRetryingRowId(null);
     }
+  }
+
+  function handleRowAbandoned(
+    rowId: string,
+    overlay: { abandonedAt: string; abandonedByAuthUserId: string; abandonmentReasonCode: string },
+  ) {
+    setRunResult((prev) =>
+      prev
+        ? { ...prev, rows: prev.rows.map((r) => (r.rowId === rowId ? { ...r, ...overlay } : r)) }
+        : prev,
+    );
+  }
+
+  // abandon_import_run_open_rows returns only a count, not per-row detail
+  // (by design -- see lib/importLifecycleOrchestration.ts), so the rows
+  // table is refreshed from the same governed recovery path used
+  // everywhere else, rather than guessing which rows changed client-side.
+  async function handleOpenRowsAbandoned() {
+    if (!runResult) {
+      return;
+    }
+    try {
+      const recovered = await recoverVendorImportRun(runResult.runId);
+      setRunResult({
+        runId: recovered.run.id,
+        eventId: recovered.run.eventId,
+        sourceFilename: recovered.run.sourceFilename,
+        rows: recovered.rows,
+      });
+      setStatus("Remaining open rows abandoned.");
+    } catch (err: any) {
+      console.error("VendorImportWorkflow: could not refresh after abandoning open rows", err);
+      setError(err?.message || "Rows were abandoned, but the results could not be refreshed. Reload to see the current state.");
+    }
+  }
+
+  function handleStagingClosed(newStatus: ImportRunLifecycleStatus) {
+    setRunStatus(newStatus);
+    setStatus("Source staging closed. This run is now ready for review.");
+  }
+
+  function handleFinalized(result: { status: ImportRunLifecycleStatus; finalizedAt: string | null; finalizedByAuthUserId: string | null }) {
+    setRunStatus(result.status);
+    setStatus("This run has been finalized and moved to Import History.");
+    if (selectedEventId) {
+      saveActiveVendorRunId(selectedEventId, null);
+    }
+    setRunResult(null);
+    setActiveRunsReloadToken((t) => t + 1);
   }
 
   const selectedEvent = availableEvents.find((e) => e.id === selectedEventId) || null;
@@ -485,6 +580,16 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
         </div>
       </div>
 
+      {selectedEventId ? (
+        <ActiveRunsPanel
+          eventId={selectedEventId}
+          importType="vendor"
+          onResume={(runId) => void handleResumeRun(runId)}
+          resumingRunId={resumingRunId}
+          reloadToken={activeRunsReloadToken}
+        />
+      ) : null}
+
       {previews.length ? (
         <div className="card app-card-section">
           <h3 style={{ marginTop: 0 }}>
@@ -534,6 +639,18 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
             Run {runResult.runId}
             {runResult.sourceFilename ? ` • ${runResult.sourceFilename}` : ""}
           </div>
+
+          {runStatus ? (
+            <RunLifecycleActions
+              runId={runResult.runId}
+              status={runStatus}
+              rows={runResult.rows}
+              onStagingClosed={handleStagingClosed}
+              onOpenRowsAbandoned={() => void handleOpenRowsAbandoned()}
+              onFinalized={handleFinalized}
+              onError={(message) => setError(message)}
+            />
+          ) : null}
 
           <div
             style={{
@@ -608,9 +725,14 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
                       {row.rowState === "needs_review" && !vendorReviewRequiresIdentityWork(row.reviewReasonCode)
                         ? "—"
                         : null}
-                      {row.rowState === "committed" || row.rowState === "approved" || row.rowState === "validation_failed"
+                      {row.rowState === "committed" || row.rowState === "validation_failed"
                         ? "—"
                         : null}
+                      <AbandonRowButton
+                        row={row}
+                        onAbandoned={handleRowAbandoned}
+                        onError={(message) => setError(message)}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -624,6 +746,8 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
       {!loadingEvents && !availableEvents.length ? (
         <EmptyState message="No accessible Events available for Vendor import." />
       ) : null}
+
+      {selectedEventId ? <ImportHistoryPanel eventId={selectedEventId} importType="vendor" /> : null}
 
       {selectedEvent ? (
         <div className="app-subtle-text" style={{ fontSize: 12 }}>

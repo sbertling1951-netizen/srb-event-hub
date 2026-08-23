@@ -142,6 +142,24 @@ test("this module never performs a direct browser table mutation against any can
   assert.equal(/\.from\(/.test(SOURCE), false);
 });
 
+test("recovered rows surface the Row Lifecycle abandonment overlay (abandoned_at/abandoned_by_auth_user_id/abandonment_reason_code) from the extended Stage 1.1 recovery RPC", () => {
+  const fn = SOURCE.slice(
+    SOURCE.indexOf("export async function recoverVendorImportRun"),
+    SOURCE.indexOf("export function summarizeVendorImportRows"),
+  );
+  assert.match(fn, /abandonedAt: r\.abandoned_at/);
+  assert.match(fn, /abandonedByAuthUserId: r\.abandoned_by_auth_user_id/);
+  assert.match(fn, /abandonmentReasonCode: r\.abandonment_reason_code/);
+});
+
+test("a freshly staged row (not yet recovered) always starts with a null abandonment overlay -- never guessed client-side", () => {
+  const fn = SOURCE.slice(
+    SOURCE.indexOf("export async function runGovernedVendorImport"),
+    SOURCE.indexOf("export async function retryVendorImportRowCommit"),
+  );
+  assert.match(fn, /abandonedAt: null,\s*\n\s*abandonedByAuthUserId: null,\s*\n\s*abandonmentReasonCode: null,/);
+});
+
 test("this module never calls a Vendor identity write, admission-revoke, or any RPC other than the six governed Imports/Stage 5B.2 operations", () => {
   const allowed = new Set([
     "create_import_run",
@@ -192,13 +210,14 @@ test("vendorReviewRequiresIdentityWork: only true canonical-identity reasons rou
 });
 
 test("summarizeVendorImportRows: counts every persisted row state and warning-bearing rows truthfully", () => {
+  const overlay = { abandonedAt: null, abandonedByAuthUserId: null, abandonmentReasonCode: null };
   const rows = [
-    { rowId: "1", sourceRowNumber: 2, candidate: {} as any, issues: [], rowState: "committed" as const, canonicalVendorId: "a", reviewReasonCode: null, commitError: null },
-    { rowId: "2", sourceRowNumber: 3, candidate: {} as any, issues: [{ code: "x", message: "m", severity: "warning" as const }], rowState: "committed" as const, canonicalVendorId: "b", reviewReasonCode: null, commitError: null },
-    { rowId: "3", sourceRowNumber: 4, candidate: {} as any, issues: [], rowState: "validation_failed" as const, canonicalVendorId: null, reviewReasonCode: null, commitError: null },
-    { rowId: "4", sourceRowNumber: 5, candidate: {} as any, issues: [], rowState: "needs_review" as const, canonicalVendorId: null, reviewReasonCode: "vendor_not_found" as const, commitError: null },
-    { rowId: "5", sourceRowNumber: 6, candidate: {} as any, issues: [], rowState: "commit_failed" as const, canonicalVendorId: null, reviewReasonCode: null, commitError: { code: "vendor_commit_failed", message: "m" } },
-    { rowId: "6", sourceRowNumber: 7, candidate: {} as any, issues: [], rowState: "approved" as const, canonicalVendorId: null, reviewReasonCode: null, commitError: null },
+    { rowId: "1", sourceRowNumber: 2, candidate: {} as any, issues: [], rowState: "committed" as const, canonicalVendorId: "a", reviewReasonCode: null, commitError: null, ...overlay },
+    { rowId: "2", sourceRowNumber: 3, candidate: {} as any, issues: [{ code: "x", message: "m", severity: "warning" as const }], rowState: "committed" as const, canonicalVendorId: "b", reviewReasonCode: null, commitError: null, ...overlay },
+    { rowId: "3", sourceRowNumber: 4, candidate: {} as any, issues: [], rowState: "validation_failed" as const, canonicalVendorId: null, reviewReasonCode: null, commitError: null, ...overlay },
+    { rowId: "4", sourceRowNumber: 5, candidate: {} as any, issues: [], rowState: "needs_review" as const, canonicalVendorId: null, reviewReasonCode: "vendor_not_found" as const, commitError: null, ...overlay },
+    { rowId: "5", sourceRowNumber: 6, candidate: {} as any, issues: [], rowState: "commit_failed" as const, canonicalVendorId: null, reviewReasonCode: null, commitError: { code: "vendor_commit_failed", message: "m" }, ...overlay },
+    { rowId: "6", sourceRowNumber: 7, candidate: {} as any, issues: [], rowState: "approved" as const, canonicalVendorId: null, reviewReasonCode: null, commitError: null, ...overlay },
   ];
 
   assert.deepEqual(summarizeVendorImportRows(rows), {

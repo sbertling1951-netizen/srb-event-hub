@@ -284,3 +284,116 @@ test("the template download list and per-type template file arrays are shared, n
   assert.equal(/^function TemplateDownloadList/m.test(source), false);
   assert.equal(/^const VENDOR_TEMPLATE_FILES/m.test(source), false);
 });
+
+// -- Import Run Lifecycle + History UI hookup ------------------------------
+//
+// docs/architecture/EPICENTRAX_GOVERNED_IMPORT_STAGING_ARCHITECTURE.md,
+// Stage 20260822170000. The Attendee door wires discovery (ActiveRunsPanel),
+// run-level lifecycle control (RunLifecycleActions), per-row abandonment
+// (AbandonRowButton), and read-only History (ImportHistoryPanel) around the
+// existing, unmodified Stage 4 governed workflow.
+
+test("Active Runs discovery is wired for the Attendee door, scoped to importType=\"attendee\" and using the shared component -- not a page-local reimplementation", () => {
+  const source = readSource();
+  const start = source.indexOf("<ActiveRunsPanel");
+  assert.notEqual(start, -1);
+  const jsx = source.slice(start, source.indexOf("/>", start));
+  assert.match(jsx, /importType="attendee"/);
+  assert.match(jsx, /eventId=\{selectedImportEventId\}/);
+});
+
+test("Resume goes through the same governed recovery path as the mount-time locator recovery -- recoverAttendeeImportRun, never a fabricated local run state", () => {
+  const source = readSource();
+  const start = source.indexOf("async function handleResumeImportRun(");
+  const body = source.slice(start, source.indexOf("\n  useEffect", start));
+  assert.match(body, /recoverAttendeeImportRun\(runId\)/);
+  assert.match(body, /saveActiveImportRunId\(selectedImportEventId, runId\)/);
+});
+
+test("RunLifecycleActions is only rendered once the recovered/created run's own lifecycle status is known -- never assumed", () => {
+  const source = readSource();
+  const start = source.indexOf("<RunLifecycleActions");
+  assert.notEqual(start, -1);
+  const guardedBlock = source.slice(source.lastIndexOf("importRunStatus ?", start), start);
+  assert.match(guardedBlock, /importRunStatus \? \(/);
+  const jsx = source.slice(start, source.indexOf("/>", start));
+  assert.match(jsx, /runId=\{importRunResult\.runId\}/);
+  assert.match(jsx, /status=\{importRunStatus\}/);
+  assert.match(jsx, /rows=\{importRunResult\.rows\}/);
+});
+
+test("closing source staging only updates local state from the RPC's own returned status -- never fabricates ready_for_review client-side", () => {
+  const source = readSource();
+  const start = source.indexOf("function handleImportStagingClosed(");
+  const body = source.slice(start, source.indexOf("\n  function handleImportRunFinalized"));
+  assert.match(body, /setImportRunStatus\(newStatus\)/);
+  assert.equal(/"ready_for_review"/.test(body), false);
+});
+
+test("abandoning remaining open rows re-reads the governed recovery RPC rather than guessing which rows changed -- abandon_import_run_open_rows returns only a count, not per-row detail", () => {
+  const source = readSource();
+  const start = source.indexOf("async function handleImportOpenRowsAbandoned(");
+  const body = source.slice(start, source.indexOf("\n  function handleImportStagingClosed"));
+  assert.match(body, /recoverAttendeeImportRun\(importRunResult\.runId\)/);
+});
+
+test("a single row abandon merges only the exact overlay the governed RPC returned (abandonedAt/abandonedByAuthUserId/abandonmentReasonCode) -- no other field is touched", () => {
+  const source = readSource();
+  const start = source.indexOf("function handleImportRowAbandoned(");
+  const body = source.slice(start, source.indexOf("\n  // abandon_import_run_open_rows"));
+  assert.match(body, /r\.rowId === rowId \? \{ \.\.\.r, \.\.\.overlay \} : r/);
+});
+
+test("finalizing a run clears the localStorage run-id locator and drops the run out of local editable state -- the run becomes read-only and moves to History", () => {
+  const source = readSource();
+  const start = source.indexOf("function handleImportRunFinalized(");
+  const body = source.slice(start, source.indexOf("\n  function openIssueInAttendeeManagement"));
+  assert.match(body, /saveActiveImportRunId\(selectedImportEventId, null\)/);
+  assert.match(body, /setImportRunResult\(null\)/);
+});
+
+test("AbandonRowButton is offered on every result row (self-guards on eligibility), alongside the existing unmodified Retry control", () => {
+  const source = readSource();
+  const start = source.indexOf("<AbandonRowButton");
+  assert.notEqual(start, -1);
+  const jsx = source.slice(start, source.indexOf("/>", start));
+  assert.match(jsx, /onAbandoned=\{handleImportRowAbandoned\}/);
+  // Retry is untouched: still gated on commit_failed, still calls the same
+  // shared retry path proven by the "retry reuses the shared orchestration
+  // retry path" test above.
+  assert.match(source, /row\.rowState === "commit_failed" \? \(/);
+});
+
+test("Import History is wired for the Attendee door, scoped to importType=\"attendee\"", () => {
+  const source = readSource();
+  assert.match(
+    source,
+    /<ImportHistoryPanel eventId=\{selectedImportEventId\} importType="attendee" \/>/,
+  );
+});
+
+test("a stale/invalid stored run id fails recovery safely -- the locator is cleared and local run state is nulled, never left showing stale data", () => {
+  const source = readSource();
+  const start = source.indexOf("const storedRunId = loadActiveImportRunId(selectedImportEventId);");
+  const body = source.slice(start, source.indexOf("\n  // Explicit resume from the Active Runs panel"));
+  const catchBlock = body.slice(body.indexOf("} catch (err) {"));
+  assert.match(catchBlock, /saveActiveImportRunId\(selectedImportEventId, null\)/);
+  assert.match(catchBlock, /setImportRunResult\(null\)/);
+  assert.match(catchBlock, /setImportRunStatus\(null\)/);
+});
+
+test("localStorage is a locator only, never the sole source of truth for active-run discovery -- ActiveRunsPanel discovers runs server-side independent of any stored id", () => {
+  const source = readSource();
+  const activeRunsPanelJsx = source.slice(source.indexOf("<ActiveRunsPanel"), source.indexOf("<ActiveRunsPanel") + 400);
+  assert.equal(/loadActiveImportRunId|localStorage/.test(activeRunsPanelJsx), false);
+});
+
+test("the lifecycle/history components are imported from their own shared modules, not defined inline on this page", () => {
+  const source = readSource();
+  assert.match(source, /import \{ ActiveRunsPanel \} from "\.\/ActiveRunsPanel";/);
+  assert.match(source, /import \{ ImportHistoryPanel \} from "\.\/ImportHistoryPanel";/);
+  assert.match(
+    source,
+    /import \{ AbandonRowButton, RunLifecycleActions \} from "\.\/RunLifecycleActions";/,
+  );
+});

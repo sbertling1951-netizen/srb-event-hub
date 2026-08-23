@@ -40,6 +40,11 @@ export type AttendeeImportRowResult = {
   rowState: AttendeeImportRowState;
   canonicalTargetId: string | null;
   commitError: AttendeeImportCommitError | null;
+  /** Row Lifecycle overlay (Stage 20260822170000): set only once, never
+   * cleared, independent of rowState (abandonment never rewrites it). */
+  abandonedAt: string | null;
+  abandonedByAuthUserId: string | null;
+  abandonmentReasonCode: string | null;
 };
 
 export type AttendeeImportRunResult = {
@@ -247,6 +252,9 @@ export async function runGovernedAttendeeImport(params: {
       rowState: reviewed.row_state as AttendeeImportRowState,
       canonicalTargetId: null,
       commitError: null,
+      abandonedAt: null,
+      abandonedByAuthUserId: null,
+      abandonmentReasonCode: null,
     });
   }
 
@@ -287,6 +295,9 @@ export async function recoverAttendeeImportRun(runId: string): Promise<Recovered
     rowState: r.row_state as AttendeeImportRowState,
     canonicalTargetId: r.canonical_target_id,
     commitError: r.commit_error,
+    abandonedAt: r.abandoned_at ?? null,
+    abandonedByAuthUserId: r.abandoned_by_auth_user_id ?? null,
+    abandonmentReasonCode: r.abandonment_reason_code ?? null,
   }));
 
   return {

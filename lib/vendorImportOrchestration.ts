@@ -62,6 +62,11 @@ export type VendorImportRowResult = {
   /** Stage 5B.2's reason for a needs_review outcome, when known. */
   reviewReasonCode: VendorReviewReasonCode | null;
   commitError: VendorImportCommitError | null;
+  /** Row Lifecycle overlay (Stage 20260822170000): set only once, never
+   * cleared, independent of rowState (abandonment never rewrites it). */
+  abandonedAt: string | null;
+  abandonedByAuthUserId: string | null;
+  abandonmentReasonCode: string | null;
 };
 
 export type VendorImportRunResult = {
@@ -288,6 +293,9 @@ export async function runGovernedVendorImport(params: {
       canonicalVendorId: null,
       reviewReasonCode: null,
       commitError: null,
+      abandonedAt: null,
+      abandonedByAuthUserId: null,
+      abandonmentReasonCode: null,
     });
   }
 
@@ -342,6 +350,9 @@ export async function recoverVendorImportRun(runId: string): Promise<RecoveredVe
       canonicalVendorId: r.canonical_target_id,
       reviewReasonCode: lastCode as VendorReviewReasonCode | null,
       commitError: r.commit_error,
+      abandonedAt: r.abandoned_at ?? null,
+      abandonedByAuthUserId: r.abandoned_by_auth_user_id ?? null,
+      abandonmentReasonCode: r.abandonment_reason_code ?? null,
     };
   });
 

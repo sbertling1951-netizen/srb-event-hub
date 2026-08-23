@@ -132,14 +132,33 @@ test("this module never performs a direct browser table mutation against any can
   assert.equal(/\.from\(/.test(SOURCE), false);
 });
 
+test("recovered rows surface the Row Lifecycle abandonment overlay (abandoned_at/abandoned_by_auth_user_id/abandonment_reason_code) from the extended Stage 1.1 recovery RPC", () => {
+  const fn = SOURCE.slice(
+    SOURCE.indexOf("export async function recoverAttendeeImportRun"),
+    SOURCE.indexOf("export function summarizeAttendeeImportRows"),
+  );
+  assert.match(fn, /abandonedAt: r\.abandoned_at/);
+  assert.match(fn, /abandonedByAuthUserId: r\.abandoned_by_auth_user_id/);
+  assert.match(fn, /abandonmentReasonCode: r\.abandonment_reason_code/);
+});
+
+test("a freshly staged row (not yet recovered) always starts with a null abandonment overlay -- never guessed client-side", () => {
+  const fn = SOURCE.slice(
+    SOURCE.indexOf("export async function runGovernedAttendeeImport"),
+    SOURCE.indexOf("export async function retryAttendeeImportRowCommit"),
+  );
+  assert.match(fn, /abandonedAt: null,\s*\n\s*abandonedByAuthUserId: null,\s*\n\s*abandonmentReasonCode: null,/);
+});
+
 test("summarizeAttendeeImportRows: counts every persisted row state and warning-bearing rows truthfully", () => {
+  const overlay = { abandonedAt: null, abandonedByAuthUserId: null, abandonmentReasonCode: null };
   const rows = [
-    { rowId: "1", sourceRowNumber: 2, candidate: {} as any, issues: [], rowState: "committed" as const, canonicalTargetId: "a", commitError: null },
-    { rowId: "2", sourceRowNumber: 3, candidate: {} as any, issues: [{ code: "x", message: "m", severity: "warning" as const }], rowState: "committed" as const, canonicalTargetId: "b", commitError: null },
-    { rowId: "3", sourceRowNumber: 4, candidate: {} as any, issues: [], rowState: "validation_failed" as const, canonicalTargetId: null, commitError: null },
-    { rowId: "4", sourceRowNumber: 5, candidate: {} as any, issues: [], rowState: "needs_review" as const, canonicalTargetId: null, commitError: null },
-    { rowId: "5", sourceRowNumber: 6, candidate: {} as any, issues: [], rowState: "commit_failed" as const, canonicalTargetId: null, commitError: { code: "canonical_commit_failed", message: "m" } },
-    { rowId: "6", sourceRowNumber: 7, candidate: {} as any, issues: [], rowState: "approved" as const, canonicalTargetId: null, commitError: null },
+    { rowId: "1", sourceRowNumber: 2, candidate: {} as any, issues: [], rowState: "committed" as const, canonicalTargetId: "a", commitError: null, ...overlay },
+    { rowId: "2", sourceRowNumber: 3, candidate: {} as any, issues: [{ code: "x", message: "m", severity: "warning" as const }], rowState: "committed" as const, canonicalTargetId: "b", commitError: null, ...overlay },
+    { rowId: "3", sourceRowNumber: 4, candidate: {} as any, issues: [], rowState: "validation_failed" as const, canonicalTargetId: null, commitError: null, ...overlay },
+    { rowId: "4", sourceRowNumber: 5, candidate: {} as any, issues: [], rowState: "needs_review" as const, canonicalTargetId: null, commitError: null, ...overlay },
+    { rowId: "5", sourceRowNumber: 6, candidate: {} as any, issues: [], rowState: "commit_failed" as const, canonicalTargetId: null, commitError: { code: "canonical_commit_failed", message: "m" }, ...overlay },
+    { rowId: "6", sourceRowNumber: 7, candidate: {} as any, issues: [], rowState: "approved" as const, canonicalTargetId: null, commitError: null, ...overlay },
   ];
 
   assert.deepEqual(summarizeAttendeeImportRows(rows), {

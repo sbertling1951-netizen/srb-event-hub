@@ -30,16 +30,20 @@ import {
   summarizeAttendeeImportRows,
 } from "@/lib/attendeeImportOrchestration";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
 import { ATTENDEE_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 import { buildImportsHref, readImportType } from "@/lib/importTypeRouting";
 import { supabase } from "@/lib/supabase";
 
+import { ActiveRunsPanel } from "./ActiveRunsPanel";
 import {
   AGENDA_TEMPLATE_FILES,
   ATTENDEE_TEMPLATE_FILES,
   TemplateDownloadList,
   VENDOR_TEMPLATE_FILES,
 } from "./importDoorTemplates";
+import { ImportHistoryPanel } from "./ImportHistoryPanel";
+import { AbandonRowButton, RunLifecycleActions } from "./RunLifecycleActions";
 import { VendorImportWorkflow } from "./VendorImportWorkflow";
 
 type EventContext = {
@@ -436,7 +440,10 @@ function AdminAttendeeImportsPageInner() {
   // returns the actual persisted row states on every reload.
   const [importRunResult, setImportRunResult] =
     useState<AttendeeImportRunResult | null>(null);
+  const [importRunStatus, setImportRunStatus] = useState<ImportRunLifecycleStatus | null>(null);
   const [retryingRowId, setRetryingRowId] = useState<string | null>(null);
+  const [resumingRunId, setResumingRunId] = useState<string | null>(null);
+  const [activeRunsReloadToken, setActiveRunsReloadToken] = useState(0);
 
   const [savedAttendees, setSavedAttendees] = useState<AttendeeRow[]>([]);
   const [loadingSavedAttendees, setLoadingSavedAttendees] = useState(false);
@@ -578,12 +585,14 @@ function AdminAttendeeImportsPageInner() {
   useEffect(() => {
     if (!selectedImportEventId) {
       setImportRunResult(null);
+      setImportRunStatus(null);
       return;
     }
 
     const storedRunId = loadActiveImportRunId(selectedImportEventId);
     if (!storedRunId) {
       setImportRunResult(null);
+      setImportRunStatus(null);
       return;
     }
 
@@ -601,12 +610,14 @@ function AdminAttendeeImportsPageInner() {
           sourceFilename: recovered.run.sourceFilename,
           rows: recovered.rows,
         });
+        setImportRunStatus(recovered.run.status as ImportRunLifecycleStatus);
         setStatus(`Recovered import run from ${recovered.run.sourceFilename || "a prior session"}.`);
       } catch (err) {
         console.error("Could not recover import run:", err);
         if (!cancelled) {
           saveActiveImportRunId(selectedImportEventId, null);
           setImportRunResult(null);
+          setImportRunStatus(null);
         }
       }
     })();
@@ -615,6 +626,36 @@ function AdminAttendeeImportsPageInner() {
       cancelled = true;
     };
   }, [selectedImportEventId]);
+
+  // Explicit resume from the Active Runs panel -- same governed recovery
+  // path as the effect above, triggered by an admin's choice rather than a
+  // stored locator. recovered.run.status is already returned by the same
+  // Stage 1.1 recovery call, so no separate view-gated status lookup is
+  // needed to resume.
+  async function handleResumeImportRun(runId: string) {
+    if (!selectedImportEventId) {
+      return;
+    }
+    setResumingRunId(runId);
+    setError(null);
+    try {
+      const recovered = await recoverAttendeeImportRun(runId);
+      setImportRunResult({
+        runId: recovered.run.id,
+        eventId: recovered.run.eventId,
+        sourceFilename: recovered.run.sourceFilename,
+        rows: recovered.rows,
+      });
+      setImportRunStatus(recovered.run.status as ImportRunLifecycleStatus);
+      saveActiveImportRunId(selectedImportEventId, runId);
+      setStatus(`Resumed import run from ${recovered.run.sourceFilename || "a prior session"}.`);
+    } catch (err: any) {
+      console.error("Could not resume import run:", err);
+      setError(err?.message || "Could not resume import run.");
+    } finally {
+      setResumingRunId(null);
+    }
+  }
 
   useEffect(() => {
     function refreshFromStorageAndReload() {
@@ -913,6 +954,7 @@ function AdminAttendeeImportsPageInner() {
     setFileName(file.name);
     setShowFullImportTable(false);
     setImportRunResult(null);
+    setImportRunStatus(null);
 
     try {
       const buffer = await file.arrayBuffer();
@@ -983,6 +1025,7 @@ function AdminAttendeeImportsPageInner() {
     setImporting(true);
     setError(null);
     setImportRunResult(null);
+    setImportRunStatus(null);
     setStatus("Creating governed import run...");
 
     try {
@@ -994,7 +1037,9 @@ function AdminAttendeeImportsPageInner() {
       });
 
       setImportRunResult(result);
+      setImportRunStatus("staging");
       saveActiveImportRunId(selectedImportEventId, result.runId);
+      setActiveRunsReloadToken((t) => t + 1);
 
       const summary = summarizeAttendeeImportRows(result.rows);
       await loadSavedAttendees(selectedImportEventId);
@@ -1054,6 +1099,60 @@ function AdminAttendeeImportsPageInner() {
       setRetryingRowId(null);
     }
   }
+
+  function handleImportRowAbandoned(
+    rowId: string,
+    overlay: { abandonedAt: string; abandonedByAuthUserId: string; abandonmentReasonCode: string },
+  ) {
+    setImportRunResult((prev) =>
+      prev
+        ? { ...prev, rows: prev.rows.map((r) => (r.rowId === rowId ? { ...r, ...overlay } : r)) }
+        : prev,
+    );
+  }
+
+  // abandon_import_run_open_rows returns only a count, not per-row detail,
+  // so the rows table is refreshed from the same governed recovery path
+  // used everywhere else, rather than guessing which rows changed
+  // client-side.
+  async function handleImportOpenRowsAbandoned() {
+    if (!importRunResult) {
+      return;
+    }
+    try {
+      const recovered = await recoverAttendeeImportRun(importRunResult.runId);
+      setImportRunResult({
+        runId: recovered.run.id,
+        eventId: recovered.run.eventId,
+        sourceFilename: recovered.run.sourceFilename,
+        rows: recovered.rows,
+      });
+      setStatus("Remaining open rows abandoned.");
+    } catch (err: any) {
+      console.error("Could not refresh after abandoning open rows:", err);
+      setError(err?.message || "Rows were abandoned, but the results could not be refreshed. Reload to see the current state.");
+    }
+  }
+
+  function handleImportStagingClosed(newStatus: ImportRunLifecycleStatus) {
+    setImportRunStatus(newStatus);
+    setStatus("Source staging closed. This run is now ready for review.");
+  }
+
+  function handleImportRunFinalized(result: {
+    status: ImportRunLifecycleStatus;
+    finalizedAt: string | null;
+    finalizedByAuthUserId: string | null;
+  }) {
+    setImportRunStatus(result.status);
+    setStatus("This run has been finalized and moved to Import History.");
+    if (selectedImportEventId) {
+      saveActiveImportRunId(selectedImportEventId, null);
+    }
+    setImportRunResult(null);
+    setActiveRunsReloadToken((t) => t + 1);
+  }
+
   function openIssueInAttendeeManagement(issue: ReviewIssue) {
     const match = savedAttendees.find((row) => {
       return (
@@ -1380,6 +1479,16 @@ function AdminAttendeeImportsPageInner() {
         </div>
       </div>
 
+      {selectedImportEventId ? (
+        <ActiveRunsPanel
+          eventId={selectedImportEventId}
+          importType="attendee"
+          onResume={(runId) => void handleResumeImportRun(runId)}
+          resumingRunId={resumingRunId}
+          reloadToken={activeRunsReloadToken}
+        />
+      ) : null}
+
       {importRunResult ? (
         <div className="card" style={{ padding: 18 }}>
           <h2 style={{ marginTop: 0, marginBottom: 6 }}>Governed Import Results</h2>
@@ -1387,6 +1496,18 @@ function AdminAttendeeImportsPageInner() {
             Run {importRunResult.runId}
             {importRunResult.sourceFilename ? ` • ${importRunResult.sourceFilename}` : ""}
           </div>
+
+          {importRunStatus ? (
+            <RunLifecycleActions
+              runId={importRunResult.runId}
+              status={importRunStatus}
+              rows={importRunResult.rows}
+              onStagingClosed={handleImportStagingClosed}
+              onOpenRowsAbandoned={() => void handleImportOpenRowsAbandoned()}
+              onFinalized={handleImportRunFinalized}
+              onError={(message) => setError(message)}
+            />
+          ) : null}
 
           {(() => {
             const summary = summarizeAttendeeImportRows(importRunResult.rows);
@@ -1450,25 +1571,31 @@ function AdminAttendeeImportsPageInner() {
                       <td style={tableCellStyle}>{row.rowState}</td>
                       <td style={tableCellStyle}>{detail}</td>
                       <td style={tableCellStyle}>
-                        {row.rowState === "commit_failed" ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleRetryImportRow(row)}
-                            disabled={retryingRowId === row.rowId}
-                            style={{
-                              padding: "6px 10px",
-                              borderRadius: 8,
-                              border: "1px solid #ccc",
-                              background: "white",
-                              cursor: "pointer",
-                              opacity: retryingRowId === row.rowId ? 0.6 : 1,
-                            }}
-                          >
-                            {retryingRowId === row.rowId ? "Retrying..." : "Retry"}
-                          </button>
-                        ) : (
-                          "—"
-                        )}
+                        <div className="row-actions">
+                          {row.rowState === "commit_failed" ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleRetryImportRow(row)}
+                              disabled={retryingRowId === row.rowId}
+                              style={{
+                                padding: "6px 10px",
+                                borderRadius: 8,
+                                border: "1px solid #ccc",
+                                background: "white",
+                                cursor: "pointer",
+                                opacity: retryingRowId === row.rowId ? 0.6 : 1,
+                              }}
+                            >
+                              {retryingRowId === row.rowId ? "Retrying..." : "Retry"}
+                            </button>
+                          ) : null}
+                          <AbandonRowButton
+                            row={row}
+                            onAbandoned={handleImportRowAbandoned}
+                            onError={(message) => setError(message)}
+                          />
+                          {row.rowState === "committed" || row.rowState === "validation_failed" ? "—" : null}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1478,6 +1605,8 @@ function AdminAttendeeImportsPageInner() {
           </div>
         </div>
       ) : null}
+
+      {selectedImportEventId ? <ImportHistoryPanel eventId={selectedImportEventId} importType="attendee" /> : null}
 
       <div className="card" style={{ padding: 18 }}>
         <h2 style={{ marginTop: 0, marginBottom: 12 }}>Import Summary</h2>
