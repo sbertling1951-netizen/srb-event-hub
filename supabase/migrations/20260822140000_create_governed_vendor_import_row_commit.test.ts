@@ -1,0 +1,19 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+
+const sql = readFileSync(fileURLToPath(new URL("./20260822140000_create_governed_vendor_import_row_commit.sql", import.meta.url)), "utf8");
+const fixture = readFileSync(fileURLToPath(new URL("../integration-tests/20260822140000_vendor_import_commit_rollback.sql", import.meta.url)), "utf8");
+const commitBlock = (source: string) => source.match(/CREATE OR REPLACE FUNCTION public\.commit_vendor_import_run_row[\s\S]*?GRANT EXECUTE ON FUNCTION public\.commit_vendor_import_run_row\(uuid\) TO authenticated;/)?.[0];
+const failureBlock = (source: string) => source.match(/CREATE OR REPLACE FUNCTION public\.record_vendor_import_run_row_commit_failure[\s\S]*?GRANT EXECUTE ON FUNCTION public\.record_vendor_import_run_row_commit_failure\(uuid,text\) TO authenticated;/)?.[0];
+const commit = commitBlock(sql) || "";
+const failure = failureBlock(sql) || "";
+
+test("Vendor commit is Event-scoped, dual-authorized, lifecycle-governed, and RPC-only",()=>{for(const x of ["event.imports.manage","event.vendors.manage","assert_event_lifecycle_mutable","import_type<>'vendors'","FOR UPDATE","SECURITY DEFINER","SET search_path TO 'pg_catalog'"])assert.ok(commit.includes(x),x);assert.match(commit,/r\.event_id/);});
+test("Vendor identity is read-only and matching is exact normalized Business Name evidence",()=>{for(const x of ["INSERT INTO public.vendors","UPDATE public.vendors","DELETE FROM public.vendors","is_active = true"])assert.equal(commit.includes(x),false,x);assert.match(commit,/lower\(regexp_replace\(btrim\(coalesce\(business_name,name,''\)\)/);assert.match(commit,/vendor_not_found|vendor_inactive|vendor_identity_ambiguous|vendor_identity_conflict/);});
+test("commit fails closed for duplicate evidence, has no revoke path, and restricts metadata",()=>{assert.match(commit,/vendor_duplicate_in_import/);assert.match(commit,/review_state='needs_review',row_state='needs_review'/);assert.equal(commit.includes("revoke_vendor_admission"),false);for(const x of ["is_featured","is_visible_to_members","action_type","signup_url","booth_location","event_note","display_order","show_on_member_dashboard","allow_service_requests"])assert.ok(commit.includes(x),x);});
+test("failure recording is Vendor-only, bounded, idempotent, and has no canonical write",()=>{for(const x of ["vendor_commit_failed","vendor_commit_denied","vendor_commit_conflict","vendor_commit_unavailable","event.imports.manage","commit_failure_already_recorded","SECURITY DEFINER"])assert.ok(failure.includes(x),x);for(const x of ["public.vendors","event_vendors","vendor_event_applications","vendor_event_dispositions","SQLERRM"])assert.equal(failure.includes(x),false,x);});
+test("a needs_review outcome always resets commit_state/commit_error so a commit_failed retry cannot violate row state consistency",()=>{const needsReviewUpdates=commit.match(/UPDATE public\.import_run_rows SET validation_details=[^;]*row_state='needs_review'[^;]*;/g)||[];assert.equal(needsReviewUpdates.length,6);for(const stmt of needsReviewUpdates){assert.match(stmt,/commit_state='not_started'/);assert.match(stmt,/commit_error=NULL/);}});
+test("event_vendors column references inside the metadata/admission check are alias-qualified, not bare, to avoid colliding with the vendor_id OUT parameter",()=>{assert.match(commit,/FROM public\.event_vendors ev WHERE ev\.vendor_id=v\.id AND ev\.event_id=r\.event_id AND ev\.admission_state='admitted'/);});
+test("linked rollback fixture exercises the exact pending RPC definitions",()=>{assert.ok(commitBlock(sql));assert.ok(failureBlock(sql));assert.equal(commitBlock(fixture),commitBlock(sql));assert.equal(failureBlock(fixture),failureBlock(sql));assert.match(fixture,/^BEGIN;/m);assert.match(fixture,/^ROLLBACK;/m);});
