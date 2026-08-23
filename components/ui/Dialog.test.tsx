@@ -3,7 +3,10 @@ import { test } from "node:test";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { DialogSurface } from "@/components/ui/Dialog";
+import {
+  DialogSurface,
+  resolveDialogBackdropClickHandler,
+} from "@/components/ui/Dialog";
 
 // Focused tests for Dialog's markup contract (Central UI Standard, Stage
 // 2): correct dialog semantics, labeling, and content/footer composition.
@@ -127,4 +130,19 @@ test("an extra className is appended to the dialog panel, alongside (not instead
     />,
   );
   assert.match(html, /class="app-dialog preferred-map-chooser-like"/);
+});
+
+test("a dialog can remove backdrop dismissal entirely while preserving the default for existing callers", () => {
+  let closeCount = 0;
+  const requestClose = () => {
+    closeCount += 1;
+  };
+
+  const disabledHandler = resolveDialogBackdropClickHandler(false, requestClose);
+  assert.equal(disabledHandler, undefined);
+  assert.equal(closeCount, 0);
+
+  const defaultHandler = resolveDialogBackdropClickHandler(true, requestClose);
+  defaultHandler?.();
+  assert.equal(closeCount, 1);
 });

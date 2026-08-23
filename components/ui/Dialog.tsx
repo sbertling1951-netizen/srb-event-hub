@@ -29,6 +29,13 @@ const FOCUSABLE_SELECTOR = [
 
 const HISTORY_MARKER = "__appDialogOpen";
 
+export function resolveDialogBackdropClickHandler(
+  dismissOnBackdrop: boolean,
+  requestClose: () => void,
+) {
+  return dismissOnBackdrop ? requestClose : undefined;
+}
+
 type DialogSurfaceProps = {
   titleId: string;
   title: ReactNode;
@@ -37,7 +44,7 @@ type DialogSurfaceProps = {
   footer?: ReactNode;
   className?: string;
   dialogRef: RefObject<HTMLDivElement | null>;
-  onBackdropClick: () => void;
+  onBackdropClick?: () => void;
   onDialogKeyDown: (e: ReactKeyboardEvent) => void;
 };
 
@@ -113,6 +120,13 @@ export type DialogProps = {
    * component's own focus-management effect would immediately override it. */
   initialFocusRef?: RefObject<HTMLElement | null>;
   /**
+   * Whether a click resolved on the backdrop requests close. Editable
+   * dialogs with substantial unsaved state should disable this so a text
+   * selection that begins inside and releases outside cannot dismiss them.
+   * Escape and explicit close controls remain available either way.
+   */
+  dismissOnBackdrop?: boolean;
+  /**
    * Push one history entry while open, so Back closes the dialog before it
    * navigates the page (matching `PreferredMapChooser`'s original
    * behavior). Off by default -- most dialogs (confirmations, small
@@ -144,6 +158,7 @@ export function Dialog({
   footer,
   className,
   initialFocusRef,
+  dismissOnBackdrop = true,
   historyBack = false,
 }: DialogProps) {
   const generatedTitleId = useId();
@@ -322,7 +337,10 @@ export function Dialog({
       footer={footer}
       className={className}
       dialogRef={dialogRef}
-      onBackdropClick={requestClose}
+      onBackdropClick={resolveDialogBackdropClickHandler(
+        dismissOnBackdrop,
+        requestClose,
+      )}
       onDialogKeyDown={handleTrapKeyDown}
     >
       {children}

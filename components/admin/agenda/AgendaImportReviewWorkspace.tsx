@@ -228,8 +228,10 @@ function AgendaRowAction({
           eventDateContext={eventDateContext}
           categoryOptions={categoryOptions}
           onCancel={() => setEditOpen(false)}
-          onSaved={async (message) => {
-            setEditOpen(false);
+          onSaved={async (message, shouldClose) => {
+            if (shouldClose) {
+              setEditOpen(false);
+            }
             await onRowsChanged(message);
           }}
           onError={onError}
