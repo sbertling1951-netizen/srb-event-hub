@@ -85,6 +85,8 @@ type AgendaResizeDrag = {
 type ActiveEvent = {
   id: string;
   name: string;
+  start_date: string | null;
+  end_date: string | null;
 };
 
 type AgendaForm = {
@@ -781,6 +783,8 @@ function AdminAgendaPageInner() {
     const selectedEvent = {
       id: adminEvent.id,
       name: adminEvent.name || "Selected Event",
+      start_date: adminEvent.start_date ?? null,
+      end_date: adminEvent.end_date ?? null,
     };
 
     setActiveEvent(selectedEvent);
@@ -2313,6 +2317,10 @@ function AdminAgendaPageInner() {
         sourceFilename: file.name,
         rows,
         expectedAgendaVersion: agendaVersionRef.current,
+        eventDateContext: {
+          event_start_date: activeEvent.start_date,
+          event_end_date: activeEvent.end_date,
+        },
       });
       setAgendaImportRun(result);
       setAgendaImportRunStatus(result.status);

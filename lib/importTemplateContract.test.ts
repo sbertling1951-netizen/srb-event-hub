@@ -96,8 +96,11 @@ test("agenda contract: the pure interpreter derives its aliases from the shared 
     AGENDA_CONTRACT_SOURCE,
     /AGENDA_IMPORT_TEMPLATE_CONTRACT\.fields\.map/,
   );
-  assert.match(AGENDA_ORCHESTRATION_SOURCE, /interpretAgendaImportRows\(rows\)/);
-  assert.doesNotMatch(AGENDA_PAGE_SOURCE, /interpretAgendaImportRows\(rows\)/);
+  assert.match(
+    AGENDA_ORCHESTRATION_SOURCE,
+    /interpretAgendaImportRows\(rows, eventDateContext\)/,
+  );
+  assert.doesNotMatch(AGENDA_PAGE_SOURCE, /interpretAgendaImportRows\(/);
 });
 
 test("agenda contract: exactly one importer implementation exists -- no second parseAgendaImportFile/getImportField elsewhere", () => {
@@ -112,6 +115,21 @@ test("agenda contract: Published documents the real blank-value behavior (blank 
   assert.equal(yesNoToBool("Yes"), true);
   assert.equal(yesNoToBool(""), false);
   assert.equal(yesNoToBool("No"), false);
+});
+
+test("agenda contract: date/time instructions describe the human input forms the pure parser accepts", () => {
+  const date = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.find(
+    (field) => field.key === "agenda_date",
+  )!;
+  const start = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.find(
+    (field) => field.key === "start_time",
+  )!;
+  assert.match(date.instructions, /11\/4\/26/);
+  assert.match(date.instructions, /selected Event's scheduled date context/);
+  assert.match(date.instructions, /Impossible or ambiguous dates are rejected/);
+  assert.match(start.instructions, /9 AM/);
+  assert.match(start.instructions, /1300/);
+  assert.match(start.instructions, /HH:MM/);
 });
 
 test("agenda contract: required fields match the real live validation (Title, Agenda Date, Start Time)", () => {

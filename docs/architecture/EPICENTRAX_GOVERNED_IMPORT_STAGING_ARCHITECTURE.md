@@ -108,7 +108,19 @@ Stage 1 already accepts this candidate unchanged in `import_run_rows.normalized_
 
 ## Agenda Governed Imports Stage B
 
-Agenda file interpretation remains the unchanged Stage A contract in `lib/agendaImportContract.ts`. `lib/agendaImportOrchestration.ts` calls that batch interpreter exactly once, creates an `agenda` import run with the source row count and loaded Agenda version in immutable `source_metadata`, stages every raw source row plus its normalized JSON-safe candidate and SHA-256 provenance fingerprint through the generic governed RPCs, and persists Stage A validation codes unchanged. Invalid rows and every implicated same-file duplicate are `validation_failed`; they are never submitted to canonical commit. Browser local storage retains only the active run id as a recovery locator.
+Agenda file interpretation remains the Stage A contract in `lib/agendaImportContract.ts`. `lib/agendaImportOrchestration.ts` calls that batch interpreter exactly once, creates an `agenda` import run with the source row count, loaded Agenda version, and selected Event date context in immutable `source_metadata`, stages every raw source row plus its normalized JSON-safe candidate and SHA-256 provenance fingerprint through the generic governed RPCs, and persists Stage A validation codes unchanged. Invalid rows and every implicated same-file duplicate are `validation_failed`; they are never submitted to canonical commit. Browser local storage retains only the active run id as a recovery locator.
+
+Stage A's spreadsheet/CSV boundary explicitly normalizes US-style dates,
+compact or AM/PM clock input, Excel date/time cells, and supported serials to
+canonical `YYYY-MM-DD` / `HH:MM` values before staging. Text parsing never uses
+the browser locale or current year. An `M/D` date uses the selected Event's
+scheduled year when that year is singular; for a cross-year Event it must map
+to exactly one valid date inside the Event range. A two-digit year selects the
+unique valid year ending in those digits that is nearest to the Event's year
+range; an equal-distance tie fails validation. Impossible or ambiguous dates
+retain the existing `invalid_agenda_date` result. This changes no external-ID
+formula: equivalent human and canonical inputs produce the same normalized
+identity evidence.
 
 `commit_agenda_import_run(run_id)` is the only authenticated Agenda import commit surface. It requires both `event.imports.manage` and `event.agenda.manage` for the run's own Event, a mutable Event/run lifecycle, complete source staging, and only non-abandoned `approved`/`commit_failed` rows. It reads the immutable expected version from the run, orders eligible candidates by their persisted source row number, and invokes the existing `import_event_agenda_items(event_id, expected_version, rows)` function internally. The canonical upsert, Agenda version advance, Agenda command-ledger write, and every staging result update therefore share one PostgreSQL transaction. A failure in any canonical row or in later staging-result persistence rolls all of them back. Authenticated execution of `import_event_agenda_items` itself is revoked, so browsers cannot bypass staging or choose between two Agenda import writers.
 

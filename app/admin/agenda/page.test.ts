@@ -339,6 +339,19 @@ test("Stage C separates upload/staging from the explicit confirmed Agenda commit
   assert.match(IMPORT_REVIEW_SOURCE, /onClick=\{\(\) => setConfirmCommitOpen\(true\)\}/);
 });
 
+test("Agenda staging passes the selected Event schedule to the single Stage A interpretation path", () => {
+  const upload = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function handleAgendaImportFile"),
+    PAGE_SOURCE.indexOf("async function resumeAgendaImportRun"),
+  );
+  assert.match(upload, /eventDateContext:/);
+  assert.match(upload, /event_start_date: activeEvent\.start_date/);
+  assert.match(upload, /event_end_date: activeEvent\.end_date/);
+  assert.match(PAGE_SOURCE, /start_date: adminEvent\.start_date \?\? null/);
+  assert.match(PAGE_SOURCE, /end_date: adminEvent\.end_date \?\? null/);
+  assert.doesNotMatch(upload, /new Date\(|Date\.parse\(/);
+});
+
 test("Stage C lifecycle callbacks reload governed recovery rather than fabricating row/run state locally", () => {
   const refresh = PAGE_SOURCE.slice(
     PAGE_SOURCE.indexOf("async function refreshAgendaImportRun"),

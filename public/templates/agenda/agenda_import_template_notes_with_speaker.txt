@@ -18,9 +18,14 @@ Required:
 - Agenda Date
 - Start Time
 
-Recommended formats:
-- Agenda Date: YYYY-MM-DD
-- Start Time / End Time: HH:MM in 24-hour time
+Date and time entry:
+- Agenda Date accepts ordinary US dates such as 11/4/26 or 11/04/2026.
+- Month/day without a year, such as 11/4, uses the selected Event's scheduled
+  date context. Impossible or ambiguous dates are rejected.
+- YYYY-MM-DD remains accepted, but is not required. EpicentraX normalizes
+  accepted dates internally to YYYY-MM-DD.
+- Start Time / End Time accept 9 AM, 1:00 PM, 900, 1300, or 24-hour HH:MM.
+  EpicentraX normalizes accepted times internally to HH:MM.
 - Published: Yes or No. Blank, or any value other than Yes/Y/True/1, imports
   the item as NOT published (draft) -- there is no separate default; blank
   is treated identically to No.

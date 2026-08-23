@@ -7,6 +7,7 @@
 
 import {
   type AgendaImportCandidate,
+  type AgendaImportEventDateContext,
   type AgendaImportIssue,
   interpretAgendaImportRows,
   type RawAgendaImportRow,
@@ -230,9 +231,16 @@ export async function stageGovernedAgendaImport(params: {
   sourceFilename: string | null;
   rows: RawAgendaImportRow[];
   expectedAgendaVersion: number;
+  eventDateContext: AgendaImportEventDateContext;
 }): Promise<AgendaImportRunResult> {
-  const { eventId, sourceFilename, rows, expectedAgendaVersion } = params;
-  const interpretations = interpretAgendaImportRows(rows);
+  const {
+    eventId,
+    sourceFilename,
+    rows,
+    expectedAgendaVersion,
+    eventDateContext,
+  } = params;
+  const interpretations = interpretAgendaImportRows(rows, eventDateContext);
 
   const { data: run, error: runError } = await supabase.rpc("create_import_run", {
     p_event_id: eventId,
@@ -241,6 +249,7 @@ export async function stageGovernedAgendaImport(params: {
     p_source_metadata: {
       row_count: rows.length,
       expected_agenda_version: expectedAgendaVersion,
+      event_date_context: eventDateContext,
     },
   });
   if (runError) {

@@ -49,15 +49,30 @@ function validRow(overrides: RawAgendaImportRow = {}): RawAgendaImportRow {
   };
 }
 
-function interpret(row: RawAgendaImportRow) {
+const EVENT_2026 = {
+  event_start_date: "2026-11-01",
+  event_end_date: "2026-11-10",
+};
+
+function interpret(
+  row: RawAgendaImportRow,
+  eventDateContext: {
+    event_start_date: string | null;
+    event_end_date: string | null;
+  } = { event_start_date: null, event_end_date: null },
+) {
   return interpretAgendaImportRow(row, {
     source_row_number: 2,
     default_sort_order: 1,
+    ...eventDateContext,
   });
 }
 
-function issueCodes(row: RawAgendaImportRow) {
-  return interpret(row).issues.map((issue) => issue.code);
+function issueCodes(
+  row: RawAgendaImportRow,
+  eventDateContext?: Parameters<typeof interpret>[1],
+) {
+  return interpret(row, eventDateContext).issues.map((issue) => issue.code);
 }
 
 function legacyImportExternalId(title: string, date: string, time: string) {
@@ -68,8 +83,11 @@ function legacyImportExternalId(title: string, date: string, time: string) {
   return [slug, date, time].join("-");
 }
 
-function sampleCandidate(row: RawAgendaImportRow): AgendaImportCandidate {
-  const result = interpret(row);
+function sampleCandidate(
+  row: RawAgendaImportRow,
+  eventDateContext?: Parameters<typeof interpret>[1],
+): AgendaImportCandidate {
+  const result = interpret(row, eventDateContext);
   assert.equal(result.validation_state, "valid", JSON.stringify(result.issues));
   return result.candidate;
 }
@@ -124,11 +142,70 @@ test("legacy starts_at and ends_at aliases supply date/start/end evidence", () =
   }
 });
 
-test("date normalization accepts supported strings, Date objects, and Excel serials", () => {
-  assert.equal(normalizeImportDate("2026-04-22"), "2026-04-22");
-  assert.equal(normalizeImportDate("4/22/2026"), "2026-04-22");
-  assert.equal(normalizeImportDate(new Date(2026, 3, 22)), "2026-04-22");
+test("date normalization accepts canonical, US full-year, real Excel Date, and serial inputs", () => {
+  assert.equal(normalizeImportDate("2026-11-04"), "2026-11-04");
+  assert.equal(normalizeImportDate("11/04/2026"), "2026-11-04");
+  assert.equal(normalizeImportDate("11/4/2026"), "2026-11-04");
+  assert.equal(normalizeImportDate(new Date(2026, 10, 4)), "2026-11-04");
   assert.equal(normalizeImportDate(46134), "2026-04-22");
+});
+
+test("two-digit US dates resolve deterministically from Event context, never browser heuristics", () => {
+  assert.equal(normalizeImportDate("11/4/26", EVENT_2026), "2026-11-04");
+  assert.equal(normalizeImportDate("1/2/26", EVENT_2026), "2026-01-02");
+  assert.equal(
+    normalizeImportDate("11/4/00", {
+      event_start_date: "2099-12-30",
+      event_end_date: "2100-01-02",
+    }),
+    "2100-11-04",
+  );
+  assert.equal(normalizeImportDate("11/4/26"), null);
+  assert.equal(
+    normalizeImportDate("11/4/26", {
+      event_start_date: "2076-06-01",
+      event_end_date: "2076-06-02",
+    }),
+    null,
+    "an equal-distance 2026/2126 century tie must not be guessed",
+  );
+});
+
+test("month/day-only dates derive from Event schedule context and fail closed when cross-year evidence is not unique", () => {
+  assert.equal(normalizeImportDate("11/4", EVENT_2026), "2026-11-04");
+  assert.equal(
+    normalizeImportDate("11/4", {
+      event_start_date: "2041-11-01",
+      event_end_date: "2041-11-10",
+    }),
+    "2041-11-04",
+    "resolution must not use the browser's current year",
+  );
+  const crossYear = {
+    event_start_date: "2026-12-30",
+    event_end_date: "2027-01-02",
+  };
+  assert.equal(normalizeImportDate("12/31", crossYear), "2026-12-31");
+  assert.equal(normalizeImportDate("1/1", crossYear), "2027-01-01");
+  assert.equal(
+    normalizeImportDate("11/4", {
+      event_start_date: "2026-01-01",
+      event_end_date: "2027-12-31",
+    }),
+    null,
+  );
+  assert.equal(normalizeImportDate("11/4"), null);
+});
+
+test("leap days are validated after deterministic Event-relative year resolution", () => {
+  assert.equal(
+    normalizeImportDate("2/29/24", {
+      event_start_date: "2024-02-28",
+      event_end_date: "2024-03-01",
+    }),
+    "2024-02-29",
+  );
+  assert.equal(normalizeImportDate("2/29/26", EVENT_2026), null);
 });
 
 test("impossible or malformed dates are validation failures, never rolled forward", () => {
@@ -137,12 +214,34 @@ test("impossible or malformed dates are validation failures, never rolled forwar
     "2026-02-30",
     "2026-13-01",
     "2/30/2026",
+    "2/30/26",
+    "13/4/26",
+    "11/31/26",
     "not-a-date",
   ]) {
-    assert.equal(normalizeImportDate(value), null, value);
-    assert.ok(issueCodes(validRow({ "Agenda Date": value })).includes("invalid_agenda_date"));
+    assert.equal(normalizeImportDate(value, EVENT_2026), null, value);
+    assert.ok(
+      issueCodes(validRow({ "Agenda Date": value }), EVENT_2026).includes(
+        "invalid_agenda_date",
+      ),
+    );
   }
   assert.ok(issueCodes({ Title: "Missing", "Start Time": "09:00" }).includes("missing_agenda_date"));
+});
+
+test("blank Agenda dates remain missing per row and never carry forward", () => {
+  const rows = interpretAgendaImportRows(
+    [
+      validRow({ "Agenda Date": "11/4" }),
+      validRow({ Title: "Second Row", "Agenda Date": "" }),
+    ],
+    EVENT_2026,
+  );
+  assert.equal(rows[0].candidate.agenda_date, "2026-11-04");
+  assert.equal(rows[1].candidate.agenda_date, null);
+  assert.deepEqual(rows[1].issues.map((issue) => issue.code), [
+    "missing_agenda_date",
+  ]);
 });
 
 test("missing or blank Title is a bounded validation failure", () => {
@@ -154,9 +253,27 @@ test("missing or blank Title is a bounded validation failure", () => {
 });
 
 test("time normalization accepts supported clock, compact, Excel, and datetime values", () => {
-  assert.equal(normalizeImportTimeOnly("9:05"), "09:05");
-  assert.equal(normalizeImportTimeOnly("0905"), "09:05");
-  assert.equal(normalizeImportTimeOnly("905"), "09:05");
+  const cases: Array<[unknown, string]> = [
+    ["1300", "13:00"],
+    ["900", "09:00"],
+    ["0900", "09:00"],
+    ["130", "01:30"],
+    ["9:00", "09:00"],
+    ["09:00", "09:00"],
+    ["13:00", "13:00"],
+    ["1 PM", "13:00"],
+    ["1 pm", "13:00"],
+    ["1:00 PM", "13:00"],
+    ["1:30 PM", "13:30"],
+    ["9 AM", "09:00"],
+    ["12 AM", "00:00"],
+    ["12:15 AM", "00:15"],
+    ["12 PM", "12:00"],
+    ["0000", "00:00"],
+  ];
+  for (const [input, expected] of cases) {
+    assert.equal(normalizeImportTimeOnly(input), expected, String(input));
+  }
   assert.equal(normalizeImportTimeOnly(0.375), "09:00");
   assert.equal(normalizeImportTimeOnly(46134.375), "09:00");
   assert.equal(normalizeImportTimeOnly(1), "00:00");
@@ -164,7 +281,18 @@ test("time normalization accepts supported clock, compact, Excel, and datetime v
 });
 
 test("impossible supplied start/end clocks are bounded validation failures", () => {
-  for (const value of ["24:00", "25:10", "09:60", "2460", -0.5]) {
+  for (const value of [
+    "24:00",
+    "25:10",
+    "09:60",
+    "1360",
+    "1261",
+    "2400",
+    "2500",
+    "90",
+    "not-a-time",
+    -0.5,
+  ]) {
     assert.equal(normalizeImportTimeOnly(value), null, String(value));
   }
   assert.ok(issueCodes(validRow({ "Start Time": "25:00" })).includes("invalid_agenda_start_time"));
@@ -176,6 +304,38 @@ test("an end before start remains valid because Stage A adds no sequencing polic
   const result = interpret(validRow({ "End Time": "08:00" }));
   assert.equal(result.validation_state, "valid");
   assert.equal(result.candidate.end_time, "08:00");
+});
+
+test("missing or blank optional end time remains accepted and canonicalizes to null", () => {
+  for (const row of [
+    validRow({ "End Time": "" }),
+    (() => {
+      const withoutEnd = validRow();
+      delete withoutEnd["End Time"];
+      return withoutEnd;
+    })(),
+  ]) {
+    const result = interpret(row);
+    assert.equal(result.validation_state, "valid");
+    assert.equal(result.candidate.end_time, null);
+    assert.doesNotMatch(
+      result.issues.map((issue) => issue.code).join(","),
+      /agenda_end_time/,
+    );
+  }
+});
+
+test("human and canonical date/time representations preserve external identity", () => {
+  const human = sampleCandidate(
+    validRow({ "Agenda Date": "11/4/26", "Start Time": "1300" }),
+    EVENT_2026,
+  );
+  const canonical = sampleCandidate(
+    validRow({ "Agenda Date": "2026-11-04", "Start Time": "13:00" }),
+  );
+  assert.equal(human.agenda_date, canonical.agenda_date);
+  assert.equal(human.start_time, canonical.start_time);
+  assert.equal(human.external_id, canonical.external_id);
 });
 
 test("Published is true only for Yes/Y/True/1 and false for blank or every other value", () => {
@@ -310,6 +470,66 @@ test("shipped XLSX assets use row 4 headings and normalize through the pure cont
   assert.equal(candidate.is_published, true);
 });
 
+test("CSV and XLSX-equivalent human date/time inputs produce identical canonical candidates", () => {
+  const headings = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.map(
+    (field) => field.preferredHeading,
+  );
+  const csv = Papa.parse<RawAgendaImportRow>(
+    [
+      "Title,Agenda Date,Start Time",
+      "Branson Welcome,11/4/26,1300",
+      "Branson Breakfast,11/4,900",
+    ].join("\n"),
+    { header: true, skipEmptyLines: true },
+  );
+
+  const excelSerial =
+    (Date.UTC(2026, 10, 4) - Date.UTC(1899, 11, 30)) / 86_400_000;
+  const xlsxValues = headings.map((heading) => {
+    if (heading === "Title") {
+      return "Branson Welcome";
+    }
+    if (heading === "Agenda Date") {
+      return excelSerial;
+    }
+    if (heading === "Start Time") {
+      return 1300;
+    }
+    return "";
+  });
+  const xlsxMonthDayValues = headings.map((heading) => {
+    if (heading === "Title") {
+      return "Branson Breakfast";
+    }
+    if (heading === "Agenda Date") {
+      return "11/4";
+    }
+    if (heading === "Start Time") {
+      return "900";
+    }
+    return "";
+  });
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    headings,
+    xlsxValues,
+    xlsxMonthDayValues,
+  ]);
+  worksheet.E2.z = "m/d/yy";
+  const xlsxRows = parseAgendaWorkbookWorksheet(worksheet);
+
+  const csvCandidates = interpretAgendaImportRows(csv.data, EVENT_2026).map(
+    (result) => result.candidate,
+  );
+  const xlsxCandidates = interpretAgendaImportRows(xlsxRows, EVENT_2026).map(
+    (result) => result.candidate,
+  );
+  assert.deepEqual(xlsxCandidates, csvCandidates);
+  assert.equal(xlsxCandidates[0].agenda_date, "2026-11-04");
+  assert.equal(xlsxCandidates[0].start_time, "13:00");
+  assert.equal(xlsxCandidates[1].agenda_date, "2026-11-04");
+  assert.equal(xlsxCandidates[1].start_time, "09:00");
+});
+
 test("shipped CSV and XLSX sample rows produce equivalent normalized candidates", () => {
   const csv = Papa.parse<RawAgendaImportRow>(
     readFileSync(
@@ -331,12 +551,17 @@ test("shipped CSV and XLSX sample rows produce equivalent normalized candidates"
   assert.deepEqual(sampleCandidate(csv.data[0]), sampleCandidate(xlsxRows[0]));
 });
 
-test("Stage B page delegates exactly one unchanged Stage A normalization pass before one governed staged batch", () => {
-  assert.equal((PAGE_SOURCE.match(/interpretAgendaImportRows\(rows\)/g) || []).length, 0);
+test("Stage B page delegates exactly one Stage A normalization pass with Event date context before one governed staged batch", () => {
+  assert.equal((PAGE_SOURCE.match(/interpretAgendaImportRows\(/g) || []).length, 0);
   assert.equal(
-    (ORCHESTRATION_SOURCE.match(/interpretAgendaImportRows\(rows\)/g) || []).length,
+    (ORCHESTRATION_SOURCE.match(/interpretAgendaImportRows\(/g) || []).length,
     1,
   );
+  assert.match(
+    ORCHESTRATION_SOURCE,
+    /interpretAgendaImportRows\(rows, eventDateContext\)/,
+  );
+  assert.doesNotMatch(CONTRACT_SOURCE, /new Date\(raw\)|Date\.parse\(raw\)/);
   assert.equal((PAGE_SOURCE.match(/function normalizeImport/g) || []).length, 0);
   assert.equal((CONTRACT_SOURCE.match(/function interpretAgendaImportRow\(/g) || []).length, 1);
   assert.equal(

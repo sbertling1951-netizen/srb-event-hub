@@ -50,6 +50,13 @@ export type AgendaImportInterpretation = {
 export type AgendaImportRowContext = {
   source_row_number: number;
   default_sort_order: number;
+  event_start_date?: string | null;
+  event_end_date?: string | null;
+};
+
+export type AgendaImportEventDateContext = {
+  event_start_date: string | null;
+  event_end_date: string | null;
 };
 
 const AGENDA_FIELD_ALIASES = Object.fromEntries(
@@ -124,7 +131,9 @@ function validCalendarDate(year: number, month: number, day: number) {
     return false;
   }
 
-  const probe = new Date(Date.UTC(year, month - 1, day));
+  const probe = new Date(0);
+  probe.setUTCHours(0, 0, 0, 0);
+  probe.setUTCFullYear(year, month - 1, day);
   return (
     probe.getUTCFullYear() === year &&
     probe.getUTCMonth() === month - 1 &&
@@ -143,7 +152,139 @@ function formatCalendarDate(year: number, month: number, day: number) {
   )}-${String(day).padStart(2, "0")}`;
 }
 
-export function normalizeImportDate(value: unknown) {
+type CalendarDate = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+type EventCalendarRange = {
+  start: CalendarDate | null;
+  end: CalendarDate | null;
+  firstYear: number;
+  lastYear: number;
+};
+
+function parseCanonicalCalendarDate(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  const match = String(value)
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/);
+  if (!match) {
+    return null;
+  }
+  const date = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+  return validCalendarDate(date.year, date.month, date.day) ? date : null;
+}
+
+function compareCalendarDates(left: CalendarDate, right: CalendarDate) {
+  return (
+    left.year * 10_000 + left.month * 100 + left.day -
+    (right.year * 10_000 + right.month * 100 + right.day)
+  );
+}
+
+function eventCalendarRange(
+  context: Partial<AgendaImportEventDateContext> | undefined,
+): EventCalendarRange | null {
+  const hasStart = Boolean(context?.event_start_date);
+  const hasEnd = Boolean(context?.event_end_date);
+  if (!hasStart && !hasEnd) {
+    return null;
+  }
+
+  const start = parseCanonicalCalendarDate(context?.event_start_date);
+  const end = parseCanonicalCalendarDate(context?.event_end_date);
+  if ((hasStart && !start) || (hasEnd && !end)) {
+    return null;
+  }
+  if (start && end && compareCalendarDates(start, end) > 0) {
+    return null;
+  }
+
+  return {
+    start,
+    end,
+    firstYear: start?.year ?? end!.year,
+    lastYear: end?.year ?? start!.year,
+  };
+}
+
+function resolveMonthDayYear(
+  month: number,
+  day: number,
+  context: Partial<AgendaImportEventDateContext> | undefined,
+) {
+  const range = eventCalendarRange(context);
+  if (!range) {
+    return null;
+  }
+
+  if (range.firstYear === range.lastYear) {
+    return formatCalendarDate(range.firstYear, month, day);
+  }
+
+  const matches: string[] = [];
+  for (let year = range.firstYear; year <= range.lastYear; year += 1) {
+    const formatted = formatCalendarDate(year, month, day);
+    if (!formatted) {
+      continue;
+    }
+    const candidate = { year, month, day };
+    if (
+      (!range.start || compareCalendarDates(candidate, range.start) >= 0) &&
+      (!range.end || compareCalendarDates(candidate, range.end) <= 0)
+    ) {
+      matches.push(formatted);
+    }
+  }
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function resolveTwoDigitYear(
+  month: number,
+  day: number,
+  shortYear: number,
+  context: Partial<AgendaImportEventDateContext> | undefined,
+) {
+  const range = eventCalendarRange(context);
+  if (!range) {
+    return null;
+  }
+
+  const candidates: Array<{ formatted: string; distance: number }> = [];
+  for (let year = shortYear || 100; year <= 9999; year += 100) {
+    const formatted = formatCalendarDate(year, month, day);
+    if (!formatted) {
+      continue;
+    }
+    const distance =
+      year < range.firstYear
+        ? range.firstYear - year
+        : year > range.lastYear
+          ? year - range.lastYear
+          : 0;
+    candidates.push({ formatted, distance });
+  }
+
+  const nearestDistance = Math.min(...candidates.map((candidate) => candidate.distance));
+  const nearest = candidates.filter(
+    (candidate) => candidate.distance === nearestDistance,
+  );
+  return nearest.length === 1 ? nearest[0].formatted : null;
+}
+
+export function normalizeImportDate(
+  value: unknown,
+  context?: Partial<AgendaImportEventDateContext>,
+) {
   if (value === undefined || value === null) {
     return null;
   }
@@ -179,25 +320,20 @@ export function normalizeImportDate(value: unknown) {
     return formatCalendarDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   }
 
-  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:$|\s)/);
+  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?$/);
   if (slash) {
-    return formatCalendarDate(
-      Number(slash[3]),
-      Number(slash[1]),
-      Number(slash[2]),
-    );
+    const month = Number(slash[1]);
+    const day = Number(slash[2]);
+    if (!slash[3]) {
+      return resolveMonthDayYear(month, day, context);
+    }
+    if (slash[3].length === 2) {
+      return resolveTwoDigitYear(month, day, Number(slash[3]), context);
+    }
+    return formatCalendarDate(Number(slash[3]), month, day);
   }
 
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return formatCalendarDate(
-    parsed.getFullYear(),
-    parsed.getMonth() + 1,
-    parsed.getDate(),
-  );
+  return null;
 }
 
 function formatClock(hour: number, minute: number) {
@@ -255,6 +391,20 @@ export function normalizeImportTimeOnly(value: unknown) {
     return formatClock(Number(padded.slice(0, 2)), Number(padded.slice(2, 4)));
   }
 
+  const meridiem = raw.match(
+    /^(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?$/i,
+  );
+  if (meridiem) {
+    const hour12 = Number(meridiem[1]);
+    const minute = Number(meridiem[2] ?? 0);
+    if (hour12 < 1 || hour12 > 12) {
+      return null;
+    }
+    const hour =
+      (hour12 % 12) + (meridiem[3].toLowerCase() === "p" ? 12 : 0);
+    return formatClock(hour, minute);
+  }
+
   // Explicitly support the legacy starts_at/ends_at fallback for a full
   // datetime string while validating its clock components independently.
   const dateTime = raw.match(/(?:T|\s)(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/);
@@ -262,12 +412,7 @@ export function normalizeImportTimeOnly(value: unknown) {
     return formatClock(Number(dateTime[1]), Number(dateTime[2]));
   }
 
-  const parsed = new Date(`1970-01-01T${raw}`);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return formatClock(parsed.getHours(), parsed.getMinutes());
+  return null;
 }
 
 export function yesNoToBool(value: unknown) {
@@ -313,7 +458,7 @@ export function interpretAgendaImportRow(
   const startRaw = field(source_payload, "start_time") ?? startsAtRaw;
   const endRaw = field(source_payload, "end_time") ?? endsAtRaw;
   const sortRaw = field(source_payload, "sort_order");
-  const agendaDate = normalizeImportDate(dateRaw);
+  const agendaDate = normalizeImportDate(dateRaw, context);
   const startTime = normalizeImportTimeOnly(startRaw);
   const endTime = normalizeImportTimeOnly(endRaw);
   const category = normalizeImportText(field(source_payload, "category"));
@@ -443,12 +588,15 @@ export function classifyAgendaFileDuplicates(
 
 export function interpretAgendaImportRows(
   rows: RawAgendaImportRow[],
+  eventDateContext?: AgendaImportEventDateContext,
 ): AgendaImportInterpretation[] {
   return classifyAgendaFileDuplicates(
     rows.map((row, index) =>
       interpretAgendaImportRow(row, {
         source_row_number: index + 2,
         default_sort_order: index + 1,
+        event_start_date: eventDateContext?.event_start_date,
+        event_end_date: eventDateContext?.event_end_date,
       }),
     ),
   );

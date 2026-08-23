@@ -75,6 +75,13 @@ export default function AgendaImportPanel({
             Speaker, Agenda Date, Start Time, End Time, Category, Color,
             Published, Sort Order.
           </p>
+
+          <p className="app-subtle-text" style={{ marginTop: 12 }}>
+            <strong>Date and time entry:</strong> Use ordinary US dates such as
+            11/4/26, 11/04/2026, or 11/4 (the selected Event supplies the year).
+            Times may be entered as 9 AM, 1:00 PM, 900, 1300, or HH:MM.
+            EpicentraX normalizes accepted values before staging.
+          </p>
         </div>
 
         <Field label="Upload File" help="Accepted formats: CSV and XLSX.">

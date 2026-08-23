@@ -13,20 +13,22 @@ const source = readFileSync(
   "utf8",
 );
 
-test("Stage B delegates exactly one interpretation pass to the unchanged Stage A batch contract", () => {
-  assert.equal((source.match(/interpretAgendaImportRows\(rows\)/g) || []).length, 1);
+test("Stage B delegates exactly one interpretation pass plus Event date context to the Stage A batch contract", () => {
+  assert.equal((source.match(/interpretAgendaImportRows\(/g) || []).length, 1);
+  assert.match(source, /interpretAgendaImportRows\(rows, eventDateContext\)/);
   assert.equal(/interpretAgendaImportRow\(/.test(source), false);
   assert.equal(/classifyAgendaFileDuplicates\(/.test(source), false);
   assert.equal(/deriveAgendaExternalId\(/.test(source), false);
 });
 
-test("Agenda run creation precedes staging and preserves row count plus immutable expected-version evidence", () => {
+test("Agenda run creation precedes staging and preserves row count, Event date context, and expected-version evidence", () => {
   const createIndex = source.indexOf('.rpc("create_import_run"');
   const stageIndex = source.indexOf('"stage_import_run_row"');
   assert.ok(createIndex > -1 && stageIndex > createIndex);
   assert.match(source, /p_import_type: "agenda"/);
   assert.match(source, /row_count: rows\.length/);
   assert.match(source, /expected_agenda_version: expectedAgendaVersion/);
+  assert.match(source, /event_date_context: eventDateContext/);
 });
 
 test("every Stage A interpretation is staged unchanged with source context and deterministic validation state", () => {
