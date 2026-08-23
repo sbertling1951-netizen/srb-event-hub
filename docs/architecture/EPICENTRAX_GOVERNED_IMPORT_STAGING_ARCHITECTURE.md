@@ -1,6 +1,6 @@
 # Governed Imports Staging Architecture
 
-Status: Live — Stage 1 (staging), Stage 2 (contract), Stage 3 (canonical commit), Stage 3.1 (failure recording), Stage 1.1 (recovery), and Stage 4 (application-layer cutover) are all in production use by `/admin/imports`.
+Status: Live — Stage 1 (staging), Stage 2 (contract), Stage 3 (canonical commit), Stage 3.1 (failure recording), Stage 1.1 (recovery), Stage 4 (application-layer cutover), Stage 5A (Vendor/Agenda doors), Stage 5B (Vendor normalization/commit), and Stage 5B.3 (Vendor application-layer cutover) are all in production use by `/admin/imports`. Run lifecycle/abandonment/finalization/History (`close_import_run_staging`, `abandon_import_run_row`, `abandon_import_run_open_rows`, the hardened `finalize_import_run`/`get_import_run_status`, `list_active_import_runs`, `list_finalized_import_run_history`, `get_finalized_import_run_history_detail`) is applied and proven at the database layer; no application-layer UI consumes it yet (see "Import-run lifecycle, abandonment, finalization, and History" below).
 
 ## Boundary
 
@@ -27,6 +27,26 @@ All mutation operations require an authenticated caller, `event.imports.manage` 
 `event.imports.manage` does not confer attendee, agenda, vendor, or any other domain mutation authority. Future Imports-to-domain commits require both Imports service authority and the relevant domain's governed authority.
 
 `event.imports.view` remains the general status/read capability. `get_managed_import_run_recovery(run_id)` is intentionally distinct: it requires `event.imports.manage` because it recovers one explicitly requested Event-scoped run for the active management workflow. It returns persisted run metadata and ordered row lifecycle/outcome fields, including the normalized candidate required to rebuild the active preview, but never raw source payload, auth evidence, or internal errors. Finalized runs remain readable by exact authorized ID so a reload can show their truthful completed outcome; this is not an Import History browser. Stage 4 uses this RPC exclusively for reload/recovery, never a direct table read.
+
+## Import-run lifecycle, abandonment, finalization, and History
+
+Source staging closes only through the governed `close_import_run_staging(run_id)` transition: `staging → ready_for_review`. Once closed, no additional source rows may be staged. Existing Attendee and Vendor commit/retry operations remain valid in either mutable run status; source closure changes neither their domain authority nor their canonical semantics.
+
+`committed` and `validation_failed` are terminal row states. `parsed`, `approved`, `needs_review`, and `commit_failed` remain open. An authorized Imports manager may instead record immutable abandonment evidence on an open row: `abandoned_at`, abandoning authenticated actor, and a bounded reason code. Abandonment is a terminal overlay, so it preserves the original validation, review, commit result, and failure evidence. It is irreversible; a correction requires a new import run. A separate whole-run operation abandons all currently open rows atomically and leaves committed, validation-failed, and already-abandoned rows untouched.
+
+Finalization is an explicit Imports-management action. It is allowed only from `ready_for_review`, only while the Event remains mutable, and only when every row is committed, validation-failed, or abandoned. It records the finalizing actor and time and is idempotent for an already-finalized run. Existing finalized runs are historical evidence and are not reopened or backfilled solely to satisfy the newer prospective invariant.
+
+Final run outcome is derived from the durable row evidence, never stored independently: `completed` means all rows committed; `completed_with_errors` means validation failures without abandonment; `abandoned` means no committed rows and one or more abandoned rows; all other terminal combinations are `mixed`. A validation-failures-only run is therefore `completed_with_errors`.
+
+Active workflow discovery is server-backed and Event-scoped under `event.imports.manage`; browser local-storage run IDs remain advisory locators only and cannot hide older unfinished runs. Finalized History is Event-scoped under `event.imports.view` and provides a paginated safe run envelope plus a safe row-level detail projection. History does not expose raw source payload, caller-supplied source metadata, or unrestricted normalized candidates. Raw-source retention and any future raw-source access authority remain explicitly deferred.
+
+`event.imports.manage` and `event.imports.view` are independent, separately grantable authorities — a caller holding only `event.imports.manage` (the common case for an Event-scoped Imports operator grant, as distinct from a platform/tenant admin) cannot read History, and a caller holding only `event.imports.view` cannot close staging, abandon a row, or finalize a run. Neither is implied by the other; both remain independent of Attendee/Vendor canonical authority, and neither new lifecycle RPC grants any canonical Attendee or Vendor mutation capability.
+
+Finalized History tolerates grandfathered evidence: a finalized run recorded before this stage has `finalized_by_auth_user_id = NULL` (the column did not exist yet), and remains fully readable through History exactly as recorded — it is never rewritten to backfill a finalizer that was never captured.
+
+An import run with zero staged rows may be closed and finalized (`finalize_import_run`'s open-row check is vacuously satisfied), and its derived outcome is `completed` (zero of zero rows committed, zero abandoned, zero validation-failed all evaluate true). This is the actual, verified behavior of the implementation, not an invented convention, and should be treated as the source of truth for any future UI that must present a zero-row run truthfully.
+
+How long a finalized run's row-level History detail is retained, and whether raw source payload should ever become accessible under some future, more restrictive authority, are both explicitly undecided and out of scope for this stage.
 
 ## Legacy compatibility
 
