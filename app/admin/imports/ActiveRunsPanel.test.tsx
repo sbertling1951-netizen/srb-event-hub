@@ -55,3 +55,9 @@ test("status presentation uses the shared StatusBadge primitive, not page-local 
 test("a fetch failure is described via describeLifecycleError -- never the raw PostgrestError surfaced to the admin", () => {
   assert.match(SOURCE, /describeLifecycleError\(err\)/);
 });
+
+test("a door can receive the governed active-run count and disable creation of a competing run", () => {
+  assert.match(SOURCE, /onRunCountChanged\?: \(count: number \| null\) => void/);
+  assert.match(SOURCE, /onRunCountChanged\?\.\(matchingRuns\.length\)/);
+  assert.match(SOURCE, /onRunCountChanged\?\.\(null\)/);
+});

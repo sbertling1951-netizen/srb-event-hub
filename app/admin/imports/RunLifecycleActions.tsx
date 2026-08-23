@@ -2,8 +2,8 @@
 
 // Stage: Import Run Lifecycle + History UI hookup. Import-type-agnostic
 // controls over the governed 20260822170000 lifecycle RPCs
-// (lib/importLifecycleOrchestration.ts), shared by the Attendee and
-// Vendor doors rather than duplicated. This module owns no lifecycle
+// (lib/importLifecycleOrchestration.ts), shared by the governed import
+// doors rather than duplicated. This module owns no lifecycle
 // rule of its own -- every transition is decided server-side; a denial
 // surfaces through the caller's own error presentation via `onError`,
 // using describeLifecycleError so the raw PostgrestError never reaches
@@ -27,9 +27,9 @@ import {
 
 /**
  * The minimal shape RunLifecycleActions/AbandonRowButton need from either
- * door's own row-result type (AttendeeImportRowResult, VendorImportRowResult
- * -- both already carry these fields). Deliberately not importing either
- * door's type here, so this module stays import-type-agnostic.
+ * door's own row-result type (Attendee, Vendor, or Agenda -- each already
+ * carries these fields). Deliberately not importing a door-specific type
+ * here, so this module stays import-type-agnostic.
  */
 export type LifecycleRowLike = {
   rowId: string;
@@ -116,19 +116,31 @@ export function AbandonReasonDialog({
 
 type AbandonRowButtonProps = {
   row: LifecycleRowLike;
+  triggerLabel?: string;
+  triggerAriaLabel?: string;
+  dialogTitle?: string;
+  dialogDescription?: string;
   onAbandoned: (
     rowId: string,
     overlay: { abandonedAt: string; abandonedByAuthUserId: string; abandonmentReasonCode: string },
-  ) => void;
+  ) => void | Promise<void>;
   onError: (message: string) => void;
 };
 
 /**
- * Drop-in row action for either door's results table Action cell. Renders
+ * Drop-in row action for a governed door's results table Action cell. Renders
  * nothing once the row is no longer eligible (the caller does not need to
  * branch on rowState itself to decide whether to render this).
  */
-export function AbandonRowButton({ row, onAbandoned, onError }: AbandonRowButtonProps) {
+export function AbandonRowButton({
+  row,
+  triggerLabel = "Abandon",
+  triggerAriaLabel,
+  dialogTitle = "Abandon This Row",
+  dialogDescription = "This marks the row as abandoned and it will no longer be eligible for retry or commit. This cannot be undone.",
+  onAbandoned,
+  onError,
+}: AbandonRowButtonProps) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -140,12 +152,12 @@ export function AbandonRowButton({ row, onAbandoned, onError }: AbandonRowButton
     setBusy(true);
     try {
       const result = await abandonImportRunRow(row.rowId, reasonCode);
-      setOpen(false);
-      onAbandoned(row.rowId, {
+      await onAbandoned(row.rowId, {
         abandonedAt: result.abandonedAt,
         abandonedByAuthUserId: result.abandonedByAuthUserId,
         abandonmentReasonCode: result.abandonmentReasonCode,
       });
+      setOpen(false);
     } catch (err) {
       onError(describeLifecycleError(err));
     } finally {
@@ -155,13 +167,17 @@ export function AbandonRowButton({ row, onAbandoned, onError }: AbandonRowButton
 
   return (
     <>
-      <AppButton variant="danger" onClick={() => setOpen(true)}>
-        Abandon
+      <AppButton
+        variant="danger"
+        aria-label={triggerAriaLabel}
+        onClick={() => setOpen(true)}
+      >
+        {triggerLabel}
       </AppButton>
       <AbandonReasonDialog
         open={open}
-        title="Abandon This Row"
-        description="This marks the row as abandoned and it will no longer be eligible for retry or commit. This cannot be undone."
+        title={dialogTitle}
+        description={dialogDescription}
         busy={busy}
         onConfirm={handleConfirm}
         onCancel={() => (busy ? null : setOpen(false))}
@@ -174,13 +190,19 @@ export type RunLifecycleActionsProps = {
   runId: string;
   status: ImportRunLifecycleStatus;
   rows: LifecycleRowLike[];
-  onStagingClosed: (status: ImportRunLifecycleStatus) => void;
-  onOpenRowsAbandoned: (count: number, reasonCode: AbandonmentReasonCode) => void;
+  abandonAllLabel?: string;
+  abandonAllDialogTitle?: string;
+  abandonAllDialogDescription?: string;
+  onStagingClosed: (status: ImportRunLifecycleStatus) => void | Promise<void>;
+  onOpenRowsAbandoned: (
+    count: number,
+    reasonCode: AbandonmentReasonCode,
+  ) => void | Promise<void>;
   onFinalized: (result: {
     status: ImportRunLifecycleStatus;
     finalizedAt: string | null;
     finalizedByAuthUserId: string | null;
-  }) => void;
+  }) => void | Promise<void>;
   onError: (message: string) => void;
 };
 
@@ -197,6 +219,9 @@ export function RunLifecycleActions({
   runId,
   status,
   rows,
+  abandonAllLabel = "Abandon Remaining Open Rows",
+  abandonAllDialogTitle = "Abandon Remaining Open Rows",
+  abandonAllDialogDescription = "This marks every remaining open row in this run as abandoned. Committed and validation-failed rows are unaffected. This cannot be undone.",
   onStagingClosed,
   onOpenRowsAbandoned,
   onFinalized,
@@ -218,8 +243,8 @@ export function RunLifecycleActions({
     setClosingStaging(true);
     try {
       const result = await closeImportRunStaging(runId);
+      await onStagingClosed(result.status);
       setConfirmCloseOpen(false);
-      onStagingClosed(result.status);
     } catch (err) {
       onError(describeLifecycleError(err));
     } finally {
@@ -231,8 +256,8 @@ export function RunLifecycleActions({
     setAbandoningAll(true);
     try {
       const count = await abandonImportRunOpenRows(runId, reasonCode);
+      await onOpenRowsAbandoned(count, reasonCode);
       setAbandonAllOpen(false);
-      onOpenRowsAbandoned(count, reasonCode);
     } catch (err) {
       onError(describeLifecycleError(err));
     } finally {
@@ -244,8 +269,8 @@ export function RunLifecycleActions({
     setFinalizing(true);
     try {
       const result = await finalizeImportRun(runId);
+      await onFinalized(result);
       setConfirmFinalizeOpen(false);
-      onFinalized(result);
     } catch (err) {
       onError(describeLifecycleError(err));
     } finally {
@@ -267,7 +292,7 @@ export function RunLifecycleActions({
 
       {status === "ready_for_review" && hasOpenRows ? (
         <AppButton variant="danger" onClick={() => setAbandonAllOpen(true)}>
-          Abandon Remaining Open Rows
+          {abandonAllLabel}
         </AppButton>
       ) : null}
 
@@ -293,8 +318,8 @@ export function RunLifecycleActions({
 
       <AbandonReasonDialog
         open={abandonAllOpen}
-        title="Abandon Remaining Open Rows"
-        description="This marks every remaining open row in this run as abandoned. Committed and validation-failed rows are unaffected. This cannot be undone."
+        title={abandonAllDialogTitle}
+        description={abandonAllDialogDescription}
         busy={abandoningAll}
         onConfirm={handleAbandonAllOpenRows}
         onCancel={() => (abandoningAll ? null : setAbandonAllOpen(false))}

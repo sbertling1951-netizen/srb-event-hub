@@ -40,6 +40,15 @@ const IMPORT_ORCHESTRATION_SOURCE = readFileSync(
   ),
   "utf8",
 );
+const IMPORT_REVIEW_SOURCE = readFileSync(
+  fileURLToPath(
+    new URL(
+      "../../../components/admin/agenda/AgendaImportReviewWorkspace.tsx",
+      import.meta.url,
+    ),
+  ),
+  "utf8",
+);
 
 function agendaTemplatePath(filename: string) {
   return fileURLToPath(
@@ -285,7 +294,8 @@ test("admin agenda page calls every required governed RPC", () => {
 });
 
 test("Agenda import browser path uses governed staging plus one batch commit and has no direct legacy import RPC", () => {
-  assert.match(PAGE_SOURCE, /runGovernedAgendaImport/);
+  assert.match(PAGE_SOURCE, /stageGovernedAgendaImport/);
+  assert.match(PAGE_SOURCE, /commitAgendaImportRun/);
   assert.equal(PAGE_SOURCE.includes('"import_event_agenda_items"'), false);
   assert.match(IMPORT_ORCHESTRATION_SOURCE, /"create_import_run"/);
   assert.match(IMPORT_ORCHESTRATION_SOURCE, /"stage_import_run_row"/);
@@ -300,17 +310,84 @@ test("Agenda import browser path uses governed staging plus one batch commit and
 test("Agenda mounts the existing generic active/resume/lifecycle/History surfaces without a parallel lifecycle", () => {
   assert.match(PAGE_SOURCE, /<ActiveRunsPanel[\s\S]*?importType="agenda"/);
   assert.match(PAGE_SOURCE, /recoverAgendaImportRun/);
-  assert.match(PAGE_SOURCE, /<RunLifecycleActions/);
-  assert.match(PAGE_SOURCE, /<AbandonRowButton/);
+  assert.match(IMPORT_REVIEW_SOURCE, /<RunLifecycleActions/);
+  assert.match(IMPORT_REVIEW_SOURCE, /<AbandonRowButton/);
   assert.match(
     PAGE_SOURCE,
-    /<ImportHistoryPanel eventId=\{activeEvent\.id\} importType="agenda"/,
+    /<ImportHistoryPanel[\s\S]*?eventId=\{activeEvent\.id\}[\s\S]*?importType="agenda"/,
   );
   assert.match(PAGE_SOURCE, /epicentrax:agenda-import-run:/);
   assert.doesNotMatch(
     `${PAGE_SOURCE}\n${IMPORT_ORCHESTRATION_SOURCE}`,
     /create_agenda_import_lifecycle|list_active_agenda_import_runs|finalize_agenda_import_run/,
   );
+});
+
+test("Stage C separates upload/staging from the explicit confirmed Agenda commit", () => {
+  const upload = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function handleAgendaImportFile"),
+    PAGE_SOURCE.indexOf("async function resumeAgendaImportRun"),
+  );
+  const commit = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function commitCurrentAgendaImportRun"),
+    PAGE_SOURCE.indexOf("async function refreshAgendaImportRun"),
+  );
+  assert.match(upload, /stageGovernedAgendaImport/);
+  assert.doesNotMatch(upload, /commitAgendaImportRun/);
+  assert.match(commit, /commitAgendaImportRun/);
+  assert.match(IMPORT_REVIEW_SOURCE, /<ConfirmDialog/);
+  assert.match(IMPORT_REVIEW_SOURCE, /onClick=\{\(\) => setConfirmCommitOpen\(true\)\}/);
+});
+
+test("Stage C lifecycle callbacks reload governed recovery rather than fabricating row/run state locally", () => {
+  const refresh = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function refreshAgendaImportRun"),
+    PAGE_SOURCE.indexOf("async function handleAgendaImportFinalized"),
+  );
+  assert.match(refresh, /recoverAgendaImportRun\(agendaImportRun\.runId\)/);
+  assert.match(IMPORT_REVIEW_SOURCE, /onRowsChanged/);
+  assert.doesNotMatch(PAGE_SOURCE, /handleAgendaImportRowAbandoned/);
+});
+
+test("finalize is verified through governed recovery, clears the locator, and resets the shared History panel", () => {
+  const finalize = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function handleAgendaImportFinalized"),
+    PAGE_SOURCE.indexOf("if \(hasAgendaAccess === false\)"),
+  );
+  assert.match(finalize, /recoverAgendaImportRun\(agendaImportRun\.runId\)/);
+  assert.match(finalize, /recovered\.status !== "finalized"/);
+  assert.match(finalize, /saveActiveAgendaImportRunId\(activeEvent\.id, null\)/);
+  assert.match(finalize, /setAgendaImportHistoryReloadToken/);
+  assert.match(PAGE_SOURCE, /key=\{agendaImportHistoryReloadToken\}/);
+});
+
+test("reload recovery hands an already-finalized locator to shared History instead of retaining Agenda-specific completed state", () => {
+  const recoveryEffect = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("// The browser stores only a run-id locator"),
+    PAGE_SOURCE.indexOf("function moveItemUp"),
+  );
+  assert.match(recoveryEffect, /recovered\.status === "finalized"/);
+  assert.match(recoveryEffect, /saveActiveAgendaImportRunId\(activeEvent\.id, null\)/);
+  assert.match(recoveryEffect, /setAgendaImportRun\(null\)/);
+  assert.match(recoveryEffect, /Import History below/);
+});
+
+test("an existing active Agenda run disables a second upload and stays resumable", () => {
+  assert.match(PAGE_SOURCE, /agendaActiveImportRunCount > 0/);
+  assert.match(PAGE_SOURCE, /onRunCountChanged=\{handleAgendaActiveRunCountChanged\}/);
+  assert.match(
+    PAGE_SOURCE,
+    /agendaActiveImportRunDiscovery\?\.eventId === activeEvent\.id/,
+  );
+  assert.match(PAGE_SOURCE, /resumeAgendaImportRun/);
+  assert.match(PAGE_SOURCE, /recoverAgendaImportRun/);
+});
+
+test("the Stage C review surface contains no direct Agenda/import-table mutation or legacy import writer", () => {
+  const sources = `${PAGE_SOURCE}\n${IMPORT_REVIEW_SOURCE}\n${IMPORT_ORCHESTRATION_SOURCE}`;
+  assert.doesNotMatch(sources, /\.from\(["'](?:import_runs|import_run_rows)["']\)/);
+  assert.doesNotMatch(sources, /\.from\(["']agenda_items["']\)\s*\.\s*(?:insert|update|delete|upsert)/);
+  assert.doesNotMatch(sources, /["']import_event_agenda_items["']/);
 });
 
 // Strips // line comments before checking for a code-level reference, so
@@ -522,7 +599,7 @@ test("the two-pane responsive workflow grid only activates at the shell's 'wide'
   assert.match(PAGE_SOURCE, /const showTwoColumnAgendaLayout = viewportClass === "wide";/);
   assert.match(
     PAGE_SOURCE,
-    /gridTemplateColumns: showTwoColumnAgendaLayout \? "minmax\(300px, 360px\) 1fr" : "1fr"/,
+    /agendaMode === "items" && showTwoColumnAgendaLayout[\s\S]{0,100}\? "minmax\(300px, 360px\) 1fr"[\s\S]{0,30}: "1fr"/,
   );
 });
 

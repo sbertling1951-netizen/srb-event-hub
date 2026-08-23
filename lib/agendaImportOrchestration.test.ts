@@ -30,7 +30,7 @@ test("Agenda run creation precedes staging and preserves row count plus immutabl
 });
 
 test("every Stage A interpretation is staged unchanged with source context and deterministic validation state", () => {
-  const run = source.slice(source.indexOf("export async function runGovernedAgendaImport"));
+  const run = source.slice(source.indexOf("export async function stageGovernedAgendaImport"));
   assert.match(run, /p_source_row_number: interpretation\.candidate\.source_row_number/);
   assert.match(run, /p_source_payload: rows\[index\]/);
   assert.match(run, /p_normalized_candidate: interpretation\.candidate/);
@@ -59,10 +59,20 @@ test("browser orchestration has no canonical or staging table writes and only th
   assert.equal(source.includes("import_event_agenda_items"), false);
 });
 
-test("one batch commit path owns initial commit and retry; valid rows are never committed one-by-one", () => {
+test("one explicit batch commit path owns first commit and retry; valid rows are never committed one-by-one", () => {
   assert.equal((source.match(/\.rpc\(\s*"commit_agenda_import_run"/g) || []).length, 1);
-  assert.match(source, /retryAgendaImportBatchCommit[\s\S]*attemptAgendaBatchCommit\(runId\)/);
+  assert.match(source, /commitAgendaImportRun[\s\S]*attemptAgendaBatchCommit\(runId\)/);
   assert.doesNotMatch(source, /commit_agenda_import_run_row/);
+});
+
+test("staging stops at recovered persisted truth and never invokes the batch commit", () => {
+  const stage = source.slice(
+    source.indexOf("export async function stageGovernedAgendaImport"),
+    source.indexOf("export async function commitAgendaImportRun"),
+  );
+  assert.match(stage, /batchOutcome: eligibleCount \? "pending_commit" : "no_eligible_rows"/);
+  assert.doesNotMatch(stage, /attemptAgendaBatchCommit\(/);
+  assert.match(stage, /recoverAfterAttempt\(runId, attempt\)/);
 });
 
 test("commit failures are classified into the five bounded Agenda codes and only the code is recorded", () => {
@@ -126,8 +136,9 @@ test("summary reports persisted Agenda row states and abandonment without guessi
     committed: 1,
     validationFailed: 1,
     commitFailed: 1,
-    approvedPendingCommit: 2,
+    approvedPendingCommit: 1,
     abandoned: 1,
+    unresolvedOpen: 2,
   });
   assert.deepEqual(summarizeAgendaImportRows([]), {
     processed: 0,
@@ -136,5 +147,6 @@ test("summary reports persisted Agenda row states and abandonment without guessi
     commitFailed: 0,
     approvedPendingCommit: 0,
     abandoned: 0,
+    unresolvedOpen: 0,
   });
 });

@@ -1,6 +1,6 @@
 # Governed Imports Staging Architecture
 
-Status: Live — Stage 1 (staging), Stage 2 (contract), Stage 3 (canonical commit), Stage 3.1 (failure recording), Stage 1.1 (recovery), Stage 4 (application-layer cutover), Stage 5A (Vendor/Agenda doors), Stage 5B (Vendor normalization/commit), Stage 5B.3 (Vendor application-layer cutover), Agenda Stage A (pure interpretation contract), Agenda Stage B (governed staging plus atomic batch commit), and Import Run Lifecycle + History UI hookup (`close_import_run_staging`, `abandon_import_run_row`, `abandon_import_run_open_rows`, `finalize_import_run`/`get_import_run_status`, `list_active_import_runs`, `list_finalized_import_run_history`, `get_finalized_import_run_history_detail`) are all in production use. See "Import-run lifecycle, abandonment, finalization, and History" and "Import Run Lifecycle + History UI hookup" below.
+Status: Live — Stage 1 (staging), Stage 2 (contract), Stage 3 (canonical commit), Stage 3.1 (failure recording), Stage 1.1 (recovery), Stage 4 (application-layer cutover), Stage 5A (Vendor/Agenda doors), Stage 5B (Vendor normalization/commit), Stage 5B.3 (Vendor application-layer cutover), Agenda Stage A (pure interpretation contract), Agenda Stage B (governed staging plus atomic batch commit), Agenda Stage C (operator review/resolution), and Import Run Lifecycle + History UI hookup (`close_import_run_staging`, `abandon_import_run_row`, `abandon_import_run_open_rows`, `finalize_import_run`/`get_import_run_status`, `list_active_import_runs`, `list_finalized_import_run_history`, `get_finalized_import_run_history_detail`) are all in production use. See "Import-run lifecycle, abandonment, finalization, and History" and "Import Run Lifecycle + History UI hookup" below.
 
 ## Boundary
 
@@ -114,6 +114,47 @@ Agenda file interpretation remains the unchanged Stage A contract in `lib/agenda
 
 Successful rows persist the canonical Agenda item id, source fingerprint, committed Agenda version, and batch size through the generic commit-result envelope. A separate Imports-owned failure recorder accepts only bounded Agenda failure codes and stores no raw database/browser exception text; a successful same-run retry clears that failure evidence, while a committed retry is `already_committed` without a second version advance or ledger entry. Agenda uses the existing active discovery, governed recovery, close, abandonment, finalization, and safe shared History operations/UI without an Agenda-specific lifecycle.
 
+## Agenda Governed Imports Stage C
+
+Stage C changes only the operator orchestration and presentation. Upload now
+ends after the unchanged Stage A interpreter has run once, every source row has
+been staged, validation/review state has been persisted, and the run has been
+recovered through `get_managed_import_run_recovery`. It does not invoke the
+Agenda batch commit. The operator reviews the persisted candidates, may skip
+eligible open rows through the shared governed abandonment operation, and then
+explicitly closes source staging. Only a recovered `ready_for_review` run with
+eligible non-abandoned rows presents the confirmed Agenda import action. First
+commit and retry both call the same `commit_agenda_import_run` client wrapper;
+there is no second commit implementation.
+
+`AgendaImportReviewWorkspace` presents the source file/run identity, persisted
+run counts, normalized Agenda fields, lifecycle status, validation guidance,
+and the next governed action without exposing raw JSON or database enum names.
+Stage A validation codes remain unchanged in persisted evidence; the workspace
+maps them to operator-facing explanations. The duplicate code explicitly tells
+the operator that every same-file copy is blocked and no winner was selected.
+Validation-failed rows remain terminal evidence under the existing lifecycle:
+they cannot be edited, approved, or abandoned in the browser, and correction
+requires a new source upload/run. Open approved or commit-failed rows may be
+skipped with the shared bounded-reason dialog.
+
+Every row abandonment, run-wide abandonment, source-staging closure, and
+finalization callback reloads the run through governed recovery before changing
+the Agenda review state. Commit also returns recovered persisted truth. A stale
+Agenda version is shown as a bounded instruction to skip the remaining open
+rows and start a new run; the UI never weakens or retries around the version
+fence. Finalization is explicit, verified through recovery, clears only the
+browser run-id locator, and hands the completed run to the existing shared
+History panel. Active-run discovery reports resumable Agenda runs and prevents
+the upload control from offering a competing run while one is open.
+
+The run summary is a small import-type-agnostic presentation component. Agenda
+candidate rendering stays Agenda-specific. Wide layouts use the shared
+`DataTable`; compact layouts use the shared named `ResponsiveList`, preserving
+the same fields and actions in stacked reading order with no hover dependency
+or fixed page width. Import mode is a dedicated workspace: the Agenda item
+editor, calendar/list, and template catalog remain in Agenda Items mode.
+
 ## Stage 5A: Imports Service Center, contextual routing, and template system
 
 `/admin/imports` is a true shared Imports Service Center, not an Attendee-only tool: **Domain Workspace -> Contextual Action -> Shared Service Center.** Attendees, Agenda, and Vendors each expose a contextual "Import X" action that navigates into this one shared workspace with a `?type=` selector (`lib/importTypeRouting.ts`); the workspace itself reads and validates that selector and falls back to its own landing view ("What do you want to import?") for a missing or unrecognized value. This is a URL contract only -- it grants no authority. Each door's own governed workflow enforces its own authority independently: **multiple doors, one governed workflow (or, for Agenda, one governed *implementation*) per import type.**
@@ -138,4 +179,7 @@ The "Vendor Library" section previously embedded in `/admin/imports` (a second, 
 
 That document (Proposed v1.0, 2026-08-07) predates this governed Imports architecture and recommended folding `/admin/imports` entirely into the Attendees module, narrowed to attendee-roster import alone. Stage 1's independent `event.imports.manage` authority and staging schema (built after that proposal) already established Imports as its own governed domain; this stage's shared Service Center is the deliberate continuation of that decision, not a reopening of it. That document's specific consolidation findings are honored exactly as written -- the Vendor Library duplicate relocates to Vendors, and Agenda's import converges on one implementation -- only its "fold Imports into Attendees" framing is superseded by the now-implemented independent Imports domain.
 
-Remaining Imports/service-center work, explicitly out of scope for Agenda Stage B: Data Review / Saved Attendee List redesign into a governed editor; further Central UI Standard polish; and any later Agenda review UI or generic import UX redesign.
+Remaining Imports/service-center work outside Agenda Stage C: Data Review /
+Saved Attendee List redesign into a governed editor and any later, separately
+authorized import-type UI work. Stage C does not begin another import type or a
+generic Imports redesign.

@@ -2,9 +2,9 @@
 
 // Stage: Import Run Lifecycle + History UI hookup. Discovery panel for
 // active (staging / ready_for_review) import runs on the selected Event,
-// shared by the Attendee and Vendor doors. This component only lists and
+// shared by the governed import doors. This component only lists and
 // requests a resume -- it never recovers a run itself. Recovery stays each
-// door's own concern (recoverAttendeeImportRun / recoverVendorImportRun),
+// door's own concern (for example recoverAgendaImportRun),
 // which already revalidates authority and persisted truth server-side; this
 // panel only supplies the run id to resume, exactly like the existing
 // localStorage locator already does, never row/commit truth.
@@ -43,6 +43,9 @@ export type ActiveRunsPanelProps = {
   importType: string;
   onResume: (runId: string) => void;
   resumingRunId?: string | null;
+  /** Optional display-state notification for a door that must disable its
+   * new-upload control while any resumable run already exists. */
+  onRunCountChanged?: (count: number | null) => void;
   /** Bump to force a reload (e.g. after a run in this list is finalized
    * elsewhere and should drop out of the active set). */
   reloadToken?: number | string;
@@ -53,6 +56,7 @@ export function ActiveRunsPanel({
   importType,
   onResume,
   resumingRunId = null,
+  onRunCountChanged,
   reloadToken,
 }: ActiveRunsPanelProps) {
   const [runs, setRuns] = useState<ActiveImportRunSummary[]>([]);
@@ -62,10 +66,12 @@ export function ActiveRunsPanel({
   useEffect(() => {
     if (!eventId) {
       setRuns([]);
+      onRunCountChanged?.(0);
       return;
     }
 
     let cancelled = false;
+    onRunCountChanged?.(null);
     setLoading(true);
     setError(null);
 
@@ -75,11 +81,14 @@ export function ActiveRunsPanel({
         if (cancelled) {
           return;
         }
-        setRuns(all.filter((run) => run.importType === importType));
+        const matchingRuns = all.filter((run) => run.importType === importType);
+        setRuns(matchingRuns);
+        onRunCountChanged?.(matchingRuns.length);
       } catch (err) {
         if (!cancelled) {
           setError(describeLifecycleError(err));
           setRuns([]);
+          onRunCountChanged?.(null);
         }
       } finally {
         if (!cancelled) {
@@ -91,7 +100,7 @@ export function ActiveRunsPanel({
     return () => {
       cancelled = true;
     };
-  }, [eventId, importType, reloadToken]);
+  }, [eventId, importType, onRunCountChanged, reloadToken]);
 
   if (!eventId) {
     return null;

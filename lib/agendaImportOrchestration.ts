@@ -1,8 +1,9 @@
-// Agenda Governed Imports Stage B client orchestration. File parsing remains
-// the Agenda page's browser-I/O concern; interpretation remains exclusively
-// lib/agendaImportContract.ts; source persistence/recovery remains the generic
-// governed Imports architecture; and canonical mutation is one database-side
-// Agenda batch through commit_agenda_import_run.
+// Agenda Governed Imports Stage B/Stage C client orchestration. File parsing
+// remains the Agenda page's browser-I/O concern; interpretation remains
+// exclusively lib/agendaImportContract.ts; source persistence/recovery remains
+// the generic governed Imports architecture; and canonical mutation is one
+// explicitly confirmed database-side Agenda batch through
+// commit_agenda_import_run.
 
 import {
   type AgendaImportCandidate,
@@ -72,6 +73,7 @@ export type AgendaImportRunSummary = {
   commitFailed: number;
   approvedPendingCommit: number;
   abandoned: number;
+  unresolvedOpen: number;
 };
 
 type AgendaBatchAttempt = Pick<
@@ -223,7 +225,7 @@ async function recoverAfterAttempt(
   return { ...recovered, ...attempt };
 }
 
-export async function runGovernedAgendaImport(params: {
+export async function stageGovernedAgendaImport(params: {
   eventId: string;
   sourceFilename: string | null;
   rows: RawAgendaImportRow[];
@@ -289,19 +291,17 @@ export async function runGovernedAgendaImport(params: {
     }
   }
 
-  const attempt = eligibleCount
-    ? await attemptAgendaBatchCommit(runId)
-    : {
-        batchOutcome: "no_eligible_rows" as const,
-        importedCount: 0,
-        newVersion: expectedAgendaVersion,
-        orchestrationError: null,
-      };
+  const attempt: AgendaBatchAttempt = {
+    batchOutcome: eligibleCount ? "pending_commit" : "no_eligible_rows",
+    importedCount: 0,
+    newVersion: null,
+    orchestrationError: null,
+  };
 
   return recoverAfterAttempt(runId, attempt);
 }
 
-export async function retryAgendaImportBatchCommit(
+export async function commitAgendaImportRun(
   runId: string,
 ): Promise<AgendaImportRunResult> {
   return recoverAfterAttempt(runId, await attemptAgendaBatchCommit(runId));
@@ -316,10 +316,18 @@ export function summarizeAgendaImportRows(
     validationFailed: rows.filter(
       (row) => row.rowState === "validation_failed",
     ).length,
-    commitFailed: rows.filter((row) => row.rowState === "commit_failed")
-      .length,
-    approvedPendingCommit: rows.filter((row) => row.rowState === "approved")
-      .length,
+    commitFailed: rows.filter(
+      (row) => row.rowState === "commit_failed" && row.abandonedAt === null,
+    ).length,
+    approvedPendingCommit: rows.filter(
+      (row) => row.rowState === "approved" && row.abandonedAt === null,
+    ).length,
     abandoned: rows.filter((row) => row.abandonedAt !== null).length,
+    unresolvedOpen: rows.filter(
+      (row) =>
+        row.abandonedAt === null &&
+        row.rowState !== "committed" &&
+        row.rowState !== "validation_failed",
+    ).length,
   };
 }

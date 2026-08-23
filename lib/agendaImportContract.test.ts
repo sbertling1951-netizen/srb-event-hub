@@ -349,7 +349,7 @@ test("Stage B page delegates exactly one unchanged Stage A normalization pass be
       .length,
     1,
   );
-  assert.match(PAGE_SOURCE, /runGovernedAgendaImport\(/);
+  assert.match(PAGE_SOURCE, /stageGovernedAgendaImport\(/);
   assert.match(PAGE_SOURCE, /expectedAgendaVersion: agendaVersionRef\.current/);
   assert.match(PAGE_SOURCE, /endsWith\("\.xlsx"\) \|\| lowerName\.endsWith\("\.xls"\)/);
 });

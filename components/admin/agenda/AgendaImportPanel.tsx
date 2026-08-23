@@ -12,6 +12,8 @@ type Props = {
   agendaMode: string;
   activeEvent: EventSummary | null;
   importBusy: boolean;
+  hasActiveRun: boolean;
+  activeRunCheckPending: boolean;
   importStatus: string;
   onImportFile: (file: File) => Promise<void>;
 };
@@ -20,6 +22,8 @@ export default function AgendaImportPanel({
   agendaMode,
   activeEvent,
   importBusy,
+  hasActiveRun,
+  activeRunCheckPending,
   importStatus,
   onImportFile,
 }: Props) {
@@ -79,7 +83,9 @@ export default function AgendaImportPanel({
               {...controlProps}
               type="file"
               accept=".csv,.xlsx,.xls"
-              disabled={importBusy || !activeEvent}
+              disabled={
+                importBusy || hasActiveRun || activeRunCheckPending || !activeEvent
+              }
               onChange={(e) => {
                 const file = e.target.files?.[0];
 
@@ -90,6 +96,16 @@ export default function AgendaImportPanel({
             />
           )}
         </Field>
+
+        {hasActiveRun ? (
+          <Alert tone="info">
+            An Agenda import run is already open for this Event. Resume and complete it before uploading another file.
+          </Alert>
+        ) : activeRunCheckPending ? (
+          <Alert tone="neutral">
+            Checking this Event for an existing Agenda import run before enabling upload.
+          </Alert>
+        ) : null}
 
         <Alert tone="neutral">{importStatus}</Alert>
       </div>
