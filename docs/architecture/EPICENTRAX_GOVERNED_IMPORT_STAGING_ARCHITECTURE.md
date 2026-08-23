@@ -39,3 +39,9 @@ Its SHA-256 fingerprint covers the stable normalized candidate (including activi
 ## Stage 3 governed attendee commit
 
 `commit_attendee_import_run_row(row_id)` requires both `event.imports.manage` and `event.attendees.manage`, consumes only the persisted approved row, and commits attendee fields, Pilot household evidence, activities, capacity audit/increase, and staged result in one transaction. Entry ID and email must resolve to the same attendee or a new registration; disagreement returns `needs_review` without canonical mutation. Co-Pilot remains solely on `attendees.copilot_*`; no Co-Pilot household row is written. Empty normalized fields do not clear existing registration data. The current live UI is still pending Stage 4 migration.
+
+## Stage 3.1 commit-failure outcome
+
+If the separate Stage 3 canonical transaction rolls back, Imports records its outcome through `record_attendee_import_run_row_commit_failure(row_id, failure_code)`. It requires only `event.imports.manage`, resolves the row/run/Event server-side, and may transition only an approved attendee-roster row in a `staging` or `ready_for_review` run to `commit_failed`. It accepts one of four server-defined codes (`canonical_commit_failed`, `canonical_commit_denied`, `canonical_commit_conflict`, or `canonical_commit_unavailable`) and stores only the matching bounded admin-readable message; it accepts no caller-supplied exception text.
+
+An identical repeat is idempotent. A different repeat is rejected so one current outcome cannot silently overwrite another. Finalized runs are never changed, because no durable attempt token exists to prove an earlier eligible attempt. `commit_failed` remains eligible for the existing Stage 3 retry; a later successful retry changes it to `committed` and clears the prior failure result. Stage 3.1 writes only Imports state and never authorizes or performs attendee, household, activity, capacity, Person/Participation, Parking, or Arrival mutation.
