@@ -26,6 +26,8 @@ All mutation operations require an authenticated caller, `event.imports.manage` 
 
 `event.imports.manage` does not confer attendee, agenda, vendor, or any other domain mutation authority. Future Imports-to-domain commits require both Imports service authority and the relevant domain's governed authority.
 
+`event.imports.view` remains the general status/read capability. `get_managed_import_run_recovery(run_id)` is intentionally distinct: it requires `event.imports.manage` because it recovers one explicitly requested Event-scoped run for the active management workflow. It returns persisted run metadata and ordered row lifecycle/outcome fields, including the normalized candidate required to rebuild the active preview, but never raw source payload, auth evidence, or internal errors. Finalized runs remain readable by exact authorized ID so a reload can show their truthful completed outcome; this is not an Import History browser. Stage 4 must use this RPC, never direct table reads.
+
 ## Legacy compatibility
 
 The legacy `event_import_rows` table and the client-orchestrated `/admin/imports` attendee workflow remain unchanged in Stage 1. They are not the new staging system and are not retired or repurposed here. A later attendee-domain commit stage must migrate the workflow deliberately.
