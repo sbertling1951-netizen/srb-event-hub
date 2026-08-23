@@ -329,6 +329,15 @@ export function describeLifecycleError(err: unknown): string {
     import_run_not_finalizable: "This run could not be found.",
     event_archived: "This Event is archived and can no longer be changed.",
     event_lifecycle_indeterminate: "This Event's lifecycle state could not be determined.",
+    import_run_not_agenda: "This run is not an Agenda import.",
+    import_run_not_correctable:
+      "This row can no longer be corrected -- the run is finalized, the row is committed or abandoned, or it is retry-owned.",
+    corrected_candidate_malformed:
+      "The corrected values are not a valid Agenda row. Check Title, Agenda Date, and Start Time.",
+    stale_correction_conflict:
+      "This row changed since you started editing it. Reload the row and try your correction again.",
+    invalid_correction_reason_code: "Choose one of the approved correction reasons.",
+    invalid_correction_validation_state: "Could not determine the corrected row's validation outcome.",
   };
 
   if (known[message]) {

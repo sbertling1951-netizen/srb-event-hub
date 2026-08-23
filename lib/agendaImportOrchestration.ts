@@ -9,6 +9,8 @@ import {
   type AgendaImportCandidate,
   type AgendaImportEventDateContext,
   type AgendaImportIssue,
+  type AgendaImportRowContext,
+  interpretAgendaImportRow,
   interpretAgendaImportRows,
   type RawAgendaImportRow,
 } from "@/lib/agendaImportContract";
@@ -34,6 +36,24 @@ export type AgendaImportCommitError = {
   message: string;
 };
 
+export type AgendaImportCorrectionReasonCode =
+  | "data_entry_error"
+  | "source_file_error"
+  | "ambiguous_date_resolved"
+  | "duplicate_conflict_resolved"
+  | "other";
+
+export const AGENDA_CORRECTION_REASON_OPTIONS: {
+  code: AgendaImportCorrectionReasonCode;
+  label: string;
+}[] = [
+  { code: "data_entry_error", label: "Data entry error" },
+  { code: "source_file_error", label: "Source file error" },
+  { code: "ambiguous_date_resolved", label: "Ambiguous date resolved" },
+  { code: "duplicate_conflict_resolved", label: "Duplicate conflict resolved" },
+  { code: "other", label: "Other" },
+];
+
 export type AgendaImportRowResult = {
   rowId: string;
   sourceRowNumber: number;
@@ -45,6 +65,16 @@ export type AgendaImportRowResult = {
   abandonedAt: string | null;
   abandonedByAuthUserId: string | null;
   abandonmentReasonCode: string | null;
+  /** 0 when this row has never been through governed correction. */
+  correctionRevision: number;
+  correctionCount: number;
+  /** The latest correction's own candidate/issues, independent of whether
+   * that latest attempt was valid -- used to preload the Edit Row dialog
+   * with the operator's own most recent edit, not the frozen original. */
+  latestCorrectedCandidate: AgendaImportCandidate | null;
+  latestCorrectionIssues: AgendaImportIssue[];
+  latestCorrectedByAuthUserId: string | null;
+  latestCorrectedAt: string | null;
 };
 
 export type AgendaImportRunStatus = "staging" | "ready_for_review" | "finalized";
@@ -188,33 +218,125 @@ export async function recoverAgendaImportRun(
 ): Promise<
   Omit<AgendaImportRunResult, "batchOutcome" | "importedCount" | "newVersion" | "orchestrationError">
 > {
-  const { data, error } = await supabase.rpc("get_managed_import_run_recovery", {
-    p_import_run_id: runId,
-  });
+  const [{ data, error }, correctionResult] = await Promise.all([
+    supabase.rpc("get_managed_import_run_recovery", { p_import_run_id: runId }),
+    supabase.rpc("list_agenda_import_row_correction_summaries", {
+      p_import_run_id: runId,
+    }),
+  ]);
   if (error) {
     throw error;
   }
   if (data?.run?.import_type !== "agenda") {
     throw new Error("import_run_not_agenda");
   }
+  // A denial here (e.g. a non-Agenda run, already rejected above) would
+  // throw; any other error is surfaced the same way rather than silently
+  // treating "corrections unknown" as "no corrections".
+  if (correctionResult.error) {
+    throw correctionResult.error;
+  }
+
+  const correctionByRow = new Map<string, any>(
+    (correctionResult.data || []).map((c: any) => [c.import_run_row_id, c]),
+  );
 
   return {
     runId: data.run.id,
     eventId: data.run.event_id,
     sourceFilename: data.run.source_filename,
     status: data.run.status,
-    rows: (data.rows || []).map((row: any) => ({
-      rowId: row.id,
-      sourceRowNumber: row.source_row_number,
-      candidate: row.normalized_candidate,
-      issues: row.validation_details || [],
-      rowState: row.row_state as AgendaImportRowState,
-      canonicalAgendaItemId: row.canonical_target_id,
-      commitError: row.commit_error,
-      abandonedAt: row.abandoned_at ?? null,
-      abandonedByAuthUserId: row.abandoned_by_auth_user_id ?? null,
-      abandonmentReasonCode: row.abandonment_reason_code ?? null,
-    })),
+    rows: (data.rows || []).map((row: any) => {
+      const correction = correctionByRow.get(row.id);
+      return {
+        rowId: row.id,
+        sourceRowNumber: row.source_row_number,
+        candidate: row.normalized_candidate,
+        issues: row.validation_details || [],
+        rowState: row.row_state as AgendaImportRowState,
+        canonicalAgendaItemId: row.canonical_target_id,
+        commitError: row.commit_error,
+        abandonedAt: row.abandoned_at ?? null,
+        abandonedByAuthUserId: row.abandoned_by_auth_user_id ?? null,
+        abandonmentReasonCode: row.abandonment_reason_code ?? null,
+        correctionRevision: correction ? Number(correction.latest_revision) : 0,
+        correctionCount: correction ? Number(correction.correction_count) : 0,
+        latestCorrectedCandidate: correction
+          ? (correction.latest_corrected_candidate as AgendaImportCandidate)
+          : null,
+        latestCorrectionIssues: correction
+          ? (correction.latest_validation_details as AgendaImportIssue[]) || []
+          : [],
+        latestCorrectedByAuthUserId: correction
+          ? correction.latest_corrected_by_auth_user_id
+          : null,
+        latestCorrectedAt: correction ? correction.latest_corrected_at : null,
+      };
+    }),
+  };
+}
+
+/**
+ * Recompute a single row's candidate through the exact same, unchanged
+ * Stage A interpreter used for original ingestion (same human-friendly
+ * date/time semantics: "11/4/26", "1300", "1:30 PM", ...), given the
+ * operator's edited preferred-heading field values. This is the only place
+ * a corrected candidate is produced -- correct_agenda_import_run_row never
+ * re-parses source text itself, only re-validates the resulting candidate's
+ * shape.
+ */
+export function interpretAgendaCorrection(
+  editedFields: RawAgendaImportRow,
+  context: AgendaImportRowContext,
+) {
+  return interpretAgendaImportRow(editedFields, context);
+}
+
+export type AgendaCorrectionResult = {
+  rowId: string;
+  rowState: AgendaImportRowState;
+  validationState: "valid" | "invalid";
+  reviewState: string;
+  revision: number;
+};
+
+/**
+ * Submit a governed correction for one staged Agenda row. The candidate and
+ * its validation outcome must already be computed by
+ * interpretAgendaCorrection (or interpretAgendaImportRow directly) -- this
+ * function only calls the governed RPC and never re-derives Stage A logic
+ * itself. expectedRevision must be the row's currently known
+ * correctionRevision (0 if never corrected); a stale value is rejected by
+ * the server rather than silently overwriting a newer correction.
+ */
+export async function correctAgendaImportRow(params: {
+  rowId: string;
+  expectedRevision: number;
+  candidate: AgendaImportCandidate;
+  validationState: "valid" | "validation_failed";
+  issues: AgendaImportIssue[];
+  reasonCode?: AgendaImportCorrectionReasonCode | null;
+}): Promise<AgendaCorrectionResult> {
+  const { rowId, expectedRevision, candidate, validationState, issues, reasonCode } =
+    params;
+  const { data, error } = await supabase.rpc("correct_agenda_import_run_row", {
+    p_import_run_row_id: rowId,
+    p_expected_revision: expectedRevision,
+    p_corrected_candidate: candidate,
+    p_validation_state: validationState === "valid" ? "valid" : "invalid",
+    p_validation_details: issues,
+    p_correction_reason_code: reasonCode ?? null,
+  });
+  if (error) {
+    throw error;
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  return {
+    rowId: result.import_run_row_id,
+    rowState: result.row_state as AgendaImportRowState,
+    validationState: result.validation_state,
+    reviewState: result.review_state,
+    revision: Number(result.revision),
   };
 }
 

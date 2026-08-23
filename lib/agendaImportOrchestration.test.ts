@@ -13,12 +13,27 @@ const source = readFileSync(
   "utf8",
 );
 
-test("Stage B delegates exactly one interpretation pass plus Event date context to the Stage A batch contract", () => {
+test("original file ingestion runs Stage A interpretation exactly once, via the batch contract, plus Event date context", () => {
   assert.equal((source.match(/interpretAgendaImportRows\(/g) || []).length, 1);
   assert.match(source, /interpretAgendaImportRows\(rows, eventDateContext\)/);
-  assert.equal(/interpretAgendaImportRow\(/.test(source), false);
   assert.equal(/classifyAgendaFileDuplicates\(/.test(source), false);
   assert.equal(/deriveAgendaExternalId\(/.test(source), false);
+});
+
+test("row correction reuses the exact same, unchanged per-row Stage A interpreter -- no second, divergent normalization implementation", () => {
+  // The only call to the singular interpretAgendaImportRow (as opposed to
+  // the batch interpretAgendaImportRows used for original ingestion above)
+  // is interpretAgendaCorrection's direct pass-through -- proving
+  // correction reuses Stage A rather than reimplementing any part of it.
+  assert.equal((source.match(/interpretAgendaImportRow\(/g) || []).length, 1);
+  assert.match(
+    source,
+    /export function interpretAgendaCorrection\([\s\S]*?return interpretAgendaImportRow\(editedFields, context\);/,
+  );
+  // No independent parsing of dates, times, aliases, or duplicate identity
+  // exists in this file -- interpretAgendaCorrection's own body is a pure
+  // pass-through to the unchanged Stage A function, not a reimplementation.
+  assert.equal(/normalizeImportDate|normalizeImportTimeOnly|deriveAgendaExternalId|classifyAgendaFileDuplicates/.test(source), false);
 });
 
 test("Agenda run creation precedes staging and preserves row count, Event date context, and expected-version evidence", () => {
@@ -41,7 +56,7 @@ test("every Stage A interpretation is staged unchanged with source context and d
   assert.match(run, /validationState === "invalid" \? "unreviewed" : "approved"/);
 });
 
-test("browser orchestration has no canonical or staging table writes and only the six governed Stage B operations", () => {
+test("browser orchestration has no canonical or staging table writes and only the eight governed Stage B/correction operations", () => {
   assert.equal(/supabase\.from|\.from\(["']/.test(source), false);
   const allowed = new Set([
     "create_import_run",
@@ -50,6 +65,8 @@ test("browser orchestration has no canonical or staging table writes and only th
     "commit_agenda_import_run",
     "record_agenda_import_run_commit_failure",
     "get_managed_import_run_recovery",
+    "list_agenda_import_row_correction_summaries",
+    "correct_agenda_import_run_row",
   ]);
   const rpcCalls = [...source.matchAll(/\.rpc\(\s*["']([a-z_]+)["']/g)].map(
     (match) => match[1],
@@ -123,6 +140,12 @@ test("summary reports persisted Agenda row states and abandonment without guessi
     abandonedAt: null,
     abandonedByAuthUserId: null,
     abandonmentReasonCode: null,
+    correctionRevision: 0,
+    correctionCount: 0,
+    latestCorrectedCandidate: null,
+    latestCorrectionIssues: [],
+    latestCorrectedByAuthUserId: null,
+    latestCorrectedAt: null,
     ...overrides,
   });
   const rows = [
@@ -151,4 +174,28 @@ test("summary reports persisted Agenda row states and abandonment without guessi
     abandoned: 0,
     unresolvedOpen: 0,
   });
+});
+
+test("correctAgendaImportRow submits exactly the recomputed candidate/validation outcome plus a fencing revision to the governed RPC", () => {
+  const fn = source.slice(
+    source.indexOf("export async function correctAgendaImportRow"),
+    source.indexOf("async function recoverAfterAttempt"),
+  );
+  assert.match(fn, /\.rpc\("correct_agenda_import_run_row", \{/);
+  assert.match(fn, /p_import_run_row_id: rowId/);
+  assert.match(fn, /p_expected_revision: expectedRevision/);
+  assert.match(fn, /p_corrected_candidate: candidate/);
+  assert.match(fn, /p_validation_details: issues/);
+  assert.doesNotMatch(fn, /p_event_id/);
+});
+
+test("recovery merges run-scoped correction summaries by row id rather than guessing per-row correction state", () => {
+  const recovery = source.slice(
+    source.indexOf("export async function recoverAgendaImportRun"),
+    source.indexOf("export function interpretAgendaCorrection"),
+  );
+  assert.match(recovery, /list_agenda_import_row_correction_summaries/);
+  assert.match(recovery, /correctionByRow\.get\(row\.id\)/);
+  assert.match(recovery, /correctionRevision: correction \? Number\(correction\.latest_revision\) : 0/);
+  assert.match(recovery, /correctionCount: correction \? Number\(correction\.correction_count\) : 0/);
 });

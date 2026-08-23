@@ -2632,6 +2632,10 @@ function AdminAgendaPageInner() {
               status={agendaImportRunStatus}
               compact={isCompact}
               committing={committingAgendaImport}
+              eventDateContext={{
+                event_start_date: activeEvent?.start_date ?? null,
+                event_end_date: activeEvent?.end_date ?? null,
+              }}
               onRowsChanged={refreshAgendaImportRun}
               onCommit={commitCurrentAgendaImportRun}
               onFinalized={handleAgendaImportFinalized}

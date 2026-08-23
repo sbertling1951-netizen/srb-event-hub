@@ -14,7 +14,11 @@ import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { FormActions } from "@/components/ui/FormActions";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
-import type { AgendaImportIssueCode } from "@/lib/agendaImportContract";
+import type { AgendaImportEventDateContext } from "@/lib/agendaImportContract";
+import {
+  describeAgendaCommitFailure,
+  describeAgendaValidationIssue,
+} from "@/lib/agendaImportMessages";
 import {
   type AgendaImportRowResult,
   type AgendaImportRunResult,
@@ -25,37 +29,12 @@ import {
   type ImportRunLifecycleStatus,
 } from "@/lib/importLifecycleOrchestration";
 
-const VALIDATION_MESSAGES: Record<AgendaImportIssueCode, string> = {
-  missing_agenda_title:
-    "Title is missing. Add it to the source row, then upload a new import run.",
-  missing_agenda_date:
-    "Agenda Date is missing. Add it to the source row, then upload a new import run.",
-  invalid_agenda_date:
-    "Agenda Date is not a valid calendar date. Correct the source row, then upload a new import run.",
-  missing_agenda_start_time:
-    "Start Time is missing. Add it to the source row, then upload a new import run.",
-  invalid_agenda_start_time:
-    "Start Time is not valid. Correct the source row, then upload a new import run.",
-  invalid_agenda_end_time:
-    "End Time is not valid. Correct the source row, then upload a new import run.",
-  invalid_agenda_sort_order:
-    "Sort Order must be a whole number of zero or greater. Correct the source row, then upload a new import run.",
-  duplicate_agenda_external_id_in_file:
-    "All rows with this same title, date, and start time are blocked. No duplicate was selected as a winner. Correct or remove every duplicate in the source file, then upload a new import run.",
-};
+import { AgendaEditRowDialog } from "./AgendaEditRowDialog";
 
-const COMMIT_FAILURE_MESSAGES: Record<string, string> = {
-  agenda_commit_failed:
-    "The Agenda import did not complete. Review the run and retry when the underlying issue is resolved.",
-  agenda_commit_denied:
-    "The Agenda import was denied by its authority or Event lifecycle boundary.",
-  agenda_commit_conflict:
-    "The Agenda import encountered a governed data conflict. Review the current Agenda before retrying.",
-  agenda_commit_unavailable:
-    "The Agenda import service was unavailable. The batch was rolled back and can be retried.",
-  agenda_commit_stale_version:
-    "The Agenda changed after this import was staged. This run cannot overwrite newer Agenda data; skip its remaining open rows and start a new import from the current Agenda version.",
-};
+// Re-exported for existing external callers (this module was their
+// original home before lib/agendaImportMessages.ts was split out to avoid
+// a component<->component import cycle with AgendaEditRowDialog).
+export { describeAgendaCommitFailure, describeAgendaValidationIssue };
 
 const RUN_STATUS: Record<
   ImportRunLifecycleStatus,
@@ -66,23 +45,6 @@ const RUN_STATUS: Record<
   finalized: { label: "Finalized", tone: "success" },
 };
 
-export function describeAgendaValidationIssue(code: string): string {
-  return (
-    VALIDATION_MESSAGES[code as AgendaImportIssueCode] ||
-    "This row did not pass Agenda import validation. Correct the source row, then upload a new import run."
-  );
-}
-
-export function describeAgendaCommitFailure(code: string | null): string {
-  if (!code) {
-    return "The Agenda import did not complete. Review the run before retrying.";
-  }
-  return (
-    COMMIT_FAILURE_MESSAGES[code] ||
-    "The Agenda import did not complete. The batch was rolled back; review the run before retrying."
-  );
-}
-
 export function getAgendaImportRowStatus(row: AgendaImportRowResult): {
   label: string;
   tone: StatusBadgeTone;
@@ -92,9 +54,16 @@ export function getAgendaImportRowStatus(row: AgendaImportRowResult): {
   }
   switch (row.rowState) {
     case "committed":
-      return { label: "Imported", tone: "success" };
+      return row.correctionCount > 0
+        ? { label: "Imported (Corrected)", tone: "success" }
+        : { label: "Imported", tone: "success" };
     case "validation_failed":
-      return { label: "Cannot Import", tone: "danger" };
+      // A correction attempt was made and is still invalid: this is an
+      // actionable, in-progress state (Needs Attention), not the original
+      // never-touched "Cannot Import" dead end.
+      return row.correctionCount > 0
+        ? { label: "Needs Attention", tone: "warning" }
+        : { label: "Cannot Import", tone: "danger" };
     case "approved":
       return { label: "Ready to Import", tone: "info" };
     case "commit_failed":
@@ -176,27 +145,63 @@ function AgendaRowOutcome({ row }: { row: AgendaImportRowResult }) {
   );
 }
 
+const CORRECTABLE_ROW_STATES = new Set(["validation_failed", "approved"]);
+
 function AgendaRowAction({
   row,
+  runStatus,
+  eventDateContext,
   onRowsChanged,
   onError,
 }: {
   row: AgendaImportRowResult;
+  runStatus: ImportRunLifecycleStatus;
+  eventDateContext: AgendaImportEventDateContext;
   onRowsChanged: (message: string) => void | Promise<void>;
   onError: (message: string) => void;
 }) {
+  const [editOpen, setEditOpen] = useState(false);
+  const canEdit =
+    runStatus !== "finalized" &&
+    row.abandonedAt === null &&
+    CORRECTABLE_ROW_STATES.has(row.rowState);
+
   return (
-    <AbandonRowButton
-      row={row}
-      triggerLabel="Skip Row"
-      triggerAriaLabel={`Skip source row ${row.sourceRowNumber}: ${row.candidate.title || "Untitled Agenda row"}`}
-      dialogTitle="Skip This Agenda Row"
-      dialogDescription="Skip this row permanently for this import run? Its source and validation evidence remain in the run, but it will not be imported or retried. This cannot be undone."
-      onAbandoned={() =>
-        onRowsChanged(`Source row ${row.sourceRowNumber} was skipped. The governed run has been refreshed.`)
-      }
-      onError={onError}
-    />
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
+      {canEdit ? (
+        <AppButton
+          variant="secondary"
+          aria-label={`Edit source row ${row.sourceRowNumber}: ${row.candidate.title || "Untitled Agenda row"}`}
+          onClick={() => setEditOpen(true)}
+        >
+          Edit Row
+        </AppButton>
+      ) : null}
+      <AbandonRowButton
+        row={{ ...row, correctable: row.correctionCount > 0 }}
+        triggerLabel="Skip Row"
+        triggerAriaLabel={`Skip source row ${row.sourceRowNumber}: ${row.candidate.title || "Untitled Agenda row"}`}
+        dialogTitle="Skip This Agenda Row"
+        dialogDescription="Skip this row permanently for this import run? Its source and validation evidence remain in the run, but it will not be imported or retried. This cannot be undone."
+        onAbandoned={() =>
+          onRowsChanged(`Source row ${row.sourceRowNumber} was skipped. The governed run has been refreshed.`)
+        }
+        onError={onError}
+      />
+      {canEdit ? (
+        <AgendaEditRowDialog
+          open={editOpen}
+          row={row}
+          eventDateContext={eventDateContext}
+          onCancel={() => setEditOpen(false)}
+          onSaved={async (message) => {
+            setEditOpen(false);
+            await onRowsChanged(message);
+          }}
+          onError={onError}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -205,6 +210,7 @@ type AgendaImportReviewWorkspaceProps = {
   status: ImportRunLifecycleStatus;
   compact: boolean;
   committing: boolean;
+  eventDateContext: AgendaImportEventDateContext;
   onRowsChanged: (message: string) => void | Promise<void>;
   onCommit: () => void | Promise<void>;
   onFinalized: (result: {
@@ -220,6 +226,7 @@ export function AgendaImportReviewWorkspace({
   status,
   compact,
   committing,
+  eventDateContext,
   onRowsChanged,
   onCommit,
   onFinalized,
@@ -278,9 +285,11 @@ export function AgendaImportReviewWorkspace({
           ]}
         />
 
-        {summary.validationFailed > 0 ? (
+        {summary.validationFailed > 0 && status !== "finalized" ? (
           <Alert tone="warning">
-            Rows that failed validation cannot be edited or approved here. Correct the source file and upload a new run if those rows must be imported; their validation evidence remains part of this run.
+            Rows that failed validation can be corrected in place -- use Edit Row below to fix the
+            values and revalidate, or Skip Row once a correction has been attempted. Their original
+            validation evidence remains part of this run either way.
           </Alert>
         ) : null}
 
@@ -347,7 +356,7 @@ export function AgendaImportReviewWorkspace({
                     <AgendaRowOutcome row={row} />
                   </div>
                   <AgendaCandidateDetails row={row} />
-                  <AgendaRowAction row={row} onRowsChanged={onRowsChanged} onError={onError} />
+                  <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} onRowsChanged={onRowsChanged} onError={onError} />
                 </li>
               ))}
             </ResponsiveList>
@@ -372,7 +381,7 @@ export function AgendaImportReviewWorkspace({
                       <AgendaRowOutcome row={row} />
                     </td>
                     <td>
-                      <AgendaRowAction row={row} onRowsChanged={onRowsChanged} onError={onError} />
+                      <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} onRowsChanged={onRowsChanged} onError={onError} />
                     </td>
                   </tr>
                 ))}

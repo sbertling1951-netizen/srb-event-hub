@@ -1,6 +1,6 @@
 # Governed Imports Staging Architecture
 
-Status: Live — Stage 1 (staging), Stage 2 (contract), Stage 3 (canonical commit), Stage 3.1 (failure recording), Stage 1.1 (recovery), Stage 4 (application-layer cutover), Stage 5A (Vendor/Agenda doors), Stage 5B (Vendor normalization/commit), Stage 5B.3 (Vendor application-layer cutover), Agenda Stage A (pure interpretation contract), Agenda Stage B (governed staging plus atomic batch commit), Agenda Stage C (operator review/resolution), and Import Run Lifecycle + History UI hookup (`close_import_run_staging`, `abandon_import_run_row`, `abandon_import_run_open_rows`, `finalize_import_run`/`get_import_run_status`, `list_active_import_runs`, `list_finalized_import_run_history`, `get_finalized_import_run_history_detail`) are all in production use. See "Import-run lifecycle, abandonment, finalization, and History" and "Import Run Lifecycle + History UI hookup" below.
+Status: Live — Stage 1 (staging), Stage 2 (contract), Stage 3 (canonical commit), Stage 3.1 (failure recording), Stage 1.1 (recovery), Stage 4 (application-layer cutover), Stage 5A (Vendor/Agenda doors), Stage 5B (Vendor normalization/commit), Stage 5B.3 (Vendor application-layer cutover), Agenda Stage A (pure interpretation contract), Agenda Stage B (governed staging plus atomic batch commit), Agenda Stage C (operator review/resolution), Agenda Stage D (in-place operator row correction), and Import Run Lifecycle + History UI hookup (`close_import_run_staging`, `abandon_import_run_row`, `abandon_import_run_open_rows`, `finalize_import_run`/`get_import_run_status`, `list_active_import_runs`, `list_finalized_import_run_history`, `get_finalized_import_run_history_detail`) are all in production use. See "Import-run lifecycle, abandonment, finalization, and History" and "Import Run Lifecycle + History UI hookup" below.
 
 ## Boundary
 
@@ -145,10 +145,10 @@ and the next governed action without exposing raw JSON or database enum names.
 Stage A validation codes remain unchanged in persisted evidence; the workspace
 maps them to operator-facing explanations. The duplicate code explicitly tells
 the operator that every same-file copy is blocked and no winner was selected.
-Validation-failed rows remain terminal evidence under the existing lifecycle:
-they cannot be edited, approved, or abandoned in the browser, and correction
-requires a new source upload/run. Open approved or commit-failed rows may be
-skipped with the shared bounded-reason dialog.
+As of Stage D below, a validation-failed row is no longer a dead end requiring
+a brand-new upload/run: `Edit Row` offers governed in-place correction, and
+only a row that has never been corrected remains unabandonable. Open approved
+or commit-failed rows may be skipped with the shared bounded-reason dialog.
 
 Every row abandonment, run-wide abandonment, source-staging closure, and
 finalization callback reloads the run through governed recovery before changing
@@ -166,6 +166,113 @@ candidate rendering stays Agenda-specific. Wide layouts use the shared
 the same fields and actions in stacked reading order with no hover dependency
 or fixed page width. Import mode is a dedicated workspace: the Agenda item
 editor, calendar/list, and template catalog remain in Agenda Items mode.
+
+## Agenda Governed Imports Stage D: in-place operator row correction
+
+Stage D lets an operator fix a `validation_failed` (or previously corrected)
+Agenda row inside EpicentraX -- Stage → Review → **Edit Row → revalidate →
+Ready to Import** → the unchanged Stage B atomic batch commit -- instead of
+leaving the app to repair the source workbook and starting an entirely new
+run. It is additive: `import_runs` / `import_run_rows` and every existing
+governed RPC keep their current shape, and the pre-existing
+`prevent_import_run_row_source_mutation` trigger is untouched, because a
+correction is a new, permanent, append-only overlay row in a new table --
+`import_run_row_corrections` -- never a rewrite of `source_payload`,
+`normalized_candidate`, or `source_fingerprint`. The table's name and shape
+are generic (any import type could reuse it the same way
+`normalized_candidate` itself is already a generic `jsonb` column), even
+though only Agenda's correction RPC writes to it today.
+
+**No second Stage A.** The browser still owns all Agenda interpretation --
+`interpretAgendaImportRow` (the same per-row function Stage A already uses
+for original ingestion) recomputes a corrected candidate from the operator's
+edited fields with the exact same human-friendly date/time semantics
+(`11/4/26`, `1300`, `1:30 PM`, ...), via
+`lib/agendaImportOrchestration.ts#interpretAgendaCorrection`, a direct,
+unmodified pass-through. `correct_agenda_import_run_row(row_id,
+expected_revision, corrected_candidate, validation_state, validation_details,
+reason_code)` requires the same composed authority as commit
+(`event.imports.manage` AND `event.agenda.manage`, scoped from the trusted
+row's own Event), and never re-derives Stage A's parsing/alias/duplicate
+logic; its own job is a narrow, non-evolving structural/type
+well-formedness check (nonblank required fields, real `::date`/`::time`
+casts, `is_published` boolean) extracted into
+`_agenda_import_candidate_is_well_formed` -- the exact same helper
+`commit_agenda_import_run`'s own pre-existing malformed-candidate check now
+calls, so the shape rule lives in exactly one place, reused by both commit
+and correction.
+
+**Lifecycle.** Eligible starting `row_state` is exactly `validation_failed`
+or `approved` (never `committed`, `commit_failed`, or abandoned); finalized
+runs refuse correction outright. A valid, well-formed correction moves the
+row to `row_state = 'approved'` -- the identical, pre-existing
+`(validation_state='valid', review_state='approved', commit_state='not_started')`
+combination the `import_run_rows_state_consistency` CHECK already allowed
+before this stage. A still-invalid correction returns the row to
+`row_state = 'validation_failed'` with fresh `validation_details` -- also a
+pre-existing allowed combination. No new `row_state` value and no CHECK
+constraint change were needed. `abandon_import_run_row` /
+`abandon_import_run_open_rows` (shared with Attendee/Vendor) gained exactly
+one narrow allowance: a `validation_failed` row may now be skipped once it
+carries at least one correction attempt; a bare, never-corrected
+`validation_failed` row remains exactly as unabandonable as before this
+stage, for every import type.
+
+**Commit.** `commit_agenda_import_run` resolves an *effective candidate* per
+eligible row -- the latest valid correction overlay if one exists, otherwise
+the row's own immutable `normalized_candidate` -- everywhere it reads a
+candidate (the malformed check, the in-batch duplicate-`external_id` check,
+the `jsonb_agg` submitted to `import_event_agenda_items`, and the post-commit
+`agenda_items` join), so the commit path cannot be tricked into using
+stale/original invalid data once a valid correction exists.
+`commit_result.source` records `'correction'` or `'original'` per row. Every
+other Stage B invariant -- one atomic batch, the expected-Agenda-version
+fence, rollback semantics, composed authority, already-committed retry,
+`import_runs`/`import_run_rows` locking -- is unchanged; a stale Agenda
+version still blocks commit even when the run's row carries a valid
+correction, because the fence is enforced by `_agenda_event_version_advance`
+independent of which candidate source was used.
+
+**Concurrency.** `correct_agenda_import_run_row` locks the target row (`FOR
+UPDATE`) and fences on `expected_revision`, an integer the client must supply
+as the row's currently-known correction revision (`0` if never corrected). A
+stale caller -- editing from an outdated snapshot, or racing a second tab --
+is rejected outright (`stale_correction_conflict`) rather than silently
+overwriting a newer correction. Every prior correction attempt, valid or
+not, keeps its own permanent, immutable revision row (a
+`BEFORE UPDATE OR DELETE` trigger enforces this), so the table is both the
+effective-candidate source and the complete audit trail; revision 1's
+`prior_validation_state`/`prior_validation_details` is permanently the
+untouched original Stage A outcome.
+
+**Recovery, corrections detail, and History.** Browser storage remains only
+a locator; `lib/agendaImportOrchestration.ts#recoverAgendaImportRun` merges
+`get_managed_import_run_recovery` (unchanged, generic) with a new run-scoped,
+one-call bulk read, `list_agenda_import_row_correction_summaries` (latest
+revision/candidate/validation per corrected row), so recovery reconstructs
+current effective candidate, original failure status, current corrected
+validation status, and Ready/Needs-Attention/Skipped/Imported disposition
+without an N+1 per-row fetch. `get_agenda_import_row_corrections(row_id)`
+exposes the full revision history for an authorized Imports manager
+(`event.imports.manage`, any run status, including finalized) -- richer
+detail than the safe History surface intentionally shows. Shared History
+(`get_finalized_import_run_history_detail`, generic, not Agenda-specific)
+gained exactly one new boolean per row, `was_corrected`, derived from a
+generic join against `import_run_row_corrections`; every existing
+redaction/shape guarantee (no raw source payload or candidate, codes only)
+is unchanged.
+
+**UI.** `AgendaImportReviewWorkspace` offers `Edit Row` (via
+`AgendaEditRowDialog`, built on the shared `Dialog`/`Field` Central UI
+Standard primitives) for any correctable row, alongside the existing
+`Skip Row`. The dialog preloads the best available candidate (the latest
+correction if one exists, else the original), live-revalidates on every
+keystroke through the same client-side interpreter for immediate friendly
+feedback, and always defers to the governed RPC's own answer on Save --
+database governance remains authoritative. On success the workspace calls
+the same `onRowsChanged` → `get_managed_import_run_recovery` refresh path
+every other lifecycle action already uses; there is no separate corrected-
+state cache to go stale.
 
 ## Stage 5A: Imports Service Center, contextual routing, and template system
 

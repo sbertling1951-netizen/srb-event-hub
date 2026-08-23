@@ -51,9 +51,20 @@ function row(
     abandonedAt: null,
     abandonedByAuthUserId: null,
     abandonmentReasonCode: null,
+    correctionRevision: 0,
+    correctionCount: 0,
+    latestCorrectedCandidate: null,
+    latestCorrectionIssues: [],
+    latestCorrectedByAuthUserId: null,
+    latestCorrectedAt: null,
     ...overrides,
   };
 }
+
+const EVENT_DATE_CONTEXT = {
+  event_start_date: "2026-09-01",
+  event_end_date: "2026-09-03",
+};
 
 function run(rows: AgendaImportRowResult[]): AgendaImportRunResult {
   return {
@@ -79,6 +90,7 @@ function renderWorkspace(
       status={options.status ?? "staging"}
       compact={options.compact ?? false}
       committing={false}
+      eventDateContext={EVENT_DATE_CONTEXT}
       onRowsChanged={noop}
       onCommit={noop}
       onFinalized={noop}
@@ -145,7 +157,7 @@ test("same-file duplicate guidance says every copy is blocked and no winner was 
   assert.match(message, /new import run/);
 });
 
-test("validation-failed rows cannot gain eligibility or a Skip action through UI state", () => {
+test("a never-corrected validation-failed row offers Edit Row but not yet Skip Row, and cannot gain commit eligibility through UI state", () => {
   const invalid = row({
     rowState: "validation_failed",
     issues: [
@@ -160,9 +172,65 @@ test("validation-failed rows cannot gain eligibility or a Skip action through UI
 
   assert.match(html, />Cannot Import</);
   assert.match(html, /Title is missing/);
+  assert.match(html, />Edit Row</);
   assert.doesNotMatch(html, />Skip Row</);
   assert.doesNotMatch(html, />Import Agenda \(/);
   assert.doesNotMatch(html, /persisted message is not the presentation source/);
+});
+
+test("a corrected-but-still-invalid row surfaces as Needs Attention and gains Skip Row, while a corrected-valid row is Ready to Import with no Cannot-Import language", () => {
+  const stillInvalid = row({
+    rowState: "validation_failed",
+    correctionCount: 1,
+    correctionRevision: 1,
+    issues: [
+      {
+        code: "invalid_agenda_date",
+        message: "server-persisted, not shown verbatim",
+        severity: "error",
+      },
+    ],
+  });
+  const stillInvalidHtml = renderWorkspace([stillInvalid], { status: "ready_for_review" });
+  assert.match(stillInvalidHtml, />Needs Attention</);
+  assert.doesNotMatch(stillInvalidHtml, />Cannot Import</);
+  assert.match(stillInvalidHtml, />Edit Row</);
+  assert.match(stillInvalidHtml, />Skip Row</);
+
+  const corrected = row({ rowState: "approved", correctionCount: 1, correctionRevision: 1 });
+  const correctedHtml = renderWorkspace([corrected], { status: "ready_for_review" });
+  assert.match(correctedHtml, />Ready to Import</);
+  assert.doesNotMatch(correctedHtml, />Cannot Import</);
+  assert.match(correctedHtml, />Edit Row</);
+});
+
+test("committed and abandoned rows never offer Edit Row", () => {
+  const committedHtml = renderWorkspace([
+    row({ rowState: "committed", canonicalAgendaItemId: crypto.randomUUID() }),
+  ]);
+  assert.doesNotMatch(committedHtml, />Edit Row</);
+
+  const abandonedHtml = renderWorkspace([
+    row({
+      rowState: "validation_failed",
+      abandonedAt: "2026-08-23T10:00:00Z",
+      abandonmentReasonCode: "cannot_resolve",
+    }),
+  ]);
+  assert.doesNotMatch(abandonedHtml, />Edit Row</);
+});
+
+test("a finalized run never offers Edit Row even for a correctable rowState", () => {
+  const html = renderWorkspace([row({ rowState: "approved" })], {
+    status: "ready_for_review",
+  });
+  assert.match(html, />Edit Row</);
+
+  // AgendaRowAction's own canEdit gate reads runStatus !== "finalized";
+  // the workspace itself is never rendered once a run is finalized (its
+  // caller unmounts it), so this proves the gate exists in source rather
+  // than rendering a finalized workspace directly.
+  assert.match(SOURCE, /canEdit =\s*\n?\s*runStatus !== "finalized"/);
 });
 
 test("row states use distinct text labels; ordinary ready state is not success-colored", () => {
@@ -216,9 +284,22 @@ test("compact presentation uses a named ResponsiveList; wider presentation uses 
   assert.match(wide, /<table class="data-table"/);
 });
 
-test("workspace exposes only governed lifecycle components and no editor or direct database path", () => {
+test("workspace uses only governed lifecycle/correction components, never a direct database call", () => {
   assert.match(SOURCE, /<RunLifecycleActions/);
   assert.match(SOURCE, /<AbandonRowButton/);
+  assert.match(SOURCE, /<AgendaEditRowDialog/);
   assert.doesNotMatch(SOURCE, /supabase|\.rpc\(|\.from\(/);
+  // The workspace delegates the actual edit form to AgendaEditRowDialog; it
+  // renders no raw form control and no staged evidence itself.
   assert.doesNotMatch(SOURCE, /<Input|<Textarea|normalized_candidate/);
+});
+
+test("the Edit Row dialog itself is the sole editor, calls the governed correction RPC through the orchestration module only, and never a direct database call", () => {
+  const dialogSource = readFileSync(
+    fileURLToPath(new URL("./AgendaEditRowDialog.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.match(dialogSource, /correctAgendaImportRow/);
+  assert.match(dialogSource, /interpretAgendaCorrection/);
+  assert.doesNotMatch(dialogSource, /supabase|\.rpc\(|\.from\(/);
 });
