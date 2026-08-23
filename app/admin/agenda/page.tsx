@@ -27,8 +27,12 @@ import {
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { getAgendaColor } from "@/lib/agendaColors";
+import {
+  interpretAgendaImportRows,
+  parseAgendaWorkbookWorksheet,
+  type RawAgendaImportRow,
+} from "@/lib/agendaImportContract";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
-import { AGENDA_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 import { buildImportsHref } from "@/lib/importTypeRouting";
 import { supabase } from "@/lib/supabase";
 
@@ -120,8 +124,6 @@ type AgendaTemplateApplication = {
 
 type AgendaAdminMode = "items" | "import";
 
-type AgendaImportRow = Record<string, unknown>;
-
 type ConfirmDialogState = {
   title: string;
   message: string;
@@ -183,192 +185,7 @@ function buildExternalId(form: AgendaForm) {
   ].join("-");
 }
 
-export function normalizeImportHeaderKey(value: string) {
-  return value
-    .replace(/\u00A0/g, " ")
-    .replace(/[\r\n\t]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-export function getImportField(row: AgendaImportRow, names: string[]) {
-  const normalizedRow: Record<string, unknown> = {};
-
-  Object.keys(row).forEach((key) => {
-    normalizedRow[normalizeImportHeaderKey(key)] = row[key];
-  });
-
-  for (const name of names) {
-    const value = normalizedRow[normalizeImportHeaderKey(name)];
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-export function normalizeImportText(value: unknown) {
-  const trimmed = String(value ?? "").trim();
-  return trimmed ? trimmed : null;
-}
-
-export function normalizeImportNumber(value: unknown) {
-  const trimmed = String(value ?? "").trim();
-  if (!trimmed) {
-    return null;
-  }
-  const parsed = Number(trimmed);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-export function normalizeImportDate(value: unknown) {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const yyyy = value.getFullYear();
-    const mm = String(value.getMonth() + 1).padStart(2, "0");
-    const dd = String(value.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  if (typeof value === "number") {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (parsed && parsed.y && parsed.m && parsed.d) {
-      return `${String(parsed.y).padStart(4, "0")}-${String(parsed.m).padStart(
-        2,
-        "0",
-      )}-${String(parsed.d).padStart(2, "0")}`;
-    }
-  }
-
-  const raw = String(value).trim();
-  if (!raw) {
-    return null;
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    return raw;
-  }
-
-  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) {
-    const [m, d, y] = raw.split("/");
-    return `${y}-${String(Number(m)).padStart(2, "0")}-${String(
-      Number(d),
-    ).padStart(2, "0")}`;
-  }
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(
-    2,
-    "0",
-  )}-${String(parsed.getDate()).padStart(2, "0")}`;
-}
-
-function excelTimeNumberToHHMM(value: number) {
-  const totalMinutes = Math.round(value * 24 * 60);
-  const hh = Math.floor(totalMinutes / 60) % 24;
-  const mm = totalMinutes % 60;
-  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
-}
-
-export function normalizeImportTimeOnly(value: unknown) {
-  if (value === undefined || value === null || String(value).trim() === "") {
-    return null;
-  }
-
-  if (typeof value === "number") {
-    return excelTimeNumberToHHMM(value);
-  }
-
-  const raw = String(value).trim();
-  if (!raw) {
-    return null;
-  }
-
-  if (/^\d{1,2}:\d{2}$/.test(raw)) {
-    const [h, m] = raw.split(":");
-    return `${String(Number(h)).padStart(2, "0")}:${m}`;
-  }
-
-  if (/^\d{3,4}$/.test(raw)) {
-    const padded = raw.padStart(4, "0");
-    const hh = padded.slice(0, 2);
-    const mm = padded.slice(2, 4);
-    if (Number(hh) <= 23 && Number(mm) <= 59) {
-      return `${hh}:${mm}`;
-    }
-  }
-
-  const parsed = new Date(`1970-01-01T${raw}`);
-  if (!Number.isNaN(parsed.getTime())) {
-    return `${String(parsed.getHours()).padStart(2, "0")}:${String(
-      parsed.getMinutes(),
-    ).padStart(2, "0")}`;
-  }
-
-  return null;
-}
-
-export function yesNoToBool(value: unknown) {
-  const raw = String(value ?? "")
-    .trim()
-    .toLowerCase();
-  return raw === "yes" || raw === "y" || raw === "true" || raw === "1";
-}
-
-// Agenda's shipped XLSX templates intentionally keep a title and short
-// instruction row above the actual field headings. Locate that canonical
-// heading row from the same contract that documents the live aliases, rather
-// than accidentally treating workbook row 1 as headers.
-export function findAgendaWorkbookHeaderRow(
-  worksheet: XLSX.WorkSheet,
-): number {
-  const worksheetRows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-  });
-  const requiredFields = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.filter(
-    (field) => field.required,
-  );
-
-  return worksheetRows.findIndex((row) => {
-    const headings = new Set(
-      row.map((value) => normalizeImportHeaderKey(String(value ?? ""))),
-    );
-
-    return requiredFields.every((field) =>
-      field.aliases.some((alias) =>
-        headings.has(normalizeImportHeaderKey(alias)),
-      ),
-    );
-  });
-}
-
-export function parseAgendaWorkbookWorksheet(
-  worksheet: XLSX.WorkSheet,
-): AgendaImportRow[] {
-  const headerRow = findAgendaWorkbookHeaderRow(worksheet);
-
-  return XLSX.utils.sheet_to_json<AgendaImportRow>(worksheet, {
-    // Preserve ordinary XLSX imports whose headings are already on row 1.
-    // The contract lookup above only changes the range when it positively
-    // recognizes an Agenda header row after title/instruction content.
-    range: headerRow >= 0 ? headerRow : 0,
-    defval: "",
-    raw: false,
-  });
-}
-
-function parseAgendaRowsFromWorkbook(file: File): Promise<AgendaImportRow[]> {
+function parseAgendaRowsFromWorkbook(file: File): Promise<RawAgendaImportRow[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -393,9 +210,9 @@ function parseAgendaRowsFromWorkbook(file: File): Promise<AgendaImportRow[]> {
   });
 }
 
-function parseAgendaRowsFromCsv(file: File): Promise<AgendaImportRow[]> {
+function parseAgendaRowsFromCsv(file: File): Promise<RawAgendaImportRow[]> {
   return new Promise((resolve, reject) => {
-    Papa.parse<AgendaImportRow>(file, {
+    Papa.parse<RawAgendaImportRow>(file, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (header) => header.replace(/^\uFEFF/, "").trim(),
@@ -2317,123 +2134,41 @@ function AdminAgendaPageInner() {
         return;
       }
 
-      const importWarnings: string[] = [];
-
-      const payloads = rows.flatMap((row, index) => {
-        const rowNumber = index + 2;
-
-        const title = normalizeImportText(
-          getImportField(row, ["Title", "title"]),
-        );
-
-        const description = normalizeImportText(
-          getImportField(row, ["Description", "description"]),
-        );
-
-        const location = normalizeImportText(
-          getImportField(row, ["Location", "location", "Room", "Venue"]),
-        );
-
-        const speaker = normalizeImportText(
-          getImportField(row, ["Speaker", "speaker", "Presenter", "Host"]),
-        );
-
-        const startsAtRaw = getImportField(row, [
-          "starts_at",
-          "Starts At",
-          "Start DateTime",
-          "start_at",
-        ]);
-
-        const endsAtRaw = getImportField(row, [
-          "ends_at",
-          "Ends At",
-          "End DateTime",
-          "end_at",
-        ]);
-
-        const agendaDate = normalizeImportDate(
-          getImportField(row, [
-            "Agenda Date",
-            "AgendaDate",
-            "Date",
-            "date",
-            "agenda_date",
-            "AGENDA DATE",
-          ]) ?? startsAtRaw,
-        );
-
-        const startTime = normalizeImportTimeOnly(
-          getImportField(row, ["Start Time", "start_time", "Start", "start"]) ??
-            startsAtRaw,
-        );
-
-        const endTime = normalizeImportTimeOnly(
-          getImportField(row, ["End Time", "end_time", "End", "end"]) ??
-            endsAtRaw,
-        );
-
-        const category = normalizeImportText(
-          getImportField(row, ["Category", "category"]),
-        );
-
-        const color = normalizeImportText(
-          getImportField(row, ["Color", "color"]),
-        );
-
-        const published = yesNoToBool(
-          getImportField(row, [
-            "Published",
-            "published",
-            "Is Published",
-            "is_published",
-          ]),
-        );
-
-        const sortOrder = normalizeImportNumber(
-          getImportField(row, ["Sort Order", "sort_order"]),
-        );
-
-        if (!title) {
-          importWarnings.push(`Row ${rowNumber}: missing Title`);
+      // The pure contract is the only Agenda import normalization pass. The
+      // browser remains responsible only for file I/O and for submitting one
+      // already-classified batch through the existing governed RPC.
+      const interpretations = interpretAgendaImportRows(rows);
+      const rejectedRows = interpretations.filter(
+        (interpretation) =>
+          interpretation.validation_state === "validation_failed",
+      );
+      const importWarnings = rejectedRows.flatMap((interpretation) =>
+        interpretation.issues.map(
+          (issue) =>
+            `Row ${interpretation.candidate.source_row_number}: ${issue.message}`,
+        ),
+      );
+      const payloads = interpretations.flatMap((interpretation) => {
+        if (interpretation.validation_state !== "valid") {
           return [];
         }
 
-        if (!agendaDate) {
-          importWarnings.push(
-            `Row ${rowNumber}: missing or invalid Agenda Date`,
-          );
-          return [];
-        }
-
-        if (!startTime) {
-          importWarnings.push(
-            `Row ${rowNumber}: missing or invalid Start Time`,
-          );
-          return [];
-        }
-
-        const externalId = [
-          slugify(title),
-          agendaDate || "no-date",
-          startTime || "no-time",
-        ].join("-");
-
+        const candidate = interpretation.candidate;
         return [
           {
             event_id: activeEvent.id,
-            external_id: externalId,
-            title,
-            description,
-            location,
-            speaker,
-            category,
-            color: getAgendaColor(category || "", color || ""),
-            agenda_date: agendaDate,
-            start_time: startTime,
-            end_time: endTime,
-            is_published: published,
-            sort_order: sortOrder ?? index + 1,
+            external_id: candidate.external_id,
+            title: candidate.title,
+            description: candidate.description,
+            location: candidate.location,
+            speaker: candidate.speaker,
+            category: candidate.category,
+            color: candidate.color,
+            agenda_date: candidate.agenda_date,
+            start_time: candidate.start_time,
+            end_time: candidate.end_time,
+            is_published: candidate.is_published,
+            sort_order: candidate.sort_order,
             source: "import",
           },
         ];
@@ -2492,7 +2227,7 @@ function AdminAgendaPageInner() {
 
       if (importWarnings.length > 0) {
         setImportStatus(
-          `Agenda import completed with warnings. Imported ${importedCount} rows. Skipped ${importWarnings.length} rows. ${importWarnings.join(" | ")}`,
+          `Agenda import completed with warnings. Imported ${importedCount} rows. Skipped ${rejectedRows.length} rows. ${importWarnings.join(" | ")}`,
         );
       } else {
         setImportStatus(

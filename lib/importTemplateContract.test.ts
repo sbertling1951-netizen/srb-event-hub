@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
+import {
+  interpretAgendaImportRow,
+  yesNoToBool,
+} from "./agendaImportContract";
 import { interpretAttendeeImportRow } from "./attendeeImportContract.ts";
 import {
   AGENDA_IMPORT_TEMPLATE_CONTRACT,
@@ -72,63 +76,50 @@ test("attendee contract: Co-Pilot fields document Policy 1 (attendees.copilot_* 
   assert.match(field.instructions, /never a separate household member or Person record/);
 });
 
-// ---- Agenda: every generated heading is accepted by the one existing ----
-// ---- importer (app/admin/agenda/page.tsx) -- no second parser. ----------
+// ---- Agenda: one shared alias vocabulary and one normalization contract ---
 
 const AGENDA_PAGE_SOURCE = readFileSync(
   fileURLToPath(new URL("../app/admin/agenda/page.tsx", import.meta.url)),
   "utf8",
 );
+const AGENDA_CONTRACT_SOURCE = readFileSync(
+  fileURLToPath(new URL("./agendaImportContract.ts", import.meta.url)),
+  "utf8",
+);
 
-function extractGetImportFieldAliasSets(source: string): Set<string>[] {
-  const re = /getImportField\(row,\s*\[([^\]]+)\]\)/g;
-  const sets: Set<string>[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(source))) {
-    const items = match[1]
-      .split(",")
-      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
-      .filter(Boolean);
-    sets.push(new Set(items));
-  }
-  return sets;
-}
-
-function sameSet(a: Set<string>, b: string[]) {
-  return a.size === b.length && b.every((v) => a.has(v));
-}
-
-test("agenda contract: every field with an alias-driven lookup matches the one live getImportField(...) call in app/admin/agenda/page.tsx exactly", () => {
-  const liveAliasSets = extractGetImportFieldAliasSets(AGENDA_PAGE_SOURCE);
-  const aliasDrivenFields = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields;
-  for (const field of aliasDrivenFields) {
-    const found = liveAliasSets.some((set) => sameSet(set, field.aliases));
-    assert.ok(found, `no live getImportField(...) call in agenda/page.tsx matches contract aliases for "${field.key}": ${JSON.stringify(field.aliases)}`);
-  }
+test("agenda contract: the pure interpreter derives its aliases from the shared template contract", () => {
+  assert.match(
+    AGENDA_CONTRACT_SOURCE,
+    /AGENDA_IMPORT_TEMPLATE_CONTRACT\.fields\.map/,
+  );
+  assert.match(AGENDA_PAGE_SOURCE, /interpretAgendaImportRows\(rows\)/);
 });
 
 test("agenda contract: exactly one importer implementation exists -- no second parseAgendaImportFile/getImportField elsewhere", () => {
-  assert.equal((AGENDA_PAGE_SOURCE.match(/function getImportField\(/g) || []).length, 1);
+  assert.equal((AGENDA_PAGE_SOURCE.match(/function getImportField\(/g) || []).length, 0);
+  assert.equal((AGENDA_CONTRACT_SOURCE.match(/function getImportField\(/g) || []).length, 1);
   assert.equal((AGENDA_PAGE_SOURCE.match(/function parseAgendaImportFile\(/g) || []).length, 1);
 });
 
 test("agenda contract: Published documents the real blank-value behavior (blank is NOT published, same as No)", () => {
   const field = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.find((f) => f.key === "is_published")!;
   assert.match(field.instructions, /[Bb]lank.*NOT published/);
-  assert.match(AGENDA_PAGE_SOURCE, /function yesNoToBool\(value: unknown\) \{/);
-  const fn = AGENDA_PAGE_SOURCE.slice(
-    AGENDA_PAGE_SOURCE.indexOf("function yesNoToBool(value: unknown) {"),
-  );
-  const body = fn.slice(0, fn.indexOf("\n}") + 2);
-  assert.match(body, /raw === "yes" \|\| raw === "y" \|\| raw === "true" \|\| raw === "1"/);
+  assert.equal(yesNoToBool("Yes"), true);
+  assert.equal(yesNoToBool(""), false);
+  assert.equal(yesNoToBool("No"), false);
 });
 
 test("agenda contract: required fields match the real live validation (Title, Agenda Date, Start Time)", () => {
   const required = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.filter((f) => f.required).map((f) => f.key).sort();
   assert.deepEqual(required, ["agenda_date", "start_time", "title"]);
-  assert.match(AGENDA_PAGE_SOURCE, /missing Title/);
-  assert.match(AGENDA_PAGE_SOURCE, /missing or invalid Agenda Date/);
-  assert.match(AGENDA_PAGE_SOURCE, /missing or invalid Start Time/);
+  const result = interpretAgendaImportRow({}, {
+    source_row_number: 2,
+    default_sort_order: 1,
+  });
+  assert.deepEqual(
+    result.issues.map((issue) => issue.code).sort(),
+    ["missing_agenda_date", "missing_agenda_start_time", "missing_agenda_title"],
+  );
 });
 
 // ---- Vendors: contract-only, truthfully not yet executable ---------------

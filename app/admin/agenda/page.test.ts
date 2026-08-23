@@ -7,16 +7,14 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
 import {
-  findAgendaWorkbookHeaderRow,
-  getImportField,
   isStaleAgendaVersionError,
   mapAgendaRpcError,
-  normalizeImportDate,
-  normalizeImportText,
-  normalizeImportTimeOnly,
-  parseAgendaWorkbookWorksheet,
-  yesNoToBool,
 } from "@/app/admin/agenda/page";
+import {
+  findAgendaWorkbookHeaderRow,
+  interpretAgendaImportRow,
+  parseAgendaWorkbookWorksheet,
+} from "@/lib/agendaImportContract";
 import { AGENDA_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 
 // Focused tests for the Admin Agenda governed UI cutover (Agenda
@@ -47,42 +45,24 @@ const AGENDA_HEADINGS = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.map(
   (field) => field.preferredHeading,
 );
 
-function agendaAliases(key: string) {
-  const field = AGENDA_IMPORT_TEMPLATE_CONTRACT.fields.find(
-    (candidate) => candidate.key === key,
-  );
-  assert.ok(field, `missing Agenda contract field: ${key}`);
-  return field.aliases;
-}
-
 function normalizeAgendaSampleRow(row: Record<string, unknown>) {
+  const interpretation = interpretAgendaImportRow(row, {
+    source_row_number: 5,
+    default_sort_order: 1,
+  });
+  assert.equal(interpretation.validation_state, "valid");
+  const candidate = interpretation.candidate;
   return {
-    title: normalizeImportText(getImportField(row, agendaAliases("title"))),
-    description: normalizeImportText(
-      getImportField(row, agendaAliases("description")),
-    ),
-    location: normalizeImportText(
-      getImportField(row, agendaAliases("location")),
-    ),
-    speaker: normalizeImportText(
-      getImportField(row, agendaAliases("speaker")),
-    ),
-    agenda_date: normalizeImportDate(
-      getImportField(row, agendaAliases("agenda_date")),
-    ),
-    start_time: normalizeImportTimeOnly(
-      getImportField(row, agendaAliases("start_time")),
-    ),
-    end_time: normalizeImportTimeOnly(
-      getImportField(row, agendaAliases("end_time")),
-    ),
-    category: normalizeImportText(
-      getImportField(row, agendaAliases("category")),
-    ),
-    color: normalizeImportText(getImportField(row, agendaAliases("color"))),
-    is_published: yesNoToBool(
-      getImportField(row, agendaAliases("is_published")),
-    ),
+    title: candidate.title,
+    description: candidate.description,
+    location: candidate.location,
+    speaker: candidate.speaker,
+    agenda_date: candidate.agenda_date,
+    start_time: candidate.start_time,
+    end_time: candidate.end_time,
+    category: candidate.category,
+    color: candidate.color,
+    is_published: candidate.is_published,
   };
 }
 

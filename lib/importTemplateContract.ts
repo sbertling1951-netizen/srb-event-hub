@@ -3,7 +3,7 @@
 // advertises: its preferred heading, whether it is required, its expected
 // format, human instructions, and a sample value. Parser authority stays
 // domain-specific (Stage 2's lib/attendeeImportContract.ts for Attendee
-// Roster, app/admin/agenda/page.tsx's own import functions for Agenda);
+// Roster, lib/agendaImportContract.ts for Agenda);
 // this module never re-implements or overrides that authority. It exists
 // so a downloadable template is generated from -- or, where a template is
 // already a maintained static asset, tested against -- the same canonical
@@ -96,12 +96,11 @@ export const ATTENDEE_IMPORT_TEMPLATE_CONTRACT: ImportTemplateContract = {
   })),
 };
 
-// ---- Agenda (existing governed importer; see app/admin/agenda/page.tsx) -
+// ---- Agenda (pure row contract; see lib/agendaImportContract.ts) --------
 //
-// Agenda's parser/writer stay exactly where they are (one implementation,
-// per Stage 5A item 4) -- this contract documents the same accepted
-// headings for template generation/testing, verified against that page's
-// own source in app/admin/agenda/page.test.tsx, not re-implemented here.
+// This remains the sole Agenda template/alias vocabulary. The pure Agenda
+// contract consumes these aliases; the page performs file I/O and submits
+// the already-normalized batch through its existing governed RPC.
 
 export const AGENDA_IMPORT_TEMPLATE_CONTRACT: ImportTemplateContract = {
   importType: "agenda",
