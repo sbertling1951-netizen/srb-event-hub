@@ -11,7 +11,6 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
-import { Alert } from "@/components/ui/Alert";
 import { AppLinkButton } from "@/components/ui/AppButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
@@ -31,12 +30,17 @@ import {
   summarizeAttendeeImportRows,
 } from "@/lib/attendeeImportOrchestration";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
-import {
-  ATTENDEE_IMPORT_TEMPLATE_CONTRACT,
-  VENDOR_IMPORT_TEMPLATE_CONTRACT,
-} from "@/lib/importTemplateContract";
+import { ATTENDEE_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 import { buildImportsHref, readImportType } from "@/lib/importTypeRouting";
 import { supabase } from "@/lib/supabase";
+
+import {
+  AGENDA_TEMPLATE_FILES,
+  ATTENDEE_TEMPLATE_FILES,
+  TemplateDownloadList,
+  VENDOR_TEMPLATE_FILES,
+} from "./importDoorTemplates";
+import { VendorImportWorkflow } from "./VendorImportWorkflow";
 
 type EventContext = {
   id?: string | null;
@@ -303,44 +307,6 @@ export default function AdminAttendeeImportsPage() {
 // doors, one governed workflow per import type -- see
 // docs/architecture/EPICENTRAX_GOVERNED_IMPORT_STAGING_ARCHITECTURE.md.
 
-type TemplateFile = { label: string; href: string };
-
-function TemplateDownloadList({ files }: { files: TemplateFile[] }) {
-  return (
-    <div style={{ display: "grid", gap: 6 }}>
-      {files.map((file) => (
-        <a key={file.href} href={file.href}>
-          {file.label}
-        </a>
-      ))}
-    </div>
-  );
-}
-
-const ATTENDEE_TEMPLATE_FILES: TemplateFile[] = [
-  { label: "Download Sample CSV", href: "/templates/attendee-roster/attendee_roster_import_template_sample.csv" },
-  { label: "Download Blank CSV", href: "/templates/attendee-roster/attendee_roster_import_template_blank.csv" },
-  { label: "Download Sample XLSX", href: "/templates/attendee-roster/attendee_roster_import_template_sample.xlsx" },
-  { label: "Download Blank XLSX", href: "/templates/attendee-roster/attendee_roster_import_template_blank.xlsx" },
-  { label: "Instructions / notes", href: "/templates/attendee-roster/attendee_roster_import_template_notes.txt" },
-];
-
-const AGENDA_TEMPLATE_FILES: TemplateFile[] = [
-  { label: "Download Sample CSV", href: "/templates/agenda/agenda_import_template_sample_with_speaker.csv" },
-  { label: "Download Blank CSV", href: "/templates/agenda/agenda_import_template_blank_with_speaker.csv" },
-  { label: "Download Sample XLSX", href: "/templates/agenda/agenda_import_template_sample_with_speaker.xlsx" },
-  { label: "Download Blank XLSX", href: "/templates/agenda/agenda_import_template_blank_with_speaker.xlsx" },
-  { label: "Instructions / notes", href: "/templates/agenda/agenda_import_template_notes_with_speaker.txt" },
-];
-
-const VENDOR_TEMPLATE_FILES: TemplateFile[] = [
-  { label: "Download Sample CSV", href: "/templates/vendors/vendor_import_template_sample.csv" },
-  { label: "Download Blank CSV", href: "/templates/vendors/vendor_import_template_blank.csv" },
-  { label: "Download Sample XLSX", href: "/templates/vendors/vendor_import_template_sample.xlsx" },
-  { label: "Download Blank XLSX", href: "/templates/vendors/vendor_import_template_blank.xlsx" },
-  { label: "Instructions / notes", href: "/templates/vendors/vendor_import_template_notes.txt" },
-];
-
 function ImportsLandingDoors() {
   return (
     <>
@@ -394,13 +360,14 @@ function ImportsLandingDoors() {
           <div style={{ display: "grid", gap: "var(--space-3)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
               <h2 className="app-section-title" style={{ margin: 0 }}>Vendors</h2>
-              <StatusBadge tone="neutral">Planned</StatusBadge>
+              <StatusBadge tone="success">Available</StatusBadge>
             </div>
             <p className="app-subtle-text" style={{ margin: 0 }}>
-              Templates and field contract are ready; canonical Vendor import execution is coming in a later stage.
+              Governed Vendor import: staged, matched to an existing canonical Vendor, and committed
+              through the Stage 1 / Stage 5B.1 / Stage 5B.2 / Stage 1.1 pipeline.
             </p>
-            <AppLinkButton variant="default" href={buildImportsHref("vendors")}>
-              View Vendor Templates
+            <AppLinkButton variant="primary" href={buildImportsHref("vendors")}>
+              Open Vendor Import
             </AppLinkButton>
             <TemplateDownloadList files={VENDOR_TEMPLATE_FILES} />
           </div>
@@ -436,32 +403,7 @@ function AgendaImportDoor() {
 }
 
 function VendorImportDoor() {
-  return (
-    <PageSection variant="card">
-      <div style={{ display: "grid", gap: "var(--space-3)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
-          <h2 className="app-section-title" style={{ margin: 0 }}>Vendor Import</h2>
-          <StatusBadge tone="neutral">Planned</StatusBadge>
-        </div>
-        <Alert tone="info">
-          Vendor import execution is not yet available. The field contract and downloadable templates
-          below establish the approved future format; no file uploaded here is processed yet.
-        </Alert>
-        <p className="app-subtle-text" style={{ margin: 0 }}>
-          Preferred fields: {VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.map((f) => f.preferredHeading).join(", ")}.
-        </p>
-        <TemplateDownloadList files={VENDOR_TEMPLATE_FILES} />
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <AppLinkButton variant="tertiary" href="/admin/vendors">
-            Go to Vendor Workspace
-          </AppLinkButton>
-          <AppLinkButton variant="tertiary" href="/admin/imports">
-            Back to Imports
-          </AppLinkButton>
-        </div>
-      </div>
-    </PageSection>
-  );
+  return <VendorImportWorkflow templateFiles={VENDOR_TEMPLATE_FILES} />;
 }
 
 function AdminAttendeeImportsPageInner() {

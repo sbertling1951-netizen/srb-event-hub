@@ -219,14 +219,13 @@ test("all three import types have a door on the landing view, each showing its t
   assert.match(landingBody, />Attendee Roster</);
   assert.match(landingBody, />Agenda</);
   assert.match(landingBody, />Vendors</);
-  // Attendee and Agenda are real, working doors; Vendors is truthfully
-  // planned -- never a working "Start Vendor Import" action.
+  // Stage 5B.3: all three doors are now real, working governed workflows.
   const statusBadges = [...landingBody.matchAll(/<StatusBadge tone="(\w+)">(\w+)<\/StatusBadge>/g)];
   assert.deepEqual(
     statusBadges.map((m) => m[2]),
-    ["Available", "Available", "Planned"],
+    ["Available", "Available", "Available"],
   );
-  assert.equal(/Start Vendor Import|Open Vendor Import/.test(landingBody), false);
+  assert.match(landingBody, /Open Vendor Import/);
 });
 
 test("?type= is read via next/navigation's useSearchParams and the shared readImportType contract, not localStorage", () => {
@@ -256,12 +255,32 @@ test("the Agenda door routes into the existing Agenda import workflow via /admin
   assert.equal(/parseAgendaImportFile|getImportField/.test(body), false);
 });
 
-test("the Vendor door truthfully shows no working import action and links back to the canonical Vendor workspace", () => {
+// -- Stage 5B.3: Vendor Import is now a working governed workflow --------
+
+test("the Vendor door renders the real governed VendorImportWorkflow -- not a placeholder, not a second implementation inline", () => {
   const source = readSource();
   const start = source.indexOf("function VendorImportDoor()");
   assert.notEqual(start, -1);
-  const body = source.slice(start, start + 2000);
-  assert.match(body, /not yet available/);
-  assert.match(body, /href="\/admin\/vendors"/);
-  assert.equal(/onImportFile|handleVendorImport|runGovernedVendorImport/.test(body), false);
+  const body = source.slice(start, source.indexOf("\nfunction AdminAttendeeImportsPageInner"));
+  assert.match(body, /<VendorImportWorkflow templateFiles=\{VENDOR_TEMPLATE_FILES\} \/>/);
+  // The door itself contains no parsing/staging/commit logic -- that all
+  // lives in VendorImportWorkflow.tsx / lib/vendorImportOrchestration.ts.
+  assert.equal(/runGovernedVendorImport\(/.test(body), false);
+  assert.equal(/\.rpc\(/.test(body), false);
+});
+
+test("VendorImportWorkflow is imported from its own module, not defined inline in the page", () => {
+  const source = readSource();
+  assert.match(source, /import \{ VendorImportWorkflow \} from "\.\/VendorImportWorkflow";/);
+  assert.equal(/function VendorImportWorkflow/.test(source), false);
+});
+
+test("the template download list and per-type template file arrays are shared, not redefined on this page", () => {
+  const source = readSource();
+  assert.match(
+    source,
+    /import\s*\{[^}]*TemplateDownloadList[^}]*\}\s*from\s*"\.\/importDoorTemplates"/s,
+  );
+  assert.equal(/^function TemplateDownloadList/m.test(source), false);
+  assert.equal(/^const VENDOR_TEMPLATE_FILES/m.test(source), false);
 });
