@@ -1033,3 +1033,36 @@ Check-In, Shared Map Engine, Inline Edit, and Central UI Standard
 Completion workstreams actually built, proved, or decided, not a
 retroactive rewrite of this document's own original discovery-only Parts
 1–14.
+
+---
+
+## 21. Proven Pattern (2026-08-22) — Shared Service Center
+
+A navigation/information-architecture pattern, recorded here as a pointer
+rather than restated in full: **Domain Workspace → Contextual Action →
+Shared Service Center.** When two or more domain workspaces need the same
+kind of governed multi-step workflow (a bulk import, for example), that
+workflow gets exactly one shared workspace, not one per domain. Each
+domain workspace exposes a contextual action — an ordinary navigation
+link, carrying no authority of its own — into the shared workspace,
+addressed by a durable, validated URL selector (never `localStorage`).
+The shared workspace reads that selector, opens the matching door, and
+falls back safely to its own landing view for a missing or unrecognized
+value. **Multiple doors, one implementation**: a domain that already owns
+a working implementation of its slice of the shared workflow is not
+forced to duplicate it inside the shared workspace — the shared
+workspace's door for that domain may itself route into the domain's own
+existing implementation, so there remains exactly one implementation,
+reachable through more than one door.
+
+First applied to `/admin/imports` becoming a true multi-type Imports
+Service Center (Attendee Roster, Agenda, Vendors) instead of an
+Attendee-only tool, with Attendees/Agenda/Vendors each gaining a
+contextual "Import X" action into it. Full contract, authority
+composition, and the accompanying shared template-definition system are
+recorded in
+`docs/architecture/EPICENTRAX_GOVERNED_IMPORT_STAGING_ARCHITECTURE.md`'s
+own "Stage 5A" section — this entry exists so the pattern itself is
+discoverable from the Central UI Standard's own index the next time a
+second shared-service-center candidate appears, without re-litigating
+Imports' own specifics here.

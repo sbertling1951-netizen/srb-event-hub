@@ -53,12 +53,15 @@ function findItem(sections: ReturnType<typeof buildAdminNavSections>, id: string
   return null;
 }
 
-test("an admin granted can_manage_imports sees the Attendee Imports link, pointed at /admin/imports, in the Operations section", () => {
+test("an admin granted can_manage_imports sees the Imports link, pointed at /admin/imports, in the Operations section", () => {
   const admin = buildAdmin({ permissionMap: { can_manage_imports: true } });
   const found = findItem(buildAdminNavSections(admin), "imports");
 
   assert.ok(found, "expected an 'imports' nav item to be present");
-  assert.equal(found!.item.label, "Attendee Imports");
+  // Stage 5A: renamed from "Attendee Imports" now that /admin/imports is a
+  // shared Service Center for Attendee Roster, Agenda, and Vendors, not an
+  // Attendee-only tool.
+  assert.equal(found!.item.label, "Imports");
   assert.equal(found!.item.href, "/admin/imports");
   assert.equal(found!.section.id, "operations");
 });

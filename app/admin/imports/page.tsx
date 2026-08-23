@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
@@ -10,6 +11,11 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { AppLinkButton } from "@/components/ui/AppButton";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSection } from "@/components/ui/PageSection";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -24,7 +30,12 @@ import {
   runGovernedAttendeeImport,
   summarizeAttendeeImportRows,
 } from "@/lib/attendeeImportOrchestration";
-import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
+import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import {
+  ATTENDEE_IMPORT_TEMPLATE_CONTRACT,
+  VENDOR_IMPORT_TEMPLATE_CONTRACT,
+} from "@/lib/importTemplateContract";
+import { buildImportsHref, readImportType } from "@/lib/importTypeRouting";
 import { supabase } from "@/lib/supabase";
 
 type EventContext = {
@@ -122,62 +133,6 @@ type AttendeeRow = {
   created_at?: string | null;
   vendor_master_id?: string | null;
   vendor_assigned_event_id?: string | null;
-};
-
-type PrintSettingsRow = {
-  id?: string;
-  event_id: string;
-  name_tag_bg_url: string | null;
-  coach_plate_bg_url: string | null;
-};
-
-type VendorRow = {
-  id: string;
-  name: string;
-  contact_name: string | null;
-  email: string | null;
-  phone: string | null;
-  website: string | null;
-  services: string | null;
-  logo_url: string | null;
-  preferred_contact_method: string | null;
-  is_active: boolean;
-  notes: string | null;
-  created_at?: string | null;
-};
-
-type EventVendorRow = {
-  id: string;
-  event_id: string;
-  vendor_id: string;
-  booth_location: string | null;
-  show_on_member_dashboard: boolean;
-  allow_service_requests: boolean;
-  status: string;
-  notes: string | null;
-  vendors?: VendorRow | null;
-};
-
-type VendorFormState = {
-  name: string;
-  contact_name: string;
-  email: string;
-  phone: string;
-  website: string;
-  services: string;
-  preferred_contact_method: string;
-  notes: string;
-};
-
-const emptyVendorForm: VendorFormState = {
-  name: "",
-  contact_name: "",
-  email: "",
-  phone: "",
-  website: "",
-  services: "",
-  preferred_contact_method: "email",
-  notes: "",
 };
 
 
@@ -335,14 +290,189 @@ function previewAttendeeImportRow(
 export default function AdminAttendeeImportsPage() {
   return (
     <AdminRouteGuard requiredTask="event.imports.manage">
-      <AdminShellAdapter pageTitle="Attendee Imports">
+      <AdminShellAdapter pageTitle="Imports">
         <AdminAttendeeImportsPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
 
+// ---- Stage 5A: Imports Service Center doors -----------------------------
+//
+// Domain Workspace -> Contextual Action -> Shared Service Center. Multiple
+// doors, one governed workflow per import type -- see
+// docs/architecture/EPICENTRAX_GOVERNED_IMPORT_STAGING_ARCHITECTURE.md.
+
+type TemplateFile = { label: string; href: string };
+
+function TemplateDownloadList({ files }: { files: TemplateFile[] }) {
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      {files.map((file) => (
+        <a key={file.href} href={file.href}>
+          {file.label}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+const ATTENDEE_TEMPLATE_FILES: TemplateFile[] = [
+  { label: "Download Sample CSV", href: "/templates/attendee-roster/attendee_roster_import_template_sample.csv" },
+  { label: "Download Blank CSV", href: "/templates/attendee-roster/attendee_roster_import_template_blank.csv" },
+  { label: "Download Sample XLSX", href: "/templates/attendee-roster/attendee_roster_import_template_sample.xlsx" },
+  { label: "Download Blank XLSX", href: "/templates/attendee-roster/attendee_roster_import_template_blank.xlsx" },
+  { label: "Instructions / notes", href: "/templates/attendee-roster/attendee_roster_import_template_notes.txt" },
+];
+
+const AGENDA_TEMPLATE_FILES: TemplateFile[] = [
+  { label: "Download Sample CSV", href: "/templates/agenda/agenda_import_template_sample_with_speaker.csv" },
+  { label: "Download Blank CSV", href: "/templates/agenda/agenda_import_template_blank_with_speaker.csv" },
+  { label: "Download Sample XLSX", href: "/templates/agenda/agenda_import_template_sample_with_speaker.xlsx" },
+  { label: "Download Blank XLSX", href: "/templates/agenda/agenda_import_template_blank_with_speaker.xlsx" },
+  { label: "Instructions / notes", href: "/templates/agenda/agenda_import_template_notes_with_speaker.txt" },
+];
+
+const VENDOR_TEMPLATE_FILES: TemplateFile[] = [
+  { label: "Download Sample CSV", href: "/templates/vendors/vendor_import_template_sample.csv" },
+  { label: "Download Blank CSV", href: "/templates/vendors/vendor_import_template_blank.csv" },
+  { label: "Download Sample XLSX", href: "/templates/vendors/vendor_import_template_sample.xlsx" },
+  { label: "Download Blank XLSX", href: "/templates/vendors/vendor_import_template_blank.xlsx" },
+  { label: "Instructions / notes", href: "/templates/vendors/vendor_import_template_notes.txt" },
+];
+
+function ImportsLandingDoors() {
+  return (
+    <>
+      <PageSection variant="section">
+        <PageHeader title="Imports" headingLevel="h1" titleClassName="app-section-title" />
+        <p className="app-subtle-text" style={{ marginTop: 0 }}>
+          What do you want to import?
+        </p>
+      </PageSection>
+
+      <div
+        style={{
+          display: "grid",
+          gap: "var(--space-5)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+        }}
+      >
+        <PageSection variant="card">
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
+              <h2 className="app-section-title" style={{ margin: 0 }}>Attendee Roster</h2>
+              <StatusBadge tone="success">Available</StatusBadge>
+            </div>
+            <p className="app-subtle-text" style={{ margin: 0 }}>
+              Governed roster import: staged, validated, and committed through the Stage 1-3.1 pipeline.
+            </p>
+            <AppLinkButton variant="primary" href={buildImportsHref("attendee-roster")}>
+              Open Attendee Import
+            </AppLinkButton>
+            <TemplateDownloadList files={ATTENDEE_TEMPLATE_FILES} />
+          </div>
+        </PageSection>
+
+        <PageSection variant="card">
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
+              <h2 className="app-section-title" style={{ margin: 0 }}>Agenda</h2>
+              <StatusBadge tone="success">Available</StatusBadge>
+            </div>
+            <p className="app-subtle-text" style={{ margin: 0 }}>
+              Import a schedule file into the existing governed Agenda import workflow.
+            </p>
+            <AppLinkButton variant="primary" href={buildImportsHref("agenda")}>
+              Open Agenda Import
+            </AppLinkButton>
+            <TemplateDownloadList files={AGENDA_TEMPLATE_FILES} />
+          </div>
+        </PageSection>
+
+        <PageSection variant="card">
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
+              <h2 className="app-section-title" style={{ margin: 0 }}>Vendors</h2>
+              <StatusBadge tone="neutral">Planned</StatusBadge>
+            </div>
+            <p className="app-subtle-text" style={{ margin: 0 }}>
+              Templates and field contract are ready; canonical Vendor import execution is coming in a later stage.
+            </p>
+            <AppLinkButton variant="default" href={buildImportsHref("vendors")}>
+              View Vendor Templates
+            </AppLinkButton>
+            <TemplateDownloadList files={VENDOR_TEMPLATE_FILES} />
+          </div>
+        </PageSection>
+      </div>
+    </>
+  );
+}
+
+function AgendaImportDoor() {
+  return (
+    <PageSection variant="card">
+      <div style={{ display: "grid", gap: "var(--space-3)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
+          <h2 className="app-section-title" style={{ margin: 0 }}>Agenda Import</h2>
+          <StatusBadge tone="success">Available</StatusBadge>
+        </div>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Agenda import is owned by the Agenda module and uses one governed implementation
+          (parsing, validation, and the governed <code>import_event_agenda_items</code> commit RPC).
+          This door opens that same workflow -- it is not a second importer.
+        </p>
+        <AppLinkButton variant="primary" href="/admin/agenda?mode=import">
+          Open Agenda Import
+        </AppLinkButton>
+        <TemplateDownloadList files={AGENDA_TEMPLATE_FILES} />
+        <AppLinkButton variant="tertiary" href="/admin/imports">
+          Back to Imports
+        </AppLinkButton>
+      </div>
+    </PageSection>
+  );
+}
+
+function VendorImportDoor() {
+  return (
+    <PageSection variant="card">
+      <div style={{ display: "grid", gap: "var(--space-3)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
+          <h2 className="app-section-title" style={{ margin: 0 }}>Vendor Import</h2>
+          <StatusBadge tone="neutral">Planned</StatusBadge>
+        </div>
+        <Alert tone="info">
+          Vendor import execution is not yet available. The field contract and downloadable templates
+          below establish the approved future format; no file uploaded here is processed yet.
+        </Alert>
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Preferred fields: {VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.map((f) => f.preferredHeading).join(", ")}.
+        </p>
+        <TemplateDownloadList files={VENDOR_TEMPLATE_FILES} />
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <AppLinkButton variant="tertiary" href="/admin/vendors">
+            Go to Vendor Workspace
+          </AppLinkButton>
+          <AppLinkButton variant="tertiary" href="/admin/imports">
+            Back to Imports
+          </AppLinkButton>
+        </div>
+      </div>
+    </PageSection>
+  );
+}
+
 function AdminAttendeeImportsPageInner() {
+  // Deep-link contract (Stage 5A): ?type=attendee-roster|agenda|vendors
+  // selects which Imports Service Center door is open. An unknown or
+  // missing value falls back to the landing view -- never a throw, never
+  // a localStorage-driven selection. This carries no authority; each
+  // door's own governed workflow enforces its own authority independently.
+  const searchParams = useSearchParams();
+  const importType = readImportType(searchParams);
+
   const { admin, loading: adminLoading } = useAdmin();
 
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
@@ -381,29 +511,7 @@ function AdminAttendeeImportsPageInner() {
   const [importing, setImporting] = useState(false);
   const [status, setStatus] = useState("Load a CSV or XLSX file to begin.");
   const [error, setError] = useState<string | null>(null);
-
-  const [printSettings, setPrintSettings] = useState<PrintSettingsRow | null>(
-    null,
-  );
-  const [nameTagFile, setNameTagFile] = useState<File | null>(null);
-  const [coachPlateFile, setCoachPlateFile] = useState<File | null>(null);
-  const [assetStatus, setAssetStatus] = useState("");
-  const [assetError, setAssetError] = useState<string | null>(null);
-  const [savingNameTagBg, setSavingNameTagBg] = useState(false);
-  const [savingCoachPlateBg, setSavingCoachPlateBg] = useState(false);
   const [showFullImportTable, setShowFullImportTable] = useState(false);
-
-  const [vendors, setVendors] = useState<VendorRow[]>([]);
-  const [eventVendors, setEventVendors] = useState<EventVendorRow[]>([]);
-  const [loadingVendors, setLoadingVendors] = useState(false);
-  const [vendorSaving, setVendorSaving] = useState(false);
-  const [vendorStatus, setVendorStatus] = useState("");
-  const [vendorError, setVendorError] = useState<string | null>(null);
-  const [vendorForm, setVendorForm] =
-    useState<VendorFormState>(emptyVendorForm);
-  const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
-  const [editingVendorForm, setEditingVendorForm] =
-    useState<VendorFormState>(emptyVendorForm);
 
   useEffect(() => {
     async function loadEvents() {
@@ -500,50 +608,6 @@ function AdminAttendeeImportsPageInner() {
   }, []);
 
   useEffect(() => {
-    async function loadPrintSettings() {
-      if (!selectedImportEventId) {
-        setPrintSettings(null);
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from("event_print_settings")
-          .select("*")
-          .eq("event_id", selectedImportEventId)
-          .maybeSingle();
-
-        if (error) {
-          throw error;
-        }
-
-        if (data) {
-          setPrintSettings(data as PrintSettingsRow);
-        } else {
-          setPrintSettings({
-            event_id: selectedImportEventId,
-            name_tag_bg_url: null,
-            coach_plate_bg_url: null,
-          });
-        }
-
-        setAssetStatus("");
-        setAssetError(null);
-      } catch (err: any) {
-        console.error("Error loading print settings:", err);
-        setPrintSettings({
-          event_id: selectedImportEventId,
-          name_tag_bg_url: null,
-          coach_plate_bg_url: null,
-        });
-        setAssetError(err?.message || "Could not load print settings.");
-      }
-    }
-
-    void loadPrintSettings();
-  }, [selectedImportEventId]);
-
-  useEffect(() => {
     if (!selectedImportEventId) {
       return;
     }
@@ -563,12 +627,10 @@ function AdminAttendeeImportsPageInner() {
   useEffect(() => {
     if (!selectedImportEventId) {
       setSavedAttendees([]);
-      setEventVendors([]);
       return;
     }
 
     void loadSavedAttendees(selectedImportEventId);
-    void loadVendors(selectedImportEventId);
   }, [selectedImportEventId]);
 
   useEffect(() => {
@@ -887,360 +949,9 @@ function AdminAttendeeImportsPageInner() {
     }
   }
 
-  async function loadVendors(eventId: string) {
-    try {
-      setLoadingVendors(true);
-      setVendorError(null);
-
-      const [
-        { data: vendorData, error: vendorLoadError },
-        { data: assignmentData, error: assignmentLoadError },
-      ] = await Promise.all([
-        supabase.from("vendors").select("*").order("name", { ascending: true }),
-        supabase
-          .from("event_vendors")
-          .select(
-            `
-                id,
-                event_id,
-                vendor_id,
-                booth_location,
-                show_on_member_dashboard,
-                allow_service_requests,
-                status,
-                notes,
-                vendor:vendors (
-                  id,
-                  name,
-                  contact_name,
-                  email,
-                  phone,
-                  website,
-                  services,
-                  logo_url,
-                  preferred_contact_method,
-                  is_active,
-                  notes,
-                  created_at
-                )
-              `,
-          )
-          .eq("event_id", eventId)
-          .order("created_at", { ascending: true }),
-      ]);
-
-      if (vendorLoadError) {
-        throw vendorLoadError;
-      }
-
-      if (assignmentLoadError) {
-        throw assignmentLoadError;
-      }
-
-      setVendors((vendorData || []) as VendorRow[]);
-      setEventVendors(
-        (assignmentData || []).map((assignment: any) => ({
-          ...assignment,
-          vendors: Array.isArray(assignment.vendor)
-            ? assignment.vendor[0] || null
-            : assignment.vendor || null,
-        })) as EventVendorRow[],
-      );
-    } catch (err: any) {
-      console.error("loadVendors error:", err);
-      setVendors([]);
-      setEventVendors([]);
-      setVendorError(err?.message || "Could not load vendors.");
-    } finally {
-      setLoadingVendors(false);
-    }
-  }
-
-  function updateVendorForm(key: keyof VendorFormState, value: string) {
-    setVendorForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function updateEditingVendorForm(key: keyof VendorFormState, value: string) {
-    setEditingVendorForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function startEditVendor(vendor: VendorRow) {
-    setEditingVendorId(vendor.id);
-    setEditingVendorForm({
-      name: vendor.name || "",
-      contact_name: vendor.contact_name || "",
-      email: vendor.email || "",
-      phone: vendor.phone || "",
-      website: vendor.website || "",
-      services: vendor.services || "",
-      preferred_contact_method: vendor.preferred_contact_method || "email",
-      notes: vendor.notes || "",
-    });
-    setVendorError(null);
-    setVendorStatus("");
-  }
-
-  function cancelEditVendor() {
-    setEditingVendorId(null);
-    setEditingVendorForm(emptyVendorForm);
-    setVendorError(null);
-  }
-
-  async function saveEditedVendor() {
-    if (!editingVendorId) {
-      return;
-    }
-
-    const vendorName = editingVendorForm.name.trim();
-
-    if (!vendorName) {
-      setVendorError("Vendor name is required.");
-      return;
-    }
-
-    try {
-      setVendorSaving(true);
-      setVendorError(null);
-      setVendorStatus("Saving vendor changes...");
-
-      const payload = {
-        name: vendorName,
-        business_name: vendorName,
-        contact_name: editingVendorForm.contact_name.trim() || null,
-        email: editingVendorForm.email.trim() || null,
-        phone: editingVendorForm.phone.trim() || null,
-        website: editingVendorForm.website.trim() || null,
-        services: editingVendorForm.services.trim() || null,
-        preferred_contact_method:
-          editingVendorForm.preferred_contact_method || null,
-        notes: editingVendorForm.notes.trim() || null,
-      };
-
-      const { error: updateError } = await supabase
-        .from("vendors")
-        .update(payload)
-        .eq("id", editingVendorId);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      setEditingVendorId(null);
-      setEditingVendorForm(emptyVendorForm);
-      setVendorStatus("Vendor updated.");
-
-      if (selectedImportEventId) {
-        await loadVendors(selectedImportEventId);
-      }
-    } catch (err: any) {
-      console.error("saveEditedVendor error:", err);
-      setVendorError(err?.message || "Could not update vendor.");
-      setVendorStatus("");
-    } finally {
-      setVendorSaving(false);
-    }
-  }
-
-  async function createVendor() {
-    const vendorName = vendorForm.name.trim();
-
-    if (!vendorName) {
-      setVendorError("Vendor name is required.");
-      return;
-    }
-
-    try {
-      setVendorSaving(true);
-      setVendorError(null);
-      setVendorStatus("Saving vendor...");
-
-      const payload = {
-        name: vendorName,
-        business_name: vendorName,
-        contact_name: vendorForm.contact_name.trim() || null,
-        email: vendorForm.email.trim() || null,
-        phone: vendorForm.phone.trim() || null,
-        website: vendorForm.website.trim() || null,
-        services: vendorForm.services.trim() || null,
-        preferred_contact_method: vendorForm.preferred_contact_method || null,
-        notes: vendorForm.notes.trim() || null,
-        is_active: true,
-      };
-
-      const { error: insertError } = await supabase
-        .from("vendors")
-        .insert(payload);
-
-      if (insertError) {
-        throw insertError;
-      }
-
-      setVendorForm(emptyVendorForm);
-      setVendorStatus("Vendor saved to the library.");
-
-      if (selectedImportEventId) {
-        await loadVendors(selectedImportEventId);
-      }
-    } catch (err: any) {
-      console.error("createVendor error:", err);
-      setVendorError(err?.message || "Could not save vendor.");
-      setVendorStatus("");
-    } finally {
-      setVendorSaving(false);
-    }
-  }
-
-  async function assignVendorToEvent(vendorId: string) {
-    if (!selectedImportEventId) {
-      setVendorError("Select an event before assigning vendors.");
-      return;
-    }
-
-    try {
-      setVendorSaving(true);
-      setVendorError(null);
-      setVendorStatus("Assigning vendor to event...");
-
-      // Governed admission (Stage 3): direct event_vendors DML is no longer
-      // permitted. admit_vendor_for_event's table defaults
-      // (show_on_member_dashboard=true, allow_service_requests=false,
-      // status='assigned') reproduce exactly what this upsert used to set
-      // explicitly, and the RPC is idempotent if the vendor is already
-      // admitted.
-      const { error: admitError } = await supabase.rpc("admit_vendor_for_event", {
-        p_vendor_id: vendorId,
-        p_event_id: selectedImportEventId,
-      });
-
-      if (admitError) {
-        throw admitError;
-      }
-
-      setVendorStatus("Vendor assigned to this event.");
-      await loadVendors(selectedImportEventId);
-    } catch (err: any) {
-      console.error("assignVendorToEvent error:", err);
-      setVendorError(err?.message || "Could not assign vendor to event.");
-      setVendorStatus("");
-    } finally {
-      setVendorSaving(false);
-    }
-  }
-
-  async function unassignVendorFromEvent(vendorId: string) {
-    if (!selectedImportEventId) {
-      return;
-    }
-
-    const reason = window.prompt(
-      "Reason for removing this vendor from the event (required):",
-    );
-    if (reason === null) {
-      return;
-    }
-    const trimmedReason = reason.trim();
-    if (!trimmedReason) {
-      setVendorError("A reason is required to remove a vendor from this event.");
-      return;
-    }
-
-    try {
-      setVendorSaving(true);
-      setVendorError(null);
-      setVendorStatus("Removing vendor from this event...");
-
-      // Governed revocation (Stage 3): direct event_vendors DML is no
-      // longer permitted. This quick-action UI has no structured reason
-      // picker yet, so it supplies the admin's own typed reason as
-      // reason_text under the non-quality-implying "other_administrative"
-      // code rather than guessing a more specific classification.
-      const { error: revokeError } = await supabase.rpc("revoke_vendor_admission", {
-        p_vendor_id: vendorId,
-        p_event_id: selectedImportEventId,
-        p_reason_code: "other_administrative",
-        p_reason_text: trimmedReason,
-      });
-
-      if (revokeError) {
-        throw revokeError;
-      }
-
-      setVendorStatus(
-        "Vendor removed from this event. It remains in the library.",
-      );
-      await loadVendors(selectedImportEventId);
-    } catch (err: any) {
-      console.error("unassignVendorFromEvent error:", err);
-      setVendorError(err?.message || "Could not remove vendor from event.");
-      setVendorStatus("");
-    } finally {
-      setVendorSaving(false);
-    }
-  }
-
-  // Metadata Governance Bridge: direct event_vendors DML remains
-  // permanently closed (Stage 3). This now calls the governed
-  // update_event_vendor_metadata RPC, which accepts only this same
-  // metadata allowlist (booth_location/show_on_member_dashboard/
-  // allow_service_requests/notes) and is structurally incapable of
-  // touching admission-lifecycle state. Takes vendor_id rather than the
-  // assignment row id -- the RPC identifies the event_vendors
-  // relationship by (vendor_id, event_id) server-side.
-  async function updateEventVendorSetting(
-    vendorId: string,
-    updates: Partial<
-      Pick<
-        EventVendorRow,
-        | "booth_location"
-        | "show_on_member_dashboard"
-        | "allow_service_requests"
-        | "notes"
-      >
-    >,
-  ) {
-    if (!selectedImportEventId) {
-      return;
-    }
-
-    try {
-      setVendorSaving(true);
-      setVendorError(null);
-      setVendorStatus("Updating event vendor...");
-
-      const { error } = await supabase.rpc("update_event_vendor_metadata", {
-        p_vendor_id: vendorId,
-        p_event_id: selectedImportEventId,
-        p_updates: updates,
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      setVendorStatus("Event vendor updated.");
-      await loadVendors(selectedImportEventId);
-    } catch (err: any) {
-      console.error("update event vendor metadata error:", err);
-      setVendorError(err?.message || "Could not update event vendor.");
-      setVendorStatus("");
-    } finally {
-      setVendorSaving(false);
-    }
-  }
-
   const selectedImportEvent =
     availableEvents.find((event) => event.id === selectedImportEventId) || null;
   const pageTitle = "Attendee Imports";
-
-  const assignedVendorIds = useMemo(
-    () => new Set(eventVendors.map((assignment) => assignment.vendor_id)),
-    [eventVendors],
-  );
-
-  const unassignedVendors = useMemo(
-    () => vendors.filter((vendor) => !assignedVendorIds.has(vendor.id)),
-    [vendors, assignedVendorIds],
-  );
 
   const eventChangedSinceLoad =
     !!rows.length &&
@@ -1308,138 +1019,6 @@ function AdminAttendeeImportsPageInner() {
       setStatus("Parse failed.");
     } finally {
       setParsing(false);
-    }
-  }
-
-  async function ensurePrintSettingsRow(nextValues: Partial<PrintSettingsRow>) {
-    if (!selectedImportEventId) {
-      return null;
-    }
-
-    const payload = {
-      event_id: selectedImportEventId,
-      name_tag_bg_url:
-        nextValues.name_tag_bg_url ?? printSettings?.name_tag_bg_url ?? null,
-      coach_plate_bg_url:
-        nextValues.coach_plate_bg_url ??
-        printSettings?.coach_plate_bg_url ??
-        null,
-    };
-
-    const { data, error } = await supabase
-      .from("event_print_settings")
-      .upsert(payload, { onConflict: "event_id" })
-      .select("*")
-      .single();
-
-    if (error) {
-      throw error;
-    }
-
-    const row = data as PrintSettingsRow;
-    setPrintSettings(row);
-    return row;
-  }
-
-  async function uploadFileToBucket(file: File, path: string) {
-    const { error: uploadError } = await supabase.storage
-      .from("event-assets")
-      .upload(path, file, {
-        upsert: true,
-        contentType: file.type || "image/png",
-      });
-
-    if (uploadError) {
-      throw uploadError;
-    }
-
-    const { data } = supabase.storage.from("event-assets").getPublicUrl(path);
-    return data.publicUrl;
-  }
-
-  async function handleUploadNameTagBackground() {
-    if (!selectedImportEventId || !nameTagFile) {
-      return;
-    }
-
-    try {
-      setSavingNameTagBg(true);
-      setAssetError(null);
-      setAssetStatus("Uploading name tag background...");
-
-      const ext = nameTagFile.name.split(".").pop() || "png";
-      const path = `${selectedImportEventId}/name-tag-bg.${ext}`;
-      const publicUrl = await uploadFileToBucket(nameTagFile, path);
-
-      await ensurePrintSettingsRow({ name_tag_bg_url: publicUrl });
-      setNameTagFile(null);
-      setAssetStatus("Name tag background saved.");
-    } catch (err: any) {
-      console.error(err);
-      setAssetError(err?.message || "Could not save name tag background.");
-      setAssetStatus("");
-    } finally {
-      setSavingNameTagBg(false);
-    }
-  }
-
-  async function handleUploadCoachPlateBackground() {
-    if (!selectedImportEventId || !coachPlateFile) {
-      return;
-    }
-
-    try {
-      setSavingCoachPlateBg(true);
-      setAssetError(null);
-      setAssetStatus("Uploading coach plate background...");
-
-      const ext = coachPlateFile.name.split(".").pop() || "png";
-      const path = `${selectedImportEventId}/coach-plate-bg.${ext}`;
-      const publicUrl = await uploadFileToBucket(coachPlateFile, path);
-
-      await ensurePrintSettingsRow({ coach_plate_bg_url: publicUrl });
-      setCoachPlateFile(null);
-      setAssetStatus("Coach plate background saved.");
-    } catch (err: any) {
-      console.error(err);
-      setAssetError(err?.message || "Could not save coach plate background.");
-      setAssetStatus("");
-    } finally {
-      setSavingCoachPlateBg(false);
-    }
-  }
-
-  async function clearNameTagBackground() {
-    if (!selectedImportEventId) {
-      return;
-    }
-
-    try {
-      setAssetError(null);
-      setAssetStatus("Removing name tag background...");
-      await ensurePrintSettingsRow({ name_tag_bg_url: null });
-      setAssetStatus("Name tag background removed.");
-    } catch (err: any) {
-      console.error(err);
-      setAssetError(err?.message || "Could not remove name tag background.");
-      setAssetStatus("");
-    }
-  }
-
-  async function clearCoachPlateBackground() {
-    if (!selectedImportEventId) {
-      return;
-    }
-
-    try {
-      setAssetError(null);
-      setAssetStatus("Removing coach plate background...");
-      await ensurePrintSettingsRow({ coach_plate_bg_url: null });
-      setAssetStatus("Coach plate background removed.");
-    } catch (err: any) {
-      console.error(err);
-      setAssetError(err?.message || "Could not remove coach plate background.");
-      setAssetStatus("");
     }
   }
 
@@ -1574,481 +1153,36 @@ function AdminAttendeeImportsPageInner() {
         parentLabel="Attendees"
       />
 
-      <div className="card" style={{ padding: 18 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "start",
-            marginBottom: 14,
-          }}
-        >
+      {importType === null ? (
+        <ImportsLandingDoors />
+      ) : importType === "agenda" ? (
+        <AgendaImportDoor />
+      ) : importType === "vendors" ? (
+        <VendorImportDoor />
+      ) : (
+        <>
+      <PageSection variant="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12, flexWrap: "wrap" }}>
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Vendor Library</h2>
-            <div style={{ fontSize: 14, opacity: 0.8 }}>
-              Store vendors once, then assign them only to the selected event.
-            </div>
+            <h2 className="app-section-title" style={{ margin: 0 }}>Attendee Roster Import</h2>
+            <p className="app-subtle-text" style={{ margin: "4px 0 0" }}>
+              Governed workflow: Stage 2 normalize -&gt; Stage 1 stage -&gt; Stage 3 commit -&gt; Stage 3.1 failure recording -&gt; Stage 1.1 recovery.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              selectedImportEventId
-                ? void loadVendors(selectedImportEventId)
-                : null
-            }
-            disabled={!selectedImportEventId || loadingVendors}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #ccc",
-              background: "#ffffff",
-              color: "#111827",
-              WebkitTextFillColor: "#111827",
-              fontWeight: 700,
-              lineHeight: 1.2,
-              cursor: "pointer",
-            }}
-          >
-            Refresh Vendors
-          </button>
+          <AppLinkButton variant="tertiary" href="/admin/imports">
+            Back to Imports
+          </AppLinkButton>
         </div>
-
-        {vendorError ? (
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #e2b4b4",
-              background: "#fff3f3",
-              color: "#8a1f1f",
-            }}
-          >
-            {vendorError}
+        <details style={{ marginTop: 12 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>Templates</summary>
+          <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+            <p className="app-subtle-text" style={{ margin: 0 }}>
+              Preferred fields: {ATTENDEE_IMPORT_TEMPLATE_CONTRACT.fields.map((f) => f.preferredHeading).join(", ")}.
+            </p>
+            <TemplateDownloadList files={ATTENDEE_TEMPLATE_FILES} />
           </div>
-        ) : null}
-
-        {vendorStatus ? (
-          <div style={{ fontSize: 14, marginBottom: 12 }}>{vendorStatus}</div>
-        ) : null}
-
-        <div
-          style={{
-            display: "grid",
-            gap: 18,
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          }}
-        >
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 14,
-              background: "#fafafa",
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: 10 }}>
-              Add Vendor to Library
-            </h3>
-
-            <div style={{ display: "grid", gap: 10 }}>
-              <input
-                value={vendorForm.name}
-                onChange={(e) => updateVendorForm("name", e.target.value)}
-                placeholder="Vendor name"
-                style={inputStyle}
-              />
-              <input
-                value={vendorForm.contact_name}
-                onChange={(e) =>
-                  updateVendorForm("contact_name", e.target.value)
-                }
-                placeholder="Contact name"
-                style={inputStyle}
-              />
-              <input
-                value={vendorForm.email}
-                onChange={(e) => updateVendorForm("email", e.target.value)}
-                placeholder="Email"
-                style={inputStyle}
-              />
-              <input
-                value={vendorForm.phone}
-                onChange={(e) => updateVendorForm("phone", e.target.value)}
-                placeholder="Phone"
-                style={inputStyle}
-              />
-              <input
-                value={vendorForm.website}
-                onChange={(e) => updateVendorForm("website", e.target.value)}
-                placeholder="Website"
-                style={inputStyle}
-              />
-              <textarea
-                value={vendorForm.services}
-                onChange={(e) => updateVendorForm("services", e.target.value)}
-                placeholder="Services offered"
-                rows={3}
-                style={inputStyle}
-              />
-              <select
-                value={vendorForm.preferred_contact_method}
-                onChange={(e) =>
-                  updateVendorForm("preferred_contact_method", e.target.value)
-                }
-                style={inputStyle}
-              >
-                <option value="email">Email</option>
-                <option value="phone">Phone</option>
-                <option value="text">Text</option>
-                <option value="in_app">In-app request</option>
-              </select>
-              <textarea
-                value={vendorForm.notes}
-                onChange={(e) => updateVendorForm("notes", e.target.value)}
-                placeholder="Internal notes"
-                rows={3}
-                style={inputStyle}
-              />
-              <button
-                type="button"
-                onClick={() => void createVendor()}
-                disabled={vendorSaving || !vendorForm.name.trim()}
-                style={{
-                  ...darkButtonStyle,
-                  opacity: vendorSaving || !vendorForm.name.trim() ? 0.6 : 1,
-                }}
-              >
-                {vendorSaving ? "Saving..." : "Save Vendor"}
-              </button>
-            </div>
-          </div>
-
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 14,
-              background: "#fafafa",
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: 10 }}>
-              Assigned to Selected Event
-            </h3>
-
-            {!selectedImportEventId ? (
-              <div style={{ opacity: 0.8 }}>Select an event first.</div>
-            ) : loadingVendors ? (
-              <div>Loading vendors...</div>
-            ) : eventVendors.length === 0 ? (
-              <div style={{ opacity: 0.8 }}>
-                No vendors assigned to this event yet.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {eventVendors.map((assignment) => {
-                  const vendor = assignment.vendors;
-                  return (
-                    <div
-                      key={assignment.id}
-                      style={{
-                        border: "1px solid #ddd",
-                        borderRadius: 12,
-                        padding: 12,
-                        background: "white",
-                      }}
-                    >
-                      <div style={{ fontWeight: 800, marginBottom: 4 }}>
-                        {vendor?.name || "Vendor"}
-                      </div>
-                      <div
-                        style={{ fontSize: 13, opacity: 0.8, marginBottom: 8 }}
-                      >
-                        {[vendor?.contact_name, vendor?.email, vendor?.phone]
-                          .filter(Boolean)
-                          .join(" • ") || "No contact details"}
-                      </div>
-                      {vendor?.services ? (
-                        <div style={{ fontSize: 13, marginBottom: 8 }}>
-                          {vendor.services}
-                        </div>
-                      ) : null}
-                      <input
-                        defaultValue={assignment.booth_location || ""}
-                        onBlur={(e) =>
-                          void updateEventVendorSetting(assignment.vendor_id, {
-                            booth_location: e.target.value.trim() || null,
-                          })
-                        }
-                        placeholder="Booth / site / location"
-                        style={{ ...inputStyle, marginBottom: 8 }}
-                      />
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: 13,
-                          marginBottom: 6,
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={assignment.show_on_member_dashboard}
-                          onChange={(e) =>
-                            void updateEventVendorSetting(assignment.vendor_id, {
-                              show_on_member_dashboard: e.target.checked,
-                            })
-                          }
-                        />{" "}
-                        Show on member dashboard
-                      </label>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: 13,
-                          marginBottom: 10,
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={assignment.allow_service_requests}
-                          onChange={(e) =>
-                            void updateEventVendorSetting(assignment.vendor_id, {
-                              allow_service_requests: e.target.checked,
-                            })
-                          }
-                        />{" "}
-                        Allow service requests
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void unassignVendorFromEvent(assignment.vendor_id)
-                        }
-                        // UI-alignment only, not the security boundary --
-                        // see the Assign button above for rationale.
-                        disabled={
-                          vendorSaving || !hasPermission(admin, "can_manage_vendors")
-                        }
-                        style={{
-                          padding: "8px 12px",
-                          borderRadius: 10,
-                          border: "1px solid #fca5a5",
-                          background: "#fff7f7",
-                          color: "#991b1b",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        Remove from this event
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div style={{ marginTop: 18 }}>
-          <h3 style={{ marginTop: 0, marginBottom: 10 }}>Library Vendors</h3>
-          {vendors.length === 0 ? (
-            <div style={{ opacity: 0.8 }}>No vendors in the library yet.</div>
-          ) : unassignedVendors.length === 0 ? (
-            <div style={{ opacity: 0.8 }}>
-              All active library vendors are assigned to this event.
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              }}
-            >
-              {unassignedVendors.map((vendor) => {
-                const isEditing = editingVendorId === vendor.id;
-
-                return (
-                  <div
-                    key={vendor.id}
-                    style={{
-                      border: "1px solid #ddd",
-                      borderRadius: 12,
-                      padding: 12,
-                      background: "#ffffff",
-                    }}
-                  >
-                    {isEditing ? (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        <input
-                          value={editingVendorForm.name}
-                          onChange={(e) =>
-                            updateEditingVendorForm("name", e.target.value)
-                          }
-                          placeholder="Vendor name"
-                          style={inputStyle}
-                        />
-                        <input
-                          value={editingVendorForm.contact_name}
-                          onChange={(e) =>
-                            updateEditingVendorForm(
-                              "contact_name",
-                              e.target.value,
-                            )
-                          }
-                          placeholder="Contact name"
-                          style={inputStyle}
-                        />
-                        <input
-                          value={editingVendorForm.email}
-                          onChange={(e) =>
-                            updateEditingVendorForm("email", e.target.value)
-                          }
-                          placeholder="Email"
-                          style={inputStyle}
-                        />
-                        <input
-                          value={editingVendorForm.phone}
-                          onChange={(e) =>
-                            updateEditingVendorForm("phone", e.target.value)
-                          }
-                          placeholder="Phone"
-                          style={inputStyle}
-                        />
-                        <input
-                          value={editingVendorForm.website}
-                          onChange={(e) =>
-                            updateEditingVendorForm("website", e.target.value)
-                          }
-                          placeholder="Website"
-                          style={inputStyle}
-                        />
-                        <textarea
-                          value={editingVendorForm.services}
-                          onChange={(e) =>
-                            updateEditingVendorForm("services", e.target.value)
-                          }
-                          placeholder="Services offered"
-                          rows={3}
-                          style={inputStyle}
-                        />
-                        <select
-                          value={editingVendorForm.preferred_contact_method}
-                          onChange={(e) =>
-                            updateEditingVendorForm(
-                              "preferred_contact_method",
-                              e.target.value,
-                            )
-                          }
-                          style={inputStyle}
-                        >
-                          <option value="email">Email</option>
-                          <option value="phone">Phone</option>
-                          <option value="text">Text</option>
-                          <option value="in_app">In-app request</option>
-                        </select>
-                        <textarea
-                          value={editingVendorForm.notes}
-                          onChange={(e) =>
-                            updateEditingVendorForm("notes", e.target.value)
-                          }
-                          placeholder="Internal notes"
-                          rows={2}
-                          style={inputStyle}
-                        />
-                        <div
-                          style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => void saveEditedVendor()}
-                            disabled={
-                              vendorSaving || !editingVendorForm.name.trim()
-                            }
-                            style={{
-                              ...darkButtonStyle,
-                              opacity:
-                                vendorSaving || !editingVendorForm.name.trim()
-                                  ? 0.6
-                                  : 1,
-                            }}
-                          >
-                            Save Changes
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelEditVendor}
-                            disabled={vendorSaving}
-                            style={secondaryButtonStyle}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div style={{ fontWeight: 800, marginBottom: 4 }}>
-                          {vendor.name || "Unnamed Vendor"}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 13,
-                            opacity: 0.8,
-                            marginBottom: 8,
-                          }}
-                        >
-                          {[vendor.contact_name, vendor.email, vendor.phone]
-                            .filter(Boolean)
-                            .join(" • ") || "No contact details"}
-                        </div>
-                        {vendor.services ? (
-                          <div style={{ fontSize: 13, marginBottom: 8 }}>
-                            {vendor.services}
-                          </div>
-                        ) : null}
-                        <div
-                          style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => void assignVendorToEvent(vendor.id)}
-                            // UI-alignment only, not the security boundary
-                            // (admit_vendor_for_event's own
-                            // has_event_task_authority check is
-                            // authoritative) -- can_manage_vendors is the
-                            // existing, coarser permission key; no
-                            // client-side adapter for the canonical
-                            // per-Event event.vendors.manage task exists
-                            // yet.
-                            disabled={
-                              !selectedImportEventId ||
-                              vendorSaving ||
-                              !hasPermission(admin, "can_manage_vendors")
-                            }
-                            style={darkButtonStyle}
-                          >
-                            Assign to Selected Event
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => startEditVendor(vendor)}
-                            disabled={vendorSaving}
-                            style={secondaryButtonStyle}
-                          >
-                            Edit
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
+        </details>
+      </PageSection>
 
       <div className="card" style={{ padding: 18 }}>
         <div
@@ -2402,189 +1536,6 @@ function AdminAttendeeImportsPageInner() {
           </div>
         </div>
       ) : null}
-
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Print Assets</h2>
-        <p style={{ marginTop: 0, opacity: 0.8 }}>
-          Optional PNG or image uploads for event-specific name tag and coach
-          plate backgrounds.
-        </p>
-
-        {assetError ? (
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #e2b4b4",
-              background: "#fff3f3",
-              color: "#8a1f1f",
-            }}
-          >
-            {assetError}
-          </div>
-        ) : null}
-
-        {assetStatus ? (
-          <div style={{ fontSize: 14, marginBottom: 12 }}>{assetStatus}</div>
-        ) : null}
-
-        <div
-          style={{
-            display: "grid",
-            gap: 18,
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          }}
-        >
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 14,
-              background: "#fafafa",
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: 10 }}>
-              Name Tag Background
-            </h3>
-
-            <input
-              type="file"
-              accept="image/*"
-              disabled={loadingEvent || !selectedImportEventId}
-              onChange={(e) => setNameTagFile(e.target.files?.[0] || null)}
-            />
-
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                marginTop: 12,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => void handleUploadNameTagBackground()}
-                disabled={
-                  !selectedImportEventId || !nameTagFile || savingNameTagBg
-                }
-              >
-                {savingNameTagBg
-                  ? "Uploading..."
-                  : "Upload Name Tag Background"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void clearNameTagBackground()}
-                disabled={
-                  !selectedImportEventId || !printSettings?.name_tag_bg_url
-                }
-              >
-                Remove Background
-              </button>
-            </div>
-
-            {printSettings?.name_tag_bg_url ? (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 13, marginBottom: 8, opacity: 0.8 }}>
-                  Current background
-                </div>
-                <img
-                  src={printSettings.name_tag_bg_url}
-                  alt="Name tag background preview"
-                  style={{
-                    width: "100%",
-                    maxWidth: 360,
-                    border: "1px solid #ddd",
-                    borderRadius: 12,
-                  }}
-                />
-              </div>
-            ) : (
-              <div style={{ marginTop: 14, opacity: 0.7 }}>
-                No name tag background set.
-              </div>
-            )}
-          </div>
-
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 14,
-              background: "#fafafa",
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: 10 }}>
-              Coach Plate Background
-            </h3>
-
-            <input
-              type="file"
-              accept="image/*"
-              disabled={loadingEvent || !selectedImportEventId}
-              onChange={(e) => setCoachPlateFile(e.target.files?.[0] || null)}
-            />
-
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                marginTop: 12,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => void handleUploadCoachPlateBackground()}
-                disabled={
-                  !selectedImportEventId ||
-                  !coachPlateFile ||
-                  savingCoachPlateBg
-                }
-              >
-                {savingCoachPlateBg
-                  ? "Uploading..."
-                  : "Upload Coach Plate Background"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void clearCoachPlateBackground()}
-                disabled={
-                  !selectedImportEventId || !printSettings?.coach_plate_bg_url
-                }
-              >
-                Remove Background
-              </button>
-            </div>
-
-            {printSettings?.coach_plate_bg_url ? (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 13, marginBottom: 8, opacity: 0.8 }}>
-                  Current background
-                </div>
-                <img
-                  src={printSettings.coach_plate_bg_url}
-                  alt="Coach plate background preview"
-                  style={{
-                    width: "100%",
-                    maxWidth: 520,
-                    border: "1px solid #ddd",
-                    borderRadius: 12,
-                  }}
-                />
-              </div>
-            ) : (
-              <div style={{ marginTop: 14, opacity: 0.7 }}>
-                No coach plate background set.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
 
       <div className="card" style={{ padding: 18 }}>
         <h2 style={{ marginTop: 0, marginBottom: 12 }}>Import Summary</h2>
@@ -3075,6 +2026,8 @@ function AdminAttendeeImportsPageInner() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }
@@ -3086,29 +2039,6 @@ const darkButtonStyle: CSSProperties = {
   background: "#111827",
   color: "#ffffff",
   WebkitTextFillColor: "#ffffff",
-  fontWeight: 700,
-  lineHeight: 1.2,
-  cursor: "pointer",
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  color: "#111827",
-  WebkitTextFillColor: "#111827",
-  boxSizing: "border-box",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  padding: "8px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "#ffffff",
-  color: "#111827",
-  WebkitTextFillColor: "#111827",
   fontWeight: 700,
   lineHeight: 1.2,
   cursor: "pointer",

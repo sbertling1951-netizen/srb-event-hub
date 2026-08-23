@@ -1435,3 +1435,33 @@ test("the hand-rolled per-participant-type badge colors remain page-local -- a s
   assert.match(source, /function participantTypeBadgeStyle\(/);
   assert.equal((source.match(/participantTypeBadgeStyle\(/g) || []).length >= 4, true);
 });
+
+// -- Stage 5A: repair the /admin/data-review -> ?view=review deep link ----
+//
+// /admin/data-review already redirects to /admin/attendees?view=review, but
+// this page previously never read that parameter -- opening plain Attendees
+// with the Review Queue closed. Contextual routing is standardized in this
+// stage, so the contract is fixed here.
+
+test("reads ?view=review via next/navigation's useSearchParams, not localStorage, to decide the Review Queue's initial state", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  assert.match(source, /import\s*\{\s*useSearchParams\s*\}\s*from\s*"next\/navigation"/);
+  assert.match(source, /const searchParams = useSearchParams\(\);/);
+  assert.match(source, /const openReviewQueueFromDeepLink = searchParams\.get\("view"\) === "review";/);
+  assert.match(source, /useState<boolean>\(openReviewQueueFromDeepLink\)|useState\(openReviewQueueFromDeepLink\)/);
+});
+
+test("an unrecognized or missing ?view value falls back to the ordinary default (Review Queue closed) -- no throw, no workaround", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  // openReviewQueueFromDeepLink is a plain strict-equality check against
+  // the literal "review" -- any other string (or null, for a missing
+  // param) is structurally false, never a special-cased branch.
+  const line = source.slice(source.indexOf("const openReviewQueueFromDeepLink ="));
+  assert.match(line, /^const openReviewQueueFromDeepLink = searchParams\.get\("view"\) === "review";/);
+});
+
+test("the deep-link fix carries no authority of its own -- Attendees' own authority gate is unchanged", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  assert.match(source, /<AdminRouteGuard>/);
+  assert.equal(/checkAdminEventTaskAuthority\(.*view/.test(source), false);
+});

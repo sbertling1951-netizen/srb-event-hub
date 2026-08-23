@@ -76,3 +76,17 @@ test("Event context handling is unchanged: reads getCurrentAdminEvent and re-syn
   assert.match(PAGE_SOURCE, /subscribeToAdminWorkspace\(/);
   assert.equal(/setCurrentAdminEvent/.test(PAGE_SOURCE), false);
 });
+
+// -- Stage 5A: contextual action into the shared Imports Service Center --
+
+test("offers a contextual Import Vendors link to the shared Imports Service Center's Vendors door, carrying no authority of its own", () => {
+  assert.match(PAGE_SOURCE, /import\s*\{\s*buildImportsHref\s*\}\s*from\s*"@\/lib\/importTypeRouting"/);
+  assert.match(PAGE_SOURCE, /href=\{buildImportsHref\("vendors"\)\}/);
+});
+
+test("the Import Vendors link is a plain navigation anchor, not a button making an RPC/table call itself", () => {
+  const start = PAGE_SOURCE.indexOf('href={buildImportsHref("vendors")}');
+  assert.notEqual(start, -1);
+  const block = PAGE_SOURCE.slice(Math.max(0, start - 40), start + 200);
+  assert.match(block, /<a href=\{buildImportsHref\("vendors"\)\} className="admin-summary-link">/);
+});

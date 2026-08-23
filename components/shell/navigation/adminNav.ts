@@ -49,7 +49,7 @@ export function buildAdminNavSections(admin: AdminAccessResult | null): ShellNav
     // the route guard regardless of what this shows.
     hasPermission(admin, "can_manage_imports") && {
       id: "imports",
-      label: "Attendee Imports",
+      label: "Imports",
       href: "/admin/imports",
     },
     hasPermission(admin, "can_manage_checkin") && { id: "checkin", label: "Check-In", href: "/admin/checkin" },

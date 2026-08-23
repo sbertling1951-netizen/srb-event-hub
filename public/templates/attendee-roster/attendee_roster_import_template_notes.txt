@@ -1,0 +1,57 @@
+FCOC Attendee Roster Import Template Notes
+
+Preferred columns:
+Entry ID
+Pilot First Name
+Pilot Last Name
+Nickname for Badge
+Email Address
+Membership Number
+Primary Phone
+Cell Phone
+City
+State
+Co-Pilot First Name
+Co-Pilot Last Name
+Co-Pilot Nickname
+Co-Pilot Email
+Co-Pilot Cell Phone
+Coach Manufacturer
+Coach Model
+Participant Capacity
+Volunteer
+First Timer
+Share Email With Attendees
+Special Events
+Additional Attendees
+
+Required:
+- Entry ID
+- Email Address
+
+Field-by-field notes:
+- Entry ID (required, text): The unique registration identifier from your registration platform. Required -- used to match this row to an existing attendee on re-import.
+- Pilot First Name (optional, text): Pilot first name. At least one of Pilot First Name / Pilot Last Name is required.
+- Pilot Last Name (optional, text): Pilot last name. At least one of Pilot First Name / Pilot Last Name is required.
+- Nickname for Badge (optional, text): Name shown on the Pilot's badge, if different from their first name.
+- Email Address (required, email): The Pilot's email address. Required.
+- Membership Number (optional, text): Membership number, if the Pilot is a member.
+- Primary Phone (optional, phone): Pilot's primary phone number.
+- Cell Phone (optional, phone): Pilot's cell phone number.
+- City (optional, text): Pilot's mailing city.
+- State (optional, text): Pilot's mailing state/province.
+- Co-Pilot First Name (optional, text): Co-Pilot first name, if there is a Co-Pilot on this registration.
+- Co-Pilot Last Name (optional, text): Co-Pilot last name.
+- Co-Pilot Nickname (optional, text): Name shown on the Co-Pilot's badge, if different from their first name.
+- Co-Pilot Email (optional, email): Co-Pilot email address (Policy 1: committed only to the attendee's Co-Pilot fields, never a separate household member or Person record).
+- Co-Pilot Cell Phone (optional, phone): Co-Pilot cell phone number.
+- Coach Manufacturer (optional, text): Coach/motorhome manufacturer.
+- Coach Model (optional, text): Coach/motorhome model.
+- Participant Capacity (optional, integer): Total paid participant capacity for this registration, if your registration platform tracks it explicitly. Leave blank to let the import evidence the minimum from Pilot/Co-Pilot names.
+- Volunteer (optional, boolean_yes_no): Whether the Pilot wants to volunteer. Yes/Y/True/1 is Yes; anything else (including blank) is No.
+- First Timer (optional, boolean_yes_no): Whether this is the Pilot's first time at an FCOC event. Yes/Y/True/1 is Yes; anything else (including blank) is No.
+- Share Email With Attendees (optional, boolean_yes_no): Whether the Pilot agreed to share their email with other attendees. Yes/Y/True/1 is Yes; anything else (including blank) is No.
+- Special Events (optional, text): Free-text notes on special-event selections not captured by a dedicated activity column.
+- Additional Attendees (optional, text): Reference-only free text (e.g. names/ages of additional household members riding along). Never creates a Person, participation, or household-member record -- for context only.
+
+The sample template can be used as the model for either XLSX or CSV imports.

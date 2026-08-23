@@ -27,6 +27,7 @@ import {
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { buildImportsHref } from "@/lib/importTypeRouting";
 import { supabase } from "@/lib/supabase";
 import {
   admitVendorForEvent,
@@ -867,6 +868,14 @@ function AdminVendorsPageInner() {
           <a href="/admin/vendors/access" className="admin-summary-link">
             <div className="admin-summary-link-title">Vendor User Access</div>
             <div className="admin-summary-link-description">Invite and manage vendor portal logins.</div>
+          </a>
+          {/* Stage 5A contextual action into the shared Imports Service
+              Center's Vendors door -- navigation only, no authority.
+              Vendor canonical import execution is Stage 5B; the
+              destination truthfully shows it is not yet available. */}
+          <a href={buildImportsHref("vendors")} className="admin-summary-link">
+            <div className="admin-summary-link-title">Import Vendors</div>
+            <div className="admin-summary-link-description">Vendor import templates (execution: coming in a later stage).</div>
           </a>
           <a href="/admin/nearby" className="admin-summary-link">
             <div className="admin-summary-link-title">Nearby Services</div>

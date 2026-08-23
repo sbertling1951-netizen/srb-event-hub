@@ -11,14 +11,28 @@ export type AttendeeImportCandidate = {
 };
 export type AttendeeImportInterpretation = { source_payload: RawImportRow; candidate: AttendeeImportCandidate; fingerprint: Promise<string>; validation_state: "valid" | "validation_failed" | "needs_review"; issues: ImportIssue[]; identifier_evidence: { entry_id: string; email: string } };
 
-export const PREFERRED_ATTENDEE_HEADINGS = { entry_id: "Entry ID", pilot_first: "Pilot First", pilot_last: "Pilot Last", email: "Email", copilot_email: "Co-Pilot Email", copilot_cell_phone: "Co-Pilot Cell Phone", participant_capacity: "Participant Capacity", additional_attendees: "Additional Attendees" } as const;
+// Stage 5A: the current preferred EpicentraX vocabulary advertised on
+// downloadable templates (lib/importTemplateContract.ts), one entry per
+// FIELD_ALIASES key. Every value here must already be case-insensitively
+// accepted by FIELD_ALIASES below -- see attendeeImportContract.test.ts's
+// "every preferred heading is an accepted alias" proof. This is
+// documentation/template metadata only; it changes no parsing,
+// normalization, or validation behavior.
+export const PREFERRED_ATTENDEE_HEADINGS = {
+  entry_id: "Entry ID", email: "Email Address", pilot_first: "Pilot First Name", pilot_last: "Pilot Last Name", nickname: "Nickname for Badge",
+  copilot_first: "Co-Pilot First Name", copilot_last: "Co-Pilot Last Name", copilot_nickname: "Co-Pilot Nickname", copilot_email: "Co-Pilot Email", copilot_cell_phone: "Co-Pilot Cell Phone",
+  additional_attendees: "Additional Attendees", participant_capacity: "Participant Capacity", membership_number: "Membership Number",
+  primary_phone: "Primary Phone", cell_phone: "Cell Phone", city: "City", state: "State",
+  coach_manufacturer: "Coach Manufacturer", coach_model: "Coach Model", special_events_raw: "Special Events",
+  share_with_attendees: "Share Email With Attendees", wants_to_volunteer: "Volunteer", is_first_timer: "First Timer",
+} as const;
 export const FIELD_ALIASES = {
   entry_id: ["Entry Id", "Entry ID", "EntryId", "Order Id", "Order ID"], email: ["Email Address", "Email", "E-mail", "Email address"],
   pilot_first: ["Pilot Name (First)", "Pilot First Name", "Pilot First", "First Name"], pilot_last: ["Pilot Name (Last)", "Pilot Last Name", "Pilot Last", "Last Name"],
   nickname: ["Nickname for Badge", "Pilot Nickname for Badge", "Pilot Badge Nickname", "Badge Nickname"],
   copilot_first: ["Co-Pilot Name (First)", "Copilot Name (First)", "Co-Pilot First Name", "Copilot First Name", "Co-Pilot First", "Copilot First"],
   copilot_last: ["Co-Pilot Name (Last)", "Copilot Name (Last)", "Co-Pilot Last Name", "Copilot Last Name", "Co-Pilot Last", "Copilot Last"],
-  copilot_nickname: ["Nickname for Badge.1", "Co-Pilot Nickname for Badge", "Copilot Nickname for Badge", "Co-Pilot Badge Nickname", "Copilot Badge Nickname"],
+  copilot_nickname: ["Nickname for Badge.1", "Co-Pilot Nickname", "Co-Pilot Nickname for Badge", "Copilot Nickname for Badge", "Co-Pilot Badge Nickname", "Copilot Badge Nickname"],
   copilot_email: ["Co-Pilot Email", "Copilot Email", "Co-Pilot E-mail", "Copilot E-mail"], copilot_cell_phone: ["Co-Pilot Cell Phone", "Copilot Cell Phone", "Co-Pilot Mobile", "Copilot Mobile"],
   additional_attendees: ["Additional attendees, if so give name(s) and age(s)", "Additional Attendees", "Additional Guests", "Additional Household Members"],
   participant_capacity: ["Party Size", "Number of Attendees", "Number of Participants", "Participant Capacity", "Paid Participant Capacity", "Capacity"], membership_number: ["FCOC Membership Number", "Membership Number", "Member Number"],

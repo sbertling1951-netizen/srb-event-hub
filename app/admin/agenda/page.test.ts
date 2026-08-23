@@ -676,3 +676,27 @@ test("the Recurring control remains the same inert placeholder (defaultValue, no
   assert.match(recurringFieldBlock, /defaultValue="none"/);
   assert.equal(/onChange/.test(recurringFieldBlock), false);
 });
+
+// -- Stage 5A: shared Imports Service Center routes into this one Agenda --
+// -- import implementation instead of a second one. ------------------------
+
+test("?mode=import opens the existing Import Agenda tab -- no second importer, one implementation reached two ways", () => {
+  assert.match(PAGE_SOURCE, /import\s*\{\s*useSearchParams\s*\}\s*from\s*"next\/navigation"/);
+  assert.match(PAGE_SOURCE, /const initialAgendaMode: AgendaAdminMode = searchParams\.get\("mode"\) === "import" \? "import" : "items";/);
+  assert.match(PAGE_SOURCE, /useState<AgendaAdminMode>\(initialAgendaMode\)/);
+});
+
+test("an unrecognized or missing ?mode value falls back to the ordinary default (Agenda Items) -- no throw", () => {
+  const line = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf('const initialAgendaMode: AgendaAdminMode ='));
+  assert.match(line, /^const initialAgendaMode: AgendaAdminMode = searchParams\.get\("mode"\) === "import" \? "import" : "items";/);
+});
+
+test("Agenda offers a reciprocal contextual link into the shared Imports Service Center's Agenda door, carrying no authority of its own", () => {
+  assert.match(PAGE_SOURCE, /import\s*\{\s*buildImportsHref\s*\}\s*from\s*"@\/lib\/importTypeRouting"/);
+  assert.match(PAGE_SOURCE, /<AppLinkButton variant="tertiary" href=\{buildImportsHref\("agenda"\)\}>/);
+});
+
+test("Agenda's own Import Agenda tab still directly renders AgendaImportPanel -- the shared door does not replace the domain's existing entry point", () => {
+  assert.match(PAGE_SOURCE, /<AgendaImportPanel/);
+  assert.match(PAGE_SOURCE, /agendaMode=\{agendaMode\}/);
+});

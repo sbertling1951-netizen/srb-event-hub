@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import Papa from "papaparse";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,7 +12,7 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { Alert } from "@/components/ui/Alert";
-import { AppButton } from "@/components/ui/AppButton";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
@@ -27,6 +28,7 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { buildImportsHref } from "@/lib/importTypeRouting";
 import { supabase } from "@/lib/supabase";
 
 type AgendaItem = {
@@ -615,6 +617,14 @@ function buildAgendaCalendarBlocks(
 }
 
 function AdminAgendaPageInner() {
+  // Deep-link contract: the shared Imports Service Center's Agenda door
+  // (/admin/imports?type=agenda) routes here with ?mode=import to open
+  // this same import tab -- one implementation, reached two ways. An
+  // unrecognized or missing value falls back to the ordinary default
+  // ("items"); this carries no authority of its own (event.agenda.manage
+  // is still enforced exactly as before).
+  const searchParams = useSearchParams();
+  const initialAgendaMode: AgendaAdminMode = searchParams.get("mode") === "import" ? "import" : "items";
   const { admin } = useAdmin();
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
   const [items, setItems] = useState<AgendaItem[]>([]);
@@ -703,7 +713,7 @@ function AdminAgendaPageInner() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [agendaMode, setAgendaMode] = useState<AgendaAdminMode>("items");
+  const [agendaMode, setAgendaMode] = useState<AgendaAdminMode>(initialAgendaMode);
   const [importStatus, setImportStatus] = useState(
     "No agenda import file selected.",
   );
@@ -2523,6 +2533,15 @@ function AdminAgendaPageInner() {
           >
             Manage Categories
           </AppButton>
+
+          {/* Contextual action into the shared Imports Service Center
+              (Stage 5A) -- the same Agenda import workflow above, reached
+              through the other door. Navigation only; carries no
+              authority (event.agenda.manage is enforced independently by
+              whichever door the operator actually uses). */}
+          <AppLinkButton variant="tertiary" href={buildImportsHref("agenda")}>
+            Browse Imports
+          </AppLinkButton>
         </div>
 
         <div style={{ display: "grid", gap: "var(--space-1)" }}>

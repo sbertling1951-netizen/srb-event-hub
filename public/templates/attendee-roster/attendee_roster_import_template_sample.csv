@@ -1,0 +1,3 @@
+Entry ID,Pilot First Name,Pilot Last Name,Nickname for Badge,Email Address,Membership Number,Primary Phone,Cell Phone,City,State,Co-Pilot First Name,Co-Pilot Last Name,Co-Pilot Nickname,Co-Pilot Email,Co-Pilot Cell Phone,Coach Manufacturer,Coach Model,Participant Capacity,Volunteer,First Timer,Share Email With Attendees,Special Events,Additional Attendees
+REG-1001,Ada,Lovelace,Ace,ada.pilot@example.com,F102345,555-201-0011,555-201-0012,St. George,UT,Grace,Hopper,Gigi,grace.copilot@example.com,555-201-0022,Newmar,Dutch Star,2,No,No,Yes,Welcome Dinner,"Pat (age 9), Sam (age 7)"
+REG-1002,Marie,Curie,,marie.curie@example.com,F208891,555-301-0033,,Cedar City,UT,,,,,,Winnebago,View,1,Yes,Yes,No,,

@@ -1,0 +1,3 @@
+Business Name,Contact Person,Email,Phone,Website,Business Description,Preferred Contact Method,Admit to This Event?,Featured?,Visible to Members?,Action Type,Signup URL,Booth Location,Event Note,Display Order
+Sunrise Coach Detailing,Jordan Rivera,jordan@sunrisedetailing.example.com,555-301-0044,https://sunrisedetailing.example.com,Mobile coach washing and detailing at your site.,email,Yes,No,Yes,service_request,,"Row C, Site 14",Requested power hookup near booth.,100
+Trailhead Outfitters,Sam Okafor,sam@trailheadoutfitters.example.com,555-402-0077,https://trailheadoutfitters.example.com,Gear rental and guided day hikes.,in_app,Yes,Yes,Yes,external_signup,https://trailheadoutfitters.example.com/book,,,200

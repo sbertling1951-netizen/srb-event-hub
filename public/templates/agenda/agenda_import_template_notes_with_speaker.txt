@@ -21,7 +21,9 @@ Required:
 Recommended formats:
 - Agenda Date: YYYY-MM-DD
 - Start Time / End Time: HH:MM in 24-hour time
-- Published: Yes or No
+- Published: Yes or No. Blank, or any value other than Yes/Y/True/1, imports
+  the item as NOT published (draft) -- there is no separate default; blank
+  is treated identically to No.
 - Color: hex value like #DBEAFE
 - Sort Order: integer like 10, 20, 30
 

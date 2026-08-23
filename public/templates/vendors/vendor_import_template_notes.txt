@@ -1,0 +1,40 @@
+FCOC Vendors Import Template Notes
+
+Preferred columns:
+Business Name
+Contact Person
+Email
+Phone
+Website
+Business Description
+Preferred Contact Method
+Admit to This Event?
+Featured?
+Visible to Members?
+Action Type
+Signup URL
+Booth Location
+Event Note
+Display Order
+
+Required:
+- Business Name
+
+Field-by-field notes:
+- Business Name (required, text): The vendor's business name. Required. Maps to the canonical Vendor directory's business_name.
+- Contact Person (optional, text): The vendor's primary contact person.
+- Email (optional, email): Vendor contact email.
+- Phone (optional, phone): Vendor contact phone.
+- Website (optional, url): Vendor website, if any.
+- Business Description (optional, text): Short description shown on the vendor's public listing.
+- Preferred Contact Method (optional, enum): One of: email, phone, text, in_app.
+- Admit to This Event? (optional, boolean_yes_no): Not yet executable (Stage 5B). Intended to drive the governed admission action for this Event, not a stored column.
+- Featured? (optional, boolean_yes_no): Per-event display flag. Maps to event_vendors.is_featured.
+- Visible to Members? (optional, boolean_yes_no): Per-event display flag. Maps to event_vendors.is_visible_to_members.
+- Action Type (optional, enum): One of: service_request, external_signup, info_only. Maps to event_vendors.action_type.
+- Signup URL (optional, url): Required only when Action Type is external_signup. Maps to event_vendors.signup_url.
+- Booth Location (optional, text): Per-event booth/site location. Maps to the governed event_vendors.booth_location field.
+- Event Note (optional, text): Per-event admin note. Maps to event_vendors.event_note.
+- Display Order (optional, integer): Per-event display order. Maps to event_vendors.display_order (default 100 if blank).
+
+The sample template can be used as the model for either XLSX or CSV imports.

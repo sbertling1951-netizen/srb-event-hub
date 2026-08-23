@@ -118,10 +118,16 @@ test("Event-membership (canAccessEvent) remains as a page-local check, unrelated
   assert.match(source, /canAccessEvent\(admin, stored\.id\)/);
 });
 
-test("the embedded Vendor Library section's distinct can_manage_vendors authority is untouched -- it is a separate capability, not a duplicate of the migrated Imports permission", () => {
+// Stage 5A: the "Vendor Library" section (a duplicate vendor-CRUD UI with
+// its own inconsistent field vocabulary -- name/show_on_member_dashboard
+// vs. the canonical /admin/vendors business_name/is_visible_to_members) is
+// retired from Imports entirely; /admin/vendors was already the fuller,
+// canonical implementation (Admin Module Architecture Module 9). See
+// app/admin/vendors/page.test.ts for that page's own (unchanged)
+// can_manage_vendors-aligned authority.
+test("the retired Vendor Library's can_manage_vendors UI-alignment check is gone -- no duplicate vendor-CRUD authority check remains in Imports", () => {
   const source = readSource();
-  const matches = [...source.matchAll(/hasPermission\(admin, "can_manage_vendors"\)/g)];
-  assert.equal(matches.length, 2, "expected both existing can_manage_vendors UI-alignment checks to remain exactly as-is");
+  assert.equal(/hasPermission\(admin, "can_manage_vendors"\)/.test(source), false);
 });
 
 test("Event context handling is unchanged: reads getCurrentAdminEvent and re-syncs on Admin workspace change", () => {
@@ -180,4 +186,82 @@ test("the orchestration module is imported from lib/attendeeImportOrchestration,
     source,
     /from "@\/lib\/attendeeImportOrchestration"/,
   );
+});
+
+// -- Stage 5A: Imports Service Center scope -------------------------------
+
+test("Vendor Library is fully retired from Imports -- no heading, no event_vendors/vendors writes, no vendor CRUD state", () => {
+  const source = readSource();
+  assert.equal(/Vendor Library/.test(source), false);
+  assert.equal(/\.from\("vendors"\)/.test(source), false);
+  assert.equal(/\.from\("event_vendors"\)/.test(source), false);
+  assert.equal(/admit_vendor_for_event|revoke_vendor_admission|update_event_vendor_metadata/.test(source), false);
+});
+
+test("Print Assets is fully retired from Imports -- no heading, no event_print_settings writes, no name-tag/coach-plate upload state", () => {
+  const source = readSource();
+  assert.equal(/Print Assets/.test(source), false);
+  assert.equal(/\.from\("event_print_settings"\)/.test(source), false);
+  assert.equal(/name_tag_bg_url|coach_plate_bg_url/.test(source), false);
+});
+
+test("showFullImportTable (the Attendee row-preview toggle) survived the Vendor/Print removal -- it is not vendor/print state", () => {
+  const source = readSource();
+  assert.match(source, /const \[showFullImportTable, setShowFullImportTable\] = useState\(false\);/);
+});
+
+// -- Stage 5A: Imports Service Center landing/routing ----------------------
+
+test("all three import types have a door on the landing view, each showing its truthful status", () => {
+  const source = readSource();
+  const landingStart = source.indexOf("function ImportsLandingDoors()");
+  const landingBody = source.slice(landingStart, source.indexOf("\nfunction AgendaImportDoor"));
+  assert.match(landingBody, />Attendee Roster</);
+  assert.match(landingBody, />Agenda</);
+  assert.match(landingBody, />Vendors</);
+  // Attendee and Agenda are real, working doors; Vendors is truthfully
+  // planned -- never a working "Start Vendor Import" action.
+  const statusBadges = [...landingBody.matchAll(/<StatusBadge tone="(\w+)">(\w+)<\/StatusBadge>/g)];
+  assert.deepEqual(
+    statusBadges.map((m) => m[2]),
+    ["Available", "Available", "Planned"],
+  );
+  assert.equal(/Start Vendor Import|Open Vendor Import/.test(landingBody), false);
+});
+
+test("?type= is read via next/navigation's useSearchParams and the shared readImportType contract, not localStorage", () => {
+  const source = readSource();
+  assert.match(source, /import\s*\{\s*useSearchParams\s*\}\s*from\s*"next\/navigation"/);
+  assert.match(source, /import\s*\{\s*buildImportsHref,\s*readImportType\s*\}\s*from\s*"@\/lib\/importTypeRouting"/);
+  assert.match(source, /const importType = readImportType\(searchParams\);/);
+  assert.equal(/localStorage.*importType|importType.*localStorage/.test(source), false);
+});
+
+test("an unrecognized or missing ?type falls back to the landing view (ImportsLandingDoors), never a throw", () => {
+  const source = readSource();
+  assert.match(source, /\{importType === null \? \(\s*\n\s*<ImportsLandingDoors \/>/);
+});
+
+test("the Attendee door is the exact existing Stage 4 governed workflow -- not rebuilt, not duplicated", () => {
+  const source = readSource();
+  assert.equal((source.match(/runGovernedAttendeeImport\(/g) || []).length, 1);
+  assert.equal((source.match(/function AdminAttendeeImportsPageInner/g) || []).length, 1);
+});
+
+test("the Agenda door routes into the existing Agenda import workflow via /admin/agenda?mode=import -- it does not embed a second parser", () => {
+  const source = readSource();
+  const start = source.indexOf("function AgendaImportDoor()");
+  const body = source.slice(start, source.indexOf("\nfunction VendorImportDoor"));
+  assert.match(body, /href="\/admin\/agenda\?mode=import"/);
+  assert.equal(/parseAgendaImportFile|getImportField/.test(body), false);
+});
+
+test("the Vendor door truthfully shows no working import action and links back to the canonical Vendor workspace", () => {
+  const source = readSource();
+  const start = source.indexOf("function VendorImportDoor()");
+  assert.notEqual(start, -1);
+  const body = source.slice(start, start + 2000);
+  assert.match(body, /not yet available/);
+  assert.match(body, /href="\/admin\/vendors"/);
+  assert.equal(/onImportFile|handleVendorImport|runGovernedVendorImport/.test(body), false);
 });

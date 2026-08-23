@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import React, {
   type CSSProperties,
   useCallback,
@@ -1885,6 +1886,12 @@ export function AttendeeRecordWorkspace(props: {
 
 function AdminAttendeesPageInner() {
   const storedPrefs = useMemo(() => getStoredAttendeeCommandCenterPrefs(), []);
+  // Deep-link contract: /admin/data-review -> /admin/attendees?view=review
+  // opens the Review Queue on load. A missing or unrecognized value falls
+  // back to the ordinary default (closed) -- never a workaround via
+  // localStorage, and this carries no authority of its own.
+  const searchParams = useSearchParams();
+  const openReviewQueueFromDeepLink = searchParams.get("view") === "review";
   const { admin } = useAdmin();
   const adminRef = useRef(admin);
   // Shell's own canonical compact-state signal (UI Phase 2-4) -- decides
@@ -1996,7 +2003,7 @@ function AdminAttendeesPageInner() {
     "review" | "browse"
   >("browse");
 
-  const [showReviewQueue, setShowReviewQueue] = useState(false);
+  const [showReviewQueue, setShowReviewQueue] = useState(openReviewQueueFromDeepLink);
 
   // Stage D: dirty-state and same-record concurrency tracking. editorBaseline
   // is the editor state exactly as loaded (selectAttendee/openCreate); the
