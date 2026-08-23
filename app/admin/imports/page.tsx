@@ -15,6 +15,15 @@ import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { interpretAttendeeImportRow } from "@/lib/attendeeImportContract";
+import {
+  type AttendeeImportRowResult,
+  type AttendeeImportRunResult,
+  recoverAttendeeImportRun,
+  retryAttendeeImportRowCommit,
+  runGovernedAttendeeImport,
+  summarizeAttendeeImportRows,
+} from "@/lib/attendeeImportOrchestration";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -29,13 +38,6 @@ type EventContext = {
 };
 
 type RawRow = Record<string, unknown>;
-
-type ActivityGroup = {
-  prefix: string;
-  nameCol: string;
-  priceCol: string;
-  qtyCol: string;
-};
 
 type ActivityPreview = {
   activity_name: string;
@@ -227,6 +229,40 @@ function saveAttendeeManagementView(
   }
 }
 
+// Stores only the active governed import_runs.id per Event -- a locator, not
+// authoritative state. get_managed_import_run_recovery(run_id) revalidates
+// authority and returns the actual persisted row states on every reload; the
+// run ID itself conveys no authority.
+function getActiveImportRunStorageKey(eventId: string) {
+  return `fcoc-attendee-import-run::${eventId}`;
+}
+
+function loadActiveImportRunId(eventId: string): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    return localStorage.getItem(getActiveImportRunStorageKey(eventId));
+  } catch {
+    return null;
+  }
+}
+
+function saveActiveImportRunId(eventId: string, runId: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    if (runId) {
+      localStorage.setItem(getActiveImportRunStorageKey(eventId), runId);
+    } else {
+      localStorage.removeItem(getActiveImportRunStorageKey(eventId));
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 function fullName(first?: string | null, last?: string | null) {
   return [first, last].filter(Boolean).join(" ").trim();
 }
@@ -235,420 +271,63 @@ function cityStateFromAttendee(row: AttendeeRow) {
   return [row.city, row.state].filter(Boolean).join(", ");
 }
 
-function normalizeKey(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'");
-}
-
-function text(value: unknown) {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  return String(value).trim();
-}
-
-function digitsOnly(value: string) {
-  return value.replace(/\D+/g, "");
-}
-
-function normalizePhone(value: unknown) {
-  const raw = text(value);
-  if (!raw) {
-    return "";
-  }
-  const digits = digitsOnly(raw);
-
-  if (digits.length === 10) {
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-
-  if (digits.length === 11 && digits.startsWith("1")) {
-    const local = digits.slice(1);
-    return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`;
-  }
-
-  return raw;
-}
-
-function normalizedRowEntries(row: RawRow) {
-  return Object.entries(row).map(
-    ([key, value]) => [normalizeKey(key), value] as const,
-  );
-}
-
-function getValueByAliases(row: RawRow, aliases: readonly string[]) {
-  const normalizedEntries = normalizedRowEntries(row);
-
-  for (const alias of aliases) {
-    const target = normalizeKey(alias);
-    const direct = row[alias];
-    if (direct !== undefined) {
-      return direct;
-    }
-
-    const found = normalizedEntries.find(([key]) => key === target);
-    if (found) {
-      return found[1];
-    }
-  }
-
-  return "";
-}
-
-function parseMoney(value: unknown): number | null {
-  const raw = text(value).replace(/[$,]/g, "");
-  if (!raw) {
-    return null;
-  }
-
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function parseInteger(value: unknown): number | null {
-  const raw = text(value);
-  if (!raw) {
-    return null;
-  }
-
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-
-  return Math.round(parsed);
-}
-
-function parseBoolYesNo(value: unknown) {
-  const raw = text(value).toLowerCase();
-  return raw.startsWith("yes");
-}
-
-function getValue(row: RawRow, key: string) {
-  return getValueByAliases(row, [key]);
-}
-
-const FIELD_ALIASES = {
-  entry_id: ["Entry Id", "Entry ID", "EntryId", "Order Id", "Order ID"],
-  email: ["Email Address", "Email", "E-mail", "Email address"],
-  pilot_first: [
-    "Pilot Name (First)",
-    "Pilot First Name",
-    "Pilot First",
-    "First Name",
-  ],
-  pilot_last: [
-    "Pilot Name (Last)",
-    "Pilot Last Name",
-    "Pilot Last",
-    "Last Name",
-  ],
-  copilot_first: [
-    "Co-Pilot Name (First)",
-    "Copilot Name (First)",
-    "Co-Pilot First Name",
-    "Copilot First Name",
-    "Co-Pilot First",
-    "Copilot First",
-  ],
-  copilot_last: [
-    "Co-Pilot Name (Last)",
-    "Copilot Name (Last)",
-    "Co-Pilot Last Name",
-    "Copilot Last Name",
-    "Co-Pilot Last",
-    "Copilot Last",
-  ],
-  nickname: [
-    "Nickname for Badge",
-    "Pilot Nickname for Badge",
-    "Pilot Badge Nickname",
-    "Badge Nickname",
-  ],
-  copilot_nickname: [
-    "Nickname for Badge.1",
-    "Co-Pilot Nickname for Badge",
-    "Copilot Nickname for Badge",
-    "Co-Pilot Badge Nickname",
-    "Copilot Badge Nickname",
-  ],
-  additional_attendees: [
-    "Additional attendees, if so give name(s) and age(s)",
-    "Additional Attendees",
-    "Additional Guests",
-    "Additional Household Members",
-  ],
-  participant_capacity: [
-    "Party Size",
-    "Number of Attendees",
-    "Number of Participants",
-    "Participant Capacity",
-    "Paid Participant Capacity",
-    "Capacity",
-  ],
-  membership_number: [
-    "FCOC Membership Number",
-    "Membership Number",
-    "Member Number",
-  ],
-  primary_phone: ["Primary Phone #", "Primary Phone", "Phone", "Phone Number"],
-  cell_phone: ["Cell Phone #", "Cell Phone", "Mobile Phone", "Mobile"],
-  city: ["Address (City)", "City", "Mailing City"],
-  state: [
-    "Address (State / Province)",
-    "State",
-    "State / Province",
-    "Province",
-  ],
-  coach_manufacturer: [
-    "Coach Manufacturer",
-    "Coach Make",
-    "Motorhome Manufacturer",
-    "RV Manufacturer",
-  ],
-  coach_model: ["Coach Model", "Model", "RV Model"],
-  special_events_raw: [
-    "Special Events",
-    "Special Event Selections",
-    "Activities",
-  ],
-  share_with_attendees: [
-    "Ok to share your email with other attendees?",
-    "OK to share your email with other attendees?",
-    "Share email with attendees",
-    "Share with attendees",
-  ],
-  wants_to_volunteer: [
-    "Would you like to volunteer to help with the event?",
-    "Volunteer to help with event",
-    "Would you like to volunteer?",
-    "Volunteer",
-  ],
-  is_first_timer: [
-    "First time at an FCOC event?",
-    "First Timer",
-    "First time attendee",
-    "Is First Timer",
-  ],
-} as const;
-
-function detectActivityGroups(headers: string[]) {
-  const defs: Record<
-    string,
-    { prefix: string; nameCol?: string; priceCol?: string; qtyCol?: string }
-  > = {};
-
-  for (const original of headers) {
-    const header = normalizeKey(original);
-    const match = header.match(/^(.*)\s+\((Name|Price|Quantity)\)$/i);
-    if (!match) {
-      continue;
-    }
-
-    const prefix = match[1].trim();
-    const kind = match[2].toLowerCase();
-
-    if (!defs[prefix]) {
-      defs[prefix] = { prefix };
-    }
-
-    if (kind === "name") {
-      defs[prefix].nameCol = original;
-    }
-    if (kind === "price") {
-      defs[prefix].priceCol = original;
-    }
-    if (kind === "quantity") {
-      defs[prefix].qtyCol = original;
-    }
-  }
-
-  return Object.values(defs)
-    .filter(
-      (item): item is ActivityGroup =>
-        !!item.nameCol && !!item.priceCol && !!item.qtyCol,
-    )
-    .filter((item) => {
-      const skip = [
-        "Product Name",
-        "Credit Card",
-        "Pilot Name",
-        "Co-Pilot Name",
-      ];
-      return !skip.some((prefix) => item.prefix.startsWith(prefix));
-    });
-}
-
-function buildActivities(row: RawRow, groups: ActivityGroup[]) {
-  const activities: ActivityPreview[] = [];
-
-  for (const group of groups) {
-    const quantity = parseInteger(getValue(row, group.qtyCol));
-    if (!quantity || quantity <= 0) {
-      continue;
-    }
-
-    const rawName = text(getValue(row, group.nameCol)) || group.prefix;
-    const price = parseMoney(getValue(row, group.priceCol));
-
-    activities.push({
-      activity_name: group.prefix,
-      quantity,
-      price,
-      raw_name: rawName,
-      source_column_prefix: group.prefix,
-    });
-  }
-
-  return activities;
-}
-
-// Derives the minimum paid-slot count evidenced by one imported registration
-// row. A nonblank Pilot name is one paid slot; a legitimate Co-Pilot name in
-// the same paid registration row is one additional paid slot. Free-text
-// fields such as "Additional attendees" are not counted here because they do
-// not reliably evidence a specific number of paid slots -- only structured,
-// discrete name fields are used. An explicit party-size/capacity column, when
-// present and valid, is preserved as-is instead of being derived.
-//
-// A Co-Pilot is treated as legitimate only when a first name is present.
-// Production data contains no genuine Co-Pilot with a first name but no last
-// name, but does contain a last-name-only placeholder value ("FAMILY") used
-// as a household indicator rather than a named individual -- requiring a
-// first name excludes that placeholder pattern without guessing at a list of
-// placeholder words.
-function deriveMinimumImportParticipantCapacity(row: {
-  pilot_first: string;
-  pilot_last: string;
-  copilot_first: string;
-  copilot_last: string;
-}): number {
-  const hasCopilot = !!row.copilot_first;
-  return hasCopilot ? 2 : 1;
-}
-
-function mapRow(
+// Thin UI adapter: reuses the Stage 2 governed contract (field/header
+// mapping, normalization, validation, activities, Co-Pilot/reference-only
+// evidence) to build the client-local preview shown before a real governed
+// run is created. It carries no mapping/validation authority of its own --
+// the same Stage 2 interpretation is what actually gets staged through
+// Stage 1 when the operator clicks Import (see runGovernedAttendeeImport).
+function previewAttendeeImportRow(
   row: RawRow,
   rowNumber: number,
-  groups: ActivityGroup[],
+  headers: string[],
   rules: ValidationRule[],
   eventId: string | null,
-) {
-  const entry_id = text(getValueByAliases(row, FIELD_ALIASES.entry_id));
-  const email = text(getValueByAliases(row, FIELD_ALIASES.email)).toLowerCase();
-  const pilot_first = text(getValueByAliases(row, FIELD_ALIASES.pilot_first));
-  const pilot_last = text(getValueByAliases(row, FIELD_ALIASES.pilot_last));
-  const copilot_first = text(
-    getValueByAliases(row, FIELD_ALIASES.copilot_first),
-  );
-  const copilot_last = text(getValueByAliases(row, FIELD_ALIASES.copilot_last));
-  const nickname = text(getValueByAliases(row, FIELD_ALIASES.nickname));
-  const copilot_nickname = text(
-    getValueByAliases(row, FIELD_ALIASES.copilot_nickname),
-  );
-  const additional_attendees = text(
-    getValueByAliases(row, FIELD_ALIASES.additional_attendees),
-  );
-  const explicitParticipantCapacity = parseInteger(
-    getValueByAliases(row, FIELD_ALIASES.participant_capacity),
-  );
-  const participant_capacity =
-    explicitParticipantCapacity !== null && explicitParticipantCapacity > 0
-      ? explicitParticipantCapacity
-      : deriveMinimumImportParticipantCapacity({
-          pilot_first,
-          pilot_last,
-          copilot_first,
-          copilot_last,
-        });
-  const membership_number = text(
-    getValueByAliases(row, FIELD_ALIASES.membership_number),
-  );
-  const primary_phone = normalizePhone(
-    getValueByAliases(row, FIELD_ALIASES.primary_phone),
-  );
-  const cell_phone = normalizePhone(
-    getValueByAliases(row, FIELD_ALIASES.cell_phone),
-  );
-  const city = text(getValueByAliases(row, FIELD_ALIASES.city));
-  const state = text(getValueByAliases(row, FIELD_ALIASES.state));
-  const coach_manufacturer = text(
-    getValueByAliases(row, FIELD_ALIASES.coach_manufacturer),
-  );
-  const coach_model = text(getValueByAliases(row, FIELD_ALIASES.coach_model));
-  const special_events_raw = text(
-    getValueByAliases(row, FIELD_ALIASES.special_events_raw),
-  );
-  const share_with_attendees = parseBoolYesNo(
-    getValueByAliases(row, FIELD_ALIASES.share_with_attendees),
-  );
-  const wants_to_volunteer = parseBoolYesNo(
-    getValueByAliases(row, FIELD_ALIASES.wants_to_volunteer),
-  );
-  const is_first_timer = parseBoolYesNo(
-    getValueByAliases(row, FIELD_ALIASES.is_first_timer),
-  );
+): ParsedRegistration {
+  const { candidate, issues } = interpretAttendeeImportRow(row, rowNumber, headers);
+  const warnings = issues.map((issue) => issue.message);
 
-  const warnings: string[] = [];
-
-  if (!entry_id) {
-    warnings.push("Missing Entry Id");
-  }
-  if (!email) {
-    warnings.push("Missing Email Address");
-  }
-  if (!pilot_first && !pilot_last) {
-    warnings.push("Missing pilot name");
-  }
-  if (!membership_number) {
-    warnings.push("Missing membership number");
-  } else {
+  if (candidate.registration.membership_number) {
     const membershipIssue = validateField(
       "membership_number",
-      membership_number,
+      candidate.registration.membership_number,
       rules,
       eventId,
     );
     if (membershipIssue) {
       warnings.push(membershipIssue.issue);
     }
-  }
-  if (!coach_manufacturer && !coach_model) {
-    warnings.push("Missing coach information");
-  }
-  if (!primary_phone && !cell_phone) {
-    warnings.push("Missing phone number");
+  } else {
+    warnings.push("Missing membership number");
   }
 
   return {
     rowNumber,
-    entry_id,
-    email,
-    pilot_first,
-    pilot_last,
-    copilot_first,
-    copilot_last,
-    nickname,
-    copilot_nickname,
-    additional_attendees,
-    participant_capacity,
-    membership_number,
-    primary_phone,
-    cell_phone,
-    city,
-    state,
-    wants_to_volunteer,
-    is_first_timer,
-    coach_manufacturer,
-    coach_model,
-    share_with_attendees,
-    special_events_raw,
+    entry_id: candidate.registration.entry_id,
+    email: candidate.registration.email,
+    pilot_first: candidate.registration.pilot_first,
+    pilot_last: candidate.registration.pilot_last,
+    copilot_first: candidate.copilot.first,
+    copilot_last: candidate.copilot.last,
+    nickname: candidate.registration.nickname,
+    copilot_nickname: candidate.copilot.nickname,
+    additional_attendees: candidate.reference_only.additional_attendees,
+    participant_capacity:
+      candidate.capacity_evidence.imported_capacity ??
+      candidate.capacity_evidence.structured_participant_minimum,
+    membership_number: candidate.registration.membership_number,
+    primary_phone: candidate.registration.primary_phone,
+    cell_phone: candidate.registration.cell_phone,
+    city: candidate.registration.city,
+    state: candidate.registration.state,
+    wants_to_volunteer: candidate.registration.wants_to_volunteer,
+    is_first_timer: candidate.registration.is_first_timer,
+    coach_manufacturer: candidate.registration.coach_manufacturer,
+    coach_model: candidate.registration.coach_model,
+    share_with_attendees: candidate.registration.share_with_attendees,
+    special_events_raw: candidate.registration.special_events_raw,
     raw_import: row,
-    activities: buildActivities(row, groups),
+    activities: candidate.activities,
     warnings,
   };
 }
@@ -672,10 +351,20 @@ function AdminAttendeeImportsPageInner() {
   const [loadedForEventId, setLoadedForEventId] = useState("");
   const [rules, setRules] = useState<ValidationRule[]>([]);
 
+  const [rawRows, setRawRows] = useState<RawRow[]>([]);
   const [rows, setRows] = useState<ParsedRegistration[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [fileName, setFileName] = useState("");
   const [reviewIssues, setReviewIssues] = useState<ReviewIssue[]>([]);
+
+  // Governed Stage 4 run state. importRunResult is the persisted truth for
+  // the most recent (or recovered) run. Only its runId is ever persisted to
+  // localStorage (as a locator, via saveActiveImportRunId) --
+  // get_managed_import_run_recovery(run_id) revalidates authority and
+  // returns the actual persisted row states on every reload.
+  const [importRunResult, setImportRunResult] =
+    useState<AttendeeImportRunResult | null>(null);
+  const [retryingRowId, setRetryingRowId] = useState<string | null>(null);
 
   const [savedAttendees, setSavedAttendees] = useState<AttendeeRow[]>([]);
   const [loadingSavedAttendees, setLoadingSavedAttendees] = useState(false);
@@ -880,6 +569,47 @@ function AdminAttendeeImportsPageInner() {
 
     void loadSavedAttendees(selectedImportEventId);
     void loadVendors(selectedImportEventId);
+  }, [selectedImportEventId]);
+
+  useEffect(() => {
+    if (!selectedImportEventId) {
+      setImportRunResult(null);
+      return;
+    }
+
+    const storedRunId = loadActiveImportRunId(selectedImportEventId);
+    if (!storedRunId) {
+      setImportRunResult(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const recovered = await recoverAttendeeImportRun(storedRunId);
+        if (cancelled) {
+          return;
+        }
+        setImportRunResult({
+          runId: recovered.run.id,
+          eventId: recovered.run.eventId,
+          sourceFilename: recovered.run.sourceFilename,
+          rows: recovered.rows,
+        });
+        setStatus(`Recovered import run from ${recovered.run.sourceFilename || "a prior session"}.`);
+      } catch (err) {
+        console.error("Could not recover import run:", err);
+        if (!cancelled) {
+          saveActiveImportRunId(selectedImportEventId, null);
+          setImportRunResult(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedImportEventId]);
 
   useEffect(() => {
@@ -1529,6 +1259,7 @@ function AdminAttendeeImportsPageInner() {
     setStatus(`Reading ${file.name}...`);
     setFileName(file.name);
     setShowFullImportTable(false);
+    setImportRunResult(null);
 
     try {
       const buffer = await file.arrayBuffer();
@@ -1542,6 +1273,7 @@ function AdminAttendeeImportsPageInner() {
       });
 
       if (!json.length) {
+        setRawRows([]);
         setRows([]);
         setHeaders([]);
         setLoadedForEventId("");
@@ -1550,22 +1282,25 @@ function AdminAttendeeImportsPageInner() {
       }
 
       const foundHeaders = Object.keys(json[0] || {});
-      const groups = detectActivityGroups(foundHeaders);
       const parsed = json.map((row, index) =>
-        mapRow(row, index + 2, groups, rules, selectedImportEventId || null),
+        previewAttendeeImportRow(
+          row,
+          index + 2,
+          foundHeaders,
+          rules,
+          selectedImportEventId || null,
+        ),
       );
 
       setHeaders(foundHeaders);
-      console.log("Detected import headers:", foundHeaders);
-      console.log("Detected activity groups:", groups);
+      setRawRows(json);
       setRows(parsed);
       setLoadedForEventId(selectedImportEventId);
-      setStatus(
-        `Loaded ${parsed.length} rows. ${groups.length} activity groups detected.`,
-      );
+      setStatus(`Loaded ${parsed.length} rows from ${file.name}.`);
     } catch (err) {
       console.error(err);
       setError("Could not parse file.");
+      setRawRows([]);
       setRows([]);
       setHeaders([]);
       setLoadedForEventId("");
@@ -1719,288 +1454,36 @@ function AdminAttendeeImportsPageInner() {
       return;
     }
 
-    if (!validRows.length) {
-      setError("No valid rows to import.");
+    if (!rawRows.length) {
+      setError("No rows to import.");
       return;
     }
 
     setImporting(true);
     setError(null);
-    setStatus("Importing attendees...");
+    setImportRunResult(null);
+    setStatus("Creating governed import run...");
 
     try {
-      const importEmails = Array.from(
-        new Set(validRows.map((row) => row.email).filter(Boolean)),
-      );
-
-      const importEntryIds = Array.from(
-        new Set(validRows.map((row) => row.entry_id).filter(Boolean)),
-      );
-
-      let existingAttendees: any[] = [];
-
-      if (importEmails.length || importEntryIds.length) {
-        const emailFilter = importEmails.length
-          ? `email.in.(${importEmails.map((e) => `"${e}"`).join(",")})`
-          : null;
-
-        const entryFilter = importEntryIds.length
-          ? `entry_id.in.(${importEntryIds.map((e) => `"${e}"`).join(",")})`
-          : null;
-
-        const orFilter = [emailFilter, entryFilter].filter(Boolean).join(",");
-
-        const { data, error } = await supabase
-          .from("attendees")
-          .select("id, event_id, entry_id, email, participant_capacity")
-          .eq("event_id", selectedImportEventId)
-          .or(orFilter);
-
-        if (error) {
-          throw error;
-        }
-        existingAttendees = data || [];
-      }
-
-      const existingByEmail = new Map(
-        existingAttendees
-          .filter((item) => item.email)
-          .map((item) => [String(item.email).toLowerCase(), item]),
-      );
-
-      const existingByEntryId = new Map(
-        existingAttendees
-          .filter((item) => item.entry_id)
-          .map((item) => [String(item.entry_id), item]),
-      );
-
-      const attendeePayload = validRows.map((row) => {
-        const existingMatch =
-          existingByEmail.get(row.email) || existingByEntryId.get(row.entry_id);
-
-        return {
-          existingId: existingMatch?.id ?? null,
-          event_id: selectedImportEventId,
-          entry_id: row.entry_id,
-          email: row.email || null,
-          pilot_first: row.pilot_first || null,
-          pilot_last: row.pilot_last || null,
-          copilot_first: row.copilot_first || null,
-          copilot_last: row.copilot_last || null,
-          nickname: row.nickname || null,
-          copilot_nickname: row.copilot_nickname || null,
-          membership_number: row.membership_number || null,
-          primary_phone: row.primary_phone || null,
-          cell_phone: row.cell_phone || null,
-          city: row.city || null,
-          state: row.state || null,
-          wants_to_volunteer: row.wants_to_volunteer,
-          is_first_timer: row.is_first_timer,
-          coach_manufacturer: row.coach_manufacturer || null,
-          coach_model: row.coach_model || null,
-          share_with_attendees: row.share_with_attendees,
-          special_events_raw: row.special_events_raw || null,
-          raw_import: row.raw_import,
-          participant_type: "attendee",
-          vendor_master_id: null,
-          vendor_assigned_event_id: null,
-          // Applies to both brand-new and existing attendee rows. The
-          // evidenced minimum is derived only from the row currently being
-          // imported (never from the mutable household roster). An existing
-          // stored value is never reduced -- greatest() raises a lower or
-          // null stored value up to the evidenced minimum and otherwise
-          // preserves whatever administrator-confirmed value already exists.
-          participant_capacity: Math.max(
-            existingMatch?.participant_capacity ?? 0,
-            row.participant_capacity,
-          ),
-        };
+      const result = await runGovernedAttendeeImport({
+        eventId: selectedImportEventId,
+        sourceFilename: fileName || null,
+        rows: rawRows,
+        headers,
       });
 
-      const importRowPayload = validRows.map((row) => ({
-        event_id: selectedImportEventId,
-        import_type: "attendee_roster",
-        source_filename: fileName || null,
-        row_number: row.rowNumber,
-        entry_id: row.entry_id || null,
-        email: row.email || null,
-        membership_number: row.membership_number || null,
-        pilot_first: row.pilot_first || null,
-        pilot_last: row.pilot_last || null,
-        pilot_badge_nickname: row.nickname || null,
-        copilot_first: row.copilot_first || null,
-        copilot_last: row.copilot_last || null,
-        copilot_badge_nickname: row.copilot_nickname || null,
-        additional_attendees: row.additional_attendees || null,
-        city: row.city || null,
-        state: row.state || null,
-        primary_phone: row.primary_phone || null,
-        cell_phone: row.cell_phone || null,
-        share_with_attendees: row.share_with_attendees,
-        wants_to_volunteer: row.wants_to_volunteer,
-        is_first_timer: row.is_first_timer,
-        coach_manufacturer: row.coach_manufacturer || null,
-        coach_model: row.coach_model || null,
-        special_events_raw: row.special_events_raw || null,
-        raw_import: row.raw_import,
-      }));
+      setImportRunResult(result);
+      saveActiveImportRunId(selectedImportEventId, result.runId);
 
-      const rowsToUpdate = attendeePayload
-        .filter((row) => row.existingId)
-        .map(({ existingId: _existingId, ...rest }) => ({
-          id: _existingId,
-          ...rest,
-        }));
-
-      const rowsToInsert = attendeePayload
-        .filter((row) => !row.existingId)
-        .map(({ existingId: _existingId, ...rest }) => rest);
-
-      if (rowsToUpdate.length) {
-        const { error: updateError } = await supabase
-          .from("attendees")
-          .upsert(rowsToUpdate, {
-            onConflict: "id",
-          });
-
-        if (updateError) {
-          throw updateError;
-        }
-      }
-
-      if (rowsToInsert.length) {
-        const { error: insertError } = await supabase
-          .from("attendees")
-          .insert(rowsToInsert);
-
-        if (insertError) {
-          throw insertError;
-        }
-      }
-
-      const activityPayload = validRows.flatMap((row) =>
-        row.activities.map((activity) => ({
-          event_id: selectedImportEventId,
-          entry_id: row.entry_id,
-          attendee_email: row.email,
-          activity_name: activity.activity_name,
-          quantity: activity.quantity,
-          price: activity.price,
-          raw_name: activity.raw_name,
-          source_column_prefix: activity.source_column_prefix,
-        })),
-      );
-
-      const importedEntryIds = validRows
-        .map((row) => row.entry_id)
-        .filter(Boolean);
-
-      const headerMetadataEntryId = `__headers__${selectedImportEventId}`;
-
-      const headerMetadataRow = {
-        event_id: selectedImportEventId,
-        import_type: "attendee_roster_headers",
-        source_filename: fileName || null,
-        row_number: 1,
-        entry_id: headerMetadataEntryId,
-        email: null,
-        membership_number: null,
-        pilot_first: null,
-        pilot_last: null,
-        pilot_badge_nickname: null,
-        copilot_first: null,
-        copilot_last: null,
-        copilot_badge_nickname: null,
-        additional_attendees: null,
-        city: null,
-        state: null,
-        primary_phone: null,
-        cell_phone: null,
-        share_with_attendees: false,
-        wants_to_volunteer: false,
-        is_first_timer: false,
-        coach_manufacturer: null,
-        coach_model: null,
-        special_events_raw: null,
-        raw_import: {
-          __source_headers: headers,
-        },
-      };
-
-      if (importedEntryIds.length) {
-        const { error: deleteImportRowsError } = await supabase
-          .from("event_import_rows")
-          .delete()
-          .eq("event_id", selectedImportEventId)
-          .eq("import_type", "attendee_roster")
-          .in("entry_id", importedEntryIds);
-
-        if (deleteImportRowsError) {
-          throw deleteImportRowsError;
-        }
-      }
-
-      const { error: deleteHeaderMetadataError } = await supabase
-        .from("event_import_rows")
-        .delete()
-        .eq("event_id", selectedImportEventId)
-        .eq("import_type", "attendee_roster_headers")
-        .eq("entry_id", headerMetadataEntryId);
-
-      if (deleteHeaderMetadataError) {
-        throw deleteHeaderMetadataError;
-      }
-
-      if (importRowPayload.length) {
-        const { error: importRowsError } = await supabase
-          .from("event_import_rows")
-          .insert(importRowPayload);
-
-        if (importRowsError) {
-          throw importRowsError;
-        }
-      }
-
-      const { error: headerMetadataInsertError } = await supabase
-        .from("event_import_rows")
-        .insert(headerMetadataRow);
-
-      if (headerMetadataInsertError) {
-        throw headerMetadataInsertError;
-      }
-
-      if (importedEntryIds.length) {
-        const { error: deleteError } = await supabase
-          .from("attendee_activities")
-          .delete()
-          .eq("event_id", selectedImportEventId)
-          .in("entry_id", importedEntryIds);
-
-        if (deleteError) {
-          throw deleteError;
-        }
-      }
-
-      if (activityPayload.length) {
-        const { error: activityError } = await supabase
-          .from("attendee_activities")
-          .insert(activityPayload);
-
-        if (activityError) {
-          throw activityError;
-        }
-      }
+      const summary = summarizeAttendeeImportRows(result.rows);
       await loadSavedAttendees(selectedImportEventId);
-      // Vendor import note:
-      // Regular attendee imports are event-scoped. Persistent vendors should be
-      // stored once in a vendor library table, then connected to events through
-      // an event-vendor assignment table. Do not duplicate vendor records across
-      // every active event.
 
       setStatus(
-        `Imported ${validRows.length} attendees, ${importRowPayload.length} source rows, and ${activityPayload.length} activity rows into ${
+        `Processed ${summary.processed} rows into ${
           selectedImportEvent?.name || "selected event"
-        }.`,
+        }: ${summary.committed} committed, ${summary.needsReview} need review, ` +
+          `${summary.validationFailed} failed validation, ${summary.commitFailed} failed to commit` +
+          (summary.warnings ? `, ${summary.warnings} with warnings.` : "."),
       );
     } catch (err: any) {
       console.error(err);
@@ -2008,6 +1491,46 @@ function AdminAttendeeImportsPageInner() {
       setStatus("Import failed.");
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleRetryImportRow(row: AttendeeImportRowResult) {
+    setRetryingRowId(row.rowId);
+    setError(null);
+
+    try {
+      const outcome = await retryAttendeeImportRowCommit({
+        rowId: row.rowId,
+        issues: row.issues,
+      });
+
+      setImportRunResult((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        return {
+          ...prev,
+          rows: prev.rows.map((r) =>
+            r.rowId === row.rowId
+              ? {
+                  ...r,
+                  rowState: outcome.rowState,
+                  canonicalTargetId: outcome.canonicalTargetId,
+                  commitError: outcome.commitError,
+                }
+              : r,
+          ),
+        };
+      });
+
+      if (outcome.rowState === "committed" && selectedImportEventId) {
+        await loadSavedAttendees(selectedImportEventId);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "Retry failed.");
+    } finally {
+      setRetryingRowId(null);
     }
   }
   function openIssueInAttendeeManagement(issue: ReviewIssue) {
@@ -2760,7 +2283,7 @@ function AdminAttendeeImportsPageInner() {
                 importing ||
                 parsing ||
                 !selectedImportEventId ||
-                !validRows.length ||
+                !rawRows.length ||
                 eventChangedSinceLoad
               }
               style={{
@@ -2769,7 +2292,7 @@ function AdminAttendeeImportsPageInner() {
                   importing ||
                   parsing ||
                   !selectedImportEventId ||
-                  !validRows.length ||
+                  !rawRows.length ||
                   eventChangedSinceLoad
                     ? 0.6
                     : 1,
@@ -2780,6 +2303,105 @@ function AdminAttendeeImportsPageInner() {
           </div>
         </div>
       </div>
+
+      {importRunResult ? (
+        <div className="card" style={{ padding: 18 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 6 }}>Governed Import Results</h2>
+          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 14 }}>
+            Run {importRunResult.runId}
+            {importRunResult.sourceFilename ? ` • ${importRunResult.sourceFilename}` : ""}
+          </div>
+
+          {(() => {
+            const summary = summarizeAttendeeImportRows(importRunResult.rows);
+            const tiles: { label: string; value: number }[] = [
+              { label: "Processed", value: summary.processed },
+              { label: "Committed", value: summary.committed },
+              { label: "Validation Failed", value: summary.validationFailed },
+              { label: "Needs Review", value: summary.needsReview },
+              { label: "Commit Failed", value: summary.commitFailed },
+              { label: "Warnings", value: summary.warnings },
+            ];
+            return (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                  marginBottom: 16,
+                }}
+              >
+                {tiles.map((tile) => (
+                  <div
+                    key={tile.label}
+                    style={{ padding: 12, border: "1px solid #ddd", borderRadius: 10 }}
+                  >
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>{tile.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 800 }}>{tile.value}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+              <thead>
+                <tr>
+                  <th style={tableHeadStyle}>Row</th>
+                  <th style={tableHeadStyle}>Entry ID</th>
+                  <th style={tableHeadStyle}>Email</th>
+                  <th style={tableHeadStyle}>State</th>
+                  <th style={tableHeadStyle}>Detail</th>
+                  <th style={tableHeadStyle}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importRunResult.rows.map((row) => {
+                  const detail =
+                    row.commitError?.message ||
+                    row.issues.map((issue) => issue.message).join("; ") ||
+                    "—";
+                  return (
+                    <tr key={row.rowId}>
+                      <td style={tableCellStyle}>{row.sourceRowNumber || "—"}</td>
+                      <td style={tableCellStyle}>
+                        {row.candidate?.registration?.entry_id || "—"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {row.candidate?.registration?.email || "—"}
+                      </td>
+                      <td style={tableCellStyle}>{row.rowState}</td>
+                      <td style={tableCellStyle}>{detail}</td>
+                      <td style={tableCellStyle}>
+                        {row.rowState === "commit_failed" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleRetryImportRow(row)}
+                            disabled={retryingRowId === row.rowId}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: 8,
+                              border: "1px solid #ccc",
+                              background: "white",
+                              cursor: "pointer",
+                              opacity: retryingRowId === row.rowId ? 0.6 : 1,
+                            }}
+                          >
+                            {retryingRowId === row.rowId ? "Retrying..." : "Retry"}
+                          </button>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <div className="card" style={{ padding: 18 }}>
         <h2 style={{ marginTop: 0, marginBottom: 12 }}>Print Assets</h2>
