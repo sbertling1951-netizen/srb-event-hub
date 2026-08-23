@@ -3,10 +3,7 @@
 import { useState } from "react";
 
 import { ImportRunSummary } from "@/app/admin/imports/ImportRunSummary";
-import {
-  AbandonRowButton,
-  RunLifecycleActions,
-} from "@/app/admin/imports/RunLifecycleActions";
+import { RunLifecycleActions } from "@/app/admin/imports/RunLifecycleActions";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -22,10 +19,12 @@ import {
 import {
   type AgendaImportRowResult,
   type AgendaImportRunResult,
+  deleteAgendaImportRow,
   summarizeAgendaImportRows,
 } from "@/lib/agendaImportOrchestration";
 import {
   ABANDONMENT_REASON_OPTIONS,
+  describeLifecycleError,
   type ImportRunLifecycleStatus,
 } from "@/lib/importLifecycleOrchestration";
 
@@ -161,10 +160,37 @@ function AgendaRowAction({
   onError: (message: string) => void;
 }) {
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const canEdit =
     runStatus !== "finalized" &&
     row.abandonedAt === null &&
     CORRECTABLE_ROW_STATES.has(row.rowState);
+  // Delete Row is the sole "this staged row does not belong" action for
+  // Agenda -- available for any not-yet-committed, not-yet-deleted row
+  // regardless of validation/correction state (invalid, corrected-invalid,
+  // or a valid row the operator simply decides to exclude). Committed and
+  // already-abandoned rows are refused by the governed RPC itself; this
+  // client hint only decides whether to render the control.
+  const canDelete =
+    runStatus !== "finalized" &&
+    row.abandonedAt === null &&
+    row.rowState !== "committed";
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteAgendaImportRow({ rowId: row.rowId });
+      setDeleteOpen(false);
+      await onRowsChanged(
+        `Source row ${row.sourceRowNumber} was deleted. The governed run has been refreshed.`,
+      );
+    } catch (err) {
+      onError(describeLifecycleError(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
@@ -177,17 +203,15 @@ function AgendaRowAction({
           Edit Row
         </AppButton>
       ) : null}
-      <AbandonRowButton
-        row={{ ...row, correctable: row.correctionCount > 0 }}
-        triggerLabel="Skip Row"
-        triggerAriaLabel={`Skip source row ${row.sourceRowNumber}: ${row.candidate.title || "Untitled Agenda row"}`}
-        dialogTitle="Skip This Agenda Row"
-        dialogDescription="Skip this row permanently for this import run? Its source and validation evidence remain in the run, but it will not be imported or retried. This cannot be undone."
-        onAbandoned={() =>
-          onRowsChanged(`Source row ${row.sourceRowNumber} was skipped. The governed run has been refreshed.`)
-        }
-        onError={onError}
-      />
+      {canDelete ? (
+        <AppButton
+          variant="danger"
+          aria-label={`Delete source row ${row.sourceRowNumber}: ${row.candidate.title || "Untitled Agenda row"}`}
+          onClick={() => setDeleteOpen(true)}
+        >
+          Delete Row
+        </AppButton>
+      ) : null}
       {canEdit ? (
         <AgendaEditRowDialog
           open={editOpen}
@@ -199,6 +223,17 @@ function AgendaRowAction({
             await onRowsChanged(message);
           }}
           onError={onError}
+        />
+      ) : null}
+      {canDelete ? (
+        <ConfirmDialog
+          open={deleteOpen}
+          title="Delete This Agenda Row"
+          message="Delete this staged row from the current import? It will not be imported. This action cannot be undone from the review workspace."
+          confirmLabel="Delete Row"
+          busy={deleting}
+          onConfirm={handleDelete}
+          onCancel={() => (deleting ? null : setDeleteOpen(false))}
         />
       ) : null}
     </div>
@@ -288,8 +323,8 @@ export function AgendaImportReviewWorkspace({
         {summary.validationFailed > 0 && status !== "finalized" ? (
           <Alert tone="warning">
             Rows that failed validation can be corrected in place -- use Edit Row below to fix the
-            values and revalidate, or Skip Row once a correction has been attempted. Their original
-            validation evidence remains part of this run either way.
+            values and revalidate. If a row does not belong in this import, use Delete Row instead;
+            deleted rows are permanently removed and will not appear in this run's History.
           </Alert>
         ) : null}
 

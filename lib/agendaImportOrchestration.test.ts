@@ -56,7 +56,7 @@ test("every Stage A interpretation is staged unchanged with source context and d
   assert.match(run, /validationState === "invalid" \? "unreviewed" : "approved"/);
 });
 
-test("browser orchestration has no canonical or staging table writes and only the eight governed Stage B/correction operations", () => {
+test("browser orchestration has no canonical or staging table writes and only the nine governed Stage B/correction/deletion operations", () => {
   assert.equal(/supabase\.from|\.from\(["']/.test(source), false);
   const allowed = new Set([
     "create_import_run",
@@ -67,6 +67,7 @@ test("browser orchestration has no canonical or staging table writes and only th
     "get_managed_import_run_recovery",
     "list_agenda_import_row_correction_summaries",
     "correct_agenda_import_run_row",
+    "delete_agenda_import_run_row",
   ]);
   const rpcCalls = [...source.matchAll(/\.rpc\(\s*["']([a-z_]+)["']/g)].map(
     (match) => match[1],

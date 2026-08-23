@@ -35,34 +35,21 @@ export type LifecycleRowLike = {
   rowId: string;
   rowState: string;
   abandonedAt: string | null;
-  /** Optional: true when this row has at least one governed correction
-   * attempt on record. Only Agenda's correction feature sets this today;
-   * every other caller omits it and sees identical behavior to before this
-   * field existed (a bare validation_failed row remains unabandonable). */
-  correctable?: boolean;
 };
 
 /**
  * A row is eligible for abandonment client-side exactly when it is not
- * already terminal by the two ways a row becomes terminal: a committed
- * rowState, or a set abandonedAt overlay. A validation_failed row is also
- * terminal *unless* it carries correction history (`correctable`), mirroring
- * the server's own extended rule (see 20260823010000). This mirrors (never
- * replaces) the server's own import_row_terminal_or_retry_owned /
- * import_row_already_abandoned / import_row_terminal checks -- it only
- * decides whether to show the control, not whether the action is allowed.
+ * already terminal by the two ways a row becomes terminal: a committed/
+ * validation_failed rowState, or a set abandonedAt overlay. This mirrors
+ * (never replaces) the server's own import_row_terminal_or_retry_owned /
+ * import_row_already_abandoned checks -- it only decides whether to show
+ * the control, not whether the action is allowed.
  */
 export function isRowAbandonEligible(row: LifecycleRowLike): boolean {
   if (row.abandonedAt) {
     return false;
   }
-  if (row.rowState === "committed") {
-    return false;
-  }
-  if (row.rowState === "validation_failed") {
-    return Boolean(row.correctable);
-  }
-  return true;
+  return row.rowState !== "committed" && row.rowState !== "validation_failed";
 }
 
 type AbandonReasonDialogProps = {

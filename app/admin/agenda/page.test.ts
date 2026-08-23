@@ -311,7 +311,7 @@ test("Agenda mounts the existing generic active/resume/lifecycle/History surface
   assert.match(PAGE_SOURCE, /<ActiveRunsPanel[\s\S]*?importType="agenda"/);
   assert.match(PAGE_SOURCE, /recoverAgendaImportRun/);
   assert.match(IMPORT_REVIEW_SOURCE, /<RunLifecycleActions/);
-  assert.match(IMPORT_REVIEW_SOURCE, /<AbandonRowButton/);
+  assert.match(IMPORT_REVIEW_SOURCE, /deleteAgendaImportRow/);
   assert.match(
     PAGE_SOURCE,
     /<ImportHistoryPanel[\s\S]*?eventId=\{activeEvent\.id\}[\s\S]*?importType="agenda"/,

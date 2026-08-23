@@ -203,13 +203,18 @@ test("minimum EXECUTE grants only -- no anon, no service_role, no PUBLIC, on eve
   }
 });
 
-test("linked rollback fixture exercises the exact pending correction/commit/abandon/History definitions", () => {
+test("linked rollback fixture exercises the exact pending correction/History definitions from this migration", () => {
   assert.ok(correctFn);
-  assert.ok(commitFn);
   assert.equal(block(fixture, "correct_agenda_import_run_row"), correctFn);
-  assert.equal(block(fixture, "commit_agenda_import_run"), commitFn);
-  assert.equal(block(fixture, "abandon_import_run_row"), abandonRowFn);
   assert.equal(block(fixture, "_agenda_import_candidate_is_well_formed"), wellFormedFn);
   assert.match(fixture, /^BEGIN;/m);
   assert.match(fixture, /^ROLLBACK;/m);
 });
+
+// commit_agenda_import_run and abandon_import_run_row/abandon_import_run_open_rows
+// are superseded by 20260823040000 (governed Agenda row deletion): the
+// completeness check is reconciled against deleted_row_count, and the
+// abandonment functions are reverted to their pre-Stage-D bodies. The
+// fixture's embedded copies now intentionally match 20260823040000, not
+// this migration's own (superseded) bodies -- see that migration's own
+// structural test for the corresponding byte-identity assertions.

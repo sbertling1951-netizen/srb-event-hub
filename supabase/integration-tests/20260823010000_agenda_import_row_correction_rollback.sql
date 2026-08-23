@@ -230,12 +230,12 @@ BEGIN
     RAISE EXCEPTION 'missing_input' USING ERRCODE = '22023';
   END IF;
 
-  SELECT * INTO v_row FROM public.import_run_rows WHERE id = p_import_run_row_id;
+  SELECT * INTO v_row FROM public.import_run_rows AS r WHERE r.id = p_import_run_row_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'import_row_not_found' USING ERRCODE = '22023';
   END IF;
 
-  SELECT * INTO v_run FROM public.import_runs WHERE id = v_row.import_run_id;
+  SELECT * INTO v_run FROM public.import_runs AS rn WHERE rn.id = v_row.import_run_id;
   IF NOT FOUND OR v_run.import_type <> 'agenda' THEN
     RAISE EXCEPTION 'import_run_not_agenda' USING ERRCODE = '22023';
   END IF;
@@ -295,7 +295,7 @@ BEGIN
   RETURN QUERY
   SELECT DISTINCT ON (c.import_run_row_id)
     c.import_run_row_id,
-    count(*) OVER (PARTITION BY c.import_run_row_id) AS correction_count,
+    (count(*) OVER (PARTITION BY c.import_run_row_id))::integer AS correction_count,
     c.revision,
     c.corrected_candidate,
     c.validation_state,
@@ -311,6 +311,144 @@ $$;
 ALTER FUNCTION public.list_agenda_import_row_correction_summaries(uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.list_agenda_import_row_correction_summaries(uuid) FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION public.list_agenda_import_row_correction_summaries(uuid) TO authenticated;
+
+-- ============================================================
+-- Row-count reconciliation and correction-history cascade for governed
+-- Agenda row deletion. Safe because delete_agenda_import_run_row (below)
+-- independently refuses committed rows and finalized runs before ever
+-- deleting.
+-- ============================================================
+
+ALTER TABLE public.import_runs
+  ADD COLUMN deleted_row_count integer NOT NULL DEFAULT 0 CHECK (deleted_row_count >= 0);
+
+-- ============================================================
+-- Correction-history immutability, revised to survive Delete Row.
+--
+-- UPDATE remains unconditionally rejected -- always, with no bypass of any
+-- kind. DELETE is rejected UNLESS a transaction-local, row-specific
+-- authorization is present that names exactly the correction row's own
+-- parent (OLD.import_run_row_id) -- never a bare boolean, never any other
+-- row.
+--
+-- Bypass mechanism: the same idiom already established by
+-- enforce_parking_repair_quiescence's epicentrax.parking_repair_bypass_authorized
+-- flag (20260808110000_create_parking_repair_quiescence_guard.sql),
+-- narrowed one step further -- not "is some repair in progress" but "is
+-- THIS EXACT row's parent authorized right now". The flag is:
+--   * set only via set_config(..., true) -- transaction-local: it cannot
+--     outlive the transaction, cannot be read by any other session/
+--     connection, and (because PostgREST executes exactly one statement,
+--     the RPC call itself, per transaction) cannot be pre-set by a caller
+--     ahead of the RPC's own internal set_config call;
+--   * set only inside delete_agenda_import_run_row (below), immediately
+--     before the one DELETE it authorizes, to the id of the exact row
+--     that function has already run every authority/lifecycle/state check
+--     against moments earlier in that same function body -- so the flag
+--     can never authorize a row the caller has not already been
+--     independently authorized, by the same checks, to delete;
+--   * irrelevant to ordinary browser/PostgREST callers regardless:
+--     authenticated and anon carry zero table privilege (SELECT, INSERT,
+--     UPDATE, or DELETE) on import_run_row_corrections or import_run_rows
+--     (unchanged from 20260822170000/20260823010000, RLS enabled with
+--     zero policies on both), so this trigger is defense-in-depth on an
+--     already fully closed table-grant surface, not the primary boundary
+--     -- confirmed directly: has_table_privilege('authenticated',
+--     'public.import_run_row_corrections', 'DELETE') = false, and the
+--     same for 'UPDATE', and the same for both on import_run_rows.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.prevent_import_run_row_corrections_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO 'pg_catalog'
+AS $$
+BEGIN
+  IF TG_OP = 'DELETE'
+    AND current_setting('epicentrax.import_run_row_deletion_target_id', true) = OLD.import_run_row_id::text
+  THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'import row correction evidence is immutable';
+END;
+$$;
+
+ALTER TABLE public.import_run_row_corrections
+  DROP CONSTRAINT import_run_row_corrections_import_run_row_id_fkey,
+  ADD CONSTRAINT import_run_row_corrections_import_run_row_id_fkey
+    FOREIGN KEY (import_run_row_id) REFERENCES public.import_run_rows(id) ON DELETE CASCADE;
+
+CREATE OR REPLACE FUNCTION public.delete_agenda_import_run_row(
+  p_import_run_row_id uuid,
+  p_reason_code text DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'pg_catalog'
+AS $$
+DECLARE
+  v_row public.import_run_rows%ROWTYPE;
+  v_run public.import_runs%ROWTYPE;
+BEGIN
+  IF auth.uid() IS NULL OR p_import_run_row_id IS NULL THEN
+    RAISE EXCEPTION 'missing_input' USING ERRCODE = '22023';
+  END IF;
+  IF p_reason_code IS NOT NULL AND p_reason_code NOT IN (
+    'operator_declined', 'source_superseded', 'duplicate_intentionally_dismissed', 'cannot_resolve', 'other'
+  ) THEN
+    RAISE EXCEPTION 'invalid_deletion_reason_code' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_row FROM public.import_run_rows WHERE id = p_import_run_row_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'import_row_not_found' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_run FROM public.import_runs WHERE id = v_row.import_run_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'import_run_not_found' USING ERRCODE = '22023';
+  END IF;
+  IF v_run.import_type <> 'agenda' THEN
+    RAISE EXCEPTION 'import_run_not_agenda' USING ERRCODE = '22023';
+  END IF;
+  IF v_run.status = 'finalized' THEN
+    RAISE EXCEPTION 'import_run_not_mutable' USING ERRCODE = '22023';
+  END IF;
+
+  IF NOT public.has_event_task_authority('event.imports.manage', v_row.event_id)
+    OR NOT public.has_event_task_authority('event.agenda.manage', v_row.event_id) THEN
+    RAISE EXCEPTION 'not_authorized' USING ERRCODE = '42501';
+  END IF;
+
+  PERFORM public.assert_event_lifecycle_mutable(v_row.event_id);
+
+  IF v_row.row_state = 'committed' THEN
+    RAISE EXCEPTION 'import_row_committed' USING ERRCODE = '22023';
+  END IF;
+  IF v_row.abandoned_at IS NOT NULL THEN
+    RAISE EXCEPTION 'import_row_already_abandoned' USING ERRCODE = '22023';
+  END IF;
+
+  -- Transaction-local, row-specific authorization for the correction-
+  -- history cascade this DELETE is about to trigger -- see
+  -- prevent_import_run_row_corrections_mutation above for the full safety
+  -- argument. Set only here, to exactly this row's own id, immediately
+  -- before the one DELETE it authorizes, after every authority/lifecycle/
+  -- state check above has already passed for this same row.
+  PERFORM set_config('epicentrax.import_run_row_deletion_target_id', v_row.id::text, true);
+
+  DELETE FROM public.import_run_rows WHERE id = v_row.id;
+
+  UPDATE public.import_runs
+  SET deleted_row_count = deleted_row_count + 1
+  WHERE id = v_run.id;
+END;
+$$;
+
+ALTER FUNCTION public.delete_agenda_import_run_row(uuid, text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.delete_agenda_import_run_row(uuid, text) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.delete_agenda_import_run_row(uuid, text) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.abandon_import_run_row(
   p_import_run_row_id uuid,
@@ -341,12 +479,7 @@ BEGIN
     IF v_row.abandonment_reason_code = p_abandonment_reason_code THEN RETURN v_row; END IF;
     RAISE EXCEPTION 'import_row_already_abandoned' USING ERRCODE = '22023';
   END IF;
-  IF v_row.row_state = 'committed' THEN
-    RAISE EXCEPTION 'import_row_terminal' USING ERRCODE = '22023';
-  END IF;
-  IF v_row.row_state = 'validation_failed' AND NOT EXISTS (
-    SELECT 1 FROM public.import_run_row_corrections WHERE import_run_row_id = v_row.id
-  ) THEN
+  IF v_row.row_state IN ('committed', 'validation_failed') THEN
     RAISE EXCEPTION 'import_row_terminal' USING ERRCODE = '22023';
   END IF;
   UPDATE public.import_run_rows
@@ -383,18 +516,14 @@ BEGIN
   IF p_abandonment_reason_code NOT IN ('operator_declined', 'source_superseded', 'duplicate_intentionally_dismissed', 'cannot_resolve', 'other') THEN
     RAISE EXCEPTION 'invalid_abandonment_reason_code' USING ERRCODE = '22023';
   END IF;
-  UPDATE public.import_run_rows AS r
+  UPDATE public.import_run_rows
   SET abandoned_at = now(),
       abandoned_by_auth_user_id = auth.uid(),
       abandonment_reason_code = p_abandonment_reason_code,
       updated_at = now()
-  WHERE r.import_run_id = v_run.id
-    AND r.abandoned_at IS NULL
-    AND r.row_state <> 'committed'
-    AND (
-      r.row_state <> 'validation_failed'
-      OR EXISTS (SELECT 1 FROM public.import_run_row_corrections c WHERE c.import_run_row_id = r.id)
-    );
+  WHERE import_run_id = v_run.id
+    AND abandoned_at IS NULL
+    AND row_state NOT IN ('committed', 'validation_failed');
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
 END;
@@ -468,7 +597,7 @@ BEGIN
   FROM public.import_run_rows
   WHERE import_run_rows.import_run_id = v_run.id;
 
-  IF v_staged_count <> v_expected_row_count THEN
+  IF v_staged_count + v_run.deleted_row_count <> v_expected_row_count THEN
     RAISE EXCEPTION 'agenda_import_run_staging_incomplete' USING ERRCODE = '22023';
   END IF;
 
@@ -724,6 +853,34 @@ AS $$
   );
 $$;
 
+-- A trigger that fails only the *final* staging-result UPDATE
+-- commit_agenda_import_run performs (row_state/commit_state/commit_result),
+-- for one targeted run, once armed via GUCs. By the time this UPDATE runs,
+-- the nested import_event_agenda_items call has already inserted the
+-- canonical agenda_items row, advanced event_agenda_state.version, and
+-- written the agenda_command_ledger row for a *corrected* candidate --
+-- proving those effects, and any Stage D correction-derived commit
+-- bookkeeping, disappear together with everything else when this later
+-- statement fails, exactly mirroring the technique already proven for
+-- Stage B (agenda_stageb_fixture_fail_staging_result_trigger).
+CREATE FUNCTION public.corr_fixture_fail_commit_result()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF current_setting('corr_stageD.fail_commit_result', true) = 'true'
+    AND OLD.import_run_id::text = current_setting('corr_stageD.fail_run_id', true) THEN
+    RAISE EXCEPTION 'corr_stageD_forced_commit_result_failure';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER corr_fixture_fail_commit_result_trigger
+BEFORE UPDATE ON public.import_run_rows
+FOR EACH ROW
+EXECUTE FUNCTION public.corr_fixture_fail_commit_result();
+
 -- ===================== fixture data + proofs =====================
 
 DO $$
@@ -739,6 +896,8 @@ DECLARE
   v_row1 uuid; -- originally invalid (missing title); the correction protagonist
   v_row2 uuid; -- originally valid, staged approved, never corrected
   v_row3 uuid; -- originally invalid, never corrected (negative control)
+  v_row4 uuid; -- originally valid, staged approved, deleted directly (never corrected)
+  v_row5 uuid; -- originally invalid, never corrected, deleted directly
   v_cross_event_run_id uuid;
   v_vendors_run uuid;
   v_original_payload jsonb;
@@ -806,11 +965,15 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub', v_both::text, true);
 
   -- Stage a run: row1 invalid (blank title), row2 valid, row3 invalid
-  -- (never corrected, the negative control for abandonment).
+  -- (never touched, the negative control for finalize/History), row4 valid
+  -- (deleted directly without ever being corrected), row5 invalid (never
+  -- corrected, deleted directly -- proves a never-corrected invalid row is
+  -- itself a valid, ordinary deletion target, distinct from row1's
+  -- corrected-invalid case and row4's approved case).
   SELECT id INTO v_run
   FROM public.create_import_run(
     v_event_a, 'agenda', 'agenda-correction.csv',
-    jsonb_build_object('row_count', 3, 'expected_agenda_version', 0)
+    jsonb_build_object('row_count', 5, 'expected_agenda_version', 0)
   );
 
   SELECT id INTO v_row1
@@ -841,12 +1004,31 @@ BEGIN
     v_row3, 'invalid', '[{"code":"missing_agenda_title","message":"Missing Title","severity":"error"}]'::jsonb, 'unreviewed'
   );
 
+  SELECT id INTO v_row4
+  FROM public.stage_import_run_row(
+    v_run, 5, jsonb_build_object('Title', 'Deleted Before Commit'),
+    public.corr_fixture_candidate(5, 'Deleted Before Commit', '2026-10-01', '12:00', 'agenda-correction-row4'),
+    'agenda-correction-row4'
+  );
+  PERFORM public.set_import_run_row_review_state(v_row4, 'valid', '[]'::jsonb, 'approved');
+
+  SELECT id INTO v_row5
+  FROM public.stage_import_run_row(
+    v_run, 6, jsonb_build_object('Title', ''),
+    public.corr_fixture_candidate(6, NULL, '2026-10-01', '13:00', NULL),
+    'agenda-correction-row5'
+  );
+  PERFORM public.set_import_run_row_review_state(
+    v_row5, 'invalid', '[{"code":"missing_agenda_title","message":"Missing Title","severity":"error"}]'::jsonb, 'unreviewed'
+  );
+
   SELECT source_payload, normalized_candidate, source_fingerprint
   INTO v_original_payload, v_original_candidate, v_original_fingerprint
   FROM public.import_run_rows WHERE id = v_row1;
 
   -- Authority composition: imports-only, agenda-only, neither, cross-Event,
-  -- wrong-type all denied with zero mutation.
+  -- wrong-type all denied with zero mutation, proven for BOTH
+  -- correct_agenda_import_run_row and delete_agenda_import_run_row.
   PERFORM set_config('request.jwt.claim.sub', v_imports::text, true);
   v_failed := false;
   BEGIN
@@ -856,6 +1038,10 @@ BEGIN
     );
   EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'not_authorized'; END;
   PERFORM public.corr_fixture_assert(v_failed, 'imports-only correction denied');
+  v_failed := false;
+  BEGIN PERFORM public.delete_agenda_import_run_row(v_row1, NULL);
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'not_authorized'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'imports-only deletion denied');
 
   PERFORM set_config('request.jwt.claim.sub', v_agenda::text, true);
   v_failed := false;
@@ -866,6 +1052,10 @@ BEGIN
     );
   EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'not_authorized'; END;
   PERFORM public.corr_fixture_assert(v_failed, 'agenda-only correction denied');
+  v_failed := false;
+  BEGIN PERFORM public.delete_agenda_import_run_row(v_row1, NULL);
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'not_authorized'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'agenda-only deletion denied');
 
   PERFORM set_config('request.jwt.claim.sub', v_neither::text, true);
   v_failed := false;
@@ -876,6 +1066,10 @@ BEGIN
     );
   EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'not_authorized'; END;
   PERFORM public.corr_fixture_assert(v_failed, 'neither-authority correction denied');
+  v_failed := false;
+  BEGIN PERFORM public.delete_agenda_import_run_row(v_row1, NULL);
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'not_authorized'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'neither-authority deletion denied');
 
   -- Cross-Event: v_both has authority only on event_a; a run truly on
   -- event_b is untouchable even by the same person.
@@ -900,10 +1094,15 @@ BEGIN
         'valid', '[]'::jsonb, NULL
       );
     EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'not_authorized'; END;
+    PERFORM public.corr_fixture_assert(v_failed, 'cross-Event correction denied');
+    v_failed := false;
+    BEGIN PERFORM public.delete_agenda_import_run_row(v_cross_row, NULL);
+    EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'not_authorized'; END;
+    PERFORM public.corr_fixture_assert(v_failed, 'cross-Event deletion denied');
   END;
-  PERFORM public.corr_fixture_assert(v_failed, 'cross-Event correction denied');
 
-  -- Wrong import type: correcting a row that belongs to a non-agenda run.
+  -- Wrong import type: correcting/deleting a row that belongs to a
+  -- non-agenda run.
   DECLARE v_vendors_row uuid;
   BEGIN
     INSERT INTO public.import_runs(id, event_id, import_type, source_metadata, created_by_auth_user_id)
@@ -923,6 +1122,10 @@ BEGIN
       );
     EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_run_not_agenda'; END;
     PERFORM public.corr_fixture_assert(v_failed, 'wrong import type correction denied');
+    v_failed := false;
+    BEGIN PERFORM public.delete_agenda_import_run_row(v_vendors_row, NULL);
+    EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_run_not_agenda'; END;
+    PERFORM public.corr_fixture_assert(v_failed, 'wrong import type deletion denied');
   END;
 
   -- Original evidence untouched by every denied attempt.
@@ -1009,62 +1212,263 @@ BEGIN
     'run-scoped correction summary reports exactly the one corrected row at its latest revision'
   );
 
-  -- A never-corrected validation_failed row (row3) still cannot be
-  -- abandoned -- the pre-existing invariant is unchanged.
-  v_failed := false;
+  -- ============================================================
+  -- Trigger / Bypass Protection: prove
+  -- prevent_import_run_row_corrections_mutation's scoped bypass in
+  -- complete isolation from delete_agenda_import_run_row -- direct
+  -- UPDATE, direct DELETE with no governed context, direct DELETE with a
+  -- mismatched-row context, and direct DELETE with the exact matching
+  -- context, plus proof that an unrelated correction row survives a
+  -- scoped delete for a different row, and that the governed RPC itself
+  -- exercises this exact same trigger.
+  -- ============================================================
+  DECLARE
+    v_trig_run uuid;
+    v_trig_row_a uuid; -- correction will be deleted directly, then the row itself governed-deleted
+    v_trig_row_b uuid; -- unrelated row -- its correction must survive row_a's direct-delete proofs
+    v_corr_a_id uuid;
+    v_corr_b_id uuid;
+    v_wrong_row_id uuid := gen_random_uuid(); -- never a real row -- for the mismatched-context proof
   BEGIN
-    PERFORM public.abandon_import_run_row(v_row3, 'cannot_resolve');
-  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_row_terminal'; END;
-  PERFORM public.corr_fixture_assert(v_failed, 'a bare never-corrected validation_failed row remains unabandonable');
+    SELECT id INTO v_trig_run
+    FROM public.create_import_run(
+      v_event_a, 'agenda', 'trigger-proof.csv',
+      jsonb_build_object('row_count', 2, 'expected_agenda_version', 0)
+    );
+    SELECT id INTO v_trig_row_a
+    FROM public.stage_import_run_row(
+      v_trig_run, 2, jsonb_build_object('Title', ''),
+      public.corr_fixture_candidate(2, NULL, '2026-10-05', '09:00', NULL),
+      'trigger-proof-row-a'
+    );
+    PERFORM public.set_import_run_row_review_state(
+      v_trig_row_a, 'invalid', '[{"code":"missing_agenda_title","message":"Missing Title","severity":"error"}]'::jsonb, 'unreviewed'
+    );
+    SELECT id INTO v_trig_row_b
+    FROM public.stage_import_run_row(
+      v_trig_run, 3, jsonb_build_object('Title', ''),
+      public.corr_fixture_candidate(3, NULL, '2026-10-05', '10:00', NULL),
+      'trigger-proof-row-b'
+    );
+    PERFORM public.set_import_run_row_review_state(
+      v_trig_row_b, 'invalid', '[{"code":"missing_agenda_title","message":"Missing Title","severity":"error"}]'::jsonb, 'unreviewed'
+    );
 
-  -- But row1, now validation_failed WITH correction history, CAN be
-  -- skipped -- proving the narrow abandonment extension. Do it, then
-  -- immediately assert that saving a correction on an abandoned row is
-  -- rejected ("operator saves a correction after the row was skipped").
-  PERFORM public.abandon_import_run_row(v_row1, 'cannot_resolve');
+    PERFORM public.correct_agenda_import_run_row(
+      v_trig_row_a, 0, public.corr_fixture_candidate(2, 'Trigger Proof A', '2026-10-05', '09:00', 'trigger-proof-row-a-fixed'),
+      'valid', '[]'::jsonb, NULL
+    );
+    PERFORM public.correct_agenda_import_run_row(
+      v_trig_row_b, 0, public.corr_fixture_candidate(3, 'Trigger Proof B', '2026-10-05', '10:00', 'trigger-proof-row-b-fixed'),
+      'valid', '[]'::jsonb, NULL
+    );
+    SELECT id INTO v_corr_a_id FROM public.import_run_row_corrections WHERE import_run_row_id = v_trig_row_a;
+    SELECT id INTO v_corr_b_id FROM public.import_run_row_corrections WHERE import_run_row_id = v_trig_row_b;
+
+    -- Direct UPDATE against a correction row is always rejected -- even
+    -- with a matching-row GUC set. UPDATE is never bypassed, under any
+    -- condition.
+    PERFORM set_config('epicentrax.import_run_row_deletion_target_id', v_trig_row_a::text, true);
+    v_failed := false;
+    BEGIN
+      UPDATE public.import_run_row_corrections SET validation_state = 'invalid' WHERE id = v_corr_a_id;
+    EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import row correction evidence is immutable'; END;
+    PERFORM public.corr_fixture_assert(v_failed, 'direct UPDATE against a correction row is rejected even with a matching-row GUC set -- UPDATE is never bypassed');
+
+    -- Direct DELETE with no governed context set is rejected.
+    PERFORM set_config('epicentrax.import_run_row_deletion_target_id', '', true);
+    v_failed := false;
+    BEGIN
+      DELETE FROM public.import_run_row_corrections WHERE id = v_corr_a_id;
+    EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import row correction evidence is immutable'; END;
+    PERFORM public.corr_fixture_assert(v_failed, 'direct correction DELETE with no governed context remains denied');
+
+    -- Direct DELETE with a context naming a DIFFERENT (mismatched) row id
+    -- is rejected.
+    PERFORM set_config('epicentrax.import_run_row_deletion_target_id', v_wrong_row_id::text, true);
+    v_failed := false;
+    BEGIN
+      DELETE FROM public.import_run_row_corrections WHERE id = v_corr_a_id;
+    EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import row correction evidence is immutable'; END;
+    PERFORM public.corr_fixture_assert(v_failed, 'direct correction DELETE with a mismatched row-id context remains denied');
+
+    -- Direct DELETE with the EXACT matching row-id context succeeds --
+    -- proves the trigger's own scoped-bypass logic on its own terms,
+    -- isolated from delete_agenda_import_run_row.
+    PERFORM set_config('epicentrax.import_run_row_deletion_target_id', v_trig_row_a::text, true);
+    DELETE FROM public.import_run_row_corrections WHERE id = v_corr_a_id;
+    PERFORM set_config('epicentrax.import_run_row_deletion_target_id', '', true);
+    PERFORM public.corr_fixture_assert(
+      NOT EXISTS (SELECT 1 FROM public.import_run_row_corrections WHERE id = v_corr_a_id),
+      'governed parent deletion (proven here directly at the trigger level) with the exact matching row context succeeds'
+    );
+
+    -- The unrelated row's correction survives untouched -- the scoped
+    -- bypass authorizes exactly one row, never a whole table's worth.
+    PERFORM public.corr_fixture_assert(
+      EXISTS (SELECT 1 FROM public.import_run_row_corrections WHERE id = v_corr_b_id),
+      'only corrections belonging to the exact authorized parent row cascade away -- an unrelated correction row survives untouched'
+    );
+
+    -- Now prove the governed path end-to-end: delete_agenda_import_run_row
+    -- on row_b (which still has its own live correction) succeeds and
+    -- takes its correction with it, via this exact same trigger.
+    PERFORM public.delete_agenda_import_run_row(v_trig_row_b, NULL);
+    PERFORM public.corr_fixture_assert(
+      NOT EXISTS (SELECT 1 FROM public.import_run_row_corrections WHERE id = v_corr_b_id),
+      'delete_agenda_import_run_row cascades the correction of the row it governs-deletes, via the exact same trigger the direct-DELETE proofs above exercised'
+    );
+  END;
+
+  -- row1, now validation_failed WITH correction history, CAN be deleted --
+  -- proving a corrected-but-still-invalid row is a valid deletion target,
+  -- and that its correction history is removed with it via the FK's
+  -- ON DELETE CASCADE.
+  PERFORM public.delete_agenda_import_run_row(v_row1, 'duplicate_intentionally_dismissed');
+  PERFORM public.corr_fixture_assert(
+    NOT EXISTS (SELECT 1 FROM public.import_run_rows WHERE id = v_row1),
+    'delete_agenda_import_run_row physically removes the staged row'
+  );
+  PERFORM public.corr_fixture_assert(
+    NOT EXISTS (SELECT 1 FROM public.import_run_row_corrections WHERE import_run_row_id = v_row1),
+    'the deleted row correction history is removed with it via ON DELETE CASCADE'
+  );
+
+  -- Deletion is deterministic once the row is already gone -- a duplicate
+  -- delete click, or a second operator racing the same delete.
+  v_failed := false;
+  BEGIN PERFORM public.delete_agenda_import_run_row(v_row1, NULL);
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_row_not_found'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'deleting an already-deleted row fails deterministically (duplicate/concurrent delete safety)');
+
+  -- A stale in-flight correction (an operator with an Edit dialog still
+  -- open on a row another operator just deleted) fails deterministically
+  -- on save; it must not resurrect the row.
   v_failed := false;
   BEGIN
     PERFORM public.correct_agenda_import_run_row(
       v_row1, 2, public.corr_fixture_candidate(2, 'Too Late', '2026-10-01', '09:00', 'agenda-correction-row1-too-late'),
       'valid', '[]'::jsonb, NULL
     );
-  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_row_already_abandoned'; END;
-  PERFORM public.corr_fixture_assert(v_failed, 'a corrected-but-still-invalid row can be skipped once corrected, and correcting an abandoned row is refused');
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_row_not_found'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'a stale correction save against a deleted row fails deterministically and does not recreate it');
+  v_failed := false;
+  BEGIN PERFORM public.get_agenda_import_row_corrections(v_row1);
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_row_not_found'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'correction history for a deleted row is no longer retrievable');
 
-  -- Recovery reflects skipped truth; row1 is out of the commit picture now.
-  v_recovery := public.get_managed_import_run_recovery(v_run);
+  -- row4 (originally valid, staged approved, never corrected) proves an
+  -- approved/uncommitted row -- not only an invalid one -- can also be
+  -- explicitly deleted before commit.
+  PERFORM public.delete_agenda_import_run_row(v_row4, 'operator_declined');
   PERFORM public.corr_fixture_assert(
-    (v_recovery -> 'rows' -> 0 ->> 'abandoned_at') IS NOT NULL,
-    'recovery reflects row1 as abandoned'
+    NOT EXISTS (SELECT 1 FROM public.import_run_rows WHERE id = v_row4),
+    'an approved, uncommitted row can also be explicitly deleted'
   );
 
-  -- Commit the run: only row2 (original valid) is eligible now. Proves an
-  -- ordinary, uncorrected row commits normally alongside the correction
-  -- machinery's existence.
+  -- row5 (originally invalid, never corrected) proves a never-corrected
+  -- invalid row is itself a valid, ordinary deletion target -- distinct
+  -- from row1's corrected-invalid case and row4's approved case above.
+  PERFORM public.delete_agenda_import_run_row(v_row5, NULL);
+  PERFORM public.corr_fixture_assert(
+    NOT EXISTS (SELECT 1 FROM public.import_run_rows WHERE id = v_row5),
+    'a never-corrected invalid row can also be explicitly deleted'
+  );
+
+  -- Recovery reflects all three deletions as plain physical absence -- not
+  -- as abandoned overlays -- and a never-touched validation_failed row
+  -- (row3) remains unabandonable, exactly as before Stage D's now-reverted
+  -- extension.
+  v_recovery := public.get_managed_import_run_recovery(v_run);
+  PERFORM public.corr_fixture_assert(
+    jsonb_array_length(v_recovery -> 'rows') = 2,
+    'recovery reflects all three deleted rows as physically absent, not as abandoned overlays'
+  );
+  PERFORM public.corr_fixture_assert(
+    NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_recovery -> 'rows') row
+      WHERE (row ->> 'id') IN (v_row1::text, v_row4::text, v_row5::text)
+    ),
+    'none of the three deleted rows appear anywhere in recovery, under any disposition'
+  );
+  v_failed := false;
+  BEGIN
+    PERFORM public.abandon_import_run_row(v_row3, 'cannot_resolve');
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_row_terminal'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'a bare never-corrected validation_failed row remains unabandonable (shared invariant reverted, not weakened)');
+
+  -- The run-level deleted_row_count bookkeeping reflects all three
+  -- deletions, while the immutable source_metadata.row_count is untouched.
+  PERFORM public.corr_fixture_assert(
+    (SELECT deleted_row_count = 3 FROM public.import_runs WHERE id = v_run),
+    'deleted_row_count tracks all three deletions'
+  );
+  PERFORM public.corr_fixture_assert(
+    (SELECT (source_metadata ->> 'row_count')::int = 5 FROM public.import_runs WHERE id = v_run),
+    'source_metadata.row_count remains the immutable original count, untouched by deletion'
+  );
+
+  -- Commit the run: only row2 (original valid, never touched) is eligible.
+  -- The completeness check must reconcile staged rows + deleted_row_count
+  -- against the original expected count now that three rows are gone.
   PERFORM public.close_import_run_staging(v_run);
   SELECT outcome, imported_count, new_version INTO v_outcome, v_imported, v_version
   FROM public.commit_agenda_import_run(v_run);
-  PERFORM public.corr_fixture_assert(v_outcome = 'committed' AND v_imported = 1 AND v_version = 1, 'commit succeeds for the one remaining eligible (never-corrected) row');
+  PERFORM public.corr_fixture_assert(v_outcome = 'committed' AND v_imported = 1 AND v_version = 1, 'commit succeeds for the one remaining eligible row once deletions are reconciled via deleted_row_count');
 
-  -- row3 is validation_failed (resolved-enough for finalize); row1 is
-  -- abandoned; row2 is committed. Finalize should now succeed.
+  -- A committed row can never be deleted or corrected, even by a fully
+  -- authorized actor.
+  v_failed := false;
+  BEGIN PERFORM public.delete_agenda_import_run_row(v_row2, NULL);
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_row_committed'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'a committed row cannot be deleted');
+  v_failed := false;
+  BEGIN
+    PERFORM public.correct_agenda_import_run_row(
+      v_row2, 0, public.corr_fixture_candidate(3, 'Too Late', '2026-10-01', '10:00', 'agenda-correction-row2-too-late'),
+      'valid', '[]'::jsonb, NULL
+    );
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_row_not_correctable'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'a committed row cannot be corrected');
+
+  -- row3 is validation_failed (resolved-enough for finalize, never
+  -- touched); row2 is committed; row1/row4/row5 are physically gone.
+  -- Finalize should now succeed operating only over the rows that still
+  -- exist.
   PERFORM public.finalize_import_run(v_run);
   PERFORM public.corr_fixture_assert(
     (SELECT status = 'finalized' FROM public.import_runs WHERE id = v_run),
-    'finalize succeeds once every row is committed, validation-failed, or abandoned'
+    'finalize succeeds once every remaining row is committed or validation-failed'
   );
+
+  -- A finalized run's rows can never be deleted, regardless of state.
+  v_failed := false;
+  BEGIN PERFORM public.delete_agenda_import_run_row(v_row3, NULL);
+  EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'import_run_not_mutable'; END;
+  PERFORM public.corr_fixture_assert(v_failed, 'a finalized run''s rows cannot be deleted');
 
   v_history_detail := public.get_finalized_import_run_history_detail(v_run);
   PERFORM public.corr_fixture_assert(
+    jsonb_array_length(v_history_detail -> 'rows') = 2,
+    'finalized History detail reflects only the two remaining rows -- the deleted rows leave no row detail behind at all'
+  );
+  PERFORM public.corr_fixture_assert(
+    NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_history_detail -> 'rows') row
+      WHERE (row ->> 'source_row_number')::int IN (2, 5, 6)
+    ),
+    'deleted rows (source_row_number 2, 5, and 6) do not appear in finalized History under any disposition'
+  );
+  PERFORM public.corr_fixture_assert(
     (SELECT bool_and((row->>'was_corrected')::boolean = false)
        FROM jsonb_array_elements(v_history_detail -> 'rows') row
-      WHERE (row->>'source_row_number')::int = 3),
-    'History correctly marks the never-corrected row3 as not corrected'
+      WHERE (row->>'source_row_number')::int = 4),
+    'History correctly marks the never-corrected, never-deleted row3 as not corrected'
   );
   PERFORM public.corr_fixture_assert(
     (SELECT (row->>'was_corrected')::boolean = true
        FROM jsonb_array_elements(v_history_detail -> 'rows') row
-      WHERE (row->>'source_row_number')::int = 2) IS NOT TRUE,
+      WHERE (row->>'source_row_number')::int = 3) IS NOT TRUE,
     'History correctly marks the never-corrected row2 as not corrected'
   );
 
@@ -1183,15 +1587,133 @@ BEGIN
     );
   END;
 
+  -- ============================================================
+  -- Fourth run: a downstream failure *after* the corrected candidate has
+  -- already entered the canonical Agenda mutation path rolls back
+  -- everything together -- the canonical agenda_items insert, the Agenda
+  -- version advance, the Agenda command-ledger write, and the staging
+  -- commit-state/commit-result bookkeeping that would otherwise record this
+  -- correction as committed. The forced failure fires on the same final
+  -- UPDATE public.import_run_rows statement commit_agenda_import_run always
+  -- performs last, so by the time it fires, import_event_agenda_items has
+  -- already run for real.
+  -- ============================================================
+  DECLARE
+    v_run4 uuid;
+    v_run4_row uuid;
+    v_before_version4 integer;
+    v_before_items4 integer;
+    v_before_ledger4 integer;
+  BEGIN
+    SELECT id INTO v_run4
+    FROM public.create_import_run(
+      v_event_a, 'agenda', 'agenda-correction-4.csv',
+      jsonb_build_object('row_count', 1, 'expected_agenda_version', 2) -- current real version after run3's rejection
+    );
+    SELECT id INTO v_run4_row
+    FROM public.stage_import_run_row(
+      v_run4, 2, jsonb_build_object('Title', ''),
+      public.corr_fixture_candidate(2, NULL, '2026-10-04', '09:00', NULL),
+      'agenda-correction-run4-row'
+    );
+    PERFORM public.set_import_run_row_review_state(
+      v_run4_row, 'invalid', '[{"code":"missing_agenda_title","message":"Missing Title","severity":"error"}]'::jsonb, 'unreviewed'
+    );
+    -- A genuine Stage D correction makes this row commit-eligible; the
+    -- forced failure below must still unwind everything this correction
+    -- made possible.
+    PERFORM public.correct_agenda_import_run_row(
+      v_run4_row, 0, public.corr_fixture_candidate(2, 'Rolled Back After Correction', '2026-10-04', '09:00', 'agenda-correction-run4-fixed'),
+      'valid', '[]'::jsonb, 'data_entry_error'
+    );
+
+    SELECT version INTO v_before_version4 FROM public.event_agenda_state WHERE event_id = v_event_a;
+    SELECT count(*) INTO v_before_items4 FROM public.agenda_items WHERE event_id = v_event_a;
+    SELECT count(*) INTO v_before_ledger4 FROM public.agenda_command_ledger WHERE event_id = v_event_a;
+
+    PERFORM set_config('corr_stageD.fail_run_id', v_run4::text, true);
+    PERFORM set_config('corr_stageD.fail_commit_result', 'true', true);
+    v_failed := false;
+    BEGIN
+      PERFORM public.commit_agenda_import_run(v_run4);
+    EXCEPTION WHEN OTHERS THEN v_failed := SQLERRM = 'corr_stageD_forced_commit_result_failure'; END;
+    PERFORM set_config('corr_stageD.fail_commit_result', '', true);
+
+    PERFORM public.corr_fixture_assert(v_failed, 'the final staging-result UPDATE failure was forced for real');
+
+    -- Canonical Agenda mutation, version advance, and ledger write must all
+    -- be gone -- even though import_event_agenda_items genuinely ran and
+    -- inserted the corrected row before the forced failure occurred.
+    PERFORM public.corr_fixture_assert(
+      NOT EXISTS (
+        SELECT 1 FROM public.agenda_items
+        WHERE event_id = v_event_a AND external_id = 'agenda-correction-run4-fixed'
+      ),
+      'the canonical Agenda item insert (using the corrected candidate) is rolled back'
+    );
+    PERFORM public.corr_fixture_assert(
+      (SELECT version = v_before_version4 FROM public.event_agenda_state WHERE event_id = v_event_a),
+      'the Agenda version advance is rolled back'
+    );
+    PERFORM public.corr_fixture_assert(
+      (SELECT count(*) = v_before_ledger4 FROM public.agenda_command_ledger WHERE event_id = v_event_a),
+      'the Agenda command-ledger write is rolled back'
+    );
+    PERFORM public.corr_fixture_assert(
+      (SELECT count(*) = v_before_items4 FROM public.agenda_items WHERE event_id = v_event_a),
+      'no net canonical Agenda row survives the rollback'
+    );
+
+    -- Staging/commit-state bookkeeping, including every Stage-D-correction-
+    -- derived field, is also rolled back: the row is exactly where it was
+    -- before this commit attempt -- approved, not_started, no canonical
+    -- target, no commit_result, no committed_at.
+    PERFORM public.corr_fixture_assert(
+      (SELECT row_state = 'approved'
+         AND commit_state = 'not_started'
+         AND canonical_target_id IS NULL
+         AND commit_result = '{}'::jsonb
+         AND commit_error IS NULL
+         AND committed_at IS NULL
+       FROM public.import_run_rows WHERE id = v_run4_row),
+      'staging/commit-state bookkeeping (including Stage D correction-derived commit_result) is rolled back to its pre-commit-attempt state'
+    );
+
+    -- The correction record itself (Imports-owned evidence, not canonical
+    -- Agenda/commit bookkeeping) is unaffected -- it was committed in an
+    -- earlier, already-completed transaction and is not part of what this
+    -- forced failure is rolling back.
+    PERFORM public.corr_fixture_assert(
+      (SELECT count(*) FROM public.import_run_row_corrections WHERE import_run_row_id = v_run4_row) = 1,
+      'the prior, already-committed correction record survives -- only this later commit attempt rolled back'
+    );
+
+    -- A clean retry (no forced failure) now succeeds, proving the
+    -- roll-back left the run in a genuinely retryable state.
+    SELECT outcome, imported_count, new_version INTO v_outcome, v_imported, v_version
+    FROM public.commit_agenda_import_run(v_run4);
+    PERFORM public.corr_fixture_assert(
+      v_outcome = 'committed' AND v_imported = 1 AND v_version = v_before_version4 + 1,
+      'a clean retry after the forced failure commits normally using the same corrected candidate'
+    );
+    PERFORM public.corr_fixture_assert(
+      (SELECT title FROM public.agenda_items WHERE event_id = v_event_a AND external_id = 'agenda-correction-run4-fixed') = 'Rolled Back After Correction',
+      'the retried commit used the corrected candidate, exactly as the rolled-back attempt would have'
+    );
+  END;
+
   -- Minimum EXECUTE surface for the new/replaced functions.
   PERFORM public.corr_fixture_assert(
     has_function_privilege('authenticated', 'public.correct_agenda_import_run_row(uuid,integer,jsonb,text,jsonb,text)', 'EXECUTE')
       AND has_function_privilege('authenticated', 'public.get_agenda_import_row_corrections(uuid)', 'EXECUTE')
       AND has_function_privilege('authenticated', 'public.list_agenda_import_row_correction_summaries(uuid)', 'EXECUTE')
+      AND has_function_privilege('authenticated', 'public.delete_agenda_import_run_row(uuid,text)', 'EXECUTE')
       AND NOT has_function_privilege('anon', 'public.correct_agenda_import_run_row(uuid,integer,jsonb,text,jsonb,text)', 'EXECUTE')
       AND NOT has_function_privilege('anon', 'public.get_agenda_import_row_corrections(uuid)', 'EXECUTE')
-      AND NOT has_table_privilege('authenticated', 'public.import_run_row_corrections', 'SELECT'),
-    'authenticated has only the intended correction RPC surface; no direct table privilege on the new table exists for any browser role'
+      AND NOT has_function_privilege('anon', 'public.delete_agenda_import_run_row(uuid,text)', 'EXECUTE')
+      AND NOT has_table_privilege('authenticated', 'public.import_run_row_corrections', 'SELECT')
+      AND NOT has_table_privilege('authenticated', 'public.import_run_rows', 'DELETE'),
+    'authenticated has only the intended correction/deletion RPC surface; no direct table privilege exists for any browser role'
   );
 END;
 $$;
@@ -1209,8 +1731,12 @@ BEGIN
   IF to_regclass('public.import_run_row_corrections') IS NOT NULL THEN
     RAISE EXCEPTION 'corr_fixture_residue: import_run_row_corrections table';
   END IF;
+  IF to_regprocedure('public.delete_agenda_import_run_row(uuid,text)') IS NOT NULL THEN
+    RAISE EXCEPTION 'corr_fixture_residue: delete_agenda_import_run_row function';
+  END IF;
   IF to_regprocedure('public.corr_fixture_assert(boolean,text)') IS NOT NULL
-    OR to_regprocedure('public.corr_fixture_candidate(integer,text,text,text,text)') IS NOT NULL THEN
+    OR to_regprocedure('public.corr_fixture_candidate(integer,text,text,text,text)') IS NOT NULL
+    OR to_regprocedure('public.corr_fixture_fail_commit_result()') IS NOT NULL THEN
     RAISE EXCEPTION 'corr_fixture_residue: helper function';
   END IF;
   IF (

@@ -157,7 +157,7 @@ test("same-file duplicate guidance says every copy is blocked and no winner was 
   assert.match(message, /new import run/);
 });
 
-test("a never-corrected validation-failed row offers Edit Row but not yet Skip Row, and cannot gain commit eligibility through UI state", () => {
+test("a never-corrected validation-failed row offers both Edit Row and Delete Row, and cannot gain commit eligibility through UI state", () => {
   const invalid = row({
     rowState: "validation_failed",
     issues: [
@@ -173,12 +173,12 @@ test("a never-corrected validation-failed row offers Edit Row but not yet Skip R
   assert.match(html, />Cannot Import</);
   assert.match(html, /Title is missing/);
   assert.match(html, />Edit Row</);
-  assert.doesNotMatch(html, />Skip Row</);
+  assert.match(html, />Delete Row</);
   assert.doesNotMatch(html, />Import Agenda \(/);
   assert.doesNotMatch(html, /persisted message is not the presentation source/);
 });
 
-test("a corrected-but-still-invalid row surfaces as Needs Attention and gains Skip Row, while a corrected-valid row is Ready to Import with no Cannot-Import language", () => {
+test("a corrected-but-still-invalid row surfaces as Needs Attention and still offers Delete Row, and a corrected-valid row is Ready to Import with Delete Row also offered", () => {
   const stillInvalid = row({
     rowState: "validation_failed",
     correctionCount: 1,
@@ -195,20 +195,22 @@ test("a corrected-but-still-invalid row surfaces as Needs Attention and gains Sk
   assert.match(stillInvalidHtml, />Needs Attention</);
   assert.doesNotMatch(stillInvalidHtml, />Cannot Import</);
   assert.match(stillInvalidHtml, />Edit Row</);
-  assert.match(stillInvalidHtml, />Skip Row</);
+  assert.match(stillInvalidHtml, />Delete Row</);
 
   const corrected = row({ rowState: "approved", correctionCount: 1, correctionRevision: 1 });
   const correctedHtml = renderWorkspace([corrected], { status: "ready_for_review" });
   assert.match(correctedHtml, />Ready to Import</);
   assert.doesNotMatch(correctedHtml, />Cannot Import</);
   assert.match(correctedHtml, />Edit Row</);
+  assert.match(correctedHtml, />Delete Row</);
 });
 
-test("committed and abandoned rows never offer Edit Row", () => {
+test("committed and abandoned rows never offer Edit Row or Delete Row", () => {
   const committedHtml = renderWorkspace([
     row({ rowState: "committed", canonicalAgendaItemId: crypto.randomUUID() }),
   ]);
   assert.doesNotMatch(committedHtml, />Edit Row</);
+  assert.doesNotMatch(committedHtml, />Delete Row</);
 
   const abandonedHtml = renderWorkspace([
     row({
@@ -218,6 +220,7 @@ test("committed and abandoned rows never offer Edit Row", () => {
     }),
   ]);
   assert.doesNotMatch(abandonedHtml, />Edit Row</);
+  assert.doesNotMatch(abandonedHtml, />Delete Row</);
 });
 
 test("a finalized run never offers Edit Row even for a correctable rowState", () => {
@@ -258,11 +261,14 @@ test("commit is offered only after staging is closed and remains confirmation-ga
   assert.match(SOURCE, /<ConfirmDialog[\s\S]*onConfirm=\{async \(\) =>/);
 });
 
-test("ready review exposes governed row and run-wide Skip language with confirmation", () => {
+test("ready review exposes the shared run-wide Skip bulk action and the row-level Delete Row action, both confirmation-gated", () => {
   const html = renderWorkspace([row()], { status: "ready_for_review" });
   assert.match(html, />Skip All Open Rows</);
-  assert.match(html, />Skip Row</);
+  assert.match(html, />Delete Row</);
+  assert.doesNotMatch(html, />Skip Row</);
   assert.match(SOURCE, /abandonAllDialogTitle="Skip All Open Agenda Rows"/);
+  assert.match(SOURCE, /title="Delete This Agenda Row"/);
+  assert.doesNotMatch(SOURCE, /will remain in History/i);
 });
 
 test("safe commit-failure presentation includes a useful stale-version explanation and never reads raw persisted messages", () => {
@@ -284,14 +290,37 @@ test("compact presentation uses a named ResponsiveList; wider presentation uses 
   assert.match(wide, /<table class="data-table"/);
 });
 
-test("workspace uses only governed lifecycle/correction components, never a direct database call", () => {
+test("workspace uses only governed lifecycle/correction/deletion components, never a direct database call", () => {
   assert.match(SOURCE, /<RunLifecycleActions/);
-  assert.match(SOURCE, /<AbandonRowButton/);
   assert.match(SOURCE, /<AgendaEditRowDialog/);
+  assert.match(SOURCE, /<ConfirmDialog/);
+  assert.match(SOURCE, /deleteAgendaImportRow/);
+  assert.doesNotMatch(SOURCE, /AbandonRowButton/);
   assert.doesNotMatch(SOURCE, /supabase|\.rpc\(|\.from\(/);
   // The workspace delegates the actual edit form to AgendaEditRowDialog; it
   // renders no raw form control and no staged evidence itself.
   assert.doesNotMatch(SOURCE, /<Input|<Textarea|normalized_candidate/);
+});
+
+test("Delete Row's confirmation dialog states the exact governed consequence -- not imported, cannot be undone -- and never claims the row remains in History", () => {
+  assert.match(
+    SOURCE,
+    /message="Delete this staged row from the current import\? It will not be imported\. This action cannot be undone from the review workspace\."/,
+  );
+  assert.doesNotMatch(SOURCE, /remain(s)? in (the )?History/i);
+});
+
+test("deletion calls the governed RPC through the orchestration module only, and reloads recovery state on success rather than removing the row client-side", () => {
+  assert.match(SOURCE, /await deleteAgendaImportRow\(\{ rowId: row\.rowId \}\)/);
+  // handleDelete awaits the RPC and only then calls onRowsChanged (which
+  // reloads governed recovery state from the server) -- there is no
+  // client-side row-array splice/filter anywhere that would remove the row
+  // optimistically ahead of RPC success.
+  assert.doesNotMatch(SOURCE, /\.filter\(.*rowId/);
+  assert.match(
+    SOURCE,
+    /async function handleDelete\(\) \{\s*\n\s*setDeleting\(true\);\s*\n\s*try \{\s*\n\s*await deleteAgendaImportRow/,
+  );
 });
 
 test("the Edit Row dialog itself is the sole editor, calls the governed correction RPC through the orchestration module only, and never a direct database call", () => {

@@ -14,6 +14,7 @@ import {
   interpretAgendaImportRows,
   type RawAgendaImportRow,
 } from "@/lib/agendaImportContract";
+import type { AbandonmentReasonCode } from "@/lib/importLifecycleOrchestration";
 import { supabase } from "@/lib/supabase";
 
 export type AgendaImportRowState =
@@ -338,6 +339,29 @@ export async function correctAgendaImportRow(params: {
     reviewState: result.review_state,
     revision: Number(result.revision),
   };
+}
+
+/**
+ * Permanently delete a staged Agenda row before it commits -- the operator
+ * has decided it does not belong in this import at all (as opposed to
+ * Edit Row, which corrects a row that should be imported). No row
+ * contents or correction history are preserved; this is pre-commit
+ * working data, not evidence. reasonCode reuses the same bounded
+ * abandonment-reason vocabulary already governed elsewhere in Imports;
+ * the governed RPC accepts it optionally.
+ */
+export async function deleteAgendaImportRow(params: {
+  rowId: string;
+  reasonCode?: AbandonmentReasonCode | null;
+}): Promise<void> {
+  const { rowId, reasonCode } = params;
+  const { error } = await supabase.rpc("delete_agenda_import_run_row", {
+    p_import_run_row_id: rowId,
+    p_reason_code: reasonCode ?? null,
+  });
+  if (error) {
+    throw error;
+  }
 }
 
 async function recoverAfterAttempt(

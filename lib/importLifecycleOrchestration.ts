@@ -338,6 +338,9 @@ export function describeLifecycleError(err: unknown): string {
       "This row changed since you started editing it. Reload the row and try your correction again.",
     invalid_correction_reason_code: "Choose one of the approved correction reasons.",
     invalid_correction_validation_state: "Could not determine the corrected row's validation outcome.",
+    import_row_not_found: "This row no longer exists -- it may already have been deleted. Reload the run.",
+    import_row_committed: "This row has already been imported and can no longer be deleted.",
+    invalid_deletion_reason_code: "Choose one of the approved reasons, or leave it blank.",
   };
 
   if (known[message]) {
