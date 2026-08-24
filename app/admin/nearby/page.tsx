@@ -1372,6 +1372,12 @@ function AdminNearbyPageInner() {
 
         payload.push({
           event_id: adminEvent.id,
+          // Nearby Scope Model Stage 2: links this copy back to the
+          // stored place it came from, exactly what
+          // associate_nearby_master_place_with_event's own single-place
+          // path already stamps -- a bulk-copied row is no longer
+          // indistinguishable from an Event Only place.
+          source_master_id: place.id,
           name: place.name,
           address: place.address ?? null,
           phone: place.phone ?? null,
@@ -1486,6 +1492,9 @@ function AdminNearbyPageInner() {
 
         payload.push({
           event_id: adminEvent.id,
+          // Nearby Scope Model Stage 2 -- see
+          // replaceEventListFromStored()'s identical comment.
+          source_master_id: place.id,
           name: place.name,
           address: place.address ?? null,
           phone: place.phone ?? null,
