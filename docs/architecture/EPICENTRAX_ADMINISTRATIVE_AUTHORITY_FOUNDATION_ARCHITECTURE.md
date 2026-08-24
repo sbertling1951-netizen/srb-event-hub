@@ -26,6 +26,22 @@ restate, alter, weaken, or compete with any of them:
   an admin-assignment substrate) over Option A (a full ADR-012 Person–Tenant
   Relationship implementation) for the reasons repeated in §3 below.
 
+### Tenant lifecycle overlay (August 24, 2026)
+
+This document records the deployed Stage 1 authority foundation. ADR-014 now
+governs Tenant lifecycle and establishes that an inactive Tenant freezes both
+inherited Tenant authority and direct Event authority, except for governed
+Platform Administrator recovery.
+
+The deployed `has_tenant_admin_authority` and
+`has_event_admin_authority` functions do not yet consult
+`tenants.is_active`. Their current inactive-Tenant behavior is an acknowledged
+implementation gap, not an alternate lifecycle policy. The hierarchy and the
+verification matrix below therefore describe active-Tenant operation unless
+Platform recovery is stated explicitly. Inactive-Tenant enforcement is the
+next implementation stage; this documentation update changes no function or
+grant.
+
 ## Purpose
 
 Two prior migrations (`20260810120000_create_governed_venue_evidence_foundation.sql`,

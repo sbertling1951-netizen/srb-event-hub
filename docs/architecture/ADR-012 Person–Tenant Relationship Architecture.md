@@ -212,7 +212,11 @@ Current implementation has fragmented admin, member, and vendor context mechanis
 
 ADR-004 remains an unused placeholder unless it is separately assigned a distinct, non-overlapping architectural subject. It is not an authority for the Person–Tenant Relationship model.
 
-ADR-009 currently anticipates ADR-004 defining this same model. ADR-009 should be corrected in a separate documentation task to reference ADR-012 instead. This ADR does not modify ADR-009.
+ADR-009 version 1.2 now references ADR-012 for this model. Its former
+ADR-004/placeholder ambiguity is resolved. ADR-014's Tenant lifecycle and
+administration contract preserves this long-term direction while explicitly
+retaining `admin_tenant_access` as the near-term transitional authority
+substrate; it does not redefine a Person-Tenant Relationship.
 
 ADR-005, ADR-006, and ADR-008 may require distinct future decisions about authentication and authorization mechanics, Event ownership and lifecycle, and permission mapping. Those decisions must consume this model without restating or competing with it.
 

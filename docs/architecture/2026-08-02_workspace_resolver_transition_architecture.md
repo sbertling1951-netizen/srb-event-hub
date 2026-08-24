@@ -4,6 +4,29 @@
 
 **Date:** August 2, 2026
 
+## Deployed-state reconciliation (August 24, 2026)
+
+Section 1 records the fragmented implementation observed on August 2, 2026.
+It is retained as historical transition evidence, not current implementation
+status.
+
+Separate governed stages have since established:
+
+- request-time Host-to-Tenant resolution through
+  `public.tenant_hostname_mappings` and `lib/server/tenantResolver.ts`;
+- required canonical Event ownership in `public.events.tenant_id`;
+- Event ownership immutability after insert, with no transfer operation;
+- a server-side Workspace Resolver consuming independently resolved Tenant
+  context; and
+- canonical Tenant inheritance for database, browser, and server Event
+  authority consumers through Tenant T0.
+
+The transition principles below remain useful, but their "Current State"
+inventory must be read as dated evidence. ADR-014 now governs the near-term
+Tenant lifecycle and administration contract. Its inactive-Tenant freeze is
+not yet consistently enforced across authority, discovery, and member access;
+that is the next implementation stage, not current deployed behavior.
+
 ## Purpose
 
 This document defines, at the architectural level only, the roadmap by which

@@ -1,14 +1,26 @@
 # ADR-009 — Tenant Identity, Resolution, Branding, and White-Label Architecture
 
 **Status:** Accepted
-**Version:** 1.1
-**Date:** 2026-07-31
+**Version:** 1.2
+**Date:** 2026-08-24
 
 ---
 
 ## Scope note
 
-This ADR is filed under "Tenant Branding and White-Label Architecture" per the architecture library's existing index, but it necessarily also decides tenant *identification* and *resolution*. Branding cannot be decided honestly without first deciding how the active Tenant is known, so this document answers both. It does not redefine or duplicate the Person/Membership relationship model already worked out in `supabase/identity-audits/baseline-diagnostics/tenant_identity_architecture_recommendation.md` (Person is global; `PersonTenantRelationship` and `Membership` are the tenant-scoped layers below it) — that model is treated here as directionally correct and is assumed, not re-litigated. ADR-012 governs the Person–Tenant Relationship model; this ADR should be read as compatible with it, not a substitute for it.
+This ADR is filed under "Tenant Branding and White-Label Architecture" per
+the architecture library's existing index, but it necessarily also decides
+Tenant identification and resolution. Branding cannot be decided honestly
+without first deciding how the active Tenant is known, so this document
+answers both.
+
+It does not redefine or duplicate the Person/Membership relationship model in
+`supabase/identity-audits/baseline-diagnostics/tenant_identity_architecture_recommendation.md`.
+That model treats Person as global and `PersonTenantRelationship` and
+`Membership` as Tenant-scoped layers. ADR-012 governs the Person-Tenant
+Relationship model; this ADR is compatible with it, not a substitute for it.
+ADR-014 governs Tenant lifecycle and administration; this ADR supplies its
+identity, resolution, branding, and hostname context.
 
 ---
 
@@ -16,7 +28,9 @@ This ADR is filed under "Tenant Branding and White-Label Architecture" per the a
 
 EpicentraX currently operates in production for exactly one Tenant: FCOC. The platform is intended to become genuinely white-label, serving multiple Tenants from one shared codebase.
 
-Evidence gathered before writing this decision:
+The following evidence records the historical state when version 1.1 was
+adopted. It is retained as architectural history, not as current
+implementation status:
 
 - `public.tenants` exists, has RLS enabled, and holds one row (`organization_code = 'FCOC'`). Its columns already separate identity (`id`), routing-style aliases (`organization_code`, `slug`), and presentation (`organization_name`, `display_name`, `app_title`, `app_tagline`, `logo_url`, `favicon_url`, `primary_color`, `secondary_color`, `accent_color`). There is no `hostname` or `domain` column anywhere in the schema.
 - The only enforced RLS policy on `public.tenants` grants `SELECT` to `anon` and `authenticated` where `is_active = true`; neither role has `INSERT`, `UPDATE`, or `DELETE` (`supabase/identity-audits/baseline-diagnostics/tenants_rls_reconciliation_plan.md`). Writes require `service_role`/`postgres`. This is the correct posture and this ADR does not propose changing it.
@@ -25,7 +39,35 @@ Evidence gathered before writing this decision:
 - A parallel, richer terminology system (`lib/tenantLabels.ts`, `TenantLabelKey`, `DEFAULT_TENANT_LABELS`, `loadTenantLabels()`) and a React context provider (`lib/providers/TenantProvider.tsx`, `useTenant()`) both exist but are dormant: `loadTenantLabels()` is never called, and `TenantProvider` is never mounted anywhere in the component tree.
 - A recent, narrowly-scoped task converted several hardcoded "FCOC" presentation strings (root layout header, print-page fallbacks, a vendor-notification email) to read from `getCurrentTenant()` instead. That work is a **transitional improvement, not a compliant end state** under this ADR: it calls `getCurrentTenant()` independently from multiple places (the root layout, a client print page, an API route) rather than resolving once and passing the result down, and the root layout's call is async in a way that Next.js can — and during local verification, did — bake into statically generated HTML at build time. Both patterns are named explicitly in this ADR's non-conformance list (§15) so they are tracked, not mistaken for precedent.
 
-No second Tenant exists today, and no request currently carries a Tenant-identifying hostname. This ADR is written ahead of that need, so the single-Tenant present can be operated safely while the multi-Tenant future is being built toward — not retrofitted in an emergency once a second Tenant is signed.
+At adoption, no second Tenant existed and no request carried a
+Tenant-identifying hostname. This ADR was written ahead of that need so the
+single-Tenant deployment could move safely toward multi-Tenant operation.
+
+### Deployed-state reconciliation (August 24, 2026)
+
+The following previously missing architecture is now deployed through
+separately governed implementation stages:
+
+- `public.events.tenant_id` is a required UUID foreign key and the canonical
+  Event-to-Tenant ownership fact
+  (`20260731120000_add_events_tenant_ownership.sql`);
+- Event ownership is immutable after insert and no governed transfer operation
+  exists (`20260824000000_enforce_event_tenant_ownership_immutability.sql`);
+- `public.tenant_hostname_mappings` is the authoritative many-to-one hostname
+  routing resource (`20260731120200_create_tenant_hostname_mappings.sql`);
+- `lib/server/tenantResolver.ts` resolves the request Host against that mapping,
+  rejects inactive mappings and inactive Tenants, and caches only within the
+  current server render;
+- the hardcoded FCOC resolver and process-wide Tenant cache have been retired;
+  and
+- `TenantProvider` is mounted only to distribute presentation derived from the
+  already server-resolved Tenant. It is not an independent resolver or an
+  authority source.
+
+The remaining code-default terminology gap is described in §11. Tenant
+lifecycle and administration are governed by ADR-014. In particular, the
+inactive-Tenant freeze is an accepted contract whose authority, discovery,
+and member-access enforcement remains pending after Tenant T0.
 
 ---
 
@@ -42,7 +84,8 @@ This ADR is bound by the Constitution (ADR-000) and by the following constraints
 7. Tenant resolution must not be established independently by individual pages, features, or business capabilities (Constitution, Article II: "Business capabilities consume these contexts rather than establishing their own state").
 8. Tenant branding must come from governed Tenant context, not from hardcoded literals.
 9. Missing or ambiguous Tenant context must not silently resolve to the wrong Tenant.
-10. FCOC-specific fallback behavior may be tolerated during controlled transition; it is not the final multi-tenant architecture.
+10. Tenant-specific fallback behavior is not part of Tenant resolution. The
+    former FCOC exception is retired history (§6).
 11. Favor the simplest, cleanest design; no speculative abstractions or extra fluff (Constitution, Article VI–VII; AGENTS.md working rules).
 
 Where this decision and the current codebase conflict, the codebase is expected to change (Constitution Preamble: "When implementation and principle conflict, implementation must change").
@@ -59,7 +102,9 @@ A separately authorized Platform Administrator context (§7) exists outside this
 
 No shared-platform build may compile one Tenant's branding into pages served to another Tenant (§12). No process-wide, cross-request, cross-Tenant cache of "the current Tenant" is permitted (§13). Missing or conflicting Tenant context fails closed — a visible, safe, neutral state — never a silent fallback to FCOC or to any other specific Tenant (§9).
 
-`organization_code = 'FCOC'` as a hardcoded resolver is an explicitly named, temporary compatibility mechanism for the current single-Tenant period, described fully in §6. It is **not** part of the permanent algorithm in §5, is not compliant multi-tenant architecture, and must be deleted — not merely deprioritized — before a second Tenant is onboarded (§15).
+The former `organization_code = 'FCOC'` hardcoded resolver was never part of
+the permanent algorithm and has been retired. It must not be reinstated as a
+fallback (§6, §15).
 
 ---
 
@@ -70,7 +115,7 @@ No shared-platform build may compile one Tenant's branding into pages served to 
 | Tenant UUID | `tenants.id` | **Identity** | Permanent, immutable, never reused, never displayed as the primary user-facing label. This is the only value other tables should reference via foreign key. |
 | Slug | `tenants.slug` | Routing alias | URL-safe short name. Reserved for path- or subdomain-based routing. Changeable only through a governed administrative action, since existing links/bookmarks depend on it. |
 | Organization code | `tenants.organization_code` | Routing/administrative alias | A short, human-assigned business code (comparable to the `ADMINISTRATIVE_PLACEHOLDER` class of identifier already defined for membership numbers in `tenant_identity_architecture_recommendation.md`: meaningful to humans, not to be treated as canonical identity or as conclusive authorization evidence). Retained as a legacy/business-reference field, not promoted to an identity or a routing key going forward. |
-| Hostname / domain | *(no column exists yet)* | Routing alias (many-to-one) | Multiple hostnames (a platform subdomain and a custom domain) may map to one Tenant. Does not exist in the schema today — see §20. |
+| Hostname / domain | `tenant_hostname_mappings.hostname` | Routing alias (many-to-one) | Multiple validated hostnames may map to one Tenant through the separate governed mapping resource. A hostname is never Tenant identity. |
 | Display name, organization name, app title, tagline, logo URL, favicon URL, colors | `tenants.display_name`, `organization_name`, `app_title`, `app_tagline`, `logo_url`, `favicon_url`, `primary_color`, `secondary_color`, `accent_color` | **Presentation only** | Never consulted for resolution, authorization, or routing decisions. Safe to fail over to neutral defaults without any security consequence. |
 
 ---
@@ -79,32 +124,37 @@ No shared-platform build may compile one Tenant's branding into pages served to 
 
 A single, permanent algorithm governs ordinary public, authenticated, and Tenant-administrator resolution. It contains exactly four stages, and only these four:
 
-1. **Governed hostname/domain mapping.** The request's hostname resolves, through a governed mapping, to exactly one active Tenant. This is the default resolver for ordinary traffic once the mapping in §20 exists.
+1. **Governed hostname/domain mapping.** The request's hostname resolves,
+   through `public.tenant_hostname_mappings`, to exactly one active Tenant.
+   This is the deployed default resolver for ordinary traffic.
 2. **Authenticated Tenant relationship or selection — narrowing only.** Used to choose among a Person's multiple Tenant memberships when the hostname itself is Tenant-agnostic (e.g. a shared platform domain before a Tenant has a dedicated hostname), or to establish the Person's authority *within* the Tenant hostname resolution already produced. This stage never overrides a hostname that has already resolved to a specific, different Tenant — see §9's conflict rule.
-3. **Event-to-Tenant ownership consistency verification.** Once a Tenant is already resolved by stages 1–2, an event-specific route additionally verifies the requested event belongs to that Tenant. This is presently **not enforceable**: `public.events` carries no `tenant_id` (§16). Until that gap is closed, event-specific routes rely on stages 1–2 alone and must not claim a consistency guarantee they cannot check.
+3. **Event-to-Tenant ownership consistency verification.** Once a Tenant is
+   already resolved by stages 1–2, an Event-specific route additionally
+   verifies `public.events.tenant_id` matches that Tenant. The canonical,
+   required ownership fact now exists. Each Event-scoped consumer must use it
+   rather than trust browser-supplied context.
 4. **Fail closed.** If stages 1–3 do not together yield one unambiguous, active Tenant, Tenant resolution fails.
 
 If no stage above yields one unambiguous, active Tenant, Tenant resolution fails and the request proceeds according to the failure rules in §9. **It must not resolve to FCOC or any other Tenant by default.**
 
-This algorithm does **not** include the Platform Administrator override or the transitional FCOC default. Neither is a stage of this list:
+This algorithm does **not** include the Platform Administrator override or a
+Tenant-specific default. Neither is a stage of this list:
 
 - The Platform Administrator override is described separately, in §7, as a structurally distinct context — never evaluated as part of ordinary resolution.
-- The transitional FCOC default is described separately, in §6, as a time-boxed exception to stage 4's fail-closed outcome — not a fifth stage of this algorithm.
+- The former FCOC default is recorded in §6 as retired history and must not
+  return as a fifth stage.
 
 ---
 
-## 6. Transitional single-Tenant exception
+## 6. Retired single-Tenant exception
 
-This section is **not** part of the permanent algorithm in §5. It describes a time-boxed, explicitly named exception that applies only for the current single-Tenant period.
+Version 1.1 temporarily tolerated resolving an otherwise unresolved request
+through `organization_code = 'FCOC'` while the governed hostname mechanism was
+absent. That exception was never part of §5 and is now retired.
 
-- While exactly one Tenant exists platform-wide, a request that cannot yet be resolved through §5 (because the hostname/domain mapping in §20 does not yet exist) may temporarily resolve through `organization_code = 'FCOC'`.
-- This is **not** a stage of the permanent resolution algorithm in §5.
-- It is a temporary substitute for the fail-closed outcome in §5 stage 4 / §9, valid only during the controlled single-Tenant transition — not a permanent alternate path.
-- It must be **deleted — not merely deprioritized** — at or before the creation or activation of a second Tenant.
-- Once a second Tenant exists, exhaustion of the permanent algorithm in §5 must fail closed per §9. There is no substitute for it to fall through to at that point.
-- No future Tenant may silently receive FCOC branding, authority, or data context because its own resolution failed. A resolution failure is always shown as a neutral, unbranded, safe state (§9) — never as FCOC's identity standing in for the missing Tenant.
-
-§15 (FCOC transition rules) lists the full set of currently-tolerated transitional patterns, of which this resolver exception is one.
+Exhaustion of the permanent algorithm must fail closed per §9 even while only
+one Tenant exists. No request may silently receive FCOC or another Tenant's
+branding, authority, or data context because resolution failed.
 
 ---
 
@@ -130,14 +180,14 @@ This context requires all of the following:
 
 | Request type | Resolver | Notes |
 |---|---|---|
-| Public, unauthenticated | Hostname/domain (§5 stage 1) | No session to consult; during the single-Tenant period only, an unresolved request may fall to the transitional exception in §6. |
+| Public, unauthenticated | Hostname/domain (§5 stage 1) | No session to consult; unresolved or inactive Tenant context fails closed. |
 | Authenticated Person session | Hostname/domain, narrowed by session (§5 stages 1–2) | Session selects among memberships; never overrides a conflicting hostname. |
 | Platform administrator | Explicit Platform Administrator context (§7) | Structurally separate from §5; must be a distinct, audited, intentionally-entered control — not an implicit side effect of platform-admin authority. |
 | Tenant administrator | Hostname/domain of their own Tenant (§5 stage 1) | Elevated authority is scoped to the Tenant the hostname resolved, never to another Tenant by inference, and never through the Platform Administrator context in §7. |
-| Event-specific routes | Hostname/domain (§5 stage 1), consistency-checked against the event once §20 lands (§5 stage 3) | Unchecked today; do not represent this as verified until `events.tenant_id` exists. |
+| Event-specific routes | Hostname/domain (§5 stage 1), consistency-checked against the Event (§5 stage 3) | Required `events.tenant_id` is the canonical ownership fact. Every Event-specific surface must consume a governed check; the column's existence alone does not prove every consumer is reconciled. |
 | API routes | Same rule as the page/session that originates the call | No separate resolution rule for APIs; an API route inherits whatever Tenant the request's session/hostname already resolved. |
-| Background or server-side operations (no HTTP hostname) | The explicit `tenant_id` foreign key of the record being processed | Never a global/default lookup; if the record has no `tenant_id` yet (e.g. an event, today), the operation cannot claim Tenant scoping and must not silently assume FCOC. |
-| Email, SMS, printing, exports, reports | Inherited from the already-resolved request that triggered them | These are downstream *outputs* of an already-authenticated, already-resolved admin action; they must not re-resolve Tenant independently (see §15 for the current, named exception). |
+| Background or server-side operations (no HTTP hostname) | The explicit `tenant_id` foreign key of the record being processed | Never a global/default lookup. Every Event now has required canonical Tenant ownership. Records that legitimately lack Tenant ownership cannot claim Tenant scope. |
+| Email, SMS, printing, exports, reports | Inherited from the already-resolved request that triggered them | These are downstream *outputs* of an already-authenticated, already-resolved action; they must not establish a competing Tenant resolution path. |
 
 ---
 
@@ -145,10 +195,14 @@ This context requires all of the following:
 
 Security and tenant isolation take priority over convenience in every case below. "Fail safe" means: refuse, show a neutral state, and audit — never guess.
 
-- **Hostname identifies Tenant A but the requested Event belongs to Tenant B:** deny the request. (Currently unenforceable per §5 stage 3 — this is a stated gap, not a stated guarantee, until `events.tenant_id` exists; §15 and §16 make closing it an operational gate, not optional cleanup.)
+- **Hostname identifies Tenant A but the requested Event belongs to Tenant B:**
+  deny the request. `events.tenant_id` makes this ownership check mechanically
+  enforceable; each Event-scoped surface must consume the governed boundary.
 - **A Person belongs to multiple Tenants:** require explicit Tenant selection (via hostname or an explicit switcher) before granting access to Tenant-scoped data. Never infer which membership the Person "meant."
 - **A stored Tenant selection conflicts with the request hostname:** the hostname wins for anything security-sensitive (authorization, data scope). The stored selection may only be used to pre-fill an explicit re-confirmation, never to silently override a conflicting hostname.
-- **A Tenant cannot be resolved:** render a neutral, unbranded "Tenant unavailable" state. Do not fall back to FCOC or to any other specific Tenant's branding or data, except as explicitly and narrowly permitted by the transitional exception in §6. Log the failure.
+- **A Tenant cannot be resolved:** render a neutral, unbranded "Tenant
+  unavailable" state. Do not fall back to FCOC or to any other specific
+  Tenant's branding or data. Log the failure.
 - **A branding lookup fails** (the Tenant is known, but its branding row/fields are unreachable or incomplete): fall back to neutral, platform-level presentation defaults — this is safe because branding is presentation-only (§4) and carries no authorization weight. This is distinct from Tenant *resolution* failure, which must not be papered over the same way.
 - **A request attempts to access data without valid Tenant authority:** deny and audit. Tenant resolution logic is an application-layer convenience, not a substitute for RLS (§14); a resolution mistake must not become a data leak because RLS is the actual backstop.
 
@@ -159,7 +213,6 @@ Security and tenant isolation take priority over convenience in every case below
 `public.tenants` is confirmed authoritative today for: organization name, display name, application title, tagline, logo, favicon, primary/secondary/accent color. This is not a new decision — it is the existing schema, confirmed correct and sufficient for these fields.
 
 **Missing, identified without inventing unneeded structure:**
-- Hostname/domain mapping (§20) — required for resolution, not just branding.
 - Support contact information and website — no column exists; add only when a real consumer needs them, not speculatively.
 - **A print-quality or vector logo, distinct from `logo_url`.** The application logo (`logo_url`) is a raster image suited to on-screen display. At least one existing print surface (coach-plate/name-tag printing) uses a separate hardcoded SVG asset for print fidelity that has no corresponding Tenant field. This is a genuine gap: a raster `logo_url` cannot safely substitute for a vector asset on physical print output without a quality regression. A dedicated field (e.g. a `print_logo_url` accepting a vector format) is warranted — this ADR identifies the need without designing the column now.
 - Tenant terminology beyond `app_title`/`app_tagline` (nav labels, field labels, etc.) has no database-backed source at all today; see §11.
@@ -170,15 +223,24 @@ Security and tenant isolation take priority over convenience in every case below
 
 `public.tenants`, and any future governed database structure holding Tenant-specific terminology, is the **sole authoritative source of truth** for Tenant-controlled terminology. Nothing in application code is a source of truth for it.
 
-`lib/tenantLabels.ts` is **not** a source of truth. It is the governed application **consumption and normalization pathway**: the one place application code reads terminology through, so that no page, component, or feature queries or hardcodes terminology independently (§2 principle 7).
+`lib/tenantLabels.ts` is **not** a source of truth. It currently contains
+platform-default terminology only. It may be a consumption and normalization
+pathway, but it must not independently establish Tenant-specific terms.
 
 This pathway must observe the following ranking, stated without ambiguity:
 
-- `loadTenantLabels()` must actually read from resolved Tenant context (§5) at request time. Today it is defined but never called, so every label currently served is a code default regardless of what any Tenant record contains — this is a non-conforming gap, not an acceptable steady state.
+- Tenant-specific terminology, once required, must be read from resolved
+  Tenant context at request time. No such database-backed terminology loader
+  exists today, so terms beyond current Tenant metadata remain platform
+  defaults. That is an explicit gap, not a second Tenant source of truth.
 - **A database value always wins when it exists.** Once a given term has a governed database column or row (as `app_title`/`app_tagline` already do in `public.tenants`), the database value is used; a code default must never shadow or override it.
 - `DEFAULT_TENANT_LABELS` may only serve as a **scoped, last-resort default** for terms that have no governed database value at all (today, most `TenantLabelKey` entries beyond `app_title`/`app_tagline` — see §10). This is acceptable under Constitution Article VI–VII (no speculative abstraction ahead of demonstrated need) only because a dedicated per-Tenant terminology table is not yet justified by a second Tenant's actual requirements. It is not license to treat code as an ongoing parallel source once a database value exists for a given key.
 
-`lib/providers/TenantProvider.tsx` / `useTenant()` should be **retired**, not formalized. It duplicates what §3 already decides: Tenant is resolved once per request and passed downward. A client-side React Context that independently re-fetches the same data is redundant with that decision, not a second legitimate pathway. It was never mounted in the tree, so retiring it removes dead code rather than working functionality.
+`lib/providers/TenantProvider.tsx` / `useTenant()` is now mounted as a
+presentation distributor. It receives presentation derived from the
+server-resolved request Tenant and performs no independent database lookup.
+That use is consistent with §3. It must never become a client-side Tenant
+resolver or authority source.
 
 ---
 
@@ -186,7 +248,10 @@ This pathway must observe the following ranking, stated without ambiguity:
 
 Tenant-specific branding must **not** be compiled into shared platform pages at `next build` time. Resolution belongs at request time (server rendering or request handling), not static generation, because a statically generated page has no per-request hostname to resolve against and will bake in whatever Tenant happened to be reachable at build time — which is exactly the mechanism observed during recent verification of `app/layout.tsx`.
 
-This is a firm rule for the target architecture. The current implementation does not yet conform to it (§15), and that gap is named explicitly rather than left implicit. Client hydration may read the already-resolved server value; it must not perform its own independent resolution (§3, §11).
+This is a firm rule. The root layout now consumes the request-scoped server
+resolver and passes its presentation result downward. Client hydration may
+read that already-resolved value; it must not perform independent resolution
+(§3, §11).
 
 Shared platform builds must never bake one Tenant's branding into content intended for multiple Tenants. A future, intentionally isolated per-Tenant build — one Tenant per build artifact and deployment boundary — may be considered only through a separate architecture decision that guarantees that isolation. This ADR does not approve such a deployment model today.
 
@@ -194,11 +259,17 @@ Shared platform builds must never bake one Tenant's branding into content intend
 
 ## 13. Caching and invalidation
 
-- **Process-wide module caches** (a variable held in server memory for the life of the process, shared across all requests and all Tenants) are **not acceptable** for Tenant resolution once more than one Tenant exists. `lib/tenantContext.ts`'s current `cachedTenant` module-level variable is named here as the specific non-conforming pattern (§15).
+- **Process-wide module caches** (a variable held in server memory for the life
+  of the process, shared across all requests and all Tenants) are **not
+  acceptable** for Tenant resolution. The former `cachedTenant` pattern has
+  been retired (§15).
 - **Request-scoped caching** (resolve once, reuse for the duration of a single request/render) is required and sufficient — this is what "resolve once per request, pass downward" (§3) means in caching terms.
 - **Framework data caching** (e.g. Next.js's fetch/data cache) must be partitioned by Tenant in its cache key if used at all for Tenant-scoped data; an unpartitioned cache is equivalent to a process-wide cache and carries the same cross-Tenant leakage risk.
 - **Browser/client caching** of a Person's own resolved Tenant for their own session is acceptable; it must never be trusted as authorization evidence on a subsequent request (§9).
-- **Invalidation triggers** that must clear any cache that does exist: a branding field changes, a Tenant is created, a Tenant is suspended or deactivated, a Tenant's domain/hostname mapping changes. No cache may allow a stale, deactivated, or reassigned Tenant's context to keep serving.
+- **Invalidation triggers** that must clear any cache that does exist: a
+  branding field changes, a Tenant is created, a Tenant is activated or
+  deactivated, or a Tenant's domain/hostname mapping changes. No cache may
+  allow a stale or deactivated Tenant context to keep serving.
 - **Tenant-context caching is distinct from caching a Person's authority or Tenant relationship.** The rules above govern only *which Tenant is active*. Caching *what a given Person may do once a Tenant is known* belongs to the relevant authorization architecture (ADR-005), not this ADR; suspension, removal, or role changes must not remain effective beyond that architecture's own approved authority-cache invalidation period.
 
 ---
@@ -213,23 +284,27 @@ Tenant resolution is an application-layer convenience for producing the right ex
 
 ---
 
-## 15. FCOC transition rules
+## 15. Single-Tenant transition reconciliation
 
-The following are explicitly tolerated during the current single-Tenant period, and explicitly not the final architecture:
+Version 1.1 named five transitional gaps. Separate governed stages have since
+closed them:
 
-- `getCurrentTenant()`'s hardcoded `organization_code = 'FCOC'` filter (§6).
-- The module-level `cachedTenant` process-wide cache in `lib/tenantContext.ts`.
-- `app/layout.tsx` resolving Tenant in a way that Next.js may compile into static build output rather than at request time.
-- `getCurrentTenant()` being called independently from multiple, unrelated locations (`app/layout.tsx`, `app/admin/print/page.tsx`, `app/api/email/send/route.ts`) instead of being resolved once and passed downward.
-- `public.events` lacking enforceable Tenant ownership through the canonical Tenant UUID (§16).
+- the FCOC-specific resolver was replaced by exact Host-to-Tenant mapping;
+- the process-wide Tenant cache was replaced by request-scoped reuse;
+- the root layout now consumes request-time Tenant resolution;
+- downstream presentation consumes the already-resolved Tenant context; and
+- `public.events.tenant_id` is required canonical ownership and is immutable
+  after insert.
 
-None of these may be pointed to as precedent for how a second Tenant should be onboarded. A future Tenant must never silently display FCOC branding because its own Tenant lookup failed, hit the hardcoded filter, or hit a stale cross-Tenant cache entry.
+These retired patterns remain architectural history, not precedent. A future
+Tenant must never display FCOC branding or receive FCOC data context because
+its own resolution failed.
 
-Before a second Tenant is onboarded:
-
-- the hardcoded filter (§6) and the process-wide cache must be replaced with the resolution order in §5 and the caching rules in §13;
-- the build-time/request-time issue in §12 must be corrected for at least the branding surfaces a second Tenant would see; and
-- `public.events` must have enforceable Tenant ownership through the canonical Tenant UUID, available for RLS, authorization, consistency checking, reporting, and request resolution (§16). **A second Tenant must not become operational for event-scoped features until this exists.**
+This reconciliation does not claim the platform is ready for unrestricted
+second-Tenant operation. ADR-014 now requires a Tenant to be created inactive
+and defines an inactive-Tenant operational freeze. Its authority, discovery,
+and member-access enforcement is the next implementation stage. The
+database-backed terminology gap in §11 also remains explicit.
 
 ---
 
@@ -238,11 +313,20 @@ Before a second Tenant is onboarded:
 Not a workflow design — the dependencies that must exist before a newly created Tenant can safely serve any request:
 
 - A `tenants` row: UUID (identity, §4), `slug`, minimum viable branding (`organization_name`, `display_name`, `app_title`; other presentation fields may fall back to platform-neutral defaults per §9's branding-failure rule).
-- A hostname/domain mapping resolving to that UUID (§5 stage 1; the mapping mechanism itself is schema work not yet designed — §20).
-- **Tenant-owned Events.** If the Tenant will operate events, `public.events` must carry enforceable Tenant ownership through the canonical Tenant UUID before that Tenant is considered operational for event-scoped features. This ownership must be available for RLS, authorization, consistency checking, reporting, and request resolution (§15) — not merely for one of those uses in isolation.
+- An explicitly governed hostname/domain mapping resolving to that UUID (§5
+  stage 1). The mapping resource already exists; activation must not invent a
+  mapping implicitly.
+- **Tenant-owned Events.** Every future Event must be created with an explicit
+  target Tenant UUID. Required, immutable `public.events.tenant_id` is already
+  available for RLS, authorization, consistency checking, reporting, and
+  request resolution.
 - **Attendee Tenant scope.** `public.attendees` should derive Tenant scope through `attendees.event_id → events.tenant_id`, not through an independently maintained `attendees.tenant_id`. An attendee-level column would duplicate a fact already derivable through its owning Event (Constitution Article II/VII — one source of truth per concept; AGENTS.md — do not create a second state source to avoid understanding the first). Such denormalization may be introduced later only through a separate, explicit architectural decision supported by a demonstrated RLS or performance requirement — not by default, and not merely for convenience. The authoritative ownership path remains Event → Tenant.
-- At least one initial Tenant Administrator relationship, so the Tenant is not created ownerless.
-- An explicit status (`is_active`, already present) — a Tenant must be creatable in an inactive state and only begin serving requests once explicitly activated.
+- Any initial Tenant Administrator assignment is a separate governed operation;
+  Tenant creation must not invent it implicitly. Near-term authority uses the
+  transitional `admin_tenant_access` substrate under ADR-014.
+- An explicit status (`is_active`, already present). Under ADR-014 every Tenant
+  is created inactive and begins serving requests only after explicit
+  activation.
 - An audit record of the creation event itself (Constitution Article IV — auditability of privileged actions).
 - No other default settings should be assumed required merely because FCOC happens to have them; each additional default must be justified by genuine need, not copied speculatively from the single existing Tenant (Constitution Article VI–VII).
 
@@ -252,7 +336,12 @@ Not a workflow design — the dependencies that must exist before a newly create
 
 **Positive:** a single, auditable resolution algorithm instead of per-feature guessing; no cross-Tenant data or branding leakage by construction; RLS remains the real security boundary regardless of resolution mistakes; the terminology and branding pathways converge on one authoritative source instead of two competing dormant systems.
 
-**Costs, stated plainly:** this decision requires real schema and application work before a second Tenant can exist — a hostname/domain mapping table or column, enforceable Tenant ownership added to `public.events` (with `public.attendees` deriving Tenant scope transitively through it, per §16, rather than receiving its own column), removal of the process-wide cache, and converting the root layout's branding resolution from build-time-bakeable to request-time. None of that work is authorized or performed by this ADR (§19).
+**Costs, stated plainly:** the hostname mapping, Event ownership,
+request-scoped resolver, and root-layout consumption work identified by version
+1.1 are now deployed. Remaining work includes lifecycle enforcement under
+ADR-014, completing governed Tenant Administration and Event provisioning,
+and introducing database-backed terminology only when a real Tenant-specific
+need exists.
 
 ---
 
@@ -261,37 +350,49 @@ Not a workflow design — the dependencies that must exist before a newly create
 - **`organization_code` as the canonical Tenant identifier.** Rejected: it is a short, human-assigned, potentially-mutable business code — the same class of value the platform already treats as non-canonical for person identity (`ADMINISTRATIVE_PLACEHOLDER`-style classification). A UUID is stable in a way a human-facing code is not guaranteed to be.
 - **Subdomain/hostname resolution with no administrative override.** Rejected: gives Platform Administrators no governed way to support/inspect a Tenant without impersonating a hostname, which would either be impossible or ungoverned. This is why §7 exists as a separate, tightly governed context rather than being omitted.
 - **Pure session-stored Tenant selection with no hostname check.** Rejected: allows a stale or spoofed session value to disagree with the actual request origin, which is exactly the cross-Tenant leakage this ADR exists to prevent.
-- **Event ownership as the primary or sole Tenant resolver.** Rejected: makes the security-relevant decision depend on deep-linked content rather than the request's own origin, and — as of this writing — is not even possible, since `events` carries no `tenant_id`.
-- **An independently maintained `attendees.tenant_id`.** Rejected as the default: Tenant scope is already derivable through `attendees.event_id → events.tenant_id` once that column exists (§16); a separate column would duplicate that fact without a demonstrated need. Not rejected permanently — only rejected as the default, pending a separately justified RLS-performance case.
-- **Continuing indefinite process-wide caching for simplicity.** Rejected: acceptable only while one Tenant exists (§15); unacceptable as permanent architecture because it becomes a direct cross-Tenant leakage vector the moment a second Tenant is added.
+- **Event ownership as the primary or sole Tenant resolver.** Rejected: even
+  though canonical Event ownership now exists, the primary security-relevant
+  request context must not depend on deep-linked content rather than the
+  request's own origin.
+- **An independently maintained `attendees.tenant_id`.** Rejected as the
+  default: Tenant scope is derivable through
+  `attendees.event_id -> events.tenant_id`; a separate column would duplicate
+  that fact without a demonstrated need. Not rejected permanently, but it
+  requires a separately justified RLS or performance decision.
+- **Continuing process-wide caching for simplicity.** Rejected: the former
+  single-Tenant exception has been retired (§15). Cross-request Tenant state
+  is incompatible with fail-closed request resolution.
 - **Build-time-only branding compilation as the permanent model.** Rejected: does not scale past one Tenant and forces a full platform rebuild for any single Tenant's branding change.
 
 ---
 
 ## 19. Implementation boundaries
 
-This ADR is a decision document. It does not authorize, and should not be read as pre-approving, any of the following — each requires its own narrowly scoped task:
+This ADR is a decision document. Version 1.1 did not authorize the later
+Event ownership, hostname mapping, or resolver changes; those changes were
+approved and delivered by separate governed stages. This version records their
+deployed status and does not retroactively claim they were part of the original
+documentation task.
 
-- Adding enforceable Tenant ownership to `public.events`, or implementing the `attendees.event_id → events.tenant_id` derivation decided in §16, or any related migration.
-- Designing or creating a hostname/domain mapping table or column.
-- Rewriting `lib/tenantContext.ts`'s `getCurrentTenant()`, removing its module-level cache, or changing `app/layout.tsx`'s rendering strategy.
-- Wiring `loadTenantLabels()` into any render path, or removing `lib/providers/TenantProvider.tsx`.
-- Building the Platform Administrator override tooling described in §7.
-- Any tenant-creation workflow, UI, or administrative tooling.
+This reconciliation does not authorize:
 
-No application code, migration, database record, or configuration was changed in producing this ADR.
+- additional Tenant resolver, branding, or terminology implementation;
+- Platform Administrator override tooling described in §7;
+- Tenant creation, lifecycle, or administration implementation; or
+- Event creation or Event ownership transfer.
+
+No application code, migration, database record, or configuration is changed
+by this documentation reconciliation.
 
 ---
 
 ## 20. Open follow-up work
 
 - ADR-012 governs the Person–Tenant Relationship model.
-- Design the hostname/domain-to-Tenant mapping mechanism (§5, §16).
-- Implement the Tenant-ownership mechanism for `public.events` decided in §16, including the RLS policies it requires; `attendees` derives through it and needs no separate implementation decision.
-- Replace `lib/tenantContext.ts`'s process-wide cache with request-scoped resolution (§13, §15).
-- Convert Tenant branding resolution to request-time rendering wherever it currently risks build-time baking (§12, §15), starting with `app/layout.tsx`.
-- Wire `loadTenantLabels()` into the actual render path, or retire it in favor of a request-time-resolved equivalent (§11).
-- Retire `lib/providers/TenantProvider.tsx` (§11).
+- ADR-014 governs Tenant lifecycle and the near-term Tenant Administration
+  contract, including the pending inactive-Tenant enforcement stage.
+- Introduce governed, database-backed Tenant terminology only when a real
+  Tenant-specific requirement justifies it (§11).
 - Build the Platform Administrator "act as Tenant" control and its audit tooling to the requirements already defined in §7, grounded in §14's security requirements.
 - Design the Tenant-creation workflow itself, using §16's dependency list as its starting requirements.
 - Define each Tenant's identity-evidence policy for tenant-issued identifiers, per the classification framework already recommended in `tenant_identity_architecture_recommendation.md`, through a separately assigned, non-overlapping architecture decision.
@@ -301,4 +402,15 @@ No application code, migration, database record, or configuration was changed in
 
 ## Relationship to Other Architecture Documents
 
-This ADR interprets the Constitution's Article II (Context: "Each context shall have one authoritative source of truth. Business capabilities consume these contexts rather than establishing their own state") and Article VIII (Trust) for Tenant resolution and branding specifically. It assumes, without redefining, the Person/Membership identity model recommended in `supabase/identity-audits/baseline-diagnostics/tenant_identity_architecture_recommendation.md` and governed by ADR-012. It governs `lib/tenantContext.ts`, `lib/tenantBranding.ts`, `lib/tenantLabels.ts`, `lib/providers/TenantProvider.tsx`, and any future Tenant-resolution or Tenant-creation code; it does not govern authentication mechanics, permission grants, Person-authority/relationship caching (§13), or event-lifecycle rules, which remain the responsibility of ADR-005 and their own respective ADRs.
+This ADR interprets Constitution Article II (each context has one source of
+truth and business capabilities consume rather than establish context) and
+Article VIII (Trust) for Tenant resolution and branding. It assumes, without
+redefining, the Person/Membership model recommended in
+`supabase/identity-audits/baseline-diagnostics/tenant_identity_architecture_recommendation.md`
+and governed by ADR-012. ADR-014 governs Tenant lifecycle and administration.
+
+This ADR governs `lib/tenantContext.ts`, `lib/server/tenantResolver.ts`,
+`lib/tenantBranding.ts`, `lib/tenantLabels.ts`,
+`lib/providers/TenantProvider.tsx`, and future Tenant-resolution code. It does
+not govern authentication mechanics, permission grants,
+Person-authority/relationship caching (§13), or Event lifecycle.
