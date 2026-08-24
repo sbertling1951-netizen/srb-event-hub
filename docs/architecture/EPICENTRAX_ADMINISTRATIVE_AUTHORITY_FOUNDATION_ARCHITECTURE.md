@@ -33,14 +33,15 @@ governs Tenant lifecycle and establishes that an inactive Tenant freezes both
 inherited Tenant authority and direct Event authority, except for governed
 Platform Administrator recovery.
 
-The deployed `has_tenant_admin_authority` and
-`has_event_admin_authority` functions do not yet consult
-`tenants.is_active`. Their current inactive-Tenant behavior is an acknowledged
-implementation gap, not an alternate lifecycle policy. The hierarchy and the
-verification matrix below therefore describe active-Tenant operation unless
-Platform recovery is stated explicitly. Inactive-Tenant enforcement is the
-next implementation stage; this documentation update changes no function or
-grant.
+Tenant T2 migration `20260824010000` closes that former implementation gap.
+For ordinary administrators, `has_tenant_admin_authority`, the self-scoped
+Tenant route gate, `has_event_admin_authority`, and the canonical task resolver
+now require the Event-owning Tenant to be active. A preserved direct Event or
+task assignment cannot bypass the freeze. Platform Administrator remains the
+explicit recovery exception and retains canonical read/authority access to an
+inactive Tenant and its Events. The hierarchy and verification matrix below
+therefore apply only when the owning Tenant is active, except where Platform
+recovery is stated explicitly.
 
 ## Purpose
 

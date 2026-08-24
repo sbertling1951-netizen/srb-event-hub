@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -144,8 +146,8 @@ test("ready_for_review with zero rows: Finalize Run is enabled -- an empty run i
 });
 
 test("every lifecycle mutation is gated behind a confirm/reason dialog -- every visible trigger button only opens a dialog (setXOpen(true)), never calls a governed RPC wrapper directly", () => {
-  const SOURCE = require("node:fs").readFileSync(
-    require("node:url").fileURLToPath(new URL("./RunLifecycleActions.tsx", import.meta.url)),
+  const SOURCE = readFileSync(
+    fileURLToPath(new URL("./RunLifecycleActions.tsx", import.meta.url)),
     "utf8",
   ) as string;
 

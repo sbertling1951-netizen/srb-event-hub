@@ -249,32 +249,38 @@ entitlement system.
 
 ## 13. Deployed enforcement status
 
-This ADR establishes the target contract. It does not claim every rule is
-already enforced.
+This ADR established the target contract in Tenant T1. Tenant T2 migration
+`20260824010000` subsequently enforced the inactive-Tenant operational
+boundary without adding a lifecycle state or mutating preserved records.
 
-As of migration `20260824000000`:
+As of migration `20260824010000`:
 
 | Boundary | Deployed status |
 | --- | --- |
 | Required Event ownership | Enforced by non-null foreign-keyed `events.tenant_id`. |
 | Event ownership immutability | Enforced by Tenant T0's update trigger. |
 | Inactive hostname resolution | Enforced by the request-time Tenant resolver. |
-| Tenant Admin inheritance freeze | Not yet enforced; `has_tenant_admin_authority` does not consult `tenants.is_active`. |
-| Direct Event Admin freeze | Not yet enforced; `has_event_admin_authority` does not reject an Event because its Tenant is inactive. |
-| Public/member Event freeze | Not consistently enforced across governed read and operational surfaces. |
+| Tenant Admin inheritance freeze | Enforced by `has_tenant_admin_authority` and the self-scoped Tenant route gate. |
+| Direct Event Admin freeze | Enforced by `has_event_admin_authority`; direct `admin_event_access` cannot bypass an inactive owning Tenant. |
+| Direct task-grant freeze | Enforced by `resolve_task_authority` before Tenant inheritance or direct Event task-grant evaluation. |
+| Public/member Event freeze | Enforced on governed discovery, known/member continuity, member account/workspace resolution, Event-code login, shared attendee resolution, check-in, and accepted direct public Event-context RPCs. |
+| Platform recovery | Preserved by the authority predicates and a Platform-only inactive-Tenant SELECT policy. |
 | New Tenant starts inactive | Contract established here; no governed Tenant-creation operation exists yet, and the column default remains `true`. |
 
-Inactive-Tenant enforcement is the next implementation stage. Until then,
-current runtime behavior must be described as an acknowledged gap, not as
-proof that inactivity has weaker semantics than this contract.
+Deactivation and reactivation operations remain future governed Tenant
+Administration work. T2 supplies only the enforcement boundary: changing the
+existing boolean through an authorized future operation will freeze or restore
+eligibility under the rows already present.
 
 ## 14. Implementation boundaries
 
-This ADR changes architecture documentation only. It does not authorize:
+The original T1 acceptance of this ADR changed architecture documentation
+only. Tenant T2 separately authorized the enforcement described in §13; it
+did not authorize:
 
 - Tenant create, update, activate, deactivate, reactivate, or delete code;
 - new lifecycle columns or states;
-- authority, RLS, discovery, hostname, member, or Event-lifecycle changes;
+- Event-lifecycle rewrites or hostname-administration changes;
 - Event creation or transfer;
 - Person or relationship persistence;
 - self-service onboarding; or
@@ -295,7 +301,6 @@ lifecycle and administration.
 - ADR-013 remains authoritative for Event lifecycle and historical
   preservation; and
 - Tenant T0 migration `20260824000000` remains authoritative for Event
-  ownership immutability.
-
-Where deployed inactive-Tenant behavior differs from this ADR, the difference
-is pending implementation work, not an alternate lifecycle decision.
+  ownership immutability; and
+- Tenant T2 migration `20260824010000` is authoritative for the reversible
+  inactive-Tenant operational freeze and Platform recovery exception.
