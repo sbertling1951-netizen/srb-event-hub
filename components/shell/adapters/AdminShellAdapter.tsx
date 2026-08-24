@@ -39,10 +39,10 @@ export function AdminShellAdapter({
   contentMode,
   children,
 }: AdminShellAdapterProps) {
-  const { admin } = useAdmin();
+  const { admin, tenantAuthority } = useAdmin();
   const { currentEvent } = useAdminWorkspace();
   const { tenant } = useTenant();
-  const navSections = buildAdminNavSections(admin);
+  const navSections = buildAdminNavSections(admin, tenantAuthority);
 
   const accountActions: ShellAccountAction[] = [
     {

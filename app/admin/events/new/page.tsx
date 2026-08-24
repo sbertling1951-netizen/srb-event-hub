@@ -62,7 +62,7 @@ export default function NewEventPage() {
       <AdminShellAdapter
         pageTitle="Add Event"
         pageSubtitle="Create one Event under explicit Tenant ownership."
-        backTarget={{ href: "/admin/events", label: "Events" }}
+        backTarget={{ href: "/admin/dashboard", label: "Dashboard" }}
       >
         <NewEventPageInner />
       </AdminShellAdapter>
@@ -340,7 +340,7 @@ function NewEventPageInner() {
               <AppButton type="submit" variant="primary" loading={saving}>
                 Create Event
               </AppButton>
-              <AppLinkButton href="/admin/events" variant="secondary">
+              <AppLinkButton href="/admin/dashboard" variant="secondary">
                 Cancel
               </AppLinkButton>
             </FormActions>

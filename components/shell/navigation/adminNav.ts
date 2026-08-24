@@ -1,28 +1,37 @@
 import type { ShellNavItem, ShellNavSection } from "@/components/shell/types";
+import type { AdminTenantAuthorityResult } from "@/lib/adminTenantAuthority";
 import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 import { hasPermission } from "@/lib/getCurrentAdminAccess";
 
 /**
  * Single canonical Admin navigation model (§G, Stage 2B). Pure function
- * over an already-resolved `AdminAccessResult` -- it reads permissions via
- * the existing `hasPermission()` projection, exactly as `components/
- * layout/Sidebar.tsx` already does; it never computes or grants Authority
- * itself (§L). Same labels, same hrefs, same permission keys, same
- * section ordering, and the same one existing bypass (`Engagement` gated
- * on `privilege_group === "super_admin"` directly rather than through
- * `hasPermission`) as Sidebar's current Admin section -- reproduced
- * faithfully, not "fixed," since resolving that bypass belongs to
- * ADR-011 §16's own future Workspace Resolver migration, not this task.
+ * over already-resolved Admin access and Tenant-authority results. It reads
+ * legacy permissions via the existing `hasPermission()` projection and the
+ * Event-provisioning entry from the exact canonical
+ * `AdminTenantAuthorityResult`; it never computes or grants Authority itself
+ * (§L). Existing labels, hrefs, permission keys, section ordering, and the
+ * one existing bypass (`Engagement` gated on
+ * `privilege_group === "super_admin"` directly rather than through
+ * `hasPermission`) remain faithful to the prior model; T6 adds only the
+ * separately-governed Add Event entry.
  *
- * Consumed today by `AdminShellAdapter`. `Sidebar.tsx` cannot yet import
- * this, per ADR-011 §18 (see `memberNav.ts` for the identical note); its
- * equivalent arrays remain a literal, currently-identical duplicate
- * pending that separately authorized future work.
+ * Consumed today by `AdminShellAdapter`. `Sidebar.tsx` remains frozen per
+ * ADR-011 §18 and is not an Admin navigation consumer for the canonical
+ * Admin route cohort; T6 therefore does not duplicate its Tenant-authority
+ * projection there.
  */
-export function buildAdminNavSections(admin: AdminAccessResult | null): ShellNavSection[] {
+export function buildAdminNavSections(
+  admin: AdminAccessResult | null,
+  tenantAuthority: AdminTenantAuthorityResult | null = null,
+): ShellNavSection[] {
   const adminSection: ShellNavItem[] = [
     hasPermission(admin, "can_view_admin_dashboard") && { id: "dashboard", label: "Dashboard", href: "/admin/dashboard" },
     hasPermission(admin, "can_manage_events") && { id: "events", label: "Event Admin", href: "/admin/events" },
+    Boolean(admin) && tenantAuthority?.status === "allowed" && {
+      id: "add-event",
+      label: "Add Event",
+      href: "/admin/events/new",
+    },
     hasPermission(admin, "can_manage_admins") && { id: "admin-users", label: "Admin Users", href: "/admin/admin-users" },
     admin?.isSuperAdmin && { id: "tenants", label: "Tenant Administration", href: "/admin/tenants" },
     hasPermission(admin, "can_manage_admins") && { id: "permissions", label: "Permissions", href: "/admin/permissions" },

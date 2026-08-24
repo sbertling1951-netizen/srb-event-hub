@@ -3,18 +3,24 @@
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 
+import {
+  type AdminTenantAuthorityResult,
+  checkAdminTenantAuthority,
+} from "@/lib/adminTenantAuthority";
 import { ensureAdminIdentityLinked } from "@/lib/ensureAdminIdentityLinked";
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type AdminContextType = {
   admin: Awaited<ReturnType<typeof getCurrentAdminAccess>> | null;
+  tenantAuthority: AdminTenantAuthorityResult | null;
   loading: boolean;
   refresh: () => Promise<void>;
 };
 
 const AdminContext = createContext<AdminContextType>({
   admin: null,
+  tenantAuthority: null,
   loading: true,
   refresh: async () => {},
 });
@@ -24,12 +30,18 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
 
   const [admin, setAdmin] = useState<AdminContextType["admin"]>(null);
+  const [tenantAuthority, setTenantAuthority] =
+    useState<AdminTenantAuthorityResult | null>(null);
   const [loading, setLoading] = useState(isAdminRoute);
 
   async function loadAdmin() {
     try {
       setLoading(true);
+      setTenantAuthority(null);
       const result = await getCurrentAdminAccess();
+      const resolvedTenantAuthority = result
+        ? await checkAdminTenantAuthority()
+        : null;
 
       setAdmin((prev) => {
         if (prev?.adminUser?.id === result?.adminUser?.id) {
@@ -38,6 +50,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
         return result;
       });
+      setTenantAuthority(resolvedTenantAuthority);
 
       if (typeof window !== "undefined") {
         if (result) {
@@ -50,6 +63,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       console.error("loadAdmin error:", err);
 
       setAdmin(null);
+      setTenantAuthority(null);
 
       if (typeof window !== "undefined") {
         sessionStorage.removeItem("fcoc-admin-access");
@@ -64,6 +78,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
     if (!isAdminRoute) {
       setAdmin(null);
+      setTenantAuthority(null);
       setLoading(false);
 
       return () => {
@@ -85,6 +100,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         await loadAdmin();
       } else {
         setAdmin(null);
+        setTenantAuthority(null);
         setLoading(false);
       }
     }
@@ -113,6 +129,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
 
       setAdmin(null);
+      setTenantAuthority(null);
 
       if (typeof window !== "undefined") {
         sessionStorage.removeItem("fcoc-admin-access");
@@ -128,7 +145,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   }, [isAdminRoute]);
 
   return (
-    <AdminContext.Provider value={{ admin, loading, refresh: loadAdmin }}>
+    <AdminContext.Provider
+      value={{ admin, tenantAuthority, loading, refresh: loadAdmin }}
+    >
       {children}
     </AdminContext.Provider>
   );

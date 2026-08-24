@@ -58,6 +58,17 @@ test("success uses the authoritative returned Event for shared context and navig
   assert.match(SOURCE, /router\.push\("\/admin\/events"\)/);
 });
 
+test("zero-Event callers can cancel or use shell back navigation without entering the Event-task route", () => {
+  assert.match(
+    SOURCE,
+    /backTarget=\{\{ href: "\/admin\/dashboard", label: "Dashboard" \}\}/,
+  );
+  assert.match(
+    SOURCE,
+    /<AppLinkButton href="\/admin\/dashboard" variant="secondary">\s*Cancel\s*<\/AppLinkButton>/,
+  );
+});
+
 test("Central UI primitives and explicit ownership guidance replace the disabled prototype", () => {
   for (const primitive of [
     "AdminShellAdapter",
