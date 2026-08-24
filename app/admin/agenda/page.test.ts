@@ -793,10 +793,23 @@ test("3. Edit Item opens the editor with the selected item's existing values", (
   assert.match(body, /setForm\(next\);/);
   assert.match(body, /setEditorExpanded\(true\);/);
   // Both the Visual Agenda Editor's calendar block and the printable list
-  // row reach the editor through this one function -- preserving the
-  // existing item selection/data-sync behavior via a single code path.
-  const callSites = [...PAGE_SOURCE.matchAll(/onClick=\{\(\) => openEditorForItem\(item\)\}/g)];
-  assert.equal(callSites.length, 2, "expected both the calendar block and list row onClick to open via openEditorForItem");
+  // row reach openEditorForItem exclusively through the dirty-guarded
+  // requestOpenEditorForItem() wrapper -- see the switching-guard block
+  // below -- preserving the existing item selection/data-sync behavior
+  // via a single code path.
+  const callSites = [
+    ...PAGE_SOURCE.matchAll(/onClick=\{\(\) => void requestOpenEditorForItem\(item\)\}/g),
+  ];
+  assert.equal(
+    callSites.length,
+    2,
+    "expected both the calendar block and list row onClick to route through requestOpenEditorForItem",
+  );
+  assert.equal(
+    /onClick=\{\(\) => openEditorForItem\(item\)\}/.test(PAGE_SOURCE),
+    false,
+    "no item-selection surface should call openEditorForItem directly, bypassing the dirty guard",
+  );
 });
 
 test("4 & 5. successful Add and successful Save both close the editor -- Save/Add no longer branches on form.id to decide whether to collapse", () => {
@@ -877,6 +890,155 @@ test("12. the Visual Agenda Editor and the agenda display remain mounted (not ga
   const visualSectionStart = PAGE_SOURCE.lastIndexOf("<PageSection", visualEditorIdx);
   const visualSectionSnippet = PAGE_SOURCE.slice(visualSectionStart, visualSectionStart + 120);
   assert.equal(/editorExpanded/.test(visualSectionSnippet), false);
+});
+
+// -- Dirty-editor protection when switching between Agenda items --------
+//
+// Both the agenda list row and the Visual Agenda Editor calendar block
+// used to call openEditorForItem(item) directly, so switching to a
+// different item while the editor held unsaved edits replaced the form
+// immediately with no warning. requestOpenEditorForItem() is the single
+// guarded path both surfaces now share -- see the updated "3. Edit Item"
+// test above for proof both onClick handlers route through it.
+
+function requestOpenEditorForItemSource() {
+  const fnStart = PAGE_SOURCE.indexOf(
+    "async function requestOpenEditorForItem(item: AgendaItem) {",
+  );
+  const fnEnd = PAGE_SOURCE.indexOf(
+    "\n  // Cancel/Close.",
+    fnStart,
+  );
+  assert.notEqual(fnStart, -1);
+  assert.notEqual(fnEnd, -1);
+  return PAGE_SOURCE.slice(fnStart, fnEnd);
+}
+
+test("requestOpenEditorForItem reuses the exact same dirty check as closeEditor -- no second dirty-state calculation", () => {
+  const guardBody = requestOpenEditorForItemSource();
+  assert.match(
+    guardBody,
+    /if \(!agendaItemFormsAreEqual\(form, originalFormRef\.current\)\) \{/,
+  );
+  // The identical expression closeEditor() already uses.
+  const occurrences = [
+    ...PAGE_SOURCE.matchAll(
+      /if \(!agendaItemFormsAreEqual\(form, originalFormRef\.current\)\) \{/g,
+    ),
+  ];
+  assert.equal(occurrences.length, 2, "expected exactly closeEditor and requestOpenEditorForItem to share this one dirty expression");
+});
+
+test("1 & 5. clean editor + selecting a different item (list row or Visual Agenda block) switches immediately -- opening only happens after the dirty check, never gated behind an unconditional prompt", () => {
+  const guardBody = requestOpenEditorForItemSource();
+  // openEditorForItem(item) must appear exactly once, after the guarded
+  // if-block, reachable whether or not that block's confirmation ran --
+  // i.e. it is not nested inside the dirty branch.
+  const dirtyBlockStart = guardBody.indexOf(
+    "if (!agendaItemFormsAreEqual(form, originalFormRef.current)) {",
+  );
+  const dirtyBlockEnd = guardBody.indexOf("\n    }\n", dirtyBlockStart) + "\n    }\n".length;
+  const openCallIdx = guardBody.indexOf("openEditorForItem(item);");
+  assert.notEqual(openCallIdx, -1);
+  assert.ok(
+    openCallIdx >= dirtyBlockEnd,
+    "openEditorForItem(item) must run after the dirty-check block closes, not inside it",
+  );
+});
+
+test("2 & 6. dirty editor + selecting a different item (list row or Visual Agenda block) opens the confirmation, reusing requestConfirmation()/ConfirmDialog -- no second confirmation mechanism", () => {
+  const guardBody = requestOpenEditorForItemSource();
+  assert.match(guardBody, /await requestConfirmation\(\{/);
+  assert.match(guardBody, /confirmLabel: "Discard Changes",/);
+  assert.match(guardBody, /cancelLabel: "Keep Editing",/);
+  assert.match(guardBody, /danger: true,/);
+  // Clearly communicates that unsaved changes will be discarded.
+  assert.match(guardBody, /unsaved changes/i);
+  assert.match(guardBody, /Discard them/i);
+});
+
+test("3. Keep Editing (declining discard) leaves the current item and unsaved values untouched -- the guard returns before calling openEditorForItem", () => {
+  const guardBody = requestOpenEditorForItemSource();
+  const confirmedIdx = guardBody.indexOf("const confirmed = await requestConfirmation({");
+  const declineReturnIdx = guardBody.indexOf("if (!confirmed) {\n        return;\n      }", confirmedIdx);
+  const openCallIdx = guardBody.indexOf("openEditorForItem(item);");
+  assert.notEqual(confirmedIdx, -1);
+  assert.notEqual(declineReturnIdx, -1);
+  assert.ok(
+    declineReturnIdx > confirmedIdx && openCallIdx > declineReturnIdx,
+    "declining (return) must come before the eventual openEditorForItem call, guarding it",
+  );
+  // No setForm/setEditorExpanded exists anywhere in the decline branch
+  // itself -- form and editorExpanded are simply never touched when the
+  // user keeps editing.
+  const declineBranch = guardBody.slice(confirmedIdx, openCallIdx);
+  assert.equal(/setForm|setEditorExpanded/.test(declineBranch), false);
+});
+
+test("4 & 7. confirming discard opens the requested item through the existing openEditorForItem() path -- not a duplicated open implementation", () => {
+  const guardBody = requestOpenEditorForItemSource();
+  assert.match(guardBody, /openEditorForItem\(item\);/);
+  // Only ever the one call to openEditorForItem in this guard -- no
+  // second, inline copy of its setForm/originalFormRef/setEditorExpanded
+  // logic.
+  const openCalls = [...guardBody.matchAll(/openEditorForItem\(item\);/g)];
+  assert.equal(openCalls.length, 1);
+  assert.equal(/setForm\(next\)/.test(guardBody), false);
+});
+
+test("8. clicking the same currently edited item does not prompt -- an early-return guard precedes the dirty check", () => {
+  const guardBody = requestOpenEditorForItemSource();
+  const sameItemGuardIdx = guardBody.indexOf(
+    "if (editorExpanded && form.id === item.id) {",
+  );
+  const dirtyCheckIdx = guardBody.indexOf(
+    "if (!agendaItemFormsAreEqual(form, originalFormRef.current)) {",
+  );
+  assert.notEqual(sameItemGuardIdx, -1);
+  assert.notEqual(dirtyCheckIdx, -1);
+  assert.ok(sameItemGuardIdx < dirtyCheckIdx, "the same-item guard must run before the dirty check");
+  const sameItemGuardEnd = guardBody.indexOf("\n    }\n", sameItemGuardIdx);
+  assert.match(guardBody.slice(sameItemGuardIdx, sameItemGuardEnd), /return;/);
+});
+
+test("9. editor closed + item click still opens normally -- the same-item guard is conditioned on editorExpanded, and form equals originalFormRef (both emptyForm) whenever closed, so the dirty check is trivially false", () => {
+  const guardBody = requestOpenEditorForItemSource();
+  assert.match(guardBody, /if \(editorExpanded && form\.id === item\.id\) \{/);
+  // Direct proof of the "trivially false while closed" claim: closeEditor,
+  // saveItem, and deleteItem all reset both form and originalFormRef to
+  // the identical emptyForm reference when the editor collapses.
+  assert.equal(agendaItemFormsAreEqual(BASE_AGENDA_FORM, BASE_AGENDA_FORM), true);
+});
+
+test("10. existing Cancel/Close dirty protection is untouched by the switching guard -- closeEditor remains its own independent function with its own copy of the same discard-confirmation shape", () => {
+  const closeStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
+  const closeEnd = PAGE_SOURCE.indexOf(
+    "\n\n  useEffect(() => {\n    itemsRef.current = items;",
+    closeStart,
+  );
+  assert.notEqual(closeStart, -1);
+  assert.notEqual(closeEnd, -1);
+  const closeBody = PAGE_SOURCE.slice(closeStart, closeEnd);
+  assert.match(closeBody, /title: "Discard Unsaved Changes\?",/);
+  assert.match(
+    closeBody,
+    /message:\s*\n\s*"This agenda item has unsaved changes\. Discard them and close the editor\?",/,
+  );
+  // requestOpenEditorForItem is defined separately, not folded into
+  // closeEditor -- Cancel/Close keeps its own exact prior behavior.
+  assert.notEqual(closeStart, PAGE_SOURCE.indexOf("async function requestOpenEditorForItem"));
+});
+
+test("11. existing Save/Add behavior is untouched by the switching guard -- same governed RPCs, same always-collapse-on-success behavior", () => {
+  assert.match(PAGE_SOURCE, /supabase\.rpc\("create_event_agenda_item", \{/);
+  assert.match(PAGE_SOURCE, /supabase\.rpc\("update_event_agenda_item", \{/);
+  const saveItemStart = PAGE_SOURCE.indexOf("async function saveItem() {");
+  const saveItemEnd = PAGE_SOURCE.indexOf("\n  async function deleteItem(");
+  const body = PAGE_SOURCE.slice(saveItemStart, saveItemEnd);
+  assert.match(
+    body,
+    /originalFormRef\.current = emptyForm;\s*\n\s*setForm\(emptyForm\);\s*\n\s*setEditorExpanded\(false\);\s*\n\s*void refreshAgendaData\(\);/,
+  );
 });
 
 test("the header Add Item/Cancel toggle is a real accessible disclosure control, at every viewport (no isCompact gate)", () => {

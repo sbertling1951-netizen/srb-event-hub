@@ -771,6 +771,36 @@ function AdminAgendaPageInner() {
     setEditorExpanded(true);
   }
 
+  // Guarded item-selection entry point, shared by the agenda list row and
+  // the Visual Agenda Editor calendar block -- both item-selection
+  // surfaces route through this one function so switching items never
+  // silently discards unsaved edits. Reuses the exact same
+  // agendaItemFormsAreEqual()/originalFormRef dirty check and
+  // requestConfirmation()/ConfirmDialog as closeEditor(); when the editor
+  // is closed, form already equals originalFormRef (both emptyForm), so
+  // the dirty check is trivially false and this opens immediately with no
+  // extra casing needed for "editor closed".
+  async function requestOpenEditorForItem(item: AgendaItem) {
+    if (editorExpanded && form.id === item.id) {
+      // Already open on this exact item -- nothing to switch.
+      return;
+    }
+    if (!agendaItemFormsAreEqual(form, originalFormRef.current)) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message:
+          "This agenda item has unsaved changes. Discard them and open the selected item instead?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    openEditorForItem(item);
+  }
+
   // Cancel/Close. Reuses the same requestConfirmation()/ConfirmDialog
   // already wired up for Delete -- no second confirmation mechanism.
   // Never wired to a backdrop or outside click: this editor is an inline
@@ -3414,7 +3444,7 @@ function AdminAgendaPageInner() {
                                     setCalendarDraggingId(null);
                                     setCalendarDropPreview(null);
                                   }}
-                                  onClick={() => openEditorForItem(item)}
+                                  onClick={() => void requestOpenEditorForItem(item)}
                                   style={{
                                     position: "absolute",
                                     top: block.top + 2,
@@ -3690,7 +3720,7 @@ function AdminAgendaPageInner() {
 
                       <button
                         type="button"
-                        onClick={() => openEditorForItem(item)}
+                        onClick={() => void requestOpenEditorForItem(item)}
                         style={{
                           textAlign: "left",
                           background: "transparent",
