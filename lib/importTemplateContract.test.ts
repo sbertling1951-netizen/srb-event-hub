@@ -17,6 +17,7 @@ import {
   IMPORT_TEMPLATE_CONTRACTS,
   VENDOR_IMPORT_TEMPLATE_CONTRACT,
 } from "./importTemplateContract.ts";
+import { PREFERRED_VENDOR_HEADINGS, VENDOR_FIELD_ALIASES } from "./vendorImportContract.ts";
 
 function publicTemplatePath(relative: string) {
   return fileURLToPath(new URL(`../public/templates/${relative}`, import.meta.url));
@@ -145,7 +146,8 @@ test("agenda contract: required fields match the real live validation (Title, Ag
   );
 });
 
-// ---- Vendors: contract-only, truthfully not yet executable ---------------
+// ---- Vendors: Stage 5B is deployed; lib/vendorImportContract.ts is the
+// sole source of truth this template reuses (no second field/alias list).
 
 test("vendor contract: includes the complete governed Event-Vendor metadata vocabulary without reviving the retired global-name field", () => {
   const keys = VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.map((f) => f.key);
@@ -159,9 +161,20 @@ test("vendor contract: includes the complete governed Event-Vendor metadata voca
   assert.equal(keys.includes("logo_url"), false);
 });
 
-test("vendor contract: Admit to This Event? truthfully documents that it is not yet executable", () => {
-  const field = VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.find((f) => f.key === "admit_to_event")!;
-  assert.match(field.instructions, /[Nn]ot yet executable/);
+test("vendor contract: key/preferredHeading/aliases are reused verbatim from lib/vendorImportContract.ts, not a second hand-maintained list", () => {
+  for (const [key, aliases] of Object.entries(VENDOR_FIELD_ALIASES)) {
+    const field = VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.find((f) => f.key === key);
+    assert.ok(field, `template contract missing field ${key}`);
+    assert.equal(field!.preferredHeading, PREFERRED_VENDOR_HEADINGS[key as keyof typeof PREFERRED_VENDOR_HEADINGS]);
+    assert.deepEqual(field!.aliases, [...aliases]);
+  }
+  assert.equal(VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.length, Object.keys(VENDOR_FIELD_ALIASES).length);
+});
+
+test("vendor contract: Admit to This Event? truthfully documents the real, deployed governed admission behavior -- Stage 5B is live, not future work", () => {
+  const field = VENDOR_IMPORT_TEMPLATE_CONTRACT.fields.find((f) => f.key === "admit")!;
+  assert.doesNotMatch(field.instructions, /[Nn]ot yet executable/);
+  assert.match(field.instructions, /admit_vendor_for_event|commit_vendor_import_run_row/);
 });
 
 const VENDORS_PAGE_SOURCE = readFileSync(

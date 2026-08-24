@@ -23,14 +23,14 @@ Required:
 - Business Name
 
 Field-by-field notes:
-- Business Name (required, text): The vendor's business name. Required. Maps to the canonical Vendor directory's business_name.
+- Business Name (required, text): The vendor's business name. Required. This is the sole identity key the governed import matches against the canonical Vendor directory.
 - Contact Person (optional, text): The vendor's primary contact person.
 - Email (optional, email): Vendor contact email.
 - Phone (optional, phone): Vendor contact phone.
 - Website (optional, url): Vendor website, if any.
 - Business Description (optional, text): Short description shown on the vendor's public listing.
 - Preferred Contact Method (optional, enum): One of: email, phone, text, in_app.
-- Admit to This Event? (optional, boolean_yes_no): Not yet executable (Stage 5B). Intended to drive the governed admission action for this Event, not a stored column.
+- Admit to This Event? (optional, boolean_yes_no): Yes admits the matched Vendor to this Event through the governed commit (commit_vendor_import_run_row -> admit_vendor_for_event). Blank/No issues no admission instruction -- it never revokes an existing admission.
 - Featured? (optional, boolean_yes_no): Per-event display flag. Maps to event_vendors.is_featured.
 - Visible to Members? (optional, boolean_yes_no): Per-event display flag. Maps to event_vendors.is_visible_to_members.
 - Action Type (optional, enum): One of: service_request, external_signup, info_only. Maps to event_vendors.action_type.
@@ -38,7 +38,7 @@ Field-by-field notes:
 - Booth Location (optional, text): Per-event booth/site location. Maps to the governed event_vendors.booth_location field.
 - Event Note (optional, text): Per-event admin note. Maps to event_vendors.event_note.
 - Display Order (optional, integer): Per-event display order. Maps to event_vendors.display_order (default 100 if blank).
-- Show on Member Dashboard (optional, boolean_yes_no): Per-event dashboard-display flag. Maps to the governed event_vendors.show_on_member_dashboard field. Blank preserves the existing Event-Vendor value when Stage 5B execution is implemented.
-- Allow Service Requests (optional, boolean_yes_no): Per-event service-request flag. Maps to the governed event_vendors.allow_service_requests field. Blank preserves the existing Event-Vendor value when Stage 5B execution is implemented.
+- Show on Member Dashboard (optional, boolean_yes_no): Per-event dashboard-display flag. Maps to the governed event_vendors.show_on_member_dashboard field. Blank preserves the existing Event-Vendor value.
+- Allow Service Requests (optional, boolean_yes_no): Per-event service-request flag. Maps to the governed event_vendors.allow_service_requests field. Blank preserves the existing Event-Vendor value.
 
 The sample template can be used as the model for either XLSX or CSV imports.

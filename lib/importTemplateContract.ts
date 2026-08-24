@@ -15,6 +15,10 @@ import {
   PREFERRED_ATTENDEE_HEADINGS,
 } from "@/lib/attendeeImportContract";
 import type { ImportType } from "@/lib/importTypeRouting";
+import {
+  PREFERRED_VENDOR_HEADINGS,
+  VENDOR_FIELD_ALIASES,
+} from "@/lib/vendorImportContract";
 
 export type ImportFieldFormat =
   | "text"
@@ -124,44 +128,66 @@ export const AGENDA_IMPORT_TEMPLATE_CONTRACT: ImportTemplateContract = {
   ],
 };
 
-// ---- Vendors (contract only -- Stage 5B implements execution) -----------
+// ---- Vendors (lib/vendorImportContract.ts is the sole source of truth) --
 //
-// Preferred vocabulary and canonical field mapping are taken from the
-// already-audited canonical Vendor workspace (app/admin/vendors/page.tsx's
-// own Vendor/EventVendor fields and <Select> option values) -- never from
-// the retired Imports "Vendor Library" duplicate's inconsistent vocabulary
-// (name/show_on_member_dashboard). No importer exists yet: this contract
-// establishes the truthful downloadable template/example for Stage 5A's
-// Vendors door. A separate, more detailed Vendor-row normalization/
-// ambiguity engine for the actual Stage 5B import (lib/vendorImportContract.ts)
-// is tracked independently and is not consumed here -- this module only
-// generates and describes the downloadable template.
+// Stage 5B Vendor import audit: the Stage 5B.1 normalization contract
+// (lib/vendorImportContract.ts, VENDOR_FIELD_ALIASES/PREFERRED_VENDOR_HEADINGS)
+// is the real, executable parser's own field/alias vocabulary -- already
+// governed identity input to commit_vendor_import_run_row (Stage 5B.2).
+// This template previously hand-duplicated that same field list instead of
+// importing it, which is exactly the "decorative template schema that can
+// drift from accepted input" risk a template contract must not create.
+// Reusing it here, the same way ATTENDEE_IMPORT_TEMPLATE_CONTRACT reuses
+// lib/attendeeImportContract.ts's FIELD_ALIASES, makes drift structurally
+// impossible: preferredHeading/aliases/key below can never diverge from
+// what the real parser accepts, because they are the same values.
+//
+// format/instructions/sample below are template-only presentation
+// metadata the parser itself has no opinion on (mirroring
+// ATTENDEE_FIELD_META's identical role for the Attendee contract).
+
+const VENDOR_FIELD_META: Record<
+  keyof typeof VENDOR_FIELD_ALIASES,
+  { required: boolean; format: ImportFieldFormat; instructions: string; sample: string }
+> = {
+  business_name: { required: true, format: "text", instructions: "The vendor's business name. Required. This is the sole identity key the governed import matches against the canonical Vendor directory.", sample: "Sunrise Coach Detailing" },
+  contact_name: { required: false, format: "text", instructions: "The vendor's primary contact person.", sample: "Jordan Rivera" },
+  email: { required: false, format: "email", instructions: "Vendor contact email.", sample: "jordan@sunrisedetailing.example.com" },
+  phone: { required: false, format: "phone", instructions: "Vendor contact phone.", sample: "555-301-0044" },
+  website: { required: false, format: "url", instructions: "Vendor website, if any.", sample: "https://sunrisedetailing.example.com" },
+  business_description: { required: false, format: "text", instructions: "Short description shown on the vendor's public listing.", sample: "Mobile coach washing and detailing at your site." },
+  // Enum values are the real <Select> options on /admin/vendors/page.tsx's
+  // own Preferred Contact Method field, not a guessed vocabulary.
+  preferred_contact_method: { required: false, format: "enum", instructions: "One of: email, phone, text, in_app.", sample: "email" },
+  admit: { required: false, format: "boolean_yes_no", instructions: "Yes admits the matched Vendor to this Event through the governed commit (commit_vendor_import_run_row -> admit_vendor_for_event). Blank/No issues no admission instruction -- it never revokes an existing admission.", sample: "Yes" },
+  is_featured: { required: false, format: "boolean_yes_no", instructions: "Per-event display flag. Maps to event_vendors.is_featured.", sample: "No" },
+  is_visible_to_members: { required: false, format: "boolean_yes_no", instructions: "Per-event display flag. Maps to event_vendors.is_visible_to_members.", sample: "Yes" },
+  action_type: { required: false, format: "enum", instructions: "One of: service_request, external_signup, info_only. Maps to event_vendors.action_type.", sample: "service_request" },
+  signup_url: { required: false, format: "url", instructions: "Required only when Action Type is external_signup. Maps to event_vendors.signup_url.", sample: "https://sunrisedetailing.example.com/book" },
+  booth_location: { required: false, format: "text", instructions: "Per-event booth/site location. Maps to the governed event_vendors.booth_location field.", sample: "Row C, Site 14" },
+  event_note: { required: false, format: "text", instructions: "Per-event admin note. Maps to event_vendors.event_note.", sample: "Requested power hookup near booth." },
+  display_order: { required: false, format: "integer", instructions: "Per-event display order. Maps to event_vendors.display_order (default 100 if blank).", sample: "100" },
+  show_on_member_dashboard: { required: false, format: "boolean_yes_no", instructions: "Per-event dashboard-display flag. Maps to the governed event_vendors.show_on_member_dashboard field. Blank preserves the existing Event-Vendor value.", sample: "Yes" },
+  allow_service_requests: { required: false, format: "boolean_yes_no", instructions: "Per-event service-request flag. Maps to the governed event_vendors.allow_service_requests field. Blank preserves the existing Event-Vendor value.", sample: "No" },
+};
+
+// Column order mirrors the approved field list, not object insertion order.
+const VENDOR_FIELD_ORDER: (keyof typeof VENDOR_FIELD_ALIASES)[] = [
+  "business_name", "contact_name", "email", "phone", "website", "business_description",
+  "preferred_contact_method", "admit", "is_featured", "is_visible_to_members", "action_type",
+  "signup_url", "booth_location", "event_note", "display_order", "show_on_member_dashboard",
+  "allow_service_requests",
+];
 
 export const VENDOR_IMPORT_TEMPLATE_CONTRACT: ImportTemplateContract = {
   importType: "vendors",
   label: "Vendors",
-  fields: [
-    { key: "business_name", preferredHeading: "Business Name", aliases: ["Business Name"], required: true, format: "text", instructions: "The vendor's business name. Required. Maps to the canonical Vendor directory's business_name.", sample: "Sunrise Coach Detailing" },
-    { key: "contact_name", preferredHeading: "Contact Person", aliases: ["Contact Person"], required: false, format: "text", instructions: "The vendor's primary contact person.", sample: "Jordan Rivera" },
-    { key: "email", preferredHeading: "Email", aliases: ["Email"], required: false, format: "email", instructions: "Vendor contact email.", sample: "jordan@sunrisedetailing.example.com" },
-    { key: "phone", preferredHeading: "Phone", aliases: ["Phone"], required: false, format: "phone", instructions: "Vendor contact phone.", sample: "555-301-0044" },
-    { key: "website", preferredHeading: "Website", aliases: ["Website"], required: false, format: "url", instructions: "Vendor website, if any.", sample: "https://sunrisedetailing.example.com" },
-    { key: "business_description", preferredHeading: "Business Description", aliases: ["Business Description"], required: false, format: "text", instructions: "Short description shown on the vendor's public listing.", sample: "Mobile coach washing and detailing at your site." },
-    // Enum values are the real <Select> options on /admin/vendors/page.tsx's
-    // own Preferred Contact Method field, not the old Imports Vendor
-    // Library's guessed vocabulary.
-    { key: "preferred_contact_method", preferredHeading: "Preferred Contact Method", aliases: ["Preferred Contact Method"], required: false, format: "enum", instructions: "One of: email, phone, text, in_app.", sample: "email" },
-    { key: "admit_to_event", preferredHeading: "Admit to This Event?", aliases: ["Admit to This Event?"], required: false, format: "boolean_yes_no", instructions: "Not yet executable (Stage 5B). Intended to drive the governed admission action for this Event, not a stored column.", sample: "Yes" },
-    { key: "is_featured", preferredHeading: "Featured?", aliases: ["Featured?"], required: false, format: "boolean_yes_no", instructions: "Per-event display flag. Maps to event_vendors.is_featured.", sample: "No" },
-    { key: "is_visible_to_members", preferredHeading: "Visible to Members?", aliases: ["Visible to Members?"], required: false, format: "boolean_yes_no", instructions: "Per-event display flag. Maps to event_vendors.is_visible_to_members.", sample: "Yes" },
-    { key: "action_type", preferredHeading: "Action Type", aliases: ["Action Type"], required: false, format: "enum", instructions: "One of: service_request, external_signup, info_only. Maps to event_vendors.action_type.", sample: "service_request" },
-    { key: "signup_url", preferredHeading: "Signup URL", aliases: ["Signup URL"], required: false, format: "url", instructions: "Required only when Action Type is external_signup. Maps to event_vendors.signup_url.", sample: "https://sunrisedetailing.example.com/book" },
-    { key: "booth_location", preferredHeading: "Booth Location", aliases: ["Booth Location"], required: false, format: "text", instructions: "Per-event booth/site location. Maps to the governed event_vendors.booth_location field.", sample: "Row C, Site 14" },
-    { key: "event_note", preferredHeading: "Event Note", aliases: ["Event Note"], required: false, format: "text", instructions: "Per-event admin note. Maps to event_vendors.event_note.", sample: "Requested power hookup near booth." },
-    { key: "display_order", preferredHeading: "Display Order", aliases: ["Display Order"], required: false, format: "integer", instructions: "Per-event display order. Maps to event_vendors.display_order (default 100 if blank).", sample: "100" },
-    { key: "show_on_member_dashboard", preferredHeading: "Show on Member Dashboard", aliases: ["Show on Member Dashboard"], required: false, format: "boolean_yes_no", instructions: "Per-event dashboard-display flag. Maps to the governed event_vendors.show_on_member_dashboard field. Blank preserves the existing Event-Vendor value when Stage 5B execution is implemented.", sample: "Yes" },
-    { key: "allow_service_requests", preferredHeading: "Allow Service Requests", aliases: ["Allow Service Requests"], required: false, format: "boolean_yes_no", instructions: "Per-event service-request flag. Maps to the governed event_vendors.allow_service_requests field. Blank preserves the existing Event-Vendor value when Stage 5B execution is implemented.", sample: "No" },
-  ],
+  fields: VENDOR_FIELD_ORDER.map((key) => ({
+    key,
+    preferredHeading: PREFERRED_VENDOR_HEADINGS[key],
+    aliases: [...VENDOR_FIELD_ALIASES[key]],
+    ...VENDOR_FIELD_META[key],
+  })),
 };
 
 export const IMPORT_TEMPLATE_CONTRACTS: Record<ImportType, ImportTemplateContract> = {
