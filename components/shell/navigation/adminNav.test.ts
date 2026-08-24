@@ -53,6 +53,19 @@ function findItem(sections: ReturnType<typeof buildAdminNavSections>, id: string
   return null;
 }
 
+test("only a Super Admin sees the canonical Tenant Administration navigation item", () => {
+  const superAdmin = buildAdmin({ isSuperAdmin: true });
+  const tenantAdmin = buildAdmin({ permissionMap: { can_manage_admins: true } });
+
+  const found = findItem(buildAdminNavSections(superAdmin), "tenants");
+  assert.ok(found);
+  assert.equal(found.item.label, "Tenant Administration");
+  assert.equal(found.item.href, "/admin/tenants");
+  assert.equal(found.section.id, "admin");
+  assert.equal(findItem(buildAdminNavSections(tenantAdmin), "tenants"), null);
+  assert.equal(findItem(buildAdminNavSections(null), "tenants"), null);
+});
+
 test("an admin granted can_manage_imports sees the Imports link, pointed at /admin/imports, in the Operations section", () => {
   const admin = buildAdmin({ permissionMap: { can_manage_imports: true } });
   const found = findItem(buildAdminNavSections(admin), "imports");
@@ -147,6 +160,7 @@ test("every other existing nav item and section is unchanged for a full-access a
     "dashboard",
     "events",
     "admin-users",
+    "tenants",
     "permissions",
     "attendees",
     "checkin",

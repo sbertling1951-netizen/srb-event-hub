@@ -354,8 +354,9 @@ test("active/inactive renders through the canonical StatusBadge with the same su
   );
 });
 
-test("the internal Tenant Admin Access link keeps Next's <Link> (client-side transition), styled via the canonical app-button class rather than swapped to AppLinkButton", () => {
-  assert.match(source, /<Link href="\/admin\/tenant-admins" className="app-button">/);
+test("the internal Tenant Administration link targets the canonical consolidated workspace while keeping Next client-side transition", () => {
+  assert.match(source, /<Link href="\/admin\/tenants" className="app-button">/);
+  assert.match(source, /Tenant Administration/);
   assert.equal(/<AppLinkButton\b/.test(source), false);
 });
 

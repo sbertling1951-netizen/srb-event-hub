@@ -255,6 +255,10 @@ boundary without adding a lifecycle state or mutating preserved records.
 Tenant T3 migration `20260824020000` adds the bounded Platform Administrator
 read/command foundation for that contract without adding a workspace UI,
 Event provisioning, or Event transfer.
+Tenant T4 subsequently adds the Super-Admin-only application workspace at
+`/admin/tenants` over that exact T3 surface. T4 adds no migration or backend
+semantics; the former `/admin/tenant-admins` route redirects to the canonical
+workspace.
 
 As of migration `20260824020000`:
 
@@ -275,23 +279,24 @@ As of migration `20260824020000`:
 | Tenant Admin assignment evidence | The compatible `set_tenant_admin_access` signature now records authenticated actor/action evidence and retains one inactive/reactivatable assignment row. |
 | Hostname administration | Platform-only commands create validated unique aliases and toggle retained active status; they expose no transfer or hard-delete operation. |
 
-The T3 surface remains a command/read foundation. A future Tenant workspace
-may consume it, but must not bypass it with raw table writes or infer additional
-lifecycle states.
+The T3 surface remains the command/read foundation. The T4 Tenant workspace
+consumes it without raw Tenant, hostname, or assignment table writes and does
+not infer additional lifecycle states. Tenant-owned Events and immutable audit
+evidence are inspection-only in that workspace.
 
 ## 14. Implementation boundaries
 
 The original T1 acceptance of this ADR changed architecture documentation
 only. Tenant T2 separately authorized the enforcement described in §13. T3
-subsequently authorized only the bounded administrative foundation summarized
-there; it did not authorize:
+subsequently authorized the bounded administrative foundation summarized
+there. T4 authorizes only the Platform workspace that consumes those governed
+operations; these stages do not authorize:
 
 - Tenant hard deletion or generic CRUD outside the governed T3 commands;
 - new lifecycle columns or states;
 - Event-lifecycle rewrites or hostname transfer/deletion;
 - Event creation or transfer;
 - Person or relationship persistence;
-- a full Tenant workspace UI;
 - self-service onboarding; or
 - billing, subscription, plan, limit, or entitlement behavior.
 
@@ -315,3 +320,5 @@ lifecycle and administration.
   inactive-Tenant operational freeze and Platform recovery exception; and
 - Tenant T3 migration `20260824020000` is authoritative for the governed
   Platform Tenant administration read/command and immutable audit surface.
+- Tenant T4 `/admin/tenants` is the canonical Platform Tenant Administration
+  workspace; `/admin/tenant-admins` is a compatibility redirect only.

@@ -24,6 +24,7 @@ export function buildAdminNavSections(admin: AdminAccessResult | null): ShellNav
     hasPermission(admin, "can_view_admin_dashboard") && { id: "dashboard", label: "Dashboard", href: "/admin/dashboard" },
     hasPermission(admin, "can_manage_events") && { id: "events", label: "Event Admin", href: "/admin/events" },
     hasPermission(admin, "can_manage_admins") && { id: "admin-users", label: "Admin Users", href: "/admin/admin-users" },
+    admin?.isSuperAdmin && { id: "tenants", label: "Tenant Administration", href: "/admin/tenants" },
     hasPermission(admin, "can_manage_admins") && { id: "permissions", label: "Permissions", href: "/admin/permissions" },
   ].filter(Boolean) as ShellNavItem[];
 

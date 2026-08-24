@@ -1010,6 +1010,60 @@ textarea.app-control,
   gap: var(--space-3);
 }
 
+/* Tenant Administration T4: a bounded master/detail composition built
+   from the shared card/list/form primitives. It collapses to one column
+   before tablet widths so ordinary administration never requires
+   horizontal panning. */
+.tenant-admin-page,
+.tenant-admin-detail-stack {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.tenant-admin-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(19rem, 0.72fr) minmax(0, 1.8fr);
+  gap: var(--space-5);
+  align-items: start;
+  min-width: 0;
+}
+
+.tenant-admin-identity-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5);
+}
+
+.tenant-admin-identity-grid div {
+  min-width: 0;
+}
+
+.tenant-admin-identity-grid dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+}
+
+.tenant-admin-identity-grid dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.tenant-admin-inline-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: end;
+  margin-bottom: var(--space-5);
+}
+
+@media (max-width: 1199px) {
+  .tenant-admin-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* .app-form-input's declarations now live in the canonical .app-control
    rule above (Central UI Standard, Stage 2) -- this selector is kept as
    a transitional alias there, not redeclared here. */
@@ -1053,6 +1107,11 @@ textarea.app-control,
 
 @media (max-width: 899px) {
   .app-form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .tenant-admin-identity-grid,
+  .tenant-admin-inline-command {
     grid-template-columns: 1fr;
   }
 

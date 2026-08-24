@@ -201,23 +201,34 @@ test("requiredTenantAuthority introduces no second, competing Tenant-authority r
   assert.equal(setterCalls, 2);
 });
 
-test("all four authority props compose with AND semantics -- each is an independent, sequential early-return block, so every supplied requirement must pass before children render", () => {
+test("all five authority props compose with AND semantics -- each is an independent, sequential early-return block, so every supplied requirement must pass before children render", () => {
   const permissionIdx = SOURCE.indexOf("if (requiredPermission && !hasPermission(");
   const taskIdx = SOURCE.indexOf("if (requiredTask) {");
   const tenantIdx = SOURCE.indexOf("if (requiredTenantAuthority) {");
   const vendorCatalogIdx = SOURCE.indexOf("if (requiredVendorCatalogAuthority) {");
+  const platformIdx = SOURCE.indexOf("if (requiredPlatformAuthority && !admin?.isSuperAdmin) {");
   const childrenIdx = SOURCE.indexOf("return <>{children}</>;");
 
   assert.ok(
-    permissionIdx > -1 && taskIdx > -1 && tenantIdx > -1 && vendorCatalogIdx > -1 && childrenIdx > -1,
+    permissionIdx > -1 && taskIdx > -1 && tenantIdx > -1 && vendorCatalogIdx > -1 && platformIdx > -1 && childrenIdx > -1,
   );
   assert.ok(
     permissionIdx < taskIdx &&
       taskIdx < tenantIdx &&
       tenantIdx < vendorCatalogIdx &&
-      vendorCatalogIdx < childrenIdx,
-    "expected all four gates, in sequence, strictly before the children render",
+      vendorCatalogIdx < platformIdx &&
+      platformIdx < childrenIdx,
+    "expected all five gates, in sequence, strictly before the children render",
   );
+});
+
+test("requiredPlatformAuthority fails closed on the resolved canonical Super Admin projection", () => {
+  assert.match(SOURCE, /requiredPlatformAuthority\?: boolean;/);
+  assert.match(
+    SOURCE,
+    /if \(requiredPlatformAuthority && !admin\?\.isSuperAdmin\) \{\s*return <div style=\{\{ padding: 24 \}\}>No permission<\/div>;/,
+  );
+  assert.equal(/requiredPlatformAuthority[\s\S]{0,200}\.rpc\(/.test(SOURCE), false);
 });
 
 // ---- requiredVendorCatalogAuthority (Vendor Catalog Authority Client Foundation). ----

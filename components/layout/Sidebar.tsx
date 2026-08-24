@@ -55,6 +55,7 @@ const ICON_MAP: Record<string, string> = {
   "/admin/vendors": "🛠️",
   "/admin/map-admin": "🗺️",
   "/admin/admin-users": "🔐",
+  "/admin/tenants": "🏢",
   "/admin/permissions": "⚙️",
   "/admin/checklist": "📋",
   "/admin/event-staff": "👥",
@@ -488,6 +489,10 @@ export default function Sidebar() {
         hasPermission(adminAccess, "can_manage_admins") && {
           label: "Admin Users",
           href: "/admin/admin-users",
+        },
+        adminAccess?.isSuperAdmin && {
+          label: "Tenant Administration",
+          href: "/admin/tenants",
         },
         hasPermission(adminAccess, "can_manage_admins") && {
           label: "Permissions",

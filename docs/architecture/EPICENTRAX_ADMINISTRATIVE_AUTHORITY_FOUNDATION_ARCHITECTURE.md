@@ -53,6 +53,14 @@ compatibility and is not authoritative identity. Inactive assignment rows
 remain inspectable and reactivate in place; T3 does not move Tenant authority
 into `admin_users.privilege_group` or create Person-backed appointments.
 
+Tenant T4 adds the canonical Super-Admin-only `/admin/tenants` application
+workspace over those T3 reads and commands. The workspace can inspect active
+and inactive assignments and use the compatible setter to assign, revoke, or
+reactivate an existing Admin User. It does not create Admin/auth identities,
+replace this transitional substrate, or add a second authority model. The
+former `/admin/tenant-admins` screen is now a redirect to that single
+workspace.
+
 ## Purpose
 
 Two prior migrations (`20260810120000_create_governed_venue_evidence_foundation.sql`,

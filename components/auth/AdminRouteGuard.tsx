@@ -28,6 +28,7 @@ type Props = {
   requiredTask?: string;
   requiredTenantAuthority?: boolean;
   requiredVendorCatalogAuthority?: boolean;
+  requiredPlatformAuthority?: boolean;
   fallbackPath?: string;
 };
 
@@ -37,6 +38,7 @@ export default function AdminRouteGuard({
   requiredTask,
   requiredTenantAuthority,
   requiredVendorCatalogAuthority,
+  requiredPlatformAuthority,
   fallbackPath = "/admin/login",
 }: Props) {
   const router = useRouter();
@@ -225,6 +227,10 @@ export default function AdminRouteGuard({
     if (vendorCatalogAuthority.status !== "allowed") {
       return <div style={{ padding: 24 }}>No permission</div>;
     }
+  }
+
+  if (requiredPlatformAuthority && !admin?.isSuperAdmin) {
+    return <div style={{ padding: 24 }}>No permission</div>;
   }
 
   return <>{children}</>;
