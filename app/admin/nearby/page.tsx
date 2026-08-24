@@ -32,6 +32,7 @@ import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import { SearchField, TableToolbar, TableToolbarDisclosure, TableToolbarPrimaryRow } from "@/components/ui/TableToolbar";
 import { useAdmin } from "@/lib/adminContext";
+import { listMyTenantAdminAccess, type MyTenantAdminAccessRow } from "@/lib/adminTenantAuthority";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -66,6 +67,10 @@ type StoredPlace = {
   lng: number | null;
 };
 
+// Nearby Scope Model Stage 3: source_master_id is what tells the unified
+// editor whether a row is Event Only (null) or linked to a reusable
+// nearby_master place (set) -- the same column Stage 2/2.5 already
+// populate, just finally read by the admin UI.
 type EventPlace = {
   id: string;
   name: string;
@@ -81,6 +86,7 @@ type EventPlace = {
   lng: number | null;
   sort_order: number | null;
   is_hidden: boolean | null;
+  source_master_id: string | null;
 };
 
 type StoredPlaceForm = {
@@ -97,7 +103,20 @@ type StoredPlaceForm = {
   lng: string;
 };
 
-type EventPlaceForm = {
+// Nearby Scope Model Stage 3 -- the unified editor's operator-facing
+// scope choice. Deliberately never "tenant_specific"/"shared_public"
+// (those stay database vocabulary): "event_only" maps to no
+// nearby_master row at all; "tenant" to scope='tenant_specific'; "shared"
+// to scope='shared_public'.
+type PlaceScope = "event_only" | "tenant" | "shared";
+type MasterScope = "tenant_specific" | "shared_public";
+
+// Event-specific snapshot fields -- always independently editable via
+// event_nearby_places, for every scope, matching Stage 2's own
+// documented "an Event's historical Nearby list is already immune to
+// the canonical place being edited" principle. Never synchronized with
+// the canonical place after creation.
+type NearbyEventForm = {
   id: string;
   name: string;
   category: string;
@@ -111,6 +130,38 @@ type EventPlaceForm = {
   lat: string;
   lng: string;
   is_hidden: boolean;
+};
+
+// Canonical reusable-place fields -- used for This Tenant/All Tenants
+// Add, and for the Reusable Place Details section when editing a linked
+// place. Never includes Event-specific fields (distance_miles,
+// is_hidden, sort_order): those are never part of a reusable place's own
+// identity.
+type NearbyCanonicalForm = {
+  name: string;
+  category: string;
+  category_id: string;
+  address: string;
+  phone: string;
+  website: string;
+  notes: string;
+  location_code: string;
+  lat: string;
+  lng: string;
+};
+
+type NearbyEditorSnapshot = {
+  scope: PlaceScope | null;
+  destinationEventId: string;
+  eventForm: NearbyEventForm;
+  canonicalForm: NearbyCanonicalForm;
+};
+
+type ManageableEvent = {
+  id: string;
+  name: string;
+  tenant_id: string | null;
+  status: string | null;
 };
 
 type PlaceCategoryOption = {
@@ -141,7 +192,7 @@ const emptyStoredPlaceForm: StoredPlaceForm = {
   lng: "",
 };
 
-const emptyEventPlaceForm: EventPlaceForm = {
+const emptyNearbyEventForm: NearbyEventForm = {
   id: "",
   name: "",
   category: "",
@@ -155,6 +206,19 @@ const emptyEventPlaceForm: EventPlaceForm = {
   lat: "",
   lng: "",
   is_hidden: false,
+};
+
+const emptyNearbyCanonicalForm: NearbyCanonicalForm = {
+  name: "",
+  category: "",
+  category_id: "",
+  address: "",
+  phone: "",
+  website: "",
+  notes: "",
+  location_code: "",
+  lat: "",
+  lng: "",
 };
 
 function toNullableNumber(value: string): number | null {
@@ -191,7 +255,7 @@ function storedFormFromPlace(place: StoredPlace): StoredPlaceForm {
   };
 }
 
-function eventFormFromPlace(place: EventPlace): EventPlaceForm {
+function nearbyEventFormFromPlace(place: EventPlace): NearbyEventForm {
   return {
     id: place.id,
     name: place.name || "",
@@ -210,6 +274,130 @@ function eventFormFromPlace(place: EventPlace): EventPlaceForm {
     lng: place.lng === null || place.lng === undefined ? "" : String(place.lng),
     is_hidden: !!place.is_hidden,
   };
+}
+
+function nearbyCanonicalFormFromMaster(master: {
+  name: string | null;
+  category: string | null;
+  category_id: string | null;
+  address: string | null;
+  phone: string | null;
+  link: string | null;
+  description: string | null;
+  location_code: string | null;
+  lat: number | null;
+  lng: number | null;
+}): NearbyCanonicalForm {
+  return {
+    name: master.name || "",
+    category: master.category || "",
+    category_id: master.category_id || "",
+    address: master.address || "",
+    phone: master.phone || "",
+    website: master.link || "",
+    notes: master.description || "",
+    location_code: master.location_code || "",
+    lat: master.lat === null || master.lat === undefined ? "" : String(master.lat),
+    lng: master.lng === null || master.lng === undefined ? "" : String(master.lng),
+  };
+}
+
+// Nearby Scope Model Stage 3 -- the unified editor's dirty-check
+// comparator, exported to mirror app/admin/agenda/page.tsx's own
+// exported agendaItemFormsAreEqual(). destinationEventId only matters in
+// Add mode; Edit mode always passes "" on both sides (Move is a
+// separate, immediate action with its own state, never part of this
+// dirty check).
+export function nearbyEditorStatesAreEqual(
+  left: NearbyEditorSnapshot,
+  right: NearbyEditorSnapshot,
+): boolean {
+  if (left.scope !== right.scope) {
+    return false;
+  }
+  if (left.destinationEventId !== right.destinationEventId) {
+    return false;
+  }
+
+  const le = left.eventForm;
+  const re = right.eventForm;
+  const eventFieldsEqual =
+    le.id === re.id &&
+    le.name === re.name &&
+    le.category === re.category &&
+    le.category_id === re.category_id &&
+    le.address === re.address &&
+    le.phone === re.phone &&
+    le.website === re.website &&
+    le.notes === re.notes &&
+    le.distance_miles === re.distance_miles &&
+    le.location_code === re.location_code &&
+    le.lat === re.lat &&
+    le.lng === re.lng &&
+    le.is_hidden === re.is_hidden;
+
+  if (!eventFieldsEqual) {
+    return false;
+  }
+
+  const lc = left.canonicalForm;
+  const rc = right.canonicalForm;
+
+  return (
+    lc.name === rc.name &&
+    lc.category === rc.category &&
+    lc.category_id === rc.category_id &&
+    lc.address === rc.address &&
+    lc.phone === rc.phone &&
+    lc.website === rc.website &&
+    lc.notes === rc.notes &&
+    lc.location_code === rc.location_code &&
+    lc.lat === rc.lat &&
+    lc.lng === rc.lng
+  );
+}
+
+// Shared coordinate-resolution helper for the three new unified-editor
+// Save paths (event-only Add/Edit, This Tenant Add, All Tenants Add) --
+// extracted because the fallback chain (manual -> plus code -> address)
+// would otherwise be duplicated three times, unlike the single existing
+// Stored/legacy-Event forms which each only needed it once.
+async function resolveNearbyCoordinates(
+  lat: string,
+  lng: string,
+  locationCode: string,
+  address: string,
+): Promise<{ lat: number | null; lng: number | null }> {
+  const manualLat = toNullableCoordinate(lat);
+  const manualLng = toNullableCoordinate(lng);
+
+  if (manualLat !== null && manualLng !== null) {
+    return { lat: manualLat, lng: manualLng };
+  }
+
+  if (locationCode.trim()) {
+    const resolved = await geocodeLocation({
+      location_code: locationCode.trim(),
+      address: null,
+    });
+
+    if (resolved.lat !== null && resolved.lng !== null) {
+      return { lat: resolved.lat, lng: resolved.lng };
+    }
+  }
+
+  if (address.trim()) {
+    const resolved = await geocodeLocation({
+      location_code: null,
+      address: address.trim(),
+    });
+
+    if (resolved.lat !== null && resolved.lng !== null) {
+      return { lat: resolved.lat, lng: resolved.lng };
+    }
+  }
+
+  return { lat: manualLat, lng: manualLng };
 }
 
 function getCoordinateStatus(
@@ -299,8 +487,15 @@ function SortableEventPlaceCard(props: {
           </div>
         </div>
 
-        <div style={{ fontSize: 13, color: "#555" }}>
-          {place.category || "Uncategorized"}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ fontSize: 13, color: "#555" }}>
+            {place.category || "Uncategorized"}
+          </div>
+          {place.source_master_id ? (
+            <StatusBadge tone="info">Reusable</StatusBadge>
+          ) : (
+            <StatusBadge tone="neutral">Event only</StatusBadge>
+          )}
         </div>
 
         <div style={{ marginTop: 6, width: "fit-content" }}>
@@ -398,7 +593,8 @@ function AdminNearbyPageInner() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const storedPlaceFormSectionRef = useRef<HTMLDivElement | null>(null);
-  const eventPlaceFormSectionRef = useRef<HTMLDivElement | null>(null);
+  const nearbyEditorSectionRef = useRef<HTMLDivElement | null>(null);
+  const nearbyEditorToggleButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -417,7 +613,7 @@ function AdminNearbyPageInner() {
   const [eventPlaces, setEventPlaces] = useState<EventPlace[]>([]);
 
   // Nearby Category Authority Stage B, Part 1: the canonical catalog,
-  // fetched once and used directly as the Stored/Event Place category
+  // fetched once and used directly as the Stored/unified editor category
   // selectors' option list (category_id is the selection value; label is
   // what's displayed) -- replacing Stage A's free-text normalized-code
   // resolution, which is no longer needed now that selection is by id,
@@ -504,15 +700,845 @@ function AdminNearbyPageInner() {
     };
   }, []);
 
-  const [eventForm, setEventForm] =
-    useState<EventPlaceForm>(emptyEventPlaceForm);
+  // ---------------------------------------------------------------------
+  // Nearby Scope Model Stage 3 -- unified editor state.
+  // ---------------------------------------------------------------------
+  const [editorExpanded, setEditorExpanded] = useState(false);
+  const [editorMode, setEditorMode] = useState<"add" | "edit">("add");
+  const [editorScope, setEditorScope] = useState<PlaceScope | null>(null);
+  const [editorSourceMasterId, setEditorSourceMasterId] = useState<string | null>(null);
+  const [editorMasterScope, setEditorMasterScope] = useState<MasterScope | null>(null);
+  const [editorMasterTenantId, setEditorMasterTenantId] = useState<string | null>(null);
+  const [editorDestinationEventId, setEditorDestinationEventId] = useState("");
+  const [editorMoveDestinationEventId, setEditorMoveDestinationEventId] = useState("");
+  const [nearbyEventForm, setNearbyEventForm] = useState<NearbyEventForm>(emptyNearbyEventForm);
+  const [nearbyCanonicalForm, setNearbyCanonicalForm] = useState<NearbyCanonicalForm>(
+    emptyNearbyCanonicalForm,
+  );
+  // Snapshot of the editor as it stood the moment it was opened (or as of
+  // the last successful save of a given section) -- compared against
+  // live state to gate the discard-confirmation, exactly mirroring
+  // app/admin/agenda/page.tsx's originalFormRef.
+  const originalNearbyEditorRef = useRef<NearbyEditorSnapshot>({
+    scope: null,
+    destinationEventId: "",
+    eventForm: emptyNearbyEventForm,
+    canonicalForm: emptyNearbyCanonicalForm,
+  });
+  const [loadingMasterDetails, setLoadingMasterDetails] = useState(false);
+  const [savingEventListing, setSavingEventListing] = useState(false);
+  const [savingCanonicalPlace, setSavingCanonicalPlace] = useState(false);
+  const [movingPlace, setMovingPlace] = useState(false);
+  const [removingPlace, setRemovingPlace] = useState(false);
+  const [retiringPlace, setRetiringPlace] = useState(false);
+
+  const [manageableEvents, setManageableEvents] = useState<ManageableEvent[]>([]);
+  const [tenantAdminAccessRows, setTenantAdminAccessRows] = useState<MyTenantAdminAccessRow[]>([]);
+
+  const tenantIdsWithAuthority = useMemo(
+    () => new Set(tenantAdminAccessRows.map((row) => row.tenant_id)),
+    [tenantAdminAccessRows],
+  );
+
+  function tenantIdForEvent(eventId: string): string | null {
+    return manageableEvents.find((evt) => evt.id === eventId)?.tenant_id ?? null;
+  }
+
+  // Nearby Event/Tenant/Shared Scope Model, Stage 0's own authority-aware
+  // default requirement (§2): This Event only is always available; This
+  // Tenant only when the destination Event's Tenant is in the caller's
+  // governed, self-scoped listMyTenantAdminAccess() result (which already
+  // returns every active Tenant for a Platform Admin -- so this single
+  // membership test covers both "Tenant Admin" and "Super Admin" without
+  // a separate branch); All Tenants only for a Platform Admin. The RPCs
+  // remain the actual authority gate regardless of what this returns --
+  // this only decides what the picker offers.
+  function scopeAvailability(destinationEventId: string): Record<PlaceScope, boolean> {
+    const tenantId = tenantIdForEvent(destinationEventId);
+    return {
+      event_only: true,
+      tenant: !!tenantId && tenantIdsWithAuthority.has(tenantId),
+      shared: !!admin?.isSuperAdmin,
+    };
+  }
+
+  function defaultScopeFor(destinationEventId: string): PlaceScope {
+    const availability = scopeAvailability(destinationEventId);
+    return availability.tenant ? "tenant" : "event_only";
+  }
+
+  const canEditCanonical =
+    editorMasterScope === "shared_public"
+      ? !!admin?.isSuperAdmin
+      : editorMasterScope === "tenant_specific"
+        ? !!editorMasterTenantId && tenantIdsWithAuthority.has(editorMasterTenantId)
+        : false;
+
+  function isNearbyEditorDirty(): boolean {
+    return !nearbyEditorStatesAreEqual(
+      {
+        scope: editorScope,
+        destinationEventId: editorMode === "add" ? editorDestinationEventId : "",
+        eventForm: nearbyEventForm,
+        canonicalForm: nearbyCanonicalForm,
+      },
+      originalNearbyEditorRef.current,
+    );
+  }
+
+  const resetNearbyEditorToClosed = useCallback(() => {
+    originalNearbyEditorRef.current = {
+      scope: null,
+      destinationEventId: "",
+      eventForm: emptyNearbyEventForm,
+      canonicalForm: emptyNearbyCanonicalForm,
+    };
+    setEditorMode("add");
+    setEditorScope(null);
+    setEditorSourceMasterId(null);
+    setEditorMasterScope(null);
+    setEditorMasterTenantId(null);
+    setEditorDestinationEventId("");
+    setEditorMoveDestinationEventId("");
+    setNearbyEventForm(emptyNearbyEventForm);
+    setNearbyCanonicalForm(emptyNearbyCanonicalForm);
+    setEditorExpanded(false);
+  }, []);
+
+  function openBlankNearbyEditor() {
+    const destinationEventId = adminEvent?.id || "";
+    const scope = destinationEventId ? defaultScopeFor(destinationEventId) : null;
+
+    originalNearbyEditorRef.current = {
+      scope,
+      destinationEventId,
+      eventForm: emptyNearbyEventForm,
+      canonicalForm: emptyNearbyCanonicalForm,
+    };
+    setEditorMode("add");
+    setEditorScope(scope);
+    setEditorSourceMasterId(null);
+    setEditorMasterScope(null);
+    setEditorMasterTenantId(null);
+    setEditorDestinationEventId(destinationEventId);
+    setEditorMoveDestinationEventId(destinationEventId);
+    setNearbyEventForm(emptyNearbyEventForm);
+    setNearbyCanonicalForm(emptyNearbyCanonicalForm);
+    setEditorExpanded(true);
+  }
+
+  // Selecting a place from the Current Event Nearby List. Event-specific
+  // fields open immediately (already on hand from `place`); a linked
+  // place's canonical fields/scope/tenant load asynchronously right
+  // after -- originalNearbyEditorRef is only stamped once that load
+  // settles, so the brief loading window is never itself mistaken for a
+  // dirty edit.
+  async function openNearbyEditorForPlace(place: EventPlace) {
+    const eventForm = nearbyEventFormFromPlace(place);
+
+    setEditorMode("edit");
+    setEditorSourceMasterId(place.source_master_id);
+    setEditorDestinationEventId("");
+    setEditorMoveDestinationEventId(adminEvent?.id || "");
+    setNearbyEventForm(eventForm);
+    setEditorExpanded(true);
+
+    if (!place.source_master_id) {
+      setEditorScope("event_only");
+      setEditorMasterScope(null);
+      setEditorMasterTenantId(null);
+      setNearbyCanonicalForm(emptyNearbyCanonicalForm);
+      originalNearbyEditorRef.current = {
+        scope: "event_only",
+        destinationEventId: "",
+        eventForm,
+        canonicalForm: emptyNearbyCanonicalForm,
+      };
+      return;
+    }
+
+    setLoadingMasterDetails(true);
+    try {
+      const { data, error } = await supabase
+        .from("nearby_master")
+        .select(
+          "id,scope,tenant_id,name,category,category_id,address,phone,link,description,location_code,lat,lng",
+        )
+        .eq("id", place.source_master_id)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      const masterScope = (data?.scope as MasterScope | undefined) ?? null;
+      const canonicalForm = data ? nearbyCanonicalFormFromMaster(data) : emptyNearbyCanonicalForm;
+      const scope: PlaceScope = masterScope === "shared_public" ? "shared" : "tenant";
+
+      setEditorScope(scope);
+      setEditorMasterScope(masterScope);
+      setEditorMasterTenantId(data?.tenant_id ?? null);
+      setNearbyCanonicalForm(canonicalForm);
+
+      originalNearbyEditorRef.current = {
+        scope,
+        destinationEventId: "",
+        eventForm,
+        canonicalForm,
+      };
+    } catch (err: any) {
+      console.error("openNearbyEditorForPlace error:", err);
+      showError(err?.message || "Failed to load reusable place details.");
+    } finally {
+      setLoadingMasterDetails(false);
+    }
+  }
+
+  // Guarded entry points -- both routes into the editor (Add Place, and
+  // selecting a place from the list/Google results) go through these so
+  // an in-progress dirty edit is never silently discarded, matching
+  // app/admin/agenda/page.tsx's requestOpenEditorForItem() exactly.
+  async function requestOpenBlankNearbyEditor() {
+    if (isNearbyEditorDirty()) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message: "This nearby place has unsaved changes. Discard them and start a new place instead?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    openBlankNearbyEditor();
+  }
+
+  async function requestOpenNearbyEditorForPlace(place: EventPlace) {
+    if (editorExpanded && editorMode === "edit" && nearbyEventForm.id === place.id) {
+      return;
+    }
+    if (isNearbyEditorDirty()) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message:
+          "This nearby place has unsaved changes. Discard them and open the selected place instead?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    await openNearbyEditorForPlace(place);
+  }
+
+  // Cancel/Close. Never wired to a backdrop or outside click: this
+  // editor is an inline disclosure, not a modal.
+  async function closeNearbyEditor() {
+    if (isNearbyEditorDirty()) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message: "This nearby place has unsaved changes. Discard them and close the editor?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    resetNearbyEditorToClosed();
+  }
+
+  function handleDestinationChange(nextEventId: string) {
+    setEditorDestinationEventId(nextEventId);
+    setEditorMoveDestinationEventId(nextEventId);
+
+    // Changing destination must never silently change the chosen reuse
+    // scope (it may only widen or narrow what is *available*): if the
+    // currently chosen scope is no longer valid for the new destination,
+    // it is cleared and Save stays blocked until the operator re-chooses
+    // -- never auto-swapped to something they didn't ask for.
+    const availability = nextEventId
+      ? scopeAvailability(nextEventId)
+      : { event_only: true, tenant: false, shared: false };
+
+    setEditorScope((current) => (current && availability[current] ? current : null));
+  }
+
+  async function saveNearbyEventListing() {
+    if (!admin) {
+      showError("Admin context not available.");
+      return;
+    }
+    if (!nearbyEventForm.name.trim()) {
+      showError("Enter a place name.");
+      return;
+    }
+
+    try {
+      setSavingEventListing(true);
+      showStatus(editorMode === "add" ? "Adding place..." : "Saving place...");
+
+      const { lat: resolvedLat, lng: resolvedLng } = await resolveNearbyCoordinates(
+        nearbyEventForm.lat,
+        nearbyEventForm.lng,
+        nearbyEventForm.location_code,
+        nearbyEventForm.address,
+      );
+
+      if (String(resolvedLat ?? "") !== nearbyEventForm.lat || String(resolvedLng ?? "") !== nearbyEventForm.lng) {
+        setNearbyEventForm((prev) => ({
+          ...prev,
+          lat: resolvedLat === null ? prev.lat : String(resolvedLat),
+          lng: resolvedLng === null ? prev.lng : String(resolvedLng),
+        }));
+      }
+
+      const trimmedName = nearbyEventForm.name.trim();
+      const payload = {
+        name: trimmedName,
+        address: nearbyEventForm.address.trim() || null,
+        phone: nearbyEventForm.phone.trim() || null,
+        website: nearbyEventForm.website.trim() || null,
+        category: nearbyEventForm.category.trim() || null,
+        category_id: nearbyEventForm.category_id || null,
+        notes: nearbyEventForm.notes.trim() || null,
+        distance_miles: toNullableNumber(nearbyEventForm.distance_miles),
+        location_code: nearbyEventForm.location_code.trim() || null,
+        is_hidden: nearbyEventForm.is_hidden,
+        lat: resolvedLat,
+        lng: resolvedLng,
+      };
+
+      if (editorMode === "edit") {
+        const { error } = await supabase
+          .from("event_nearby_places")
+          .update(payload)
+          .eq("id", nearbyEventForm.id);
+
+        if (error) {
+          throw error;
+        }
+
+        if (adminEvent?.id) {
+          await loadEventPlaces(adminEvent.id);
+        }
+
+        showStatus(`${trimmedName} updated in ${adminEvent?.name || "the"} Nearby list.`);
+
+        originalNearbyEditorRef.current = {
+          ...originalNearbyEditorRef.current,
+          eventForm: { ...nearbyEventForm, lat: String(resolvedLat ?? ""), lng: String(resolvedLng ?? "") },
+        };
+
+        if (!isNearbyEditorDirty()) {
+          resetNearbyEditorToClosed();
+        }
+        return;
+      }
+
+      // Add mode, Event Only.
+      if (!editorDestinationEventId) {
+        showError("Choose a destination event.");
+        return;
+      }
+
+      const destination = manageableEvents.find((evt) => evt.id === editorDestinationEventId);
+
+      const { data: maxSortRows } = await supabase
+        .from("event_nearby_places")
+        .select("sort_order")
+        .eq("event_id", editorDestinationEventId)
+        .order("sort_order", { ascending: false })
+        .limit(1);
+
+      const nextSortOrder = (maxSortRows?.[0]?.sort_order ?? 0) + 1;
+
+      const { error } = await supabase.from("event_nearby_places").insert({
+        ...payload,
+        event_id: editorDestinationEventId,
+        sort_order: nextSortOrder,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (editorDestinationEventId === adminEvent?.id && adminEvent?.id) {
+        await loadEventPlaces(adminEvent.id);
+      }
+
+      showStatus(`${trimmedName} added to ${destination?.name || "the"} Nearby list.`);
+      resetNearbyEditorToClosed();
+    } catch (err: any) {
+      console.error("saveNearbyEventListing error:", err);
+      showError(err?.message || "Failed to save nearby place.");
+    } finally {
+      setSavingEventListing(false);
+    }
+  }
+
+  // Reusable-place canonical Save (Edit mode only). Deliberately does
+  // not close the whole editor by itself -- it only clears *this*
+  // section's dirty baseline, then closes only if the Event Listing
+  // section (saved independently, above) is also now clean. This is
+  // what lets either section be saved first without silently discarding
+  // whatever the operator hasn't saved in the other one yet.
+  async function saveNearbyCanonicalPlace() {
+    if (!editorSourceMasterId) {
+      return;
+    }
+    if (!nearbyCanonicalForm.name.trim()) {
+      showError("Enter a place name.");
+      return;
+    }
+
+    try {
+      setSavingCanonicalPlace(true);
+      showStatus("Updating reusable place...");
+
+      const { lat: resolvedLat, lng: resolvedLng } = await resolveNearbyCoordinates(
+        nearbyCanonicalForm.lat,
+        nearbyCanonicalForm.lng,
+        nearbyCanonicalForm.location_code,
+        nearbyCanonicalForm.address,
+      );
+
+      const trimmedName = nearbyCanonicalForm.name.trim();
+
+      const { error } = await supabase.rpc("update_nearby_master_place", {
+        p_place_id: editorSourceMasterId,
+        p_name: trimmedName,
+        p_category_id: nearbyCanonicalForm.category_id || null,
+        p_category: nearbyCanonicalForm.category.trim() || null,
+        p_address: nearbyCanonicalForm.address.trim() || null,
+        p_phone: nearbyCanonicalForm.phone.trim() || null,
+        p_website: nearbyCanonicalForm.website.trim() || null,
+        p_lat: resolvedLat,
+        p_lng: resolvedLng,
+        p_notes: nearbyCanonicalForm.notes.trim() || null,
+        p_location_code: nearbyCanonicalForm.location_code.trim() || null,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      const savedForm = {
+        ...nearbyCanonicalForm,
+        lat: String(resolvedLat ?? ""),
+        lng: String(resolvedLng ?? ""),
+      };
+      setNearbyCanonicalForm(savedForm);
+
+      const libraryLabel = editorMasterScope === "shared_public" ? "the Shared library" : "the Tenant library";
+      showStatus(`${trimmedName} updated in ${libraryLabel}.`);
+
+      originalNearbyEditorRef.current = {
+        ...originalNearbyEditorRef.current,
+        canonicalForm: savedForm,
+      };
+
+      if (!isNearbyEditorDirty()) {
+        resetNearbyEditorToClosed();
+      }
+    } catch (err: any) {
+      console.error("saveNearbyCanonicalPlace error:", err);
+      showError(err?.message || "Failed to update reusable place.");
+    } finally {
+      setSavingCanonicalPlace(false);
+    }
+  }
+
+  // Add mode, This Tenant: single composed RPC (record_tenant_place +
+  // associate_nearby_master_place_with_event in one transaction --
+  // Nearby Scope Model Stage 3's add_tenant_place_to_event). No client
+  // rollback logic: if association fails, the place insert rolls back
+  // with it, atomically, inside the RPC.
+  async function addTenantPlace() {
+    if (!admin) {
+      showError("Admin context not available.");
+      return;
+    }
+    if (!nearbyCanonicalForm.name.trim()) {
+      showError("Enter a place name.");
+      return;
+    }
+    if (!editorDestinationEventId) {
+      showError("Choose a destination event.");
+      return;
+    }
+
+    const tenantId = tenantIdForEvent(editorDestinationEventId);
+
+    if (!tenantId) {
+      showError("Could not determine the destination event's Tenant.");
+      return;
+    }
+
+    try {
+      setSavingCanonicalPlace(true);
+      showStatus("Adding place to the Tenant library...");
+
+      const { lat: resolvedLat, lng: resolvedLng } = await resolveNearbyCoordinates(
+        nearbyCanonicalForm.lat,
+        nearbyCanonicalForm.lng,
+        nearbyCanonicalForm.location_code,
+        nearbyCanonicalForm.address,
+      );
+
+      const trimmedName = nearbyCanonicalForm.name.trim();
+
+      const { error } = await supabase.rpc("add_tenant_place_to_event", {
+        p_event_id: editorDestinationEventId,
+        p_tenant_id: tenantId,
+        p_name: trimmedName,
+        p_category_id: nearbyCanonicalForm.category_id || null,
+        p_category: nearbyCanonicalForm.category.trim() || null,
+        p_address: nearbyCanonicalForm.address.trim() || null,
+        p_phone: nearbyCanonicalForm.phone.trim() || null,
+        p_website: nearbyCanonicalForm.website.trim() || null,
+        p_lat: resolvedLat,
+        p_lng: resolvedLng,
+        p_notes: nearbyCanonicalForm.notes.trim() || null,
+        p_location_code: nearbyCanonicalForm.location_code.trim() || null,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      const destination = manageableEvents.find((evt) => evt.id === editorDestinationEventId);
+
+      if (editorDestinationEventId === adminEvent?.id && adminEvent?.id) {
+        await loadEventPlaces(adminEvent.id);
+      }
+
+      showStatus(`${trimmedName} added to ${destination?.name || "the"} Nearby list.`);
+      resetNearbyEditorToClosed();
+    } catch (err: any) {
+      console.error("addTenantPlace error:", err);
+      showError(err?.message || "Failed to add place.");
+    } finally {
+      setSavingCanonicalPlace(false);
+    }
+  }
+
+  // Add mode, All Tenants: record_tenant_place alone (scope =
+  // shared_public). Deliberately never followed by association --
+  // Stage 2's own eligibility check refuses to associate a
+  // pending_review candidate, so the UI tells the truth about that up
+  // front instead of attempting and failing.
+  async function submitSharedPlace() {
+    if (!admin) {
+      showError("Admin context not available.");
+      return;
+    }
+    if (!nearbyCanonicalForm.name.trim()) {
+      showError("Enter a place name.");
+      return;
+    }
+
+    try {
+      setSavingCanonicalPlace(true);
+      showStatus("Submitting place for Shared review...");
+
+      const { lat: resolvedLat, lng: resolvedLng } = await resolveNearbyCoordinates(
+        nearbyCanonicalForm.lat,
+        nearbyCanonicalForm.lng,
+        nearbyCanonicalForm.location_code,
+        nearbyCanonicalForm.address,
+      );
+
+      const trimmedName = nearbyCanonicalForm.name.trim();
+
+      const { error } = await supabase.rpc("record_tenant_place", {
+        p_scope: "shared_public",
+        p_name: trimmedName,
+        p_tenant_id: null,
+        p_category_id: nearbyCanonicalForm.category_id || null,
+        p_category: nearbyCanonicalForm.category.trim() || null,
+        p_address: nearbyCanonicalForm.address.trim() || null,
+        p_phone: nearbyCanonicalForm.phone.trim() || null,
+        p_website: nearbyCanonicalForm.website.trim() || null,
+        p_lat: resolvedLat,
+        p_lng: resolvedLng,
+        p_notes: nearbyCanonicalForm.notes.trim() || null,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      showStatus(
+        `${trimmedName} submitted for Shared review. It can be added to an Event once approved.`,
+      );
+      resetNearbyEditorToClosed();
+    } catch (err: any) {
+      console.error("submitSharedPlace error:", err);
+      showError(err?.message || "Failed to submit place for review.");
+    } finally {
+      setSavingCanonicalPlace(false);
+    }
+  }
+
+  // Edit mode, Move: governed reassign_event_nearby_place only -- never
+  // a raw event_id update, so Stage 2.5's dual source/destination
+  // authority and Tenant-boundary validation is never duplicated or
+  // bypassed here.
+  async function moveNearbyPlace() {
+    if (!nearbyEventForm.id || !editorMoveDestinationEventId) {
+      return;
+    }
+    if (editorMoveDestinationEventId === adminEvent?.id) {
+      return;
+    }
+
+    const destination = manageableEvents.find((evt) => evt.id === editorMoveDestinationEventId);
+
+    const confirmed = await requestConfirmation({
+      title: "Move Nearby Place",
+      message: `Move "${nearbyEventForm.name}" from ${adminEvent?.name || "this event"} Nearby to ${destination?.name || "the selected event"} Nearby?`,
+      confirmLabel: "Move",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setMovingPlace(true);
+      showStatus("Moving place...");
+
+      const { error } = await supabase.rpc("reassign_event_nearby_place", {
+        p_event_place_id: nearbyEventForm.id,
+        p_destination_event_id: editorMoveDestinationEventId,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (adminEvent?.id) {
+        await loadEventPlaces(adminEvent.id);
+      }
+
+      showStatus(
+        `${nearbyEventForm.name} moved from ${adminEvent?.name || "this event"} Nearby to ${destination?.name || "the selected"} Nearby.`,
+      );
+      resetNearbyEditorToClosed();
+    } catch (err: any) {
+      console.error("moveNearbyPlace error:", err);
+      showError(err?.message || "Failed to move nearby place.");
+    } finally {
+      setMovingPlace(false);
+    }
+  }
+
+  // Edit mode, Remove/Delete: a linked place's Event row is deleted by
+  // id -- association only, the reusable master row is never touched,
+  // exactly the existing event_nearby_places RLS path Stage 2.5 already
+  // confirmed correct. An Event-only place has no reusable record to
+  // preserve, so the same delete is simply labeled "Delete Place" instead
+  // of "Remove from this Event."
+  async function deleteOrRemoveNearbyPlace() {
+    if (!admin || !nearbyEventForm.id) {
+      return;
+    }
+
+    const isLinked = !!editorSourceMasterId;
+
+    const confirmed = await requestConfirmation({
+      title: isLinked ? "Remove From Event" : "Delete Place",
+      message: isLinked
+        ? `Remove "${nearbyEventForm.name}" from ${adminEvent?.name || "this event"}'s Nearby list? The reusable place itself is not affected.`
+        : `Delete "${nearbyEventForm.name}"? This cannot be undone.`,
+      confirmLabel: isLinked ? "Remove" : "Delete",
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRemovingPlace(true);
+      showStatus(isLinked ? "Removing place from event..." : "Deleting place...");
+
+      const { error } = await supabase
+        .from("event_nearby_places")
+        .delete()
+        .eq("id", nearbyEventForm.id);
+
+      if (error) {
+        throw error;
+      }
+
+      const placeName = nearbyEventForm.name;
+
+      if (adminEvent?.id) {
+        await loadEventPlaces(adminEvent.id);
+      }
+
+      showStatus(
+        isLinked
+          ? `${placeName} removed from ${adminEvent?.name || "the"} Nearby list.`
+          : `${placeName} deleted.`,
+      );
+      resetNearbyEditorToClosed();
+    } catch (err: any) {
+      console.error("deleteOrRemoveNearbyPlace error:", err);
+      showError(err?.message || "Failed to remove nearby place.");
+    } finally {
+      setRemovingPlace(false);
+    }
+  }
+
+  // Edit mode, Retire (Tenant/Shared canonical place only, authority-
+  // gated by canEditCanonical -- same rule as canonical Save). The
+  // pre-check counts below are read-only and shown in the confirmation
+  // dialog (retirement archives the place, and no un-retire operation
+  // exists, so the operator needs impact visibility *before* confirming,
+  // not only in the after-the-fact success message); the authoritative
+  // counts retire_nearby_master_place itself returns are what the
+  // success message reports.
+  async function retireNearbyCanonicalPlace() {
+    if (!editorSourceMasterId) {
+      return;
+    }
+
+    const isShared = editorMasterScope === "shared_public";
+    const libraryLabel = isShared ? "the Shared library" : "the Tenant library";
+
+    try {
+      setRetiringPlace(true);
+      showStatus("Checking references...");
+
+      const [{ count: eventRefs }, { count: relevanceRefs }] = await Promise.all([
+        supabase
+          .from("event_nearby_places")
+          .select("id", { count: "exact", head: true })
+          .eq("source_master_id", editorSourceMasterId),
+        supabase
+          .from("tenant_place_relevance")
+          .select("place_id", { count: "exact", head: true })
+          .eq("place_id", editorSourceMasterId),
+      ]);
+
+      setStatus("");
+
+      const confirmed = await requestConfirmation({
+        title: isShared ? "Retire Shared Place" : "Retire From Tenant Library",
+        message: `Retire "${nearbyCanonicalForm.name}" from ${libraryLabel}? It will no longer be available to add to new Events. Currently used by ${eventRefs ?? 0} Event listing${(eventRefs ?? 0) === 1 ? "" : "s"}${relevanceRefs ? ` and marked relevant for ${relevanceRefs} Tenant${relevanceRefs === 1 ? "" : "s"}` : ""} -- existing listings keep working, they are not affected.`,
+        confirmLabel: "Retire",
+        danger: true,
+      });
+
+      if (!confirmed) {
+        return;
+      }
+
+      showStatus("Retiring place...");
+
+      const { data, error } = await supabase
+        .rpc("retire_nearby_master_place", { p_place_id: editorSourceMasterId })
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const referenceCount = (data as { event_place_references?: number } | null)?.event_place_references ?? 0;
+
+      showStatus(
+        `${nearbyCanonicalForm.name} retired from ${libraryLabel} (${referenceCount} existing Event listing${referenceCount === 1 ? "" : "s"} unaffected).`,
+      );
+      resetNearbyEditorToClosed();
+    } catch (err: any) {
+      console.error("retireNearbyCanonicalPlace error:", err);
+      showError(err?.message || "Failed to retire reusable place.");
+    } finally {
+      setRetiringPlace(false);
+    }
+  }
+
+  function loadGooglePlaceIntoNearbyEditor(place: any) {
+    const destinationEventId = adminEvent?.id || "";
+    const scope = destinationEventId ? defaultScopeFor(destinationEventId) : null;
+
+    const filledEventForm: NearbyEventForm = {
+      ...emptyNearbyEventForm,
+      name: place.name || "",
+      category: place.category || "",
+      address: place.address || "",
+      phone: place.phone || "",
+      website: place.website || "",
+      notes: place.editorialSummary || "",
+      location_code: place.plusCode || "",
+      lat: place.lat === null || place.lat === undefined ? "" : String(place.lat),
+      lng: place.lng === null || place.lng === undefined ? "" : String(place.lng),
+    };
+
+    const filledCanonicalForm: NearbyCanonicalForm = {
+      ...emptyNearbyCanonicalForm,
+      name: place.name || "",
+      category: place.category || "",
+      address: place.address || "",
+      phone: place.phone || "",
+      website: place.website || "",
+      notes: place.editorialSummary || "",
+      location_code: place.plusCode || "",
+      lat: place.lat === null || place.lat === undefined ? "" : String(place.lat),
+      lng: place.lng === null || place.lng === undefined ? "" : String(place.lng),
+    };
+
+    originalNearbyEditorRef.current = {
+      scope: null,
+      destinationEventId,
+      eventForm: emptyNearbyEventForm,
+      canonicalForm: emptyNearbyCanonicalForm,
+    };
+    setEditorMode("add");
+    setEditorScope(scope);
+    setEditorSourceMasterId(null);
+    setEditorMasterScope(null);
+    setEditorMasterTenantId(null);
+    setEditorDestinationEventId(destinationEventId);
+    setEditorMoveDestinationEventId(destinationEventId);
+    setNearbyEventForm(filledEventForm);
+    setNearbyCanonicalForm(filledCanonicalForm);
+    setEditorExpanded(true);
+
+    nearbyEditorSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+
+    showStatus(`Loaded "${place.name}" into the Nearby Place editor.`);
+  }
+
+  async function requestLoadGooglePlaceIntoNearbyEditor(place: any) {
+    if (isNearbyEditorDirty()) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message: "This nearby place has unsaved changes. Discard them and load this Google result instead?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    loadGooglePlaceIntoNearbyEditor(place);
+  }
 
   const [loadingAreas, setLoadingAreas] = useState(true);
   const [loadingStoredPlaces, setLoadingStoredPlaces] = useState(false);
   const [loadingEventPlaces, setLoadingEventPlaces] = useState(false);
   const [savingArea, setSavingArea] = useState(false);
   const [savingStoredPlace, setSavingStoredPlace] = useState(false);
-  const [savingEventPlace, setSavingEventPlace] = useState(false);
   const [copyingToEvent, setCopyingToEvent] = useState(false);
   const [bulkGeocoding, setBulkGeocoding] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -530,7 +1556,7 @@ function AdminNearbyPageInner() {
 
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
 
-  function resetAllState() {
+  const resetAllState = useCallback(() => {
     setAdminEvent(null);
     setStoredAreas([]);
     setStoredPlaces([]);
@@ -539,8 +1565,8 @@ function AdminNearbyPageInner() {
     setAreaName("");
     setAreaDescription("");
     setStoredForm(emptyStoredPlaceForm);
-    setEventForm(emptyEventPlaceForm);
-  }
+    resetNearbyEditorToClosed();
+  }, [resetNearbyEditorToClosed]);
 
   function showStatus(message: string) {
     setError(null);
@@ -592,7 +1618,7 @@ function AdminNearbyPageInner() {
 
     setAdminEvent(evt ?? null);
     setLoading(false);
-  }, [admin]);
+  }, [admin, resetAllState]);
 
   useEffect(() => {
     if (!admin) {
@@ -619,6 +1645,56 @@ function AdminNearbyPageInner() {
     });
 
     return unsubscribe;
+  }, [admin, resetAllState]);
+
+  // Nearby Scope Model Stage 3 -- the destination Event picker's option
+  // source. Same authorization pattern app/admin/dashboard/page.tsx
+  // already uses for its own Event picker (canAccessEvent/isSuperAdmin):
+  // a client-side convenience list only. Every write the unified editor
+  // makes is still authorized server-side by its own RPC/RLS regardless
+  // of what this list shows.
+  const loadManageableEvents = useCallback(async () => {
+    if (!admin) {
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("events")
+        .select("id,name,tenant_id,status")
+        .order("name", { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      const all = (data || []) as ManageableEvent[];
+      const filtered = admin.isSuperAdmin ? all : all.filter((evt) => canAccessEvent(admin, evt.id));
+
+      setManageableEvents(filtered);
+    } catch (err) {
+      console.error("loadManageableEvents error:", err);
+      setManageableEvents([]);
+    }
+  }, [admin]);
+
+  useEffect(() => {
+    if (!admin) {
+      return;
+    }
+    void loadManageableEvents();
+  }, [admin, loadManageableEvents]);
+
+  useEffect(() => {
+    if (!admin) {
+      setTenantAdminAccessRows([]);
+      return;
+    }
+
+    void (async () => {
+      const rows = await listMyTenantAdminAccess();
+      setTenantAdminAccessRows(rows);
+    })();
   }, [admin]);
 
   const selectedArea =
@@ -812,11 +1888,11 @@ function AdminNearbyPageInner() {
           // First alphabetical area
           return rows[0].id;
         });
-
-        setStatus(
-          `Loaded ${rows.length} stored area${rows.length === 1 ? "" : "s"}.`,
-        );
       }
+
+      setStatus(
+        `Loaded ${rows.length} stored area${rows.length === 1 ? "" : "s"}.`,
+      );
     } catch (err: any) {
       console.error("loadStoredAreas error:", err);
       setStoredAreas([]);
@@ -879,7 +1955,7 @@ function AdminNearbyPageInner() {
       const { data, error } = await supabase
         .from("event_nearby_places")
         .select(
-          "id,name,address,phone,website,category,category_id,notes,sort_order,is_hidden,distance_miles,location_code,lat,lng",
+          "id,name,address,phone,website,category,category_id,notes,sort_order,is_hidden,distance_miles,location_code,lat,lng,source_master_id",
         )
         .eq("event_id", eventId)
         .order("sort_order", { ascending: true })
@@ -959,9 +2035,9 @@ function AdminNearbyPageInner() {
       void loadEventPlaces(adminEvent.id);
     } else {
       setEventPlaces([]);
-      setEventForm(emptyEventPlaceForm);
+      resetNearbyEditorToClosed();
     }
-  }, [admin, adminEvent?.id, loadEventPlaces]);
+  }, [admin, adminEvent?.id, loadEventPlaces, resetNearbyEditorToClosed]);
 
   async function createStoredArea() {
     if (!admin) {
@@ -1129,6 +2205,11 @@ function AdminNearbyPageInner() {
     }
   }
 
+  // Nearby Scope Model Stage 3: governed replacement for the raw
+  // nearby_master .insert()/.update() this form used to make --
+  // upsert_stored_area_place replicates the exact legacy
+  // privilege_group authority the retired bridge policy provided (a
+  // mechanism change only, never an authority change).
   async function saveStoredPlace() {
     if (!admin) {
       showError("Admin context not available.");
@@ -1196,47 +2277,37 @@ function AdminNearbyPageInner() {
         }
       }
 
-      const payload = {
-        area_id: selectedAreaId,
-        name: storedForm.name.trim(),
-        address: storedForm.address.trim() || null,
-        phone: storedForm.phone.trim() || null,
+      const rpcArgs = {
+        p_place_id: storedForm.id || null,
+        p_area_id: selectedAreaId,
+        p_name: storedForm.name.trim(),
         // Nearby Category Authority Stage B: category_id is the selected
         // catalog identity (the Select's own value); category (legacy
         // free text) is a compatibility projection kept in lockstep with
         // it by the Select's onChange, never independently editable, so
         // it can never drift from category_id.
-        category: storedForm.category.trim() || null,
-        category_id: storedForm.category_id || null,
-        description: storedForm.notes.trim() || null,
-        link: storedForm.website.trim() || null,
-        location_code: storedForm.location_code.trim() || null,
-        lat: resolvedLat,
-        lng: resolvedLng,
+        p_category: storedForm.category.trim() || null,
+        p_category_id: storedForm.category_id || null,
+        p_address: storedForm.address.trim() || null,
+        p_phone: storedForm.phone.trim() || null,
+        p_website: storedForm.website.trim() || null,
+        p_notes: storedForm.notes.trim() || null,
+        p_location_code: storedForm.location_code.trim() || null,
+        p_lat: resolvedLat,
+        p_lng: resolvedLng,
       };
 
-      if (storedForm.id) {
-        const { error } = await supabase
-          .from("nearby_master")
-          .update(payload)
-          .eq("id", storedForm.id);
+      const { error } = await supabase.rpc("upsert_stored_area_place", rpcArgs);
 
-        if (error) {
-          throw error;
-        }
-        setStatus(
-          `Updated stored place "${storedForm.name.trim()}" using ${locationSource}.`,
-        );
-      } else {
-        const { error } = await supabase.from("nearby_master").insert(payload);
-
-        if (error) {
-          throw error;
-        }
-        setStatus(
-          `Created stored place "${storedForm.name.trim()}" using ${locationSource}.`,
-        );
+      if (error) {
+        throw error;
       }
+
+      setStatus(
+        storedForm.id
+          ? `Updated stored place "${storedForm.name.trim()}" using ${locationSource}.`
+          : `Created stored place "${storedForm.name.trim()}" using ${locationSource}.`,
+      );
 
       await loadStoredPlaces(selectedAreaId);
 
@@ -1251,6 +2322,8 @@ function AdminNearbyPageInner() {
     }
   }
 
+  // Nearby Scope Model Stage 3: governed replacement for the raw
+  // nearby_master .delete().
   async function deleteStoredPlace() {
     if (!admin) {
       showError("Admin context not available.");
@@ -1275,10 +2348,9 @@ function AdminNearbyPageInner() {
       setSavingStoredPlace(true);
       showStatus("Deleting stored place...");
 
-      const { error } = await supabase
-        .from("nearby_master")
-        .delete()
-        .eq("id", storedForm.id);
+      const { error } = await supabase.rpc("delete_stored_area_place", {
+        p_place_id: storedForm.id,
+      });
 
       if (error) {
         throw error;
@@ -1408,7 +2480,6 @@ function AdminNearbyPageInner() {
       }
 
       await loadEventPlaces(adminEvent.id);
-      setEventForm(emptyEventPlaceForm);
       setStatus(
         `Replaced event nearby list with ${payload.length} place${
           payload.length === 1 ? "" : "s"
@@ -1601,189 +2672,6 @@ function AdminNearbyPageInner() {
     void saveEventPlaceOrder(reordered);
   }
 
-  async function saveEventPlace() {
-    if (!admin) {
-      showError("Admin context not available.");
-      return;
-    }
-    if (!adminEvent?.id) {
-      showError("No admin working event selected.");
-      return;
-    }
-
-    if (!eventForm.name.trim()) {
-      showError("Enter an event place name.");
-      return;
-    }
-
-    try {
-      setSavingEventPlace(true);
-      showStatus("Saving event place...");
-
-      let resolvedLat = toNullableCoordinate(eventForm.lat);
-      let resolvedLng = toNullableCoordinate(eventForm.lng);
-      let locationSource = "manual coordinates";
-
-      if (resolvedLat === null || resolvedLng === null) {
-        if (eventForm.location_code.trim()) {
-          showStatus("Resolving coordinates from plus code...");
-          const plusResolved = await geocodeLocation({
-            location_code: eventForm.location_code.trim(),
-            address: null,
-          });
-
-          if (plusResolved.lat !== null && plusResolved.lng !== null) {
-            resolvedLat = plusResolved.lat;
-            resolvedLng = plusResolved.lng;
-            locationSource = "plus code";
-            setEventForm((prev) => ({
-              ...prev,
-              lat: String(plusResolved.lat),
-              lng: String(plusResolved.lng),
-            }));
-          }
-        }
-
-        if (
-          (resolvedLat === null || resolvedLng === null) &&
-          eventForm.address.trim()
-        ) {
-          showStatus("Resolving coordinates from address...");
-          const addressResolved = await geocodeLocation({
-            location_code: null,
-            address: eventForm.address.trim(),
-          });
-
-          if (addressResolved.lat !== null && addressResolved.lng !== null) {
-            resolvedLat = addressResolved.lat;
-            resolvedLng = addressResolved.lng;
-            locationSource = "address";
-            setEventForm((prev) => ({
-              ...prev,
-              lat: String(addressResolved.lat),
-              lng: String(addressResolved.lng),
-            }));
-          }
-        }
-      }
-
-      const payload = {
-        event_id: adminEvent.id,
-        name: eventForm.name.trim(),
-        address: eventForm.address.trim() || null,
-        phone: eventForm.phone.trim() || null,
-        website: eventForm.website.trim() || null,
-        // Nearby Category Authority Stage B -- see saveStoredPlace()'s
-        // identical comment.
-        category: eventForm.category.trim() || null,
-        category_id: eventForm.category_id || null,
-        notes: eventForm.notes.trim() || null,
-        distance_miles: toNullableNumber(eventForm.distance_miles),
-        location_code: eventForm.location_code.trim() || null,
-        is_hidden: eventForm.is_hidden,
-        lat: resolvedLat,
-        lng: resolvedLng,
-      };
-
-      if (eventForm.id) {
-        const { error } = await supabase
-          .from("event_nearby_places")
-          .update(payload)
-          .eq("id", eventForm.id);
-
-        if (error) {
-          throw error;
-        }
-        setStatus(
-          `Updated event place "${eventForm.name.trim()}" using ${locationSource}.`,
-        );
-      } else {
-        const { error } = await supabase.from("event_nearby_places").insert({
-          ...payload,
-          sort_order: eventPlaces.length + 1,
-        });
-
-        if (error) {
-          throw error;
-        }
-        setStatus(
-          `Created event place "${eventForm.name.trim()}" using ${locationSource}.`,
-        );
-      }
-
-      await loadEventPlaces(adminEvent.id);
-      setEventForm(emptyEventPlaceForm);
-     } catch (err: any) {
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : typeof err?.message === "string" && err.message.trim()
-            ? err.message
-            : typeof err === "string" && err.trim()
-              ? err
-              : "Failed to save nearby place.";
-
-      console.error("saveEventPlace error:", {
-        message: errorMessage,
-        code: err?.code ?? null,
-        details: err?.details ?? null,
-        hint: err?.hint ?? null,
-        status: err?.status ?? null,
-        raw: err,
-      });
-
-      showError(errorMessage);
-    } finally {
-      setSavingEventPlace(false);
-    }
-  }
-
-  async function deleteEventPlace() {
-    if (!admin) {
-      showError("Admin context not available.");
-      return;
-    }
-    if (!eventForm.id) {
-      showError("Select an event place to delete.");
-      return;
-    }
-
-    const confirmed = await requestConfirmation({
-      title: "Delete Event Place",
-      message: `Delete event place "${eventForm.name}"? This cannot be undone.`,
-      confirmLabel: "Delete",
-      danger: true,
-    });
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      setSavingEventPlace(true);
-      showStatus("Deleting event place...");
-
-      const { error } = await supabase
-        .from("event_nearby_places")
-        .delete()
-        .eq("id", eventForm.id);
-
-      if (error) {
-        throw error;
-      }
-
-      if (adminEvent?.id) {
-        await loadEventPlaces(adminEvent.id);
-      }
-      setEventForm(emptyEventPlaceForm);
-      setStatus(`Deleted event place "${eventForm.name}".`);
-    } catch (err: any) {
-      console.error("deleteEventPlace error:", err);
-      showError(err?.message || "Failed to delete event place.");
-    } finally {
-      setSavingEventPlace(false);
-    }
-  }
-
   async function searchGoogleNearby() {
     if (!adminEvent?.location) {
       showError("No admin event location available.");
@@ -1897,13 +2785,25 @@ function AdminNearbyPageInner() {
         });
 
         if (resolved.lat !== null && resolved.lng !== null) {
-          const { error } = await supabase
-            .from("nearby_master")
-            .update({
-              lat: resolved.lat,
-              lng: resolved.lng,
-            })
-            .eq("id", place.id);
+          // Nearby Scope Model Stage 3: governed replacement for the raw
+          // nearby_master .update() -- passes the already-loaded full
+          // record through unchanged except lat/lng, since
+          // upsert_stored_area_place replaces the whole row (no partial
+          // update).
+          const { error } = await supabase.rpc("upsert_stored_area_place", {
+            p_place_id: place.id,
+            p_area_id: selectedAreaId,
+            p_name: place.name,
+            p_category_id: place.category_id || null,
+            p_category: place.category || null,
+            p_address: place.address || null,
+            p_phone: place.phone || null,
+            p_website: place.website || null,
+            p_notes: place.notes || null,
+            p_location_code: place.location_code || null,
+            p_lat: resolved.lat,
+            p_lng: resolved.lng,
+          });
 
           if (error) {
             console.error("Bulk geocode update error:", error);
@@ -1947,13 +2847,23 @@ function AdminNearbyPageInner() {
         throw new Error("Could not resolve coordinates for this place.");
       }
 
-      const { error } = await supabase
-        .from("nearby_master")
-        .update({
-          lat: resolved.lat,
-          lng: resolved.lng,
-        })
-        .eq("id", storedForm.id);
+      // Nearby Scope Model Stage 3: governed replacement for the raw
+      // nearby_master .update() -- see bulkGeocodeStoredPlaces()'s
+      // identical comment.
+      const { error } = await supabase.rpc("upsert_stored_area_place", {
+        p_place_id: storedForm.id,
+        p_area_id: selectedAreaId,
+        p_name: storedForm.name.trim(),
+        p_category_id: storedForm.category_id || null,
+        p_category: storedForm.category.trim() || null,
+        p_address: storedForm.address.trim() || null,
+        p_phone: storedForm.phone.trim() || null,
+        p_website: storedForm.website.trim() || null,
+        p_notes: storedForm.notes.trim() || null,
+        p_location_code: storedForm.location_code.trim() || null,
+        p_lat: resolved.lat,
+        p_lng: resolved.lng,
+      });
 
       if (error) {
         throw error;
@@ -1976,6 +2886,29 @@ function AdminNearbyPageInner() {
       setSavingStoredPlace(false);
     }
   }
+
+  const scopeAvailabilityForDestination = editorDestinationEventId
+    ? scopeAvailability(editorDestinationEventId)
+    : { event_only: true, tenant: false, shared: false };
+
+  const scopeOptions: { value: PlaceScope; label: string }[] = [
+    { value: "event_only", label: "This Event only" },
+    ...(scopeAvailabilityForDestination.tenant
+      ? [{ value: "tenant" as PlaceScope, label: "This Tenant" }]
+      : []),
+    ...(scopeAvailabilityForDestination.shared
+      ? [{ value: "shared" as PlaceScope, label: "All Tenants" }]
+      : []),
+  ];
+
+  const showEventListingSection =
+    (editorMode === "add" && editorScope === "event_only") || editorMode === "edit";
+  const showCanonicalSection =
+    (editorMode === "add" && (editorScope === "tenant" || editorScope === "shared")) ||
+    (editorMode === "edit" && !!editorSourceMasterId);
+
+  const editingBusy =
+    savingEventListing || savingCanonicalPlace || movingPlace || removingPlace || retiringPlace;
 
   return (
     <div style={{ display: "grid", gap: "var(--space-10)" }}>
@@ -2110,9 +3043,11 @@ function AdminNearbyPageInner() {
 
         <PageSection variant="section">
           <PageHeader
-            title="Stored Area Places"
+            title="Reusable Places · Stored Areas"
             headingLevel="h2"
             titleClassName="app-section-title"
+            description="A bulk-organized library of places, grouped by Stored Area -- separate from the Tenant/Shared reusable places created in the Current Event Nearby List editor below."
+            descriptionClassName="app-subtle-text"
             actions={
               <AppButton
                 variant="secondary"
@@ -2435,7 +3370,7 @@ function AdminNearbyPageInner() {
           title="Google Nearby Search"
           headingLevel="h2"
           titleClassName="app-section-title"
-          description="Search Google Places near the current admin event location and quickly add them into the stored nearby list."
+          description="Search Google Places near the current admin event location and quickly add them into the stored nearby list or the current Event's Nearby list."
           descriptionClassName="app-subtle-text"
         />
 
@@ -2574,37 +3509,9 @@ function AdminNearbyPageInner() {
                     Load Into Stored Place Editor
                   </AppButton>
                   <AppButton
-                    onClick={() => {
-                      setEventForm({
-                        ...emptyEventPlaceForm,
-                        name: place.name || "",
-                        category: place.category || "",
-                        address: place.address || "",
-                        phone: place.phone || "",
-                        website: place.website || "",
-                        notes: place.editorialSummary || "",
-                        location_code: place.plusCode || "",
-                        lat:
-                          place.lat === null || place.lat === undefined
-                            ? ""
-                            : String(place.lat),
-                        lng:
-                          place.lng === null || place.lng === undefined
-                            ? ""
-                            : String(place.lng),
-                      });
-
-                      eventPlaceFormSectionRef.current?.scrollIntoView({
-                        behavior: "smooth",
-                        block: "start",
-                      });
-
-                      showStatus(
-                        `Loaded "${place.name}" into the event place editor.`,
-                      );
-                    }}
+                    onClick={() => void requestLoadGooglePlaceIntoNearbyEditor(place)}
                   >
-                    Load Into Event Place Editor
+                    Load Into Nearby Place Editor
                   </AppButton>
                 </FormActions>
               </div>
@@ -2614,7 +3521,7 @@ function AdminNearbyPageInner() {
       </PageSection>
 
       <PageSection variant="section">
-        <PageHeader title="Current Event Nearby Places" headingLevel="h2" titleClassName="app-section-title" />
+        <PageHeader title="Current Event Nearby List" headingLevel="h2" titleClassName="app-section-title" />
 
         {!adminEvent?.id ? (
           <EmptyState message="No admin working event selected." />
@@ -2655,8 +3562,8 @@ function AdminNearbyPageInner() {
                         <SortableEventPlaceCard
                           key={place.id}
                           place={place}
-                          selected={eventForm.id === place.id}
-                          onSelect={() => setEventForm(eventFormFromPlace(place))}
+                          selected={editorExpanded && editorMode === "edit" && nearbyEventForm.id === place.id}
+                          onSelect={() => void requestOpenNearbyEditorForPlace(place)}
                         />
                       ))}
                     </div>
@@ -2665,179 +3572,545 @@ function AdminNearbyPageInner() {
               )}
             </div>
 
-            <div ref={eventPlaceFormSectionRef} style={{ display: "grid", gap: "var(--space-3)" }}>
-              <Field label="Event Place Name">
-                {(controlProps) => (
-                  <Input
-                    {...controlProps}
-                    value={eventForm.name}
-                    onChange={(e) => setEventForm((prev) => ({ ...prev, name: e.target.value }))}
-                    placeholder="Event place name"
-                    disabled={!admin || savingEventPlace}
-                  />
-                )}
-              </Field>
+            <div ref={nearbyEditorSectionRef} style={{ display: "grid", gap: "var(--space-3)" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "var(--space-3)",
+                }}
+              >
+                <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+                  {editorExpanded
+                    ? editorMode === "add"
+                      ? "Add Nearby Place"
+                      : "Edit Nearby Place"
+                    : "Nearby Place"}
+                </div>
 
-              {/* Nearby Category Authority Stage B, Part 1: canonical
-                  catalog selection, same as the Stored Place form above --
-                  no free-text category input. */}
-              <Field label="Category">
-                {(controlProps) => (
-                  <Select
-                    {...controlProps}
-                    value={eventForm.category_id}
-                    onChange={(e) => {
-                      const nextCategoryId = e.target.value;
-                      setEventForm((prev) => ({
-                        ...prev,
-                        category_id: nextCategoryId,
-                        category: nextCategoryId ? categoryLabelById.get(nextCategoryId) || "" : "",
-                      }));
-                    }}
-                    disabled={!admin || savingEventPlace}
+                {editorExpanded ? (
+                  <AppButton
+                    ref={nearbyEditorToggleButtonRef}
+                    onClick={() => void closeNearbyEditor()}
+                    disabled={editingBusy}
                   >
-                    <option value="">Select category</option>
-                    {placeCategories.map((placeCategory) => (
-                      <option key={placeCategory.id} value={placeCategory.id}>
-                        {placeCategory.label}
-                      </option>
-                    ))}
-                  </Select>
+                    Cancel
+                  </AppButton>
+                ) : (
+                  <AppButton
+                    ref={nearbyEditorToggleButtonRef}
+                    variant="primary"
+                    onClick={() => void requestOpenBlankNearbyEditor()}
+                  >
+                    + Add Place
+                  </AppButton>
                 )}
-              </Field>
-
-              <Field label="Address">
-                {(controlProps) => (
-                  <Input
-                    {...controlProps}
-                    value={eventForm.address}
-                    onChange={(e) => setEventForm((prev) => ({ ...prev, address: e.target.value }))}
-                    placeholder="Address"
-                    disabled={!admin || savingEventPlace}
-                  />
-                )}
-              </Field>
-
-              <Field label="Phone">
-                {(controlProps) => (
-                  <Input
-                    {...controlProps}
-                    value={eventForm.phone}
-                    onChange={(e) => setEventForm((prev) => ({ ...prev, phone: e.target.value }))}
-                    placeholder="Phone"
-                    disabled={!admin || savingEventPlace}
-                  />
-                )}
-              </Field>
-
-              <Field label="Website">
-                {(controlProps) => (
-                  <Input
-                    {...controlProps}
-                    value={eventForm.website}
-                    onChange={(e) => setEventForm((prev) => ({ ...prev, website: e.target.value }))}
-                    placeholder="Website"
-                    disabled={!admin || savingEventPlace}
-                  />
-                )}
-              </Field>
-
-              <Field label="Notes">
-                {(controlProps) => (
-                  <Textarea
-                    {...controlProps}
-                    value={eventForm.notes}
-                    onChange={(e) => setEventForm((prev) => ({ ...prev, notes: e.target.value }))}
-                    placeholder="Notes"
-                    rows={4}
-                    disabled={!admin || savingEventPlace}
-                  />
-                )}
-              </Field>
-
-              <div className="app-form-grid-2">
-                <Field label="Latitude">
-                  {(controlProps) => (
-                    <Input
-                      {...controlProps}
-                      value={eventForm.lat}
-                      onChange={(e) => setEventForm((prev) => ({ ...prev, lat: e.target.value }))}
-                      placeholder="Latitude"
-                      disabled={!admin || savingEventPlace}
-                    />
-                  )}
-                </Field>
-                <Field label="Longitude">
-                  {(controlProps) => (
-                    <Input
-                      {...controlProps}
-                      value={eventForm.lng}
-                      onChange={(e) => setEventForm((prev) => ({ ...prev, lng: e.target.value }))}
-                      placeholder="Longitude"
-                      disabled={!admin || savingEventPlace}
-                    />
-                  )}
-                </Field>
               </div>
 
-              <div className="app-form-grid-2">
-                <Field label="Distance (miles)">
-                  {(controlProps) => (
-                    <Input
-                      {...controlProps}
-                      value={eventForm.distance_miles}
-                      onChange={(e) =>
-                        setEventForm((prev) => ({ ...prev, distance_miles: e.target.value }))
-                      }
-                      placeholder="Miles"
-                      disabled={!admin || savingEventPlace}
-                    />
-                  )}
-                </Field>
-                <Field label="Location Code" help="Plus code, used to resolve coordinates if latitude/longitude are blank.">
-                  {(controlProps) => (
-                    <Input
-                      {...controlProps}
-                      value={eventForm.location_code}
-                      onChange={(e) =>
-                        setEventForm((prev) => ({ ...prev, location_code: e.target.value }))
-                      }
-                      placeholder="Location code"
-                      disabled={!admin || savingEventPlace}
-                    />
-                  )}
-                </Field>
-              </div>
+              {!editorExpanded ? (
+                <div className="app-subtle-text" style={{ fontSize: 13 }}>
+                  Select a place from the list, or Add Place to create a new one.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: "var(--space-4)" }}>
+                  {editorMode === "edit" ? (
+                    <Alert tone="neutral">
+                      Editing{" "}
+                      {editorScope === "event_only"
+                        ? "an Event-only place"
+                        : editorScope === "tenant"
+                          ? "a Tenant reusable place"
+                          : "a Shared reusable place"}
+                      .
+                    </Alert>
+                  ) : null}
 
-              <Checkbox
-                label="Hidden from members"
-                checked={eventForm.is_hidden}
-                onChange={(e) => setEventForm((prev) => ({ ...prev, is_hidden: e.target.checked }))}
-                disabled={!admin || savingEventPlace}
-              />
+                  {editorMode === "add" ? (
+                    <>
+                      <Field label="Destination Event">
+                        {(controlProps) => (
+                          <Select
+                            {...controlProps}
+                            value={editorDestinationEventId}
+                            onChange={(e) => handleDestinationChange(e.target.value)}
+                            disabled={editingBusy}
+                          >
+                            <option value="">Select an event</option>
+                            {manageableEvents.map((evt) => (
+                              <option key={evt.id} value={evt.id}>
+                                {evt.name}
+                              </option>
+                            ))}
+                          </Select>
+                        )}
+                      </Field>
 
-              <FormActions>
-                <AppButton
-                  variant="primary"
-                  onClick={() => void saveEventPlace()}
-                  disabled={!admin || savingEventPlace}
-                >
-                  {eventForm.id ? "Update Event Place" : "Add Event-Only Place"}
-                </AppButton>
-                <AppButton
-                  onClick={() => setEventForm(emptyEventPlaceForm)}
-                  disabled={!admin || savingEventPlace}
-                >
-                  New Blank
-                </AppButton>
-                <AppButton
-                  variant="danger"
-                  onClick={() => void deleteEventPlace()}
-                  disabled={!admin || !eventForm.id || savingEventPlace}
-                >
-                  Delete Event Place
-                </AppButton>
-              </FormActions>
+                      <Field label="Availability" help="Where this place can be reused.">
+                        {(controlProps) => (
+                          <Select
+                            {...controlProps}
+                            value={editorScope ?? ""}
+                            onChange={(e) =>
+                              setEditorScope((e.target.value || null) as PlaceScope | null)
+                            }
+                            disabled={editingBusy || !editorDestinationEventId}
+                          >
+                            <option value="">Choose availability...</option>
+                            {scopeOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </Select>
+                        )}
+                      </Field>
+                    </>
+                  ) : null}
+
+                  {showEventListingSection ? (
+                    <div style={{ display: "grid", gap: "var(--space-3)" }}>
+                      {editorMode === "edit" ? (
+                        <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+                          This Event's Listing
+                        </div>
+                      ) : null}
+
+                      <Field label="Place Name">
+                        {(controlProps) => (
+                          <Input
+                            {...controlProps}
+                            value={nearbyEventForm.name}
+                            onChange={(e) =>
+                              setNearbyEventForm((prev) => ({ ...prev, name: e.target.value }))
+                            }
+                            placeholder="Place name"
+                            disabled={editingBusy}
+                          />
+                        )}
+                      </Field>
+
+                      <Field label="Category">
+                        {(controlProps) => (
+                          <Select
+                            {...controlProps}
+                            value={nearbyEventForm.category_id}
+                            onChange={(e) => {
+                              const nextCategoryId = e.target.value;
+                              setNearbyEventForm((prev) => ({
+                                ...prev,
+                                category_id: nextCategoryId,
+                                category: nextCategoryId ? categoryLabelById.get(nextCategoryId) || "" : "",
+                              }));
+                            }}
+                            disabled={editingBusy}
+                          >
+                            <option value="">Select category</option>
+                            {placeCategories.map((placeCategory) => (
+                              <option key={placeCategory.id} value={placeCategory.id}>
+                                {placeCategory.label}
+                              </option>
+                            ))}
+                          </Select>
+                        )}
+                      </Field>
+
+                      <Field label="Address">
+                        {(controlProps) => (
+                          <Input
+                            {...controlProps}
+                            value={nearbyEventForm.address}
+                            onChange={(e) =>
+                              setNearbyEventForm((prev) => ({ ...prev, address: e.target.value }))
+                            }
+                            placeholder="Address"
+                            disabled={editingBusy}
+                          />
+                        )}
+                      </Field>
+
+                      <Field label="Phone">
+                        {(controlProps) => (
+                          <Input
+                            {...controlProps}
+                            value={nearbyEventForm.phone}
+                            onChange={(e) =>
+                              setNearbyEventForm((prev) => ({ ...prev, phone: e.target.value }))
+                            }
+                            placeholder="Phone"
+                            disabled={editingBusy}
+                          />
+                        )}
+                      </Field>
+
+                      <Field label="Website">
+                        {(controlProps) => (
+                          <Input
+                            {...controlProps}
+                            value={nearbyEventForm.website}
+                            onChange={(e) =>
+                              setNearbyEventForm((prev) => ({ ...prev, website: e.target.value }))
+                            }
+                            placeholder="Website"
+                            disabled={editingBusy}
+                          />
+                        )}
+                      </Field>
+
+                      <Field label="Notes">
+                        {(controlProps) => (
+                          <Textarea
+                            {...controlProps}
+                            value={nearbyEventForm.notes}
+                            onChange={(e) =>
+                              setNearbyEventForm((prev) => ({ ...prev, notes: e.target.value }))
+                            }
+                            placeholder="Notes"
+                            rows={4}
+                            disabled={editingBusy}
+                          />
+                        )}
+                      </Field>
+
+                      <div className="app-form-grid-2">
+                        <Field label="Latitude">
+                          {(controlProps) => (
+                            <Input
+                              {...controlProps}
+                              value={nearbyEventForm.lat}
+                              onChange={(e) =>
+                                setNearbyEventForm((prev) => ({ ...prev, lat: e.target.value }))
+                              }
+                              placeholder="Latitude"
+                              disabled={editingBusy}
+                            />
+                          )}
+                        </Field>
+                        <Field label="Longitude">
+                          {(controlProps) => (
+                            <Input
+                              {...controlProps}
+                              value={nearbyEventForm.lng}
+                              onChange={(e) =>
+                                setNearbyEventForm((prev) => ({ ...prev, lng: e.target.value }))
+                              }
+                              placeholder="Longitude"
+                              disabled={editingBusy}
+                            />
+                          )}
+                        </Field>
+                      </div>
+
+                      <div className="app-form-grid-2">
+                        <Field label="Distance (miles)">
+                          {(controlProps) => (
+                            <Input
+                              {...controlProps}
+                              value={nearbyEventForm.distance_miles}
+                              onChange={(e) =>
+                                setNearbyEventForm((prev) => ({
+                                  ...prev,
+                                  distance_miles: e.target.value,
+                                }))
+                              }
+                              placeholder="Miles"
+                              disabled={editingBusy}
+                            />
+                          )}
+                        </Field>
+                        <Field label="Location Code" help="Plus code, used to resolve coordinates if latitude/longitude are blank.">
+                          {(controlProps) => (
+                            <Input
+                              {...controlProps}
+                              value={nearbyEventForm.location_code}
+                              onChange={(e) =>
+                                setNearbyEventForm((prev) => ({
+                                  ...prev,
+                                  location_code: e.target.value,
+                                }))
+                              }
+                              placeholder="Location code"
+                              disabled={editingBusy}
+                            />
+                          )}
+                        </Field>
+                      </div>
+
+                      <Checkbox
+                        label="Hidden from members"
+                        checked={nearbyEventForm.is_hidden}
+                        onChange={(e) =>
+                          setNearbyEventForm((prev) => ({ ...prev, is_hidden: e.target.checked }))
+                        }
+                        disabled={editingBusy}
+                      />
+
+                      <FormActions>
+                        <AppButton
+                          variant="primary"
+                          onClick={() => void saveNearbyEventListing()}
+                          disabled={editingBusy}
+                        >
+                          {editorMode === "add" ? "Add Place" : "Save Listing"}
+                        </AppButton>
+                      </FormActions>
+                    </div>
+                  ) : null}
+
+                  {showCanonicalSection ? (
+                    <div style={{ display: "grid", gap: "var(--space-3)" }}>
+                      <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+                        {editorMode === "edit"
+                          ? "Reusable Place Details"
+                          : editorScope === "shared"
+                            ? "New Shared Place"
+                            : "New Tenant Place"}
+                      </div>
+
+                      {editorMode === "edit" && loadingMasterDetails ? (
+                        <LoadingState message="Loading reusable place details..." />
+                      ) : (
+                        <>
+                          {editorMode === "edit" && !canEditCanonical ? (
+                            <Alert tone="neutral">
+                              {editorMasterScope === "shared_public"
+                                ? "This is a Shared place, reusable across EpicentraX. Only Platform Admins can edit these details."
+                                : "This is a Tenant reusable place. Only that Tenant's admins can edit these details."}
+                            </Alert>
+                          ) : null}
+
+                          <Field label="Place Name">
+                            {(controlProps) => (
+                              <Input
+                                {...controlProps}
+                                value={nearbyCanonicalForm.name}
+                                onChange={(e) =>
+                                  setNearbyCanonicalForm((prev) => ({ ...prev, name: e.target.value }))
+                                }
+                                placeholder="Place name"
+                                disabled={editingBusy || (editorMode === "edit" && !canEditCanonical)}
+                              />
+                            )}
+                          </Field>
+
+                          <Field label="Category">
+                            {(controlProps) => (
+                              <Select
+                                {...controlProps}
+                                value={nearbyCanonicalForm.category_id}
+                                onChange={(e) => {
+                                  const nextCategoryId = e.target.value;
+                                  setNearbyCanonicalForm((prev) => ({
+                                    ...prev,
+                                    category_id: nextCategoryId,
+                                    category: nextCategoryId ? categoryLabelById.get(nextCategoryId) || "" : "",
+                                  }));
+                                }}
+                                disabled={editingBusy || (editorMode === "edit" && !canEditCanonical)}
+                              >
+                                <option value="">Select category</option>
+                                {placeCategories.map((placeCategory) => (
+                                  <option key={placeCategory.id} value={placeCategory.id}>
+                                    {placeCategory.label}
+                                  </option>
+                                ))}
+                              </Select>
+                            )}
+                          </Field>
+
+                          <Field label="Address">
+                            {(controlProps) => (
+                              <Input
+                                {...controlProps}
+                                value={nearbyCanonicalForm.address}
+                                onChange={(e) =>
+                                  setNearbyCanonicalForm((prev) => ({ ...prev, address: e.target.value }))
+                                }
+                                placeholder="Address"
+                                disabled={editingBusy || (editorMode === "edit" && !canEditCanonical)}
+                              />
+                            )}
+                          </Field>
+
+                          <Field label="Phone">
+                            {(controlProps) => (
+                              <Input
+                                {...controlProps}
+                                value={nearbyCanonicalForm.phone}
+                                onChange={(e) =>
+                                  setNearbyCanonicalForm((prev) => ({ ...prev, phone: e.target.value }))
+                                }
+                                placeholder="Phone"
+                                disabled={editingBusy || (editorMode === "edit" && !canEditCanonical)}
+                              />
+                            )}
+                          </Field>
+
+                          <Field label="Website">
+                            {(controlProps) => (
+                              <Input
+                                {...controlProps}
+                                value={nearbyCanonicalForm.website}
+                                onChange={(e) =>
+                                  setNearbyCanonicalForm((prev) => ({ ...prev, website: e.target.value }))
+                                }
+                                placeholder="Website"
+                                disabled={editingBusy || (editorMode === "edit" && !canEditCanonical)}
+                              />
+                            )}
+                          </Field>
+
+                          <Field label="Notes">
+                            {(controlProps) => (
+                              <Textarea
+                                {...controlProps}
+                                value={nearbyCanonicalForm.notes}
+                                onChange={(e) =>
+                                  setNearbyCanonicalForm((prev) => ({ ...prev, notes: e.target.value }))
+                                }
+                                placeholder="Notes"
+                                rows={4}
+                                disabled={editingBusy || (editorMode === "edit" && !canEditCanonical)}
+                              />
+                            )}
+                          </Field>
+
+                          <div className="app-form-grid-2">
+                            <Field label="Latitude">
+                              {(controlProps) => (
+                                <Input
+                                  {...controlProps}
+                                  value={nearbyCanonicalForm.lat}
+                                  onChange={(e) =>
+                                    setNearbyCanonicalForm((prev) => ({ ...prev, lat: e.target.value }))
+                                  }
+                                  placeholder="Latitude"
+                                  disabled={editingBusy || (editorMode === "edit" && !canEditCanonical)}
+                                />
+                              )}
+                            </Field>
+                            <Field label="Longitude">
+                              {(controlProps) => (
+                                <Input
+                                  {...controlProps}
+                                  value={nearbyCanonicalForm.lng}
+                                  onChange={(e) =>
+                                    setNearbyCanonicalForm((prev) => ({ ...prev, lng: e.target.value }))
+                                  }
+                                  placeholder="Longitude"
+                                  disabled={editingBusy || (editorMode === "edit" && !canEditCanonical)}
+                                />
+                              )}
+                            </Field>
+                          </div>
+
+                          <Field label="Location Code" help="Plus code, used to resolve coordinates if latitude/longitude are blank.">
+                            {(controlProps) => (
+                              <Input
+                                {...controlProps}
+                                value={nearbyCanonicalForm.location_code}
+                                onChange={(e) =>
+                                  setNearbyCanonicalForm((prev) => ({
+                                    ...prev,
+                                    location_code: e.target.value,
+                                  }))
+                                }
+                                placeholder="Location code"
+                                disabled={editingBusy || (editorMode === "edit" && !canEditCanonical)}
+                              />
+                            )}
+                          </Field>
+
+                          {editorMode === "add" || canEditCanonical ? (
+                            <FormActions>
+                              <AppButton
+                                variant="primary"
+                                onClick={() => {
+                                  if (editorMode === "add") {
+                                    if (editorScope === "shared") {
+                                      void submitSharedPlace();
+                                    } else {
+                                      void addTenantPlace();
+                                    }
+                                  } else {
+                                    void saveNearbyCanonicalPlace();
+                                  }
+                                }}
+                                disabled={editingBusy}
+                              >
+                                {editorMode === "add"
+                                  ? editorScope === "shared"
+                                    ? "Submit for Shared Review"
+                                    : "Add to Tenant Library"
+                                  : "Save Reusable Place"}
+                              </AppButton>
+                            </FormActions>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {editorMode === "edit" ? (
+                    <div style={{ display: "grid", gap: "var(--space-3)" }}>
+                      <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+                        Move
+                      </div>
+                      <Field label="Move to Event">
+                        {(controlProps) => (
+                          <Select
+                            {...controlProps}
+                            value={editorMoveDestinationEventId}
+                            onChange={(e) => setEditorMoveDestinationEventId(e.target.value)}
+                            disabled={movingPlace}
+                          >
+                            {manageableEvents.map((evt) => (
+                              <option key={evt.id} value={evt.id}>
+                                {evt.name}
+                              </option>
+                            ))}
+                          </Select>
+                        )}
+                      </Field>
+                      <FormActions>
+                        <AppButton
+                          onClick={() => void moveNearbyPlace()}
+                          disabled={
+                            movingPlace ||
+                            !editorMoveDestinationEventId ||
+                            editorMoveDestinationEventId === adminEvent?.id
+                          }
+                        >
+                          {movingPlace ? "Moving..." : "Move to This Event"}
+                        </AppButton>
+                      </FormActions>
+                    </div>
+                  ) : null}
+
+                  {editorMode === "edit" ? (
+                    <FormActions>
+                      <AppButton
+                        variant="danger"
+                        onClick={() => void deleteOrRemoveNearbyPlace()}
+                        disabled={removingPlace}
+                      >
+                        {editorSourceMasterId ? "Remove from this Event" : "Delete Place"}
+                      </AppButton>
+                      {editorSourceMasterId && canEditCanonical ? (
+                        <AppButton
+                          variant="danger"
+                          onClick={() => void retireNearbyCanonicalPlace()}
+                          disabled={retiringPlace}
+                        >
+                          {editorMasterScope === "shared_public"
+                            ? "Retire Shared Place"
+                            : "Retire from Tenant Library"}
+                        </AppButton>
+                      ) : null}
+                    </FormActions>
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
         )}

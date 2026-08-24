@@ -294,17 +294,29 @@ test("the exact production dependency kept alive by the temporary bridge, and it
   assert.match(SQL, /Stage 3 MUST drop this\s*\n-- policy \(`DROP POLICY nearby_master_legacy_authenticated_write_bridge/);
 });
 
-test("the five raw write call sites the bridge exists for are still present in the admin page, confirmed live rather than assumed stale", () => {
-  const writeCallSites = [
+// Updated by Nearby Scope Model Stage 3
+// (20260823090000_unify_nearby_editor_and_retire_legacy_bridge): this
+// test originally asserted the five raw write call sites were still
+// present, as live evidence for why this migration preserved the bridge
+// rather than retiring it. Stage 3 is precisely the migration of those
+// five call sites to upsert_stored_area_place/delete_stored_area_place
+// (Stage 3's own governed replacements) and the bridge's retirement --
+// so the assertion is inverted here to keep this file consistent with
+// current reality rather than frozen to a since-superseded snapshot.
+// Stage 3's own test file
+// (20260823090000_unify_nearby_editor_and_retire_legacy_bridge.test.ts)
+// is the authoritative coverage for the replacement call sites.
+test("the five raw write call sites the bridge existed for are gone -- retired by Nearby Scope Model Stage 3", () => {
+  const rawWriteCallSites = [
     /\.from\("nearby_master"\)\s*\n\s*\.update\(payload\)/, // saveStoredPlace update
     /supabase\.from\("nearby_master"\)\.insert\(payload\)/, // saveStoredPlace insert
     /\.from\("nearby_master"\)\s*\n\s*\.delete\(\)/, // deleteStoredPlace
   ];
-  for (const pattern of writeCallSites) {
-    assert.match(PAGE_SOURCE, pattern);
+  for (const pattern of rawWriteCallSites) {
+    assert.doesNotMatch(PAGE_SOURCE, pattern);
   }
   const geocodeUpdates = [...PAGE_SOURCE.matchAll(/\.from\("nearby_master"\)\s*\n\s*\.update\(\{\s*\n\s*lat: resolved\.lat,\s*\n\s*lng: resolved\.lng,\s*\n\s*\}\)/g)];
-  assert.equal(geocodeUpdates.length, 2, "expected exactly bulkGeocodeStoredPlaces and reGeocodeStoredPlace's lat/lng-only updates");
+  assert.equal(geocodeUpdates.length, 0, "expected bulkGeocodeStoredPlaces/reGeocodeStoredPlace's lat/lng-only updates to no longer be raw nearby_master writes");
 });
 
 // ---------------------------------------------------------------------------
