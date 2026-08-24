@@ -43,6 +43,16 @@ inactive Tenant and its Events. The hierarchy and verification matrix below
 therefore apply only when the owning Tenant is active, except where Platform
 recovery is stated explicitly.
 
+Tenant T3 migration `20260824020000` governs the Platform administration
+side of this transitional substrate. The compatible
+`set_tenant_admin_access(uuid, uuid, boolean, text)` signature remains, but
+assignment, same-state, revocation, and reactivation actions now record the
+authenticated Platform actor in immutable Tenant-administration audit
+evidence. Caller-supplied `p_granted_by` text is retained only for call
+compatibility and is not authoritative identity. Inactive assignment rows
+remain inspectable and reactivate in place; T3 does not move Tenant authority
+into `admin_users.privilege_group` or create Person-backed appointments.
+
 ## Purpose
 
 Two prior migrations (`20260810120000_create_governed_venue_evidence_foundation.sql`,

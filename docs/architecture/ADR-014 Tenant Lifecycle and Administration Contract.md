@@ -252,8 +252,11 @@ entitlement system.
 This ADR established the target contract in Tenant T1. Tenant T2 migration
 `20260824010000` subsequently enforced the inactive-Tenant operational
 boundary without adding a lifecycle state or mutating preserved records.
+Tenant T3 migration `20260824020000` adds the bounded Platform Administrator
+read/command foundation for that contract without adding a workspace UI,
+Event provisioning, or Event transfer.
 
-As of migration `20260824010000`:
+As of migration `20260824020000`:
 
 | Boundary | Deployed status |
 | --- | --- |
@@ -265,24 +268,30 @@ As of migration `20260824010000`:
 | Direct task-grant freeze | Enforced by `resolve_task_authority` before Tenant inheritance or direct Event task-grant evaluation. |
 | Public/member Event freeze | Enforced on governed discovery, known/member continuity, member account/workspace resolution, Event-code login, shared attendee resolution, check-in, and accepted direct public Event-context RPCs. |
 | Platform recovery | Preserved by the authority predicates and a Platform-only inactive-Tenant SELECT policy. |
-| New Tenant starts inactive | Contract established here; no governed Tenant-creation operation exists yet, and the column default remains `true`. |
+| New Tenant starts inactive | Enforced mechanically by the governed create command, independent of the historical table default. |
+| Tenant administrative reads | Platform-only RPCs expose active/inactive Tenant detail, retained hostname mappings, active/inactive Tenant Admin assignments, immutable audit, and read-only owned-Event inspection. |
+| Tenant metadata mutation | A Platform-only JSON patch accepts only the explicit presentation/configuration allowlist; identity, lifecycle, hostname, assignment, and ownership fields are excluded. |
+| Tenant status mutation | A separate idempotent Platform command changes only `tenants.is_active`; T2 freezes or restores eligibility through preserved records. |
+| Tenant Admin assignment evidence | The compatible `set_tenant_admin_access` signature now records authenticated actor/action evidence and retains one inactive/reactivatable assignment row. |
+| Hostname administration | Platform-only commands create validated unique aliases and toggle retained active status; they expose no transfer or hard-delete operation. |
 
-Deactivation and reactivation operations remain future governed Tenant
-Administration work. T2 supplies only the enforcement boundary: changing the
-existing boolean through an authorized future operation will freeze or restore
-eligibility under the rows already present.
+The T3 surface remains a command/read foundation. A future Tenant workspace
+may consume it, but must not bypass it with raw table writes or infer additional
+lifecycle states.
 
 ## 14. Implementation boundaries
 
 The original T1 acceptance of this ADR changed architecture documentation
-only. Tenant T2 separately authorized the enforcement described in §13; it
-did not authorize:
+only. Tenant T2 separately authorized the enforcement described in §13. T3
+subsequently authorized only the bounded administrative foundation summarized
+there; it did not authorize:
 
-- Tenant create, update, activate, deactivate, reactivate, or delete code;
+- Tenant hard deletion or generic CRUD outside the governed T3 commands;
 - new lifecycle columns or states;
-- Event-lifecycle rewrites or hostname-administration changes;
+- Event-lifecycle rewrites or hostname transfer/deletion;
 - Event creation or transfer;
 - Person or relationship persistence;
+- a full Tenant workspace UI;
 - self-service onboarding; or
 - billing, subscription, plan, limit, or entitlement behavior.
 
@@ -303,4 +312,6 @@ lifecycle and administration.
 - Tenant T0 migration `20260824000000` remains authoritative for Event
   ownership immutability; and
 - Tenant T2 migration `20260824010000` is authoritative for the reversible
-  inactive-Tenant operational freeze and Platform recovery exception.
+  inactive-Tenant operational freeze and Platform recovery exception; and
+- Tenant T3 migration `20260824020000` is authoritative for the governed
+  Platform Tenant administration read/command and immutable audit surface.
