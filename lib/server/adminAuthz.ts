@@ -1,5 +1,5 @@
-import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { resolveAndLinkAdminIdentity } from "@/lib/server/adminIdentityLinkage";
+import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 
 type AdminUserRow = {
   id: string;
@@ -195,25 +195,22 @@ export async function adminCanManageEvent(
   admin: AdminActor,
   eventId: string,
 ): Promise<boolean> {
-  if (admin.isSuperAdmin) {
-    return true;
-  }
-
   const supabaseAdmin = getSupabaseAdminClient();
   if (!supabaseAdmin) {
     return false;
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("admin_event_access")
-    .select("id")
-    .eq("admin_user_id", admin.adminUserId)
-    .eq("event_id", eventId)
-    .maybeSingle();
+  const { data, error } = await supabaseAdmin.rpc(
+    "has_event_admin_authority",
+    {
+      p_auth_user_id: admin.authUserId,
+      p_event_id: eventId,
+    },
+  );
 
   if (error) {
     return false;
   }
 
-  return !!data?.id;
+  return data === true;
 }

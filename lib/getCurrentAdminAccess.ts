@@ -40,10 +40,12 @@ export type AdminAccessResult = {
   privilege_group: string | null;
   eventIds: string[];
   event_ids: string[];
+  cacheSchemaVersion?: number;
 };
 
 const ADMIN_ACCESS_CACHE_TTL_MS = 1000 * 60 * 30;
 const ADMIN_ACCESS_TIMEOUT_MS = 15000;
+const ADMIN_ACCESS_CACHE_SCHEMA_VERSION = 2;
 
 let inflightAdminAccess: Promise<AdminAccessResult | null> | null = null;
 
@@ -88,10 +90,11 @@ export function canAccessEvent(
   if (!admin || !eventId) {
     return false;
   }
-  if (admin.isSuperAdmin) {
-    return true;
-  }
-  return admin.eventAccessRows.some((row) => row.event_id === eventId);
+
+  // eventIds comes from public.events SELECT under the caller's own session.
+  // The table's canonical has_event_admin_authority RLS policy resolves
+  // Platform, inherited Tenant, and direct Event authority server-side.
+  return admin.eventIds.includes(eventId);
 }
 
 function unique(values: Array<string | null | undefined>): string[] {
@@ -188,7 +191,11 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
 
       const cached = getCachedAdminAccess();
 
-      if (cached && cached.adminUser?.user_id === user.id) {
+      if (
+        cached &&
+        cached.cacheSchemaVersion === ADMIN_ACCESS_CACHE_SCHEMA_VERSION &&
+        cached.adminUser?.user_id === user.id
+      ) {
         return cached;
       }
 
@@ -244,10 +251,20 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
 
       const accessStarted = Date.now();
 
-      const { data: accessRows, error: accessError } = await supabase
-        .from("admin_event_access")
-        .select("*")
-        .eq("admin_user_id", adminUser.id);
+      const [directAccessResult, effectiveEventResult] = await Promise.all([
+        supabase
+          .from("admin_event_access")
+          .select("*")
+          .eq("admin_user_id", adminUser.id),
+        // This is the canonical effective Event-authority read. Event RLS
+        // invokes has_event_admin_authority(auth.uid(), id), so no Tenant or
+        // Platform inheritance rule is reproduced in browser code.
+        supabase.from("events").select("id"),
+      ]);
+
+      const { data: accessRows, error: accessError } = directAccessResult;
+      const { data: effectiveEventRows, error: effectiveEventError } =
+        effectiveEventResult;
 
       console.log("[ADMIN] Event access result", {
         elapsed: Date.now() - accessStarted,
@@ -255,7 +272,15 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         error: accessError,
       });
 
-      const eventIds = unique((accessRows || []).map((r: any) => r.event_id));
+      if (accessError) {
+        throw accessError;
+      }
+
+      if (effectiveEventError) {
+        throw effectiveEventError;
+      }
+
+      const eventIds = unique((effectiveEventRows || []).map((row) => row.id));
 
       const privilegeGroup = adminUser.privilege_group || "read_only";
 
@@ -365,6 +390,7 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         privilege_group: adminUser.privilege_group,
         eventIds,
         event_ids: eventIds,
+        cacheSchemaVersion: ADMIN_ACCESS_CACHE_SCHEMA_VERSION,
       };
 
       saveAdminAccessCache(result);
