@@ -1,8 +1,8 @@
 # EpicentraX Nearby Knowledge + Tenant Curation Foundation
 
-**Status:** Accepted — Stage 1 (data model, resolver, governance boundaries, minimal admin curation UI); revised (Tenant Admin authority wired in, geographic-constraint defect found and stopped)
-**Version:** 1.1
-**Date:** August 11, 2026
+**Status:** Accepted — Stage 1 (data model, resolver, governance boundaries, minimal admin curation UI); revised (Tenant Admin authority wired in, geographic-constraint defect found and stopped); Nearby Scope Model Stage 0 applied (§14)
+**Version:** 1.2
+**Date:** August 11, 2026 (§14 added August 23, 2026)
 
 **Revision note (1.0 -> 1.1):** Two changes, both to the migration this
 document describes, neither to any renderer/map-integration content (§11):
@@ -15,6 +15,15 @@ had no geographic constraint at all (it would have returned the entire
 approved central catalog for every Event); that branch is now disabled
 rather than shipped unsafe, falling back to exactly the pre-existing,
 already-safe `event_nearby_places`-only behavior.
+
+**Revision note (1.1 -> 1.2):** §14 added. An accepted follow-on design
+("Nearby Scope Model": explicit Event Only / Tenant / Shared reuse scopes,
+2026-08-23) approved Stage 0 of a multi-stage implementation — Shared-place
+Tenant provenance plus a Shared-proposal authority correction on
+`record_tenant_place`. Stage 0 is applied
+(`20260823050000_govern_shared_place_contribution.sql`); §14 also records
+an approved requirement for the still-unbuilt Stage 3 unified editor.
+Nothing in §1–§13 above is altered by this revision.
 
 ## Relationship to Governing Architecture
 
@@ -318,6 +327,63 @@ existing free text, `category_id` linkage) are deterministic and
 idempotent (`ON CONFLICT DO NOTHING`, `WHERE category_id IS NULL`), safe
 to run once against production data without inventing evidence that was
 never actually collected.
+
+## 14. Nearby Scope Model — Stage 0 (August 23, 2026)
+
+A follow-on design pass ("Nearby Scope Model") made the reuse scope this
+document already implements — `nearby_master.scope IN ('shared_public',
+'tenant_specific')` plus (unbuilt until a later stage) Event Only as the
+absence of a `nearby_master` row — an explicit, operator-facing model:
+**Event Only / Tenant / Shared**, with cross-Tenant Shared reuse affirmed
+as an intentional product capability, not an authority defect. That
+design approved a staged implementation. **Only Stage 0 is applied by
+this revision.** Stage 1 (governed canonical-update and reference-counted
+retire RPCs), Stage 2 (per-place Event association, populating the
+existing but currently-unused `event_nearby_places.source_master_id`),
+and the unified Add/Edit Nearby Place editor remain future, separately
+authorized work.
+
+### 14.1 Stage 0 — applied
+
+`supabase/migrations/20260823050000_govern_shared_place_contribution.sql`:
+
+- **Provenance:** `nearby_master.contributed_by_tenant_id uuid REFERENCES
+  public.tenants(id)`, nullable, no default, no backfill. Deliberately
+  separate from `tenant_id` — `tenant_id` continues to mean exclusive
+  ownership for a `tenant_specific` row (§7's
+  `nearby_master_scope_tenant_consistency` CHECK is untouched); this new
+  column answers a different question, "which Tenant originally
+  contributed this," and is the only place that answer can now live for a
+  `shared_public` row, since `tenant_id` is correctly forced `NULL` there.
+  A new `nearby_master_contributed_by_tenant_scope_check` CHECK keeps it
+  `NULL` for every `tenant_specific` row too — `tenant_id` already answers
+  that question unambiguously for `tenant_specific`, so this column is not
+  stamped there merely for symmetry. Existing rows are left `NULL`; no
+  historical contributor is fabricated where one cannot be proven.
+- **Authority:** `record_tenant_place`'s `shared_public` branch moved from
+  `has_platform_admin_authority(auth.uid())` to
+  `has_tenant_admin_authority(auth.uid(), p_tenant_id)` — an authorized
+  Tenant Admin (for their own Tenant only) or Super Admin may now propose
+  a Shared candidate; the `tenant_specific` branch, `pending_review`
+  gating, and `tenant_id IS NULL` for `shared_public` are all unchanged.
+  `review_shared_place` (§8's approval step) is not modified — approval
+  remains Super Admin only. Proposing is not approving.
+
+### 14.2 Approved, not yet built — future unified-editor requirement
+
+The eventual unified Add/Edit Nearby Place editor (Stage 3+) **must**
+default its scope selector by the operator's actual authority, never
+uniformly to the lowest common option:
+
+- Event Admin without Tenant authority → default **This Event only**.
+- Tenant Admin → default **This Tenant**.
+- Super Admin → default **This Tenant**, with **All Tenants** available as
+  a deliberate, explicit selection when platform-wide sharing is intended
+  — never the automatic default even for a Super Admin session.
+
+This requirement is recorded here for the implementation stage that
+eventually builds that editor. No editor UI exists yet; none is
+introduced by this revision.
 
 ## Non-Goals Honored
 
