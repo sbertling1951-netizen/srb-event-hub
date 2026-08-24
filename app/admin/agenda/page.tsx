@@ -340,6 +340,15 @@ function formFromItem(item: AgendaItem): AgendaForm {
   };
 }
 
+// Exported for focused testing (app/admin/agenda/page.test.ts) -- mirrors
+// components/admin/agenda/AgendaEditRowDialog.tsx's own
+// agendaEditFieldsAreEqual, the established pattern for this dirty check.
+export function agendaItemFormsAreEqual(left: AgendaForm, right: AgendaForm) {
+  return (Object.keys(left) as (keyof AgendaForm)[]).every(
+    (key) => left[key] === right[key],
+  );
+}
+
 function moveItem<T>(arr: T[], fromIndex: number, toIndex: number) {
   const copy = [...arr];
   const [item] = copy.splice(fromIndex, 1);
@@ -611,24 +620,26 @@ function AdminAgendaPageInner() {
   // ("evaluate whether full desktop multi-column layout remains genuinely
   // useful... collapse... when columns become cramped"), not a shortcut.
   const showTwoColumnAgendaLayout = viewportClass === "wide";
-  // Agenda-local collapsible-editor disclosure (compact widths only --
-  // 2026-08-21 iPhone regression fix). No shared Disclosure/Collapsible
-  // primitive exists yet in components/ui; this is the smallest
-  // Agenda-local implementation for this fix, reported as a future
-  // Central UI standardization candidate rather than generalized here.
-  // Ignored entirely at !isCompact -- the wide/standard editor keeps its
-  // original always-expanded, always-sticky behavior unchanged.
+  // Agenda-local on-demand item editor (2026-08-23: extended to every
+  // viewport so the editor never permanently consumes agenda viewing
+  // space -- originally a compact-only disclosure from the 2026-08-21
+  // iPhone regression fix). No shared Disclosure/Collapsible primitive
+  // exists yet in components/ui; this remains the smallest Agenda-local
+  // implementation, still a future Central UI standardization candidate.
   const [editorExpanded, setEditorExpanded] = useState(false);
   const editorFormBodyRef = useRef<HTMLDivElement | null>(null);
   const editorToggleButtonRef = useRef<HTMLButtonElement | null>(null);
-  // 2026-08-21 follow-up: while compact AND expanded, the outer card is no
-  // longer sticky as a whole (a 1200px+ sticky card would re-obstruct the
-  // viewport) -- instead only this small header (title + Collapse) stays
-  // sticky, so Collapse is reachable without scrolling back to the top of
-  // a long form. Collapsed, and every !isCompact case, are unchanged: the
-  // outer PageSection itself is still the thing that's sticky there, so
-  // this header needs no positioning of its own.
-  const editorHeaderSticky = isCompact && editorExpanded;
+  // Snapshot of the form as it stood the moment the editor was opened
+  // (blank, or the selected item's values) -- compared against live
+  // `form` state to gate the discard-confirmation on Cancel/Close.
+  const originalFormRef = useRef<AgendaForm>(emptyForm);
+  // While expanded, the outer card is no longer sticky as a whole (a
+  // 1200px+ sticky card would re-obstruct the viewport) -- instead only
+  // this small header (title + Add Item/Cancel) stays sticky, so it is
+  // reachable without scrolling back to the top of a long form. Collapsed
+  // is unchanged: the outer PageSection itself is still the thing that's
+  // sticky there, so this header needs no positioning of its own.
+  const editorHeaderSticky = editorExpanded;
   const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
   const [compactCalendarView, setCompactCalendarView] = useState(false);
   const useButtonReorder = isCompact && !forceDesktopDrag;
@@ -739,6 +750,50 @@ function AdminAgendaPageInner() {
     setConfirmDialog(null);
   }
 
+  // The three entry/exit points for the on-demand item editor. Each keeps
+  // originalFormRef in sync with whatever the editor now holds, so the
+  // discard check in closeEditor() always compares against the right
+  // baseline (blank, or the selected item's persisted values).
+  function openBlankEditor() {
+    const defaultCat = agendaCategories.find((cat) => cat.is_default);
+    const next = defaultCat
+      ? { ...emptyForm, category: defaultCat.name, color: defaultCat.color }
+      : emptyForm;
+    originalFormRef.current = next;
+    setForm(next);
+    setEditorExpanded(true);
+  }
+
+  function openEditorForItem(item: AgendaItem) {
+    const next = formFromItem(item);
+    originalFormRef.current = next;
+    setForm(next);
+    setEditorExpanded(true);
+  }
+
+  // Cancel/Close. Reuses the same requestConfirmation()/ConfirmDialog
+  // already wired up for Delete -- no second confirmation mechanism.
+  // Never wired to a backdrop or outside click: this editor is an inline
+  // disclosure, not a modal, so there is no such surface to guard.
+  async function closeEditor() {
+    if (!agendaItemFormsAreEqual(form, originalFormRef.current)) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message:
+          "This agenda item has unsaved changes. Discard them and close the editor?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    originalFormRef.current = emptyForm;
+    setForm(emptyForm);
+    setEditorExpanded(false);
+  }
+
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
@@ -747,12 +802,12 @@ function AdminAgendaPageInner() {
     activeEventRef.current = activeEvent;
   }, [activeEvent]);
 
-  // Move focus to the collapse/expand toggle whenever the compact editor
-  // auto-collapses (e.g. after a successful update) while focus was
+  // Move focus to the Add Item toggle whenever the editor closes (e.g.
+  // after a successful save, or a confirmed discard) while focus was
   // actively inside the form body about to be hidden -- never leave a
   // focused control silently removed from the page.
   useEffect(() => {
-    if (!isCompact || editorExpanded) {
+    if (editorExpanded) {
       return;
     }
     const activeEl = document.activeElement;
@@ -763,7 +818,7 @@ function AdminAgendaPageInner() {
     ) {
       editorToggleButtonRef.current?.focus();
     }
-  }, [editorExpanded, isCompact]);
+  }, [editorExpanded]);
 
   const loadPage = useCallback(async () => {
     setLoading(true);
@@ -1186,15 +1241,11 @@ function AdminAgendaPageInner() {
         setStatus(`Added "${form.title.trim()}".`);
       }
 
-      // Collapse the compact editor after finishing an edit of an
-      // existing item (the user's likely next step is browsing the
-      // agenda), but not after a fresh Add -- keep it open so an admin
-      // adding several items in a row isn't forced to re-expand each time.
-      if (form.id) {
-        setEditorExpanded(false);
-      }
-
+      // Successful Save/Add always closes the on-demand editor so the
+      // full agenda regains focus, per the item-editor workflow standard.
+      originalFormRef.current = emptyForm;
       setForm(emptyForm);
+      setEditorExpanded(false);
       void refreshAgendaData();
     } finally {
       setSaving(false);
@@ -1238,6 +1289,7 @@ function AdminAgendaPageInner() {
     }
 
     if (form.id === id) {
+      originalFormRef.current = emptyForm;
       setForm(emptyForm);
       setEditorExpanded(false);
     }
@@ -2659,12 +2711,12 @@ function AdminAgendaPageInner() {
           <PageSection
             variant="section"
             style={{
-              // Wide/standard: unchanged always-sticky, always-expanded
-              // editor. Compact: sticky only while collapsed (a small,
-              // helpful, always-reachable summary bar) -- never sticky
-              // while expanded, so a tall open editor scrolls away
-              // normally instead of re-pinning itself over the agenda.
-              position: isCompact && editorExpanded ? undefined : "sticky",
+              // Sticky only while collapsed (a small, helpful,
+              // always-reachable summary bar with the Add Item entry
+              // point) -- never sticky while expanded, so a tall open
+              // editor scrolls away normally instead of re-pinning
+              // itself over the agenda.
+              position: editorExpanded ? undefined : "sticky",
               top: 12,
               zIndex: 20,
             }}
@@ -2688,17 +2740,27 @@ function AdminAgendaPageInner() {
                 titleStyle={{ margin: 0 }}
                 title={form.id ? `Editing: ${form.title || "Untitled Item"}` : "New Agenda Item"}
                 actions={
-                  isCompact ? (
+                  editorExpanded ? (
                     <AppButton
                       ref={editorToggleButtonRef}
                       variant="tertiary"
                       aria-expanded={editorExpanded}
                       aria-controls="agenda-editor-form-body"
-                      onClick={() => setEditorExpanded((prev) => !prev)}
+                      onClick={() => void closeEditor()}
                     >
-                      {editorExpanded ? "Collapse" : form.id ? "Edit" : "Expand"}
+                      Cancel
                     </AppButton>
-                  ) : undefined
+                  ) : (
+                    <AppButton
+                      ref={editorToggleButtonRef}
+                      variant="primary"
+                      aria-expanded={editorExpanded}
+                      aria-controls="agenda-editor-form-body"
+                      onClick={openBlankEditor}
+                    >
+                      Add Item
+                    </AppButton>
+                  )
                 }
               />
             </div>
@@ -2712,7 +2774,7 @@ function AdminAgendaPageInner() {
                 </div>
               ) : null}
 
-              {!isCompact || editorExpanded ? (
+              {editorExpanded ? (
               <div
                 id="agenda-editor-form-body"
                 ref={editorFormBodyRef}
@@ -2934,25 +2996,18 @@ function AdminAgendaPageInner() {
 
                 <AppButton
                   variant="tertiary"
-                  onClick={() => {
-                    // On New Blank, if a default category exists, set it
-                    const defaultCat = agendaCategories.find(
-                      (cat) => cat.is_default,
-                    );
-                    if (defaultCat) {
-                      setForm({
-                        ...emptyForm,
-                        category: defaultCat.name,
-                        color: defaultCat.color,
-                      });
-                    } else {
-                      setForm(emptyForm);
-                    }
-                    setEditorExpanded(true);
-                  }}
+                  onClick={openBlankEditor}
                   disabled={saving}
                 >
                   New Blank
+                </AppButton>
+
+                <AppButton
+                  variant="tertiary"
+                  onClick={() => void closeEditor()}
+                  disabled={saving}
+                >
+                  Cancel
                 </AppButton>
 
                 {form.id ? (
@@ -3359,10 +3414,7 @@ function AdminAgendaPageInner() {
                                     setCalendarDraggingId(null);
                                     setCalendarDropPreview(null);
                                   }}
-                                  onClick={() => {
-                                    setForm(formFromItem(item));
-                                    setEditorExpanded(true);
-                                  }}
+                                  onClick={() => openEditorForItem(item)}
                                   style={{
                                     position: "absolute",
                                     top: block.top + 2,
@@ -3638,10 +3690,7 @@ function AdminAgendaPageInner() {
 
                       <button
                         type="button"
-                        onClick={() => {
-                          setForm(formFromItem(item));
-                          setEditorExpanded(true);
-                        }}
+                        onClick={() => openEditorForItem(item)}
                         style={{
                           textAlign: "left",
                           background: "transparent",

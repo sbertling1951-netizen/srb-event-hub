@@ -7,6 +7,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
 import {
+  agendaItemFormsAreEqual,
   isStaleAgendaVersionError,
   mapAgendaRpcError,
 } from "@/app/admin/agenda/page";
@@ -731,64 +732,185 @@ test("Agenda import correction reuses the normal editor's canonical active categ
   assert.match(IMPORT_REVIEW_SOURCE, /categoryOptions=\{categoryOptions\}/);
 });
 
-// -- iPhone collapsible-editor regression fix (2026-08-21) ----------------
+// -- On-demand item editor + dirty-edit protection (2026-08-23) -----------
 //
-// Real-device iPhone testing found the always-expanded, always-sticky
-// editor from the migration above dominated the narrow viewport. These
-// tests lock in the fix: a compact, Agenda-local disclosure gated on the
-// existing isCompact capability signal -- no new page-local viewport
-// listener, no change to desktop/standard behavior.
+// The item editor previously stayed permanently expanded on wide/standard
+// widths (only compact got the 2026-08-21 collapsible fix), consuming a
+// large permanent slice of the page and obscuring the agenda. These tests
+// lock in the on-demand behavior for every viewport: closed by default,
+// opened only via Add Item / Edit Item, and closing never silently
+// discards unsaved edits.
 
-test("no new page-local viewport-width listener was introduced -- the collapsible editor reuses the existing isCompact capability signal", () => {
-  const listenerCount = (PAGE_SOURCE.match(/addEventListener\(\s*["']resize["']/g) || []).length;
-  assert.equal(listenerCount, 0);
+type AgendaFormLike = Parameters<typeof agendaItemFormsAreEqual>[0];
+
+const BASE_AGENDA_FORM: AgendaFormLike = {
+  id: "",
+  external_id: "",
+  title: "",
+  description: "",
+  location: "",
+  speaker: "",
+  category: "",
+  color: "",
+  agenda_date: "",
+  start_time: "",
+  end_time: "",
+  sort_order: "",
+  is_published: true,
+};
+
+test("1. editor is closed by default", () => {
   assert.match(PAGE_SOURCE, /const \[editorExpanded, setEditorExpanded\] = useState\(false\);/);
 });
 
-test("the editor toggle button only renders on compact widths, with a real accessible disclosure control", () => {
-  assert.match(PAGE_SOURCE, /actions=\{\s*isCompact \? \(/);
-  assert.match(PAGE_SOURCE, /aria-expanded=\{editorExpanded\}/);
-  assert.match(PAGE_SOURCE, /aria-controls="agenda-editor-form-body"/);
-  assert.match(PAGE_SOURCE, /id="agenda-editor-form-body"/);
-  assert.match(PAGE_SOURCE, /\{editorExpanded \? "Collapse" : form\.id \? "Edit" : "Expand"\}/);
+test("no new page-local viewport-width listener was introduced, and the editor no longer branches on isCompact at all -- it is on-demand at every width", () => {
+  const listenerCount = (PAGE_SOURCE.match(/addEventListener\(\s*["']resize["']/g) || []).length;
+  assert.equal(listenerCount, 0);
+  assert.equal(/isCompact.*editorExpanded|editorExpanded.*isCompact/.test(PAGE_SOURCE), false);
 });
 
-test("the form body (Field/Input/Select/Textarea/AppButton row) only renders while expanded on compact widths -- wide/standard always renders it, matching the pre-fix behavior exactly", () => {
-  assert.match(PAGE_SOURCE, /\{!isCompact \|\| editorExpanded \? \(/);
+test("2. Add Item opens a blank editor", () => {
+  const fnStart = PAGE_SOURCE.indexOf("function openBlankEditor() {");
+  const fnEnd = PAGE_SOURCE.indexOf("\n  function openEditorForItem(");
+  assert.notEqual(fnStart, -1);
+  assert.notEqual(fnEnd, -1);
+  const body = PAGE_SOURCE.slice(fnStart, fnEnd);
+  assert.match(body, /originalFormRef\.current = next;/);
+  assert.match(body, /setForm\(next\);/);
+  assert.match(body, /setEditorExpanded\(true\);/);
+  // Wired to the always-visible header button shown while collapsed.
+  assert.match(PAGE_SOURCE, /onClick=\{openBlankEditor\}\s*\n\s*>\s*\n\s*Add Item/);
 });
 
-test("the editor is sticky except while expanded on a compact width -- a tall open editor must scroll away normally, not stay pinned over the agenda", () => {
-  assert.match(
-    PAGE_SOURCE,
-    /position: isCompact && editorExpanded \? undefined : "sticky",/,
-  );
+test("3. Edit Item opens the editor with the selected item's existing values", () => {
+  const fnStart = PAGE_SOURCE.indexOf("function openEditorForItem(item: AgendaItem) {");
+  const fnEnd = PAGE_SOURCE.indexOf("\n  // Cancel/Close.");
+  assert.notEqual(fnStart, -1);
+  assert.notEqual(fnEnd, -1);
+  const body = PAGE_SOURCE.slice(fnStart, fnEnd);
+  assert.match(body, /const next = formFromItem\(item\);/);
+  assert.match(body, /originalFormRef\.current = next;/);
+  assert.match(body, /setForm\(next\);/);
+  assert.match(body, /setEditorExpanded\(true\);/);
+  // Both the Visual Agenda Editor's calendar block and the printable list
+  // row reach the editor through this one function -- preserving the
+  // existing item selection/data-sync behavior via a single code path.
+  const callSites = [...PAGE_SOURCE.matchAll(/onClick=\{\(\) => openEditorForItem\(item\)\}/g)];
+  assert.equal(callSites.length, 2, "expected both the calendar block and list row onClick to open via openEditorForItem");
 });
 
-test("selecting an agenda item (calendar block or list row) auto-expands the editor so it is immediately reachable", () => {
-  const selectCallSites = [...PAGE_SOURCE.matchAll(/setForm\(formFromItem\(item\)\);\s*\n\s*setEditorExpanded\(true\);/g)];
-  assert.equal(selectCallSites.length, 2, "expected both the calendar block and list row onClick to auto-expand");
-});
-
-test("New Blank auto-expands the editor (the user is about to start typing a new item)", () => {
-  // lastIndexOf, not indexOf -- the button's own onClick body contains an
-  // earlier comment ("// On New Blank, if a default category exists...")
-  // that also matches "New Blank" before the actual button label text.
-  const newBlankIdx = PAGE_SOURCE.lastIndexOf("New Blank");
-  const priorButtonStart = PAGE_SOURCE.lastIndexOf("<AppButton", newBlankIdx);
-  const block = PAGE_SOURCE.slice(priorButtonStart, newBlankIdx);
-  assert.match(block, /setEditorExpanded\(true\);/);
-});
-
-test("saving an existing item's update auto-collapses the editor (edit session complete); saving a brand-new item does not (so adding several in a row doesn't force re-expanding each time)", () => {
+test("4 & 5. successful Add and successful Save both close the editor -- Save/Add no longer branches on form.id to decide whether to collapse", () => {
   const saveItemStart = PAGE_SOURCE.indexOf("async function saveItem() {");
   const saveItemEnd = PAGE_SOURCE.indexOf("\n  async function deleteItem(");
   assert.notEqual(saveItemStart, -1);
   assert.notEqual(saveItemEnd, -1);
   const body = PAGE_SOURCE.slice(saveItemStart, saveItemEnd);
-  assert.match(body, /if \(form\.id\) \{\s*\n\s*setEditorExpanded\(false\);\s*\n\s*\}/);
+  assert.match(
+    body,
+    /originalFormRef\.current = emptyForm;\s*\n\s*setForm\(emptyForm\);\s*\n\s*setEditorExpanded\(false\);\s*\n\s*void refreshAgendaData\(\);/,
+  );
+  assert.equal(/if \(form\.id\) \{\s*\n\s*setEditorExpanded\(false\);/.test(body), false);
 });
 
-test("deleting the item currently being edited also collapses the editor", () => {
+test("6. clean Cancel/Close closes immediately (no unsaved changes)", () => {
+  const fnStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
+  assert.notEqual(fnStart, -1);
+  const fnEnd = PAGE_SOURCE.indexOf("\n\n", fnStart + "async function closeEditor() {".length + 400);
+  const body = PAGE_SOURCE.slice(fnStart, fnEnd === -1 ? fnStart + 900 : fnEnd);
+  assert.match(body, /if \(!agendaItemFormsAreEqual\(form, originalFormRef\.current\)\) \{/);
+  assert.match(body, /originalFormRef\.current = emptyForm;\s*\n\s*setForm\(emptyForm\);\s*\n\s*setEditorExpanded\(false\);/);
+});
+
+test("7. dirty Cancel/Close requires discard confirmation, reusing the existing requestConfirmation()/ConfirmDialog pattern -- no second confirmation mechanism", () => {
+  const fnStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
+  const fnEnd = PAGE_SOURCE.indexOf("\n\n  useEffect(() => {\n    itemsRef.current = items;", fnStart);
+  assert.notEqual(fnStart, -1);
+  assert.notEqual(fnEnd, -1);
+  const body = PAGE_SOURCE.slice(fnStart, fnEnd);
+  assert.match(body, /await requestConfirmation\(\{/);
+  assert.match(body, /confirmLabel: "Discard Changes",/);
+  assert.match(body, /cancelLabel: "Keep Editing",/);
+  assert.match(body, /danger: true,/);
+});
+
+test("8. declining discard leaves the editor open with edits intact -- closeEditor returns before touching form/editorExpanded when the confirmation resolves false", () => {
+  const fnStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
+  const fnEnd = PAGE_SOURCE.indexOf("\n\n  useEffect(() => {\n    itemsRef.current = items;", fnStart);
+  const body = PAGE_SOURCE.slice(fnStart, fnEnd);
+  assert.match(body, /if \(!confirmed\) \{\s*\n\s*return;\s*\n\s*\}/);
+});
+
+test("9. confirming discard closes the editor -- the reset/collapse lines run unconditionally after the guarded confirmation block", () => {
+  const fnStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
+  const fnEnd = PAGE_SOURCE.indexOf("\n\n  useEffect(() => {\n    itemsRef.current = items;", fnStart);
+  const body = PAGE_SOURCE.slice(fnStart, fnEnd);
+  const resetIdx = body.indexOf("originalFormRef.current = emptyForm;");
+  const returnIdx = body.indexOf("return;");
+  assert.notEqual(resetIdx, -1);
+  assert.notEqual(returnIdx, -1);
+  assert.ok(resetIdx > returnIdx, "the reset/collapse must come after the early-return guard, not before it");
+});
+
+test("10. no backdrop/outside-click dismissal exists for the editor -- it is an inline disclosure, not a modal, so there is no such surface, and the shared Dialog's dismissOnBackdrop is never wired to it", () => {
+  assert.equal(/components\/ui\/Dialog["']/.test(PAGE_SOURCE.slice(0, PAGE_SOURCE.indexOf("export default function AdminAgendaPage"))), false);
+  assert.equal(/dismissOnBackdrop/.test(PAGE_SOURCE), false);
+  // The only close paths are the two explicit Cancel controls and a
+  // successful Save -- confirmed above -- not any generic outside click.
+  const cancelOnClicks = [...PAGE_SOURCE.matchAll(/onClick=\{\(\) => void closeEditor\(\)\}/g)];
+  assert.equal(cancelOnClicks.length, 2, "expected exactly the header Cancel and the FormActions Cancel");
+});
+
+test("11. existing Agenda save/update RPC calls and their exact parameters are unchanged by the visibility/workflow change", () => {
+  assert.match(PAGE_SOURCE, /supabase\.rpc\("create_event_agenda_item", \{/);
+  assert.match(PAGE_SOURCE, /supabase\.rpc\("update_event_agenda_item", \{/);
+  assert.match(PAGE_SOURCE, /p_expected_agenda_version: agendaVersionRef\.current,/);
+});
+
+test("12. the Visual Agenda Editor and the agenda display remain mounted (not gated on editorExpanded) when the item form is closed", () => {
+  const bodyGateIdx = PAGE_SOURCE.indexOf("{editorExpanded ? (\n              <div\n                id=\"agenda-editor-form-body\"");
+  assert.notEqual(bodyGateIdx, -1);
+  const visualEditorIdx = PAGE_SOURCE.indexOf('title="Visual Agenda Editor"');
+  assert.notEqual(visualEditorIdx, -1);
+  assert.ok(visualEditorIdx > bodyGateIdx, "Visual Agenda Editor section should follow the gated form body, outside it");
+  // Neither the printable agenda list nor the Visual Agenda Editor
+  // PageSection is itself conditioned on editorExpanded.
+  const visualSectionStart = PAGE_SOURCE.lastIndexOf("<PageSection", visualEditorIdx);
+  const visualSectionSnippet = PAGE_SOURCE.slice(visualSectionStart, visualSectionStart + 120);
+  assert.equal(/editorExpanded/.test(visualSectionSnippet), false);
+});
+
+test("the header Add Item/Cancel toggle is a real accessible disclosure control, at every viewport (no isCompact gate)", () => {
+  assert.match(PAGE_SOURCE, /actions=\{\s*editorExpanded \? \(/);
+  assert.match(PAGE_SOURCE, /aria-expanded=\{editorExpanded\}/);
+  assert.match(PAGE_SOURCE, /aria-controls="agenda-editor-form-body"/);
+  assert.match(PAGE_SOURCE, /id="agenda-editor-form-body"/);
+});
+
+test("the form body only renders while editorExpanded, at every viewport", () => {
+  assert.match(PAGE_SOURCE, /\{editorExpanded \? \(/);
+  assert.equal(/\{!isCompact \|\| editorExpanded/.test(PAGE_SOURCE), false);
+});
+
+test("the editor is sticky except while expanded, at every viewport -- a tall open editor must scroll away normally, not stay pinned over the agenda", () => {
+  assert.match(PAGE_SOURCE, /position: editorExpanded \? undefined : "sticky",/);
+});
+
+test("New Blank and both Edit Item entry points route through the shared openBlankEditor()/openEditorForItem() helpers, not inline duplicated logic", () => {
+  assert.match(PAGE_SOURCE, /onClick=\{openBlankEditor\}/);
+  assert.equal(/On New Blank, if a default category exists/.test(PAGE_SOURCE), false);
+});
+
+test("saveItem's stale version conflict path leaves the editor open (only the success path closes it)", () => {
+  const saveItemStart = PAGE_SOURCE.indexOf("async function saveItem() {");
+  const saveItemEnd = PAGE_SOURCE.indexOf("\n  async function deleteItem(");
+  const body = PAGE_SOURCE.slice(saveItemStart, saveItemEnd);
+  assert.match(
+    body,
+    /if \(isStaleAgendaVersionError\(new Error\(error\.message\)\)\) \{\s*\n\s*await reconcileAfterStaleVersion\(\);\s*\n\s*return;\s*\n\s*\}/,
+  );
+});
+
+test("deleting the item currently being edited also collapses the editor and resets the dirty-tracking snapshot", () => {
   const deleteItemStart = PAGE_SOURCE.indexOf("async function deleteItem(id: string) {");
   const deleteItemEnd = PAGE_SOURCE.indexOf("\n  async function togglePublished(");
   assert.notEqual(deleteItemStart, -1);
@@ -796,42 +918,25 @@ test("deleting the item currently being edited also collapses the editor", () =>
   const body = PAGE_SOURCE.slice(deleteItemStart, deleteItemEnd);
   assert.match(
     body,
-    /if \(form\.id === id\) \{\s*\n\s*setForm\(emptyForm\);\s*\n\s*setEditorExpanded\(false\);\s*\n\s*\}/,
+    /if \(form\.id === id\) \{\s*\n\s*originalFormRef\.current = emptyForm;\s*\n\s*setForm\(emptyForm\);\s*\n\s*setEditorExpanded\(false\);\s*\n\s*\}/,
   );
 });
 
-test("collapsing the editor while a focused control is inside it moves focus to the toggle button, rather than silently dropping focus", () => {
+test("collapsing the editor while a focused control is inside it moves focus to the toggle button, rather than silently dropping focus -- now unconditional on isCompact", () => {
   assert.match(PAGE_SOURCE, /editorFormBodyRef\.current\.contains\(activeEl\)/);
   assert.match(PAGE_SOURCE, /editorToggleButtonRef\.current\?\.focus\(\);/);
+  assert.match(PAGE_SOURCE, /useEffect\(\(\) => \{\s*\n\s*if \(editorExpanded\) \{\s*\n\s*return;\s*\n\s*\}/);
 });
 
-test("no shared Disclosure/Collapsible primitive was invented -- this is a documented Agenda-local implementation, a candidate for later Central UI standardization", () => {
+test("no shared Disclosure/Collapsible primitive was invented -- this remains a documented Agenda-local implementation, a candidate for later Central UI standardization", () => {
   assert.equal(/components\/ui\/(Disclosure|Collapsible|Accordion)/i.test(PAGE_SOURCE), false);
 });
 
-// -- Mobile editor escape-path fix (2026-08-21 follow-up) -----------------
-//
-// Real-device iPhone testing found Collapse itself became unreachable
-// once the user scrolled into the (very tall) expanded form -- the whole
-// editor card stopped being sticky the moment it expanded on a compact
-// width, so the Collapse control at its top scrolled away with everything
-// else. These tests lock in the fix: only a small header (title +
-// Collapse) stays sticky while compact+expanded; the full form body
-// remains normal-flow, and the outer card's own sticky behavior for every
-// other case (collapsed, and all of !isCompact) is untouched.
-
-test("a small header-only sticky region exists for the compact+expanded case, independent of the outer card's own sticky behavior", () => {
-  assert.match(PAGE_SOURCE, /const editorHeaderSticky = isCompact && editorExpanded;/);
+test("a small header-only sticky region exists whenever the editor is expanded, at every viewport, independent of the outer card's own sticky behavior", () => {
+  assert.match(PAGE_SOURCE, /const editorHeaderSticky = editorExpanded;/);
   assert.match(
     PAGE_SOURCE,
     /editorHeaderSticky\s*\n\s*\?\s*\{\s*\n\s*position: "sticky",/,
-  );
-});
-
-test("the outer editor PageSection's own sticky rule is unchanged from the prior fix -- still sticky whenever NOT (compact AND expanded)", () => {
-  assert.match(
-    PAGE_SOURCE,
-    /position: isCompact && editorExpanded \? undefined : "sticky",/,
   );
 });
 
@@ -843,24 +948,16 @@ test("the sticky header has an opaque background and a bottom divider so it does
   assert.match(block, /borderBottom: "var\(--border-width-default\) solid var\(--color-border-default\)"/);
 });
 
-test("the Collapse/Expand toggle's onClick performs a pure view-state flip only -- no setForm, no RPC call, no reset -- Collapse must never be a data action", () => {
-  const onClickIdx = PAGE_SOURCE.indexOf("onClick={() => setEditorExpanded((prev) => !prev)}");
-  assert.notEqual(onClickIdx, -1);
-  // The entire handler is this one expression -- nothing else runs.
-  assert.match(
-    PAGE_SOURCE.slice(onClickIdx, onClickIdx + 80),
-    /^onClick=\{\(\) => setEditorExpanded\(\(prev\) => !prev\)\}\s*\n\s*>/,
+test("agendaItemFormsAreEqual: pure dirty-comparison helper treats identical forms as equal and any single-field change as unequal", () => {
+  assert.equal(agendaItemFormsAreEqual(BASE_AGENDA_FORM, { ...BASE_AGENDA_FORM }), true);
+  assert.equal(
+    agendaItemFormsAreEqual(BASE_AGENDA_FORM, { ...BASE_AGENDA_FORM, title: "Changed" }),
+    false,
   );
-});
-
-test("form field values are driven entirely by the persisted `form` state, never reset by the toggle -- dirty/uncommitted edits survive collapse and re-expand by construction (React state is untouched by a conditional-render toggle)", () => {
-  // The toggle handler and the Field/Input value bindings are disjoint --
-  // grep confirms no `setForm` call exists anywhere near the toggle.
-  const toggleButtonBlockStart = PAGE_SOURCE.indexOf("<AppButton\n                      ref={editorToggleButtonRef}");
-  const toggleButtonBlockEnd = PAGE_SOURCE.indexOf("</AppButton>", toggleButtonBlockStart);
-  assert.notEqual(toggleButtonBlockStart, -1);
-  const block = PAGE_SOURCE.slice(toggleButtonBlockStart, toggleButtonBlockEnd);
-  assert.equal(/setForm/.test(block), false);
+  assert.equal(
+    agendaItemFormsAreEqual(BASE_AGENDA_FORM, { ...BASE_AGENDA_FORM, is_published: false }),
+    false,
+  );
 });
 
 // -- Admin Batch 1: Central UI Standard completion touch-up -----------------
