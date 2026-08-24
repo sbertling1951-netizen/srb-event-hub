@@ -61,6 +61,16 @@ replace this transitional substrate, or add a second authority model. The
 former `/admin/tenant-admins` screen is now a redirect to that single
 workspace.
 
+Tenant T5 migration `20260824030000` consumes this hierarchy for governed
+Event provisioning. `create_event_for_tenant` requires an explicit active
+Tenant and calls `has_tenant_admin_authority(auth.uid(), tenant_id)` on the
+server: Platform Admin may target any active Tenant, Tenant Admin may target
+only an active Tenant they govern, and direct Event Admin authority is
+irrelevant because no target Event exists yet. No direct Event assignment is
+created; post-creation reach follows the same live hierarchy. Raw authenticated
+Event INSERT remains closed, and the command records one immutable bounded
+Event/Tenant/actor audit row without creating other domain state.
+
 ## Purpose
 
 Two prior migrations (`20260810120000_create_governed_venue_evidence_foundation.sql`,

@@ -219,31 +219,31 @@ functions to eliminate, and shared primitives required.
    completion state.
 4. **Stays inside except via CC/SL/TI** — Draft/unsaved edit state;
    geocoding internals; the full checklist item list.
-5. **Primary workflow** — Update event details or switch the working
-   event.
-6. **Secondary workflows** — Clone an event; bind Master Map/Nearby List;
-   work through the pre-rally checklist.
+5. **Primary workflow** — Update event details, switch the working event,
+   or create an Event through the separately Tenant-authorized governed
+   provisioning command.
+6. **Secondary workflows** — Bind Master Map/Nearby List; work through the
+   pre-rally checklist.
 7. **Candidate Summary Link** — "Event Setup": event name/date/status +
    a compact readiness count (e.g., "3/4 configured").
 8. **Candidate Context contribution** — An `attention`-class signal if
    readiness is materially incomplete close to the event's start date.
 9. **Candidate Trust inputs** — None directly; working-event ambiguity
    is a session-local concern, not a platform-trust one.
-10. **Routes** — `/admin/events`, `/admin/checklist`. *Eliminated:*
-    `/admin/events/new` (Audit Part D — non-functional, zero inbound
-    links).
-11. **Duplicates to eliminate** — The permanently-blocked create-event
-    form that still fully renders (Audit, Event Configuration table);
+10. **Routes** — `/admin/events`, `/admin/events/new`, `/admin/checklist`.
+    Tenant T5 replaces the historically dead `/admin/events/new` prototype
+    with the governed, Tenant-authorized creation flow; Event editing remains
+    Event-task-scoped on `/admin/events`.
+11. **Duplicates to eliminate** — The former permanently-blocked in-page
+    create/clone paths and mock create-event prototype are eliminated by T5;
     two buttons on one page both navigating to the dashboard; a manual
     geocode button *and* an automatic debounced geocode effect
-    triggering the identical action; undocumented draft persistence to
-    `localStorage`.
+    triggering the identical action.
 12. **Shared primitives required** — One Working-Event Switcher
     (currently reimplemented independently on the Dashboard, Events, and
     Event Staff — Audit Findings N3, C2); one Readiness/Health indicator
     primitive (reusable wherever a module needs to express "how complete
-    is this"); one Geocode-address control (Events and the eliminated
-    `events/new` each had their own copy).
+    is this"); one Geocode-address control for existing-Event editing.
 
 ---
 
@@ -691,7 +691,7 @@ relocates into Vendors (Module 9), narrowing Imports to attendee-roster
 import alone (Module 2).
 
 **Which routes disappear.**
-`/admin/events/new`, `/admin/agenda/import`, `/admin/export`,
+`/admin/agenda/import`, `/admin/export`,
 `/admin/reports/coach-plates/print`, `/admin/reports/name-tags/print`,
 `/admin/nearby-google` — all confirmed dead in the Stage 1 audit (zero
 inbound links, or non-functional, or both). `/admin/data-review` already
@@ -699,6 +699,10 @@ disappeared functionally (it is a redirect into Attendees) and needs no
 further architectural decision. `/admin/map-test` disappears from the
 Admin module structure specifically — not because it is dead code, but
 because it was never an admin feature to begin with.
+
+The Stage 1 finding that `/admin/events/new` was dead remains historically
+accurate, but Tenant T5 explicitly supersedes its elimination: the route is
+now the canonical governed Event-provisioning UI under ADR-014.
 
 **Which routes remain separate.**
 Admin Users, Permissions, and Event Staff remain three distinct screens

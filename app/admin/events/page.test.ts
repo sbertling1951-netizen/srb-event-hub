@@ -96,12 +96,13 @@ test("shell wrapper and AdminRouteGuard remain in place", () => {
 // edited event gated the shared-context write on the saved event's own
 // lifecycle status (clearing context to null for an inactive save), the
 // status-filter dropdown cleared context on every filter change, and
-// the "New Event" button cleared context merely to open a blank form.
+// the former in-page "New Event" button cleared context merely to open a
+// blank form. T5 now routes creation to its Tenant-authorized page.
 // None of these are "lifecycle status changing context" edge cases --
 // they are the same defect class as the mount-time bug, triggered by a
 // different kind of event handler.
 
-test("saving an event (update or create) writes the shared working Event unconditionally -- never gated on isActiveEventStatus", () => {
+test("saving an existing event writes the shared working Event unconditionally -- never gated on isActiveEventStatus", () => {
   const saveFnIdx = PAGE_SOURCE.indexOf("async function saveEvent()");
   const saveFnEndIdx = PAGE_SOURCE.indexOf(
     "async function saveAssignments()",
@@ -112,14 +113,13 @@ test("saving an event (update or create) writes the shared working Event uncondi
   const saveFnBody = PAGE_SOURCE.slice(saveFnIdx, saveFnEndIdx);
 
   assert.equal(
-    /if \(isActiveEventStatus\((updatedEvent|createdEvent)\.status\)\)/.test(
+    /if \(isActiveEventStatus\(updatedEvent\.status\)\)/.test(
       saveFnBody,
     ),
     false,
     "found the retired lifecycle-status gate around a saveEvent setWorkspaceEvent call",
   );
   assert.match(saveFnBody, /setWorkspaceEvent\(updatedEvent\)/);
-  assert.match(saveFnBody, /setWorkspaceEvent\(createdEvent\)/);
 });
 
 test("changing the Event Filter (status-filter picker) no longer clears the shared working Event", () => {
@@ -138,25 +138,16 @@ test("changing the Event Filter (status-filter picker) no longer clears the shar
   );
 });
 
-test("the 'New Event' button no longer clears the shared working Event -- it only resets this page's own form state", () => {
-  const buttonIdx = PAGE_SOURCE.indexOf(">\n              New Event\n");
-  assert.notEqual(buttonIdx, -1);
-  const onClickIdx = PAGE_SOURCE.lastIndexOf("onClick={() => {", buttonIdx);
-  assert.notEqual(onClickIdx, -1);
-  const onClickEndIdx = PAGE_SOURCE.indexOf("}}", onClickIdx);
-  const handlerBody = PAGE_SOURCE.slice(onClickIdx, onClickEndIdx);
-
-  assert.match(handlerBody, /setForm\(emptyForm\)/);
-  assert.equal(
-    /setWorkspaceEvent\(null\)/.test(handlerBody),
-    false,
-    "opening a blank creation form must never clear the shared working Event",
+test("Add Event is a route link and does not mutate shared working-Event context", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<AppLinkButton href="\/admin\/events\/new" variant="primary">\s*Add Event\s*<\/AppLinkButton>/,
   );
 });
 
-test("the explicit Select Event picker and Clone action remain genuine explicit-selection writes, unaffected by the fixes above", () => {
+test("the explicit Select Event picker remains a genuine explicit-selection write", () => {
   assert.match(PAGE_SOURCE, /const evt = events\.find\(\(row\) => row\.id === newId\) \|\| null;\s*\n\s*setWorkspaceEvent\(evt\);/);
-  assert.match(PAGE_SOURCE, /setWorkspaceEvent\(clonedEvent\);/);
+  assert.doesNotMatch(PAGE_SOURCE, /Clone Event|clonedEvent/);
 });
 
 // ADR-013 §10 / prerequisite Authority repair: the Events query used to
@@ -544,7 +535,7 @@ test("loadPage never persists a filter -- only an explicit picker choice does", 
   );
 });
 
-test("saveEvent's own incidental filter adjustments (to keep a just-saved/created Event visible) are not persisted as the admin's chosen filter", () => {
+test("saveEvent's incidental filter adjustment to keep an updated Event visible is not persisted as the admin's chosen filter", () => {
   const saveFnIdx = PAGE_SOURCE.indexOf("async function saveEvent()");
   const saveFnEndIdx = PAGE_SOURCE.indexOf(
     "async function saveAssignments()",
@@ -555,10 +546,7 @@ test("saveEvent's own incidental filter adjustments (to keep a just-saved/create
 
   const setFilterCalls = (saveFnBody.match(/setEventStatusFilter\(/g) || [])
     .length;
-  assert.ok(
-    setFilterCalls >= 2,
-    "expected both the update and create branches to still adjust the in-memory filter",
-  );
+  assert.equal(setFilterCalls, 1);
   assert.equal(
     /persistEventStatusFilter/.test(saveFnBody),
     false,
@@ -619,21 +607,16 @@ test("the explicit Select Event picker still writes canonical context exactly on
 
 // -- G-03G: Events route-authority migration -------------------------------
 //
-// Existing-Event management (this page's only live-reachable mutation --
-// see below) is Event-scoped: has_event_admin_authority(auth.uid(), id)
+// Existing-Event management on this page is Event-scoped:
+// has_event_admin_authority(auth.uid(), id)
 // already gates public.events UPDATE server-side
 // (20260813140000_reconcile_events_rls_grant_drift.sql), a broader
 // population than event.definition.manage, so this route guard narrows
-// page reachability relative to the RLS boundary, never widens it. New
-// Event creation is unaffected by this migration either way: it is
-// unconditionally blocked in-page by blockNewEventCreation()
-// (NEW_EVENT_CREATION_UNAVAILABLE) regardless of authority, and
-// public.events INSERT is closed at both the RLS-policy and table-grant
-// level in the same migration -- Event creation is Tenant-scoped
-// authority, deliberately deferred until a governed create_event RPC
-// exists (per the explicit architecture decision: "Tenant Admin may
-// create Events within their governed Tenant; Event-scoped authority
-// begins after the Event exists").
+// page reachability relative to the RLS boundary, never widens it.
+// public.events INSERT remains closed at both the RLS-policy and table-grant
+// level. T5 exposes the separate Tenant-scoped
+// /admin/events/new route and create_event_for_tenant RPC; this Event-task
+// route does not acquire Tenant provisioning authority.
 
 test("route requires event.definition.manage, not the legacy can_manage_events permission", () => {
   assert.match(
@@ -653,17 +636,14 @@ test("no direct has_event_task_authority RPC call is introduced -- authority is 
   assert.equal(/checkAdminEventTaskAuthority/.test(PAGE_SOURCE), false);
 });
 
-test("new-Event creation remains unconditionally blocked in-page, unaffected by the route-authority migration", () => {
-  assert.match(
-    PAGE_SOURCE,
-    /if \(!form\.id && blockNewEventCreation\(\)\) \{\s*\n\s*return;\s*\n\s*\}/,
-  );
-  assert.match(PAGE_SOURCE, /NEW_EVENT_CREATION_UNAVAILABLE/);
+test("new-Event creation leaves this Event-task page through the governed Tenant route", () => {
+  assert.match(PAGE_SOURCE, /href="\/admin\/events\/new"/);
+  assert.doesNotMatch(PAGE_SOURCE, /blockNewEventCreation|NEW_EVENT_CREATION_UNAVAILABLE/);
 });
 
-test("existing-Event update/create request payloads and RLS-facing table access are unchanged", () => {
+test("existing-Event update remains and raw Event creation is absent", () => {
   assert.match(PAGE_SOURCE, /\.from\("events"\)\s*\n\s*\.update\(payload\)/);
-  assert.match(PAGE_SOURCE, /\.from\("events"\)\s*\n\s*\.insert\(payload\)/);
+  assert.doesNotMatch(PAGE_SOURCE, /\.from\("events"\)\s*\n\s*\.insert\(/);
 });
 
 test("Event-membership (canAccessEvent) remains as a page-local per-row check, unrelated to the migrated route permission", () => {
@@ -757,25 +737,23 @@ test("loading and error presentation uses the canonical LoadingState/Alert primi
   assert.match(PAGE_SOURCE, /\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
 });
 
-test("New Event/Clone Event render inside the canonical FormActions wrapper", () => {
+test("the governed Add Event action renders inside the canonical FormActions wrapper", () => {
   assert.match(
     PAGE_SOURCE,
     /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
   );
   const formActionsCount = (PAGE_SOURCE.match(/<FormActions>/g) || []).length;
   assert.ok(formActionsCount >= 2, `expected at least 2 FormActions usages, found ${formActionsCount}`);
+  assert.match(PAGE_SOURCE, /<FormActions>\s*<AppLinkButton href="\/admin\/events\/new"/);
 });
 
 test("eventAdminStatusTone classifies confirmation/loading/failure text correctly", () => {
   assert.equal(eventAdminStatusTone("Updated event \"Saint George\" to Active."), "success");
-  assert.equal(eventAdminStatusTone("Created event \"Saint George\"."), "success");
-  assert.equal(eventAdminStatusTone("Cloned event \"Saint George Copy\"."), "success");
   assert.equal(eventAdminStatusTone("Saved event assignments."), "success");
   assert.equal(eventAdminStatusTone("Coordinates loaded."), "success");
   assert.equal(eventAdminStatusTone("Event admin ready."), "success");
 
   assert.equal(eventAdminStatusTone("Loading events, maps, and nearby lists..."), "info");
-  assert.equal(eventAdminStatusTone("Cloning event..."), "info");
 
   assert.equal(
     eventAdminStatusTone("Your previously selected event is no longer available. Choose one above."),
@@ -791,10 +769,4 @@ test("eventAdminStatusTone classifies confirmation/loading/failure text correctl
   assert.equal(eventAdminStatusTone("Access denied."), "danger");
   assert.equal(eventAdminStatusTone("Failed to save event."), "danger");
   assert.equal(eventAdminStatusTone("Enter an event name."), "danger");
-  assert.equal(
-    eventAdminStatusTone(
-      "New event creation is temporarily unavailable while secure tenant ownership is being completed. Existing events may still be edited.",
-    ),
-    "danger",
-  );
 });

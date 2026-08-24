@@ -217,7 +217,7 @@ validation rules. An active mapping may resolve only an active Tenant. An
 inactive Tenant must remain unavailable even if a preserved mapping row is
 itself active.
 
-## 11. Future Event creation
+## 11. Governed Event creation
 
 Every future governed Event-creation operation must require an explicit target
 Tenant UUID. There is no implicit current, default, sole, or hostname-derived
@@ -227,9 +227,23 @@ A Platform Administrator may create an Event for an allowed active Tenant. A
 Tenant Administrator may create an Event only for a Tenant where that caller
 has effective Tenant authority, subject to future task/service restrictions.
 
-Creating an Event for an inactive Tenant must not create an operational Event.
-The exact fail-closed implementation belongs to the Event-provisioning stage,
-but it must conform to the inactive-Tenant freeze defined here.
+Creating an Event for an inactive Tenant must fail without an Event or success
+audit. Tenant T5 migration `20260824030000` implements this contract through
+`create_event_for_tenant`: a narrow authenticated command that resolves the
+caller through canonical Platform/Tenant authority, validates the active
+target Tenant server-side, and inserts the explicit immutable `tenant_id`.
+Direct Event authority is not provisioning authority.
+
+The T5 command accepts only name, required end date and IANA timezone, plus
+optional start date, location, normalized Event code, and coordinate pair. It
+does not accept lifecycle, status, visibility, activity, actor, ownership
+transfer, or generic patch state. A new Event uses the existing database
+`operational` lifecycle default and the existing initial presentation state:
+`status = 'Draft'`, `is_active = false`, and `visible_to_members = false`.
+It creates no direct Event assignment or other setup/domain row; Platform and
+Tenant administrators already inherit post-creation Event authority through
+the canonical hierarchy. The only companion row is immutable bounded
+`event_definition_command_audit` evidence for the ownership-bearing command.
 
 ## 12. Self-service and commercial boundary
 
@@ -259,6 +273,9 @@ Tenant T4 subsequently adds the Super-Admin-only application workspace at
 `/admin/tenants` over that exact T3 surface. T4 adds no migration or backend
 semantics; the former `/admin/tenant-admins` route redirects to the canonical
 workspace.
+Tenant T5 migration `20260824030000` and `/admin/events/new` subsequently add
+the governed Event-provisioning command and Tenant-authorized creation UI
+defined in §11. Raw authenticated `public.events` INSERT remains closed.
 
 As of migration `20260824020000`:
 
@@ -278,6 +295,7 @@ As of migration `20260824020000`:
 | Tenant status mutation | A separate idempotent Platform command changes only `tenants.is_active`; T2 freezes or restores eligibility through preserved records. |
 | Tenant Admin assignment evidence | The compatible `set_tenant_admin_access` signature now records authenticated actor/action evidence and retains one inactive/reactivatable assignment row. |
 | Hostname administration | Platform-only commands create validated unique aliases and toggle retained active status; they expose no transfer or hard-delete operation. |
+| Event provisioning | `create_event_for_tenant` requires an explicit active Tenant and canonical Platform/Tenant authority, creates one canonical Event plus immutable command audit, and exposes no ownership transfer or raw client INSERT path. |
 
 The T3 surface remains the command/read foundation. The T4 Tenant workspace
 consumes it without raw Tenant, hostname, or assignment table writes and does
@@ -290,12 +308,13 @@ The original T1 acceptance of this ADR changed architecture documentation
 only. Tenant T2 separately authorized the enforcement described in §13. T3
 subsequently authorized the bounded administrative foundation summarized
 there. T4 authorizes only the Platform workspace that consumes those governed
-operations; these stages do not authorize:
+operations. T5 separately authorizes only the bounded Event creation contract
+in §11. These stages do not authorize:
 
 - Tenant hard deletion or generic CRUD outside the governed T3 commands;
 - new lifecycle columns or states;
 - Event-lifecycle rewrites or hostname transfer/deletion;
-- Event creation or transfer;
+- Event transfer or reassignment;
 - Person or relationship persistence;
 - self-service onboarding; or
 - billing, subscription, plan, limit, or entitlement behavior.
@@ -322,3 +341,5 @@ lifecycle and administration.
   Platform Tenant administration read/command and immutable audit surface.
 - Tenant T4 `/admin/tenants` is the canonical Platform Tenant Administration
   workspace; `/admin/tenant-admins` is a compatibility redirect only.
+- Tenant T5 migration `20260824030000` is authoritative for governed Event
+  provisioning and immutable Event-creation command evidence.

@@ -77,9 +77,6 @@ const emptyForm: EventFormState = {
   lng: "",
 };
 
-const NEW_EVENT_CREATION_UNAVAILABLE =
-  "New event creation is temporarily unavailable while secure tenant ownership is being completed. Existing events may still be edited.";
-
 function formatEventLabel(evt: EventRow) {
   const name = evt.name || "Untitled event";
   const dates = [evt.start_date, evt.end_date].filter(Boolean).join(" – ");
@@ -149,8 +146,7 @@ export function eventAdminStatusTone(message: string): AlertTone {
     lower.startsWith("access denied") ||
     lower.startsWith("enter an event name") ||
     lower.startsWith("select an event first") ||
-    lower.startsWith("no coordinates found") ||
-    lower === NEW_EVENT_CREATION_UNAVAILABLE.toLowerCase()
+    lower.startsWith("no coordinates found")
   ) {
     return "danger";
   }
@@ -168,8 +164,6 @@ export function eventAdminStatusTone(message: string): AlertTone {
 
   if (
     lower.startsWith("updated event") ||
-    lower.startsWith("created event") ||
-    lower.startsWith("cloned event") ||
     lower.startsWith("saved event assignments") ||
     lower.startsWith("coordinates loaded") ||
     lower.startsWith("event admin ready")
@@ -219,12 +213,6 @@ function EventAdminPageInner() {
   const loadGenerationRef = useRef(0);
 
   const { admin } = useAdmin();
-
-  function blockNewEventCreation(): boolean {
-    setError(NEW_EVENT_CREATION_UNAVAILABLE);
-    setStatus(NEW_EVENT_CREATION_UNAVAILABLE);
-    return true;
-  }
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
@@ -497,31 +485,6 @@ function EventAdminPageInner() {
   }, [admin, eventStatusFilter]);
 
   useEffect(() => {
-    if (selectedEventId) {
-      return;
-    }
-
-    try {
-      const stored = localStorage.getItem("fcoc-event-draft");
-
-      if (!stored) {
-        return;
-      }
-
-      const parsed = JSON.parse(stored);
-
-      setForm({
-        ...emptyForm,
-        ...parsed,
-      });
-
-      setStatus("Restored unsaved event draft.");
-    } catch (err) {
-      console.error("draft restore failed", err);
-    }
-  }, [selectedEventId]);
-
-  useEffect(() => {
     if (!selectedEvent) {
       setForm(emptyForm);
       setSelectedMasterMapId("");
@@ -582,14 +545,6 @@ function EventAdminPageInner() {
     return () => clearTimeout(timeout);
   }, [form.location]);
 
-  useEffect(() => {
-    if (form.id) {
-      return;
-    }
-
-    localStorage.setItem("fcoc-event-draft", JSON.stringify(form));
-  }, [form]);
-
   function setWorkspaceEvent(event: EventRow | null) {
     if (!event) {
       setCurrentAdminEvent(null);
@@ -608,7 +563,9 @@ function EventAdminPageInner() {
   }
 
   async function saveEvent() {
-    if (!form.id && blockNewEventCreation()) {
+    if (!form.id) {
+      setError("Select an existing Event to edit, or use Add Event.");
+      setStatus("Select an existing Event to edit, or use Add Event.");
       return;
     }
 
@@ -703,28 +660,6 @@ function EventAdminPageInner() {
         setStatus(
           `Updated event "${payload.name}" to ${updatedEvent.status || "Draft"}.`,
         );
-      } else {
-        const { data, error } = await supabase
-          .from("events")
-          .insert(payload)
-          .select(
-            "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
-          )
-          .single();
-
-        if (error) {
-          throw error;
-        }
-
-        const createdEvent = data as EventRow;
-        setSelectedEventId(createdEvent.id);
-        setEventStatusFilter(filterForStatus(createdEvent.status));
-        localStorage.removeItem("fcoc-event-draft");
-        setEvents([createdEvent]);
-        // ADR-006 §2.1/§2.3: same as the update branch above -- lifecycle
-        // status must never gate this.
-        setWorkspaceEvent(createdEvent);
-        setStatus(`Created event "${payload.name}".`);
       }
     } catch (err: any) {
       console.error("saveEvent error:", err);
@@ -900,112 +835,9 @@ function EventAdminPageInner() {
           </Field>
 
           <FormActions>
-            <AppButton
-              onClick={() => {
-                // ADR-006 §2.3: opening a blank creation form is page-local
-                // editing state, not an Event selection -- it must not clear
-                // the shared Admin working Event.
-                setSelectedEventId("");
-                setForm(emptyForm);
-                setSelectedMasterMapId("");
-                setSelectedNearbyListId("");
-                setError(null);
-                setStatus("Creating a new event.");
-              }}
-            >
-              New Event
-            </AppButton>
-
-            <AppButton
-              disabled={!selectedEvent}
-              onClick={async () => {
-                if (!selectedEvent) {
-                  setStatus("Select an event first.");
-                  return;
-                }
-
-                if (blockNewEventCreation()) {
-                  return;
-                }
-
-                const newName = window.prompt(
-                  "New event name",
-                  `${selectedEvent.name || "Event"} Copy`,
-                );
-
-                if (!newName) {
-                  return;
-                }
-
-                const newCode = window.prompt(
-                  "New event code",
-                  `${selectedEvent.event_code || "COPY"}-COPY`,
-                );
-
-                if (!newCode) {
-                  return;
-                }
-
-                try {
-                  setStatus("Cloning event...");
-                  setError(null);
-
-                  const { data: createdEvent, error: createError } = await supabase
-                    .from("events")
-                    .insert({
-                      name: newName.trim(),
-                      location: selectedEvent.location || null,
-                      start_date: selectedEvent.start_date || null,
-                      end_date: selectedEvent.end_date || null,
-                      event_code: newCode.trim(),
-                      status: "Draft",
-                      is_active: false,
-                      visible_to_members: false,
-                      lat: selectedEvent.lat || null,
-                      lng: selectedEvent.lng || null,
-                    })
-                    .select(
-                      "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
-                    )
-                    .single();
-
-                  if (createError) {
-                    throw createError;
-                  }
-
-                  if (!createdEvent?.id) {
-                    throw new Error("Failed to create cloned event.");
-                  }
-
-                  await supabase.from("event_map_settings").upsert({
-                    event_id: createdEvent.id,
-                    selected_master_map_id: selectedMasterMapId || null,
-                  });
-
-                  await supabase
-                    .from("events")
-                    .update({
-                      selected_nearby_area_id: selectedNearbyListId || null,
-                    })
-                    .eq("id", createdEvent.id);
-
-                  const clonedEvent = createdEvent as EventRow;
-
-                  setEvents((prev) => [clonedEvent, ...prev]);
-                  setSelectedEventId(clonedEvent.id);
-
-                  setWorkspaceEvent(clonedEvent);
-
-                  setStatus(`Cloned event "${newName}".`);
-                } catch (err: any) {
-                  console.error("clone event error:", err);
-                  setError(err?.message || "Failed to clone event.");
-                  setStatus(err?.message || "Failed to clone event.");
-                }
-              }}
-            >
-              Clone Event
-            </AppButton>
+            <AppLinkButton href="/admin/events/new" variant="primary">
+              Add Event
+            </AppLinkButton>
           </FormActions>
         </div>
       </PageSection>
@@ -1398,14 +1230,12 @@ export default function EventAdminPage() {
   return (
     // Page-content access is governed by the canonical Event Task
     // Authority resolver (event.definition.manage for the current
-    // working Event), not the legacy can_manage_events permission. New
-    // Event creation is unaffected either way: it remains unconditionally
-    // blocked by blockNewEventCreation() (NEW_EVENT_CREATION_UNAVAILABLE)
-    // above, and public.events INSERT is closed at RLS/grant level too
-    // (20260813140000_reconcile_events_rls_grant_drift.sql) -- creation
-    // is a Tenant-scoped authority question deliberately deferred until a
-    // governed create_event RPC exists, not something this route-level
-    // task grants. Existing-Event UPDATE remains gated server-side by the
+    // working Event), not the legacy can_manage_events permission. T5
+    // routes new Event creation to /admin/events/new, where the separate
+    // Tenant-authority guard and governed create_event_for_tenant RPC own
+    // provisioning. This Event-scoped route grants no creation authority,
+    // and raw public.events INSERT remains closed. Existing-Event UPDATE
+    // remains gated server-side by the
     // broader has_event_admin_authority(auth.uid(), id) (same migration),
     // so this route guard is a narrower, more conservative page-
     // reachability check than the RLS boundary already enforces, never a
