@@ -395,6 +395,54 @@ function TenantAdministrationWorkspace() {
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, [createDirty, createOpen, metadataDirty]);
 
+  useEffect(() => {
+    if (!metadataDirty) {
+      return;
+    }
+
+    const guardClientNavigation = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const target = event.target instanceof Element ? event.target : null;
+      const anchor = target?.closest<HTMLAnchorElement>("a[href]");
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) {
+        return;
+      }
+
+      const destination = new URL(anchor.href, window.location.href);
+      if (destination.origin !== window.location.origin) {
+        return;
+      }
+
+      const current = new URL(window.location.href);
+      if (
+        destination.pathname === current.pathname &&
+        destination.search === current.search
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      setDiscardIntent({
+        kind: "navigate",
+        href: `${destination.pathname}${destination.search}${destination.hash}`,
+      });
+    };
+
+    document.addEventListener("click", guardClientNavigation, true);
+    return () => document.removeEventListener("click", guardClientNavigation, true);
+  }, [metadataDirty]);
+
   async function loadTenantList() {
     const rows = await listTenantsForAdministration();
     setTenants(rows);

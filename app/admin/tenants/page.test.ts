@@ -60,12 +60,14 @@ test("lifecycle status is a separate governed confirmation with accurate retaine
   assert.equal(/metadataForm[\s\S]{0,200}is_active/.test(SOURCE), false);
 });
 
-test("dirty metadata protects selection, Cancel, create handoff, internal navigation, and browser unload", () => {
+test("dirty metadata protects selection, Cancel, create handoff, same-app navigation, and browser unload", () => {
   assert.match(SOURCE, /if \(metadataDirty\) \{\s*setDiscardIntent\(\{ kind: "select", tenantId \}\)/);
   assert.match(SOURCE, /kind: "reset-metadata"/);
   assert.match(SOURCE, /kind: "open-create"/);
   assert.match(SOURCE, /kind: "navigate"/);
   assert.match(SOURCE, /window\.addEventListener\("beforeunload", warnBeforeUnload\)/);
+  assert.match(SOURCE, /document\.addEventListener\("click", guardClientNavigation, true\)/);
+  assert.match(SOURCE, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);\s*setDiscardIntent\(\{/);
   assert.match(SOURCE, /title="Discard unsaved changes\?"/);
 });
 
