@@ -45,17 +45,39 @@ export type TenantHostnameMappingRow = {
   updated_at: string;
 };
 
-export type TenantAdminAssignmentRow = {
-  id: string;
+export type EligiblePersonTenantAdministratorCandidate = {
+  person_id: string;
   admin_user_id: string;
-  tenant_id: string;
-  assignment_is_active: boolean;
-  created_at: string;
-  created_by: string | null;
   admin_email: string;
   admin_display_name: string | null;
-  admin_is_active: boolean;
-  admin_privilege_group: string | null;
+};
+
+export type TenantAdministratorAppointmentRow = {
+  id: string;
+  person_id: string;
+  tenant_id: string;
+  appointment_is_active: boolean;
+  is_effective: boolean;
+  created_at: string;
+  activated_at: string;
+  revoked_at: string | null;
+  admin_user_id: string | null;
+  admin_email: string | null;
+  admin_display_name: string | null;
+};
+
+export type TenantAdministratorAppointmentAuditRow = {
+  id: string;
+  appointment_id: string | null;
+  person_id: string;
+  tenant_id: string;
+  action: "appointed" | "revoked" | "reactivated" | "unchanged";
+  actor_auth_user_id: string;
+  actor_admin_user_id: string;
+  reason: string | null;
+  before_state: Record<string, unknown> | null;
+  after_state: Record<string, unknown> | null;
+  occurred_at: string;
 };
 
 export type TenantOwnedEventRow = {
@@ -201,15 +223,53 @@ export async function listTenantHostnameMappingsForAdministration(
   );
 }
 
-export async function listTenantAdminAssignmentsForAdministration(
+export async function listEligiblePersonTenantAdministratorCandidatesForAdministration(
+  client: TenantAdministrationRpcClient = defaultClient,
+): Promise<EligiblePersonTenantAdministratorCandidate[]> {
+  return callRows(
+    "list_eligible_person_tenant_administrator_candidates_for_admini",
+    {},
+    client,
+  );
+}
+
+export async function listTenantAdministratorAppointmentsForAdministration(
   tenantId: string,
   client: TenantAdministrationRpcClient = defaultClient,
-): Promise<TenantAdminAssignmentRow[]> {
+): Promise<TenantAdministratorAppointmentRow[]> {
   return callRows(
-    "list_tenant_admin_assignments_for_administration",
+    "list_tenant_administrator_appointments_for_administration",
     { p_tenant_id: tenantId },
     client,
   );
+}
+
+export async function listTenantAdministratorAppointmentAuditForAdministration(
+  tenantId: string,
+  limit = 100,
+  client: TenantAdministrationRpcClient = defaultClient,
+): Promise<TenantAdministratorAppointmentAuditRow[]> {
+  return callRows(
+    "list_person_tenant_administrator_appointment_audit_for_administration",
+    { p_tenant_id: tenantId, p_limit: limit },
+    client,
+  );
+}
+
+export async function setPersonTenantAdministratorAppointment(
+  personId: string,
+  tenantId: string,
+  isActive: boolean,
+  reason: string,
+  client: TenantAdministrationRpcClient = defaultClient,
+): Promise<void> {
+  const { error } = await client.rpc("set_person_tenant_administrator_appointment", {
+    p_person_id: personId,
+    p_tenant_id: tenantId,
+    p_is_active: isActive,
+    p_reason: nullableText(reason),
+  });
+  if (error) {throw new Error(error.message);}
 }
 
 export async function listTenantOwnedEventsForAdministration(

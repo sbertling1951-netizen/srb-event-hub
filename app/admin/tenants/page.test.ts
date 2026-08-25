@@ -21,7 +21,8 @@ test("active and inactive Tenants come from the governed administrative list and
   for (const reader of [
     "getTenantForAdministration",
     "listTenantHostnameMappingsForAdministration",
-    "listTenantAdminAssignmentsForAdministration",
+    "listTenantAdministratorAppointmentsForAdministration",
+    "listTenantAdministratorAppointmentAuditForAdministration",
     "listTenantOwnedEventsForAdministration",
     "listTenantAdministrationAudit",
   ]) {
@@ -35,7 +36,7 @@ test("Add Tenant communicates inactive-first side effects and contains no Active
     SOURCE.indexOf("open={statusDialogOpen}"),
   );
   assert.match(dialog, /always created Inactive/);
-  assert.match(dialog, /does not create Events, hostname mappings, or Tenant Admin assignments/);
+  assert.match(dialog, /does not create Events, hostname mappings, or Tenant Administrator appointments/);
   assert.match(SOURCE, /createTenantForAdministration\(createForm\)/);
   assert.equal(/Active Tenant|is_active|p_is_active/.test(dialog), false);
 });
@@ -79,13 +80,19 @@ test("failed metadata and status commands preserve editor input and show canonic
   assert.equal(/setMetadataForm|setMetadataReason|setStatusDialogOpen/.test(saveCatch), false);
 });
 
-test("Tenant Admin management lists active and revoked assignments and uses only the governed setter", () => {
-  assert.match(SOURCE, /assignment\.assignment_is_active \? "Active" : "Revoked"/);
-  assert.match(SOURCE, /Assign Tenant Admin/);
-  assert.match(SOURCE, /Revoke Assignment/);
-  assert.match(SOURCE, /Reactivate Assignment/);
-  assert.match(SOURCE, /setTenantAdminAccess\(/);
+test("Tenant Administrator management uses canonical Person candidates and appointment lifecycle commands", () => {
+  assert.match(SOURCE, /listEligiblePersonTenantAdministratorCandidatesForAdministration/);
+  assert.match(SOURCE, /listTenantAdministratorAppointmentsForAdministration/);
+  assert.match(SOURCE, /listTenantAdministratorAppointmentAuditForAdministration/);
+  assert.match(SOURCE, /appointment\.appointment_is_active \? "Active" : "Revoked"/);
+  assert.match(SOURCE, /Appoint Tenant Administrator/);
+  assert.match(SOURCE, /Revoke Appointment/);
+  assert.match(SOURCE, /Reactivate Appointment/);
+  assert.match(SOURCE, /setPersonTenantAdministratorAppointment\(/);
+  assert.match(SOURCE, /Person-backed appointment lifecycle evidence/);
   assert.match(SOURCE, /Open Admin Users/);
+  assert.equal(/setTenantAdminAccess|listTenantAdminAssignmentsForAdministration/.test(SOURCE), false);
+  assert.equal(/\.from\("admin_users"\)/.test(SOURCE), false);
   assert.equal(/create.*Admin User/i.test(SOURCE), false);
 });
 
@@ -115,7 +122,7 @@ test("audit history renders readable action, actor, subject, reason, and change 
 
 test("Tenant mutations have no raw table-write escape hatch", () => {
   const combined = `${SOURCE}\n${CLIENT_SOURCE}`;
-  for (const table of ["tenants", "admin_tenant_access", "tenant_hostname_mappings"]) {
+  for (const table of ["tenants", "admin_tenant_access", "tenant_hostname_mappings", "person_tenant_administrator_appointments"]) {
     assert.equal(new RegExp(`\\.from\\(["']${table}["']\\)`).test(combined), false);
   }
   assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(combined), false);

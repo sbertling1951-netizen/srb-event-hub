@@ -37,6 +37,11 @@ test("the Tenant selector is populated from the governed self-scoped RPC", () =>
   );
 });
 
+test("Tenant authority guidance no longer names the retired legacy writer", () => {
+  assert.match(PAGE_SOURCE, /Person-backed Tenant Administrator appointments/);
+  assert.doesNotMatch(PAGE_SOURCE, /set_tenant_admin_access/);
+});
+
 test("the old unfiltered tenants table query is gone", () => {
   assert.equal(/\.from\(["']tenants["']\)/.test(PAGE_SOURCE), false);
 });

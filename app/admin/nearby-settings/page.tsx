@@ -337,7 +337,7 @@ function NearbySettingsPageInner() {
         <div className="card" role="note" style={{ borderColor: "#f59e0b", marginBottom: 16 }}>
           <strong>Tenant curation requires authority for the selected Tenant.</strong>{" "}
           The Tenant list above already only shows Tenants you administer
-          (granted via <code>public.set_tenant_admin_access</code>).
+          through your active Person-backed Tenant Administrator appointments.
           Category overrides and Tenant-specific places are still
           authorized per-Tenant on the server; adding a new shared/public
           place requires Super Admin specifically. See

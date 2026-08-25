@@ -7,11 +7,14 @@ import {
   createTenantForAdministration,
   type CreateTenantInput,
   getTenantForAdministration,
-  listTenantAdminAssignmentsForAdministration,
+  listEligiblePersonTenantAdministratorCandidatesForAdministration,
   listTenantAdministrationAudit,
+  listTenantAdministratorAppointmentAuditForAdministration,
+  listTenantAdministratorAppointmentsForAdministration,
   listTenantHostnameMappingsForAdministration,
   listTenantOwnedEventsForAdministration,
   listTenantsForAdministration,
+  setPersonTenantAdministratorAppointment,
   setTenantActiveStatus,
   setTenantHostnameMappingActiveStatus,
   type TenantAdministrationRpcClient,
@@ -56,7 +59,9 @@ test("all administrative reads use the exact governed T3 RPCs", async () => {
   await listTenantsForAdministration(client);
   await getTenantForAdministration("tenant-1", client);
   await listTenantHostnameMappingsForAdministration("tenant-1", client);
-  await listTenantAdminAssignmentsForAdministration("tenant-1", client);
+  await listEligiblePersonTenantAdministratorCandidatesForAdministration(client);
+  await listTenantAdministratorAppointmentsForAdministration("tenant-1", client);
+  await listTenantAdministratorAppointmentAuditForAdministration("tenant-1", 75, client);
   await listTenantOwnedEventsForAdministration("tenant-1", client);
   await listTenantAdministrationAudit("tenant-1", 75, client);
 
@@ -66,12 +71,38 @@ test("all administrative reads use the exact governed T3 RPCs", async () => {
       "list_tenants_for_administration",
       "get_tenant_for_administration",
       "list_tenant_hostname_mappings_for_administration",
-      "list_tenant_admin_assignments_for_administration",
+      "list_eligible_person_tenant_administrator_candidates_for_admini",
+      "list_tenant_administrator_appointments_for_administration",
+      "list_person_tenant_administrator_appointment_audit_for_administration",
       "list_tenant_owned_events_for_administration",
       "list_tenant_administration_audit",
     ],
   );
+  assert.deepEqual(calls[3]?.args, {});
+  assert.deepEqual(calls[4]?.args, { p_tenant_id: "tenant-1" });
+  assert.deepEqual(calls[5]?.args, { p_tenant_id: "tenant-1", p_limit: 75 });
   assert.deepEqual(calls.at(-1)?.args, { p_tenant_id: "tenant-1", p_limit: 75 });
+});
+
+test("Person-backed appointment lifecycle uses only the governed T8 command", async () => {
+  const { client, calls } = fakeClient(null);
+  await setPersonTenantAdministratorAppointment(
+    "person-1",
+    "tenant-1",
+    true,
+    " appointment ",
+    client,
+  );
+
+  assert.deepEqual(calls, [{
+    name: "set_person_tenant_administrator_appointment",
+    args: {
+      p_person_id: "person-1",
+      p_tenant_id: "tenant-1",
+      p_is_active: true,
+      p_reason: "appointment",
+    },
+  }]);
 });
 
 test("create maps only the governed contract, normalizes nullable values, and cannot request Active", async () => {

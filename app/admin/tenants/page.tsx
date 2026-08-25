@@ -20,22 +20,26 @@ import { PageSection } from "@/components/ui/PageSection";
 import { RowActions } from "@/components/ui/RowActions";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { supabase } from "@/lib/supabase";
-import { setTenantAdminAccess } from "@/lib/tenantAdminAccess";
 import {
   addTenantHostnameMapping,
   createTenantForAdministration,
   type CreateTenantInput,
+  type EligiblePersonTenantAdministratorCandidate,
   getTenantForAdministration,
-  listTenantAdminAssignmentsForAdministration,
+  listEligiblePersonTenantAdministratorCandidatesForAdministration,
   listTenantAdministrationAudit,
+  listTenantAdministratorAppointmentAuditForAdministration,
+  listTenantAdministratorAppointmentsForAdministration,
   listTenantHostnameMappingsForAdministration,
   listTenantOwnedEventsForAdministration,
   listTenantsForAdministration,
+  setPersonTenantAdministratorAppointment,
   setTenantActiveStatus,
   setTenantHostnameMappingActiveStatus,
-  type TenantAdminAssignmentRow,
   type TenantAdministrationAuditRow,
   type TenantAdministrationRow,
+  type TenantAdministratorAppointmentAuditRow,
+  type TenantAdministratorAppointmentRow,
   type TenantHostnameMappingRow,
   type TenantMetadataForm,
   type TenantOwnedEventRow,
@@ -49,14 +53,6 @@ type TenantTypeRow = {
   label: string;
 };
 
-type AdminUserOption = {
-  id: string;
-  email: string;
-  display_name: string | null;
-  is_active: boolean;
-  privilege_group: string | null;
-};
-
 type DiscardIntent =
   | { kind: "select"; tenantId: string }
   | { kind: "reset-metadata" }
@@ -64,8 +60,8 @@ type DiscardIntent =
   | { kind: "close-create" }
   | { kind: "navigate"; href: string };
 
-type AssignmentIntent = {
-  assignment: TenantAdminAssignmentRow;
+type AppointmentIntent = {
+  appointment: TenantAdministratorAppointmentRow;
   nextActive: boolean;
 };
 
@@ -145,8 +141,8 @@ function formatDate(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 }
 
-function displayAdminName(assignment: TenantAdminAssignmentRow): string {
-  return assignment.admin_display_name || assignment.admin_email;
+function displayAppointmentName(appointment: TenantAdministratorAppointmentRow): string {
+  return appointment.admin_display_name || appointment.admin_email || `Person ${appointment.person_id}`;
 }
 
 function auditSubject(row: TenantAdministrationAuditRow): string {
@@ -332,11 +328,13 @@ function TenantAdministrationWorkspace() {
   const detailGeneration = useRef(0);
   const [tenants, setTenants] = useState<TenantAdministrationRow[]>([]);
   const [tenantTypes, setTenantTypes] = useState<TenantTypeRow[]>([]);
-  const [adminUsers, setAdminUsers] = useState<AdminUserOption[]>([]);
+  const [appointmentCandidates, setAppointmentCandidates] = useState<EligiblePersonTenantAdministratorCandidate[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState("");
   const [detail, setDetail] = useState<TenantAdministrationRow | null>(null);
   const [hostnames, setHostnames] = useState<TenantHostnameMappingRow[]>([]);
-  const [assignments, setAssignments] = useState<TenantAdminAssignmentRow[]>([]);
+  const [appointments, setAppointments] = useState<TenantAdministratorAppointmentRow[]>([]);
+  const [appointmentAuditRows, setAppointmentAuditRows] =
+    useState<TenantAdministratorAppointmentAuditRow[]>([]);
   const [events, setEvents] = useState<TenantOwnedEventRow[]>([]);
   const [auditRows, setAuditRows] = useState<TenantAdministrationAuditRow[]>([]);
   const [metadataForm, setMetadataForm] = useState<TenantMetadataForm>(EMPTY_METADATA_FORM);
@@ -347,12 +345,12 @@ function TenantAdministrationWorkspace() {
   const [createOpen, setCreateOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [statusReason, setStatusReason] = useState("");
-  const [selectedAdminUserId, setSelectedAdminUserId] = useState("");
+  const [selectedPersonId, setSelectedPersonId] = useState("");
   const [hostname, setHostname] = useState("");
   const [hostnameStartsActive, setHostnameStartsActive] = useState(true);
   const [hostnameReason, setHostnameReason] = useState("");
   const [discardIntent, setDiscardIntent] = useState<DiscardIntent | null>(null);
-  const [assignmentIntent, setAssignmentIntent] = useState<AssignmentIntent | null>(null);
+  const [appointmentIntent, setAppointmentIntent] = useState<AppointmentIntent | null>(null);
   const [hostnameIntent, setHostnameIntent] = useState<HostnameIntent | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -371,19 +369,16 @@ function TenantAdministrationWorkspace() {
     [createForm],
   );
 
-  const assignedAdminIds = useMemo(
-    () => new Set(assignments.map((assignment) => assignment.admin_user_id)),
-    [assignments],
+  const appointedPersonIds = useMemo(
+    () => new Set(appointments.map((appointment) => appointment.person_id)),
+    [appointments],
   );
-  const eligibleAdminUsers = useMemo(
+  const eligibleAppointmentCandidates = useMemo(
     () =>
-      adminUsers.filter(
-        (candidate) =>
-          candidate.is_active &&
-          candidate.privilege_group !== "super_admin" &&
-          !assignedAdminIds.has(candidate.id),
+      appointmentCandidates.filter(
+        (candidate) => !appointedPersonIds.has(candidate.person_id),
       ),
-    [adminUsers, assignedAdminIds],
+    [appointmentCandidates, appointedPersonIds],
   );
 
   useEffect(() => {
@@ -454,11 +449,12 @@ function TenantAdministrationWorkspace() {
     setLoadingDetail(true);
     setError(null);
     try {
-      const [tenant, hostnameRows, assignmentRows, eventRows, historyRows] =
+      const [tenant, hostnameRows, appointmentRows, appointmentHistoryRows, eventRows, historyRows] =
         await Promise.all([
           getTenantForAdministration(tenantId),
           listTenantHostnameMappingsForAdministration(tenantId),
-          listTenantAdminAssignmentsForAdministration(tenantId),
+          listTenantAdministratorAppointmentsForAdministration(tenantId),
+          listTenantAdministratorAppointmentAuditForAdministration(tenantId),
           listTenantOwnedEventsForAdministration(tenantId),
           listTenantAdministrationAudit(tenantId),
         ]);
@@ -466,13 +462,14 @@ function TenantAdministrationWorkspace() {
       const form = tenantRowToMetadataForm(tenant);
       setDetail(tenant);
       setHostnames(hostnameRows);
-      setAssignments(assignmentRows);
+      setAppointments(appointmentRows);
+      setAppointmentAuditRows(appointmentHistoryRows);
       setEvents(eventRows);
       setAuditRows(historyRows);
       setMetadataForm(form);
       setMetadataBaseline(form);
       setMetadataReason("");
-      setSelectedAdminUserId("");
+      setSelectedPersonId("");
       setHostname("");
       setHostnameReason("");
       setHostnameStartsActive(true);
@@ -480,7 +477,8 @@ function TenantAdministrationWorkspace() {
       if (detailGeneration.current !== generation) {return;}
       setDetail(null);
       setHostnames([]);
-      setAssignments([]);
+      setAppointments([]);
+      setAppointmentAuditRows([]);
       setEvents([]);
       setAuditRows([]);
       setError(describeError(loadError));
@@ -494,23 +492,18 @@ function TenantAdministrationWorkspace() {
       setLoading(true);
       setError(null);
       try {
-        const [tenantRows, adminResult, typeResult] = await Promise.all([
+        const [tenantRows, candidateRows, typeResult] = await Promise.all([
           listTenantsForAdministration(),
-          supabase
-            .from("admin_users")
-            .select("id,email,display_name,is_active,privilege_group")
-            .order("email"),
+          listEligiblePersonTenantAdministratorCandidatesForAdministration(),
           supabase.from("tenant_types").select("id,code,label").order("label"),
         ]);
-        if (adminResult.error || typeResult.error) {
+        if (typeResult.error) {
           throw new Error(
-            adminResult.error?.message ||
-              typeResult.error?.message ||
-              "Could not load Tenant administration catalogs.",
+            typeResult.error?.message || "Could not load Tenant administration catalogs.",
           );
         }
         setTenants(tenantRows);
-        setAdminUsers((adminResult.data || []) as AdminUserOption[]);
+        setAppointmentCandidates(candidateRows);
         setTenantTypes((typeResult.data || []) as TenantTypeRow[]);
       } catch (loadError) {
         setError(describeError(loadError));
@@ -663,14 +656,19 @@ function TenantAdministrationWorkspace() {
     }
   }
 
-  async function assignTenantAdmin() {
-    if (!selectedTenantId || !selectedAdminUserId) {return;}
+  async function appointTenantAdministrator() {
+    if (!selectedTenantId || !selectedPersonId) {return;}
     setStatus(null);
     setBusy(true);
     setError(null);
     try {
-      await setTenantAdminAccess(selectedAdminUserId, selectedTenantId, true);
-      await refreshSelectedTenant("Tenant Admin assigned.");
+      await setPersonTenantAdministratorAppointment(
+        selectedPersonId,
+        selectedTenantId,
+        true,
+        "",
+      );
+      await refreshSelectedTenant("Tenant Administrator appointed.");
     } catch (assignmentError) {
       setError(describeError(assignmentError));
     } finally {
@@ -678,25 +676,28 @@ function TenantAdministrationWorkspace() {
     }
   }
 
-  async function confirmAssignmentStatus() {
-    if (!assignmentIntent || !selectedTenantId) {return;}
-    const intent = assignmentIntent;
+  async function confirmAppointmentStatus() {
+    if (!appointmentIntent || !selectedTenantId) {return;}
+    const intent = appointmentIntent;
     setStatus(null);
     setBusy(true);
     setError(null);
     try {
-      await setTenantAdminAccess(
-        intent.assignment.admin_user_id,
+      await setPersonTenantAdministratorAppointment(
+        intent.appointment.person_id,
         selectedTenantId,
         intent.nextActive,
+        "",
       );
-      setAssignmentIntent(null);
+      setAppointmentIntent(null);
       await refreshSelectedTenant(
-        intent.nextActive ? "Tenant Admin assignment reactivated." : "Tenant Admin assignment revoked.",
+        intent.nextActive
+          ? "Tenant Administrator appointment reactivated."
+          : "Tenant Administrator appointment revoked.",
       );
     } catch (assignmentError) {
       setError(describeError(assignmentError));
-      setAssignmentIntent(null);
+      setAppointmentIntent(null);
     } finally {
       setBusy(false);
     }
@@ -762,18 +763,18 @@ function TenantAdministrationWorkspace() {
         onConfirm={confirmDiscard}
       />
       <ConfirmDialog
-        open={assignmentIntent !== null}
-        title={assignmentIntent?.nextActive ? "Reactivate Tenant Admin?" : "Revoke Tenant Admin?"}
+        open={appointmentIntent !== null}
+        title={appointmentIntent?.nextActive ? "Reactivate Tenant Administrator?" : "Revoke Tenant Administrator?"}
         message={
-          assignmentIntent?.nextActive
-            ? `Restore Tenant-scoped authority for ${assignmentIntent ? displayAdminName(assignmentIntent.assignment) : "this Admin User"}?`
-            : `Revoke Tenant-scoped authority for ${assignmentIntent ? displayAdminName(assignmentIntent.assignment) : "this Admin User"}? Event-specific assignments are unchanged.`
+          appointmentIntent?.nextActive
+            ? `Restore Tenant-scoped authority for ${appointmentIntent ? displayAppointmentName(appointmentIntent.appointment) : "this Person"}?`
+            : `Revoke Tenant-scoped authority for ${appointmentIntent ? displayAppointmentName(appointmentIntent.appointment) : "this Person"}? Event-specific assignments are unchanged.`
         }
-        confirmLabel={assignmentIntent?.nextActive ? "Reactivate Assignment" : "Revoke Assignment"}
-        danger={!assignmentIntent?.nextActive}
+        confirmLabel={appointmentIntent?.nextActive ? "Reactivate Appointment" : "Revoke Appointment"}
+        danger={!appointmentIntent?.nextActive}
         busy={busy}
-        onCancel={() => setAssignmentIntent(null)}
-        onConfirm={confirmAssignmentStatus}
+        onCancel={() => setAppointmentIntent(null)}
+        onConfirm={confirmAppointmentStatus}
       />
       <ConfirmDialog
         open={hostnameIntent !== null}
@@ -791,7 +792,7 @@ function TenantAdministrationWorkspace() {
         onClose={requestCloseCreate}
         dismissOnBackdrop={false}
         title="Add Tenant"
-        description="New Tenants are always created Inactive. This does not create Events, hostname mappings, or Tenant Admin assignments."
+        description="New Tenants are always created Inactive. This does not create Events, hostname mappings, or Tenant Administrator appointments."
         className="app-dialog-wide"
         footer={
           <>
@@ -1046,10 +1047,10 @@ function TenantAdministrationWorkspace() {
 
               <PageSection variant="card">
                 <PageHeader
-                  title="Tenant Admins"
+                  title="Tenant Administrators"
                   headingLevel="h2"
                   titleClassName="app-section-title"
-                  description="Assign, revoke, or reactivate Tenant-scoped authority for an existing Admin User."
+                  description="Govern canonical Person-backed appointments. Names and email are display data after canonical identity is established."
                   descriptionClassName="app-subtle-text"
                   actions={
                     <AppLinkButton
@@ -1064,19 +1065,19 @@ function TenantAdministrationWorkspace() {
                   }
                 />
                 <div className="tenant-admin-inline-command">
-                  <Field label="Existing Admin User">
+                  <Field label="Eligible canonical Person">
                     {(props) => (
                       <Select
                         {...props}
-                        value={selectedAdminUserId}
-                        onChange={(event) => setSelectedAdminUserId(event.target.value)}
+                        value={selectedPersonId}
+                        onChange={(event) => setSelectedPersonId(event.target.value)}
                         disabled={busy || metadataDirty}
                       >
-                        <option value="">Select an active Admin User...</option>
-                        {eligibleAdminUsers.map((candidate) => (
-                          <option key={candidate.id} value={candidate.id}>
-                            {candidate.display_name || candidate.email}
-                            {candidate.display_name ? ` — ${candidate.email}` : ""}
+                        <option value="">Select an eligible Person...</option>
+                        {eligibleAppointmentCandidates.map((candidate) => (
+                          <option key={candidate.person_id} value={candidate.person_id}>
+                            {candidate.admin_display_name || candidate.admin_email}
+                            {candidate.admin_display_name ? ` — ${candidate.admin_email}` : ""}
                           </option>
                         ))}
                       </Select>
@@ -1084,52 +1085,88 @@ function TenantAdministrationWorkspace() {
                   </Field>
                   <AppButton
                     variant="primary"
-                    disabled={!selectedAdminUserId || busy || metadataDirty}
-                    onClick={() => void assignTenantAdmin()}
+                    disabled={!selectedPersonId || busy || metadataDirty}
+                    onClick={() => void appointTenantAdministrator()}
                   >
-                    Assign Tenant Admin
+                    Appoint Tenant Administrator
                   </AppButton>
                 </div>
-                {assignments.length === 0 ? (
-                  <EmptyState message="No Tenant Admin assignments have been recorded." />
+                {appointments.length === 0 ? (
+                  <EmptyState message="No Person-backed Tenant Administrator appointments have been recorded." />
                 ) : (
-                  <ResponsiveList aria-label="Tenant Admin assignments">
-                    {assignments.map((assignment) => (
-                      <li key={assignment.id} className="responsive-list-item">
+                  <ResponsiveList aria-label="Tenant Administrator appointments">
+                    {appointments.map((appointment) => (
+                      <li key={appointment.id} className="responsive-list-item">
                         <div className="responsive-list-item-header">
                           <div>
-                            <div className="responsive-list-item-title">{displayAdminName(assignment)}</div>
-                            {assignment.admin_display_name ? (
-                              <div className="app-subtle-text">{assignment.admin_email}</div>
+                            <div className="responsive-list-item-title">{displayAppointmentName(appointment)}</div>
+                            {appointment.admin_display_name && appointment.admin_email ? (
+                              <div className="app-subtle-text">{appointment.admin_email}</div>
                             ) : null}
                           </div>
                           <div className="responsive-list-item-badges">
-                            <StatusBadge tone={assignment.assignment_is_active ? "success" : "neutral"}>
-                              Assignment {assignment.assignment_is_active ? "Active" : "Revoked"}
+                            <StatusBadge tone={appointment.appointment_is_active ? "success" : "neutral"}>
+                              Appointment {appointment.appointment_is_active ? "Active" : "Revoked"}
                             </StatusBadge>
-                            <StatusBadge tone={assignment.admin_is_active ? "info" : "danger"}>
-                              Admin User {assignment.admin_is_active ? "Active" : "Inactive"}
+                            <StatusBadge tone={appointment.is_effective ? "info" : "warning"}>
+                              Authority {appointment.is_effective ? "Effective" : "Not effective"}
                             </StatusBadge>
                           </div>
                         </div>
                         <div className="responsive-list-item-meta">
-                          <span>Created {formatDateTime(assignment.created_at)}</span>
-                          <span>Actor evidence: {assignment.created_by || "Not recorded"}</span>
+                          <span>Person ID: {appointment.person_id}</span>
+                          <span>Created {formatDateTime(appointment.created_at)}</span>
+                          <span>Last activated {formatDateTime(appointment.activated_at)}</span>
                         </div>
                         <RowActions>
                           <AppButton
-                            variant={assignment.assignment_is_active ? "danger" : "default"}
-                            disabled={busy || metadataDirty || (!assignment.assignment_is_active && !assignment.admin_is_active)}
+                            variant={appointment.appointment_is_active ? "danger" : "default"}
+                            disabled={busy || metadataDirty}
                             onClick={() =>
-                              setAssignmentIntent({
-                                assignment,
-                                nextActive: !assignment.assignment_is_active,
+                              setAppointmentIntent({
+                                appointment,
+                                nextActive: !appointment.appointment_is_active,
                               })
                             }
                           >
-                            {assignment.assignment_is_active ? "Revoke Assignment" : "Reactivate Assignment"}
+                            {appointment.appointment_is_active ? "Revoke Appointment" : "Reactivate Appointment"}
                           </AppButton>
                         </RowActions>
+                      </li>
+                    ))}
+                  </ResponsiveList>
+                )}
+              </PageSection>
+
+              <PageSection variant="card">
+                <PageHeader
+                  title="Appointment history"
+                  headingLevel="h2"
+                  titleClassName="app-section-title"
+                  description="Immutable Person-backed appointment lifecycle evidence, newest first."
+                  descriptionClassName="app-subtle-text"
+                />
+                {appointmentAuditRows.length === 0 ? (
+                  <EmptyState message="No Tenant Administrator appointment history has been recorded." />
+                ) : (
+                  <ResponsiveList aria-label="Tenant Administrator appointment history">
+                    {appointmentAuditRows.map((row) => (
+                      <li key={row.id} className="responsive-list-item">
+                        <div className="responsive-list-item-header">
+                          <div className="responsive-list-item-title">
+                            {row.action.replaceAll("_", " ")}
+                          </div>
+                          <span className="app-subtle-text">{formatDateTime(row.occurred_at)}</span>
+                        </div>
+                        <div className="responsive-list-item-meta">
+                          <span>Person ID: {row.person_id}</span>
+                          <span>Platform actor: {row.actor_admin_user_id}</span>
+                        </div>
+                        {row.reason ? (
+                          <p className="app-subtle-text" style={{ margin: 0 }}>
+                            Reason: {row.reason}
+                          </p>
+                        ) : null}
                       </li>
                     ))}
                   </ResponsiveList>
