@@ -24,6 +24,7 @@ import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewpo
 import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { FormActions } from "@/components/ui/FormActions";
@@ -41,6 +42,11 @@ import {
 import { geocodeLocation } from "@/lib/geocodeLocation";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
+
+import {
+  googlePlaceIdsFromCandidates,
+  pendingGooglePlaceCandidates,
+} from "./googleCandidateIdentity";
 
 
 type StoredArea = {
@@ -615,8 +621,6 @@ function AdminNearbyPageInner() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const storedPlaceFormSectionRef = useRef<HTMLDivElement | null>(null);
-  const nearbyEditorSectionRef = useRef<HTMLDivElement | null>(null);
-  const nearbyEditorToggleButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -753,6 +757,11 @@ function AdminNearbyPageInner() {
   const [movingPlace, setMovingPlace] = useState(false);
   const [removingPlace, setRemovingPlace] = useState(false);
   const [retiringPlace, setRetiringPlace] = useState(false);
+  // This is discovery provenance only. Event-only listings deliberately do
+  // not have a canonical provider-identity model, so they never set this
+  // state or participate in exact candidate suppression.
+  const [googleCandidateInEditor, setGoogleCandidateInEditor] =
+    useState<GoogleNearbyResult | null>(null);
 
   const [manageableEvents, setManageableEvents] = useState<ManageableEvent[]>([]);
   const [tenantAdminAccessRows, setTenantAdminAccessRows] = useState<MyTenantAdminAccessRow[]>([]);
@@ -824,6 +833,7 @@ function AdminNearbyPageInner() {
     setEditorMoveDestinationEventId("");
     setNearbyEventForm(emptyNearbyEventForm);
     setNearbyCanonicalForm(emptyNearbyCanonicalForm);
+    setGoogleCandidateInEditor(null);
     setEditorExpanded(false);
   }, []);
 
@@ -846,6 +856,7 @@ function AdminNearbyPageInner() {
     setEditorMoveDestinationEventId(destinationEventId);
     setNearbyEventForm(emptyNearbyEventForm);
     setNearbyCanonicalForm(emptyNearbyCanonicalForm);
+    setGoogleCandidateInEditor(null);
     setEditorExpanded(true);
   }
 
@@ -859,6 +870,7 @@ function AdminNearbyPageInner() {
     const eventForm = nearbyEventFormFromPlace(place);
 
     setEditorMode("edit");
+    setGoogleCandidateInEditor(null);
     setEditorSourceMasterId(place.source_master_id);
     setEditorDestinationEventId("");
     setEditorMoveDestinationEventId(adminEvent?.id || "");
@@ -1214,7 +1226,7 @@ function AdminNearbyPageInner() {
 
       const trimmedName = nearbyCanonicalForm.name.trim();
 
-      const { error } = await supabase.rpc("add_tenant_place_to_event", {
+      const { data, error } = await supabase.rpc("add_tenant_place_to_event", {
         p_event_id: editorDestinationEventId,
         p_tenant_id: tenantId,
         p_name: trimmedName,
@@ -1232,6 +1244,10 @@ function AdminNearbyPageInner() {
       if (error) {
         throw error;
       }
+
+      await linkGoogleCandidateToCanonicalPlace(
+        (data as { source_master_id?: string | null } | null)?.source_master_id ?? null,
+      );
 
       const destination = manageableEvents.find((evt) => evt.id === editorDestinationEventId);
 
@@ -1277,7 +1293,7 @@ function AdminNearbyPageInner() {
 
       const trimmedName = nearbyCanonicalForm.name.trim();
 
-      const { error } = await supabase.rpc("record_tenant_place", {
+      const { data, error } = await supabase.rpc("record_tenant_place", {
         p_scope: "shared_public",
         p_name: trimmedName,
         p_tenant_id: null,
@@ -1294,6 +1310,8 @@ function AdminNearbyPageInner() {
       if (error) {
         throw error;
       }
+
+      await linkGoogleCandidateToCanonicalPlace(typeof data === "string" ? data : null);
 
       showStatus(
         `${trimmedName} submitted for Shared review. It can be added to an Event once approved.`,
@@ -1530,14 +1548,10 @@ function AdminNearbyPageInner() {
     setEditorMoveDestinationEventId(destinationEventId);
     setNearbyEventForm(filledEventForm);
     setNearbyCanonicalForm(filledCanonicalForm);
+    setGoogleCandidateInEditor(place);
     setEditorExpanded(true);
 
-    nearbyEditorSectionRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-
-    showStatus(`Loaded "${place.name}" into the Nearby Place editor.`);
+    showStatus(`Ready to add "${place.name}" in the Nearby Place editor.`);
   }
 
   async function requestLoadGooglePlaceIntoNearbyEditor(place: GoogleNearbyResult) {
@@ -1570,6 +1584,9 @@ function AdminNearbyPageInner() {
   const [googleQuery, setGoogleQuery] = useState("");
   const [googleRadius, setGoogleRadius] = useState("10");
   const [googleResults, setGoogleResults] = useState<GoogleNearbyResult[]>([]);
+  const [matchedGooglePlaceIds, setMatchedGooglePlaceIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [searchingGoogle, setSearchingGoogle] = useState(false);
   const [storedSearch, setStoredSearch] = useState("");
   const [storedCategoryFilter, setStoredCategoryFilter] = useState("All");
@@ -1578,11 +1595,41 @@ function AdminNearbyPageInner() {
 
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
 
+  const pendingGoogleResults = useMemo(
+    () => pendingGooglePlaceCandidates(googleResults, matchedGooglePlaceIds),
+    [googleResults, matchedGooglePlaceIds],
+  );
+
+  async function linkGoogleCandidateToCanonicalPlace(nearbyMasterId: string | null) {
+    const googlePlaceId = googleCandidateInEditor?.id?.trim();
+
+    if (!googlePlaceId) {
+      return;
+    }
+
+    if (!nearbyMasterId) {
+      throw new Error("The saved canonical Nearby place could not be identified for Google Place ID linkage.");
+    }
+
+    const { error } = await supabase.rpc("link_google_place_id_to_nearby_master", {
+      p_nearby_master_id: nearbyMasterId,
+      p_google_place_id: googlePlaceId,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    setMatchedGooglePlaceIds((current) => new Set([...current, googlePlaceId]));
+  }
+
   const resetAllState = useCallback(() => {
     setAdminEvent(null);
     setStoredAreas([]);
     setStoredPlaces([]);
     setEventPlaces([]);
+    setGoogleResults([]);
+    setMatchedGooglePlaceIds(new Set());
     setSelectedAreaId("");
     setAreaName("");
     setAreaDescription("");
@@ -2736,7 +2783,28 @@ function AdminNearbyPageInner() {
         throw new Error(data?.error || "Google nearby search failed.");
       }
 
-      setGoogleResults(Array.isArray(data.places) ? data.places : []);
+      const results = Array.isArray(data.places) ? (data.places as GoogleNearbyResult[]) : [];
+      const googlePlaceIds = googlePlaceIdsFromCandidates(results);
+      const { data: matchedRows, error: matchingError } = await supabase.rpc(
+        "list_matching_google_place_ids_for_nearby_administration",
+        {
+          p_event_id: adminEvent.id,
+          p_google_place_ids: googlePlaceIds,
+        },
+      );
+
+      if (matchingError) {
+        throw matchingError;
+      }
+
+      setGoogleResults(results);
+      setMatchedGooglePlaceIds(
+        new Set(
+          ((matchedRows || []) as Array<{ google_place_id: string }>).map(
+            (row) => row.google_place_id,
+          ),
+        ),
+      );
 
       if (selectedAreaId) {
         await supabase
@@ -2750,9 +2818,7 @@ function AdminNearbyPageInner() {
       }
 
       showStatus(
-        `Found ${(data.places || []).length} Google nearby place${
-          (data.places || []).length === 1 ? "" : "s"
-        }.`,
+        `Found ${results.length} Google nearby place${results.length === 1 ? "" : "s"}.`,
       );
     } catch (err: any) {
       console.error("searchGoogleNearby error:", err);
@@ -3441,12 +3507,14 @@ function AdminNearbyPageInner() {
           </AppButton>
         </FormActions>
 
-        {googleResults.length === 0 ? null : (
+        {googleResults.length === 0 ? null : pendingGoogleResults.length === 0 ? (
+          <EmptyState message="All returned Google results are already represented in your authorized canonical Nearby places." />
+        ) : (
           <div style={{ display: "grid", gap: "var(--space-3)" }}>
             <div className="app-subtle-text" style={{ fontSize: 12 }}>
-              Google Maps results
+              Pending Google candidates
             </div>
-            {googleResults.map((place) => (
+            {pendingGoogleResults.map((place) => (
               <div key={place.id} className="app-card-section" style={{ display: "grid", gap: "var(--space-2)" }}>
                 <div
                   style={{
@@ -3510,36 +3578,10 @@ function AdminNearbyPageInner() {
 
                 <FormActions>
                   <AppButton
-                    onClick={() => {
-                      setStoredForm({
-                        ...emptyStoredPlaceForm,
-                        name: place.name || "",
-                        category: place.category || "",
-                        address: place.address || "",
-                        phone: place.phone || "",
-                        website: place.website || "",
-                        notes: place.editorialSummary || "",
-                        location_code: place.plusCode || "",
-                        lat: hasGoogleResultCoordinates(place) ? String(place.lat) : "",
-                        lng: hasGoogleResultCoordinates(place) ? String(place.lng) : "",
-                      });
-
-                      storedPlaceFormSectionRef.current?.scrollIntoView({
-                        behavior: "smooth",
-                        block: "start",
-                      });
-
-                      showStatus(
-                        `Loaded "${place.name}" into the stored place editor.`,
-                      );
-                    }}
-                  >
-                    Load Into Stored Place Editor
-                  </AppButton>
-                  <AppButton
+                    variant="primary"
                     onClick={() => void requestLoadGooglePlaceIntoNearbyEditor(place)}
                   >
-                    Load Into Nearby Place Editor
+                    Add to Nearby
                   </AppButton>
                 </FormActions>
               </div>
@@ -3549,7 +3591,20 @@ function AdminNearbyPageInner() {
       </PageSection>
 
       <PageSection variant="section">
-        <PageHeader title="Current Event Nearby List" headingLevel="h2" titleClassName="app-section-title" />
+        <PageHeader
+          title="Current Event Nearby List"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+          actions={
+            <AppButton
+              variant="primary"
+              onClick={() => void requestOpenBlankNearbyEditor()}
+              disabled={!adminEvent?.id}
+            >
+              + Add Place
+            </AppButton>
+          }
+        />
 
         {!adminEvent?.id ? (
           <EmptyState message="No admin working event selected." />
@@ -3557,7 +3612,7 @@ function AdminNearbyPageInner() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isCompact ? "1fr" : "minmax(260px, 360px) 1fr",
+              gridTemplateColumns: "1fr",
               gap: "var(--space-5)",
               alignItems: "start",
             }}
@@ -3600,48 +3655,19 @@ function AdminNearbyPageInner() {
               )}
             </div>
 
-            <div ref={nearbyEditorSectionRef} style={{ display: "grid", gap: "var(--space-3)" }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: "var(--space-3)",
-                }}
-              >
-                <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
-                  {editorExpanded
-                    ? editorMode === "add"
-                      ? "Add Nearby Place"
-                      : "Edit Nearby Place"
-                    : "Nearby Place"}
-                </div>
-
-                {editorExpanded ? (
-                  <AppButton
-                    ref={nearbyEditorToggleButtonRef}
-                    onClick={() => void closeNearbyEditor()}
-                    disabled={editingBusy}
-                  >
-                    Cancel
-                  </AppButton>
-                ) : (
-                  <AppButton
-                    ref={nearbyEditorToggleButtonRef}
-                    variant="primary"
-                    onClick={() => void requestOpenBlankNearbyEditor()}
-                  >
-                    + Add Place
-                  </AppButton>
-                )}
-              </div>
-
-              {!editorExpanded ? (
-                <div className="app-subtle-text" style={{ fontSize: 13 }}>
-                  Select a place from the list, or Add Place to create a new one.
-                </div>
-              ) : (
-                <div style={{ display: "grid", gap: "var(--space-4)" }}>
+            <Dialog
+              open={editorExpanded}
+              onClose={() => void closeNearbyEditor()}
+              title={editorMode === "add" ? "Add Nearby Place" : "Edit Nearby Place"}
+              className="app-dialog-form"
+              dismissOnBackdrop={false}
+              footer={
+                <AppButton onClick={() => void closeNearbyEditor()} disabled={editingBusy}>
+                  Cancel
+                </AppButton>
+              }
+            >
+              <div style={{ display: "grid", gap: "var(--space-4)" }}>
                   {editorMode === "edit" ? (
                     <Alert tone="neutral">
                       Editing{" "}
@@ -4137,9 +4163,8 @@ function AdminNearbyPageInner() {
                       ) : null}
                     </FormActions>
                   ) : null}
-                </div>
-              )}
-            </div>
+              </div>
+            </Dialog>
           </div>
         )}
       </PageSection>
