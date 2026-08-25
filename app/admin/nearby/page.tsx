@@ -45,6 +45,7 @@ import { supabase } from "@/lib/supabase";
 
 type StoredArea = {
   id: string;
+  nearby_area_id: string | null;
   name: string;
   description: string | null;
   google_radius_miles: number | null;
@@ -1720,6 +1721,7 @@ function AdminNearbyPageInner() {
 
   const selectedArea =
     storedAreas.find((area) => area.id === selectedAreaId) || null;
+  const selectedAreaParentId = selectedArea?.nearby_area_id ?? null;
 
   useEffect(() => {
     if (selectedArea) {
@@ -1833,7 +1835,7 @@ function AdminNearbyPageInner() {
       const { data, error } = await supabase
         .from("nearby_area_templates")
         .select(
-          "id,name,description,google_radius_miles,google_custom_search,google_search_city,google_search_state,google_last_run",
+          "id,nearby_area_id,name,description,google_radius_miles,google_custom_search,google_search_city,google_search_state,google_last_run",
         )
         .order("name", { ascending: true });
 
@@ -1924,7 +1926,7 @@ function AdminNearbyPageInner() {
     }
   }, [adminEvent]);
 
-  const loadStoredPlaces = useCallback(async (areaId: string) => {
+  const loadStoredPlaces = useCallback(async (nearbyAreaId: string) => {
     try {
       setLoadingStoredPlaces(true);
       showStatus("Loading stored places...");
@@ -1934,7 +1936,7 @@ function AdminNearbyPageInner() {
         .select(
           "id,name,address,phone,category,category_id,description,link,location_code,lat,lng",
         )
-        .eq("area_id", areaId)
+        .eq("area_id", nearbyAreaId)
         .order("name", { ascending: true });
 
       if (error) {
@@ -2040,12 +2042,12 @@ function AdminNearbyPageInner() {
       return;
     }
 
-    if (selectedAreaId) {
-      void loadStoredPlaces(selectedAreaId);
+    if (selectedAreaParentId) {
+      void loadStoredPlaces(selectedAreaParentId);
     } else {
       setStoredPlaces([]);
     }
-  }, [admin, selectedAreaId, loadStoredPlaces]);
+  }, [admin, selectedAreaParentId, loadStoredPlaces]);
 
   useEffect(() => {
     if (!admin) {
@@ -2075,24 +2077,17 @@ function AdminNearbyPageInner() {
       showStatus("Creating stored area...");
 
       const payload = {
-        name: areaName.trim(),
-        description: areaDescription.trim() || null,
-        google_radius_miles: Number(googleRadius) || 10,
-        google_custom_search: googleQuery.trim() || null,
-        google_search_city:
+        p_name: areaName.trim(),
+        p_description: areaDescription.trim() || null,
+        p_google_radius_miles: Number(googleRadius) || 10,
+        p_google_custom_search: googleQuery.trim() || null,
+        p_google_search_city:
           adminEvent?.location?.split(",")?.[0]?.trim() || null,
-        google_search_state:
+        p_google_search_state:
           adminEvent?.location?.split(",")?.[1]?.trim() || null,
-        google_last_run: null,
       };
 
-      const { data, error } = await supabase
-        .from("nearby_area_templates")
-        .insert(payload)
-        .select(
-          "id,name,description,google_radius_miles,google_custom_search,google_search_city,google_search_state,google_last_run",
-        )
-        .single();
+      const { data, error } = await supabase.rpc("create_stored_area", payload);
 
       if (error) {
         throw new Error(
@@ -2109,11 +2104,12 @@ function AdminNearbyPageInner() {
 
       await loadStoredAreas();
 
-      if (data?.id) {
-        setSelectedAreaId(data.id);
+      const createdArea = Array.isArray(data) ? data[0] : data;
+      if (createdArea?.id) {
+        setSelectedAreaId(createdArea.id);
       }
 
-      setStatus(`Created stored area "${payload.name}".`);
+      setStatus(`Created stored area "${payload.p_name}".`);
     } catch (err: any) {
       console.error("createStoredArea error:", err);
 
@@ -2300,7 +2296,7 @@ function AdminNearbyPageInner() {
 
       const rpcArgs = {
         p_place_id: storedForm.id || null,
-        p_area_id: selectedAreaId,
+        p_template_id: selectedAreaId,
         p_name: storedForm.name.trim(),
         // Nearby Category Authority Stage B: category_id is the selected
         // catalog identity (the Select's own value); category (legacy
@@ -2330,7 +2326,9 @@ function AdminNearbyPageInner() {
           : `Created stored place "${storedForm.name.trim()}" using ${locationSource}.`,
       );
 
-      await loadStoredPlaces(selectedAreaId);
+      if (selectedAreaParentId) {
+        await loadStoredPlaces(selectedAreaParentId);
+      }
 
       localStorage.removeItem("admin-nearby-draft");
 
@@ -2379,7 +2377,9 @@ function AdminNearbyPageInner() {
 
       const deletedPlaceName = storedForm.name;
 
-      await loadStoredPlaces(selectedAreaId);
+      if (selectedAreaParentId) {
+        await loadStoredPlaces(selectedAreaParentId);
+      }
 
       setStatus(`Deleted stored place "${deletedPlaceName}".`);
     } catch (err: any) {
@@ -2404,6 +2404,10 @@ function AdminNearbyPageInner() {
       showError("No stored area selected.");
       return;
     }
+    if (!selectedAreaParentId) {
+      showError("The selected Stored Area has no explicit Nearby Area parent mapping.");
+      return;
+    }
 
     const confirmed = await requestConfirmation({
       title: "Replace Event Nearby List",
@@ -2424,7 +2428,7 @@ function AdminNearbyPageInner() {
         .select(
           "id,name,address,phone,category,category_id,description,link,location_code,lat,lng",
         )
-        .eq("area_id", selectedAreaId)
+        .eq("area_id", selectedAreaParentId)
         .order("name", { ascending: true });
 
       if (sourceError) {
@@ -2529,6 +2533,10 @@ function AdminNearbyPageInner() {
       showError("No stored area selected.");
       return;
     }
+    if (!selectedAreaParentId) {
+      showError("The selected Stored Area has no explicit Nearby Area parent mapping.");
+      return;
+    }
 
     try {
       setCopyingToEvent(true);
@@ -2539,7 +2547,7 @@ function AdminNearbyPageInner() {
         .select(
           "id,name,address,phone,category,category_id,description,link,location_code,lat,lng",
         )
-        .eq("area_id", selectedAreaId)
+        .eq("area_id", selectedAreaParentId)
         .order("name", { ascending: true });
 
       if (sourceError) {
@@ -2802,7 +2810,7 @@ function AdminNearbyPageInner() {
           // update).
           const { error } = await supabase.rpc("upsert_stored_area_place", {
             p_place_id: place.id,
-            p_area_id: selectedAreaId,
+            p_template_id: selectedAreaId,
             p_name: place.name,
             p_category_id: place.category_id || null,
             p_category: place.category || null,
@@ -2821,7 +2829,9 @@ function AdminNearbyPageInner() {
         }
       }
 
-      await loadStoredPlaces(selectedAreaId);
+      if (selectedAreaParentId) {
+        await loadStoredPlaces(selectedAreaParentId);
+      }
 
       showStatus("Bulk geocoding completed.");
     } catch (err: any) {
@@ -2862,7 +2872,7 @@ function AdminNearbyPageInner() {
       // identical comment.
       const { error } = await supabase.rpc("upsert_stored_area_place", {
         p_place_id: storedForm.id,
-        p_area_id: selectedAreaId,
+        p_template_id: selectedAreaId,
         p_name: storedForm.name.trim(),
         p_category_id: storedForm.category_id || null,
         p_category: storedForm.category.trim() || null,
@@ -2885,7 +2895,9 @@ function AdminNearbyPageInner() {
         lng: String(resolved.lng),
       }));
 
-      await loadStoredPlaces(selectedAreaId);
+      if (selectedAreaParentId) {
+        await loadStoredPlaces(selectedAreaParentId);
+      }
 
       showStatus(`Updated coordinates for ${storedForm.name}.`);
     } catch (err: any) {
