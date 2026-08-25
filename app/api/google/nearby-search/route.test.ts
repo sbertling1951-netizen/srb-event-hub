@@ -43,6 +43,7 @@ test("returns mapped Places results after geocoding the complete Event location"
         vicinity: "123 Example Road",
         rating: 4.5,
         types: ["restaurant"],
+        geometry: { location: { lat: 30.31, lng: -87.75 } },
       }],
     });
   };
@@ -61,6 +62,8 @@ test("returns mapped Places results after geocoding the complete Event location"
         address: "123 Example Road",
         rating: 4.5,
         category: "restaurant",
+        lat: 30.31,
+        lng: -87.75,
       }],
       debug: {
         query: "restaurants",
@@ -77,6 +80,54 @@ test("returns mapped Places results after geocoding the complete Event location"
     );
     assert.equal(urls[1].searchParams.get("location"), "30.25,-87.7");
     assert.equal(urls[1].searchParams.get("radius"), "32180");
+  } finally {
+    restoreEnvironment();
+  }
+});
+
+test("normalizes missing or non-numeric Google result coordinates to null", async () => {
+  process.env.GOOGLE_MAPS_API_KEY = "test-server-key";
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    return url.pathname.endsWith("/geocode/json")
+      ? Response.json({
+          status: "OK",
+          results: [{ geometry: { location: { lat: 30.25, lng: -87.7 } } }],
+        })
+      : Response.json({
+          status: "OK",
+          results: [
+            { place_id: "missing", name: "Missing geometry" },
+            {
+              place_id: "invalid",
+              name: "Invalid geometry",
+              geometry: { location: { lat: "30.3", lng: -87.8 } },
+            },
+          ],
+        });
+  };
+
+  try {
+    const response = await POST(request({ query: "restaurants", location: "Gulf Shores, AL" }));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).places, [
+      {
+        id: "missing",
+        name: "Missing geometry",
+        address: "",
+        category: null,
+        lat: null,
+        lng: null,
+      },
+      {
+        id: "invalid",
+        name: "Invalid geometry",
+        address: "",
+        category: null,
+        lat: null,
+        lng: -87.8,
+      },
+    ]);
   } finally {
     restoreEnvironment();
   }

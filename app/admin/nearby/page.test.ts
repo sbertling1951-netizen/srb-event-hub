@@ -188,6 +188,21 @@ test("event-context/authority behavior (canAccessEvent, getCurrentAdminEvent, su
   }
 });
 
+test("Google Nearby results render and preload coordinates only when both values are numeric", () => {
+  assert.match(PAGE_SOURCE, /type GoogleNearbyResult = \{[\s\S]*?lat: number \| null;[\s\S]*?lng: number \| null;/);
+  assert.match(
+    PAGE_SOURCE,
+    /function hasGoogleResultCoordinates\([\s\S]*?return typeof place\.lat === "number" && typeof place\.lng === "number";/,
+  );
+  assert.equal(PAGE_SOURCE.includes("Number(place.lat).toFixed(5)"), true);
+  const coordinatesDisplay = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("Number(place.lat).toFixed(5)"),
+    PAGE_SOURCE.indexOf("Number(place.lat).toFixed(5)") + 250,
+  );
+  assert.match(coordinatesDisplay, /hasGoogleResultCoordinates\(place\)/);
+  assert.equal(/place\.lat !== null && place\.lng !== null/.test(PAGE_SOURCE), false);
+});
+
 test("the draft-restore-focus mechanism (data-stored-field/rememberStoredFieldFocus) survives the Field migration unchanged", () => {
   assert.match(PAGE_SOURCE, /function rememberStoredFieldFocus\(/);
   // "custom-category" is gone (Nearby Category Authority Stage B, Part 1

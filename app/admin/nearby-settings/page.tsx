@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { NearbyAreaListManager } from "@/components/nearby/NearbyAreaListManager";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { AppButton } from "@/components/ui/AppButton";
 import { InlineEdit } from "@/components/ui/InlineEdit";
@@ -576,6 +577,11 @@ function NearbySettingsPageInner() {
             )}
           </div>
       ) : null}
+
+      <NearbyAreaListManager
+        selectedTenantId={selectedTenantId}
+        isPlatformAdmin={isSuperAdmin}
+      />
     </Page>
   );
 }

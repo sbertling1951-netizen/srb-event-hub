@@ -16,6 +16,7 @@ type GoogleNearbyResponse = GoogleResponse & {
     formatted_address?: string;
     rating?: number;
     types?: string[];
+    geometry?: { location?: { lat?: number; lng?: number } };
   }>;
 };
 
@@ -143,6 +144,14 @@ export async function POST(req: Request) {
       address: place.vicinity || place.formatted_address || "",
       rating: place.rating,
       category: place.types?.[0] || null,
+      lat:
+        typeof place.geometry?.location?.lat === "number"
+          ? place.geometry.location.lat
+          : null,
+      lng:
+        typeof place.geometry?.location?.lng === "number"
+          ? place.geometry.location.lng
+          : null,
     }));
 
     return NextResponse.json({

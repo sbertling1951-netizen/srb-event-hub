@@ -18,6 +18,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { EventNearbyAreaListApplication } from "@/components/nearby/EventNearbyAreaListApplication";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { Alert } from "@/components/ui/Alert";
@@ -169,6 +170,26 @@ type PlaceCategoryOption = {
   code: string;
   label: string;
 };
+
+type GoogleNearbyResult = {
+  id: string | null;
+  name: string | null;
+  address: string;
+  rating?: number;
+  category: string | null;
+  phone?: string | null;
+  website?: string | null;
+  editorialSummary?: string | null;
+  plusCode?: string | null;
+  lat: number | null;
+  lng: number | null;
+};
+
+function hasGoogleResultCoordinates(
+  place: GoogleNearbyResult,
+): place is GoogleNearbyResult & { lat: number; lng: number } {
+  return typeof place.lat === "number" && typeof place.lng === "number";
+}
 
 type ConfirmDialogState = {
   title: string;
@@ -1463,7 +1484,7 @@ function AdminNearbyPageInner() {
     }
   }
 
-  function loadGooglePlaceIntoNearbyEditor(place: any) {
+  function loadGooglePlaceIntoNearbyEditor(place: GoogleNearbyResult) {
     const destinationEventId = adminEvent?.id || "";
     const scope = destinationEventId ? defaultScopeFor(destinationEventId) : null;
 
@@ -1476,8 +1497,8 @@ function AdminNearbyPageInner() {
       website: place.website || "",
       notes: place.editorialSummary || "",
       location_code: place.plusCode || "",
-      lat: place.lat === null || place.lat === undefined ? "" : String(place.lat),
-      lng: place.lng === null || place.lng === undefined ? "" : String(place.lng),
+      lat: hasGoogleResultCoordinates(place) ? String(place.lat) : "",
+      lng: hasGoogleResultCoordinates(place) ? String(place.lng) : "",
     };
 
     const filledCanonicalForm: NearbyCanonicalForm = {
@@ -1489,8 +1510,8 @@ function AdminNearbyPageInner() {
       website: place.website || "",
       notes: place.editorialSummary || "",
       location_code: place.plusCode || "",
-      lat: place.lat === null || place.lat === undefined ? "" : String(place.lat),
-      lng: place.lng === null || place.lng === undefined ? "" : String(place.lng),
+      lat: hasGoogleResultCoordinates(place) ? String(place.lat) : "",
+      lng: hasGoogleResultCoordinates(place) ? String(place.lng) : "",
     };
 
     originalNearbyEditorRef.current = {
@@ -1518,7 +1539,7 @@ function AdminNearbyPageInner() {
     showStatus(`Loaded "${place.name}" into the Nearby Place editor.`);
   }
 
-  async function requestLoadGooglePlaceIntoNearbyEditor(place: any) {
+  async function requestLoadGooglePlaceIntoNearbyEditor(place: GoogleNearbyResult) {
     if (isNearbyEditorDirty()) {
       const confirmed = await requestConfirmation({
         title: "Discard Unsaved Changes?",
@@ -1547,7 +1568,7 @@ function AdminNearbyPageInner() {
 
   const [googleQuery, setGoogleQuery] = useState("");
   const [googleRadius, setGoogleRadius] = useState("10");
-  const [googleResults, setGoogleResults] = useState<any[]>([]);
+  const [googleResults, setGoogleResults] = useState<GoogleNearbyResult[]>([]);
   const [searchingGoogle, setSearchingGoogle] = useState(false);
   const [storedSearch, setStoredSearch] = useState("");
   const [storedCategoryFilter, setStoredCategoryFilter] = useState("All");
@@ -2707,7 +2728,7 @@ function AdminNearbyPageInner() {
         throw new Error(data?.error || "Google nearby search failed.");
       }
 
-      setGoogleResults(data.places || []);
+      setGoogleResults(Array.isArray(data.places) ? data.places : []);
 
       if (selectedAreaId) {
         await supabase
@@ -3354,6 +3375,15 @@ function AdminNearbyPageInner() {
         </PageSection>
       </div>
 
+      <EventNearbyAreaListApplication
+        eventId={adminEvent?.id}
+        onApplied={() => {
+          if (adminEvent?.id) {
+            void loadEventPlaces(adminEvent.id);
+          }
+        }}
+      />
+
       <PageSection variant="section">
         <PageHeader
           title="Google Nearby Search"
@@ -3401,6 +3431,9 @@ function AdminNearbyPageInner() {
 
         {googleResults.length === 0 ? null : (
           <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            <div className="app-subtle-text" style={{ fontSize: 12 }}>
+              Google Maps results
+            </div>
             {googleResults.map((place) => (
               <div key={place.id} className="app-card-section" style={{ display: "grid", gap: "var(--space-2)" }}>
                 <div
@@ -3441,17 +3474,17 @@ function AdminNearbyPageInner() {
                 >
                   {place.phone ? <div>📞 {place.phone}</div> : null}
                   {place.website ? <div>🌐 Website Available</div> : null}
-                  {place.lat !== null && place.lng !== null ? (
+                  {hasGoogleResultCoordinates(place) ? (
                     <div>
                       📍 {Number(place.lat).toFixed(5)}, {Number(place.lng).toFixed(5)}
                     </div>
                   ) : null}
                 </div>
 
-                {(place.lat !== null && place.lng !== null) || place.address ? (
+                {hasGoogleResultCoordinates(place) || place.address ? (
                   <AppLinkButton
                     href={
-                      place.lat !== null && place.lng !== null
+                      hasGoogleResultCoordinates(place)
                         ? `https://www.google.com/maps?q=${place.lat},${place.lng}`
                         : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || "")}`
                     }
@@ -3475,14 +3508,8 @@ function AdminNearbyPageInner() {
                         website: place.website || "",
                         notes: place.editorialSummary || "",
                         location_code: place.plusCode || "",
-                        lat:
-                          place.lat === null || place.lat === undefined
-                            ? ""
-                            : String(place.lat),
-                        lng:
-                          place.lng === null || place.lng === undefined
-                            ? ""
-                            : String(place.lng),
+                        lat: hasGoogleResultCoordinates(place) ? String(place.lat) : "",
+                        lng: hasGoogleResultCoordinates(place) ? String(place.lng) : "",
                       });
 
                       storedPlaceFormSectionRef.current?.scrollIntoView({
