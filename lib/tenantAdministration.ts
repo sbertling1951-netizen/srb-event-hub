@@ -250,7 +250,7 @@ export async function listTenantAdministratorAppointmentAuditForAdministration(
   client: TenantAdministrationRpcClient = defaultClient,
 ): Promise<TenantAdministratorAppointmentAuditRow[]> {
   return callRows(
-    "list_person_tenant_administrator_appointment_audit_for_administration",
+    "list_person_tenant_administrator_appointment_audit_for_administ",
     { p_tenant_id: tenantId, p_limit: limit },
     client,
   );

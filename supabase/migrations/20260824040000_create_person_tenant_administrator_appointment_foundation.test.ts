@@ -22,6 +22,10 @@ const FIXTURE = readFileSync(
   ),
   "utf8",
 );
+const TENANT_ADMINISTRATION_CLIENT = readFileSync(
+  "lib/tenantAdministration.ts",
+  "utf8",
+);
 
 function parityBlock(source: string) {
   const start = source.indexOf("-- PARITY START:");
@@ -236,6 +240,17 @@ test("T8 functions are postgres-owned, closed to anon, and only callable by auth
   }
   assert.doesNotMatch(SQL, /GRANT EXECUTE[^;]+TO anon/);
   assert.doesNotMatch(SQL, /GRANT EXECUTE[^;]+TO service_role/);
+});
+
+test("the appointment-audit client RPC uses PostgreSQL's applied catalog identifier", () => {
+  assert.match(
+    TENANT_ADMINISTRATION_CLIENT,
+    /list_person_tenant_administrator_appointment_audit_for_administ/,
+  );
+  assert.doesNotMatch(
+    TENANT_ADMINISTRATION_CLIENT,
+    /list_person_tenant_administrator_appointment_audit_for_administration/,
+  );
 });
 
 test("linked fixture covers canonical identity denial, lifecycle, non-authority, audit, and rollback", () => {

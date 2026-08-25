@@ -73,7 +73,7 @@ test("all administrative reads use the exact governed T3 RPCs", async () => {
       "list_tenant_hostname_mappings_for_administration",
       "list_eligible_person_tenant_administrator_candidates_for_admini",
       "list_tenant_administrator_appointments_for_administration",
-      "list_person_tenant_administrator_appointment_audit_for_administration",
+      "list_person_tenant_administrator_appointment_audit_for_administ",
       "list_tenant_owned_events_for_administration",
       "list_tenant_administration_audit",
     ],
