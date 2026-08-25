@@ -1,12 +1,62 @@
 import { NextResponse } from "next/server";
 
+type GoogleResponse = {
+  status?: string;
+};
+
+type GoogleGeocodeResponse = GoogleResponse & {
+  results?: Array<{ geometry?: { location?: { lat?: number; lng?: number } } }>;
+};
+
+type GoogleNearbyResponse = GoogleResponse & {
+  results?: Array<{
+    place_id?: string;
+    name?: string;
+    vicinity?: string;
+    formatted_address?: string;
+    rating?: number;
+    types?: string[];
+  }>;
+};
+
+function googleFailure(
+  service: "geocoding" | "nearby search",
+  response: Response,
+  data: GoogleResponse,
+) {
+  const googleStatus = data.status || "UNKNOWN_ERROR";
+  const code = `google_${service.replace(/ /g, "_")}_${googleStatus.toLowerCase()}`;
+
+  console.error(`Google ${service} request failed.`, {
+    upstreamHttpStatus: response.status,
+    googleStatus,
+  });
+
+  if (googleStatus === "REQUEST_DENIED") {
+    return NextResponse.json(
+      {
+        error: `Google ${service} request was denied. Check the server Google Maps API configuration.`,
+        code,
+      },
+      { status: 502 },
+    );
+  }
+
+  return NextResponse.json(
+    {
+      error: `Google ${service} request failed (${googleStatus}).`,
+      code,
+    },
+    { status: 502 },
+  );
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
     const query = String(body?.query || "").trim();
-    const city = String(body?.city || "").trim();
-    const state = String(body?.state || "").trim();
+    const location = String(body?.location || "").trim();
     const radiusMiles = Number(body?.radiusMiles || 10);
 
     if (!query) {
@@ -20,16 +70,17 @@ export async function POST(req: Request) {
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Missing GOOGLE_MAPS_API_KEY." },
+        {
+          error: "Google nearby search is unavailable because its server credential is not configured.",
+          code: "missing_google_maps_api_key",
+        },
         { status: 500 },
       );
     }
 
-    const locationQuery = [city, state].filter(Boolean).join(", ");
-
-    if (!locationQuery) {
+    if (!location) {
       return NextResponse.json(
-        { error: "Missing city/state for nearby search." },
+        { error: "Missing Event location for nearby search." },
         { status: 400 },
       );
     }
@@ -38,20 +89,29 @@ export async function POST(req: Request) {
       "https://maps.googleapis.com/maps/api/geocode/json",
     );
 
-    geocodeUrl.searchParams.set("address", locationQuery);
+    geocodeUrl.searchParams.set("address", location);
     geocodeUrl.searchParams.set("key", apiKey);
 
     const geocodeResponse = await fetch(geocodeUrl.toString());
-    const geocodeData = await geocodeResponse.json();
+    const geocodeData = (await geocodeResponse.json()) as GoogleGeocodeResponse;
 
-    console.log("GEOCODE RESPONSE:", geocodeData);
+    if (!geocodeResponse.ok || geocodeData.status !== "OK") {
+      return googleFailure("geocoding", geocodeResponse, geocodeData);
+    }
 
     const firstResult = geocodeData?.results?.[0];
 
-    if (!firstResult) {
+    if (
+      !firstResult?.geometry?.location
+      || typeof firstResult.geometry.location.lat !== "number"
+      || typeof firstResult.geometry.location.lng !== "number"
+    ) {
       return NextResponse.json(
-        { error: "Could not geocode location." },
-        { status: 400 },
+        {
+          error: "Google could not resolve coordinates for the Event location.",
+          code: "google_geocoding_missing_coordinates",
+        },
+        { status: 422 },
       );
     }
 
@@ -68,11 +128,16 @@ export async function POST(req: Request) {
     nearbyUrl.searchParams.set("key", apiKey);
 
     const nearbyResponse = await fetch(nearbyUrl.toString());
-    const nearbyData = await nearbyResponse.json();
+    const nearbyData = (await nearbyResponse.json()) as GoogleNearbyResponse;
 
-    console.log("GOOGLE NEARBY RESPONSE:", nearbyData);
+    if (
+      !nearbyResponse.ok
+      || (nearbyData.status !== "OK" && nearbyData.status !== "ZERO_RESULTS")
+    ) {
+      return googleFailure("nearby search", nearbyResponse, nearbyData);
+    }
 
-    const places = (nearbyData?.results || []).map((place: any) => ({
+    const places = (nearbyData.results || []).map((place) => ({
       id: place.place_id,
       name: place.name,
       address: place.vicinity || place.formatted_address || "",
@@ -84,18 +149,19 @@ export async function POST(req: Request) {
       places,
       debug: {
         query,
-        locationQuery,
+        location,
         radiusMiles,
         lat,
         lng,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("nearby-search route error:", err);
 
     return NextResponse.json(
       {
-        error: err?.message || "Google nearby search failed.",
+        error: "Google nearby search could not be completed.",
+        code: "google_nearby_search_unavailable",
       },
       { status: 500 },
     );

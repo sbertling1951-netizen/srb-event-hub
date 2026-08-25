@@ -2687,15 +2687,7 @@ function AdminNearbyPageInner() {
       setSearchingGoogle(true);
       showStatus("Searching Google nearby places...");
 
-      const locationParts = adminEvent.location.split(",");
-
-      const city = locationParts[0]?.trim() || "";
-      const state = locationParts[1]?.trim() || "";
-      console.log({
-        location: adminEvent.location,
-        city,
-        state,
-      });
+      const location = adminEvent.location.trim();
 
       const response = await fetch("/api/google/nearby-search", {
         method: "POST",
@@ -2704,8 +2696,7 @@ function AdminNearbyPageInner() {
         },
         body: JSON.stringify({
           query: googleQuery.trim(),
-          city,
-          state,
+          location,
           radiusMiles: Number(googleRadius) || 10,
         }),
       });
@@ -2725,8 +2716,6 @@ function AdminNearbyPageInner() {
             google_last_run: new Date().toISOString(),
             google_radius_miles: Number(googleRadius) || 10,
             google_custom_search: googleQuery.trim() || null,
-            google_search_city: city || null,
-            google_search_state: state || null,
           })
           .eq("id", selectedAreaId);
       }
