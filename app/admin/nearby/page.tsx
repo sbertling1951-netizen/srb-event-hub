@@ -15,7 +15,15 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { EventNearbyAreaListApplication } from "@/components/nearby/EventNearbyAreaListApplication";
@@ -2998,6 +3006,54 @@ function AdminNearbyPageInner() {
   const editingBusy =
     savingEventListing || savingCanonicalPlace || movingPlace || removingPlace || retiringPlace;
 
+  // The unified editor is displayed in a portal, so it owns its own
+  // submit boundary. Add-mode's visible primary action and Enter from a
+  // single-line field both route through this exact existing-save dispatch;
+  // nothing may bubble to the legacy Stored Area surface behind the dialog.
+  async function submitNearbyEditor() {
+    if (editingBusy || editorMode !== "add") {
+      return;
+    }
+
+    if (editorScope === "event_only") {
+      await saveNearbyEventListing();
+    } else if (editorScope === "tenant") {
+      await addTenantPlace();
+    } else if (editorScope === "shared") {
+      await submitSharedPlace();
+    }
+  }
+
+  function handleNearbyEditorSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    void submitNearbyEditor();
+  }
+
+  function handleNearbyEditorKeyDown(event: ReactKeyboardEvent<HTMLFormElement>) {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) {
+      return;
+    }
+
+    const target = event.target;
+
+    // Textareas own Enter for a newline; selects, checkboxes, radios, and
+    // buttons keep their native/control-specific Enter behavior.
+    if (
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLButtonElement ||
+      (target instanceof HTMLInputElement &&
+        ["button", "checkbox", "radio", "reset", "submit"].includes(target.type))
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    void submitNearbyEditor();
+  }
+
   return (
     <div style={{ display: "grid", gap: "var(--space-10)" }}>
       <ConfirmDialog
@@ -3667,7 +3723,11 @@ function AdminNearbyPageInner() {
                 </AppButton>
               }
             >
-              <div style={{ display: "grid", gap: "var(--space-4)" }}>
+              <form
+                style={{ display: "grid", gap: "var(--space-4)" }}
+                onSubmit={handleNearbyEditorSubmit}
+                onKeyDown={handleNearbyEditorKeyDown}
+              >
                   {editorMode === "edit" ? (
                     <Alert tone="neutral">
                       Editing{" "}
@@ -3902,7 +3962,12 @@ function AdminNearbyPageInner() {
                       <FormActions>
                         <AppButton
                           variant="primary"
-                          onClick={() => void saveNearbyEventListing()}
+                          type={editorMode === "add" ? "submit" : "button"}
+                          onClick={
+                            editorMode === "add"
+                              ? undefined
+                              : () => void saveNearbyEventListing()
+                          }
                           disabled={editingBusy}
                         >
                           {editorMode === "add" ? "Add Place" : "Save Listing"}
@@ -4079,17 +4144,12 @@ function AdminNearbyPageInner() {
                             <FormActions>
                               <AppButton
                                 variant="primary"
-                                onClick={() => {
-                                  if (editorMode === "add") {
-                                    if (editorScope === "shared") {
-                                      void submitSharedPlace();
-                                    } else {
-                                      void addTenantPlace();
-                                    }
-                                  } else {
-                                    void saveNearbyCanonicalPlace();
-                                  }
-                                }}
+                                type={editorMode === "add" ? "submit" : "button"}
+                                onClick={
+                                  editorMode === "add"
+                                    ? undefined
+                                    : () => void saveNearbyCanonicalPlace()
+                                }
                                 disabled={editingBusy}
                               >
                                 {editorMode === "add"
@@ -4163,7 +4223,7 @@ function AdminNearbyPageInner() {
                       ) : null}
                     </FormActions>
                   ) : null}
-              </div>
+              </form>
             </Dialog>
           </div>
         )}

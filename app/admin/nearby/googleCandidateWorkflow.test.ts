@@ -44,6 +44,45 @@ test("the existing unified Event/Tenant/Shared editor is rendered in the Central
   assert.equal(PAGE_SOURCE.includes("Load Into Nearby Place Editor"), false);
 });
 
+test("Enter from a single-line modal field and the add-mode primary action share the editor submit path", () => {
+  const submit = sourceBetween(
+    "async function submitNearbyEditor()",
+    "function handleNearbyEditorSubmit",
+  );
+  const keyDown = sourceBetween(
+    "function handleNearbyEditorKeyDown",
+    "return (",
+  );
+
+  assert.match(
+    PAGE_SOURCE,
+    /<form\s+[\s\S]*?onSubmit=\{handleNearbyEditorSubmit\}[\s\S]*?onKeyDown=\{handleNearbyEditorKeyDown\}/,
+  );
+  assert.match(submit, /editorScope === "event_only"[\s\S]*?saveNearbyEventListing\(\)/);
+  assert.match(submit, /editorScope === "tenant"[\s\S]*?addTenantPlace\(\)/);
+  assert.match(submit, /editorScope === "shared"[\s\S]*?submitSharedPlace\(\)/);
+  assert.match(keyDown, /event\.preventDefault\(\)/);
+  assert.match(keyDown, /void submitNearbyEditor\(\)/);
+  assert.match(PAGE_SOURCE, /type=\{editorMode === "add" \? "submit" : "button"\}/);
+});
+
+test("modal keyboard submission keeps multiline/native controls local and never routes to the Stored Area editor", () => {
+  const keyDown = sourceBetween(
+    "function handleNearbyEditorKeyDown",
+    "return (",
+  );
+  const submit = sourceBetween(
+    "async function submitNearbyEditor()",
+    "function handleNearbyEditorSubmit",
+  );
+
+  assert.match(keyDown, /target instanceof HTMLTextAreaElement/);
+  assert.match(keyDown, /target instanceof HTMLSelectElement/);
+  assert.match(keyDown, /target instanceof HTMLButtonElement/);
+  assert.match(keyDown, /\["button", "checkbox", "radio", "reset", "submit"\]/);
+  assert.doesNotMatch(submit, /storedPlaceFormSectionRef|setStoredForm|saveStoredPlace/);
+});
+
 test("canonical acceptance removes its exact candidate while Event-only saves and stored-place editing never request Google", () => {
   const tenantAdd = sourceBetween("async function addTenantPlace()", "async function submitSharedPlace()");
   const sharedAdd = sourceBetween("async function submitSharedPlace()", "async function moveNearbyPlace()");
@@ -58,6 +97,18 @@ test("canonical acceptance removes its exact candidate while Event-only saves an
   assert.match(PAGE_SOURCE, /setMatchedGooglePlaceIds\(\(current\) => new Set\(\[\.\.\.current, googlePlaceId\]\)\)/);
   assert.doesNotMatch(eventSave, /linkGoogleCandidateToCanonicalPlace/);
   assert.doesNotMatch(storedEdit, /fetch\(|google\//);
+});
+
+test("successful canonical submission retains the Google result state until its exact ID is marked accepted, while failures leave the modal open", () => {
+  const tenantAdd = sourceBetween("async function addTenantPlace()", "async function submitSharedPlace()");
+  const sharedAdd = sourceBetween("async function submitSharedPlace()", "async function moveNearbyPlace()");
+  const reset = sourceBetween("const resetNearbyEditorToClosed", "function openBlankNearbyEditor");
+
+  assert.match(tenantAdd, /linkGoogleCandidateToCanonicalPlace\([\s\S]*?resetNearbyEditorToClosed\(\)/);
+  assert.match(sharedAdd, /linkGoogleCandidateToCanonicalPlace\([\s\S]*?resetNearbyEditorToClosed\(\)/);
+  assert.match(tenantAdd, /catch \(err: any\)[\s\S]*?showError\(/);
+  assert.match(sharedAdd, /catch \(err: any\)[\s\S]*?showError\(/);
+  assert.doesNotMatch(reset, /setGoogleResults|setMatchedGooglePlaceIds/);
 });
 
 test("Cancel remains the single explicit close path and preserves the existing dirty-discard confirmation", () => {
