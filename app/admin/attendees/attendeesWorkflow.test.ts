@@ -6,6 +6,7 @@ import {
   attendeeChangedRemotelyWhileDirty,
   attendeeConcurrencyFingerprint,
   type AttendeeRow,
+  attendeeToEditorState,
   computeReviewItems,
   dirtySectionIds,
   editorStateDiffKeys,
@@ -53,6 +54,18 @@ const requiredMembershipRule: ValidationRule = {
   priority: 1,
   applies_to_event_id: null,
 };
+
+test("emptyAttendeeEditorState matches the canonical Needs Parking default for manual creation", () => {
+  assert.equal(emptyAttendeeEditorState().needs_parking, true);
+});
+
+test("attendeeToEditorState preserves an existing explicit parking-need value", () => {
+  const falseState = attendeeToEditorState(attendee({ needs_parking: false }));
+  const trueState = attendeeToEditorState(attendee({ needs_parking: true }));
+
+  assert.equal(falseState.needs_parking, false);
+  assert.equal(trueState.needs_parking, true);
+});
 
 // --- computeReviewItems is the single owner of "what is flagged" -----------
 

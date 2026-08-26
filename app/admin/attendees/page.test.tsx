@@ -15,6 +15,7 @@ import {
 } from "@/app/admin/attendees/attendeesWorkflow";
 import {
   AttendeeActionRow,
+  AttendeeParkingNeedControl,
   QuickActionBar,
 } from "@/app/admin/attendees/page";
 
@@ -51,33 +52,41 @@ function baseAttendee(overrides: Partial<AttendeeRow> = {}): AttendeeRow {
 function noop() {}
 async function asyncNoop() {}
 
-test("Stage A: generic attendee payload excludes operational Arrival and placement fields and presents governed handoffs", () => {
+test("generic attendee payload excludes Arrival, placement, and parking intent; create alone may explicitly opt out of the canonical default", () => {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
-  const payload = source.slice(source.indexOf("const payload = {"), source.indexOf("if (editorMode === \"create\")"));
+  const payload = source.slice(
+    source.indexOf("const payload = {"),
+    source.indexOf("const createPayload ="),
+  );
   assert.equal(/assigned_site:/.test(payload), false);
   assert.equal(/has_arrived:/.test(payload), false);
+  assert.equal(/needs_parking:/.test(payload), false);
+  assert.match(
+    source,
+    /editorState\.needs_parking === false\s*\? \{ \.\.\.payload, needs_parking: false \}\s*: payload/,
+  );
   assert.match(source, /fetchCanonicalAttendeePlacement/);
   assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/checkin", state\.id\)/);
   assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
 });
 
-// -- UI Phase 4: read-only Arrival/Placement in the roster list itself ------
+// -- Parking intent control: Attendees owns intent, Parking owns placement --
 
-test("attendeeArrivalPresentation and attendeePlacementPresentation are read-only derivations -- neither returns a setter, handler, or writable control", () => {
+test("Arrival remains read-only while the roster parking-need control uses the governed command only", () => {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
   const arrivalFn = source.slice(
     source.indexOf("function attendeeArrivalPresentation("),
-    source.indexOf("function attendeePlacementPresentation("),
+    source.indexOf("export function AttendeeParkingNeedControl("),
   );
-  const placementFn = source.slice(
-    source.indexOf("function attendeePlacementPresentation("),
+  const parkingControl = source.slice(
+    source.indexOf("export function AttendeeParkingNeedControl("),
     source.indexOf("function attendeeGroupSiteLabel("),
   );
 
-  for (const fn of [arrivalFn, placementFn]) {
-    assert.equal(/onChange|onClick|setHasArrived|setAssignedSite/.test(fn), false);
-    assert.equal(/\.rpc\(|supabase\.from\(/.test(fn), false);
-  }
+  assert.equal(/onChange|onClick|setHasArrived|setAssignedSite/.test(arrivalFn), false);
+  assert.match(parkingControl, /onSetParkingNeed\(attendee, !needsParking\)/);
+  assert.equal(/supabase\.from\(|\.update\(/.test(parkingControl), false);
+  assert.match(source, /supabase\.rpc\(\s*"set_attendee_parking_need"/);
 });
 
 test("the roster list never reads or displays attendees.assigned_site directly -- Placement is sourced only from the canonical placements map", () => {
@@ -91,7 +100,7 @@ test("the roster list never reads or displays attendees.assigned_site directly -
   assert.match(attendeeListSource, /placementsByAttendeeId/);
 });
 
-test("Arrival and Placement badges in the roster render through the shared, read-only StatusBadge -- no <input>/<select> ever mutates has_arrived or placement from this page", () => {
+test("the roster retains a read-only Arrival badge and renders an accessible governed parking-need control", () => {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
   const attendeeListSource = source.slice(
     source.indexOf("function AttendeeList("),
@@ -99,8 +108,44 @@ test("Arrival and Placement badges in the roster render through the shared, read
   );
 
   assert.match(attendeeListSource, /<StatusBadge tone=\{arrival\.tone\}>\{arrival\.label\}<\/StatusBadge>/);
-  assert.match(attendeeListSource, /<StatusBadge tone=\{placement\.tone\}>\{placement\.label\}<\/StatusBadge>/);
+  assert.match(attendeeListSource, /<AttendeeParkingNeedControl/);
+  assert.match(attendeeListSource, /placementKnown=\{!placementsLoading && !placementsError\}/);
   assert.equal(/type="checkbox"|type="radio"/.test(attendeeListSource), false);
+});
+
+test("unplaced parking intent is a real keyboard/touch button, while a placed attendee keeps the site label and Parking-first explanation", () => {
+  const unplaced = renderToStaticMarkup(
+    <AttendeeParkingNeedControl
+      attendee={baseAttendee({ needs_parking: true })}
+      placement={undefined}
+      placementKnown
+      canEdit
+      saving={false}
+      onSetParkingNeed={asyncNoop}
+    />,
+  );
+  assert.match(unplaced, /<button/);
+  assert.match(unplaced, /aria-pressed="true"/);
+  assert.match(unplaced, /Needs Parking/);
+  assert.match(unplaced, /Toggle Jane Doe/);
+
+  const placed = renderToStaticMarkup(
+    <AttendeeParkingNeedControl
+      attendee={baseAttendee({ needs_parking: true })}
+      placement={{
+        parkingSiteId: "site-1",
+        masterSiteId: "master-site-1",
+        label: "Site A12",
+      }}
+      placementKnown
+      canEdit
+      saving={false}
+      onSetParkingNeed={asyncNoop}
+    />,
+  );
+  assert.match(placed, /Site A12/);
+  assert.match(placed, /Remove the assignment in Parking before changing this/);
+  assert.doesNotMatch(placed, /<button/);
 });
 
 test("saveMembershipNumber: the quick-correction path defers to the governed validateField check, not a second hardcoded F/C copy (Refactor Audit Q7)", () => {

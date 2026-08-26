@@ -81,6 +81,7 @@ import {
 import {
   type CanonicalAttendeePlacementMap,
   type CanonicalAttendeePlacementResult,
+  type CanonicalAttendeePlacementSite,
   fetchCanonicalAttendeePlacement,
   fetchCanonicalAttendeePlacementsForEvent,
 } from "@/lib/canonicalAttendeePlacement";
@@ -673,22 +674,75 @@ function attendeeArrivalPresentation(
 // assigned_site) -- Parking alone owns placement mutation; this page only
 // ever reads and hands off (View in Parking, in AttendeeActionRow/
 // AttendeeRecordWorkspace).
-function attendeePlacementPresentation(
-  attendee: AttendeeRow,
-  placements: CanonicalAttendeePlacementMap,
-  placementsLoading: boolean,
-): { label: string; tone: StatusBadgeTone } {
-  const site = placements.get(attendee.id);
-  if (site) {
-    return { label: site.label, tone: "success" };
+export function AttendeeParkingNeedControl(props: {
+  attendee: AttendeeRow;
+  placement: CanonicalAttendeePlacementSite | undefined;
+  placementKnown: boolean;
+  canEdit: boolean;
+  saving: boolean;
+  onSetParkingNeed: (attendee: AttendeeRow, needsParking: boolean) => Promise<void>;
+}) {
+  const {
+    attendee,
+    placement,
+    placementKnown,
+    canEdit,
+    saving,
+    onSetParkingNeed,
+  } = props;
+  const needsParking = attendee.needs_parking !== false;
+  const attendeeName = displayPilotName(attendee);
+
+  // Do not present an attendee as safely unplaced while the canonical
+  // placement lookup is still pending or unavailable. Parking owns that
+  // relationship, and a false parking-need transition is deliberately
+  // blocked whenever the current placement cannot be established here.
+  if (!placementKnown) {
+    return <StatusBadge tone="neutral">Checking parking...</StatusBadge>;
   }
-  if (placementsLoading) {
-    return { label: "Checking...", tone: "neutral" };
+
+  // Preserve the useful Site label, while making the intent and its
+  // Parking-first safety rule visible. There is intentionally no toggle here:
+  // changing a placed attendee to "Doesn't Need Parking" must first happen
+  // through Parking's governed placement-clear workflow.
+  if (placement) {
+    return (
+      <div style={{ display: "grid", gap: "var(--space-1)" }}>
+        <StatusBadge tone="success">{placement.label}</StatusBadge>
+        <span style={{ fontSize: "var(--font-size-small)", color: "var(--color-text-secondary)" }}>
+          {needsParking ? "Needs Parking" : "Doesn't Need Parking"} · Remove the
+          assignment in Parking before changing this.
+        </span>
+      </div>
+    );
   }
-  if (attendee.needs_parking === false) {
-    return { label: "Does Not Need Parking", tone: "neutral" };
-  }
-  return { label: "Needs Parking", tone: "warning" };
+
+  return (
+    <AppButton
+      variant={needsParking ? "secondary" : "tertiary"}
+      loading={saving}
+      disabled={!canEdit}
+      aria-pressed={needsParking}
+      aria-label={`Toggle ${attendeeName}'s parking need. Currently ${
+        needsParking ? "Needs Parking" : "Doesn't Need Parking"
+      }.`}
+      title={
+        needsParking
+          ? "Mark as Doesn't Need Parking"
+          : "Mark as Needs Parking"
+      }
+      onClick={(event) => {
+        event.stopPropagation();
+        void onSetParkingNeed(attendee, !needsParking);
+      }}
+      // The compact roster row is itself keyboard-selectable. Stop this
+      // control's native Enter/Space interaction from also selecting the row.
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      {needsParking ? "Needs Parking" : "Doesn't Need Parking"}
+      <span aria-hidden="true"> ↔</span>
+    </AppButton>
+  );
 }
 
 function attendeeGroupSiteLabel(
@@ -710,8 +764,10 @@ function AttendeeList(props: {
   placementsByAttendeeId: CanonicalAttendeePlacementMap;
   placementsLoading: boolean;
   placementsError: string | null;
+  parkingNeedSavingIds: ReadonlySet<string>;
   isCompact: boolean;
   onSelect: (attendee: AttendeeRow) => void;
+  onSetParkingNeed: (attendee: AttendeeRow, needsParking: boolean) => Promise<void>;
   onUpdateDataStatus: (attendeeId: string, nextStatus: string) => Promise<void>;
   onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
 }) {
@@ -727,8 +783,10 @@ function AttendeeList(props: {
     placementsByAttendeeId,
     placementsLoading,
     placementsError,
+    parkingNeedSavingIds,
     isCompact,
     onSelect,
+    onSetParkingNeed,
     onUpdateDataStatus,
     onCancelRegistration,
   } = props;
@@ -789,7 +847,7 @@ function AttendeeList(props: {
         const showSiteHeader = attendeeSortMode === "site" && currentSiteLabel !== previousSiteLabel;
         const isSelected = selectedAttendeeId === attendee.id;
         const arrival = attendeeArrivalPresentation(attendee);
-        const placement = attendeePlacementPresentation(attendee, placementsByAttendeeId, placementsLoading);
+        const placement = placementsByAttendeeId.get(attendee.id);
 
         return (
           <li key={attendee.id} style={{ display: "contents" }}>
@@ -824,7 +882,14 @@ function AttendeeList(props: {
 
               <div className="responsive-list-item-badges">
                 <StatusBadge tone={arrival.tone}>{arrival.label}</StatusBadge>
-                <StatusBadge tone={placement.tone}>{placement.label}</StatusBadge>
+                <AttendeeParkingNeedControl
+                  attendee={attendee}
+                  placement={placement}
+                  placementKnown={!placementsLoading && !placementsError}
+                  canEdit={canEdit}
+                  saving={parkingNeedSavingIds.has(attendee.id)}
+                  onSetParkingNeed={onSetParkingNeed}
+                />
               </div>
 
               {dataStatusBadges(attendee)}
@@ -865,7 +930,7 @@ function AttendeeList(props: {
           const showSiteHeader = attendeeSortMode === "site" && currentSiteLabel !== previousSiteLabel;
           const isSelected = selectedAttendeeId === attendee.id;
           const arrival = attendeeArrivalPresentation(attendee);
-          const placement = attendeePlacementPresentation(attendee, placementsByAttendeeId, placementsLoading);
+          const placement = placementsByAttendeeId.get(attendee.id);
 
           return (
             <React.Fragment key={attendee.id}>
@@ -906,7 +971,14 @@ function AttendeeList(props: {
                   <StatusBadge tone={arrival.tone}>{arrival.label}</StatusBadge>
                 </td>
                 <td>
-                  <StatusBadge tone={placement.tone}>{placement.label}</StatusBadge>
+                  <AttendeeParkingNeedControl
+                    attendee={attendee}
+                    placement={placement}
+                    placementKnown={!placementsLoading && !placementsError}
+                    canEdit={canEdit}
+                    saving={parkingNeedSavingIds.has(attendee.id)}
+                    onSetParkingNeed={onSetParkingNeed}
+                  />
                 </td>
                 <td>
                   <AttendeeActionRow
@@ -975,6 +1047,7 @@ export function AttendeeRecordWorkspace(props: {
   conflict: string | null;
   saveFeedback: string | null;
   onClose: () => void;
+  parkingNeedSaving: boolean;
   onChange: <K extends keyof AttendeeEditorState>(
     key: K,
     value: AttendeeEditorState[K],
@@ -982,6 +1055,7 @@ export function AttendeeRecordWorkspace(props: {
   onEnterEdit: () => void;
   onCancelEdit: () => void;
   onSave: () => Promise<void>;
+  onSetParkingNeed: (needsParking: boolean) => Promise<void>;
   onReloadRecord: () => void;
   onRemoveHouseholdMember: (role: "copilot" | "additional") => Promise<void>;
   onUpdateDataStatus: (
@@ -1007,10 +1081,12 @@ export function AttendeeRecordWorkspace(props: {
     conflict,
     saveFeedback,
     onClose,
+    parkingNeedSaving,
     onChange,
     onEnterEdit,
     onCancelEdit,
     onSave,
+    onSetParkingNeed,
     onReloadRecord,
     onRemoveHouseholdMember,
     onUpdateDataStatus,
@@ -1201,6 +1277,10 @@ export function AttendeeRecordWorkspace(props: {
         </div>
       </div>
     ) : null;
+
+  const parkingNeedPlacementKnown = operationalStatus?.ok === true;
+  const parkingNeedBlockedByPlacement =
+    parkingNeedPlacementKnown && !!operationalStatus.site && state.needs_parking;
 
   const titleText =
     mode === "create"
@@ -1655,11 +1735,28 @@ export function AttendeeRecordWorkspace(props: {
             label="Needs Coach Plate"
           />
 
-          <Checkbox
-            checked={state.needs_parking}
-            onChange={(e) => onChange("needs_parking", e.target.checked)}
-            label="Needs Parking"
-          />
+          {mode === "create" ? (
+            <Checkbox
+              checked={state.needs_parking}
+              onChange={(e) => onChange("needs_parking", e.target.checked)}
+              label="Needs Parking"
+              help="New attendee records start as needing parking."
+            />
+          ) : (
+            <Checkbox
+              checked={state.needs_parking}
+              disabled={!canEdit || parkingNeedSaving || !parkingNeedPlacementKnown || parkingNeedBlockedByPlacement}
+              onChange={(e) => void onSetParkingNeed(e.target.checked)}
+              label="Needs Parking"
+              help={
+                parkingNeedBlockedByPlacement
+                  ? "Remove this attendee's parking assignment in Parking before marking them as not needing parking."
+                  : !parkingNeedPlacementKnown
+                    ? "Parking status is loading before this intent can be changed."
+                    : "Changes are saved through the governed parking-need command."
+              }
+            />
+          )}
         </div>
       </div>
 
@@ -1982,6 +2079,10 @@ function AdminAttendeesPageInner() {
   );
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
+  const [parkingNeedSavingIds, setParkingNeedSavingIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const parkingNeedSavingRef = useRef<Set<string>>(new Set());
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   // Stage C: exactly one focused record workspace owns the selected
   // attendee. editorOpen/editorMode track whether the workspace is open and
@@ -2782,6 +2883,93 @@ created_at
       setStatus("Status update failed.");
     }
   }
+
+  function parkingNeedErrorMessage(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+
+    if (message.includes("parking_assignment_must_be_removed_first")) {
+      return "Remove this attendee's parking assignment in Parking before marking them as not needing parking.";
+    }
+    if (message.includes("authorization_denied") || message.includes("unauthorized")) {
+      return "You do not have permission to change this attendee's parking need.";
+    }
+    if (message.includes("attendee_not_found")) {
+      return "This attendee is no longer available in the current event.";
+    }
+    return "We couldn't update this attendee's parking need. Please try again.";
+  }
+
+  async function setAttendeeParkingNeed(
+    attendee: AttendeeRow,
+    needsParking: boolean,
+  ) {
+    if (parkingNeedSavingRef.current.has(attendee.id)) {
+      return;
+    }
+
+    parkingNeedSavingRef.current.add(attendee.id);
+    setParkingNeedSavingIds((previous) => new Set(previous).add(attendee.id));
+
+    try {
+      setError(null);
+      setStatus("Saving parking need...");
+
+      const { data, error: parkingNeedError } = await supabase.rpc(
+        "set_attendee_parking_need",
+        {
+          p_attendee_id: attendee.id,
+          p_needs_parking: needsParking,
+        },
+      );
+
+      if (parkingNeedError) {
+        throw parkingNeedError;
+      }
+
+      const result = Array.isArray(data) ? data[0] : data;
+      if (!result || typeof result.needs_parking !== "boolean") {
+        throw new Error("parking_need_result_invalid");
+      }
+
+      const persistedNeedsParking = result.needs_parking;
+      setAttendees((previous) =>
+        previous.map((row) =>
+          row.id === attendee.id
+            ? { ...row, needs_parking: persistedNeedsParking }
+            : row,
+        ),
+      );
+      setEditorState((previous) =>
+        previous.id === attendee.id
+          ? { ...previous, needs_parking: persistedNeedsParking }
+          : previous,
+      );
+      setEditorBaseline((previous) =>
+        previous.id === attendee.id
+          ? { ...previous, needs_parking: persistedNeedsParking }
+          : previous,
+      );
+
+      setStatus("Parking need updated.");
+      showFlash(
+        persistedNeedsParking
+          ? "Attendee marked as needing parking."
+          : "Attendee marked as not needing parking.",
+      );
+    } catch (error) {
+      console.error("setAttendeeParkingNeed error:", error);
+      setError(parkingNeedErrorMessage(error));
+      setStatus("Parking need was not changed.");
+    } finally {
+      parkingNeedSavingRef.current.delete(attendee.id);
+      setParkingNeedSavingIds((previous) => {
+        const next = new Set(previous);
+        next.delete(attendee.id);
+        return next;
+      });
+    }
+  }
+
   async function onCancelRegistration(attendee: AttendeeRow) {
     const confirmed = await confirmViaDialog(
       "Cancel registration?",
@@ -3390,7 +3578,6 @@ created_at
         include_in_headcount: editorState.include_in_headcount,
         needs_name_tag: editorState.needs_name_tag,
         needs_coach_plate: editorState.needs_coach_plate,
-        needs_parking: editorState.needs_parking,
         data_status: editorState.data_status || "pending",
         notes: editorState.notes.trim() || null,
         // Overwrite participant_capacity on every save, except when this
@@ -3405,11 +3592,18 @@ created_at
               ? editorState.registration_capacity_original
               : requiredCapacity,
       };
+      // A new manual attendee inherits the canonical true default unless the
+      // operator explicitly opts out before creation. Existing records never
+      // carry parking intent through this broad raw attendee payload.
+      const createPayload =
+        editorState.needs_parking === false
+          ? { ...payload, needs_parking: false }
+          : payload;
 
       if (editorMode === "create") {
         const { data: newAttendee, error: insertError } = await supabase
           .from("attendees")
-          .insert(payload)
+          .insert(createPayload)
           .select("id")
           .single();
 
@@ -3557,7 +3751,6 @@ created_at
                 include_in_headcount: payload.include_in_headcount,
                 needs_name_tag: payload.needs_name_tag,
                 needs_coach_plate: payload.needs_coach_plate,
-                needs_parking: payload.needs_parking,
                 data_status: payload.data_status,
                 notes: payload.notes,
               }
@@ -3803,10 +3996,12 @@ created_at
           placementsByAttendeeId={placementsByAttendeeId}
           placementsLoading={placementsLoading}
           placementsError={placementsError}
+          parkingNeedSavingIds={parkingNeedSavingIds}
           isCompact={isCompact}
           onSelect={(attendee) =>
             void selectAttendee(attendee, { listContext: "browse" })
           }
+          onSetParkingNeed={setAttendeeParkingNeed}
           onUpdateDataStatus={updateDataStatus}
           onCancelRegistration={onCancelRegistration}
         />
@@ -3833,10 +4028,19 @@ created_at
         conflict={selectedConflict}
         saveFeedback={saveFeedback}
         onClose={requestCloseAttendeeEditor}
+        parkingNeedSaving={
+          !!editorState.id && parkingNeedSavingIds.has(editorState.id)
+        }
         onChange={updateEditorField}
         onEnterEdit={enterEditMode}
         onCancelEdit={cancelEditToView}
         onSave={handleSaveAttendeeRecord}
+        onSetParkingNeed={(needsParking) => {
+          const attendee = attendees.find((row) => row.id === editorState.id);
+          return attendee
+            ? setAttendeeParkingNeed(attendee, needsParking)
+            : Promise.resolve();
+        }}
         onReloadRecord={() => {
           const freshRow = attendees.find((row) => row.id === editorState.id);
           if (freshRow) {

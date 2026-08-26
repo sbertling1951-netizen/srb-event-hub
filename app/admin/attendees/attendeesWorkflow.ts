@@ -641,7 +641,9 @@ export function emptyAttendeeEditorState(): AttendeeEditorState {
     include_in_headcount: true,
     needs_name_tag: false,
     needs_coach_plate: false,
-    needs_parking: false,
+    // Match the canonical database default for new registrations. Existing
+    // attendee records continue to reflect their persisted value below.
+    needs_parking: true,
     data_status: "pending",
     entry_id: "",
     notes: "",
