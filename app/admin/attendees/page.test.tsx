@@ -15,6 +15,7 @@ import {
 } from "@/app/admin/attendees/attendeesWorkflow";
 import {
   AttendeeActionRow,
+  AttendeeOperationalNeedControl,
   AttendeeParkingNeedControl,
   QuickActionBar,
 } from "@/app/admin/attendees/page";
@@ -52,19 +53,23 @@ function baseAttendee(overrides: Partial<AttendeeRow> = {}): AttendeeRow {
 function noop() {}
 async function asyncNoop() {}
 
-test("manual create defers universal onboarding needs to database defaults while edit preserves explicit operational-need changes", () => {
+test("manual create defers universal onboarding needs to database defaults while existing-record need changes use governed commands", () => {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
   const payload = source.slice(
     source.indexOf("const payload = {"),
-    source.indexOf("const updatePayload ="),
+    source.indexOf("const createPayload ="),
   );
   assert.equal(/assigned_site:/.test(payload), false);
   assert.equal(/has_arrived:/.test(payload), false);
   assert.equal(/needs_name_tag:/.test(payload), false);
   assert.equal(/needs_coach_plate:/.test(payload), false);
   assert.equal(/needs_parking:/.test(payload), false);
-  assert.match(source, /needs_name_tag: editorState\.needs_name_tag/);
-  assert.match(source, /needs_coach_plate: editorState\.needs_coach_plate/);
+  assert.equal(/const updatePayload/.test(source), false);
+  assert.equal(/needs_name_tag: editorState\.needs_name_tag/.test(source), false);
+  assert.equal(/needs_coach_plate: editorState\.needs_coach_plate/.test(source), false);
+  assert.match(source, /supabase\.rpc\(\s*isNameTag\s*\?\s*"set_attendee_name_tag_need"\s*:\s*"set_attendee_coach_plate_need"/);
+  assert.match(source, /onSetNameTagNeed\(e\.target\.checked\)/);
+  assert.match(source, /onSetCoachPlateNeed\(e\.target\.checked\)/);
   assert.match(
     source,
     /editorState\.needs_name_tag === false\s*\? \{ needs_name_tag: false \}/,
@@ -82,16 +87,52 @@ test("manual create defers universal onboarding needs to database defaults while
   assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
 });
 
-test("attendee detail renders the stored Name Tag and Coach Plate requirements independently", () => {
+test("attendee detail renders accessible governed Name Tag and Coach Plate controls independently", () => {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
-  assert.match(
-    source,
-    /<strong>Name Tag<\/strong>\s*<div>\{state\.needs_name_tag \? "Needed" : "Not needed"\}<\/div>/,
+  const nameTag = renderToStaticMarkup(
+    <AttendeeOperationalNeedControl
+      attendeeName="Jane Doe"
+      label="Name Tag"
+      needs
+      canEdit
+      saving={false}
+      onSetNeed={asyncNoop}
+    />,
   );
-  assert.match(
-    source,
-    /<strong>Coach Plate<\/strong>\s*<div>\{state\.needs_coach_plate \? "Needed" : "Not needed"\}<\/div>/,
+  const coachPlate = renderToStaticMarkup(
+    <AttendeeOperationalNeedControl
+      attendeeName="Jane Doe"
+      label="Coach Plate"
+      needs={false}
+      canEdit
+      saving={false}
+      onSetNeed={asyncNoop}
+    />,
   );
+  assert.match(source, /<AttendeeOperationalNeedControl[\s\S]*?label="Name Tag"/);
+  assert.match(source, /<AttendeeOperationalNeedControl[\s\S]*?label="Coach Plate"/);
+  assert.match(nameTag, /<button/);
+  assert.match(nameTag, /aria-pressed="true"/);
+  assert.match(nameTag, /Toggle Jane Doe(?:&#x27;|')s name tag requirement\. Currently Needed\./);
+  assert.match(coachPlate, /<button/);
+  assert.match(coachPlate, /aria-pressed="false"/);
+  assert.match(coachPlate, /Toggle Jane Doe(?:&#x27;|')s coach plate requirement\. Currently Not needed\./);
+});
+
+test("Name Tag and Coach Plate controls preserve authoritative state until their governed RPC succeeds and block duplicate writes", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const start = source.indexOf("async function setAttendeeOperationalNeed(");
+  const body = source.slice(start, source.indexOf("async function onCancelRegistration", start));
+
+  assert.match(body, /operationalNeedSavingRef\.current\.has\(savingKey\)/);
+  assert.match(body, /setOperationalNeedSavingKeys/);
+  assert.match(body, /const persistedNeed = result\?\.\[field\]/);
+  assert.match(body, /typeof persistedNeed !== "boolean"/);
+  assert.match(body, /setAttendees/);
+  assert.match(body, /setEditorState/);
+  assert.match(body, /setEditorBaseline/);
+  assert.match(body, /setError\(attendeeOperationalNeedErrorMessage/);
+  assert.match(body, /need was not changed/);
 });
 
 // -- Parking intent control: Attendees owns intent, Parking owns placement --

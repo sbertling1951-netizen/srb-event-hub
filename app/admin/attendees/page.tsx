@@ -745,6 +745,36 @@ export function AttendeeParkingNeedControl(props: {
   );
 }
 
+export function AttendeeOperationalNeedControl(props: {
+  attendeeName: string;
+  label: "Name Tag" | "Coach Plate";
+  needs: boolean;
+  canEdit: boolean;
+  saving: boolean;
+  onSetNeed: (needs: boolean) => Promise<void>;
+}) {
+  const { attendeeName, label, needs, canEdit, saving, onSetNeed } = props;
+  const currentState = needs ? "Needed" : "Not needed";
+
+  return (
+    <div style={{ display: "grid", gap: "var(--space-2)", alignContent: "start" }}>
+      <strong>{label}</strong>
+      <AppButton
+        variant={needs ? "secondary" : "tertiary"}
+        loading={saving}
+        disabled={!canEdit}
+        aria-pressed={needs}
+        aria-label={`Toggle ${attendeeName}'s ${label.toLowerCase()} requirement. Currently ${currentState}.`}
+        title={needs ? `Mark ${label} Not Needed` : `Mark ${label} Needed`}
+        onClick={() => void onSetNeed(!needs)}
+      >
+        {label} {currentState}
+        <span aria-hidden="true"> ↔</span>
+      </AppButton>
+    </div>
+  );
+}
+
 function attendeeGroupSiteLabel(
   attendee: AttendeeRow,
   placements: CanonicalAttendeePlacementMap,
@@ -1048,6 +1078,8 @@ export function AttendeeRecordWorkspace(props: {
   saveFeedback: string | null;
   onClose: () => void;
   parkingNeedSaving: boolean;
+  nameTagNeedSaving: boolean;
+  coachPlateNeedSaving: boolean;
   onChange: <K extends keyof AttendeeEditorState>(
     key: K,
     value: AttendeeEditorState[K],
@@ -1056,6 +1088,8 @@ export function AttendeeRecordWorkspace(props: {
   onCancelEdit: () => void;
   onSave: () => Promise<void>;
   onSetParkingNeed: (needsParking: boolean) => Promise<void>;
+  onSetNameTagNeed: (needsNameTag: boolean) => Promise<void>;
+  onSetCoachPlateNeed: (needsCoachPlate: boolean) => Promise<void>;
   onReloadRecord: () => void;
   onRemoveHouseholdMember: (role: "copilot" | "additional") => Promise<void>;
   onUpdateDataStatus: (
@@ -1082,11 +1116,15 @@ export function AttendeeRecordWorkspace(props: {
     saveFeedback,
     onClose,
     parkingNeedSaving,
+    nameTagNeedSaving,
+    coachPlateNeedSaving,
     onChange,
     onEnterEdit,
     onCancelEdit,
     onSave,
     onSetParkingNeed,
+    onSetNameTagNeed,
+    onSetCoachPlateNeed,
     onReloadRecord,
     onRemoveHouseholdMember,
     onUpdateDataStatus,
@@ -1396,14 +1434,22 @@ export function AttendeeRecordWorkspace(props: {
             <strong>Headcount</strong>
             <div>{state.include_in_headcount ? "Included" : "Not included"}</div>
           </div>
-          <div>
-            <strong>Name Tag</strong>
-            <div>{state.needs_name_tag ? "Needed" : "Not needed"}</div>
-          </div>
-          <div>
-            <strong>Coach Plate</strong>
-            <div>{state.needs_coach_plate ? "Needed" : "Not needed"}</div>
-          </div>
+          <AttendeeOperationalNeedControl
+            attendeeName={titleText}
+            label="Name Tag"
+            needs={state.needs_name_tag}
+            canEdit={canEdit}
+            saving={nameTagNeedSaving}
+            onSetNeed={onSetNameTagNeed}
+          />
+          <AttendeeOperationalNeedControl
+            attendeeName={titleText}
+            label="Coach Plate"
+            needs={state.needs_coach_plate}
+            canEdit={canEdit}
+            saving={coachPlateNeedSaving}
+            onSetNeed={onSetCoachPlateNeed}
+          />
           <div>
             <strong>Parking</strong>
             <div>{state.needs_parking ? "Needed" : "Not needed"}</div>
@@ -1723,17 +1769,39 @@ export function AttendeeRecordWorkspace(props: {
             label="Include In Headcount"
           />
 
-          <Checkbox
-            checked={state.needs_name_tag}
-            onChange={(e) => onChange("needs_name_tag", e.target.checked)}
-            label="Needs Name Tag"
-          />
+          {mode === "create" ? (
+            <Checkbox
+              checked={state.needs_name_tag}
+              onChange={(e) => onChange("needs_name_tag", e.target.checked)}
+              label="Needs Name Tag"
+              help="New attendee records start as needing a name tag."
+            />
+          ) : (
+            <Checkbox
+              checked={state.needs_name_tag}
+              disabled={!canEdit || nameTagNeedSaving}
+              onChange={(e) => void onSetNameTagNeed(e.target.checked)}
+              label="Needs Name Tag"
+              help="Changes are saved through the governed Name Tag need command."
+            />
+          )}
 
-          <Checkbox
-            checked={state.needs_coach_plate}
-            onChange={(e) => onChange("needs_coach_plate", e.target.checked)}
-            label="Needs Coach Plate"
-          />
+          {mode === "create" ? (
+            <Checkbox
+              checked={state.needs_coach_plate}
+              onChange={(e) => onChange("needs_coach_plate", e.target.checked)}
+              label="Needs Coach Plate"
+              help="New attendee records start as needing a coach plate."
+            />
+          ) : (
+            <Checkbox
+              checked={state.needs_coach_plate}
+              disabled={!canEdit || coachPlateNeedSaving}
+              onChange={(e) => void onSetCoachPlateNeed(e.target.checked)}
+              label="Needs Coach Plate"
+              help="Changes are saved through the governed Coach Plate need command."
+            />
+          )}
 
           {mode === "create" ? (
             <Checkbox
@@ -2083,6 +2151,10 @@ function AdminAttendeesPageInner() {
     new Set(),
   );
   const parkingNeedSavingRef = useRef<Set<string>>(new Set());
+  const [operationalNeedSavingKeys, setOperationalNeedSavingKeys] = useState<Set<string>>(
+    new Set(),
+  );
+  const operationalNeedSavingRef = useRef<Set<string>>(new Set());
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   // Stage C: exactly one focused record workspace owns the selected
   // attendee. editorOpen/editorMode track whether the workspace is open and
@@ -2970,6 +3042,109 @@ created_at
     }
   }
 
+  type AttendeeOperationalNeed = "name_tag" | "coach_plate";
+
+  function attendeeOperationalNeedSavingKey(
+    attendeeId: string,
+    need: AttendeeOperationalNeed,
+  ) {
+    return `${attendeeId}:${need}`;
+  }
+
+  function attendeeOperationalNeedErrorMessage(
+    need: AttendeeOperationalNeed,
+    error: unknown,
+  ): string {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    const label = need === "name_tag" ? "Name Tag" : "Coach Plate";
+
+    if (message.includes("authorization_denied") || message.includes("unauthorized")) {
+      return `You do not have permission to change this attendee's ${label} need.`;
+    }
+    if (message.includes("attendee_not_found")) {
+      return "This attendee is no longer available in the current event.";
+    }
+    return `We couldn't update this attendee's ${label} need. Please try again.`;
+  }
+
+  async function setAttendeeOperationalNeed(
+    attendee: AttendeeRow,
+    need: AttendeeOperationalNeed,
+    requestedNeed: boolean,
+  ) {
+    const savingKey = attendeeOperationalNeedSavingKey(attendee.id, need);
+    if (operationalNeedSavingRef.current.has(savingKey)) {
+      return;
+    }
+
+    operationalNeedSavingRef.current.add(savingKey);
+    setOperationalNeedSavingKeys((previous) => new Set(previous).add(savingKey));
+
+    const isNameTag = need === "name_tag";
+    const label = isNameTag ? "Name Tag" : "Coach Plate";
+    const field = isNameTag ? "needs_name_tag" : "needs_coach_plate";
+
+    try {
+      setError(null);
+      setStatus(`Saving ${label} need...`);
+
+      const { data, error: operationalNeedError } = await supabase.rpc(
+        isNameTag
+          ? "set_attendee_name_tag_need"
+          : "set_attendee_coach_plate_need",
+        isNameTag
+          ? {
+              p_attendee_id: attendee.id,
+              p_needs_name_tag: requestedNeed,
+            }
+          : {
+              p_attendee_id: attendee.id,
+              p_needs_coach_plate: requestedNeed,
+            },
+      );
+
+      if (operationalNeedError) {
+        throw operationalNeedError;
+      }
+
+      const result = Array.isArray(data) ? data[0] : data;
+      const persistedNeed = result?.[field];
+      if (typeof persistedNeed !== "boolean") {
+        throw new Error("attendee_operational_need_result_invalid");
+      }
+
+      setAttendees((previous) =>
+        previous.map((row) =>
+          row.id === attendee.id ? { ...row, [field]: persistedNeed } : row,
+        ),
+      );
+      setEditorState((previous) =>
+        previous.id === attendee.id ? { ...previous, [field]: persistedNeed } : previous,
+      );
+      setEditorBaseline((previous) =>
+        previous.id === attendee.id ? { ...previous, [field]: persistedNeed } : previous,
+      );
+
+      setStatus(`${label} need updated.`);
+      showFlash(
+        persistedNeed
+          ? `Attendee marked as needing a ${label.toLowerCase()}.`
+          : `Attendee marked as not needing a ${label.toLowerCase()}.`,
+      );
+    } catch (error) {
+      console.error("setAttendeeOperationalNeed error:", error);
+      setError(attendeeOperationalNeedErrorMessage(need, error));
+      setStatus(`${label} need was not changed.`);
+    } finally {
+      operationalNeedSavingRef.current.delete(savingKey);
+      setOperationalNeedSavingKeys((previous) => {
+        const next = new Set(previous);
+        next.delete(savingKey);
+        return next;
+      });
+    }
+  }
+
   async function onCancelRegistration(attendee: AttendeeRow) {
     const confirmed = await confirmViaDialog(
       "Cancel registration?",
@@ -3590,15 +3765,11 @@ created_at
               ? editorState.registration_capacity_original
               : requiredCapacity,
       };
-      // Existing records retain the current broad edit behavior for Name Tag
-      // and Coach Plate. New manual attendees instead receive the same
-      // canonical true defaults as governed imports unless an operator opts
-      // out explicitly. Parking remains separately governed below.
-      const updatePayload = {
-        ...payload,
-        needs_name_tag: editorState.needs_name_tag,
-        needs_coach_plate: editorState.needs_coach_plate,
-      };
+      // Existing Name Tag and Coach Plate changes are intentionally absent
+      // from this broad edit payload: their two explicit governed commands
+      // own those durable operational requirements. New manual attendees
+      // receive the same canonical true defaults as governed imports unless
+      // an operator opts out explicitly. Parking remains separately governed.
       const createPayload = {
         ...payload,
         ...(editorState.needs_name_tag === false
@@ -3642,7 +3813,7 @@ created_at
       } else {
         const { error: updateError } = await supabase
           .from("attendees")
-          .update(updatePayload)
+          .update(payload)
           .eq("id", editorState.id);
         if (updateError) {
           throw updateError;
@@ -3761,8 +3932,6 @@ created_at
                 share_with_attendees: payload.share_with_attendees,
                 is_active: payload.is_active,
                 include_in_headcount: payload.include_in_headcount,
-                needs_name_tag: updatePayload.needs_name_tag,
-                needs_coach_plate: updatePayload.needs_coach_plate,
                 data_status: payload.data_status,
                 notes: payload.notes,
               }
@@ -4043,6 +4212,18 @@ created_at
         parkingNeedSaving={
           !!editorState.id && parkingNeedSavingIds.has(editorState.id)
         }
+        nameTagNeedSaving={
+          !!editorState.id &&
+          operationalNeedSavingKeys.has(
+            attendeeOperationalNeedSavingKey(editorState.id, "name_tag"),
+          )
+        }
+        coachPlateNeedSaving={
+          !!editorState.id &&
+          operationalNeedSavingKeys.has(
+            attendeeOperationalNeedSavingKey(editorState.id, "coach_plate"),
+          )
+        }
         onChange={updateEditorField}
         onEnterEdit={enterEditMode}
         onCancelEdit={cancelEditToView}
@@ -4051,6 +4232,18 @@ created_at
           const attendee = attendees.find((row) => row.id === editorState.id);
           return attendee
             ? setAttendeeParkingNeed(attendee, needsParking)
+            : Promise.resolve();
+        }}
+        onSetNameTagNeed={(needsNameTag) => {
+          const attendee = attendees.find((row) => row.id === editorState.id);
+          return attendee
+            ? setAttendeeOperationalNeed(attendee, "name_tag", needsNameTag)
+            : Promise.resolve();
+        }}
+        onSetCoachPlateNeed={(needsCoachPlate) => {
+          const attendee = attendees.find((row) => row.id === editorState.id);
+          return attendee
+            ? setAttendeeOperationalNeed(attendee, "coach_plate", needsCoachPlate)
             : Promise.resolve();
         }}
         onReloadRecord={() => {
