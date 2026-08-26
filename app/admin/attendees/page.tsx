@@ -756,13 +756,21 @@ export function AttendeeOperationalNeedControl(props: {
   const { attendeeName, label, needs, canEdit, saving, onSetNeed } = props;
   const currentState = needs ? "Needed" : "Not needed";
 
+  if (!canEdit) {
+    return (
+      <div>
+        <strong>{label}</strong>
+        <div>{currentState}</div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gap: "var(--space-2)", alignContent: "start" }}>
       <strong>{label}</strong>
       <AppButton
         variant={needs ? "secondary" : "tertiary"}
         loading={saving}
-        disabled={!canEdit}
         aria-pressed={needs}
         aria-label={`Toggle ${attendeeName}'s ${label.toLowerCase()} requirement. Currently ${currentState}.`}
         title={needs ? `Mark ${label} Not Needed` : `Mark ${label} Needed`}

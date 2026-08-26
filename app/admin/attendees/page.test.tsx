@@ -89,7 +89,7 @@ test("manual create defers universal onboarding needs to database defaults while
 
 test("attendee detail renders accessible governed Name Tag and Coach Plate controls independently", () => {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
-  const nameTag = renderToStaticMarkup(
+  const nameTagNeeded = renderToStaticMarkup(
     <AttendeeOperationalNeedControl
       attendeeName="Jane Doe"
       label="Name Tag"
@@ -99,7 +99,27 @@ test("attendee detail renders accessible governed Name Tag and Coach Plate contr
       onSetNeed={asyncNoop}
     />,
   );
-  const coachPlate = renderToStaticMarkup(
+  const nameTagNotNeeded = renderToStaticMarkup(
+    <AttendeeOperationalNeedControl
+      attendeeName="Jane Doe"
+      label="Name Tag"
+      needs={false}
+      canEdit={false}
+      saving={false}
+      onSetNeed={asyncNoop}
+    />,
+  );
+  const coachPlateNeeded = renderToStaticMarkup(
+    <AttendeeOperationalNeedControl
+      attendeeName="Jane Doe"
+      label="Coach Plate"
+      needs
+      canEdit={false}
+      saving={false}
+      onSetNeed={asyncNoop}
+    />,
+  );
+  const coachPlateNotNeeded = renderToStaticMarkup(
     <AttendeeOperationalNeedControl
       attendeeName="Jane Doe"
       label="Coach Plate"
@@ -111,12 +131,18 @@ test("attendee detail renders accessible governed Name Tag and Coach Plate contr
   );
   assert.match(source, /<AttendeeOperationalNeedControl[\s\S]*?label="Name Tag"/);
   assert.match(source, /<AttendeeOperationalNeedControl[\s\S]*?label="Coach Plate"/);
-  assert.match(nameTag, /<button/);
-  assert.match(nameTag, /aria-pressed="true"/);
-  assert.match(nameTag, /Toggle Jane Doe(?:&#x27;|')s name tag requirement\. Currently Needed\./);
-  assert.match(coachPlate, /<button/);
-  assert.match(coachPlate, /aria-pressed="false"/);
-  assert.match(coachPlate, /Toggle Jane Doe(?:&#x27;|')s coach plate requirement\. Currently Not needed\./);
+  assert.match(nameTagNeeded, /<button/);
+  assert.match(nameTagNeeded, /aria-pressed="true"/);
+  assert.match(nameTagNeeded, /Toggle Jane Doe(?:&#x27;|')s name tag requirement\. Currently Needed\./);
+  assert.match(nameTagNotNeeded, /Name Tag/);
+  assert.match(nameTagNotNeeded, /Not needed/);
+  assert.doesNotMatch(nameTagNotNeeded, /<button/);
+  assert.match(coachPlateNeeded, /Coach Plate/);
+  assert.match(coachPlateNeeded, /Needed/);
+  assert.doesNotMatch(coachPlateNeeded, /<button/);
+  assert.match(coachPlateNotNeeded, /<button/);
+  assert.match(coachPlateNotNeeded, /aria-pressed="false"/);
+  assert.match(coachPlateNotNeeded, /Toggle Jane Doe(?:&#x27;|')s coach plate requirement\. Currently Not needed\./);
 });
 
 test("Name Tag and Coach Plate controls preserve authoritative state until their governed RPC succeeds and block duplicate writes", () => {
