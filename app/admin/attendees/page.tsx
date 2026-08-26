@@ -3576,8 +3576,6 @@ created_at
         share_with_attendees: editorState.share_with_attendees,
         is_active: editorState.is_active,
         include_in_headcount: editorState.include_in_headcount,
-        needs_name_tag: editorState.needs_name_tag,
-        needs_coach_plate: editorState.needs_coach_plate,
         data_status: editorState.data_status || "pending",
         notes: editorState.notes.trim() || null,
         // Overwrite participant_capacity on every save, except when this
@@ -3592,13 +3590,27 @@ created_at
               ? editorState.registration_capacity_original
               : requiredCapacity,
       };
-      // A new manual attendee inherits the canonical true default unless the
-      // operator explicitly opts out before creation. Existing records never
-      // carry parking intent through this broad raw attendee payload.
-      const createPayload =
-        editorState.needs_parking === false
-          ? { ...payload, needs_parking: false }
-          : payload;
+      // Existing records retain the current broad edit behavior for Name Tag
+      // and Coach Plate. New manual attendees instead receive the same
+      // canonical true defaults as governed imports unless an operator opts
+      // out explicitly. Parking remains separately governed below.
+      const updatePayload = {
+        ...payload,
+        needs_name_tag: editorState.needs_name_tag,
+        needs_coach_plate: editorState.needs_coach_plate,
+      };
+      const createPayload = {
+        ...payload,
+        ...(editorState.needs_name_tag === false
+          ? { needs_name_tag: false }
+          : {}),
+        ...(editorState.needs_coach_plate === false
+          ? { needs_coach_plate: false }
+          : {}),
+        ...(editorState.needs_parking === false
+          ? { needs_parking: false }
+          : {}),
+      };
 
       if (editorMode === "create") {
         const { data: newAttendee, error: insertError } = await supabase
@@ -3630,7 +3642,7 @@ created_at
       } else {
         const { error: updateError } = await supabase
           .from("attendees")
-          .update(payload)
+          .update(updatePayload)
           .eq("id", editorState.id);
         if (updateError) {
           throw updateError;
@@ -3749,8 +3761,8 @@ created_at
                 share_with_attendees: payload.share_with_attendees,
                 is_active: payload.is_active,
                 include_in_headcount: payload.include_in_headcount,
-                needs_name_tag: payload.needs_name_tag,
-                needs_coach_plate: payload.needs_coach_plate,
+                needs_name_tag: updatePayload.needs_name_tag,
+                needs_coach_plate: updatePayload.needs_coach_plate,
                 data_status: payload.data_status,
                 notes: payload.notes,
               }

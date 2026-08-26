@@ -52,22 +52,46 @@ function baseAttendee(overrides: Partial<AttendeeRow> = {}): AttendeeRow {
 function noop() {}
 async function asyncNoop() {}
 
-test("generic attendee payload excludes Arrival, placement, and parking intent; create alone may explicitly opt out of the canonical default", () => {
+test("manual create defers universal onboarding needs to database defaults while edit preserves explicit operational-need changes", () => {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
   const payload = source.slice(
     source.indexOf("const payload = {"),
-    source.indexOf("const createPayload ="),
+    source.indexOf("const updatePayload ="),
   );
   assert.equal(/assigned_site:/.test(payload), false);
   assert.equal(/has_arrived:/.test(payload), false);
+  assert.equal(/needs_name_tag:/.test(payload), false);
+  assert.equal(/needs_coach_plate:/.test(payload), false);
   assert.equal(/needs_parking:/.test(payload), false);
+  assert.match(source, /needs_name_tag: editorState\.needs_name_tag/);
+  assert.match(source, /needs_coach_plate: editorState\.needs_coach_plate/);
   assert.match(
     source,
-    /editorState\.needs_parking === false\s*\? \{ \.\.\.payload, needs_parking: false \}\s*: payload/,
+    /editorState\.needs_name_tag === false\s*\? \{ needs_name_tag: false \}/,
+  );
+  assert.match(
+    source,
+    /editorState\.needs_coach_plate === false\s*\? \{ needs_coach_plate: false \}/,
+  );
+  assert.match(
+    source,
+    /editorState\.needs_parking === false\s*\? \{ needs_parking: false \}/,
   );
   assert.match(source, /fetchCanonicalAttendeePlacement/);
   assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/checkin", state\.id\)/);
   assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
+});
+
+test("attendee detail renders the stored Name Tag and Coach Plate requirements independently", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  assert.match(
+    source,
+    /<strong>Name Tag<\/strong>\s*<div>\{state\.needs_name_tag \? "Needed" : "Not needed"\}<\/div>/,
+  );
+  assert.match(
+    source,
+    /<strong>Coach Plate<\/strong>\s*<div>\{state\.needs_coach_plate \? "Needed" : "Not needed"\}<\/div>/,
+  );
 });
 
 // -- Parking intent control: Attendees owns intent, Parking owns placement --

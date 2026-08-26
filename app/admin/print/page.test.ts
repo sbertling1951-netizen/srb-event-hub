@@ -124,6 +124,13 @@ test("Print Center performs no database write of any kind -- confirms it is a vi
   assert.equal(/\.rpc\(/.test(source), false);
 });
 
+test("Print queue membership and printing remain session-only workflow state, independent of attendee need flags", () => {
+  assert.match(source, /const \[selectedIds, setSelectedIds\] = useState<string\[\]>\(\[\]\);/);
+  assert.match(source, /setSelectedIds\(\(prev\) =>/);
+  assert.match(source, /window\.print\(\);/);
+  assert.equal(/needs_name_tag|needs_coach_plate/.test(source), false);
+});
+
 test("the unrelated can_manage_admins check (which admin may browse all Events to print for) is preserved unchanged -- not part of this migration", () => {
   assert.match(
     source,

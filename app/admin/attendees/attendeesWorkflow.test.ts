@@ -55,15 +55,29 @@ const requiredMembershipRule: ValidationRule = {
   applies_to_event_id: null,
 };
 
-test("emptyAttendeeEditorState matches the canonical Needs Parking default for manual creation", () => {
+test("emptyAttendeeEditorState matches the canonical universal onboarding defaults for manual creation", () => {
+  assert.equal(emptyAttendeeEditorState().needs_name_tag, true);
+  assert.equal(emptyAttendeeEditorState().needs_coach_plate, true);
   assert.equal(emptyAttendeeEditorState().needs_parking, true);
 });
 
-test("attendeeToEditorState preserves an existing explicit parking-need value", () => {
-  const falseState = attendeeToEditorState(attendee({ needs_parking: false }));
-  const trueState = attendeeToEditorState(attendee({ needs_parking: true }));
+test("attendeeToEditorState preserves existing explicit operational-need values", () => {
+  const falseState = attendeeToEditorState(attendee({
+    needs_name_tag: false,
+    needs_coach_plate: false,
+    needs_parking: false,
+  }));
+  const trueState = attendeeToEditorState(attendee({
+    needs_name_tag: true,
+    needs_coach_plate: true,
+    needs_parking: true,
+  }));
 
+  assert.equal(falseState.needs_name_tag, false);
+  assert.equal(falseState.needs_coach_plate, false);
   assert.equal(falseState.needs_parking, false);
+  assert.equal(trueState.needs_name_tag, true);
+  assert.equal(trueState.needs_coach_plate, true);
   assert.equal(trueState.needs_parking, true);
 });
 

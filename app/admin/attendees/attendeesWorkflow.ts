@@ -639,10 +639,10 @@ export function emptyAttendeeEditorState(): AttendeeEditorState {
     share_with_attendees: false,
     is_active: true,
     include_in_headcount: true,
-    needs_name_tag: false,
-    needs_coach_plate: false,
-    // Match the canonical database default for new registrations. Existing
-    // attendee records continue to reflect their persisted value below.
+    // Match the canonical database defaults for new registrations. Existing
+    // attendee records continue to reflect their persisted values below.
+    needs_name_tag: true,
+    needs_coach_plate: true,
     needs_parking: true,
     data_status: "pending",
     entry_id: "",
