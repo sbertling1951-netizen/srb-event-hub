@@ -183,14 +183,24 @@ function NearbyPageInner() {
   // Kept separate from `selectedPlace` above, which is dedicated to the
   // preferred-map chooser dialog and must keep working exactly as-is.
   const [panelPlace, setPanelPlace] = useState<Place | null>(null);
+  // Which surface opened the panel. The map-launched panel hides
+  // Previous/Next (the pins already are direct place selection); the
+  // List-launched panel keeps them. Preserved across prev/next navigation.
+  const [panelSource, setPanelSource] = useState<"list" | "map">("list");
   const [addressCopied, setAddressCopied] = useState(false);
   const [addressCopyFailed, setAddressCopyFailed] = useState(false);
 
-  const openPlacePanel = useCallback((place: Place) => {
-    setAddressCopied(false);
-    setAddressCopyFailed(false);
-    setPanelPlace(place);
-  }, []);
+  const openPlacePanel = useCallback(
+    (place: Place, source?: "list" | "map") => {
+      setAddressCopied(false);
+      setAddressCopyFailed(false);
+      if (source) {
+        setPanelSource(source);
+      }
+      setPanelPlace(place);
+    },
+    [],
+  );
 
   const closePlacePanel = useCallback(() => {
     setPanelPlace(null);
@@ -792,7 +802,7 @@ function NearbyPageInner() {
           onObjectActivate={(objectId) => {
             const place = filteredPlaces.find((p) => p.id === objectId);
             if (place) {
-              openPlacePanel(place);
+              openPlacePanel(place, "map");
             }
           }}
           onMapBackgroundActivate={() => {
@@ -841,7 +851,7 @@ function NearbyPageInner() {
                       <button
                         type="button"
                         className="nearby-place-open-button"
-                        onClick={() => openPlacePanel(place)}
+                        onClick={() => openPlacePanel(place, "list")}
                         aria-label={`View details for ${place.name}`}
                       >
                         <div>
@@ -941,7 +951,7 @@ function NearbyPageInner() {
                   <button
                     type="button"
                     className="nearby-place-open-button nearby-place-open-button-has-favorite"
-                    onClick={() => openPlacePanel(place)}
+                    onClick={() => openPlacePanel(place, "list")}
                     aria-label={`View details for ${place.name}`}
                   >
                     <div className="nearby-card-title">
@@ -1131,6 +1141,7 @@ function NearbyPageInner() {
       <ObjectPanel
         open={panelPlace !== null}
         onClose={closePlacePanel}
+        density="compact"
         title={panelPlace?.name ?? ""}
         subtitle={
           panelPlace
@@ -1144,13 +1155,16 @@ function NearbyPageInner() {
                 .join(" • ") || undefined
             : undefined
         }
+        // Previous/Next only for a List-launched panel -- from the map the
+        // pins themselves are the direct place selection. Navigation keeps
+        // the launch source so it stays hidden/shown consistently.
         onPrevious={
-          panelHasPrevious
+          panelSource !== "map" && panelHasPrevious
             ? () => openPlacePanel(filteredPlaces[panelIndex - 1])
             : undefined
         }
         onNext={
-          panelHasNext
+          panelSource !== "map" && panelHasNext
             ? () => openPlacePanel(filteredPlaces[panelIndex + 1])
             : undefined
         }
@@ -1239,17 +1253,24 @@ function NearbyPageInner() {
       >
         {panelPlace ? (
           <div className="app-stack-8">
-            {panelPlace.address ? <p>{panelPlace.address}</p> : null}
+            {/* Address and phone grouped tightly (4px gap), plain <div>s so
+                there are no browser <p> margins opening large blank gaps.
+                The tel: link behavior is unchanged. */}
+            {panelPlace.address || panelPlace.phone ? (
+              <div style={{ display: "grid", gap: "var(--space-1)" }}>
+                {panelPlace.address ? <div>{panelPlace.address}</div> : null}
 
-            {panelPlace.phone ? (
-              <p>
-                <a href={`tel:${panelPlace.phone}`}>
-                  {formatPhoneNumber(panelPlace.phone)}
-                </a>
-              </p>
+                {panelPlace.phone ? (
+                  <div>
+                    <a href={`tel:${panelPlace.phone}`}>
+                      {formatPhoneNumber(panelPlace.phone)}
+                    </a>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
 
-            {panelPlace.notes ? <p>{panelPlace.notes}</p> : null}
+            {panelPlace.notes ? <div>{panelPlace.notes}</div> : null}
           </div>
         ) : null}
       </ObjectPanel>

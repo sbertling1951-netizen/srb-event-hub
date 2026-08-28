@@ -3112,6 +3112,65 @@ body.slideshow-view-mode .app-header-card {
   color: var(--color-text-muted);
 }
 
+/* Compact density (opt-in via <ObjectPanel density="compact">). Tightens
+   this panel's own chrome padding and lays the action rows out as tight
+   grids so a glanceable surface (e.g. the Nearby map place panel) fits an
+   ordinary object without a long scroll. Touch targets are kept at/above
+   the minimum -- this is tighter spacing, not smaller controls -- except
+   the explicitly-subordinate secondary row. Only added to the panel root
+   for compact consumers; every other consumer is untouched. */
+.object-panel--compact .object-panel-header {
+  padding: var(--space-4) var(--space-5) var(--space-3);
+}
+
+.object-panel--compact .object-panel-subtitle {
+  margin-top: var(--space-1);
+}
+
+.object-panel--compact .object-panel-primary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5) 0;
+}
+
+/* The first primary action (Directions in Nearby) is the visually primary
+   one -- it spans the full width. A Call/Website pair then sits two-up
+   below; a single remaining action spans full width rather than sitting
+   half-width and lopsided. */
+.object-panel--compact .object-panel-primary-actions > :first-child,
+.object-panel--compact .object-panel-primary-actions > :nth-child(2):last-child {
+  grid-column: 1 / -1;
+}
+
+.object-panel--compact .object-panel-primary-actions .app-button {
+  width: 100%;
+}
+
+.object-panel--compact .object-panel-body {
+  padding: var(--space-4) var(--space-5);
+}
+
+.object-panel--compact .object-panel-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-4);
+}
+
+.object-panel--compact .object-panel-secondary-actions .app-button {
+  width: auto;
+  flex: 1 1 auto;
+  min-height: 38px;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  font-size: var(--font-size-caption);
+}
+
+.object-panel--compact .object-panel-footer {
+  padding: var(--space-3) var(--space-5);
+}
+
 @keyframes object-panel-enter-sheet {
   from {
     transform: translateY(100%);

@@ -238,13 +238,53 @@ test("the panel opened from the map is the same ObjectPanel, filled from the can
   const props = mapSurfaceProps();
   assert.match(
     props,
-    /onObjectActivate=\{\(objectId\) => \{\s*\n\s*const place = filteredPlaces\.find\(\(p\) => p\.id === objectId\);\s*\n\s*if \(place\) \{\s*\n\s*openPlacePanel\(place\);/,
+    /onObjectActivate=\{\(objectId\) => \{\s*\n\s*const place = filteredPlaces\.find\(\(p\) => p\.id === objectId\);\s*\n\s*if \(place\) \{\s*\n\s*openPlacePanel\(place, "map"\);/,
   );
   // openPlacePanel is the single entry point the List view already uses.
-  assert.match(SOURCE, /const openPlacePanel = useCallback\(\(place: Place\) => \{[\s\S]*?setPanelPlace\(place\);/);
-  assert.match(SOURCE, /onClick=\{\(\) => openPlacePanel\(place\)\}/); // list card
+  assert.match(SOURCE, /const openPlacePanel = useCallback\(\s*\n\s*\(place: Place, source\?: "list" \| "map"\) => \{[\s\S]*?setPanelPlace\(place\);/);
+  assert.match(SOURCE, /onClick=\{\(\) => openPlacePanel\(place, "list"\)\}/); // list card
   // panel content reads the canonical panelPlace fields
   assert.match(SOURCE, /title=\{panelPlace\?\.name \?\? ""\}/);
+});
+
+test("the Nearby place panel is compact and groups address + phone tightly (no <p> gaps)", () => {
+  assert.match(SOURCE, /<ObjectPanel\s*\n\s*open=\{panelPlace !== null\}\s*\n\s*onClose=\{closePlacePanel\}\s*\n\s*density="compact"/);
+  // body: no <p> tags, address+phone in one tight sub-grid, tel: link unchanged
+  const bodyStart = SOURCE.indexOf('{panelPlace ? (\n          <div className="app-stack-8">');
+  assert.notEqual(bodyStart, -1);
+  const body = SOURCE.slice(bodyStart, SOURCE.indexOf("</ObjectPanel>", bodyStart))
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, ""); // strip JSX comments (prose mentions <p>)
+  assert.doesNotMatch(body, /<p>|<\/p>/);
+  assert.match(body, /\{panelPlace\.address \|\| panelPlace\.phone \? \(\s*\n\s*<div style=\{\{ display: "grid", gap: "var\(--space-1\)" \}\}>/);
+  assert.match(body, /<a href=\{`tel:\$\{panelPlace\.phone\}`\}>\s*\n\s*\{formatPhoneNumber\(panelPlace\.phone\)\}/);
+});
+
+test("Previous/Next is hidden for a MAP-launched panel, kept for a LIST-launched one", () => {
+  assert.match(
+    SOURCE,
+    /onPrevious=\{\s*\n\s*panelSource !== "map" && panelHasPrevious\s*\n\s*\? \(\) => openPlacePanel\(filteredPlaces\[panelIndex - 1\]\)\s*\n\s*: undefined\s*\n\s*\}/,
+  );
+  assert.match(
+    SOURCE,
+    /onNext=\{\s*\n\s*panelSource !== "map" && panelHasNext\s*\n\s*\? \(\) => openPlacePanel\(filteredPlaces\[panelIndex \+ 1\]\)\s*\n\s*: undefined\s*\n\s*\}/,
+  );
+  // panelSource is tracked, defaults to list, set on open, not reset by nav
+  assert.match(SOURCE, /const \[panelSource, setPanelSource\] = useState<"list" \| "map">\("list"\)/);
+  assert.match(SOURCE, /if \(source\) \{\s*\n\s*setPanelSource\(source\);\s*\n\s*\}/);
+});
+
+test("every panel action callback is unchanged -- handleDirections / tel: / website / favorite / copy address / preferred-map chooser", () => {
+  assert.match(SOURCE, /onClick=\{\(\) => handleDirections\(panelPlace\)\}/);
+  assert.match(SOURCE, /<AppLinkButton href=\{`tel:\$\{panelPlace\.phone\}`\}>/);
+  assert.match(SOURCE, /href=\{panelPlace\.website\}\s*\n\s*target="_blank"\s*\n\s*rel="noreferrer"/);
+  assert.match(SOURCE, /onClick=\{\(\) => toggleFavorite\(panelPlace\.id\)\}/);
+  assert.match(SOURCE, /onClick=\{\(\) => void copyPlaceAddress\(panelPlace\.address as string\)\}/);
+  assert.match(SOURCE, /<AppButton variant="muted" onClick=\{openPreferredMapChooser\}>\s*\n\s*Change preferred map/);
+  // Favorite + Change preferred map remain in secondaryActions (subordinate)
+  const secondary = SOURCE.slice(SOURCE.indexOf("secondaryActions={"), SOURCE.indexOf("footer={"));
+  assert.match(secondary, /toggleFavorite\(panelPlace\.id\)/);
+  assert.match(secondary, /openPreferredMapChooser/);
+  assert.match(secondary, /copyPlaceAddress/);
 });
 
 test("Directions from the panel uses the one List-view URL builder (handleDirections) -- no second navigation implementation", () => {

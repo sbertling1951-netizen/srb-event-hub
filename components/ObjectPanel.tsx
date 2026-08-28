@@ -58,6 +58,13 @@ export type ObjectPanelProps = {
   previousLabel?: string;
   nextLabel?: string;
   closeLabel?: string;
+  /** Visual density. "comfortable" (default) is unchanged for every
+   * existing consumer. "compact" tightens the panel's own chrome padding
+   * and lays the primary/secondary action rows out as tight grids -- for
+   * a glanceable surface like the Nearby map place panel. Purely
+   * presentational; changes no behavior, semantics, or which content
+   * renders. */
+  density?: "comfortable" | "compact";
 };
 
 /**
@@ -70,7 +77,9 @@ export type ObjectPanelProps = {
  * handled entirely by CSS media queries in `app/globals.css` (see
  * `.object-panel-*`), so rotating or resizing the viewport changes
  * presentation without this component re-rendering, closing, or losing
- * state.
+ * state. `density="compact"` (opt-in; default unchanged) adds
+ * `.object-panel--compact` to tighten chrome padding and grid the action
+ * rows -- still purely CSS, still the same content and semantics.
  *
  * Behavior provided:
  * - Correct dialog semantics (`role="dialog"`, `aria-modal`,
@@ -103,6 +112,7 @@ export function ObjectPanel({
   previousLabel = "Previous",
   nextLabel = "Next",
   closeLabel = "Close",
+  density = "comfortable",
 }: ObjectPanelProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -297,7 +307,11 @@ export function ObjectPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="object-panel"
+        className={
+          density === "compact"
+            ? "object-panel object-panel--compact"
+            : "object-panel"
+        }
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleTrapKeyDown}
         tabIndex={-1}
