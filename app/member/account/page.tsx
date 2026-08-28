@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -92,6 +92,14 @@ function deriveDisplayName(
 
 export default function MemberAccountPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Member Event Context Stage 2: set by MemberWorkspaceProvider when a
+  // previously-established Event context failed governed server-side
+  // validation (the Event no longer exists, or this Person's participation
+  // is no longer eligible) -- never for the Event merely being inactive or
+  // hidden. Read once; the account/session data itself is always re-loaded
+  // fresh from resolve_member_account() below regardless of this flag.
+  const contextInvalid = searchParams.get("contextInvalid") === "1";
 
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("checking");
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
@@ -286,6 +294,25 @@ export default function MemberAccountPage() {
           </div>
         </div>
       </div>
+
+      {contextInvalid ? (
+        <div
+          role="alert"
+          style={{
+            border: "1px solid #fde68a",
+            borderRadius: 8,
+            background: "#fffbeb",
+            color: "#92400e",
+            padding: 12,
+            fontSize: 14,
+            fontWeight: 700,
+            marginBottom: 16,
+          }}
+        >
+          This Event is no longer available to this account. Choose another
+          Event below.
+        </div>
+      ) : null}
 
       {error ? (
         <div

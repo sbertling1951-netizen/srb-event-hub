@@ -436,3 +436,190 @@ export function compareWorkspaceContextShadow(
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Member Event Context Stage 2 -- governed established-context validation.
+//
+// This is a distinct question from resolveWorkspaceContext above: that
+// function answers "which Events may this Person choose among" (discovery /
+// new entry, still correctly gated by resolve_member_account's existing
+// lifecycle/visibility discovery predicate -- unchanged, out of scope for
+// this stage). resolveEstablishedMemberEventContext answers "is this one,
+// already-selected, persisted Event still a valid workspace for this
+// Person" -- per ADR-006 and Member Event Context Stage 1, an Event's
+// lifecycle/visibility flags never answer that question by themselves. This
+// is the function MemberWorkspaceProvider/MemberRouteGuard call to stop
+// treating localStorage as authoritative for that answer; it is live
+// authority, not a shadow/comparison path.
+// ---------------------------------------------------------------------------
+
+export type EstablishedEventContextState =
+  | "valid"
+  | "invalid_authorization"
+  | "event_missing"
+  | "no_context"
+  | "unauthenticated"
+  | "ambiguous_person"
+  | "error";
+
+export type EstablishedEventData = {
+  id: string;
+  name: string | null;
+  venueName: string | null;
+  location: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  lat: number | null;
+  lng: number | null;
+  mapImageUrl: string | null;
+  masterMapId: string | null;
+  coachMapOpenScale: number | null;
+  shortName: string | null;
+};
+
+export type EstablishedEventContextResult =
+  | { state: "valid"; event: EstablishedEventData }
+  | {
+      state: Exclude<EstablishedEventContextState, "valid">;
+    };
+
+type EstablishedEventContextRow = {
+  outcome?: unknown;
+  id?: unknown;
+  name?: unknown;
+  venue_name?: unknown;
+  location?: unknown;
+  start_date?: unknown;
+  end_date?: unknown;
+  lat?: unknown;
+  lng?: unknown;
+  map_image_url?: unknown;
+  master_map_id?: unknown;
+  coach_map_open_scale?: unknown;
+  short_name?: unknown;
+};
+
+type TenantOwnedEventIdRow = { id: unknown };
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === "number" ? value : null;
+}
+
+/**
+ * Validates one already-selected, persisted Event as an established Member
+ * workspace. Never enumerates candidates, never falls back to a different
+ * Event, and never treats the Event's lifecycle status or member-visibility
+ * flag as revocation -- the sole authorization/context facts this consults are
+ * Event existence (scoped to an active-Tenant pair) and the canonical
+ * Person x Event participation the identity architecture already governs.
+ * `eventId` absent or malformed is reported as "no_context" -- a client-side
+ * fact about what was persisted, not a server authorization failure.
+ */
+export async function resolveEstablishedMemberEventContext(
+  requestHeaders: Headers,
+  eventId: string | null,
+): Promise<EstablishedEventContextResult> {
+  if (!isUuid(eventId)) {
+    return { state: "no_context" };
+  }
+
+  const tenantResolution = await resolveTenantFromHeaders(requestHeaders);
+
+  if (tenantResolution.state === "unresolved") {
+    return { state: "error" };
+  }
+
+  const accountResolution = await resolveAuthenticatedRequest(requestHeaders);
+
+  if (accountResolution.state === "unauthenticated") {
+    return { state: "unauthenticated" };
+  }
+
+  if (accountResolution.state === "internal_error") {
+    return { state: "error" };
+  }
+
+  const personResolution = await resolveAuthenticatedAccountPerson(
+    accountResolution,
+  );
+
+  if (personResolution.state === "no_person") {
+    return { state: "invalid_authorization" };
+  }
+
+  if (personResolution.state === "invalid_or_ambiguous") {
+    return { state: "ambiguous_person" };
+  }
+
+  if (personResolution.state === "internal_error") {
+    return { state: "error" };
+  }
+
+  const supabase = createAuthenticatedUserClient(accountResolution.credential);
+
+  if (!supabase) {
+    return { state: "error" };
+  }
+
+  // Defense-in-depth Tenant-ownership guard, consistent with
+  // resolveWorkspaceContext's own use of this RPC: a persisted Event ID
+  // must actually belong to the Tenant serving this hostname. This RPC does
+  // not itself read Event lifecycle/visibility, so it does not reintroduce
+  // that gating here.
+  const { data: tenantOwned, error: tenantOwnedError } = await supabase.rpc(
+    "get_tenant_owned_event_ids",
+    { p_event_ids: [eventId], p_tenant_id: tenantResolution.tenant.id },
+  );
+
+  if (tenantOwnedError || !Array.isArray(tenantOwned)) {
+    return { state: "error" };
+  }
+
+  const isTenantOwned = (tenantOwned as TenantOwnedEventIdRow[]).some(
+    (row) => row.id === eventId,
+  );
+
+  if (!isTenantOwned) {
+    return { state: "invalid_authorization" };
+  }
+
+  const { data, error } = await supabase
+    .rpc("get_my_established_event_context", { p_event_id: eventId })
+    .maybeSingle();
+
+  if (error || !data) {
+    return { state: "error" };
+  }
+
+  const row = data as EstablishedEventContextRow;
+
+  if (row.outcome === "valid" && isUuid(row.id)) {
+    return {
+      state: "valid",
+      event: {
+        id: row.id,
+        name: nullableString(row.name),
+        venueName: nullableString(row.venue_name),
+        location: nullableString(row.location),
+        startDate: nullableString(row.start_date),
+        endDate: nullableString(row.end_date),
+        lat: nullableNumber(row.lat),
+        lng: nullableNumber(row.lng),
+        mapImageUrl: nullableString(row.map_image_url),
+        masterMapId: nullableString(row.master_map_id),
+        coachMapOpenScale: nullableNumber(row.coach_map_open_scale),
+        shortName: nullableString(row.short_name),
+      },
+    };
+  }
+
+  if (row.outcome === "event_missing") {
+    return { state: "event_missing" };
+  }
+
+  if (row.outcome === "invalid_authorization") {
+    return { state: "invalid_authorization" };
+  }
+
+  return { state: "error" };
+}

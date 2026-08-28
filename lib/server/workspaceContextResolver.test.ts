@@ -11,6 +11,13 @@ import { fileURLToPath } from "node:url";
 // filtering -- this is a known-context ownership validation, not
 // discovery or continuity.
 //
+// Also covers Member Event Context Stage 2's
+// resolveEstablishedMemberEventContext: live authority for "is this one
+// persisted Event still a valid established workspace," distinct from
+// resolveWorkspaceContext's discovery/enumeration (unchanged, still shadow,
+// still correctly gated by resolve_member_account's is_active/
+// visible_to_members predicate).
+//
 // Run with:
 //   npx tsx --test lib/server/workspaceContextResolver.test.ts
 
@@ -52,4 +59,64 @@ test("downstream consumption of the returned id set is unchanged", () => {
 test("error handling and eligibleEvents/selectedEvent resolution logic is unchanged", () => {
   assert.match(SOURCE, /if \(tenantEventsError \|\| !Array\.isArray\(tenantEvents\)\) \{/);
   assert.match(SOURCE, /reasons: \["event_validation_failed"\]/);
+});
+
+// ---------------------------------------------------------------------
+// Member Event Context Stage 2: resolveEstablishedMemberEventContext
+// ---------------------------------------------------------------------
+
+function establishedFn() {
+  const start = SOURCE.indexOf(
+    "export async function resolveEstablishedMemberEventContext",
+  );
+  assert.notEqual(start, -1, "expected resolveEstablishedMemberEventContext");
+  return SOURCE.slice(start);
+}
+
+test("resolveWorkspaceContext (discovery/enumeration) is untouched and still shadow-labeled", () => {
+  assert.match(
+    SOURCE,
+    /export async function resolveWorkspaceContext\(/,
+  );
+  assert.match(SOURCE, /resolve_member_account/);
+});
+
+test("established-context resolver never reads Event lifecycle/visibility, and never calls the discovery RPC", () => {
+  const fn = establishedFn().replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.equal(/is_active/.test(fn), false);
+  assert.equal(/visible_to_members/.test(fn), false);
+  assert.equal(/resolve_member_account/.test(fn), false);
+});
+
+test("no_context is decided before any auth/tenant/person resolution runs", () => {
+  const fn = establishedFn();
+  const noContextIdx = fn.indexOf('return { state: "no_context" };');
+  const tenantIdx = fn.indexOf("resolveTenantFromHeaders");
+  assert.ok(noContextIdx !== -1 && tenantIdx !== -1 && noContextIdx < tenantIdx);
+});
+
+test("calls the governed established-context RPC, not a generic active-Event helper", () => {
+  const fn = establishedFn();
+  assert.match(fn, /"get_my_established_event_context"/);
+  assert.equal(/get_active_event|get_public_discoverable_events/.test(fn), false);
+});
+
+test("established-context resolver reuses the same Tenant-ownership guard RPC, applied to the one persisted Event id", () => {
+  const fn = establishedFn();
+  assert.match(fn, /"get_tenant_owned_event_ids"/);
+  assert.match(fn, /if \(!isTenantOwned\) \{\s*\n\s*return \{ state: "invalid_authorization" \};/);
+});
+
+test("every non-valid RPC outcome maps to a distinct, non-guessed client state -- no silent fallback to valid", () => {
+  const fn = establishedFn();
+  assert.match(fn, /row\.outcome === "event_missing"/);
+  assert.match(fn, /row\.outcome === "invalid_authorization"/);
+  assert.match(fn, /return \{ state: "error" \};\s*\n\}/);
+});
+
+test("EstablishedEventContextResult is a genuine discriminated union keyed on state", () => {
+  assert.match(
+    SOURCE,
+    /export type EstablishedEventContextResult =\s*\n\s*\| \{ state: "valid"; event: EstablishedEventData \}/,
+  );
 });

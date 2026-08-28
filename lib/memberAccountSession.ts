@@ -224,6 +224,32 @@ export async function enterResolvedRegistration(
   });
 }
 
+// Local-storage cleanup shared by full logout and by Member Event Context
+// Stage 2's invalid-established-context handling. Clears every piece of
+// legacy/local member and account-picker state -- MemberSession plus every
+// standalone legacy key -- but never touches the Supabase Auth session
+// itself; callers that are actually signing the account out call
+// supabase.auth.signOut() separately (see signOutOfMemberAccount below).
+// An invalid Event context is not an invalid account: the Person may still
+// be legitimately signed in and simply needs to choose a different, valid
+// Event.
+export function clearMemberLocalState() {
+  clearMemberSession();
+
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(STORAGE_KEYS.memberAttendeeId);
+    localStorage.removeItem(STORAGE_KEYS.memberEntryId);
+    localStorage.removeItem(STORAGE_KEYS.memberEmail);
+    localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
+    localStorage.removeItem(STORAGE_KEYS.memberEventContext);
+    localStorage.removeItem(STORAGE_KEYS.memberEventChanged);
+    localStorage.removeItem("fcoc-member-auth-user-id");
+    localStorage.removeItem("member-participant-id");
+    localStorage.removeItem("member-participant-name");
+    localStorage.removeItem("member-participant-role");
+  }
+}
+
 // Full logout: ends the Supabase Auth session and clears every piece
 // of legacy/local member and account-picker state so no stale identity
 // evidence remains in the browser.
@@ -236,24 +262,11 @@ export async function signOutOfMemberAccount() {
     // Guaranteed local cleanup: runs whether signOut() succeeded,
     // resolved with an error, or threw unexpectedly. Nothing above this
     // point returns early, so this always executes.
-    clearMemberSession();
+    clearMemberLocalState();
 
     // Reset shared-device intent so the next sign-in (on this same
     // browser) starts from the safe, explicit default rather than
     // silently inheriting a prior session's storage mode.
     setSharedDeviceMode(false);
-
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(STORAGE_KEYS.memberAttendeeId);
-      localStorage.removeItem(STORAGE_KEYS.memberEntryId);
-      localStorage.removeItem(STORAGE_KEYS.memberEmail);
-      localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
-      localStorage.removeItem(STORAGE_KEYS.memberEventContext);
-      localStorage.removeItem(STORAGE_KEYS.memberEventChanged);
-      localStorage.removeItem("fcoc-member-auth-user-id");
-      localStorage.removeItem("member-participant-id");
-      localStorage.removeItem("member-participant-name");
-      localStorage.removeItem("member-participant-role");
-    }
   }
 }

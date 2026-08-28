@@ -32,9 +32,16 @@ function eventHintFromBody(body: ShadowRequestBody): WorkspaceEventHint {
 }
 
 /**
- * A transport-only shadow endpoint for the existing Member Account page.
- * The resolver independently validates every governed fact; browser values
- * here are limited to a claimed Event hint and comparison-only legacy IDs.
+ * A transport-only shadow endpoint for the existing Member Account page's
+ * discovery/enumeration comparison only -- "which Events may this Person
+ * choose among." The resolver independently validates every governed fact;
+ * browser values here are limited to a claimed Event hint and
+ * comparison-only legacy IDs. This route's shadow status is unchanged by
+ * Member Event Context Stage 2: discovery/enumeration promotion remains out
+ * of scope. It answers a different question from, and is not a duplicate
+ * implementation of, this directory's `validate` sibling route, which is
+ * live authority (not shadow) for "is this one already-selected, persisted
+ * Event still a valid established workspace."
  */
 export async function POST(request: Request) {
   let body: ShadowRequestBody = {};
