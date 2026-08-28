@@ -88,11 +88,18 @@ test("established-context resolver never reads Event lifecycle/visibility, and n
   assert.equal(/resolve_member_account/.test(fn), false);
 });
 
-test("no_context is decided before any auth/tenant/person resolution runs", () => {
+test("no_context is decided before any auth/person resolution runs", () => {
   const fn = establishedFn();
   const noContextIdx = fn.indexOf('return { state: "no_context" };');
-  const tenantIdx = fn.indexOf("resolveTenantFromHeaders");
-  assert.ok(noContextIdx !== -1 && tenantIdx !== -1 && noContextIdx < tenantIdx);
+  const authIdx = fn.indexOf("resolveAuthenticatedRequest");
+  assert.ok(noContextIdx !== -1 && authIdx !== -1 && noContextIdx < authIdx);
+});
+
+test("does not depend on request-host Tenant resolution at all -- unlike resolveWorkspaceContext, it never calls resolveTenantFromHeaders or any Tenant-ownership RPC", () => {
+  const fn = establishedFn();
+  assert.equal(/resolveTenantFromHeaders/.test(fn), false);
+  assert.equal(/get_tenant_owned_event_ids/.test(fn), false);
+  assert.equal(/tenantResolution/.test(fn), false);
 });
 
 test("calls the governed established-context RPC, not a generic active-Event helper", () => {
@@ -101,10 +108,16 @@ test("calls the governed established-context RPC, not a generic active-Event hel
   assert.equal(/get_active_event|get_public_discoverable_events/.test(fn), false);
 });
 
-test("established-context resolver reuses the same Tenant-ownership guard RPC, applied to the one persisted Event id", () => {
+test("authorization is decided solely by auth + Person resolution + the governed RPC's own outcome -- removing the Tenant-hostname guard broadens nothing", () => {
   const fn = establishedFn();
-  assert.match(fn, /"get_tenant_owned_event_ids"/);
-  assert.match(fn, /if \(!isTenantOwned\) \{\s*\n\s*return \{ state: "invalid_authorization" \};/);
+  // Every branch that can deny access maps to a named, governed reason --
+  // wrong/unresolved Person, an ambiguous account link, or the RPC's own
+  // outcome -- never a bare "true"/pass-through and never a state this
+  // module invents independently of resolveAuthenticatedRequest,
+  // resolveAuthenticatedAccountPerson, or the RPC response.
+  assert.match(fn, /personResolution\.state === "no_person"[\s\S]{0,80}return \{ state: "invalid_authorization" \};/);
+  assert.match(fn, /personResolution\.state === "invalid_or_ambiguous"[\s\S]{0,80}return \{ state: "ambiguous_person" \};/);
+  assert.match(fn, /accountResolution\.state === "unauthenticated"[\s\S]{0,80}return \{ state: "unauthenticated" \};/);
 });
 
 test("every non-valid RPC outcome maps to a distinct, non-guessed client state -- no silent fallback to valid", () => {

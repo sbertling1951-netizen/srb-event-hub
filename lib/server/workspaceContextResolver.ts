@@ -499,8 +499,6 @@ type EstablishedEventContextRow = {
   short_name?: unknown;
 };
 
-type TenantOwnedEventIdRow = { id: unknown };
-
 function nullableNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
@@ -523,12 +521,18 @@ export async function resolveEstablishedMemberEventContext(
     return { state: "no_context" };
   }
 
-  const tenantResolution = await resolveTenantFromHeaders(requestHeaders);
-
-  if (tenantResolution.state === "unresolved") {
-    return { state: "error" };
-  }
-
+  // Deliberately no request-host Tenant resolution here (unlike
+  // resolveWorkspaceContext above). That function needs it because it
+  // answers a multi-candidate discovery question scoped to "this hostname's
+  // Tenant." This function answers a single, already-known Event's yes/no
+  // established-context question, for which the governed RPC below already
+  // scopes correctly by the Event's own Tenant (t.is_active) -- exactly the
+  // same shape get_my_member_event_continuity_context already uses, with no
+  // hostname dependency. Coupling this check to request-host Tenant
+  // resolution added a real fragility (it fails outright on any host with
+  // no tenant_hostname_mappings row, e.g. local development) without a
+  // corresponding authorization benefit: Person x Event participation is
+  // already the correct, sufficient scoping fact.
   const accountResolution = await resolveAuthenticatedRequest(requestHeaders);
 
   if (accountResolution.state === "unauthenticated") {
@@ -559,28 +563,6 @@ export async function resolveEstablishedMemberEventContext(
 
   if (!supabase) {
     return { state: "error" };
-  }
-
-  // Defense-in-depth Tenant-ownership guard, consistent with
-  // resolveWorkspaceContext's own use of this RPC: a persisted Event ID
-  // must actually belong to the Tenant serving this hostname. This RPC does
-  // not itself read Event lifecycle/visibility, so it does not reintroduce
-  // that gating here.
-  const { data: tenantOwned, error: tenantOwnedError } = await supabase.rpc(
-    "get_tenant_owned_event_ids",
-    { p_event_ids: [eventId], p_tenant_id: tenantResolution.tenant.id },
-  );
-
-  if (tenantOwnedError || !Array.isArray(tenantOwned)) {
-    return { state: "error" };
-  }
-
-  const isTenantOwned = (tenantOwned as TenantOwnedEventIdRow[]).some(
-    (row) => row.id === eventId,
-  );
-
-  if (!isTenantOwned) {
-    return { state: "invalid_authorization" };
   }
 
   const { data, error } = await supabase
