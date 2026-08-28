@@ -25,6 +25,7 @@ import {
   type DataStatusFilter,
   dataStatusLabel,
   dataStatusOptionLabel,
+  decideCapacityReconciliation,
   dirtySectionIds,
   displayCopilotName,
   displayPilotName,
@@ -92,6 +93,14 @@ import {
 import { isActiveEventStatus } from "@/lib/eventStatus";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
+
+// Fixed audit note for the post-save capacity reconciliation
+// (reconcileCapacityToMaterializedRoster). Written to
+// participant_capacity_adjustments via record_participant_capacity_increase.
+const CAPACITY_ROSTER_RECONCILE_NOTE =
+  "Automatic reconciliation: participant_capacity raised to match the " +
+  "participant roster already materialized in attendee_household_members " +
+  "after an authorized attendee save.";
 
 type EventContext = {
   id?: string | null;
@@ -1161,9 +1170,13 @@ export function AttendeeRecordWorkspace(props: {
     (state.additional_nickname ?? "").trim() !== "" ||
     (state.additional_cell_phone ?? "").trim() !== "";
   // "New" means this participant did not exist when the editor loaded --
-  // distinguishes the admin adding someone (which authorizes capacity)
-  // from an unrelated edit to an already-existing row (which must never
-  // silently paper over a pre-existing roster/capacity mismatch).
+  // distinguishes the admin adding someone (which authorizes a fresh
+  // capacity increase, shown by the banner below) from an unrelated edit.
+  // An unrelated save still reconciles a KNOWN capacity up to the roster
+  // already materialized in attendee_household_members
+  // (reconcileCapacityToMaterializedRoster) -- to the existing roster count,
+  // never above an explicitly higher administrator-selected value, never
+  // downward, never for a null capacity.
   const isNewCopilot = mode === "edit" && hasCopilotNow && !state.had_copilot_at_load;
   const isNewAdditional =
     mode === "edit" && hasAdditionalNow && !state.had_additional_at_load;
@@ -3194,6 +3207,68 @@ created_at
     }
   }
 
+  // After household synchronization on an authorized save, a KNOWN
+  // participant_capacity must not remain below the participant roster that is
+  // actually materialized in attendee_household_members. This:
+  //   - counts the materialized rows with a COUNT query (never fetches rows
+  //     just to length them);
+  //   - re-reads the freshly stored participant_capacity;
+  //   - leaves a NULL ("unknown / never established") capacity untouched --
+  //     it is never auto-established here;
+  //   - does nothing when the stored capacity already covers the roster;
+  //   - otherwise raises capacity through the governed
+  //     record_participant_capacity_increase RPC in slot-only mode
+  //     (p_participant_role = null), which creates no household row, never
+  //     lowers, and re-derives event.attendees.manage server-side. The new
+  //     value is max(administrator-selected capacity, materialized roster) --
+  //     an explicitly higher administrator choice is preserved.
+  // Any count/read/RPC error is rethrown so the save fails visibly rather
+  // than silently leaving the mismatch.
+  async function reconcileCapacityToMaterializedRoster(
+    attendeeId: string,
+    adminSelectedCapacity: number | null,
+  ) {
+    const { count, error: countError } = await supabase
+      .from("attendee_household_members")
+      .select("id", { count: "exact", head: true })
+      .eq("attendee_id", attendeeId);
+    if (countError) {
+      throw countError;
+    }
+
+    const { data: freshAttendee, error: freshError } = await supabase
+      .from("attendees")
+      .select("participant_capacity")
+      .eq("id", attendeeId)
+      .single();
+    if (freshError) {
+      throw freshError;
+    }
+
+    const decision = decideCapacityReconciliation({
+      storedCapacity: freshAttendee?.participant_capacity ?? null,
+      materializedRosterCount: count ?? 0,
+      adminSelectedCapacity,
+    });
+
+    if (decision.action !== "raise") {
+      return;
+    }
+
+    const { error: reconcileError } = await supabase.rpc(
+      "record_participant_capacity_increase",
+      {
+        p_attendee_id: attendeeId,
+        p_new_capacity: decision.newCapacity,
+        p_note: CAPACITY_ROSTER_RECONCILE_NOTE,
+        p_participant_role: null,
+      },
+    );
+    if (reconcileError) {
+      throw reconcileError;
+    }
+  }
+
   // Helper to sync pilot/copilot/additional household members for an attendee.
   // Every write goes through the governed manage_attendee_household_member
   // RPC (event derivation, authorization, mutation, and audit all happen
@@ -3633,9 +3708,13 @@ created_at
     }
 
     // --- Compute participant capacity ---
-    // hasCopilot / hasAdditional use the same three-field definition the
-    // governed RPC itself uses (first name, last name, email) so "does a
-    // participant exist" is judged consistently everywhere.
+    // hasCopilot uses the same three-field definition (first / last / email)
+    // the governed RPC and syncHouseholdMembers use for the Co-Pilot role.
+    // hasAdditional mirrors syncHouseholdMembers' own five-field test
+    // (first / last / email / nickname / cell phone) so "an Additional
+    // participant exists" is judged identically in the capacity math and in
+    // the household write -- an Additional entered with only a nickname or
+    // only a cell phone still counts.
     const hasCopilot =
       !!editorState.copilot_first.trim() ||
       !!editorState.copilot_last.trim() ||
@@ -3643,16 +3722,22 @@ created_at
     const hasAdditional =
       !!editorState.additional_first_name?.trim() ||
       !!editorState.additional_last_name?.trim() ||
-      !!editorState.additional_email?.trim();
+      !!editorState.additional_email?.trim() ||
+      !!editorState.additional_nickname?.trim() ||
+      !!editorState.additional_cell_phone?.trim();
 
     // Governed product rule: an administrator's own authorized action of
     // adding a participant, or explicitly raising Registration Capacity,
     // itself authorizes the resulting participant_capacity -- no separate
     // confirmation, accounting status, or payment attestation is required.
     // "New" means this participant did not exist when the editor loaded --
-    // an unrelated edit to an already-existing row must never silently
-    // paper over a pre-existing roster/capacity mismatch (that remains a
-    // visible warning instead).
+    // it distinguishes the admin adding someone (which authorizes a fresh
+    // increase, RPC'd atomically below) from an unrelated edit. An unrelated
+    // save no longer papers over the mismatch: after household sync,
+    // reconcileCapacityToMaterializedRoster raises a KNOWN participant_capacity
+    // up to the roster already materialized in attendee_household_members --
+    // never beyond an explicitly higher administrator-selected value, never
+    // downward, and never for a null (never-established) capacity.
     const isNewCopilot =
       editorMode === "edit" && hasCopilot && !editorState.had_copilot_at_load;
     const isNewAdditional =
@@ -3816,6 +3901,11 @@ created_at
             .eq("attendee_id", newAttendee.id);
 
           console.log("HOUSEHOLD AFTER SAVE", data);
+
+          await reconcileCapacityToMaterializedRoster(
+            newAttendee.id,
+            requiredCapacity,
+          );
         }
         showFlash("Attendee record created.");
       } else {
@@ -3910,6 +4000,16 @@ created_at
             throw capacityError;
           }
         }
+
+        // Close any remaining gap between a KNOWN stored capacity and the
+        // roster this save just materialized (covers a legitimate Co-Pilot /
+        // Additional that was already present and uncounted, and any residual
+        // undercount). No-op when capacity already covers the roster or is
+        // unknown (null).
+        await reconcileCapacityToMaterializedRoster(
+          editorState.id,
+          requiredCapacity,
+        );
       }
 
       if (editorMode === "edit" && viewMode === "review") {

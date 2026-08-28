@@ -1601,3 +1601,101 @@ test("the deep-link fix carries no authority of its own -- Attendees' own author
   assert.match(source, /<AdminRouteGuard>/);
   assert.equal(/checkAdminEventTaskAuthority\(.*view/.test(source), false);
 });
+
+// ---------------------------------------------------------------------------
+// Stage 2: post-save capacity reconciliation to the materialized roster.
+// ---------------------------------------------------------------------------
+
+function pageSource(): string {
+  return readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+}
+
+function reconcileBody(source: string): string {
+  const start = source.indexOf(
+    "async function reconcileCapacityToMaterializedRoster(",
+  );
+  assert.ok(start > -1, "reconcileCapacityToMaterializedRoster must exist");
+  const end = source.indexOf("\n  }\n", start);
+  assert.ok(end > start, "reconcileCapacityToMaterializedRoster body must close");
+  return source.slice(start, end);
+}
+
+test("reconcile: counts materialized rows with a COUNT query, never fetches member rows just to length them", () => {
+  const body = reconcileBody(pageSource());
+  assert.match(
+    body,
+    /\.from\("attendee_household_members"\)\s*\n?\s*\.select\("id",\s*\{\s*count:\s*"exact",\s*head:\s*true\s*\}\)/,
+  );
+  // no `.select("*")` / id-list fetch of household members inside the helper
+  assert.equal(/\.from\("attendee_household_members"\)[\s\S]*?\.select\("\*"\)/.test(body), false);
+  assert.equal(/materializedRosterCount:\s*count\s*\?\?\s*0/.test(body), true);
+});
+
+test("reconcile: re-reads the fresh stored participant_capacity and delegates the decision to the pure helper", () => {
+  const body = reconcileBody(pageSource());
+  assert.match(body, /\.from\("attendees"\)\s*\n?\s*\.select\("participant_capacity"\)/);
+  assert.match(body, /decideCapacityReconciliation\(\{/);
+  assert.match(body, /storedCapacity: freshAttendee\?\.participant_capacity \?\? null/);
+});
+
+test("reconcile: raises only through record_participant_capacity_increase in slot-only mode, creating no household row", () => {
+  const body = reconcileBody(pageSource());
+  assert.match(body, /supabase\.rpc\(\s*\n?\s*"record_participant_capacity_increase"/);
+  assert.match(body, /p_participant_role: null/);
+  assert.match(body, /p_new_capacity: decision\.newCapacity/);
+  assert.match(body, /p_note: CAPACITY_ROSTER_RECONCILE_NOTE/);
+  // never a direct capacity UPDATE, never a household-member write
+  assert.equal(/\.from\("attendees"\)[\s\S]*?\.update\(/.test(body), false);
+  assert.equal(/manage_attendee_household_member/.test(body), false);
+  assert.equal(/attendee_household_members"\)[\s\S]*?\.(insert|upsert|delete)\(/.test(body), false);
+  // only ever the "raise" branch acts
+  assert.match(body, /if \(decision\.action !== "raise"\) \{\s*\n?\s*return;/);
+});
+
+test("reconcile: a count / read / RPC failure is rethrown, never swallowed like syncHouseholdMembers", () => {
+  const body = reconcileBody(pageSource());
+  assert.match(body, /if \(countError\) \{\s*\n?\s*throw countError;/);
+  assert.match(body, /if \(freshError\) \{\s*\n?\s*throw freshError;/);
+  assert.match(body, /if \(reconcileError\) \{\s*\n?\s*throw reconcileError;/);
+  // it has no catch that would absorb the error
+  assert.equal(/catch\s*\(/.test(body), false);
+});
+
+test("reconcile: runs after household synchronization in both the create and edit save paths", () => {
+  const source = pageSource();
+  // create branch
+  const createSync = source.indexOf("await syncHouseholdMembers(\n            newAttendee.id");
+  const createReconcile = source.indexOf(
+    "await reconcileCapacityToMaterializedRoster(\n            newAttendee.id",
+  );
+  assert.ok(createSync > -1 && createReconcile > createSync, "create: reconcile follows household sync");
+  // edit branch
+  const editSync = source.indexOf("await syncHouseholdMembers(\n          editorState.id");
+  const editReconcile = source.indexOf(
+    "await reconcileCapacityToMaterializedRoster(\n          editorState.id",
+  );
+  assert.ok(editSync > -1 && editReconcile > editSync, "edit: reconcile follows household sync");
+  // edit-branch reconcile also runs after the add-participant capacity RPC
+  const editCapacityRpc = source.indexOf('"record_participant_capacity_increase"');
+  assert.ok(editCapacityRpc > -1 && editReconcile > editCapacityRpc);
+});
+
+test("reconcile: the audit note names automatic reconciliation to the materialized roster", () => {
+  const source = pageSource();
+  assert.match(
+    source,
+    /const CAPACITY_ROSTER_RECONCILE_NOTE =[\s\S]*?Automatic reconciliation:[\s\S]*?attendee_household_members/,
+  );
+});
+
+test("save handler: hasAdditional recognizes the same five fields syncHouseholdMembers does (first / last / email / nickname / cell phone)", () => {
+  const source = pageSource();
+  const start = source.indexOf("// --- Compute participant capacity ---");
+  const end = source.indexOf("const isNewCopilot =", start);
+  const block = source.slice(start, end);
+  assert.match(block, /const hasAdditional =[\s\S]*?additional_first_name\?\.trim\(\)/);
+  assert.match(block, /additional_last_name\?\.trim\(\)/);
+  assert.match(block, /additional_email\?\.trim\(\)/);
+  assert.match(block, /additional_nickname\?\.trim\(\)/);
+  assert.match(block, /additional_cell_phone\?\.trim\(\)/);
+});

@@ -782,6 +782,49 @@ export function buildHouseholdRemovalConfirmMessage(
   );
 }
 
+export type CapacityReconciliationDecision =
+  | { action: "none"; reason: "unknown-capacity" | "capacity-covers-roster" }
+  | { action: "raise"; newCapacity: number };
+
+// Pure decision for the post-save capacity reconciliation performed by the
+// reconcileCapacityToMaterializedRoster closure in page.tsx. Given the
+// freshly re-read stored participant_capacity, the count of rows actually
+// materialized for the attendee in attendee_household_members, and any
+// capacity the administrator explicitly selected in the stepper this save,
+// decide whether a governed capacity increase is required and to what value.
+//
+//   - A null stored capacity is "unknown / never established" -- left
+//     exactly as it is. This step never auto-establishes a capacity.
+//   - A stored capacity that already covers the materialized roster needs
+//     nothing.
+//   - Otherwise raise: never below the materialized roster, never below a
+//     higher capacity the administrator explicitly chose. Never downward --
+//     the caller only ever invokes record_participant_capacity_increase,
+//     which itself rejects anything that is not a strict increase.
+//
+// Exported so every branch is unit-testable without driving the save flow.
+export function decideCapacityReconciliation(input: {
+  storedCapacity: number | null;
+  materializedRosterCount: number;
+  adminSelectedCapacity: number | null;
+}): CapacityReconciliationDecision {
+  const { storedCapacity, materializedRosterCount, adminSelectedCapacity } =
+    input;
+
+  if (storedCapacity === null) {
+    return { action: "none", reason: "unknown-capacity" };
+  }
+
+  if (storedCapacity >= materializedRosterCount) {
+    return { action: "none", reason: "capacity-covers-roster" };
+  }
+
+  return {
+    action: "raise",
+    newCapacity: Math.max(adminSelectedCapacity ?? 0, materializedRosterCount),
+  };
+}
+
 // Bookkeeping-only fields: loaded once to inform save-time decisions (which
 // household role a capacity increase authorizes, what to name in a removal
 // prompt), never themselves a "change" the operator made. Excluded from

@@ -8,6 +8,7 @@ import {
   type AttendeeRow,
   attendeeToEditorState,
   computeReviewItems,
+  decideCapacityReconciliation,
   dirtySectionIds,
   editorStateDiffKeys,
   editorStateIsDirty,
@@ -320,5 +321,116 @@ test("attendeeChangedRemotelyWhileDirty: only true when dirty AND the fingerprin
     attendeeChangedRemotelyWhileDirty(null, "after", true),
     false,
     "no baseline captured yet -- cannot judge a conflict",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// decideCapacityReconciliation: post-save capacity-vs-materialized-roster
+// reconciliation decision (Stage 2 attendee-save-path hardening).
+// ---------------------------------------------------------------------------
+
+test("decideCapacityReconciliation: existing Pilot + Co-Pilot, stored capacity 1 -> raise to 2", () => {
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: 1,
+      materializedRosterCount: 2,
+      adminSelectedCapacity: 1,
+    }),
+    { action: "raise", newCapacity: 2 },
+  );
+});
+
+test("decideCapacityReconciliation: existing Pilot + Co-Pilot, stored capacity 2 -> no RPC", () => {
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: 2,
+      materializedRosterCount: 2,
+      adminSelectedCapacity: 2,
+    }),
+    { action: "none", reason: "capacity-covers-roster" },
+  );
+});
+
+test("decideCapacityReconciliation: roster 3, stored capacity 2 -> raise to 3", () => {
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: 2,
+      materializedRosterCount: 3,
+      adminSelectedCapacity: 2,
+    }),
+    { action: "raise", newCapacity: 3 },
+  );
+});
+
+test("decideCapacityReconciliation: null stored capacity stays null (never auto-established)", () => {
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: null,
+      materializedRosterCount: 2,
+      adminSelectedCapacity: null,
+    }),
+    { action: "none", reason: "unknown-capacity" },
+  );
+  // even a large roster does not establish an unknown capacity
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: null,
+      materializedRosterCount: 3,
+      adminSelectedCapacity: 3,
+    }),
+    { action: "none", reason: "unknown-capacity" },
+  );
+});
+
+test("decideCapacityReconciliation: stored capacity 3 with roster 2 -> stays 3, never lowered", () => {
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: 3,
+      materializedRosterCount: 2,
+      adminSelectedCapacity: 3,
+    }),
+    { action: "none", reason: "capacity-covers-roster" },
+  );
+});
+
+test("decideCapacityReconciliation: an explicitly higher administrator-selected capacity is preserved (4 with roster 3)", () => {
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: 2,
+      materializedRosterCount: 3,
+      adminSelectedCapacity: 4,
+    }),
+    { action: "raise", newCapacity: 4 },
+  );
+});
+
+test("decideCapacityReconciliation: raises to the roster count when no higher capacity was selected", () => {
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: 1,
+      materializedRosterCount: 3,
+      adminSelectedCapacity: null,
+    }),
+    { action: "raise", newCapacity: 3 },
+  );
+  // a lower admin selection never drags the floor below the roster
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: 1,
+      materializedRosterCount: 3,
+      adminSelectedCapacity: 2,
+    }),
+    { action: "raise", newCapacity: 3 },
+  );
+});
+
+test("decideCapacityReconciliation: solo Pilot (roster 1) at stored capacity 1 -> no RPC", () => {
+  assert.deepEqual(
+    decideCapacityReconciliation({
+      storedCapacity: 1,
+      materializedRosterCount: 1,
+      adminSelectedCapacity: 1,
+    }),
+    { action: "none", reason: "capacity-covers-roster" },
   );
 });
