@@ -54,8 +54,16 @@ test("compact CSS tightens chrome padding and grids the action rows, keeping tou
     CSS.indexOf("@keyframes object-panel-enter-sheet"),
   );
   assert.match(block, /\.object-panel--compact \.object-panel-header \{\s*\n\s*padding: var\(--space-4\) var\(--space-5\) var\(--space-3\);/);
-  assert.match(block, /\.object-panel--compact \.object-panel-primary-actions \{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: 1fr 1fr;/);
-  assert.match(block, /\.object-panel--compact \.object-panel-primary-actions > :first-child,\s*\n\s*\.object-panel--compact \.object-panel-primary-actions > :nth-child\(2\):last-child \{\s*\n\s*grid-column: 1 \/ -1;/);
+  // primary actions: one equal-width row, count-driven redistribution
+  assert.match(
+    block,
+    /\.object-panel--compact \.object-panel-primary-actions \{[\s\S]*?display: grid;[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: 1fr;/,
+  );
+  // narrow-screen fallback: Directions full-width, remaining actions two-up
+  assert.match(
+    block,
+    /@media \(max-width: 380px\) \{[\s\S]*?\.object-panel--compact \.object-panel-primary-actions \{[\s\S]*?grid-auto-flow: row;[\s\S]*?grid-template-columns: 1fr 1fr;[\s\S]*?> :first-child,[\s\S]*?:nth-child\(2\):last-child \{[\s\S]*?grid-column: 1 \/ -1;/,
+  );
   assert.match(block, /\.object-panel--compact \.object-panel-body \{\s*\n\s*padding: var\(--space-4\) var\(--space-5\);/);
   // secondary row is the only place controls shrink -- and only to 38px
   assert.match(block, /\.object-panel--compact \.object-panel-secondary-actions \.app-button \{[\s\S]*?min-height: 38px;/);

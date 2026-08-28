@@ -3127,24 +3127,41 @@ body.slideshow-view-mode .app-header-card {
   margin-top: var(--space-1);
 }
 
+/* One equal-width row for however many primary actions exist:
+   Directions only -> full width; Directions + one -> two-up;
+   Directions + Call + Website -> three-up. `grid-auto-flow: column` with
+   `grid-auto-columns: 1fr` redistributes automatically by count -- no
+   per-child span rules. Directions stays visually primary through its
+   button variant, not its width. */
 .object-panel--compact .object-panel-primary-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-5) 0;
 }
 
-/* The first primary action (Directions in Nearby) is the visually primary
-   one -- it spans the full width. A Call/Website pair then sits two-up
-   below; a single remaining action spans full width rather than sitting
-   half-width and lopsided. */
-.object-panel--compact .object-panel-primary-actions > :first-child,
-.object-panel--compact .object-panel-primary-actions > :nth-child(2):last-child {
-  grid-column: 1 / -1;
-}
-
 .object-panel--compact .object-panel-primary-actions .app-button {
   width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* Genuinely narrow phones: three equal buttons would crowd "Directions".
+   Fall back to Directions full-width with any remaining actions two-up --
+   never shrink the label or the touch target. */
+@media (max-width: 380px) {
+  .object-panel--compact .object-panel-primary-actions {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .object-panel--compact .object-panel-primary-actions > :first-child,
+  .object-panel--compact
+    .object-panel-primary-actions
+    > :nth-child(2):last-child {
+    grid-column: 1 / -1;
+  }
 }
 
 .object-panel--compact .object-panel-body {
