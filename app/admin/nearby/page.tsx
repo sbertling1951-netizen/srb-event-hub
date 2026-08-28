@@ -49,6 +49,10 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { geocodeLocation } from "@/lib/geocodeLocation";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import {
+  isCurrentNearbyEventRequest,
+  resolveStoredAreaSelection,
+} from "@/lib/nearbyAdminState";
 import { supabase } from "@/lib/supabase";
 
 import {
@@ -1901,72 +1905,14 @@ function AdminNearbyPageInner() {
       const rows = (data || []) as StoredArea[];
       setStoredAreas(rows);
 
-      if (rows.length > 0) {
-        setSelectedAreaId((current) => {
-          // FIRST PRIORITY:
-          // Match admin event name to nearby area name
-          if (adminEvent?.name) {
-            const normalizedEventName = adminEvent.name.toLowerCase().trim();
-
-            const matchingByName = rows.find((row) => {
-              const normalizedAreaName = row.name.toLowerCase().trim();
-
-              return (
-                normalizedAreaName.includes(normalizedEventName) ||
-                normalizedEventName.includes(normalizedAreaName)
-              );
-            });
-
-            if (matchingByName) {
-              return matchingByName.id;
-            }
-          }
-
-          // SECOND PRIORITY:
-          // Match city from event location
-          if (adminEvent?.location) {
-            const locationParts = adminEvent.location
-              .split(",")
-              .map((part) => part.trim().toLowerCase())
-              .filter(Boolean);
-
-            const possibleCity =
-              locationParts.length >= 2 ? locationParts[1] : "";
-
-            if (possibleCity) {
-              const matchingByCity = rows.find((row) => {
-                const normalizedAreaName = row.name.toLowerCase().trim();
-
-                return normalizedAreaName.includes(possibleCity);
-              });
-
-              if (matchingByCity) {
-                return matchingByCity.id;
-              }
-            }
-          }
-
-          // THIRD PRIORITY:
-          // Keep current valid selection
-          if (current && rows.some((row) => row.id === current)) {
-            return current;
-          }
-
-          // FOURTH PRIORITY:
-          // Restore previously selected area
-          const savedAreaId = localStorage.getItem(
-            "fcoc-nearby-selected-area-id",
-          );
-
-          if (savedAreaId && rows.some((row) => row.id === savedAreaId)) {
-            return savedAreaId;
-          }
-
-          // FINAL FALLBACK:
-          // First alphabetical area
-          return rows[0].id;
-        });
-      }
+      setSelectedAreaId((current) =>
+        resolveStoredAreaSelection(
+          rows,
+          current,
+          localStorage.getItem("fcoc-nearby-selected-area-id"),
+          adminEvent,
+        ),
+      );
 
       setStatus(
         `Loaded ${rows.length} stored area${rows.length === 1 ? "" : "s"}.`,
@@ -2026,9 +1972,14 @@ function AdminNearbyPageInner() {
   }, []);
 
   const loadEventPlaces = useCallback(async (eventId: string) => {
+    const isCurrentRequest = () =>
+      isCurrentNearbyEventRequest(eventId, getCurrentAdminEvent()?.id);
+
     try {
-      setLoadingEventPlaces(true);
-      showStatus("Loading event nearby places...");
+      if (isCurrentRequest()) {
+        setLoadingEventPlaces(true);
+        showStatus("Loading event nearby places...");
+      }
 
       const { data, error } = await supabase
         .from("event_nearby_places")
@@ -2043,16 +1994,25 @@ function AdminNearbyPageInner() {
         throw error;
       }
 
+      if (!isCurrentRequest()) {
+        return;
+      }
+
       setEventPlaces((data || []) as EventPlace[]);
       setStatus(
         `Loaded ${(data || []).length} event nearby place${(data || []).length === 1 ? "" : "s"}.`,
       );
     } catch (err: any) {
       console.error("loadEventPlaces error:", err);
+      if (!isCurrentRequest()) {
+        return;
+      }
       setEventPlaces([]);
       showError(err?.message || "Failed to load event nearby places.");
     } finally {
-      setLoadingEventPlaces(false);
+      if (isCurrentRequest()) {
+        setLoadingEventPlaces(false);
+      }
     }
   }, []);
 
@@ -3095,6 +3055,9 @@ function AdminNearbyPageInner() {
             <LoadingState message="Loading stored areas..." />
           ) : (
             <div style={{ display: "grid", gap: "var(--space-4)" }}>
+              <Alert tone="neutral">
+                Stored Areas are reusable collections. Selecting one does not change the Admin Working Event or its assigned Nearby list.
+              </Alert>
               <Field label="Selected Area">
                 {(controlProps) => (
                   <Select

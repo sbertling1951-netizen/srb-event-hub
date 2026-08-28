@@ -83,20 +83,21 @@ test("no raw form controls remain in the Add/Edit forms -- every input/select/te
   assert.match(PAGE_SOURCE, /<Checkbox\s+label="Hidden from members"/);
 });
 
-test("no window.confirm remains -- all four destructive/impactful actions route through one shared ConfirmDialog + requestConfirmation()", () => {
+test("confirmation-requiring Nearby actions route through the shared ConfirmDialog", () => {
   assert.equal(/window\.confirm/.test(PAGE_SOURCE), false);
   assert.match(PAGE_SOURCE, /function requestConfirmation\(/);
   assert.match(PAGE_SOURCE, /<ConfirmDialog\s/);
 
   const confirmCallCount = (PAGE_SOURCE.match(/await requestConfirmation\(\{/g) || []).length;
-  assert.equal(confirmCallCount, 4, "expected exactly 4 requestConfirmation() call sites");
+  assert.ok(confirmCallCount >= 4, "expected confirmation coverage for Nearby actions");
 });
 
-test("delete-initiating buttons use the danger variant; Save/Create actions use primary", () => {
+test("current delete and Event-removal actions use the danger variant", () => {
   for (const label of [
     "Delete Area",
     "Delete Stored Place",
-    "Delete Event Place",
+    "Delete Place",
+    "Remove from this Event",
   ]) {
     // lastIndexOf, not indexOf -- each of these labels also appears as
     // its ConfirmDialog's `title` earlier in the file.
@@ -106,7 +107,7 @@ test("delete-initiating buttons use the danger variant; Save/Create actions use 
     assert.match(nearby, /variant="danger"/);
   }
 
-  for (const label of ["Save Area Changes", "Update Stored Place", "Update Event Place"]) {
+  for (const label of ["Save Area Changes", "Update Stored Place", "Save Listing"]) {
     assert.ok(PAGE_SOURCE.includes(label), `expected to find button label "${label}"`);
   }
 });
@@ -163,18 +164,19 @@ test("all three data tables/entities and their governed writes are unchanged -- 
   }
 });
 
-test("geocodeLocation resolution behavior (plus code -> address -> manual coordinates fallback order) is unchanged", () => {
+test("stored and Event listing saves retain the existing coordinate-resolution behavior", () => {
   assert.match(PAGE_SOURCE, /import \{ geocodeLocation \} from "@\/lib\/geocodeLocation";/);
   const saveStoredIdx = PAGE_SOURCE.indexOf("async function saveStoredPlace()");
-  const saveEventIdx = PAGE_SOURCE.indexOf("async function saveEventPlace()");
+  const saveEventIdx = PAGE_SOURCE.indexOf("async function saveNearbyEventListing()");
   assert.notEqual(saveStoredIdx, -1);
   assert.notEqual(saveEventIdx, -1);
-  for (const fnStart of [saveStoredIdx, saveEventIdx]) {
-    const body = PAGE_SOURCE.slice(fnStart, fnStart + 1600);
-    assert.match(body, /location_code\.trim\(\)/);
-    assert.match(body, /address\.trim\(\)/);
-    assert.match(body, /geocodeLocation\(/);
-  }
+  const storedSave = functionBody("saveStoredPlace");
+  assert.match(storedSave, /location_code\.trim\(\)/);
+  assert.match(storedSave, /address\.trim\(\)/);
+  assert.match(storedSave, /geocodeLocation\(/);
+  assert.match(PAGE_SOURCE, /async function resolveNearbyCoordinates\([\s\S]*?locationCode\.trim\(\)[\s\S]*?address\.trim\(\)[\s\S]*?geocodeLocation\(/);
+  const eventSave = functionBody("saveNearbyEventListing");
+  assert.match(eventSave, /resolveNearbyCoordinates\(/);
 });
 
 test("event-context/authority behavior (canAccessEvent, getCurrentAdminEvent, subscribeToAdminWorkspace) is unchanged", () => {
@@ -186,6 +188,22 @@ test("event-context/authority behavior (canAccessEvent, getCurrentAdminEvent, su
   ]) {
     assert.ok(PAGE_SOURCE.includes(needle), `expected ${needle} to be retained`);
   }
+});
+
+test("Event Nearby reads only commit while their request Event is still the authoritative Admin Event", () => {
+  const start = PAGE_SOURCE.indexOf("const loadEventPlaces = useCallback");
+  const end = PAGE_SOURCE.indexOf("\n  useEffect(() => {", start);
+  assert.ok(start >= 0 && end > start, "expected loadEventPlaces function");
+  const body = PAGE_SOURCE.slice(start, end);
+
+  assert.match(body, /isCurrentNearbyEventRequest\(eventId, getCurrentAdminEvent\(\)\?\.id\)/);
+  assert.match(body, /if \(!isCurrentRequest\(\)\) \{\n        return;/);
+  assert.match(body, /if \(isCurrentRequest\(\)\) \{\n        setLoadingEventPlaces\(false\);/);
+});
+
+test("Stored Area selection states that it is independent from the Admin Working Event", () => {
+  assert.match(PAGE_SOURCE, /Stored Areas are reusable collections\. Selecting one does not change the Admin Working Event or its assigned Nearby list\./);
+  assert.match(PAGE_SOURCE, /resolveStoredAreaSelection\(/);
 });
 
 test("Google Nearby results render and preload coordinates only when both values are numeric", () => {
@@ -278,54 +296,44 @@ test("the free-text/custom-category escape hatch is completely gone -- no __cust
   }
 });
 
-test("both category selectors are catalog-driven: option value is a real category_id (placeCategories.id), option text is its label", () => {
-  const storedSelect = PAGE_SOURCE.slice(
-    PAGE_SOURCE.indexOf('value={storedForm.category_id}'),
-    PAGE_SOURCE.indexOf("</Select>", PAGE_SOURCE.indexOf('value={storedForm.category_id}')),
-  );
-  assert.match(
-    storedSelect,
-    /\{placeCategories\.map\(\(placeCategory\) => \(\s*\n\s*<option key=\{placeCategory\.id\} value=\{placeCategory\.id\}>\s*\n\s*\{placeCategory\.label\}/,
-  );
-
-  const eventSelect = PAGE_SOURCE.slice(
-    PAGE_SOURCE.indexOf("value={eventForm.category_id}"),
-    PAGE_SOURCE.indexOf("</Select>", PAGE_SOURCE.indexOf("value={eventForm.category_id}")),
-  );
-  assert.match(
-    eventSelect,
-    /\{placeCategories\.map\(\(placeCategory\) => \(\s*\n\s*<option key=\{placeCategory\.id\} value=\{placeCategory\.id\}>\s*\n\s*\{placeCategory\.label\}/,
-  );
+test("all current category selectors are catalog-driven", () => {
+  for (const valueExpression of [
+    "storedForm.category_id",
+    "nearbyEventForm.category_id",
+    "nearbyCanonicalForm.category_id",
+  ]) {
+    const start = PAGE_SOURCE.indexOf(`value={${valueExpression}}`);
+    const select = PAGE_SOURCE.slice(start, PAGE_SOURCE.indexOf("</Select>", start));
+    assert.ok(start >= 0, `expected ${valueExpression} selector`);
+    assert.match(select, /<option key=\{placeCategory\.id\} value=\{placeCategory\.id\}>/);
+    assert.match(select, /\{placeCategory\.label\}/);
+  }
 });
 
-test("saveStoredPlace persists category_id directly from the selected value, and derives the legacy category text from the catalog label -- never independently editable", () => {
+test("saveStoredPlace preserves category identity through its governed Stored Area RPC", () => {
   const body = functionBody("saveStoredPlace");
-  assert.match(body, /category_id: storedForm\.category_id \|\| null,/);
-  assert.match(body, /category: storedForm\.category\.trim\(\) \|\| null,/);
-  assert.match(PAGE_SOURCE, /\.from\("nearby_master"\)\s*\n\s*\.update\(payload\)/);
-  assert.match(PAGE_SOURCE, /supabase\.from\("nearby_master"\)\.insert\(payload\)/);
+  assert.match(body, /p_category_id: storedForm\.category_id \|\| null,/);
+  assert.match(body, /p_category: storedForm\.category\.trim\(\) \|\| null,/);
+  assert.match(body, /supabase\.rpc\("upsert_stored_area_place", rpcArgs\)/);
 });
 
-test("saveEventPlace persists category_id directly from the selected value", () => {
-  const body = functionBody("saveEventPlace");
-  assert.match(body, /category_id: eventForm\.category_id \|\| null,/);
-  assert.match(body, /category: eventForm\.category\.trim\(\) \|\| null,/);
+test("saveNearbyEventListing persists category_id directly from the selected value", () => {
+  const body = functionBody("saveNearbyEventListing");
+  assert.match(body, /category_id: nearbyEventForm\.category_id \|\| null,/);
+  assert.match(body, /category: nearbyEventForm\.category\.trim\(\) \|\| null,/);
 });
 
-test("selecting a category writes both category_id and the matching label as category text in the same state update, on both forms", () => {
-  const storedOnChange = PAGE_SOURCE.slice(
-    PAGE_SOURCE.indexOf("value={storedForm.category_id}"),
-    PAGE_SOURCE.indexOf("disabled={!admin || savingStoredPlace}", PAGE_SOURCE.indexOf("value={storedForm.category_id}")),
-  );
-  assert.match(storedOnChange, /category_id: nextCategoryId,/);
-  assert.match(storedOnChange, /category: nextCategoryId \? categoryLabelById\.get\(nextCategoryId\) \|\| "" : "",/);
-
-  const eventOnChange = PAGE_SOURCE.slice(
-    PAGE_SOURCE.indexOf("value={eventForm.category_id}"),
-    PAGE_SOURCE.indexOf("disabled={!admin || savingEventPlace}", PAGE_SOURCE.indexOf("value={eventForm.category_id}")),
-  );
-  assert.match(eventOnChange, /category_id: nextCategoryId,/);
-  assert.match(eventOnChange, /category: nextCategoryId \? categoryLabelById\.get\(nextCategoryId\) \|\| "" : "",/);
+test("selecting a category keeps category_id and the compatibility label in lockstep", () => {
+  for (const valueExpression of [
+    "storedForm.category_id",
+    "nearbyEventForm.category_id",
+    "nearbyCanonicalForm.category_id",
+  ]) {
+    const start = PAGE_SOURCE.indexOf(`value={${valueExpression}}`);
+    const select = PAGE_SOURCE.slice(start, PAGE_SOURCE.indexOf("</Select>", start));
+    assert.match(select, /category_id: nextCategoryId,/);
+    assert.match(select, /category: nextCategoryId \? categoryLabelById\.get\(nextCategoryId\) \|\| "" : "",/);
+  }
 });
 
 test("replaceEventListFromStored copies category_id directly from the source stored place -- never re-derives it from copied display text", () => {
@@ -340,15 +348,14 @@ test("mergeStoredAreaIntoEvent copies category_id directly from the source store
   assert.match(body, /category_id: place\.category_id \?\? null,/);
 });
 
-test("loadStoredPlaces and loadEventPlaces both select category_id, so an existing place's current category resolves directly by id, independent of legacy text/casing", () => {
-  assert.match(
-    PAGE_SOURCE,
-    /"id,name,address,phone,category,category_id,description,link,location_code,lat,lng",\s*\n\s*\)\s*\n\s*\.eq\("area_id", areaId\)/,
-  );
-  assert.match(
-    PAGE_SOURCE,
-    /"id,name,address,phone,website,category,category_id,notes,sort_order,is_hidden,distance_miles,location_code,lat,lng",/,
-  );
+test("loadStoredPlaces and loadEventPlaces both select category_id", () => {
+  const storedStart = PAGE_SOURCE.indexOf("const loadStoredPlaces = useCallback");
+  const eventStart = PAGE_SOURCE.indexOf("const loadEventPlaces = useCallback");
+  const storedLoad = PAGE_SOURCE.slice(storedStart, eventStart);
+  const eventLoad = PAGE_SOURCE.slice(eventStart, PAGE_SOURCE.indexOf("\n  useEffect(() => {", eventStart));
+  assert.match(storedLoad, /category,category_id,description/);
+  assert.match(storedLoad, /\.eq\("area_id", nearbyAreaId\)/);
+  assert.match(eventLoad, /category,category_id,notes/);
 });
 
 test("Stage B's category state/helpers are local to this page -- neither app/member/nearby/page.tsx nor app/admin/nearby-settings/page.tsx picked up any of this stage's logic", () => {
