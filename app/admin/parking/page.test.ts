@@ -98,6 +98,34 @@ test("Parking reads canonical occupancy through the local canonical snapshot bui
   assert.equal(/assigned_attendee_id:\s*attendeeFromRoster/.test(SOURCE), false);
 });
 
+test("Needs Parking is a strict attendee requirement filter, independent of canonical placement and Arrival", () => {
+  assert.match(
+    SOURCE,
+    /if \(needsParkingOnly && a\.needs_parking !== true\) \{\s*return false;\s*\}/,
+  );
+  assert.match(
+    SOURCE,
+    /needs_parking,arrival_status,has_arrived/,
+  );
+
+  const filterStart = SOURCE.indexOf("const filtered = attendees.filter((a) => {");
+  const filterEnd = SOURCE.indexOf("const sorted = [...filtered].sort", filterStart);
+  assert.ok(filterStart >= 0 && filterEnd > filterStart);
+  const filter = SOURCE.slice(filterStart, filterEnd);
+  const needsParkingBranch = filter.slice(
+    filter.indexOf("if (needsParkingOnly"),
+    filter.indexOf("const name =", filter.indexOf("if (needsParkingOnly")),
+  );
+  assert.equal(/siteLabelByAttendeeId|arrival_status|assigned_site/.test(needsParkingBranch), false);
+});
+
+test("Parking retains the all-attendee correction surface when Needs Parking is off", () => {
+  assert.match(SOURCE, /const \[needsParkingOnly, setNeedsParkingOnly\] = useState\(false\)/);
+  assert.match(SOURCE, /setNeedsParkingOnly\(false\)/);
+  assert.match(SOURCE, /label="Needs Parking"/);
+  assert.equal(/unassignedOnly|setUnassignedOnly|Unassigned only/.test(SOURCE), false);
+});
+
 test("Parking rejects stale context and realtime responses before applying them", () => {
   assert.match(SOURCE, /mayApplyParkingLoad\(\{/);
   assert.match(SOURCE, /if \(!canApply\(\)\) \{\s*return;/);

@@ -146,6 +146,7 @@ type Attendee = {
   coach_make: string | null;
   coach_model: string | null;
   assigned_site: string | null;
+  needs_parking: boolean | null;
   arrival_status: string | null;
   has_arrived: boolean | null;
 };
@@ -201,7 +202,7 @@ function ParkingAdminPageInner() {
 
   const [showLabels, setShowLabels] = useState(true);
   const [showQueuePanel, setShowQueuePanel] = useState(true);
-  const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [needsParkingOnly, setNeedsParkingOnly] = useState(false);
   const [showParked, setShowParked] = useState(false);
   const [showArrivedOnly, setShowArrivedOnly] = useState(false);
   const [defaultZoom, setDefaultZoom] = useState(0.6);
@@ -413,7 +414,7 @@ function ParkingAdminPageInner() {
         supabase
           .from("attendees")
           .select(
-            "id,event_id,pilot_first,pilot_last,coach_make:coach_manufacturer,coach_model,assigned_site,arrival_status,has_arrived",
+            "id,event_id,pilot_first,pilot_last,coach_make:coach_manufacturer,coach_model,assigned_site,needs_parking,arrival_status,has_arrived",
           )
           .eq("event_id", typedEvent.id)
           .order("pilot_last"),
@@ -738,6 +739,13 @@ function ParkingAdminPageInner() {
       !!siteQ && /^[A-Z]+\d+/i.test(siteQ) && !rawSearch.includes(" ");
 
     const filtered = attendees.filter((a) => {
+      // Parking requirement is its own canonical attendee fact. Placement and
+      // Arrival remain independent: this filter intentionally retains both
+      // placed and unplaced attendees who need parking.
+      if (needsParkingOnly && a.needs_parking !== true) {
+        return false;
+      }
+
       const name = `${a.pilot_first || ""} ${a.pilot_last || ""}`.toLowerCase();
       const coach =
         `${a.coach_make || ""} ${a.coach_model || ""}`.toLowerCase();
@@ -759,12 +767,6 @@ function ParkingAdminPageInner() {
       }
       if (!q) {
         if (showArrivedOnly && a.arrival_status !== "arrived") {
-          return false;
-        }
-        if (
-          unassignedOnly &&
-          siteLabelByAttendeeId.get(a.id)
-        ) {
           return false;
         }
         if (isNarrow && a.arrival_status === "parked") {
@@ -804,7 +806,7 @@ function ParkingAdminPageInner() {
   }, [
     attendees,
     search,
-    unassignedOnly,
+    needsParkingOnly,
     showParked,
     showArrivedOnly,
     isNarrow,
@@ -1364,7 +1366,7 @@ function ParkingAdminPageInner() {
         variant="secondary"
         onClick={() => {
           setSearch("");
-          setUnassignedOnly(false);
+          setNeedsParkingOnly(false);
           setShowArrivedOnly(false);
           setShowParked(true);
         }}
@@ -1379,9 +1381,9 @@ function ParkingAdminPageInner() {
           label="Show site labels"
         />
         <Checkbox
-          checked={unassignedOnly}
-          onChange={(e) => setUnassignedOnly(e.target.checked)}
-          label="Unassigned only"
+          checked={needsParkingOnly}
+          onChange={(e) => setNeedsParkingOnly(e.target.checked)}
+          label="Needs Parking"
         />
         {!isNarrow && (
           <Checkbox
