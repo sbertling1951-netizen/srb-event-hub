@@ -213,3 +213,93 @@ test("no automatic category creation, no rename RPC, no InlineEdit adoption, and
   assert.equal(/rename_place_category/.test(SOURCE), false);
   assert.equal(/InlineEdit/.test(SOURCE), false);
 });
+
+// ---------------------------------------------------------------------------
+// Map pin -> ObjectPanel interaction (pin tap opens the same canonical
+// place-information/action panel the List view uses; no hover, no
+// intermediate "View details" card).
+// ---------------------------------------------------------------------------
+
+function mapSurfaceProps(): string {
+  const start = SOURCE.indexOf("<EpicentraxMapSurface");
+  assert.notEqual(start, -1, "the map surface must be rendered");
+  const end = SOURCE.indexOf("/>", start);
+  assert.ok(end > start);
+  return SOURCE.slice(start, end);
+}
+
+test("a pin tap selects its place AND opens the panel -- one deliberate action, no bridging card", () => {
+  const props = mapSurfaceProps();
+  assert.match(props, /selectActivatesObject/);
+  assert.match(props, /onObjectSelect=\{\(objectId\) => setSelectedMapObjectId\(objectId\)\}/);
+});
+
+test("the panel opened from the map is the same ObjectPanel, filled from the canonical Place looked up by id", () => {
+  const props = mapSurfaceProps();
+  assert.match(
+    props,
+    /onObjectActivate=\{\(objectId\) => \{\s*\n\s*const place = filteredPlaces\.find\(\(p\) => p\.id === objectId\);\s*\n\s*if \(place\) \{\s*\n\s*openPlacePanel\(place\);/,
+  );
+  // openPlacePanel is the single entry point the List view already uses.
+  assert.match(SOURCE, /const openPlacePanel = useCallback\(\(place: Place\) => \{[\s\S]*?setPanelPlace\(place\);/);
+  assert.match(SOURCE, /onClick=\{\(\) => openPlacePanel\(place\)\}/); // list card
+  // panel content reads the canonical panelPlace fields
+  assert.match(SOURCE, /title=\{panelPlace\?\.name \?\? ""\}/);
+});
+
+test("Directions from the panel uses the one List-view URL builder (handleDirections) -- no second navigation implementation", () => {
+  assert.match(SOURCE, /onClick=\{\(\) => handleDirections\(panelPlace\)\}/);
+  // exactly one function builds external map URLs
+  const builders = SOURCE.match(/function handleDirections\(/g) ?? [];
+  assert.equal(builders.length, 1);
+  const dirUrls = SOURCE.match(/maps\.apple\.com\/\?saddr|google\.com\/maps\/dir/g) ?? [];
+  // both URL forms appear once, and only inside handleDirections
+  const fnStart = SOURCE.indexOf("function handleDirections(");
+  const fnEnd = SOURCE.indexOf("\n  }", fnStart);
+  const fnBody = SOURCE.slice(fnStart, fnEnd);
+  assert.match(fnBody, /maps\.apple\.com\/\?saddr/);
+  assert.match(fnBody, /google\.com\/maps\/dir/);
+  assert.equal(dirUrls.length, 2);
+});
+
+test("Call and Website render only when that datum exists, reusing the List-view link forms", () => {
+  assert.match(SOURCE, /\{panelPlace\.phone \? \(\s*\n\s*<AppLinkButton href=\{`tel:\$\{panelPlace\.phone\}`\}>/);
+  assert.match(SOURCE, /\{panelPlace\.website \? \(\s*\n\s*<AppLinkButton\s*\n\s*href=\{panelPlace\.website\}/);
+  // List view uses the identical tel: form
+  assert.match(SOURCE, /href=\{`tel:\$\{place\.phone\}`\}/);
+});
+
+test("closing the panel clears both the panel and the map's selected pin -- and touches nothing about the viewport", () => {
+  assert.match(
+    SOURCE,
+    /const closePlacePanel = useCallback\(\(\) => \{\s*\n\s*setPanelPlace\(null\);[\s\S]*?setSelectedMapObjectId\(null\);\s*\n\s*\}, \[\]\)/,
+  );
+  assert.match(SOURCE, /<ObjectPanel\s*\n\s*open=\{panelPlace !== null\}\s*\n\s*onClose=\{closePlacePanel\}/);
+  const close = SOURCE.slice(
+    SOURCE.indexOf("const closePlacePanel"),
+    SOURCE.indexOf("const closePlacePanel") + 320,
+  ).replace(/\/\/.*$/gm, ""); // strip comments; the prose mentions center/zoom
+  assert.doesNotMatch(close, /viewportIntent|setView|setZoom|panTo|flyTo/);
+});
+
+test("the map background tap clears the pin and dismisses the panel, without moving the map", () => {
+  const props = mapSurfaceProps();
+  assert.match(
+    props,
+    /onMapBackgroundActivate=\{\(\) => \{\s*\n\s*setSelectedMapObjectId\(null\);\s*\n\s*closePlacePanel\(\);\s*\n\s*\}\}/,
+  );
+});
+
+test("map viewport intent is derived only from the Event center -- never from the selected/opened place", () => {
+  const props = mapSurfaceProps();
+  assert.match(props, /viewportIntent=\{[\s\S]*?event\?\.lat[\s\S]*?center: \{ latitude: event\.lat, longitude: event\.lng \}/);
+  assert.doesNotMatch(props, /viewportIntent=\{[\s\S]*?panelPlace/);
+  assert.doesNotMatch(props, /viewportIntent=\{[\s\S]*?selectedMapObjectId/);
+});
+
+test("List view rendering is unchanged -- same cards, same openPlacePanel, same Directions/Call", () => {
+  assert.match(SOURCE, /\{viewMode === "list" && \(/);
+  assert.match(SOURCE, /filteredPlaces\.map\(\(place\) => \(/);
+  assert.match(SOURCE, /onClick=\{\(\) => handleDirections\(place\)\}/);
+  assert.match(SOURCE, /className="nearby-action-button nearby-action-button-danger"/);
+});

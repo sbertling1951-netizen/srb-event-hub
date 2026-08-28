@@ -133,13 +133,16 @@ export type MapRendererId = "leaflet" | "maplibre" | "openlayers" | "google";
  * the adapter's problem to solve once per renderer, never the domain's.
  *
  * Two activation-shaped callbacks are provided rather than one, because
- * Nearby's real, working, real-device-verified UX is a genuine two-step
- * flow: tapping a map object identifies it (`onObjectSelect`); a second,
+ * Nearby's original real-device-verified UX was a genuine two-step flow:
+ * tapping a map object identifies it (`onObjectSelect`); a second,
  * deliberate tap on the resulting identity surface opens it
- * (`onObjectActivate`). Collapsing these into a single "activate" would
- * silently reintroduce the direct marker-tap-to-panel handoff that has
- * repeatedly failed real-device testing -- this contract does not do
- * that, and this stage does not attempt to change that interaction.
+ * (`onObjectActivate`). That two-step remains the DEFAULT. A consumer
+ * whose own selected-object treatment is itself the deliberate action
+ * (Nearby now opens its ObjectPanel straight from a pin tap) sets
+ * `selectActivatesObject` -- the neutral surface then promotes a select
+ * to the activation and fires `onObjectActivate` for it. Even then the
+ * raw renderer gesture never reaches the domain unmediated: the surface,
+ * not the adapter, decides which step counts as activation.
  */
 export type MapSurfaceProps = {
   objects: MapObject[];
@@ -152,12 +155,20 @@ export type MapSurfaceProps = {
   /** The user committed to this object and wants it opened (e.g. the
    * existing ObjectPanel). Never fired directly off a raw renderer
    * gesture; always the result of a deliberate, distinct activation step
-   * the domain layer or the neutral surface itself owns. */
+   * the domain layer or the neutral surface itself owns -- either the
+   * bridging identity card's own tap, or (when `selectActivatesObject`)
+   * the surface promoting a select to an activation. */
   onObjectActivate?: (objectId: string) => void;
   /** The map background (not any object) was activated -- clears
    * selection. */
   onMapBackgroundActivate?: () => void;
   onViewportChange?: (viewport: MapViewportIntent) => void;
+  /** When true, the surface treats a renderer object-select as the
+   * deliberate activation: it fires `onObjectActivate` for that object
+   * and renders no bridging identity card. For a consumer whose own
+   * selected-object surface (e.g. Nearby's ObjectPanel) IS the intended
+   * action of a pin tap. Defaults to the two-step flow. */
+  selectActivatesObject?: boolean;
 };
 
 /** Props a renderer adapter itself implements. Deliberately narrower than

@@ -194,6 +194,10 @@ function NearbyPageInner() {
 
   const closePlacePanel = useCallback(() => {
     setPanelPlace(null);
+    // Keep the map's "current pin" in step with the panel, so dismissing
+    // the panel also deselects the marker. This never touches map
+    // center/zoom.
+    setSelectedMapObjectId(null);
   }, []);
 
   async function copyPlaceAddress(address: string) {
@@ -770,6 +774,12 @@ function NearbyPageInner() {
         <EpicentraxMapSurface
           objects={mapObjects}
           selectedObjectId={selectedMapObjectId}
+          // A pin tap is the deliberate action here: it selects the place
+          // AND opens the same ObjectPanel (canonical data + Directions /
+          // Call / Website) the List view uses -- no intermediate "View
+          // details" card. Directions still go only through
+          // handleDirections (the one List-view URL builder).
+          selectActivatesObject
           viewportIntent={
             event?.lat !== null &&
             event?.lat !== undefined &&
@@ -781,12 +791,14 @@ function NearbyPageInner() {
           onObjectSelect={(objectId) => setSelectedMapObjectId(objectId)}
           onObjectActivate={(objectId) => {
             const place = filteredPlaces.find((p) => p.id === objectId);
-            setSelectedMapObjectId(null);
             if (place) {
               openPlacePanel(place);
             }
           }}
-          onMapBackgroundActivate={() => setSelectedMapObjectId(null)}
+          onMapBackgroundActivate={() => {
+            setSelectedMapObjectId(null);
+            closePlacePanel();
+          }}
         />
       ) : null}
       {viewMode === "list" && (

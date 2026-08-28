@@ -6,9 +6,18 @@
  * The only mapping import a domain consumer (Nearby today) should need.
  * Resolves a renderer adapter through the registry (lib/mapSurface/
  * registry.ts) and renders it with translated, renderer-neutral props.
- * Also owns the selected-object identity/action card -- it has zero
- * renderer dependency (plain DOM), so it lives here rather than being
- * duplicated inside every adapter.
+ *
+ * Interaction: by default a renderer object-select surfaces a neutral
+ * "identity" card (SelectedObjectCard) whose own tap is the deliberate
+ * activation -- the original real-device-verified two-step flow. A
+ * consumer whose own selected-object treatment IS the deliberate action
+ * (e.g. Nearby opening its ObjectPanel straight from a pin tap) passes
+ * `selectActivatesObject`; the surface then treats a select as the
+ * activation, fires `onObjectActivate`, and does not render the bridging
+ * card. Either way the raw renderer gesture never reaches the domain --
+ * the neutral surface owns which step counts as activation. This card has
+ * zero renderer dependency (plain DOM), so it lives here rather than
+ * being duplicated inside every adapter.
  *
  * This component, and everything it renders, must never import from
  * "leaflet", "react-leaflet", or any other renderer package. If it needs
@@ -48,6 +57,7 @@ export function EpicentraxMapSurface({
   onObjectActivate,
   onMapBackgroundActivate,
   onViewportChange,
+  selectActivatesObject = false,
 }: MapSurfaceProps) {
   const Renderer = resolveMapRenderer();
   const selectedObject = objects.find((object) => object.id === selectedObjectId) ?? null;
@@ -66,12 +76,17 @@ export function EpicentraxMapSurface({
         selectedObjectId={selectedObjectId}
         viewportIntent={viewportIntent}
         userLocation={userLocation}
-        onObjectSelect={onObjectSelect}
+        onObjectSelect={(objectId) => {
+          onObjectSelect?.(objectId);
+          if (selectActivatesObject) {
+            onObjectActivate?.(objectId);
+          }
+        }}
         onBackgroundActivate={onMapBackgroundActivate}
         onViewportChange={onViewportChange}
       />
 
-      {selectedObject ? (
+      {selectedObject && !selectActivatesObject ? (
         <SelectedObjectCard
           object={selectedObject}
           onActivate={() => onObjectActivate?.(selectedObject.id)}
