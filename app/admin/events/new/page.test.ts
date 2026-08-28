@@ -26,10 +26,35 @@ test("creation uses only the governed RPC adapter and never a raw Event INSERT",
   assert.doesNotMatch(SOURCE, /\.upsert\(/);
 });
 
-test("Create resolves Event coordinates through the shared save-time contract", () => {
-  assert.match(SOURCE, /resolveEventCoordinates\(form, \(\{ address \}\) => geocodeLocation\(\{ address \}\)\)/);
-  assert.match(SOURCE, /coordinates\.kind === "unresolved"/);
-  assert.match(SOURCE, /coordinates\.kind === "no_location" \? null : coordinates\.lat/);
+test("Create resolves Event coordinates through the shared /api/geocode contract", () => {
+  assert.match(SOURCE, /resolveEventCoordinates\(form, \(\{ address \}\) =>\s*\n?\s*geocodeLocation\(\{ address \}\)/);
+  assert.match(SOURCE, /planCoordinatePersistence\([\s\S]*?"create"/);
+  assert.doesNotMatch(SOURCE, /nominatim/);
+});
+
+test("third-party geocoder success is NOT a prerequisite for creating an Event", () => {
+  const start = SOURCE.indexOf("async function handleSubmit");
+  const submit = SOURCE.slice(start, SOURCE.indexOf("return (", start));
+  // No throw on an unresolved geocode.
+  assert.doesNotMatch(submit, /throw new Error\(coordinates\.message\)/);
+  assert.doesNotMatch(submit, /coordinates\.kind === "unresolved"/);
+  // The Event is still created; only a "write" plan supplies coordinates.
+  assert.match(submit, /const created = await createEventForTenant\(/);
+  assert.match(submit, /coordinatePlan\.kind === "write" \? coordinatePlan\.lat : null/);
+  // An unresolved location surfaces a non-blocking notice instead of navigating away.
+  assert.match(submit, /if \(coordinatePlan\.notice\) \{[\s\S]*?setCoordinateNotice\(coordinatePlan\.notice\);[\s\S]*?return;/);
+});
+
+test("the successful (resolved) path still navigates to Event Admin", () => {
+  assert.match(SOURCE, /router\.push\("\/admin\/events"\)/);
+});
+
+test("Editing Location updates only Location -- it never clears lat/lng", () => {
+  const start = SOURCE.indexOf('<Field label="Location">');
+  const block = SOURCE.slice(start, SOURCE.indexOf("</Field>", start));
+  assert.match(block, /onChange=\{\(event\) => updateField\("location", event\.target\.value\)\}/);
+  assert.doesNotMatch(block, /lat: ""/);
+  assert.doesNotMatch(block, /lng: ""/);
 });
 
 test("the form exposes the accepted contract and no lifecycle/system controls", () => {

@@ -89,13 +89,57 @@ test("shell wrapper and AdminRouteGuard remain in place", () => {
   assert.match(PAGE_SOURCE, /AdminShellAdapter/);
 });
 
-test("Edit uses the shared save-time coordinate contract and has no browser geocode debounce", () => {
+test("Edit resolves coordinates only through the shared /api/geocode path -- no second Nominatim implementation", () => {
+  // The one governed geocoding path is lib/geocodeLocation -> /api/geocode.
+  assert.doesNotMatch(PAGE_SOURCE, /nominatim\.openstreetmap\.org/);
+  assert.doesNotMatch(PAGE_SOURCE, /"https:\/\/nominatim/);
   const saveStart = PAGE_SOURCE.indexOf("async function saveEvent()");
   const saveBody = PAGE_SOURCE.slice(saveStart, PAGE_SOURCE.indexOf("async function saveAssignments()", saveStart));
-  assert.match(saveBody, /resolveEventCoordinates\(form, \(\{ address \}\) => geocodeLocation\(\{ address \}\)\)/);
-  assert.match(saveBody, /coordinates\.kind === "unresolved"/);
-  assert.doesNotMatch(PAGE_SOURCE, /nominatim\.openstreetmap\.org\/search\?format=json/);
-  assert.match(PAGE_SOURCE, /location: e\.target\.value, lat: "", lng: ""/);
+  assert.match(saveBody, /resolveEventCoordinates\(form, \(\{ address \}\) =>\s*\n?\s*geocodeLocation\(\{ address \}\)/);
+});
+
+test("Editing Location updates only Location -- it never clears lat/lng", () => {
+  // The Location <Input> onChange sets `location` and nothing else.
+  const start = PAGE_SOURCE.indexOf('<Field label="Location">');
+  const block = PAGE_SOURCE.slice(start, PAGE_SOURCE.indexOf("</Field>", start));
+  assert.match(block, /setForm\(\(prev\) => \(\{ \.\.\.prev, location: e\.target\.value \}\)\)/);
+  assert.doesNotMatch(block, /lat: ""/);
+  assert.doesNotMatch(block, /lng: ""/);
+});
+
+test("An unresolved geocode never blocks the Event save and never nulls a stored pair", () => {
+  const saveStart = PAGE_SOURCE.indexOf("async function saveEvent()");
+  const saveBody = PAGE_SOURCE.slice(saveStart, PAGE_SOURCE.indexOf("async function saveAssignments()", saveStart));
+  // No throw on an unresolved geocode.
+  assert.doesNotMatch(saveBody, /throw new Error\(coordinates\.message\)/);
+  assert.doesNotMatch(saveBody, /coordinates\.kind === "unresolved"/);
+  // The plan decides what is persisted; "preserve" omits lat/lng entirely.
+  assert.match(saveBody, /planCoordinatePersistence\(/);
+  assert.match(saveBody, /coordinatePlan\.kind === "write"/);
+  assert.match(saveBody, /coordinatePlan\.kind === "clear"/);
+  // A non-blocking notice, not an error, on the preserve path.
+  assert.match(saveBody, /coordinatePlan\.notice\s*\n?\s*\?\s*coordinatePlan\.notice/);
+});
+
+test("Edit does not re-geocode an unchanged location with blank coordinate fields", () => {
+  const saveStart = PAGE_SOURCE.indexOf("async function saveEvent()");
+  const saveBody = PAGE_SOURCE.slice(saveStart, PAGE_SOURCE.indexOf("async function saveAssignments()", saveStart));
+  assert.match(saveBody, /eventSaveShouldResolveCoordinates\(\{\s*\n?\s*mode: "edit"/);
+  assert.match(saveBody, /form\.location\.trim\(\) !== \(selectedEvent\?\.location \?\? ""\)\.trim\(\)/);
+  assert.match(saveBody, /form\.lat\.trim\(\) !== "" \|\| form\.lng\.trim\(\) !== ""/);
+});
+
+test("Auto Fill Coordinates routes through the shared geocodeLocation() and never clears an existing pair on failure", () => {
+  const start = PAGE_SOURCE.indexOf("Auto Fill Coordinates");
+  // walk back to the enclosing onClick handler
+  const handlerStart = PAGE_SOURCE.lastIndexOf("onClick={async () => {", start);
+  const handler = PAGE_SOURCE.slice(handlerStart, start);
+  assert.match(handler, /await geocodeLocation\(\{\s*\n?\s*address: form\.location/);
+  assert.doesNotMatch(handler, /fetch\(/);
+  // On a null result it returns without touching form.lat / form.lng.
+  assert.match(handler, /if \(lat === null \|\| lng === null\) \{[\s\S]*?return;/);
+  const nullBranch = handler.slice(handler.indexOf("lat === null"), handler.indexOf("setForm"));
+  assert.doesNotMatch(nullBranch, /setForm/);
 });
 
 // Single-Owner Integrity pass (docs/architecture/ADR-006 Event Context
@@ -778,4 +822,12 @@ test("eventAdminStatusTone classifies confirmation/loading/failure text correctl
   assert.equal(eventAdminStatusTone("Access denied."), "danger");
   assert.equal(eventAdminStatusTone("Failed to save event."), "danger");
   assert.equal(eventAdminStatusTone("Enter an event name."), "danger");
+
+  // A non-blocking coordinate notice reads as a warning, not a failure.
+  assert.equal(
+    eventAdminStatusTone(
+      "Coordinates could not be resolved automatically for this location. The rest of the Event was saved; enter a latitude and longitude pair manually.",
+    ),
+    "warning",
+  );
 });

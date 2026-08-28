@@ -17,8 +17,11 @@ import {
   listMyTenantAdminAccess,
   type MyTenantAdminAccessRow,
 } from "@/lib/adminTenantAuthority";
+import {
+  planCoordinatePersistence,
+  resolveEventCoordinates,
+} from "@/lib/eventCoordinates";
 import { createEventForTenant } from "@/lib/eventProvisioning";
-import { resolveEventCoordinates } from "@/lib/eventCoordinates";
 import { geocodeLocation } from "@/lib/geocodeLocation";
 
 type EventFormState = {
@@ -65,6 +68,9 @@ function NewEventPageInner() {
   const [loadingTenants, setLoadingTenants] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Non-blocking notice shown after a successful create whose coordinates
+  // could not be resolved -- the Event exists; coordinates need manual entry.
+  const [coordinateNotice, setCoordinateNotice] = useState<string | null>(null);
   const [form, setForm] = useState<EventFormState>(EMPTY_FORM);
 
   useEffect(() => {
@@ -125,8 +131,19 @@ function NewEventPageInner() {
       }
 
       setSaving(true);
-      const coordinates = await resolveEventCoordinates(form, ({ address }) => geocodeLocation({ address }));
-      if (coordinates.kind === "unresolved") throw new Error(coordinates.message);
+
+      // Third-party geocoder success is NOT a prerequisite for creating an
+      // Event. A manual pair is validated (partial / out-of-range still fail
+      // visibly via resolveEventCoordinates); a resolvable location is
+      // geocoded; an unresolved location creates the Event with NULL
+      // coordinates and a non-blocking notice.
+      const coordinatePlan = planCoordinatePersistence(
+        await resolveEventCoordinates(form, ({ address }) =>
+          geocodeLocation({ address }),
+        ),
+        "create",
+      );
+
       const created = await createEventForTenant({
         tenantId: form.tenantId,
         name: form.name,
@@ -135,8 +152,8 @@ function NewEventPageInner() {
         startDate: form.startDate,
         location: form.location,
         eventCode: form.eventCode,
-        lat: coordinates.kind === "no_location" ? null : coordinates.lat,
-        lng: coordinates.kind === "no_location" ? null : coordinates.lng,
+        lat: coordinatePlan.kind === "write" ? coordinatePlan.lat : null,
+        lng: coordinatePlan.kind === "write" ? coordinatePlan.lng : null,
       });
 
       setCurrentAdminEvent({
@@ -148,6 +165,12 @@ function NewEventPageInner() {
         start_date: created.start_date,
         end_date: created.end_date,
       });
+
+      if (coordinatePlan.notice) {
+        setCoordinateNotice(coordinatePlan.notice);
+        return;
+      }
+
       router.push("/admin/events");
     } catch (caught) {
       setError(
@@ -167,6 +190,15 @@ function NewEventPageInner() {
           No active Tenant is available for Event creation under your current
           authority.
         </Alert>
+      ) : coordinateNotice ? (
+        <PageSection variant="card" title="Event created">
+          <Alert tone="warning">{coordinateNotice}</Alert>
+          <FormActions>
+            <AppLinkButton href="/admin/events" variant="primary">
+              Open Event Admin
+            </AppLinkButton>
+          </FormActions>
+        </PageSection>
       ) : (
         <form onSubmit={(event) => void handleSubmit(event)}>
           <PageSection variant="card" title="Event ownership and details">
@@ -221,7 +253,7 @@ function NewEventPageInner() {
                   <Input
                     {...controlProps}
                     value={form.location}
-                    onChange={(event) => setForm((current) => ({ ...current, location: event.target.value, lat: "", lng: "" }))}
+                    onChange={(event) => updateField("location", event.target.value)}
                     disabled={saving}
                   />
                 )}

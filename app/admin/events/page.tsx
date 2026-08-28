@@ -18,8 +18,12 @@ import {
   setCurrentAdminEvent,
 } from "@/lib/adminEventContext";
 import { subscribeToAdminWorkspace } from "@/lib/adminWorkspaceContext";
+import {
+  eventSaveShouldResolveCoordinates,
+  planCoordinatePersistence,
+  resolveEventCoordinates,
+} from "@/lib/eventCoordinates";
 import { isActiveEventStatus, normalizeEventStatus } from "@/lib/eventStatus";
-import { resolveEventCoordinates } from "@/lib/eventCoordinates";
 import { geocodeLocation } from "@/lib/geocodeLocation";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -147,15 +151,15 @@ export function eventAdminStatusTone(message: string): AlertTone {
     lower.includes("failed") ||
     lower.startsWith("access denied") ||
     lower.startsWith("enter an event name") ||
-    lower.startsWith("select an event first") ||
-    lower.startsWith("no coordinates found")
+    lower.startsWith("select an event first")
   ) {
     return "danger";
   }
 
   if (
     lower.includes("no longer available") ||
-    lower.includes("is not shown under this filter")
+    lower.includes("is not shown under this filter") ||
+    lower.startsWith("coordinates could not be resolved")
   ) {
     return "warning";
   }
@@ -556,10 +560,43 @@ function EventAdminPageInner() {
 
       const nextStatus = form.status || "Draft";
       const nextIsActive = isActiveEventStatus(nextStatus);
-      const coordinates = await resolveEventCoordinates(form, ({ address }) => geocodeLocation({ address }));
-      if (coordinates.kind === "unresolved") throw new Error(coordinates.message);
 
-      const payload = {
+      // Coordinate resolution never blocks the save. A manual pair is
+      // validated (partial / out-of-range still fail visibly via
+      // resolveEventCoordinates); a changed location is geocoded; an
+      // unchanged location with blank coordinate fields keeps whatever is
+      // stored -- no needless re-geocode. An unresolved geocode leaves the
+      // stored pair untouched and only surfaces a non-blocking notice.
+      const hasManualCoordinateInput =
+        form.lat.trim() !== "" || form.lng.trim() !== "";
+      const locationChanged =
+        form.location.trim() !== (selectedEvent?.location ?? "").trim();
+
+      const coordinatePlan = eventSaveShouldResolveCoordinates({
+        mode: "edit",
+        hasManualCoordinateInput,
+        locationChanged,
+      })
+        ? planCoordinatePersistence(
+            await resolveEventCoordinates(form, ({ address }) =>
+              geocodeLocation({ address }),
+            ),
+            "edit",
+          )
+        : ({ kind: "preserve", notice: null } as const);
+
+      const payload: {
+        name: string;
+        location: string | null;
+        start_date: string | null;
+        end_date: string | null;
+        event_code: string | null;
+        status: string;
+        is_active: boolean;
+        visible_to_members: boolean;
+        lat?: number | null;
+        lng?: number | null;
+      } = {
         name: form.name.trim(),
         location: form.location.trim() || null,
         start_date: form.start_date || null,
@@ -568,9 +605,16 @@ function EventAdminPageInner() {
         status: nextStatus,
         is_active: nextIsActive,
         visible_to_members: nextIsActive,
-        lat: coordinates.kind === "no_location" ? null : coordinates.lat,
-        lng: coordinates.kind === "no_location" ? null : coordinates.lng,
       };
+
+      if (coordinatePlan.kind === "write") {
+        payload.lat = coordinatePlan.lat;
+        payload.lng = coordinatePlan.lng;
+      } else if (coordinatePlan.kind === "clear") {
+        payload.lat = null;
+        payload.lng = null;
+      }
+      // coordinatePlan.kind === "preserve" -> lat/lng omitted -> stored values kept.
 
       if (form.id) {
         const { data, error } = await supabase
@@ -624,7 +668,9 @@ function EventAdminPageInner() {
         setWorkspaceEvent(updatedEvent);
 
         setStatus(
-          `Updated event "${payload.name}" to ${updatedEvent.status || "Draft"}.`,
+          coordinatePlan.notice
+            ? coordinatePlan.notice
+            : `Updated event "${payload.name}" to ${updatedEvent.status || "Draft"}.`,
         );
       }
     } catch (err: any) {
@@ -936,7 +982,7 @@ function EventAdminPageInner() {
                   {...controlProps}
                   value={form.location}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, location: e.target.value, lat: "", lng: "" }))
+                    setForm((prev) => ({ ...prev, location: e.target.value }))
                   }
                   placeholder="Location"
                 />
@@ -951,33 +997,27 @@ function EventAdminPageInner() {
                     return;
                   }
 
-                  try {
-                    setStatus("Looking up coordinates...");
+                  // One governed geocoding path: the same /api/geocode +
+                  // geocodeLocation machinery the save uses. A failed lookup
+                  // never clears an existing coordinate pair.
+                  setStatus("Looking up coordinates...");
+                  const { lat, lng } = await geocodeLocation({
+                    address: form.location,
+                  });
 
-                    const response = await fetch(
-                      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(form.location)}`,
+                  if (lat === null || lng === null) {
+                    setStatus(
+                      "Coordinates could not be resolved automatically for this location.",
                     );
-
-                    const results = await response.json();
-
-                    if (!results?.length) {
-                      setStatus("No coordinates found.");
-                      return;
-                    }
-
-                    const first = results[0];
-
-                    setForm((prev) => ({
-                      ...prev,
-                      lat: first.lat,
-                      lng: first.lon,
-                    }));
-
-                    setStatus("Coordinates loaded.");
-                  } catch (err) {
-                    console.error(err);
-                    setStatus("Coordinate lookup failed.");
+                    return;
                   }
+
+                  setForm((prev) => ({
+                    ...prev,
+                    lat: String(lat),
+                    lng: String(lng),
+                  }));
+                  setStatus("Coordinates loaded.");
                 }}
               >
                 Auto Fill Coordinates
