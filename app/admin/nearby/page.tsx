@@ -2437,6 +2437,7 @@ function AdminNearbyPageInner() {
     try {
       setCopyingToEvent(true);
       showStatus("Replacing current event nearby list...");
+      const eventId = adminEvent.id;
 
       const { data: sourceRows, error: sourceError } = await supabase
         .from("nearby_master")
@@ -2450,17 +2451,8 @@ function AdminNearbyPageInner() {
         throw sourceError;
       }
 
-      const { error: deleteError } = await supabase
-        .from("event_nearby_places")
-        .delete()
-        .eq("event_id", adminEvent.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
       const sourcePlaces = sourceRows || [];
-      const payload: any[] = [];
+      const coordinateOverrides: Array<{ source_master_id: string; lat: number; lng: number }> = [];
 
       for (let index = 0; index < sourcePlaces.length; index += 1) {
         const place = sourcePlaces[index];
@@ -2469,6 +2461,10 @@ function AdminNearbyPageInner() {
         let lng = place.lng ?? null;
 
         if (lat === null || lng === null) {
+          const hasGeocodeInput = Boolean(place.location_code?.trim() || place.address?.trim());
+          if (!hasGeocodeInput) {
+            continue;
+          }
           showStatus(
             `Geocoding ${index + 1} of ${sourcePlaces.length}: ${place.name}...`,
           );
@@ -2480,51 +2476,30 @@ function AdminNearbyPageInner() {
 
           lat = resolved.lat;
           lng = resolved.lng;
-        }
-
-        payload.push({
-          event_id: adminEvent.id,
-          // Nearby Scope Model Stage 2: links this copy back to the
-          // stored place it came from, exactly what
-          // associate_nearby_master_place_with_event's own single-place
-          // path already stamps -- a bulk-copied row is no longer
-          // indistinguishable from an Event Only place.
-          source_master_id: place.id,
-          name: place.name,
-          address: place.address ?? null,
-          phone: place.phone ?? null,
-          website: place.link ?? null,
-          category: place.category ?? null,
-          // Copied directly from the source stored place's own resolved
-          // identity (Stage A) -- never re-derived from copied display
-          // text when a canonical source category_id already exists.
-          category_id: place.category_id ?? null,
-          notes: place.description ?? null,
-          sort_order: index + 1,
-          is_hidden: false,
-          distance_miles: null,
-          location_code: place.location_code ?? null,
-          lat,
-          lng,
-        });
-      }
-
-      if (payload.length > 0) {
-        const { error: insertError } = await supabase
-          .from("event_nearby_places")
-          .insert(payload);
-
-        if (insertError) {
-          throw insertError;
+          if (lat === null || lng === null) {
+            throw new Error(`Could not resolve coordinates for stored place "${place.name}". The Event Nearby list was not changed.`);
+          }
+          coordinateOverrides.push({ source_master_id: place.id, lat, lng });
         }
       }
 
-      await loadEventPlaces(adminEvent.id);
-      setStatus(
-        `Replaced event nearby list with ${payload.length} place${
-          payload.length === 1 ? "" : "s"
-        }.`,
+      const { data, error: replaceError } = await supabase.rpc(
+        "replace_event_nearby_from_stored_area",
+        {
+          p_event_id: eventId,
+          p_stored_area_template_id: selectedAreaId,
+          p_coordinate_overrides: coordinateOverrides,
+        },
       );
+      if (replaceError) {
+        throw replaceError;
+      }
+
+      await loadEventPlaces(eventId);
+      if (getCurrentAdminEvent()?.id === eventId) {
+        const replacedCount = data?.[0]?.replaced_count ?? sourcePlaces.length;
+        setStatus(`Replaced event nearby list with ${replacedCount} place${replacedCount === 1 ? "" : "s"}.`);
+      }
     } catch (err: any) {
       console.error("replaceEventListFromStored error:", err);
       showError(err?.message || "Failed to replace event nearby list.");

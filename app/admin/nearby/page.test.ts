@@ -336,10 +336,11 @@ test("selecting a category keeps category_id and the compatibility label in lock
   }
 });
 
-test("replaceEventListFromStored copies category_id directly from the source stored place -- never re-derives it from copied display text", () => {
+test("replaceEventListFromStored requests the atomic RPC with the source identity only -- canonical category_id remains server-derived", () => {
   const body = functionBody("replaceEventListFromStored");
   assert.match(body, /"id,name,address,phone,category,category_id,description,link,location_code,lat,lng"/);
-  assert.match(body, /category_id: place\.category_id \?\? null,/);
+  assert.match(body, /replace_event_nearby_from_stored_area/);
+  assert.doesNotMatch(body, /category_id: place\.category_id \?\? null,/);
 });
 
 test("mergeStoredAreaIntoEvent copies category_id directly from the source stored place -- never re-derives it from copied display text", () => {
