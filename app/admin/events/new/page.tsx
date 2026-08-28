@@ -18,6 +18,8 @@ import {
   type MyTenantAdminAccessRow,
 } from "@/lib/adminTenantAuthority";
 import { createEventForTenant } from "@/lib/eventProvisioning";
+import { resolveEventCoordinates } from "@/lib/eventCoordinates";
+import { geocodeLocation } from "@/lib/geocodeLocation";
 
 type EventFormState = {
   tenantId: string;
@@ -42,19 +44,6 @@ const EMPTY_FORM: EventFormState = {
   lat: "",
   lng: "",
 };
-
-function parseCoordinate(value: string, label: string): number | null {
-  if (!value.trim()) {
-    return null;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`${label} must be a number.`);
-  }
-
-  return parsed;
-}
 
 export default function NewEventPage() {
   return (
@@ -135,19 +124,9 @@ function NewEventPageInner() {
         throw new Error("Event end date cannot be before start date.");
       }
 
-      const lat = parseCoordinate(form.lat, "Latitude");
-      const lng = parseCoordinate(form.lng, "Longitude");
-      if ((lat === null) !== (lng === null)) {
-        throw new Error("Latitude and longitude must be entered together.");
-      }
-      if (lat !== null && (lat < -90 || lat > 90)) {
-        throw new Error("Latitude must be between -90 and 90.");
-      }
-      if (lng !== null && (lng < -180 || lng > 180)) {
-        throw new Error("Longitude must be between -180 and 180.");
-      }
-
       setSaving(true);
+      const coordinates = await resolveEventCoordinates(form, ({ address }) => geocodeLocation({ address }));
+      if (coordinates.kind === "unresolved") throw new Error(coordinates.message);
       const created = await createEventForTenant({
         tenantId: form.tenantId,
         name: form.name,
@@ -156,8 +135,8 @@ function NewEventPageInner() {
         startDate: form.startDate,
         location: form.location,
         eventCode: form.eventCode,
-        lat,
-        lng,
+        lat: coordinates.kind === "no_location" ? null : coordinates.lat,
+        lng: coordinates.kind === "no_location" ? null : coordinates.lng,
       });
 
       setCurrentAdminEvent({
@@ -242,9 +221,7 @@ function NewEventPageInner() {
                   <Input
                     {...controlProps}
                     value={form.location}
-                    onChange={(event) =>
-                      updateField("location", event.target.value)
-                    }
+                    onChange={(event) => setForm((current) => ({ ...current, location: event.target.value, lat: "", lng: "" }))}
                     disabled={saving}
                   />
                 )}
@@ -311,7 +288,7 @@ function NewEventPageInner() {
                 )}
               </Field>
 
-              <Field label="Latitude" help="Optional; enter both coordinates or neither.">
+              <Field label="Latitude" help="Optional manual override; enter both coordinates or neither.">
                 {(controlProps) => (
                   <Input
                     {...controlProps}

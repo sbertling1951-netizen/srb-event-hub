@@ -26,6 +26,12 @@ test("creation uses only the governed RPC adapter and never a raw Event INSERT",
   assert.doesNotMatch(SOURCE, /\.upsert\(/);
 });
 
+test("Create resolves Event coordinates through the shared save-time contract", () => {
+  assert.match(SOURCE, /resolveEventCoordinates\(form, \(\{ address \}\) => geocodeLocation\(\{ address \}\)\)/);
+  assert.match(SOURCE, /coordinates\.kind === "unresolved"/);
+  assert.match(SOURCE, /coordinates\.kind === "no_location" \? null : coordinates\.lat/);
+});
+
 test("the form exposes the accepted contract and no lifecycle/system controls", () => {
   for (const label of [
     "Owning Tenant",

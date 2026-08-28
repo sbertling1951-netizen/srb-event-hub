@@ -19,6 +19,8 @@ import {
 } from "@/lib/adminEventContext";
 import { subscribeToAdminWorkspace } from "@/lib/adminWorkspaceContext";
 import { isActiveEventStatus, normalizeEventStatus } from "@/lib/eventStatus";
+import { resolveEventCoordinates } from "@/lib/eventCoordinates";
+import { geocodeLocation } from "@/lib/geocodeLocation";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -507,44 +509,6 @@ function EventAdminPageInner() {
     void loadAssignmentsForEvent(selectedEvent.id);
   }, [selectedEvent, loadAssignmentsForEvent]);
 
-  useEffect(() => {
-    if (!form.location.trim()) {
-      return;
-    }
-
-    const timeout = setTimeout(async () => {
-      try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(form.location)}`,
-        );
-
-        const results = await response.json();
-
-        if (!results?.length) {
-          return;
-        }
-
-        const first = results[0];
-
-        setForm((prev) => {
-          if (prev.lat && prev.lng) {
-            return prev;
-          }
-
-          return {
-            ...prev,
-            lat: first.lat,
-            lng: first.lon,
-          };
-        });
-      } catch (err) {
-        console.error("auto geocode failed", err);
-      }
-    }, 1200);
-
-    return () => clearTimeout(timeout);
-  }, [form.location]);
-
   function setWorkspaceEvent(event: EventRow | null) {
     if (!event) {
       setCurrentAdminEvent(null);
@@ -592,6 +556,8 @@ function EventAdminPageInner() {
 
       const nextStatus = form.status || "Draft";
       const nextIsActive = isActiveEventStatus(nextStatus);
+      const coordinates = await resolveEventCoordinates(form, ({ address }) => geocodeLocation({ address }));
+      if (coordinates.kind === "unresolved") throw new Error(coordinates.message);
 
       const payload = {
         name: form.name.trim(),
@@ -602,8 +568,8 @@ function EventAdminPageInner() {
         status: nextStatus,
         is_active: nextIsActive,
         visible_to_members: nextIsActive,
-        lat: form.lat ? Number(form.lat) : null,
-        lng: form.lng ? Number(form.lng) : null,
+        lat: coordinates.kind === "no_location" ? null : coordinates.lat,
+        lng: coordinates.kind === "no_location" ? null : coordinates.lng,
       };
 
       if (form.id) {
@@ -970,7 +936,7 @@ function EventAdminPageInner() {
                   {...controlProps}
                   value={form.location}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, location: e.target.value }))
+                    setForm((prev) => ({ ...prev, location: e.target.value, lat: "", lng: "" }))
                   }
                   placeholder="Location"
                 />

@@ -89,6 +89,15 @@ test("shell wrapper and AdminRouteGuard remain in place", () => {
   assert.match(PAGE_SOURCE, /AdminShellAdapter/);
 });
 
+test("Edit uses the shared save-time coordinate contract and has no browser geocode debounce", () => {
+  const saveStart = PAGE_SOURCE.indexOf("async function saveEvent()");
+  const saveBody = PAGE_SOURCE.slice(saveStart, PAGE_SOURCE.indexOf("async function saveAssignments()", saveStart));
+  assert.match(saveBody, /resolveEventCoordinates\(form, \(\{ address \}\) => geocodeLocation\(\{ address \}\)\)/);
+  assert.match(saveBody, /coordinates\.kind === "unresolved"/);
+  assert.doesNotMatch(PAGE_SOURCE, /nominatim\.openstreetmap\.org\/search\?format=json/);
+  assert.match(PAGE_SOURCE, /location: e\.target\.value, lat: "", lng: ""/);
+});
+
 // Single-Owner Integrity pass (docs/architecture/ADR-006 Event Context
 // Architecture.md §2.3): a repository-wide re-audit of every remaining
 // setWorkspaceEvent/setCurrentAdminEvent call site found three more
