@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { shouldShowNoListsEmptyState } from "@/components/nearby/EventNearbyAreaListApplication";
+
 const MANAGER = readFileSync(
   fileURLToPath(new URL("./NearbyAreaListManager.tsx", import.meta.url)),
   "utf8",
@@ -43,4 +45,52 @@ test("Nearby Admin uses only the event-scoped governed Area List application pat
   assert.match(APPLICATION, /Existing Event Nearby places and subsequent Event-specific curation remain independent/);
   assert.equal(/\.from\("event_nearby_places"\)[\s\S]*?\.insert/.test(APPLICATION), false);
   assert.equal(/\.from\("nearby_area_lists"\)/.test(APPLICATION), false);
+});
+
+// ---------------------------------------------------------------------------
+// A loader failure must surface the error only -- never a simultaneous
+// "successful and empty" message.
+// ---------------------------------------------------------------------------
+
+test("the zero-lists EmptyState render is gated on !error", () => {
+  // The JSX must not render the "No active Area Lists" message while an
+  // error is showing.
+  assert.match(
+    APPLICATION,
+    /shouldShowNoListsEmptyState\(\{[\s\S]*?hasError: !!error[\s\S]*?\}\)\s*\?\s*<EmptyState message="No active Area Lists/,
+  );
+  // the loader still sets the error + clears the list on an rpcError
+  assert.match(APPLICATION, /if \(rpcError\) \{\s*\n\s*setLists\(\[\]\);[\s\S]*?setError\("Could not load Area Lists available to this Event\."\);/);
+});
+
+test("successful zero-result load shows the EmptyState", () => {
+  assert.equal(
+    shouldShowNoListsEmptyState({ hasEventId: true, loading: false, hasError: false, listCount: 0 }),
+    true,
+  );
+});
+
+test("failed load does NOT show the EmptyState (error banner only)", () => {
+  assert.equal(
+    shouldShowNoListsEmptyState({ hasEventId: true, loading: false, hasError: true, listCount: 0 }),
+    false,
+  );
+});
+
+test("successful non-empty load does not show the EmptyState (list renders)", () => {
+  assert.equal(
+    shouldShowNoListsEmptyState({ hasEventId: true, loading: false, hasError: false, listCount: 3 }),
+    false,
+  );
+});
+
+test("EmptyState is suppressed while loading and when no Event is selected", () => {
+  assert.equal(
+    shouldShowNoListsEmptyState({ hasEventId: true, loading: true, hasError: false, listCount: 0 }),
+    false,
+  );
+  assert.equal(
+    shouldShowNoListsEmptyState({ hasEventId: false, loading: false, hasError: false, listCount: 0 }),
+    false,
+  );
 });

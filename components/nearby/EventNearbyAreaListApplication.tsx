@@ -31,6 +31,26 @@ type EventNearbyAreaListApplicationProps = {
   onApplied: () => void;
 };
 
+/**
+ * The "no Area Lists available" empty state is a *successful* result: a
+ * working Event with zero eligible lists. It must never render while a load
+ * error is showing -- a failed load surfaces only the error, never a
+ * simultaneous "successful and empty" message.
+ */
+export function shouldShowNoListsEmptyState(input: {
+  hasEventId: boolean;
+  loading: boolean;
+  hasError: boolean;
+  listCount: number;
+}): boolean {
+  return (
+    input.hasEventId &&
+    !input.loading &&
+    !input.hasError &&
+    input.listCount === 0
+  );
+}
+
 /** Event-only use of a reusable list; maintenance authority is never inferred here. */
 export function EventNearbyAreaListApplication({
   eventId,
@@ -139,7 +159,7 @@ export function EventNearbyAreaListApplication({
         {status ? <Alert tone="success">{status}</Alert> : null}
         {!eventId ? <EmptyState message="Select an admin working event before applying an Area List." /> : null}
         {loading ? <LoadingState message="Loading Area Lists for this Event..." /> : null}
-        {eventId && !loading && lists.length === 0 ? <EmptyState message="No active Area Lists with eligible canonical places are available for this Event." /> : null}
+        {shouldShowNoListsEmptyState({ hasEventId: !!eventId, loading, hasError: !!error, listCount: lists.length }) ? <EmptyState message="No active Area Lists with eligible canonical places are available for this Event." /> : null}
         {eventId && lists.length > 0 ? (
           <>
             <Field label="Area List">
