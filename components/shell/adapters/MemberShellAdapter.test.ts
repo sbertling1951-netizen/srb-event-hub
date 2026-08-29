@@ -34,3 +34,15 @@ test("no member-discovery filtering (visible_to_members/status) is introduced", 
   assert.doesNotMatch(SOURCE, /get_public_discoverable_events/);
   assert.doesNotMatch(SOURCE, /get_event_continuity_context/);
 });
+
+test("explicit shell sign-out uses the full Member logout path before returning to login", () => {
+  assert.match(
+    SOURCE,
+    /import \{ signOutOfMemberAccount \} from "@\/lib\/memberAccountSession";/,
+  );
+  assert.match(
+    SOURCE,
+    /signOutOfMemberAccount\(\)\.finally\(\(\) => \{\s*window\.location\.href = "\/member\/login";/,
+  );
+  assert.doesNotMatch(SOURCE, /supabase\.auth\.signOut\(\)/);
+});

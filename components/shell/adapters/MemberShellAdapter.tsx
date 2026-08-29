@@ -6,6 +6,7 @@ import { AppShell } from "@/components/shell/AppShell";
 import { buildShellBrand } from "@/components/shell/brand";
 import { buildMemberNavSections } from "@/components/shell/navigation/memberNav";
 import type { ShellAccountAction, ShellBackTarget, ShellContentMode } from "@/components/shell/types";
+import { signOutOfMemberAccount } from "@/lib/memberAccountSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { useTenant } from "@/lib/providers/TenantProvider";
 import { supabase } from "@/lib/supabase";
@@ -91,7 +92,7 @@ export function MemberShellAdapter({
       label: "Sign Out",
       variant: "danger",
       onClick: () => {
-        void supabase.auth.signOut().finally(() => {
+        void signOutOfMemberAccount().finally(() => {
           window.location.href = "/member/login";
         });
       },

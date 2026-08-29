@@ -254,19 +254,25 @@ export function clearMemberLocalState() {
 // of legacy/local member and account-picker state so no stale identity
 // evidence remains in the browser.
 export async function signOutOfMemberAccount() {
+  // Clear the account-origin marker before Supabase publishes SIGNED_OUT.
+  // MemberRouteGuard intentionally treats that marker plus an absent Auth
+  // session as an unexpected/lapsed Account session. During an explicit
+  // logout, removing it first prevents that legitimate guard from racing
+  // this deliberate transition and showing the expired-session notice.
+  clearMemberLocalState();
+
+  // Reset shared-device intent at the same boundary. A later sign-in must
+  // always choose its storage mode explicitly, including if signOut fails.
+  setSharedDeviceMode(false);
+
   try {
     await supabase.auth.signOut();
   } catch (err) {
     console.error("Sign out failed:", err);
   } finally {
-    // Guaranteed local cleanup: runs whether signOut() succeeded,
-    // resolved with an error, or threw unexpectedly. Nothing above this
-    // point returns early, so this always executes.
+    // Keep cleanup idempotent in case browser storage changed while the
+    // sign-out request was in flight.
     clearMemberLocalState();
-
-    // Reset shared-device intent so the next sign-in (on this same
-    // browser) starts from the safe, explicit default rather than
-    // silently inheriting a prior session's storage mode.
     setSharedDeviceMode(false);
   }
 }
