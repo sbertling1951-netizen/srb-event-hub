@@ -164,6 +164,7 @@ export async function POST(req: NextRequest) {
     const attempt = Array.isArray(data) ? data[0] : null;
     const publicResult =
       attempt?.public_result_classification === "CONTINUE_VERIFICATION" ||
+      attempt?.public_result_classification === "ALREADY_ACTIVATED" ||
       attempt?.public_result_classification === "REVIEW_REQUIRED" ||
       attempt?.public_result_classification ===
         "CREATE_NEW_ACCOUNT_AVAILABLE" ||

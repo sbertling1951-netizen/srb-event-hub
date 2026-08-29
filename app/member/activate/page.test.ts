@@ -44,3 +44,32 @@ test("identity-claim evaluation flow (event selection, evidence submission) is u
   assert.match(SOURCE, /selectedEventIds/);
   assert.match(SOURCE, /\/api\/member\/identity-claim\/evaluate/);
 });
+
+test("event evidence is labeled as registration, not attendance -- the list is current/upcoming registrations", () => {
+  assert.match(SOURCE, /Events You(&apos;|')re Registered For/);
+  assert.match(SOURCE, /registered to attend/);
+  // the old, false "attended" framing is gone
+  assert.doesNotMatch(SOURCE, /Events Personally Attended/);
+  assert.doesNotMatch(SOURCE, /you already know you\s*\n?\s*attended/);
+});
+
+test("an ALREADY_ACTIVATED result stops activation and offers Sign In -- no magic-link/activation step", () => {
+  // accepted as a real server result, not coerced to UNABLE_TO_VERIFY
+  assert.match(SOURCE, /payload\.result === "ALREADY_ACTIVATED"/);
+  // dedicated branch with a sign-in action
+  assert.match(SOURCE, /result === "ALREADY_ACTIVATED" \?/);
+  const block = SOURCE.slice(
+    SOURCE.indexOf('result === "ALREADY_ACTIVATED" ?'),
+    SOURCE.indexOf('result === "CONTINUE_VERIFICATION" && attemptToken ?'),
+  );
+  assert.match(block, /already activated/i);
+  assert.match(block, /href="\/member\/login"/);
+  assert.match(block, /Sign in to My Account/);
+  // the ALREADY_ACTIVATED block itself never triggers the activation/magic-link step
+  assert.doesNotMatch(block, /sendActivationMagicLink|magicLink|Finish Activating/);
+  // and the "Finish Activating" box stays gated on CONTINUE_VERIFICATION only
+  assert.match(
+    SOURCE,
+    /\{result === "CONTINUE_VERIFICATION" && attemptToken \? \(/,
+  );
+});

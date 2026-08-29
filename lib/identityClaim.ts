@@ -76,6 +76,11 @@ export type IdentityClaimInternalResult =
 
 export type IdentityClaimPublicResult =
   | "CONTINUE_VERIFICATION"
+  // Strong-evidence single candidate whose canonical Person already holds
+  // an active auth account. The activation workflow stops and directs the
+  // member to sign in; every downstream RPC already refuses to proceed on
+  // anything but CONTINUE_VERIFICATION, so no activation/mutation occurs.
+  | "ALREADY_ACTIVATED"
   | "REVIEW_REQUIRED"
   | "CREATE_NEW_ACCOUNT_AVAILABLE"
   | "UNABLE_TO_VERIFY";
@@ -201,6 +206,8 @@ export function getIdentityClaimPublicMessage(
   switch (result) {
     case "CONTINUE_VERIFICATION":
       return "We found enough information to continue securely. No account changes have been made yet.";
+    case "ALREADY_ACTIVATED":
+      return "Your account is already activated. Please sign in to continue. No account changes have been made.";
     case "REVIEW_REQUIRED":
       return "We need an additional verification step before connecting prior records. No account changes have been made.";
     case "CREATE_NEW_ACCOUNT_AVAILABLE":

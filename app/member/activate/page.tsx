@@ -214,6 +214,7 @@ export default function MemberActivatePage() {
 
       const safeResult =
         payload.result === "CONTINUE_VERIFICATION" ||
+        payload.result === "ALREADY_ACTIVATED" ||
         payload.result === "REVIEW_REQUIRED" ||
         payload.result === "CREATE_NEW_ACCOUNT_AVAILABLE" ||
         payload.result === "UNABLE_TO_VERIFY"
@@ -427,11 +428,12 @@ export default function MemberActivatePage() {
 
         <div>
           <div style={{ fontWeight: 700, marginBottom: 6 }}>
-            Events Personally Attended
+            Events You&apos;re Registered For
           </div>
           <div style={{ color: "#475569", fontSize: 14, marginBottom: 10 }}>
-            Optional. Select only general event entries you already know you
-            attended.
+            Optional. Select events you know you are registered to attend. These
+            are current and upcoming registrations, not a record of past
+            attendance.
           </div>
 
           <div
@@ -546,6 +548,54 @@ export default function MemberActivatePage() {
           </div>
         ) : null}
       </form>
+
+      {result === "ALREADY_ACTIVATED" ? (
+        <div
+          style={{
+            marginTop: 16,
+            border: "1px solid #bfdbfe",
+            borderRadius: 12,
+            background: "#eff6ff",
+            padding: 18,
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 20, color: "#1e3a8a" }}>
+            Your account is already activated
+          </h2>
+          <p style={{ margin: 0, color: "#1e3a8a", lineHeight: 1.5 }}>
+            Please sign in to continue. Nothing was changed on your account.
+          </p>
+
+          <Link
+            href="/member/login"
+            style={{
+              justifySelf: "start",
+              minHeight: 44,
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "10px 16px",
+              borderRadius: 8,
+              border: "1px solid #1d4ed8",
+              background: "#1d4ed8",
+              color: "#ffffff",
+              fontWeight: 700,
+              textDecoration: "none",
+            }}
+          >
+            Sign in to My Account
+          </Link>
+
+          <p style={{ margin: 0, color: "#475569", fontSize: 13, lineHeight: 1.5 }}>
+            Forgot your password? Use{" "}
+            <Link href="/member/login" style={{ color: "#1d4ed8", fontWeight: 600 }}>
+              Email me a recovery link
+            </Link>{" "}
+            on the sign-in page.
+          </p>
+        </div>
+      ) : null}
 
       {result === "CONTINUE_VERIFICATION" && attemptToken ? (
         <div
