@@ -6,6 +6,7 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
 import { fullName } from "@/lib/formatters";
+import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
@@ -56,12 +57,9 @@ function AttendeesPageInner() {
     async (currentEventId: string) => {
       setError(null);
 
-      const identifier =
-        session?.attendee_email || session?.attendee_phone || null;
       const rpcArgs = {
         p_event_id: currentEventId,
-        p_event_code: session?.event_code || null,
-        p_registration_identifier: identifier,
+        ...memberIdentityRpcArgs(session),
       };
 
       // Whether this viewer participates is derived from the same governed

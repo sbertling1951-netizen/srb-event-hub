@@ -359,19 +359,24 @@ export default function MemberLoginPage() {
       setStatus("Checking registration...");
       setError(null);
 
-      const { data, error } = await supabase.rpc("verify_member_event_login", {
-        p_event_id: event.id,
-        p_event_code: entered,
-        p_identifier: normalizedIdentifier,
+      const response = await fetch("/api/member/temporary-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: event.id,
+          eventCode: entered,
+          identifier: normalizedIdentifier,
+        }),
       });
+      const responseBody = await response.json().catch(() => null);
 
-      if (error) {
-        throw error;
+      if (!response.ok) {
+        throw new Error("Temporary access verification failed.");
       }
 
       const attendee =
-        Array.isArray(data) && data.length > 0
-          ? (data[0] as AttendeeRow)
+        Array.isArray(responseBody?.data) && responseBody.data.length > 0
+          ? (responseBody.data[0] as AttendeeRow)
           : null;
 
       if (!attendee?.id) {
@@ -429,14 +434,13 @@ export default function MemberLoginPage() {
         lat: event.lat || null,
         lng: event.lng || null,
         attendee_id: attendee.id,
-        attendee_email: attendee.email || null,
-        attendee_phone: normalizedIdentifier.includes("@")
-          ? null
-          : enteredIdentifier.trim(),
+        attendee_email: null,
+        attendee_phone: null,
+        temporary_capability_hash: responseBody.capabilityHash,
         participant_id: attendee.participant_id || null,
         participant_name: attendee.participant_name || null,
         login_at: new Date().toISOString(),
-        expires_at: null,
+        expires_at: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
       });
 
       await logEngagement({

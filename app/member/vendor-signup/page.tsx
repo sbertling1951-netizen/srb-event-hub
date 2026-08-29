@@ -7,6 +7,7 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
+import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
 import { formatVendorNoticeDisplay, type VendorNotice } from "@/lib/vendorNotice";
 
@@ -277,9 +278,7 @@ function MemberVendorSignupInner() {
       const { data: attendeeRecordData, error: attendeeError } =
         await supabase.rpc("get_my_attendee_record", {
           p_event_id: event.id,
-          p_event_code: session?.event_code || null,
-          p_registration_identifier:
-            session?.attendee_email || session?.attendee_phone || null,
+          ...memberIdentityRpcArgs(session),
         });
 
       if (attendeeError) {
@@ -352,7 +351,7 @@ function MemberVendorSignupInner() {
       );
       setStatus("");
     }
-  }, [attendeeId, event?.id, isReady, vendorIdFromUrl]);
+  }, [attendeeId, event?.id, isReady, session, vendorIdFromUrl]);
 
   useEffect(() => {
     if (!isReady || !event?.id || !attendeeId) {

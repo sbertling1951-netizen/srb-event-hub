@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
+import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
 
@@ -71,9 +72,7 @@ export default function MemberPhotosPage() {
           "get_my_attendee_record",
           {
             p_event_id: workspaceEvent.id,
-            p_event_code: session?.event_code || null,
-            p_registration_identifier:
-              session?.attendee_email || session?.attendee_phone || null,
+            ...memberIdentityRpcArgs(session),
           },
         );
 

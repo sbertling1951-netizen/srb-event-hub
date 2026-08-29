@@ -8,6 +8,8 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
 import { preferredDisplayLine } from "@/lib/formatters";
+import { clearMemberLocalState } from "@/lib/memberAccountSession";
+import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
@@ -131,9 +133,7 @@ function MemberCheckinPageInner() {
       const { data: attendeeRecordData, error: attendeeError } =
         await supabase.rpc("get_my_attendee_record", {
           p_event_id: event.id,
-          p_event_code: session?.event_code || null,
-          p_registration_identifier:
-            session?.attendee_email || session?.attendee_phone || null,
+          ...memberIdentityRpcArgs(session),
         });
 
       if (attendeeError) {
@@ -159,7 +159,14 @@ function MemberCheckinPageInner() {
         const accountOrigin =
           typeof window !== "undefined" &&
           !!localStorage.getItem(STORAGE_KEYS.memberAuthUserId);
+        const capabilityOrigin = !!session?.temporary_capability_hash;
         const { data: sessionData } = await supabase.auth.getSession();
+
+        if (capabilityOrigin && !sessionData.session) {
+          clearMemberLocalState();
+          router.replace("/member/login?sessionExpired=1");
+          return;
+        }
 
         if (accountOrigin && !sessionData.session) {
           setNeedsReauth(true);
@@ -197,9 +204,7 @@ function MemberCheckinPageInner() {
         "get_my_confirmed_site_placement",
         {
           p_event_id: event.id,
-          p_event_code: session?.event_code || null,
-          p_registration_identifier:
-            session?.attendee_email || session?.attendee_phone || null,
+          ...memberIdentityRpcArgs(session),
         },
       );
 
@@ -216,9 +221,7 @@ function MemberCheckinPageInner() {
         "get_my_household_members",
         {
           p_event_id: event.id,
-          p_event_code: session?.event_code || null,
-          p_registration_identifier:
-            session?.attendee_email || session?.attendee_phone || null,
+          ...memberIdentityRpcArgs(session),
         },
       );
 
@@ -235,7 +238,7 @@ function MemberCheckinPageInner() {
       );
       setStatus("");
     }
-  }, [attendeeId, event?.id, isReady]);
+  }, [attendeeId, event?.id, isReady, router, session]);
 
   useEffect(() => {
     if (!isReady) {
@@ -254,14 +257,16 @@ function MemberCheckinPageInner() {
 
     void supabase.auth.getSession().then(({ data }) => {
       if (active) {
-        setRequiresTemporaryCredentials(!data.session);
+        setRequiresTemporaryCredentials(
+          !data.session && !session?.temporary_capability_hash,
+        );
       }
     });
 
     return () => {
       active = false;
     };
-  }, []);
+  }, [session?.temporary_capability_hash]);
 
   useEffect(() => {
     if (!event?.id) {
@@ -292,11 +297,13 @@ function MemberCheckinPageInner() {
 
       const { data: sessionData } = await supabase.auth.getSession();
       const temporaryAccess = !sessionData.session;
+      const hasCapability = !!session?.temporary_capability_hash;
 
-      setRequiresTemporaryCredentials(temporaryAccess);
+      setRequiresTemporaryCredentials(temporaryAccess && !hasCapability);
 
       if (
         temporaryAccess &&
+        !hasCapability &&
         (!temporaryEventCode.trim() || !temporaryRegistrationIdentifier.trim())
       ) {
         throw new Error(
@@ -324,9 +331,16 @@ function MemberCheckinPageInner() {
           hasArrived: !!attendee.has_arrived,
           shareWithAttendees,
           assignedSite: siteReport,
-          eventCode: temporaryAccess ? temporaryEventCode.trim() : null,
-          registrationIdentifier: temporaryAccess
-            ? temporaryRegistrationIdentifier.trim()
+          eventCode:
+            temporaryAccess && !hasCapability
+              ? temporaryEventCode.trim()
+              : null,
+          registrationIdentifier:
+            temporaryAccess && !hasCapability
+              ? temporaryRegistrationIdentifier.trim()
+              : null,
+          capabilityHash: hasCapability
+            ? session?.temporary_capability_hash
             : null,
         }),
       });
@@ -334,6 +348,11 @@ function MemberCheckinPageInner() {
       const responseBody = await response.json().catch(() => null);
 
       if (!response.ok) {
+        if (hasCapability) {
+          clearMemberLocalState();
+          router.replace("/member/login?sessionExpired=1");
+          return;
+        }
         throw new Error(
           "Check-in verification failed. Re-enter your event code and registration email or mobile number.",
         );
@@ -378,10 +397,16 @@ function MemberCheckinPageInner() {
         "set_member_attendee_sharing_preferences",
         {
           p_event_id: event.id,
-          p_event_code: temporaryAccess ? temporaryEventCode.trim() : null,
-          p_registration_identifier: temporaryAccess
-            ? temporaryRegistrationIdentifier.trim()
-            : null,
+          ...(hasCapability
+            ? memberIdentityRpcArgs(session)
+            : {
+                p_event_code: temporaryAccess
+                  ? temporaryEventCode.trim()
+                  : null,
+                p_registration_identifier: temporaryAccess
+                  ? temporaryRegistrationIdentifier.trim()
+                  : null,
+              }),
           p_shared_field_keys: shareWithAttendees
             ? MEMBER_SHARE_ALL_FIELD_KEYS
             : [],

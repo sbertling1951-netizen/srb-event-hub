@@ -6,6 +6,7 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import ParticipantIdentityEditor from "@/components/participants/ParticipantIdentityEditor";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
+import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
@@ -67,9 +68,7 @@ function ParticipantsPageInner() {
 
       const rpcArgs = {
         p_event_id: event.id,
-        p_event_code: session?.event_code || null,
-        p_registration_identifier:
-          session?.attendee_email || session?.attendee_phone || null,
+        ...memberIdentityRpcArgs(session),
       };
 
       const { data: recordData, error: recordError } = await supabase.rpc(
@@ -117,9 +116,7 @@ function ParticipantsPageInner() {
     attendeeId,
     event?.id,
     isReady,
-    session?.attendee_email,
-    session?.attendee_phone,
-    session?.event_code,
+    session,
   ]);
 
   useEffect(() => {

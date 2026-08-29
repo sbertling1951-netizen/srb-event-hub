@@ -36,10 +36,11 @@ test("EventRow no longer carries visibility/lifecycle fields the RPC doesn't ret
   assert.doesNotMatch(typeBlock, /event_code/);
 });
 
-test("event-code submission/verification is unchanged: user-entered code still resolved via verify_member_event_login", () => {
+test("event-code submission still uses the governed temporary-access verification route", () => {
   assert.match(SOURCE, /enteredCode/);
-  assert.match(SOURCE, /supabase\.rpc\("verify_member_event_login",\s*\{/);
-  assert.match(SOURCE, /p_event_code:\s*entered/);
+  assert.match(SOURCE, /fetch\("\/api\/member\/temporary-access"/);
+  assert.match(SOURCE, /eventCode:\s*entered/);
+  assert.match(SOURCE, /identifier:\s*normalizedIdentifier/);
 });
 
 test("saveMemberSession still stores the user-entered code, never a value read from the events table", () => {
@@ -47,6 +48,13 @@ test("saveMemberSession still stores the user-entered code, never a value read f
   const sessionCallEnd = SOURCE.indexOf("});", sessionCallStart);
   const sessionCall = SOURCE.slice(sessionCallStart, sessionCallEnd);
   assert.match(sessionCall, /event_code:\s*entered/);
+});
+
+test("temporary login stores only the issued capability for later identity resolution", () => {
+  assert.match(SOURCE, /temporary_capability_hash:\s*responseBody\.capabilityHash/);
+  assert.match(SOURCE, /attendee_email:\s*null/);
+  assert.match(SOURCE, /attendee_phone:\s*null/);
+  assert.match(SOURCE, /expires_at:\s*new Date\(Date\.now\(\) \+ 8 \* 60 \* 60 \* 1000\)/);
 });
 
 test("displayed selection fields (name, dates) are preserved", () => {

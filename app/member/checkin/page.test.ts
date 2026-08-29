@@ -13,6 +13,14 @@ test("member sharing writes through the governed set_member_attendee_sharing_pre
   assert.equal(/\.from\("attendee_sharing_preferences"\)/.test(source), false);
 });
 
+test("capability-backed temporary sessions save without rendering the legacy credential ceremony", () => {
+  assert.match(source, /hasCapability = !!session\?\.temporary_capability_hash/);
+  assert.match(source, /temporaryAccess && !hasCapability/);
+  assert.match(source, /capabilityHash: hasCapability/);
+  assert.match(source, /memberIdentityRpcArgs\(session\)/);
+  assert.match(source, /Verify temporary event access/);
+});
+
 test("the sharing RPC call happens only after the governed /api/member/checkin call has already succeeded", () => {
   const fetchIdx = source.indexOf('fetch("/api/member/checkin"');
   const okGuard = source.indexOf("if (!response.ok)");

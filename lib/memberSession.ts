@@ -17,6 +17,7 @@ export type MemberSession = {
   attendee_id?: string | null;
   attendee_email?: string | null;
   attendee_phone?: string | null;
+  temporary_capability_hash?: string | null;
 
   participant_id?: string | null;
   participant_name?: string | null;
@@ -24,6 +25,23 @@ export type MemberSession = {
   login_at: string;
   expires_at: string | null;
 };
+
+export const TEMPORARY_CAPABILITY_MARKER = "__TEA_CAPABILITY__:";
+
+export function memberIdentityRpcArgs(session: MemberSession | null) {
+  if (session?.temporary_capability_hash) {
+    return {
+      p_event_code: null,
+      p_registration_identifier: `${TEMPORARY_CAPABILITY_MARKER}${session.temporary_capability_hash}`,
+    };
+  }
+
+  return {
+    p_event_code: session?.event_code || null,
+    p_registration_identifier:
+      session?.attendee_email || session?.attendee_phone || null,
+  };
+}
 
 const MEMBER_SESSION_KEY = STORAGE_KEYS.memberSession;
 

@@ -24,6 +24,7 @@ type CheckinRequestBody = {
   assignedSite?: unknown;
   eventCode?: unknown;
   registrationIdentifier?: unknown;
+  capabilityHash?: unknown;
 };
 
 const UUID_PATTERN =
@@ -110,7 +111,10 @@ export async function POST(request: Request) {
     p_assigned_site: assignedSite,
     p_tenant_id: tenantResolution.tenant.id,
     p_event_code: nullableString(body.eventCode),
-    p_registration_identifier: nullableString(body.registrationIdentifier),
+    p_registration_identifier:
+      typeof body.capabilityHash === "string" && body.capabilityHash
+        ? `__TEA_CAPABILITY__:${body.capabilityHash}`
+        : nullableString(body.registrationIdentifier),
   });
 
   if (error) {

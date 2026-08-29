@@ -19,7 +19,10 @@ import {
   getStoredMemberEmail,
   getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
-import { getMemberSession } from "@/lib/memberSession";
+import {
+  getMemberSession,
+  memberIdentityRpcArgs,
+} from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 import { formatVendorNoticeDisplay, type VendorNotice } from "@/lib/vendorNotice";
@@ -158,9 +161,7 @@ export default function MemberDashboardPage() {
             const session = getMemberSession();
             const rpcArgs = {
               p_event_id: memberEvent.id,
-              p_event_code: session?.event_code || null,
-              p_registration_identifier:
-                session?.attendee_email || session?.attendee_phone || null,
+              ...memberIdentityRpcArgs(session),
             };
 
             const { data: recordData, error: recordError } =
