@@ -1,6 +1,13 @@
 # Node
 node_modules/
 .next/
+tsconfig.tsbuildinfo
+
+# Local agent / tooling state
+.claude/
+
+# Generated import templates (produced by scripts/generate-import-templates.ts)
+agenda_import_template_*.xlsx
 
 # Env (VERY important)
 .env
