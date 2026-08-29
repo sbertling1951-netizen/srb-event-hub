@@ -75,3 +75,27 @@ test("an already-activated redirect has a separate green, one-time sign-in notic
   assert.match(SOURCE, /Your account is already activated\. Sign in to continue\./);
   assert.match(SOURCE, /background: "#f0fdf4"/);
 });
+
+test("secondary Member Login actions are a compact row inside the sign-in card", () => {
+  const signInAction = SOURCE.indexOf('variant="primary"');
+  const secondaryActions = SOURCE.indexOf('aria-label="Other sign-in options"');
+  const signInStatus = SOURCE.indexOf("{signInStatus ? (");
+  assert.ok(signInAction >= 0);
+  assert.ok(secondaryActions > signInAction);
+  assert.ok(signInStatus > secondaryActions);
+
+  const row = SOURCE.slice(secondaryActions, signInStatus);
+  assert.match(row, /gridTemplateColumns: "repeat\(auto-fit, minmax\(150px, 1fr\)\)"/);
+  assert.match(row, /Recovery Link/);
+  assert.match(row, /Temporary Event Access/);
+  assert.match(row, /Choose Login Type/);
+  assert.match(row, /onClick=\{\(\) => void sendRecoveryLink\(\)\}/);
+  assert.match(row, /onClick=\{\(\) => setShowEventAccess\(\(current\) => !current\)\}/);
+  assert.match(row, /href="\/login"/);
+});
+
+test("the former large below-card Member Login controls are absent", () => {
+  assert.doesNotMatch(SOURCE, /Hide Temporary Event Access/);
+  assert.doesNotMatch(SOURCE, />\s*Back to Login\s*</);
+  assert.doesNotMatch(SOURCE, /Email me a recovery link/);
+});

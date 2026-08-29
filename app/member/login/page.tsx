@@ -605,13 +605,34 @@ export default function MemberLoginPage() {
           {signInBusy ? "Signing in..." : "Sign In"}
         </LoginActionButton>
 
-        <LoginActionButton
-          variant="recovery"
-          onClick={() => void sendRecoveryLink()}
-          disabled={recoveryBusy}
+        <div
+          role="group"
+          aria-label="Other sign-in options"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+            gap: 8,
+          }}
         >
-          Email me a recovery link
-        </LoginActionButton>
+          <LoginActionButton
+            variant="recovery"
+            onClick={() => void sendRecoveryLink()}
+            disabled={recoveryBusy}
+          >
+            Recovery Link
+          </LoginActionButton>
+
+          <LoginActionButton
+            variant="alternate"
+            onClick={() => setShowEventAccess((current) => !current)}
+          >
+            Temporary Event Access
+          </LoginActionButton>
+
+          <LoginActionButton variant="back" href="/login">
+            Choose Login Type
+          </LoginActionButton>
+        </div>
 
         {signInStatus ? (
           <div style={{ fontSize: 13, color: "#666" }}>{signInStatus}</div>
@@ -637,17 +658,6 @@ export default function MemberLoginPage() {
             {signInError}
           </div>
         ) : null}
-      </div>
-
-      <div style={{ marginTop: 20 }}>
-        <LoginActionButton
-          variant="alternate"
-          onClick={() => setShowEventAccess((current) => !current)}
-        >
-          {showEventAccess
-            ? "Hide Temporary Event Access"
-            : "Temporary Event Access"}
-        </LoginActionButton>
       </div>
 
       {showEventAccess ? (
@@ -757,11 +767,6 @@ export default function MemberLoginPage() {
         </form>
       ) : null}
 
-      <div style={{ marginTop: 12 }}>
-        <LoginActionButton variant="back" href="/login">
-          Back to Login
-        </LoginActionButton>
-      </div>
     </div>
   );
 }
