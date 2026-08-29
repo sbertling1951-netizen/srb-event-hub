@@ -108,7 +108,7 @@ export default function VendorLoginPage() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 440, margin: "0 auto", display: "grid", gap: 14 }}>
+    <div style={{ padding: 24, maxWidth: 540, margin: "0 auto", display: "grid", gap: 14 }}>
       <div className="card" style={{ padding: 18, display: "grid", gap: 12 }}>
         <h1 style={{ marginTop: 0, marginBottom: 0 }}>Vendor Login</h1>
         <div style={{ color: "#555", fontSize: 14 }}>

@@ -24,6 +24,10 @@ test("Vendor login keeps password recovery and access actions in a responsive in
   assert.ok(secondaryActions > signInAction);
   assert.ok(status > secondaryActions);
 
+  // 540px leaves the card's existing padding plus three 150px action
+  // targets and their gaps room to stay on one row at desktop/tablet widths.
+  assert.match(SOURCE, /maxWidth: 540/);
+
   const row = SOURCE.slice(secondaryActions, status);
   assert.match(row, /gridTemplateColumns: "repeat\(auto-fit, minmax\(150px, 1fr\)\)"/);
   assert.match(row, /Recovery Link/);
