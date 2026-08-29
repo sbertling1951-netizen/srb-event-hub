@@ -444,7 +444,7 @@ test("syncHouseholdMembers: rpcOwnedParticipantRole still skips exactly the one 
 
 // --- 2. Per-action edit permission guards ---------------------------------
 
-test("AttendeeActionRow: without can_edit_attendees, every mutating button is disabled", () => {
+test("AttendeeActionRow: without can_edit_attendees, every remaining mutating button is disabled", () => {
   const html = renderToStaticMarkup(
     <AttendeeActionRow
       attendee={baseAttendee()}
@@ -459,12 +459,7 @@ test("AttendeeActionRow: without can_edit_attendees, every mutating button is di
   // Each mutating button's own <button ...disabled...>Label</button>
   // fragment is checked directly so a false positive on unrelated markup
   // is impossible.
-  for (const label of [
-    "Mark Reviewed",
-    "Cancel Registration",
-    "Lock Record",
-    "Back To Pending",
-  ]) {
+  for (const label of ["Cancel Registration", "Back To Pending"]) {
     const buttonStart = html.lastIndexOf("<button", html.indexOf(label));
     const fragment = html.slice(buttonStart, html.indexOf(label));
     assert.ok(
@@ -474,7 +469,7 @@ test("AttendeeActionRow: without can_edit_attendees, every mutating button is di
   }
 });
 
-test("AttendeeActionRow: with can_edit_attendees, the legitimate mutating buttons are enabled", () => {
+test("AttendeeActionRow: with can_edit_attendees, the remaining mutating buttons are enabled", () => {
   const html = renderToStaticMarkup(
     <AttendeeActionRow
       attendee={baseAttendee()}
@@ -486,12 +481,7 @@ test("AttendeeActionRow: with can_edit_attendees, the legitimate mutating button
     />,
   );
 
-  for (const label of [
-    "Mark Reviewed",
-    "Cancel Registration",
-    "Lock Record",
-    "Back To Pending",
-  ]) {
+  for (const label of ["Cancel Registration", "Back To Pending"]) {
     const buttonStart = html.lastIndexOf("<button", html.indexOf(label));
     const fragment = html.slice(buttonStart, html.indexOf(label));
     assert.ok(
@@ -950,15 +940,26 @@ test("AttendeeActionRow: showBackToPending governs exactly the one legitimate di
   assert.ok(withBackToPending.includes("Back To Pending"));
   assert.ok(!withoutBackToPending.includes("Back To Pending"));
 
-  for (const label of [
-    "View Record",
-    "Mark Reviewed",
-    "Cancel Registration",
-    "Lock Record",
-  ]) {
+  for (const label of ["View Record", "Cancel Registration"]) {
     assert.ok(withBackToPending.includes(label));
     assert.ok(withoutBackToPending.includes(label));
   }
+  assert.ok(!withBackToPending.includes("Mark Reviewed"));
+  assert.ok(!withBackToPending.includes("Lock Record"));
+});
+
+test("AttendeeRecordWorkspace: Mark Reviewed is retained only for an explicit Review Queue context", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const workspaceSource = source.slice(
+    source.indexOf("export function AttendeeRecordWorkspace("),
+    source.indexOf("function AdminAttendeesPageInner()"),
+  );
+
+  assert.match(workspaceSource, /isReviewContext: boolean/);
+  assert.match(workspaceSource, /\{isReviewContext \? \(/);
+  assert.match(workspaceSource, /onUpdateDataStatus\(attendee\.id, "reviewed"\)/);
+  assert.equal(/"locked"/.test(workspaceSource), false);
+  assert.match(source, /isReviewContext=\{workspaceListContext === "review"\}/);
 });
 
 test("AttendeeActionRow: never depends on horizontal scrolling for the primary action row -- now via the shared RowActions primitive, not a page-local inline style", () => {

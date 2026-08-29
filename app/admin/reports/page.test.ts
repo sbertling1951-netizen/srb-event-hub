@@ -111,6 +111,15 @@ test("Reports preserves its data and task actions", () => {
   }
 });
 
+test("Reports has no Locked data-status filter and normalizes a stale saved preset", () => {
+  assert.equal(/\| "locked"/.test(source), false);
+  assert.equal(/value="locked"/.test(controlsSource), false);
+  assert.match(
+    source,
+    /setDataStatusFilter\(\s*normalizeReportDataStatusFilter\(preset\.dataStatusFilter\),?\s*\)/,
+  );
+});
+
 // Canonical Event Operational Summary Read Contract reconciliation --
 // docs/architecture/EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md, "Consumer
 // implications" for Reports.

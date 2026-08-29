@@ -80,8 +80,7 @@ export type DataStatusFilter =
   | "all"
   | "pending"
   | "corrected"
-  | "reviewed"
-  | "locked";
+  | "reviewed";
 export type ParticipantTypeFilter =
   | "all"
   | "attendee"
@@ -108,7 +107,6 @@ export const DATA_STATUS_OPTIONS: DataStatusFilter[] = [
   "pending",
   "corrected",
   "reviewed",
-  "locked",
 ];
 
 export const PARTICIPANT_TYPE_OPTIONS: ParticipantTypeFilter[] = [
@@ -125,18 +123,23 @@ const STATUS_LABELS: Record<Exclude<DataStatusFilter, "all">, string> = {
   pending: "Pending",
   corrected: "Corrected",
   reviewed: "Reviewed",
-  locked: "Locked",
 };
 
 export function dataStatusOptionLabel(value: Exclude<DataStatusFilter, "all">) {
   return STATUS_LABELS[value];
 }
 
+export function normalizeDataStatusFilter(value: unknown): DataStatusFilter {
+  return DATA_STATUS_OPTIONS.includes(value as DataStatusFilter)
+    ? (value as DataStatusFilter)
+    : "all";
+}
+
 export function dataStatusLabel(value?: string | null) {
   if (!value) {
     return "pending";
   }
-  if (["pending", "reviewed", "corrected", "locked"].includes(value)) {
+  if (["pending", "reviewed", "corrected"].includes(value)) {
     return value;
   }
   return value;

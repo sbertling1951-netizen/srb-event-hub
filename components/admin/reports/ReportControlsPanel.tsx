@@ -31,8 +31,7 @@ export type DataStatusFilter =
   | "all"
   | "pending"
   | "corrected"
-  | "reviewed"
-  | "locked";
+  | "reviewed";
 
 type Props = {
   reportType: ReportType;
@@ -164,7 +163,6 @@ export default function ReportControlsPanel(props: Props) {
             <option value="pending">Pending</option>
             <option value="corrected">Corrected</option>
             <option value="reviewed">Reviewed</option>
-            <option value="locked">Locked</option>
           </Select>
         )}
       </Field>

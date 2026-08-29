@@ -35,6 +35,7 @@ import {
   formatCancellationDetail,
   fullName,
   normalizeMemberNumber,
+  normalizeDataStatusFilter,
   type PageSize,
   PARTICIPANT_TYPE_OPTIONS,
   type ParticipantTypeFilter,
@@ -139,7 +140,14 @@ function getStoredAttendeeCommandCenterPrefs(): AttendeeCommandCenterPrefs {
     if (!raw) {
       return {};
     }
-    return JSON.parse(raw) as AttendeeCommandCenterPrefs;
+    const prefs = JSON.parse(raw) as AttendeeCommandCenterPrefs;
+    return {
+      ...prefs,
+      dataStatusFilter:
+        prefs.dataStatusFilter === undefined
+          ? undefined
+          : normalizeDataStatusFilter(prefs.dataStatusFilter),
+    };
   } catch {
     return {};
   }
@@ -429,9 +437,9 @@ export function QuickActionBar(props: {
 // ReviewQueue and AttendeeList (previously two independently-drifted
 // implementations -- one horizontal-scroll-only, one wrapping). Both
 // consumers now share one layout, one responsive behavior, and one
-// permission-gating rule. `showBackToPending` and `viewToggle` are the
-// only two points of legitimate difference between the two contexts;
-// no action was added or removed from either context's existing set.
+// permission-gating rule. `showBackToPending` is the only legitimate
+// difference between the two contexts. Review completion belongs in the
+// Review Record workspace, where its review context is explicit.
 export function AttendeeActionRow(props: {
   attendee: AttendeeRow;
   canEdit: boolean;
@@ -462,14 +470,6 @@ export function AttendeeActionRow(props: {
         View Record
       </AppButton>
 
-      <AppButton
-        disabled={!canEdit}
-        onClick={() => void onUpdateDataStatus(attendee.id, "reviewed")}
-        aria-label={`Mark "${name}" reviewed`}
-      >
-        Mark Reviewed
-      </AppButton>
-
       {/* Ends this registration's participation -- the one action in this
           row with real, consequential effect, so it alone gets the danger
           treatment (UI Phase 4, Part 8): routine status transitions never
@@ -481,14 +481,6 @@ export function AttendeeActionRow(props: {
         aria-label={`Cancel "${name}"'s registration`}
       >
         Cancel Registration
-      </AppButton>
-
-      <AppButton
-        disabled={!canEdit}
-        onClick={() => void onUpdateDataStatus(attendee.id, "locked")}
-        aria-label={`Lock "${name}"'s record`}
-      >
-        Lock Record
       </AppButton>
 
       {showBackToPending ? (
@@ -1083,6 +1075,9 @@ export function AttendeeRecordWorkspace(props: {
   // Understand) or actively being changed (mutable, Act). Create sessions
   // are always "edit" -- there is nothing yet to view.
   viewState: "view" | "edit";
+  // Review completion is only meaningful when this workspace was opened
+  // from the Review Queue, not during ordinary attendee browsing.
+  isReviewContext: boolean;
   attendee: AttendeeRow | null;
   state: AttendeeEditorState;
   reviewIssues: ReviewFieldIssue[];
@@ -1122,6 +1117,7 @@ export function AttendeeRecordWorkspace(props: {
     open,
     editorMode,
     viewState,
+    isReviewContext,
     attendee,
     state,
     reviewIssues,
@@ -2007,16 +2003,17 @@ export function AttendeeRecordWorkspace(props: {
         <AppButton variant="primary" onClick={onEnterEdit} disabled={!canEdit}>
           Edit
         </AppButton>
-        <AppButton
-          disabled={!canEdit || !attendee}
-          onClick={() => attendee && void onUpdateDataStatus(attendee.id, "reviewed")}
-        >
-          Mark Reviewed
-        </AppButton>
+        {isReviewContext ? (
+          <AppButton
+            disabled={!canEdit || !attendee}
+            onClick={() => attendee && void onUpdateDataStatus(attendee.id, "reviewed")}
+          >
+            Mark Reviewed
+          </AppButton>
+        ) : null}
         {/* Ends this registration's participation -- the one consequential
             action here, so it alone gets the danger treatment (Part 6/8),
-            matching AttendeeActionRow's identical decision for the same
-            action elsewhere on this page. */}
+            matching its presentation elsewhere on this page. */}
         <AppButton
           variant="danger"
           disabled={!canEdit || !attendee}
@@ -2045,9 +2042,6 @@ export function AttendeeRecordWorkspace(props: {
   const secondaryActions =
     viewState === "view" && mode === "edit" && attendee ? (
       <>
-        <AppButton disabled={!canEdit} onClick={() => void onUpdateDataStatus(attendee.id, "locked")}>
-          Lock Record
-        </AppButton>
         <AppButton disabled={!canEdit} onClick={() => void onUpdateDataStatus(attendee.id, "pending")}>
           Back To Pending
         </AppButton>
@@ -4300,6 +4294,7 @@ created_at
         open={editorOpen}
         editorMode={editorMode}
         viewState={viewState}
+        isReviewContext={workspaceListContext === "review"}
         attendee={
           editorMode === "edit"
             ? attendees.find((row) => row.id === editorState.id) ?? null

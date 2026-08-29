@@ -7,7 +7,9 @@ import ReportControlsPanel from "@/components/admin/reports/ReportControlsPanel"
 import { buildExportRows } from "@/components/admin/reports/reportExport";
 import {
   loadStoredReportPresets,
+  normalizeReportDataStatusFilter,
   saveStoredReportPresets,
+  type ReportDataStatusFilter,
 } from "@/components/admin/reports/reportPresets";
 import { printReportPack } from "@/components/admin/reports/reportPrintPack";
 import ReportsPanel from "@/components/admin/reports/ReportsPanel";
@@ -125,7 +127,7 @@ type ParticipantTypeFilter =
   | "volunteer"
   | "event_host";
 
-type DataStatusFilter = "all" | "pending" | "corrected" | "reviewed" | "locked";
+type DataStatusFilter = ReportDataStatusFilter;
 
 type ReportPreset = {
   id: string;
@@ -197,9 +199,6 @@ function dataStatusLabel(value?: string | null) {
   }
   if (value === "corrected") {
     return "corrected";
-  }
-  if (value === "locked") {
-    return "locked";
   }
   return value;
 }
@@ -1220,7 +1219,9 @@ function AdminReportsPageInner() {
     setReportType(preset.reportType);
     setSortType(preset.sortType);
     setParticipantTypeFilter(preset.participantTypeFilter);
-    setDataStatusFilter(preset.dataStatusFilter);
+    setDataStatusFilter(
+      normalizeReportDataStatusFilter(preset.dataStatusFilter),
+    );
     setError(null);
     setStatus(`Applied report preset "${preset.name}".`);
   }
