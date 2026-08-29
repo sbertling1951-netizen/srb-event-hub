@@ -3631,6 +3631,15 @@ body.slideshow-view-mode .app-header-card {
 }
 
 .shell-body {
+  /*
+   * The canonical shell's ordinary content gets one bounded stacking
+   * context. Sticky controls such as `.table-toolbar` may layer within this
+   * body, but cannot escape above the sibling navigation overlay
+   * (`.shell-nav-drawer-backdrop`). Dialogs and Object Panels deliberately
+   * portal to document.body and retain their separate, higher overlay layer.
+   */
+  position: relative;
+  z-index: 0;
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
