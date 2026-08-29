@@ -7,21 +7,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import AdminTrustIndicator from "@/components/admin/AdminTrustIndicator";
 
-// Focused tests for the Admin Trust Indicator placeholder
+// Focused tests for the intentionally dormant Admin Trust Indicator boundary
 // (docs/architecture/EPICENTRAX_ADAPTIVE_UI_ARCHITECTURE.md §7, Semantic
 // limits: absence of a governed signal is not evidence of
 // trustworthiness). Run with:
 //   npx tsx --test components/admin/AdminTrustIndicator.test.tsx
 
-test("renders the neutral 'not yet connected' statement, identically on every render", () => {
+test("renders no UI until governed Admin Trust evidence exists", () => {
   const first = renderToStaticMarkup(<AdminTrustIndicator />);
   const second = renderToStaticMarkup(<AdminTrustIndicator />);
 
-  assert.ok(first.includes("Status check not yet connected"));
+  assert.equal(first, "");
   assert.equal(first, second);
 });
 
-test("never renders a green/healthy/trustworthy claim -- absence of a problem is not evidence of trust", () => {
+test("does not fabricate a green/healthy/trustworthy state while unconnected", () => {
   const html = renderToStaticMarkup(<AdminTrustIndicator />);
 
   for (const forbidden of [
@@ -37,12 +37,6 @@ test("never renders a green/healthy/trustworthy claim -- absence of a problem is
       `AdminTrustIndicator must never render "${forbidden}"`,
     );
   }
-});
-
-test("the decorative dot carries no meaning on its own -- it is aria-hidden, text is the sole carrier", () => {
-  const html = renderToStaticMarkup(<AdminTrustIndicator />);
-
-  assert.ok(html.includes('aria-hidden="true"'));
 });
 
 test("takes no props -- nothing in the surrounding page can feed it a computed status", () => {

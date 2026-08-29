@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import AdminSummaryLink from "@/components/admin/AdminSummaryLink";
-import AdminTrustIndicator from "@/components/admin/AdminTrustIndicator";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Alert, type AlertTone } from "@/components/ui/Alert";
@@ -48,8 +47,8 @@ import { supabase } from "@/lib/supabase";
 // priority logic -- an absent card is architecturally correct here, not
 // an oversight.
 //
-// Trust Indicator: renders a neutral, non-computing placeholder
-// (components/admin/AdminTrustIndicator.tsx). The prior "Super Admin
+// Trust Indicator: no UI is rendered until the future governed signal
+// exists (components/admin/AdminTrustIndicator.tsx). The prior "Super Admin
 // System Status" card polled a bespoke endpoint
 // (/api/admin/system-status) and rendered its own ad hoc health display
 // -- exactly the kind of non-governed, independently-aggregated status
@@ -566,13 +565,6 @@ function AdminDashboardPageInner() {
             ) : null}
           </div>
         </div>
-      </section>
-
-      <section aria-labelledby="dashboard-trust-heading" style={sectionStyle}>
-        <h2 id="dashboard-trust-heading" className="sr-only">
-          System status
-        </h2>
-        <AdminTrustIndicator />
       </section>
 
       {/* No Context Card: no governed Admin Experience Resolver exists

@@ -166,7 +166,10 @@ test("Production Status is isolated to the canonical Super Admin path and existi
   assert.match(source, /fetch\("\/api\/admin\/system-status"/);
   assert.match(source, /Production Status/);
   assert.match(source, /Production status is currently unavailable/);
-  assert.match(source, /<AdminTrustIndicator \/>/);
+  assert.equal(/import AdminTrustIndicator/.test(source), false);
+  assert.equal(/<AdminTrustIndicator\s*\/>/.test(source), false);
+  assert.equal(source.includes("Status check not yet connected"), false);
+  assert.equal(source.includes("dashboard-trust-heading"), false);
 });
 
 test("the page still queries only the events table directly -- no attendees table read remains", () => {
