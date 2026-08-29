@@ -217,11 +217,24 @@ function EventAdminPageInner() {
   // overlapping loads with different filter closures. Only the newest load
   // may commit its result, so a late response cannot restore an obsolete list.
   const loadGenerationRef = useRef(0);
+  const autoFillCoordinatesRef = useRef<HTMLButtonElement>(null);
+  const masterMapSelectRef = useRef<HTMLSelectElement>(null);
+  const nearbyListSelectRef = useRef<HTMLSelectElement>(null);
+  const eventStatusSelectRef = useRef<HTMLSelectElement>(null);
 
   const { admin } = useAdmin();
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
+
+  function navigateToHealthControl(control: HTMLElement | null) {
+    if (!control) {
+      return;
+    }
+
+    control.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.requestAnimationFrame(() => control.focus({ preventScroll: true }));
+  }
 
   // Read fresh on every render (a synchronous localStorage read, same
   // cost as the equivalent call inside loadPage) so this always reflects
@@ -898,7 +911,11 @@ function EventAdminPageInner() {
                 gap: "var(--space-3)",
               }}
             >
-              <div style={healthCardStyle}>
+              <AppButton
+                style={healthCardStyle}
+                onClick={() => navigateToHealthControl(autoFillCoordinatesRef.current)}
+                aria-label="Manage Coordinates in Event Details"
+              >
                 <div style={healthTitleStyle}>Coordinates</div>
 
                 <div style={healthValueStyle}>
@@ -912,9 +929,13 @@ function EventAdminPageInner() {
                     ? `${selectedEvent.lat.toFixed(4)}, ${selectedEvent.lng.toFixed(4)}`
                     : "Nearby distances may fail"}
                 </div>
-              </div>
+              </AppButton>
 
-              <div style={healthCardStyle}>
+              <AppButton
+                style={healthCardStyle}
+                onClick={() => navigateToHealthControl(masterMapSelectRef.current)}
+                aria-label="Manage Selected Master Map in Event Assignments"
+              >
                 <div style={healthTitleStyle}>Master Map</div>
 
                 <div style={healthValueStyle}>
@@ -926,9 +947,13 @@ function EventAdminPageInner() {
                     ? "Event map ready"
                     : "No campground map assigned"}
                 </div>
-              </div>
+              </AppButton>
 
-              <div style={healthCardStyle}>
+              <AppButton
+                style={healthCardStyle}
+                onClick={() => navigateToHealthControl(nearbyListSelectRef.current)}
+                aria-label="Manage Selected Stored Nearby List in Event Assignments"
+              >
                 <div style={healthTitleStyle}>Nearby List</div>
 
                 <div style={healthValueStyle}>
@@ -940,9 +965,13 @@ function EventAdminPageInner() {
                     ? "Nearby locations available"
                     : "No nearby list assigned"}
                 </div>
-              </div>
+              </AppButton>
 
-              <div style={healthCardStyle}>
+              <AppButton
+                style={healthCardStyle}
+                onClick={() => navigateToHealthControl(eventStatusSelectRef.current)}
+                aria-label="Manage member visibility through Event Status"
+              >
                 <div style={healthTitleStyle}>Visibility</div>
 
                 <div style={healthValueStyle}>
@@ -956,7 +985,7 @@ function EventAdminPageInner() {
                     ? "Members can access"
                     : "Hidden from members"}
                 </div>
-              </div>
+              </AppButton>
             </div>
           </PageSection>
         ) : null}
@@ -991,6 +1020,7 @@ function EventAdminPageInner() {
 
             <div>
               <AppButton
+                ref={autoFillCoordinatesRef}
                 onClick={async () => {
                   if (!form.location.trim()) {
                     setStatus("Enter a location first.");
@@ -1106,6 +1136,7 @@ function EventAdminPageInner() {
               {(controlProps) => (
                 <Select
                   {...controlProps}
+                  ref={eventStatusSelectRef}
                   value={form.status}
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, status: e.target.value }))
@@ -1141,6 +1172,7 @@ function EventAdminPageInner() {
               {(controlProps) => (
                 <Select
                   {...controlProps}
+                  ref={masterMapSelectRef}
                   value={selectedMasterMapId}
                   onChange={(e) => setSelectedMasterMapId(e.target.value)}
                   disabled={!selectedEventId}
@@ -1159,6 +1191,7 @@ function EventAdminPageInner() {
               {(controlProps) => (
                 <Select
                   {...controlProps}
+                  ref={nearbyListSelectRef}
                   value={selectedNearbyListId}
                   onChange={(e) => setSelectedNearbyListId(e.target.value)}
                   disabled={!selectedEventId}
@@ -1212,6 +1245,9 @@ const healthCardStyle: CSSProperties = {
   background: "var(--color-bg-muted)",
   display: "grid",
   gap: "var(--space-1)",
+  width: "100%",
+  textAlign: "left",
+  alignItems: "stretch",
 };
 
 const healthTitleStyle: CSSProperties = {

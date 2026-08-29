@@ -778,6 +778,41 @@ test("Event Health status and Coordinates Loaded render through the shared Statu
   assert.match(PAGE_SOURCE, /<StatusBadge tone="success">📍 Coordinates Loaded<\/StatusBadge>/);
 });
 
+test("Event Health cards are semantic actions that navigate to their owning controls without mutating Event data", () => {
+  const navigationStart = PAGE_SOURCE.indexOf("function navigateToHealthControl");
+  const navigationEnd = PAGE_SOURCE.indexOf("// Read fresh on every render", navigationStart);
+  const navigationBody = PAGE_SOURCE.slice(navigationStart, navigationEnd);
+
+  assert.match(
+    navigationBody,
+    /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/,
+  );
+  assert.match(
+    navigationBody,
+    /requestAnimationFrame\(\(\) => control\.focus\(\{ preventScroll: true \}\)\)/,
+  );
+  assert.doesNotMatch(navigationBody, /set[A-Z]|supabase|saveEvent|saveAssignments/);
+
+  for (const [label, targetRef] of [
+    ["Coordinates", "autoFillCoordinatesRef"],
+    ["Master Map", "masterMapSelectRef"],
+    ["Nearby List", "nearbyListSelectRef"],
+    ["Visibility", "eventStatusSelectRef"],
+  ]) {
+    const cardStart = PAGE_SOURCE.indexOf(`>${label}</div>`);
+    const card = PAGE_SOURCE.slice(Math.max(0, cardStart - 500), cardStart + 500);
+    assert.match(card, new RegExp(`<AppButton[\\s\\S]*?navigateToHealthControl\\(${targetRef}\\.current\\)`));
+  }
+});
+
+test("each Event Health destination is a canonical focusable control, so loaded and missing states share the same action", () => {
+  assert.match(PAGE_SOURCE, /ref=\{autoFillCoordinatesRef\}/);
+  assert.match(PAGE_SOURCE, /ref=\{masterMapSelectRef\}/);
+  assert.match(PAGE_SOURCE, /ref=\{nearbyListSelectRef\}/);
+  assert.match(PAGE_SOURCE, /ref=\{eventStatusSelectRef\}/);
+  assert.equal((PAGE_SOURCE.match(/aria-label="Manage /g) || []).length, 4);
+});
+
 test("loading and error presentation uses the canonical LoadingState/Alert primitives", () => {
   assert.match(
     PAGE_SOURCE,
