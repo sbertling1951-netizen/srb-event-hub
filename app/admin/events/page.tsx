@@ -6,6 +6,7 @@ import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Alert, type AlertTone } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
@@ -99,6 +100,40 @@ function toInputDate(value: string | null | undefined) {
   return value || "";
 }
 
+function eventFormFromEvent(event: EventRow): EventFormState {
+  return {
+    id: event.id,
+    name: event.name || "",
+    location: event.location || "",
+    start_date: toInputDate(event.start_date),
+    end_date: toInputDate(event.end_date),
+    event_code: event.event_code || "",
+    status: event.status || "Draft",
+    lat: String(event.lat ?? ""),
+    lng: String(event.lng ?? ""),
+  };
+}
+
+function eventFormsEqual(left: EventFormState, right: EventFormState) {
+  return (
+    left.id === right.id &&
+    left.name === right.name &&
+    left.location === right.location &&
+    left.start_date === right.start_date &&
+    left.end_date === right.end_date &&
+    left.event_code === right.event_code &&
+    left.status === right.status &&
+    left.lat === right.lat &&
+    left.lng === right.lng
+  );
+}
+
+type EventAssignments = { masterMapId: string; nearbyListId: string };
+
+function assignmentsEqual(left: EventAssignments, right: EventAssignments) {
+  return left.masterMapId === right.masterMapId && left.nearbyListId === right.nearbyListId;
+}
+
 type EventStatusFilter = "active" | "inactive" | "archived" | "draft" | "all";
 
 const EVENT_STATUS_FILTER_VALUES: EventStatusFilter[] = [
@@ -159,7 +194,8 @@ export function eventAdminStatusTone(message: string): AlertTone {
   if (
     lower.includes("no longer available") ||
     lower.includes("is not shown under this filter") ||
-    lower.startsWith("coordinates could not be resolved")
+    lower.startsWith("coordinates could not be resolved") ||
+    lower.startsWith("saved event data changed")
   ) {
     return "warning";
   }
@@ -202,9 +238,11 @@ function EventAdminPageInner() {
 
   const [selectedEventId, setSelectedEventId] = useState("");
   const [form, setForm] = useState<EventFormState>(emptyForm);
+  const [formBaseline, setFormBaseline] = useState<EventFormState>(emptyForm);
 
   const [selectedMasterMapId, setSelectedMasterMapId] = useState("");
   const [selectedNearbyListId, setSelectedNearbyListId] = useState("");
+  const [assignmentBaseline, setAssignmentBaseline] = useState<EventAssignments>({ masterMapId: "", nearbyListId: "" });
 
   const [loading, setLoading] = useState(true);
   const [savingEvent, setSavingEvent] = useState(false);
@@ -221,11 +259,28 @@ function EventAdminPageInner() {
   const masterMapSelectRef = useRef<HTMLSelectElement>(null);
   const nearbyListSelectRef = useRef<HTMLSelectElement>(null);
   const eventStatusSelectRef = useRef<HTMLSelectElement>(null);
+  const formDirtyRef = useRef(false);
+  const assignmentDirtyRef = useRef(false);
+  const formBaselineRef = useRef<EventFormState>(emptyForm);
+  const assignmentBaselineRef = useRef<EventAssignments>({ masterMapId: "", nearbyListId: "" });
+  const selectedEventIdRef = useRef("");
+  const allowEditorSynchronizationRef = useRef(true);
+  const assignmentLoadGenerationRef = useRef(0);
+  const pendingWorkspaceEventIdRef = useRef<string | null>(null);
+  const [confirmDialogState, setConfirmDialogState] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const { admin } = useAdmin();
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
+  const formDirty = !eventFormsEqual(form, formBaseline);
+  const assignmentDirty = selectedMasterMapId !== assignmentBaseline.masterMapId || selectedNearbyListId !== assignmentBaseline.nearbyListId;
+  const editorDirty = formDirty || assignmentDirty;
+  formDirtyRef.current = formDirty;
+  assignmentDirtyRef.current = assignmentDirty;
+  formBaselineRef.current = formBaseline;
+  assignmentBaselineRef.current = assignmentBaseline;
+  selectedEventIdRef.current = selectedEventId;
 
   function navigateToHealthControl(control: HTMLElement | null) {
     if (!control) {
@@ -248,11 +303,15 @@ function EventAdminPageInner() {
   const canonicalWorkingEvent = getCurrentAdminEvent();
 
   const loadAssignmentsForEvent = useCallback(
-    async (eventId: string) => {
+    async (eventId: string, forceSynchronization = false) => {
+      const generation = ++assignmentLoadGenerationRef.current;
       try {
         if (!admin || !canAccessEvent(admin, eventId)) {
-          setSelectedMasterMapId("");
-          setSelectedNearbyListId("");
+          if (forceSynchronization || !assignmentDirtyRef.current) {
+            setSelectedMasterMapId("");
+            setSelectedNearbyListId("");
+            setAssignmentBaseline({ masterMapId: "", nearbyListId: "" });
+          }
           return;
         }
 
@@ -286,12 +345,29 @@ function EventAdminPageInner() {
           | { selected_nearby_area_id?: string | null }
           | undefined;
 
-        setSelectedMasterMapId(mapSettings?.selected_master_map_id || "");
-        setSelectedNearbyListId(nearbyRow?.selected_nearby_area_id || "");
+        const nextAssignments = { masterMapId: mapSettings?.selected_master_map_id || "", nearbyListId: nearbyRow?.selected_nearby_area_id || "" };
+        if (generation !== assignmentLoadGenerationRef.current || selectedEventIdRef.current !== eventId) {
+          return;
+        }
+
+        if (forceSynchronization || !assignmentDirtyRef.current) {
+          setSelectedMasterMapId(nextAssignments.masterMapId);
+          setSelectedNearbyListId(nextAssignments.nearbyListId);
+          setAssignmentBaseline(nextAssignments);
+        } else if (!assignmentsEqual(nextAssignments, assignmentBaselineRef.current)) {
+          setStatus("Saved Event data changed while this Event has unsaved edits. Your draft was preserved; saving may overwrite newer persisted values.");
+        }
       } catch (err: any) {
         console.error("loadAssignmentsForEvent error:", err);
-        setSelectedMasterMapId("");
-        setSelectedNearbyListId("");
+        if (
+          generation === assignmentLoadGenerationRef.current &&
+          selectedEventIdRef.current === eventId &&
+          (forceSynchronization || !assignmentDirtyRef.current)
+        ) {
+          setSelectedMasterMapId("");
+          setSelectedNearbyListId("");
+          setAssignmentBaseline({ masterMapId: "", nearbyListId: "" });
+        }
         setStatus(err?.message || "Failed to load event assignments.");
       }
     },
@@ -413,10 +489,27 @@ function EventAdminPageInner() {
       }
 
       if (loadedEvents.length === 0) {
+        if (formDirtyRef.current || assignmentDirtyRef.current) {
+          if (pendingWorkspaceEventIdRef.current !== "") {
+            pendingWorkspaceEventIdRef.current = "";
+            setConfirmDialogState({
+              title: "Discard unsaved Event changes?",
+              message: "The working Event changed while this page has unsaved Event Details or assignment edits. Discard those edits and leave this Event?",
+              onConfirm: () => {
+                pendingWorkspaceEventIdRef.current = null;
+                discardEditorDraft();
+                selectedEventIdRef.current = "";
+                setSelectedEventId("");
+                setConfirmDialogState(null);
+              },
+            });
+          }
+          setStatus("The Event list refreshed, but your unsaved Event Details and assignment edits were preserved.");
+          return;
+        }
+        selectedEventIdRef.current = "";
         setSelectedEventId("");
-        setForm(emptyForm);
-        setSelectedMasterMapId("");
-        setSelectedNearbyListId("");
+        discardEditorDraft();
         setStatus(
           invalidStoredContext
             ? "Your previously selected event is no longer available. Choose one above."
@@ -451,6 +544,29 @@ function EventAdminPageInner() {
         : null;
       const preferredEventId = visibleContextEvent?.id || "";
 
+      if (
+        preferredEventId !== selectedEventIdRef.current &&
+        (formDirtyRef.current || assignmentDirtyRef.current)
+      ) {
+        if (pendingWorkspaceEventIdRef.current !== preferredEventId) {
+          pendingWorkspaceEventIdRef.current = preferredEventId;
+          setConfirmDialogState({
+            title: "Discard unsaved Event changes?",
+            message: "The working Event changed while this page has unsaved Event Details or assignment edits. Discard those edits and switch Events?",
+            onConfirm: () => {
+              pendingWorkspaceEventIdRef.current = null;
+              discardEditorDraft();
+              selectedEventIdRef.current = preferredEventId;
+              setSelectedEventId(preferredEventId);
+              setConfirmDialogState(null);
+            },
+          });
+        }
+        setStatus("The working Event changed, but your unsaved edits were preserved. Choose Discard to switch Events.");
+        return;
+      }
+
+      pendingWorkspaceEventIdRef.current = null;
       setSelectedEventId(preferredEventId);
 
       if (preferredEventId) {
@@ -477,6 +593,37 @@ function EventAdminPageInner() {
       }
     }
   }, [admin, eventStatusFilter]);
+
+  function discardEditorDraft() {
+    allowEditorSynchronizationRef.current = true;
+    setForm(emptyForm);
+    setFormBaseline(emptyForm);
+    setSelectedMasterMapId("");
+    setSelectedNearbyListId("");
+    setAssignmentBaseline({ masterMapId: "", nearbyListId: "" });
+  }
+
+  function selectEventForEditing(event: EventRow | null, announceSelection = true) {
+    discardEditorDraft();
+    const nextEventId = event?.id || "";
+    selectedEventIdRef.current = nextEventId;
+    setSelectedEventId(nextEventId);
+    setError(null);
+    setWorkspaceEvent(event);
+    if (announceSelection) {
+      setStatus(event ? `Working event changed to ${event.name || "Untitled event"}.` : "No event selected.");
+    }
+  }
+
+  function applyEventStatusFilter(nextFilter: EventStatusFilter) {
+    discardEditorDraft();
+    selectedEventIdRef.current = "";
+    setEvents([]);
+    setSelectedEventId("");
+    setEventStatusFilter(nextFilter);
+    persistEventStatusFilter(nextFilter);
+    setStatus("Loading filtered events...");
+  }
 
   useEffect(() => {
     if (!admin) {
@@ -505,25 +652,24 @@ function EventAdminPageInner() {
 
   useEffect(() => {
     if (!selectedEvent) {
-      setForm(emptyForm);
-      setSelectedMasterMapId("");
-      setSelectedNearbyListId("");
+      if (!formDirtyRef.current && !assignmentDirtyRef.current) {
+        discardEditorDraft();
+      }
       return;
     }
 
-    setForm({
-      id: selectedEvent.id,
-      name: selectedEvent.name || "",
-      location: selectedEvent.location || "",
-      start_date: toInputDate(selectedEvent.start_date),
-      end_date: toInputDate(selectedEvent.end_date),
-      event_code: selectedEvent.event_code || "",
-      status: selectedEvent.status || "Draft",
-      lat: String(selectedEvent.lat ?? ""),
-      lng: String(selectedEvent.lng ?? ""),
-    });
+    const nextForm = eventFormFromEvent(selectedEvent);
 
-    void loadAssignmentsForEvent(selectedEvent.id);
+    const forceSynchronization = allowEditorSynchronizationRef.current;
+    if (forceSynchronization || !formDirtyRef.current) {
+      setForm(nextForm);
+      setFormBaseline(nextForm);
+      allowEditorSynchronizationRef.current = false;
+    } else if (!eventFormsEqual(nextForm, formBaselineRef.current)) {
+      setStatus("Saved Event data changed while this Event has unsaved edits. Your draft was preserved; saving may overwrite newer persisted values.");
+    }
+
+    void loadAssignmentsForEvent(selectedEvent.id, forceSynchronization);
   }, [selectedEvent, loadAssignmentsForEvent]);
 
   function setWorkspaceEvent(event: EventRow | null) {
@@ -658,17 +804,10 @@ function EventAdminPageInner() {
         );
 
         setSelectedEventId(updatedEvent.id);
-        setForm({
-          id: updatedEvent.id,
-          name: updatedEvent.name || "",
-          location: updatedEvent.location || "",
-          start_date: toInputDate(updatedEvent.start_date),
-          end_date: toInputDate(updatedEvent.end_date),
-          event_code: updatedEvent.event_code || "",
-          status: updatedEvent.status || "Draft",
-          lat: String(updatedEvent.lat ?? ""),
-          lng: String(updatedEvent.lng ?? ""),
-        });
+        const confirmedForm = eventFormFromEvent(updatedEvent);
+        setForm(confirmedForm);
+        setFormBaseline(confirmedForm);
+        allowEditorSynchronizationRef.current = false;
 
         const nextFilter = filterForStatus(updatedEvent.status);
         setEventStatusFilter(nextFilter);
@@ -747,6 +886,8 @@ function EventAdminPageInner() {
         throw nearbyResult.error;
       }
 
+      setAssignmentBaseline({ masterMapId: selectedMasterMapId, nearbyListId: selectedNearbyListId });
+
       setStatus("Saved event assignments.");
     } catch (err: any) {
       console.error("saveAssignments error:", err);
@@ -787,6 +928,17 @@ function EventAdminPageInner() {
                 value={eventStatusFilter}
                 onChange={(e) => {
                   const nextFilter = e.target.value as EventStatusFilter;
+                  if (editorDirty) {
+                    setConfirmDialogState({
+                      title: "Discard unsaved Event changes?",
+                      message: "Changing the filter will discard unsaved Event Details and assignment edits.",
+                      onConfirm: () => {
+                        applyEventStatusFilter(nextFilter);
+                        setConfirmDialogState(null);
+                      },
+                    });
+                    return;
+                  }
                   // ADR-006 §4: this filter is presentation/discovery logic
                   // for this page's own list -- it must never touch the
                   // shared Admin working Event. loadPage() re-runs on this
@@ -798,14 +950,7 @@ function EventAdminPageInner() {
                   // since flipping the filter to keep a just-saved/created
                   // Event visible is not the admin explicitly choosing a
                   // filter to remember.
-                  setEventStatusFilter(nextFilter);
-                  persistEventStatusFilter(nextFilter);
-                  setEvents([]);
-                  setSelectedEventId("");
-                  setForm(emptyForm);
-                  setSelectedMasterMapId("");
-                  setSelectedNearbyListId("");
-                  setStatus("Loading filtered events...");
+                  applyEventStatusFilter(nextFilter);
                 }}
               >
                 {admin?.isSuperAdmin ? (
@@ -832,16 +977,20 @@ function EventAdminPageInner() {
                 value={selectedEventId}
                 onChange={(e) => {
                   const newId = e.target.value;
-                  setSelectedEventId(newId);
-                  setError(null);
-
+                  if (editorDirty && newId !== selectedEventId) {
+                    const evt = events.find((row) => row.id === newId) || null;
+                    setConfirmDialogState({
+                      title: "Discard unsaved Event changes?",
+                      message: "Switching Events will discard unsaved Event Details and assignment edits.",
+                      onConfirm: () => {
+                        selectEventForEditing(evt);
+                        setConfirmDialogState(null);
+                      },
+                    });
+                    return;
+                  }
                   const evt = events.find((row) => row.id === newId) || null;
-                  setWorkspaceEvent(evt);
-                  setStatus(
-                    evt
-                      ? `Working event changed to ${evt.name || "Untitled event"}.`
-                      : "No event selected.",
-                  );
+                  selectEventForEditing(evt);
                 }}
                 disabled={loading}
               >
@@ -1230,6 +1379,7 @@ function EventAdminPageInner() {
           </div>
         </PageSection>
       </div>
+      <ConfirmDialog open={!!confirmDialogState} title={confirmDialogState?.title || ""} message={confirmDialogState?.message || ""} danger onConfirm={() => confirmDialogState?.onConfirm()} onCancel={() => setConfirmDialogState(null)} />
     </div>
   );
 }

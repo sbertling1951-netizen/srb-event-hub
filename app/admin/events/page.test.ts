@@ -22,6 +22,69 @@ const PAGE_SOURCE = readFileSync(
   "utf8",
 );
 
+// -- Unsaved Event editor protection ---------------------------------------
+
+test("Event Details uses a field-level persisted baseline, including coordinates, instead of object identity", () => {
+  assert.match(PAGE_SOURCE, /const \[formBaseline, setFormBaseline\] = useState<EventFormState>\(emptyForm\)/);
+  assert.match(PAGE_SOURCE, /function eventFormsEqual\(left: EventFormState, right: EventFormState\)/);
+  for (const field of ["name", "location", "start_date", "end_date", "event_code", "status", "lat", "lng"]) {
+    assert.match(PAGE_SOURCE, new RegExp(`left\\.${field} === right\\.${field}`));
+  }
+  assert.match(PAGE_SOURCE, /const formDirty = !eventFormsEqual\(form, formBaseline\)/);
+});
+
+test("Event Assignments keep their own persisted baseline and contribute to editor dirtiness", () => {
+  assert.match(PAGE_SOURCE, /const \[assignmentBaseline, setAssignmentBaseline\] = useState<EventAssignments>/);
+  assert.match(PAGE_SOURCE, /const assignmentDirty = selectedMasterMapId !== assignmentBaseline\.masterMapId \|\| selectedNearbyListId !== assignmentBaseline\.nearbyListId/);
+  assert.match(PAGE_SOURCE, /const editorDirty = formDirty \|\| assignmentDirty/);
+});
+
+test("a same-Event refresh adopts fresh state only when clean and otherwise preserves the local draft", () => {
+  const effect = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("const forceSynchronization = allowEditorSynchronizationRef.current"), PAGE_SOURCE.indexOf("function setWorkspaceEvent"));
+  assert.match(effect, /if \(forceSynchronization \|\| !formDirtyRef\.current\) \{/);
+  assert.match(effect, /else if \(!eventFormsEqual\(nextForm, formBaselineRef\.current\)\) \{/);
+  assert.match(effect, /Your draft was preserved; saving may overwrite newer persisted values\./);
+  assert.match(effect, /loadAssignmentsForEvent\(selectedEvent\.id, forceSynchronization\)/);
+});
+
+test("assignment refreshes preserve a dirty local assignment draft and surface a conflict only for changed saved assignments", () => {
+  const assignments = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("const loadAssignmentsForEvent"), PAGE_SOURCE.indexOf("const loadPage"));
+  assert.match(assignments, /if \(forceSynchronization \|\| !assignmentDirtyRef\.current\) \{/);
+  assert.match(assignments, /else if \(!assignmentsEqual\(nextAssignments, assignmentBaselineRef\.current\)\) \{/);
+  assert.match(assignments, /assignmentLoadGenerationRef/);
+});
+
+test("Auto Fill coordinates remains a local form update and therefore participates in dirty draft protection", () => {
+  const autoFill = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("Auto Fill Coordinates") - 1800, PAGE_SOURCE.indexOf("Auto Fill Coordinates") + 100);
+  assert.match(autoFill, /setForm\(\(prev\) => \(\{[\s\S]*?lat: String\(lat\),[\s\S]*?lng: String\(lng\)/);
+});
+
+test("dirty Event switches and filter changes use the shared ConfirmDialog before discarding local drafts", () => {
+  assert.match(PAGE_SOURCE, /import ConfirmDialog from "@\/components\/ui\/ConfirmDialog"/);
+  assert.match(PAGE_SOURCE, /title: "Discard unsaved Event changes\?"/);
+  assert.match(PAGE_SOURCE, /Changing the filter will discard unsaved Event Details and assignment edits\./);
+  assert.match(PAGE_SOURCE, /Switching Events will discard unsaved Event Details and assignment edits\./);
+  assert.match(PAGE_SOURCE, /<ConfirmDialog open=\{!!confirmDialogState\}/);
+  assert.match(PAGE_SOURCE, /function selectEventForEditing\(event: EventRow \| null/);
+  assert.match(PAGE_SOURCE, /function applyEventStatusFilter\(nextFilter: EventStatusFilter\)/);
+});
+
+test("a workspace retarget never silently replaces a dirty Event editor", () => {
+  const loadPage = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("const loadPage = useCallback"), PAGE_SOURCE.indexOf("useEffect(() => {\n    if (!admin)", PAGE_SOURCE.indexOf("const loadPage = useCallback")));
+  assert.match(loadPage, /preferredEventId !== selectedEventIdRef\.current/);
+  assert.match(loadPage, /formDirtyRef\.current \|\| assignmentDirtyRef\.current/);
+  assert.match(loadPage, /The working Event changed, but your unsaved edits were preserved/);
+  assert.match(loadPage, /Discard those edits and switch Events\?/);
+});
+
+test("successful Event and assignment saves establish fresh baselines before their workspace reloads", () => {
+  const saveEvent = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("async function saveEvent"), PAGE_SOURCE.indexOf("async function saveAssignments"));
+  const saveAssignments = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("async function saveAssignments"), PAGE_SOURCE.indexOf("return (", PAGE_SOURCE.indexOf("async function saveAssignments")));
+  assert.match(saveEvent, /const confirmedForm = eventFormFromEvent\(updatedEvent\)/);
+  assert.match(saveEvent, /setFormBaseline\(confirmedForm\)/);
+  assert.match(saveAssignments, /setAssignmentBaseline\(\{ masterMapId: selectedMasterMapId, nearbyListId: selectedNearbyListId \}\)/);
+});
+
 test("the shared Event context is resolved against accessibleEvents (the full authorized set), never loadedEvents (the status-filtered list)", () => {
   const callIdx = PAGE_SOURCE.indexOf("resolveAdminWorkingEvent(");
   assert.notEqual(callIdx, -1, "expected a resolveAdminWorkingEvent(...) call");
@@ -183,7 +246,7 @@ test("changing the Event Filter (status-filter picker) no longer clears the shar
   const onChangeEndIdx = PAGE_SOURCE.indexOf("}}", onChangeIdx);
   const handlerBody = PAGE_SOURCE.slice(onChangeIdx, onChangeEndIdx);
 
-  assert.match(handlerBody, /setEventStatusFilter\(nextFilter\)/);
+  assert.match(handlerBody, /applyEventStatusFilter\(nextFilter\)/);
   assert.equal(
     /setWorkspaceEvent\(null\)/.test(handlerBody),
     false,
@@ -199,7 +262,8 @@ test("Add Event is a route link and does not mutate shared working-Event context
 });
 
 test("the explicit Select Event picker remains a genuine explicit-selection write", () => {
-  assert.match(PAGE_SOURCE, /const evt = events\.find\(\(row\) => row\.id === newId\) \|\| null;\s*\n\s*setWorkspaceEvent\(evt\);/);
+  assert.match(PAGE_SOURCE, /const evt = events\.find\(\(row\) => row\.id === newId\) \|\| null;\s*\n\s*selectEventForEditing\(evt\);/);
+  assert.match(PAGE_SOURCE, /function selectEventForEditing[\s\S]*?setWorkspaceEvent\(event\);/);
   assert.doesNotMatch(PAGE_SOURCE, /Clone Event|clonedEvent/);
 });
 
@@ -562,8 +626,7 @@ test("the Event Filter picker's onChange persists the explicit choice, and never
   assert.notEqual(onChangeIdx, -1);
   const handlerBody = PAGE_SOURCE.slice(onChangeIdx, onChangeEndIdx);
 
-  assert.match(handlerBody, /setEventStatusFilter\(nextFilter\)/);
-  assert.match(handlerBody, /persistEventStatusFilter\(nextFilter\)/);
+  assert.match(handlerBody, /applyEventStatusFilter\(nextFilter\)/);
   assert.equal(
     /setWorkspaceEvent\(/.test(handlerBody),
     false,
@@ -646,16 +709,22 @@ test("when canonical context is not part of the current filter, the status names
 test("the explicit Select Event picker still writes canonical context exactly once per change, unaffected by the filter-selection fix", () => {
   assert.match(
     PAGE_SOURCE,
-    /const evt = events\.find\(\(row\) => row\.id === newId\) \|\| null;\s*\n\s*setWorkspaceEvent\(evt\);/,
+    /const evt = events\.find\(\(row\) => row\.id === newId\) \|\| null;\s*\n\s*selectEventForEditing\(evt\);/,
   );
-  // Exactly one setWorkspaceEvent call in the picker's own onChange body.
+  // Both the clean path and the explicit discard-confirmation path delegate
+  // to the same helper, which owns the one canonical context write.
   const selectIdx = PAGE_SOURCE.indexOf('value={selectedEventId}');
   const onChangeIdx = PAGE_SOURCE.indexOf("onChange={(e) => {", selectIdx);
   const onChangeEndIdx = PAGE_SOURCE.indexOf("}}", onChangeIdx);
   const handlerBody = PAGE_SOURCE.slice(onChangeIdx, onChangeEndIdx);
-  const setWorkspaceCalls = (handlerBody.match(/setWorkspaceEvent\(/g) || [])
+  const selectEventCalls = (handlerBody.match(/selectEventForEditing\(/g) || [])
     .length;
-  assert.equal(setWorkspaceCalls, 1);
+  assert.equal(selectEventCalls, 2);
+  const switchHelper = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("function selectEventForEditing"),
+    PAGE_SOURCE.indexOf("function applyEventStatusFilter"),
+  );
+  assert.equal((switchHelper.match(/setWorkspaceEvent\(/g) || []).length, 1);
 });
 
 // -- G-03G: Events route-authority migration -------------------------------
