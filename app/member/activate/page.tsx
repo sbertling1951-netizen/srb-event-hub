@@ -334,6 +334,8 @@ export default function MemberActivatePage() {
     return <div style={{ padding: 24 }}>Checking your session...</div>;
   }
 
+  const accountAlreadyActivated = result === "ALREADY_ACTIVATED";
+
   return (
     <div style={{ padding: 24, maxWidth: 760, margin: "0 auto" }}>
       <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
@@ -367,6 +369,47 @@ export default function MemberActivatePage() {
           gap: 14,
         }}
       >
+        {accountAlreadyActivated ? (
+          <section
+            aria-labelledby="already-activated-heading"
+            style={{
+              border: "1px solid #86efac",
+              borderRadius: 10,
+              background: "#f0fdf4",
+              color: "#166534",
+              padding: 16,
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            <h2
+              id="already-activated-heading"
+              style={{ margin: 0, fontSize: 20 }}
+            >
+              Your account is already activated
+            </h2>
+            <p style={{ margin: 0, lineHeight: 1.5 }}>
+              We found your account. Sign in to continue — nothing was changed
+              on your account.
+            </p>
+          </section>
+        ) : null}
+
+        <fieldset
+          disabled={accountAlreadyActivated}
+          aria-describedby={
+            accountAlreadyActivated ? "already-activated-heading" : undefined
+          }
+          style={{
+            border: 0,
+            margin: 0,
+            padding: 0,
+            minWidth: 0,
+            display: "grid",
+            gap: 14,
+            opacity: accountAlreadyActivated ? 0.55 : 1,
+          }}
+        >
         <div
           style={{
             display: "grid",
@@ -539,30 +582,66 @@ export default function MemberActivatePage() {
             : ` You currently have ${additionalEvidenceCount} additional evidence field${additionalEvidenceCount === 1 ? "" : "s"} filled.`}
         </div>
 
-        <button
-          type="submit"
-          disabled={busy}
-          style={{
-            width: "100%",
-            minHeight: 48,
-            padding: "12px 14px",
-            borderRadius: 8,
-            border: "1px solid #cbd5e1",
-            background: "#0b5cff",
-            color: "#ffffff",
-            cursor: busy ? "not-allowed" : "pointer",
-            fontWeight: 700,
-            fontSize: 16,
-            lineHeight: 1.2,
-            opacity: busy ? 0.7 : 1,
-            WebkitAppearance: "none",
-            appearance: "none",
-          }}
-        >
-          {busy ? "Checking..." : "Continue"}
-        </button>
+        </fieldset>
 
-        {status ? (
+        {accountAlreadyActivated ? (
+          <>
+            <Link
+              href="/member/login"
+              style={{
+                width: "100%",
+                minHeight: 48,
+                boxSizing: "border-box",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "12px 14px",
+                borderRadius: 8,
+                border: "1px solid #1d4ed8",
+                background: "#1d4ed8",
+                color: "#ffffff",
+                fontWeight: 700,
+                fontSize: 16,
+                lineHeight: 1.2,
+                textDecoration: "none",
+              }}
+            >
+              Sign in to My Account
+            </Link>
+            <p style={{ margin: 0, color: "#475569", fontSize: 13, lineHeight: 1.5 }}>
+              Can&apos;t sign in? Use{" "}
+              <Link href="/member/login" style={{ color: "#1d4ed8", fontWeight: 600 }}>
+                Email me a recovery link
+              </Link>{" "}
+              on the sign-in page.
+            </p>
+          </>
+        ) : (
+          <button
+            type="submit"
+            disabled={busy}
+            style={{
+              width: "100%",
+              minHeight: 48,
+              padding: "12px 14px",
+              borderRadius: 8,
+              border: "1px solid #cbd5e1",
+              background: "#0b5cff",
+              color: "#ffffff",
+              cursor: busy ? "not-allowed" : "pointer",
+              fontWeight: 700,
+              fontSize: 16,
+              lineHeight: 1.2,
+              opacity: busy ? 0.7 : 1,
+              WebkitAppearance: "none",
+              appearance: "none",
+            }}
+          >
+            {busy ? "Checking..." : "Continue"}
+          </button>
+        )}
+
+        {status && !accountAlreadyActivated ? (
           <div style={{ fontSize: 13, color: result ? "#0f172a" : "#666" }}>
             {status}
           </div>
@@ -609,54 +688,6 @@ export default function MemberActivatePage() {
             2,
           )}`}
         </pre>
-      ) : null}
-
-      {result === "ALREADY_ACTIVATED" ? (
-        <div
-          style={{
-            marginTop: 16,
-            border: "1px solid #bfdbfe",
-            borderRadius: 12,
-            background: "#eff6ff",
-            padding: 18,
-            display: "grid",
-            gap: 12,
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 20, color: "#1e3a8a" }}>
-            Your account is already activated
-          </h2>
-          <p style={{ margin: 0, color: "#1e3a8a", lineHeight: 1.5 }}>
-            Please sign in to continue. Nothing was changed on your account.
-          </p>
-
-          <Link
-            href="/member/login"
-            style={{
-              justifySelf: "start",
-              minHeight: 44,
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "10px 16px",
-              borderRadius: 8,
-              border: "1px solid #1d4ed8",
-              background: "#1d4ed8",
-              color: "#ffffff",
-              fontWeight: 700,
-              textDecoration: "none",
-            }}
-          >
-            Sign in to My Account
-          </Link>
-
-          <p style={{ margin: 0, color: "#475569", fontSize: 13, lineHeight: 1.5 }}>
-            Forgot your password? Use{" "}
-            <Link href="/member/login" style={{ color: "#1d4ed8", fontWeight: 600 }}>
-              Email me a recovery link
-            </Link>{" "}
-            on the sign-in page.
-          </p>
-        </div>
       ) : null}
 
       {result === "CONTINUE_VERIFICATION" && attemptToken ? (

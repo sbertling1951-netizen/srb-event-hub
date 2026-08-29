@@ -66,18 +66,26 @@ test("the server result string is trusted directly -- no lock-step allowlist tha
   assert.doesNotMatch(block, /payload\.result === "ALREADY_ACTIVATED"/);
 });
 
-test("an ALREADY_ACTIVATED result stops activation and offers Sign In -- no magic-link/activation step", () => {
-  // dedicated branch with a sign-in action
-  assert.match(SOURCE, /result === "ALREADY_ACTIVATED" \?/);
-  const block = SOURCE.slice(
-    SOURCE.indexOf('result === "ALREADY_ACTIVATED" ?'),
-    SOURCE.indexOf('result === "CONTINUE_VERIFICATION" && attemptToken ?'),
+test("an ALREADY_ACTIVATED result replaces activation with a sign-in state", () => {
+  assert.match(SOURCE, /const accountAlreadyActivated = result === "ALREADY_ACTIVATED";/);
+  assert.match(SOURCE, /aria-labelledby="already-activated-heading"/);
+  assert.match(SOURCE, /We found your account\. Sign in to continue/);
+  assert.match(SOURCE, /<fieldset\s+disabled=\{accountAlreadyActivated\}/);
+
+  const resultActionBlock = SOURCE.slice(
+    SOURCE.indexOf("{accountAlreadyActivated ? (", SOURCE.indexOf("<fieldset")),
+    SOURCE.indexOf("{status && !accountAlreadyActivated ?"),
   );
-  assert.match(block, /already activated/i);
-  assert.match(block, /href="\/member\/login"/);
-  assert.match(block, /Sign in to My Account/);
-  // the ALREADY_ACTIVATED block itself never triggers the activation/magic-link step
-  assert.doesNotMatch(block, /sendActivationMagicLink|magicLink|Finish Activating/);
+  const alreadyActivatedAction = resultActionBlock.slice(
+    0,
+    resultActionBlock.indexOf(") : ("),
+  );
+  assert.match(alreadyActivatedAction, /href="\/member\/login"/);
+  assert.match(alreadyActivatedAction, /Sign in to My Account/);
+  assert.match(alreadyActivatedAction, /Email me a recovery link/);
+  assert.doesNotMatch(alreadyActivatedAction, /type="submit"|>Continue</);
+  // This state never triggers the activation/magic-link step.
+  assert.doesNotMatch(alreadyActivatedAction, /sendActivationMagicLink|magicLink|Finish Activating/);
   // and the "Finish Activating" box stays gated on CONTINUE_VERIFICATION only
   assert.match(
     SOURCE,
