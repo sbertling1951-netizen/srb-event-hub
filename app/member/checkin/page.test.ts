@@ -37,6 +37,37 @@ test("a sharing-preference failure is reported distinctly from a check-in failur
   assert.equal(/router\.replace/.test(block!), false, "must not navigate away on a sharing failure");
 });
 
+test("ordinary capability Check-In failures preserve the session and stay on the page", () => {
+  const saveStart = source.indexOf("async function saveCheckin(");
+  const saveBody = source.slice(saveStart, source.indexOf("\n  const participantCapacity"));
+  assert.match(saveBody, /responseBody\?\.error === "temporary_access_invalid"/);
+  assert.match(
+    saveBody,
+    /Your check-in could not be saved\. Review the form and try again\./,
+  );
+  assert.equal(
+    /if \(hasCapability\) \{\s*clearMemberLocalState/.test(saveBody),
+    false,
+    "ordinary capability failures must not clear local state",
+  );
+  assert.equal(
+    /router\.replace\("\/member\/login\?sessionExpired=1"\)/.test(saveBody),
+    false,
+    "ordinary capability failures must not use account expiry navigation",
+  );
+});
+
+test("only an explicitly invalid capability clears TEA state and routes to TEA verification", () => {
+  const saveStart = source.indexOf("async function saveCheckin(");
+  const saveBody = source.slice(saveStart, source.indexOf("\n  const participantCapacity"));
+  const invalidBranch = saveBody.match(
+    /if \(\s*hasCapability[\s\S]*?responseBody\?\.error === "temporary_access_invalid"[\s\S]*?return;\n        \}/,
+  )?.[0];
+  assert.ok(invalidBranch, "expected the explicit capability-invalid branch");
+  assert.match(invalidBranch!, /clearMemberLocalState\(\);/);
+  assert.match(invalidBranch!, /router\.replace\("\/member\/login\?teaSessionExpired=1"\)/);
+});
+
 test("the boolean share checkbox maps to the full approved optional-field set or none -- never a partial/invented combination", () => {
   const constBlock = source.match(
     /const MEMBER_SHARE_ALL_FIELD_KEYS = \[[\s\S]*?\];/,

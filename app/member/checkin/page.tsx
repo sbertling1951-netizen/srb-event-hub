@@ -348,11 +348,21 @@ function MemberCheckinPageInner() {
       const responseBody = await response.json().catch(() => null);
 
       if (!response.ok) {
-        if (hasCapability) {
+        if (
+          hasCapability &&
+          responseBody?.error === "temporary_access_invalid"
+        ) {
           clearMemberLocalState();
-          router.replace("/member/login?sessionExpired=1");
+          router.replace("/member/login?teaSessionExpired=1");
           return;
         }
+
+        if (hasCapability) {
+          throw new Error(
+            "Your check-in could not be saved. Review the form and try again.",
+          );
+        }
+
         throw new Error(
           "Check-in verification failed. Re-enter your event code and registration email or mobile number.",
         );

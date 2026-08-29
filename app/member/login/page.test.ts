@@ -75,6 +75,16 @@ test("a lapsed-account redirect (?sessionExpired=1) shows an explanatory notice,
   );
 });
 
+test("a Temporary Event Access expiry has separate recovery copy and does not replace account expiry messaging", () => {
+  assert.match(SOURCE, /teaSessionExpiredNotice/);
+  assert.match(SOURCE, /teaSessionExpired.*=== "1"/s);
+  assert.match(
+    SOURCE,
+    /Your Temporary Event Access session expired\. Verify your Event Code\s+and registration information again to continue\./,
+  );
+  assert.match(SOURCE, /Your account session expired\. Sign in again to continue/);
+});
+
 test("an already-activated redirect has a separate green, one-time sign-in notice", () => {
   assert.match(SOURCE, /accountActivatedNotice/);
   assert.match(SOURCE, /url\.searchParams\.get\("accountActivated"\) === "1"/);

@@ -118,6 +118,13 @@ export async function POST(request: Request) {
   });
 
   if (error) {
+    if (error.code === "P0002") {
+      return NextResponse.json(
+        { error: "temporary_access_invalid" },
+        { status: 401 },
+      );
+    }
+
     return NextResponse.json({ error: "checkin_failed" }, { status: 400 });
   }
 

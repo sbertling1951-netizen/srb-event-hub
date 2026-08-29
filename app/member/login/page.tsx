@@ -94,6 +94,7 @@ export default function MemberLoginPage() {
   // again. Read from the URL rather than next/navigation's useSearchParams
   // so this client page needs no extra Suspense boundary.
   const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
+  const [teaSessionExpiredNotice, setTeaSessionExpiredNotice] = useState(false);
   const [accountActivatedNotice, setAccountActivatedNotice] = useState(false);
 
   // ---- Account sign-in (password fallback; passkey primary when flagged on) ----
@@ -124,6 +125,9 @@ export default function MemberLoginPage() {
     }
     const url = new URL(window.location.href);
     setSessionExpiredNotice(url.searchParams.get("sessionExpired") === "1");
+    setTeaSessionExpiredNotice(
+      url.searchParams.get("teaSessionExpired") === "1",
+    );
 
     // Activation redirects here with a deliberately one-time success
     // notice. Consume only this parameter so a refresh, later logout, or
@@ -479,6 +483,25 @@ export default function MemberLoginPage() {
   return (
     <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Member Login</h1>
+
+      {teaSessionExpiredNotice ? (
+        <div
+          role="status"
+          style={{
+            border: "1px solid #fde68a",
+            background: "#fffbeb",
+            color: "#92400e",
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 16,
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Your Temporary Event Access session expired. Verify your Event Code
+          and registration information again to continue.
+        </div>
+      ) : null}
 
       {sessionExpiredNotice ? (
         <div
