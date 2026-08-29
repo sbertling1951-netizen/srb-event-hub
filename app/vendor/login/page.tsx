@@ -73,42 +73,6 @@ export default function VendorLoginPage() {
     }
   }
 
-  async function sendMagicLink() {
-    const normalizedEmail = email.trim().toLowerCase();
-
-    if (!normalizedEmail) {
-      setError("Enter your email address.");
-      setStatus("");
-      return;
-    }
-
-    try {
-      setBusy(true);
-      setError(null);
-      setStatus("Sending sign-in link...");
-
-      const redirectTo = `${window.location.origin}/vendor/callback`;
-
-      const { error: otpError } = await supabase.auth.signInWithOtp({
-        email: normalizedEmail,
-        options: {
-          emailRedirectTo: redirectTo,
-        },
-      });
-
-      if (otpError) {
-        throw otpError;
-      }
-
-      setStatus("Check your email for the secure vendor sign-in link.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send sign-in link.");
-      setStatus("");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function sendPasswordReset() {
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -196,15 +160,7 @@ export default function VendorLoginPage() {
             onClick={() => void sendPasswordReset()}
             disabled={busy}
           >
-            Forgot Password
-          </LoginActionButton>
-
-          <LoginActionButton
-            variant="alternate"
-            onClick={() => void sendMagicLink()}
-            disabled={busy}
-          >
-            Email Me a Sign-in Link
+            Recovery Link
           </LoginActionButton>
 
           <LoginActionButton variant="alternate" href="/vendor/register">
