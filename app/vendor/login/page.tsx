@@ -6,6 +6,8 @@ import { useState } from "react";
 import LoginActionButton from "@/components/auth/LoginActionButton";
 import { supabase } from "@/lib/supabase";
 
+import styles from "./page.module.css";
+
 export default function VendorLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -149,11 +151,7 @@ export default function VendorLoginPage() {
         <div
           role="group"
           aria-label="Other sign-in options"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-            gap: 8,
-          }}
+          className={styles.secondaryActions}
         >
           <LoginActionButton
             variant="recovery"

@@ -15,6 +15,10 @@ const SESSION_ROUTE_SOURCE = readFileSync(
   fileURLToPath(new URL("../../api/vendor/session/route.ts", import.meta.url)),
   "utf8",
 );
+const LAYOUT_SOURCE = readFileSync(
+  fileURLToPath(new URL("./page.module.css", import.meta.url)),
+  "utf8",
+);
 
 test("Vendor login keeps password recovery and access actions in a responsive in-card row", () => {
   const signInAction = SOURCE.indexOf('variant="primary"');
@@ -24,12 +28,20 @@ test("Vendor login keeps password recovery and access actions in a responsive in
   assert.ok(secondaryActions > signInAction);
   assert.ok(status > secondaryActions);
 
-  // 540px leaves the card's existing padding plus three 150px action
-  // targets and their gaps room to stay on one row at desktop/tablet widths.
+  // The card remains deliberately modest; desktop tracks are explicit so
+  // the three actions stay balanced despite the card's padded inner width.
   assert.match(SOURCE, /maxWidth: 540/);
+  assert.match(SOURCE, /className=\{styles\.secondaryActions\}/);
 
   const row = SOURCE.slice(secondaryActions, status);
-  assert.match(row, /gridTemplateColumns: "repeat\(auto-fit, minmax\(150px, 1fr\)\)"/);
+  assert.match(
+    LAYOUT_SOURCE,
+    /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/,
+  );
+  assert.match(
+    LAYOUT_SOURCE,
+    /@media \(max-width: 560px\)[\s\S]*repeat\(auto-fit, minmax\(150px, 1fr\)\)/,
+  );
   assert.match(row, /Recovery Link/);
   assert.match(row, /Request Vendor Access/);
   assert.match(row, /Choose Login Type/);
