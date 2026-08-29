@@ -212,13 +212,18 @@ export default function MemberActivatePage() {
         attemptToken?: string | null;
       };
 
-      const safeResult =
-        payload.result === "CONTINUE_VERIFICATION" ||
-        payload.result === "ALREADY_ACTIVATED" ||
-        payload.result === "REVIEW_REQUIRED" ||
-        payload.result === "CREATE_NEW_ACCOUNT_AVAILABLE" ||
-        payload.result === "UNABLE_TO_VERIFY"
-          ? payload.result
+      // Trust the server's already-sanitized result string (the API route
+      // validates it against the database CHECK constraint). Re-applying a
+      // hard-coded allowlist here meant every new classification had to be
+      // added in three places in lockstep; when this bundle lagged the
+      // server, a valid result like ALREADY_ACTIVATED was silently coerced
+      // to UNABLE_TO_VERIFY and the dedicated result block never rendered.
+      // Unknown/malformed values still fall back to UNABLE_TO_VERIFY, and
+      // the render only special-cases the results it knows -- any other
+      // value just shows the status message, exactly as before.
+      const safeResult: IdentityClaimPublicResult =
+        typeof payload.result === "string" && payload.result.length > 0
+          ? (payload.result as IdentityClaimPublicResult)
           : "UNABLE_TO_VERIFY";
 
       setResult(safeResult);

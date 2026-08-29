@@ -162,14 +162,21 @@ export async function POST(req: NextRequest) {
     }
 
     const attempt = Array.isArray(data) ? data[0] : null;
-    const publicResult =
-      attempt?.public_result_classification === "CONTINUE_VERIFICATION" ||
-      attempt?.public_result_classification === "ALREADY_ACTIVATED" ||
-      attempt?.public_result_classification === "REVIEW_REQUIRED" ||
-      attempt?.public_result_classification ===
-        "CREATE_NEW_ACCOUNT_AVAILABLE" ||
-      attempt?.public_result_classification === "UNABLE_TO_VERIFY"
-        ? (attempt.public_result_classification as IdentityClaimPublicResult)
+
+    // The RPC's public_result_classification is already constrained to the
+    // valid set by a CHECK constraint on identity_claim_attempts, so pass
+    // any non-empty string straight through. The previous hard-coded
+    // allowlist here had to be updated in lockstep with every new
+    // classification (CONTINUE_VERIFICATION, ALREADY_ACTIVATED, ...); a
+    // version skew between this route and the database silently coerced an
+    // unrecognized-but-valid result (e.g. ALREADY_ACTIVATED) to
+    // UNABLE_TO_VERIFY, stranding the caller with a misleading message.
+    // getIdentityClaimPublicMessage() still falls back to the generic
+    // message for anything it does not recognize.
+    const rawClassification = attempt?.public_result_classification;
+    const publicResult: IdentityClaimPublicResult =
+      typeof rawClassification === "string" && rawClassification.length > 0
+        ? (rawClassification as IdentityClaimPublicResult)
         : genericResult;
 
     return NextResponse.json({

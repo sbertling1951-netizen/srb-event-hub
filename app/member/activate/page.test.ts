@@ -53,9 +53,20 @@ test("event evidence is labeled as registration, not attendance -- the list is c
   assert.doesNotMatch(SOURCE, /you already know you\s*\n?\s*attended/);
 });
 
+test("the server result string is trusted directly -- no lock-step allowlist that drops a valid new result", () => {
+  const block = SOURCE.slice(
+    SOURCE.indexOf("const safeResult"),
+    SOURCE.indexOf("setResult(safeResult)"),
+  );
+  assert.match(
+    block,
+    /typeof payload\.result === "string" && payload\.result\.length > 0\s*\n\s*\? \(payload\.result as IdentityClaimPublicResult\)\s*\n\s*: "UNABLE_TO_VERIFY";/,
+  );
+  assert.doesNotMatch(block, /payload\.result === "CONTINUE_VERIFICATION"/);
+  assert.doesNotMatch(block, /payload\.result === "ALREADY_ACTIVATED"/);
+});
+
 test("an ALREADY_ACTIVATED result stops activation and offers Sign In -- no magic-link/activation step", () => {
-  // accepted as a real server result, not coerced to UNABLE_TO_VERIFY
-  assert.match(SOURCE, /payload\.result === "ALREADY_ACTIVATED"/);
   // dedicated branch with a sign-in action
   assert.match(SOURCE, /result === "ALREADY_ACTIVATED" \?/);
   const block = SOURCE.slice(
