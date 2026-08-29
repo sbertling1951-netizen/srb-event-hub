@@ -58,11 +58,20 @@ test("a lapsed-account redirect (?sessionExpired=1) shows an explanatory notice,
   assert.match(SOURCE, /sessionExpiredNotice/);
   assert.match(
     SOURCE,
-    /new URLSearchParams\(window\.location\.search\)\.get\("sessionExpired"\) === "1"/,
+    /url\.searchParams\.get\("sessionExpired"\) === "1"/,
   );
   assert.equal(/useSearchParams\(/.test(SOURCE), false);
   assert.match(
     SOURCE,
     /Your account session expired\. Sign in again to continue/,
   );
+});
+
+test("an already-activated redirect has a separate green, one-time sign-in notice", () => {
+  assert.match(SOURCE, /accountActivatedNotice/);
+  assert.match(SOURCE, /url\.searchParams\.get\("accountActivated"\) === "1"/);
+  assert.match(SOURCE, /url\.searchParams\.delete\("accountActivated"\)/);
+  assert.match(SOURCE, /window\.history\.replaceState/);
+  assert.match(SOURCE, /Your account is already activated\. Sign in to continue\./);
+  assert.match(SOURCE, /background: "#f0fdf4"/);
 });

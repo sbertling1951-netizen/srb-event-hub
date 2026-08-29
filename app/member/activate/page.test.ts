@@ -66,29 +66,17 @@ test("the server result string is trusted directly -- no lock-step allowlist tha
   assert.doesNotMatch(block, /payload\.result === "ALREADY_ACTIVATED"/);
 });
 
-test("an ALREADY_ACTIVATED result replaces activation with a sign-in state", () => {
-  assert.match(SOURCE, /const accountAlreadyActivated = result === "ALREADY_ACTIVATED";/);
-  assert.match(SOURCE, /aria-labelledby="already-activated-heading"/);
-  assert.match(SOURCE, /We found your account\. Sign in to continue/);
-  assert.match(SOURCE, /<fieldset\s+disabled=\{accountAlreadyActivated\}/);
-
-  const resultActionBlock = SOURCE.slice(
-    SOURCE.indexOf("{accountAlreadyActivated ? (", SOURCE.indexOf("<fieldset")),
-    SOURCE.indexOf("{status && !accountAlreadyActivated ?"),
-  );
-  const alreadyActivatedAction = resultActionBlock.slice(
-    0,
-    resultActionBlock.indexOf(") : ("),
-  );
-  assert.match(alreadyActivatedAction, /href="\/member\/login"/);
-  assert.match(alreadyActivatedAction, /Sign in to My Account/);
-  assert.match(alreadyActivatedAction, /Email me a recovery link/);
-  assert.doesNotMatch(alreadyActivatedAction, /type="submit"|>Continue</);
-  // This state never triggers the activation/magic-link step.
-  assert.doesNotMatch(alreadyActivatedAction, /sendActivationMagicLink|magicLink|Finish Activating/);
-  // and the "Finish Activating" box stays gated on CONTINUE_VERIFICATION only
+test("an ALREADY_ACTIVATED result routes directly to the one-time Member Login notice", () => {
+  assert.match(SOURCE, /if \(safeResult === "ALREADY_ACTIVATED"\) \{/);
+  assert.match(SOURCE, /router\.replace\("\/member\/login\?accountActivated=1"\);/);
+  assert.doesNotMatch(SOURCE, /accountAlreadyActivated|already-activated-heading/);
+  // The activation finishing step remains limited to verified candidates.
   assert.match(
     SOURCE,
     /\{result === "CONTINUE_VERIFICATION" && attemptToken \? \(/,
   );
+});
+
+test("temporary activation diagnostics are absent from the browser flow", () => {
+  assert.doesNotMatch(SOURCE, /_diag|activate-diag|diagnostic \(temporary\)|setDiag/);
 });

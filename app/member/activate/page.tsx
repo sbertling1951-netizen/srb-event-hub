@@ -64,12 +64,6 @@ export default function MemberActivatePage() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<IdentityClaimPublicResult | null>(null);
   const [attemptToken, setAttemptToken] = useState<string | null>(null);
-  // TEMPORARY: surfaces the raw HTTP-boundary facts for the "already
-  // activated not showing" hunt -- HTTP status, the literal `result` string
-  // the browser received, and the server `_diag`. Remove with the
-  // route-side instrumentation once resolved.
-  const [diag, setDiag] = useState<Record<string, unknown> | null>(null);
-
   // Activation now completes via a single Supabase magic link to the
   // verified email, rather than a custom numeric code. This mirrors the
   // channel field already collected above -- no second, competing
@@ -211,34 +205,11 @@ export default function MemberActivatePage() {
         }),
       });
 
-      const rawText = await response.text();
-      let payload: {
+      const payload: {
         result?: IdentityClaimPublicResult;
         message?: string;
         attemptToken?: string | null;
-        _diag?: Record<string, unknown>;
-      } = {};
-      let parseOk = true;
-      try {
-        payload = JSON.parse(rawText);
-      } catch {
-        parseOk = false;
-      }
-
-      // TEMPORARY diagnostic: the literal HTTP-boundary facts.
-      setDiag({
-        httpStatus: response.status,
-        contentType: response.headers.get("content-type"),
-        parsedJson: parseOk,
-        receivedResult: parseOk ? (payload.result ?? null) : null,
-        bodyPreview: parseOk ? undefined : rawText.slice(0, 200),
-        serverDiag: payload._diag ?? null,
-        buildId:
-          document
-            .querySelector('script[src*="/_next/static/"]')
-            ?.getAttribute("src")
-            ?.match(/\/_next\/static\/([^/]+)\//)?.[1] ?? null,
-      });
+      } = await response.json();
 
       // Trust the server's already-sanitized result string (the API route
       // validates it against the database CHECK constraint). Re-applying a
@@ -254,6 +225,11 @@ export default function MemberActivatePage() {
           ? (payload.result as IdentityClaimPublicResult)
           : "UNABLE_TO_VERIFY";
 
+      if (safeResult === "ALREADY_ACTIVATED") {
+        router.replace("/member/login?accountActivated=1");
+        return;
+      }
+
       setResult(safeResult);
       setAttemptToken(
         typeof payload.attemptToken === "string" && payload.attemptToken
@@ -265,14 +241,10 @@ export default function MemberActivatePage() {
       setMagicLinkStatus(null);
       setMagicLinkError(null);
       setStatus(payload.message || getIdentityClaimPublicMessage(safeResult));
-    } catch (err) {
+    } catch {
       setResult("UNABLE_TO_VERIFY");
       setStatus(getIdentityClaimPublicMessage("UNABLE_TO_VERIFY"));
       setError(null);
-      setDiag({
-        httpStatus: "fetch_threw",
-        error: err instanceof Error ? err.message : String(err),
-      });
     } finally {
       setBusy(false);
     }
@@ -334,8 +306,6 @@ export default function MemberActivatePage() {
     return <div style={{ padding: 24 }}>Checking your session...</div>;
   }
 
-  const accountAlreadyActivated = result === "ALREADY_ACTIVATED";
-
   return (
     <div style={{ padding: 24, maxWidth: 760, margin: "0 auto" }}>
       <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
@@ -369,47 +339,6 @@ export default function MemberActivatePage() {
           gap: 14,
         }}
       >
-        {accountAlreadyActivated ? (
-          <section
-            aria-labelledby="already-activated-heading"
-            style={{
-              border: "1px solid #86efac",
-              borderRadius: 10,
-              background: "#f0fdf4",
-              color: "#166534",
-              padding: 16,
-              display: "grid",
-              gap: 10,
-            }}
-          >
-            <h2
-              id="already-activated-heading"
-              style={{ margin: 0, fontSize: 20 }}
-            >
-              Your account is already activated
-            </h2>
-            <p style={{ margin: 0, lineHeight: 1.5 }}>
-              We found your account. Sign in to continue — nothing was changed
-              on your account.
-            </p>
-          </section>
-        ) : null}
-
-        <fieldset
-          disabled={accountAlreadyActivated}
-          aria-describedby={
-            accountAlreadyActivated ? "already-activated-heading" : undefined
-          }
-          style={{
-            border: 0,
-            margin: 0,
-            padding: 0,
-            minWidth: 0,
-            display: "grid",
-            gap: 14,
-            opacity: accountAlreadyActivated ? 0.55 : 1,
-          }}
-        >
         <div
           style={{
             display: "grid",
@@ -582,66 +511,30 @@ export default function MemberActivatePage() {
             : ` You currently have ${additionalEvidenceCount} additional evidence field${additionalEvidenceCount === 1 ? "" : "s"} filled.`}
         </div>
 
-        </fieldset>
+        <button
+          type="submit"
+          disabled={busy}
+          style={{
+            width: "100%",
+            minHeight: 48,
+            padding: "12px 14px",
+            borderRadius: 8,
+            border: "1px solid #cbd5e1",
+            background: "#0b5cff",
+            color: "#ffffff",
+            cursor: busy ? "not-allowed" : "pointer",
+            fontWeight: 700,
+            fontSize: 16,
+            lineHeight: 1.2,
+            opacity: busy ? 0.7 : 1,
+            WebkitAppearance: "none",
+            appearance: "none",
+          }}
+        >
+          {busy ? "Checking..." : "Continue"}
+        </button>
 
-        {accountAlreadyActivated ? (
-          <>
-            <Link
-              href="/member/login"
-              style={{
-                width: "100%",
-                minHeight: 48,
-                boxSizing: "border-box",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "12px 14px",
-                borderRadius: 8,
-                border: "1px solid #1d4ed8",
-                background: "#1d4ed8",
-                color: "#ffffff",
-                fontWeight: 700,
-                fontSize: 16,
-                lineHeight: 1.2,
-                textDecoration: "none",
-              }}
-            >
-              Sign in to My Account
-            </Link>
-            <p style={{ margin: 0, color: "#475569", fontSize: 13, lineHeight: 1.5 }}>
-              Can&apos;t sign in? Use{" "}
-              <Link href="/member/login" style={{ color: "#1d4ed8", fontWeight: 600 }}>
-                Email me a recovery link
-              </Link>{" "}
-              on the sign-in page.
-            </p>
-          </>
-        ) : (
-          <button
-            type="submit"
-            disabled={busy}
-            style={{
-              width: "100%",
-              minHeight: 48,
-              padding: "12px 14px",
-              borderRadius: 8,
-              border: "1px solid #cbd5e1",
-              background: "#0b5cff",
-              color: "#ffffff",
-              cursor: busy ? "not-allowed" : "pointer",
-              fontWeight: 700,
-              fontSize: 16,
-              lineHeight: 1.2,
-              opacity: busy ? 0.7 : 1,
-              WebkitAppearance: "none",
-              appearance: "none",
-            }}
-          >
-            {busy ? "Checking..." : "Continue"}
-          </button>
-        )}
-
-        {status && !accountAlreadyActivated ? (
+        {status ? (
           <div style={{ fontSize: 13, color: result ? "#0f172a" : "#666" }}>
             {status}
           </div>
@@ -664,31 +557,6 @@ export default function MemberActivatePage() {
           </div>
         ) : null}
       </form>
-
-      {diag ? (
-        <pre
-          data-testid="activate-diag"
-          style={{
-            marginTop: 12,
-            border: "1px dashed #cbd5e1",
-            borderRadius: 8,
-            background: "#0b1020",
-            color: "#a5f3fc",
-            padding: 12,
-            fontSize: 12,
-            lineHeight: 1.5,
-            overflowX: "auto",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
-          {`diagnostic (temporary):\n${JSON.stringify(
-            { clientResultState: result, ...diag },
-            null,
-            2,
-          )}`}
-        </pre>
-      ) : null}
 
       {result === "CONTINUE_VERIFICATION" && attemptToken ? (
         <div

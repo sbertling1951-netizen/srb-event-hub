@@ -94,6 +94,7 @@ export default function MemberLoginPage() {
   // again. Read from the URL rather than next/navigation's useSearchParams
   // so this client page needs no extra Suspense boundary.
   const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
+  const [accountActivatedNotice, setAccountActivatedNotice] = useState(false);
 
   // ---- Account sign-in (password fallback; passkey primary when flagged on) ----
   const [signInEmail, setSignInEmail] = useState("");
@@ -121,9 +122,22 @@ export default function MemberLoginPage() {
     if (typeof window === "undefined") {
       return;
     }
-    setSessionExpiredNotice(
-      new URLSearchParams(window.location.search).get("sessionExpired") === "1",
-    );
+    const url = new URL(window.location.href);
+    setSessionExpiredNotice(url.searchParams.get("sessionExpired") === "1");
+
+    // Activation redirects here with a deliberately one-time success
+    // notice. Consume only this parameter so a refresh, later logout, or
+    // direct visit cannot re-present it; sessionExpired retains its own
+    // independent semantics.
+    if (url.searchParams.get("accountActivated") === "1") {
+      setAccountActivatedNotice(true);
+      url.searchParams.delete("accountActivated");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -477,6 +491,24 @@ export default function MemberLoginPage() {
         >
           Your account session expired. Sign in again to continue — your event
           registrations will be here waiting.
+        </div>
+      ) : null}
+
+      {accountActivatedNotice ? (
+        <div
+          role="status"
+          style={{
+            border: "1px solid #86efac",
+            background: "#f0fdf4",
+            color: "#166534",
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 16,
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Your account is already activated. Sign in to continue.
         </div>
       ) : null}
 
