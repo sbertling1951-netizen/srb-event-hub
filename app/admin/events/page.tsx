@@ -1248,6 +1248,15 @@ const healthCardStyle: CSSProperties = {
   width: "100%",
   textAlign: "left",
   alignItems: "stretch",
+  // Reset the generic AppButton's centered flex/button typography so this
+  // semantic button retains the exact grid alignment of the former card.
+  justifyContent: "normal",
+  justifyItems: "stretch",
+  alignContent: "normal",
+  minHeight: "auto",
+  fontSize: "inherit",
+  fontWeight: "inherit",
+  lineHeight: "normal",
 };
 
 const healthTitleStyle: CSSProperties = {

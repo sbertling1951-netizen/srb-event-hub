@@ -813,6 +813,28 @@ test("each Event Health destination is a canonical focusable control, so loaded 
   assert.equal((PAGE_SOURCE.match(/aria-label="Manage /g) || []).length, 4);
 });
 
+test("semantic Event Health buttons retain the former card grid alignment instead of generic button centering", () => {
+  const healthCardStyleStart = PAGE_SOURCE.indexOf("const healthCardStyle");
+  const healthCardStyle = PAGE_SOURCE.slice(
+    healthCardStyleStart,
+    PAGE_SOURCE.indexOf("const healthTitleStyle", healthCardStyleStart),
+  );
+
+  for (const expected of [
+    'display: "grid"',
+    'textAlign: "left"',
+    'justifyContent: "normal"',
+    'justifyItems: "stretch"',
+    'alignContent: "normal"',
+    'minHeight: "auto"',
+    'fontSize: "inherit"',
+    'fontWeight: "inherit"',
+    'lineHeight: "normal"',
+  ]) {
+    assert.ok(healthCardStyle.includes(expected), `expected card reset: ${expected}`);
+  }
+});
+
 test("loading and error presentation uses the canonical LoadingState/Alert primitives", () => {
   assert.match(
     PAGE_SOURCE,
