@@ -18,6 +18,11 @@ export const STORAGE_KEYS = {
   memberEntryId: "fcoc-member-entry-id",
   memberEmail: "fcoc-member-email",
   memberHasArrived: "fcoc-member-has-arrived",
+  // Account-origin marker: written only by the authenticated Account
+  // login path (finishMemberLogin), and explicitly removed by the
+  // Temporary Event Access path. Its presence distinguishes an
+  // account-origin MemberSession from a Temporary Event Access one.
+  memberAuthUserId: "fcoc-member-auth-user-id",
 
   activeEventChanged: "fcoc-active-event-changed",
 

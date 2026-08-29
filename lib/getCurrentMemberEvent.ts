@@ -36,6 +36,18 @@ export function getStoredMemberEmail() {
   return localStorage.getItem(STORAGE_KEYS.memberEmail);
 }
 
+// The authenticated Account login path (finishMemberLogin) writes this;
+// Temporary Event Access explicitly clears it. Non-null here means the
+// persisted member state originated from an Account session -- used to
+// tell a lapsed Account session (needs re-authentication) apart from
+// genuine Temporary Event Access (localStorage-sufficient by design).
+export function getStoredMemberAuthUserId() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return localStorage.getItem(STORAGE_KEYS.memberAuthUserId);
+}
+
 export function getStoredMemberHasArrived() {
   if (typeof window === "undefined") {
     return null;

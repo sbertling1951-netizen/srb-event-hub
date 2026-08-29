@@ -52,3 +52,67 @@ test("does not re-derive attendee identity or Event choice independently -- no d
 test("invalid established context is not handled by a redirect here -- the Provider owns that navigation exactly once", () => {
   assert.equal(/contextInvalid/.test(CODE), false);
 });
+
+// ---------------------------------------------------------------------------
+// Lapsed Account session (account-origin marker present, Supabase Auth
+// session gone). Must NOT be reclassified as Temporary Event Access and
+// must NOT render protected children -- route to re-authentication instead.
+// ---------------------------------------------------------------------------
+
+test("account-vs-temporary is decided by the existing fcoc-member-auth-user-id marker, read via the shared helper (no new MemberSession origin field)", () => {
+  assert.match(CODE, /getStoredMemberAuthUserId/);
+  assert.match(CODE, /const accountOriginMarker = getStoredMemberAuthUserId\(\);/);
+});
+
+test("a lapsed Account session is denied and routed to sign-in BEFORE the Temporary Event Access allow path", () => {
+  const lapsedIdx = CODE.indexOf(
+    "if (accountOriginMarker && workspace.isAccountSession === false) {",
+  );
+  const tempAllowIdx = CODE.indexOf(
+    "if (workspace.isAccountSession === false) {",
+  );
+  assert.ok(lapsedIdx >= 0, "expected the lapsed-account branch");
+  assert.ok(tempAllowIdx >= 0, "expected the Temporary Access allow branch");
+  assert.ok(
+    lapsedIdx < tempAllowIdx,
+    "the lapsed-account check must run before the Temporary Access allow",
+  );
+
+  const branch = CODE.slice(lapsedIdx, tempAllowIdx);
+  assert.match(branch, /setStatus\("denied"\)/);
+  assert.match(branch, /clearMemberLocalState\(\)/);
+  assert.match(branch, /router\.replace\("\/member\/login\?sessionExpired=1"\)/);
+  assert.match(branch, /return;/);
+  // never "allowed" for this state
+  assert.equal(/setStatus\("allowed"\)/.test(branch), false);
+});
+
+test("a lapsed Account session is never optimistically painted as allowed pre-paint", () => {
+  const preLayoutEffect = CODE.slice(
+    0,
+    CODE.indexOf("useEffect(() => {\n    let mounted"),
+  );
+  // the optimistic allow explicitly excludes the account-origin marker
+  assert.match(
+    preLayoutEffect,
+    /!accountOriginMarker &&\s*\n\s*workspace\.isAccountSession === false/,
+  );
+});
+
+test("re-auth navigation cannot loop: the lapsed branch returns immediately and the effect's deps do not include anything clearMemberLocalState mutates", () => {
+  // single router.replace to the sign-in path in the lapsed branch
+  const matches = CODE.match(
+    /router\.replace\("\/member\/login\?sessionExpired=1"\)/g,
+  );
+  assert.equal(matches?.length, 1);
+  // the verification effect still keys only off router + workspace signals,
+  // never off a localStorage value the clear would change
+  assert.match(
+    CODE,
+    /\}, \[router, workspace\.isAccountSession, workspace\.contextStatus\]\);/,
+  );
+});
+
+test("still no direct identity/context RPC in this component after the repair", () => {
+  assert.equal(/\.rpc\(/.test(CODE), false);
+});

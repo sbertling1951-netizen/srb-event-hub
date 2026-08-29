@@ -89,6 +89,12 @@ export default function MemberLoginPage() {
   // already-authenticated member never sees this page's forms.
   const [checkingSession, setCheckingSession] = useState(true);
 
+  // Set when a lapsed Account session was intercepted (MemberRouteGuard or
+  // the My Check-In fallback) and the member was routed here to sign in
+  // again. Read from the URL rather than next/navigation's useSearchParams
+  // so this client page needs no extra Suspense boundary.
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
+
   // ---- Account sign-in (password fallback; passkey primary when flagged on) ----
   const [signInEmail, setSignInEmail] = useState("");
   const [signInPassword, setSignInPassword] = useState("");
@@ -110,6 +116,15 @@ export default function MemberLoginPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    setSessionExpiredNotice(
+      new URLSearchParams(window.location.search).get("sessionExpired") === "1",
+    );
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -445,6 +460,26 @@ export default function MemberLoginPage() {
   return (
     <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Member Login</h1>
+
+      {sessionExpiredNotice ? (
+        <div
+          role="status"
+          style={{
+            border: "1px solid #fde68a",
+            background: "#fffbeb",
+            color: "#92400e",
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 16,
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Your account session expired. Sign in again to continue — your event
+          registrations will be here waiting.
+        </div>
+      ) : null}
+
       <p style={{ marginTop: 0, marginBottom: 16, color: "#475569" }}>
         New here or haven&apos;t activated an account yet?{" "}
         <Link

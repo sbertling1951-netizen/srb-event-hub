@@ -53,3 +53,16 @@ test("displayed selection fields (name, dates) are preserved", () => {
   assert.match(SOURCE, /event\.name \|\| "Untitled event"/);
   assert.match(SOURCE, /formatDateRange\(event\.start_date, event\.end_date\)/);
 });
+
+test("a lapsed-account redirect (?sessionExpired=1) shows an explanatory notice, read from the URL without useSearchParams", () => {
+  assert.match(SOURCE, /sessionExpiredNotice/);
+  assert.match(
+    SOURCE,
+    /new URLSearchParams\(window\.location\.search\)\.get\("sessionExpired"\) === "1"/,
+  );
+  assert.equal(/useSearchParams\(/.test(SOURCE), false);
+  assert.match(
+    SOURCE,
+    /Your account session expired\. Sign in again to continue/,
+  );
+});

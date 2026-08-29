@@ -90,3 +90,45 @@ test("the report is still submitted through the existing governed /api/member/ch
   assert.match(source, /assignedSite: siteReport/);
   assert.match(source, /fetch\("\/api\/member\/checkin"/);
 });
+
+// ---------------------------------------------------------------------------
+// Lapsed-account session messaging (defense-in-depth behind MemberRouteGuard).
+// The old copy blamed the login code for a failure that is really an absent
+// auth session; it must be gone.
+// ---------------------------------------------------------------------------
+
+test('the misleading "Member login needs to store attendee identity" diagnosis is gone', () => {
+  assert.equal(
+    /Member login needs to store attendee identity/.test(source),
+    false,
+  );
+  assert.equal(/No member identity found for self check-in/.test(source), false);
+});
+
+test("an account-origin lookup that fails only because there is no Supabase session is surfaced as an expired session, using the existing auth-user marker", () => {
+  const branch = source.match(
+    /if \(!attendeeRow\) \{[\s\S]*?\n {6}\}/,
+  )?.[0];
+  assert.ok(branch, "expected the empty-attendee branch");
+  assert.match(branch!, /STORAGE_KEYS\.memberAuthUserId/);
+  assert.match(branch!, /supabase\.auth\.getSession\(\)/);
+  assert.match(branch!, /accountOrigin && !sessionData\.session/);
+  assert.match(branch!, /setNeedsReauth\(true\)/);
+  assert.match(branch!, /Your account session has expired/);
+});
+
+test("the empty-attendee view offers a sign-in action for the expired-session case and does not invent a second attendee-resolution path", () => {
+  assert.match(source, /const \[needsReauth, setNeedsReauth\] = useState\(false\)/);
+  assert.match(source, /needsReauth \?/);
+  assert.match(source, /href="\/member\/login\?sessionExpired=1"/);
+  // still exactly one identity read: get_my_attendee_record. No new RPC, no
+  // direct table read.
+  assert.match(source, /supabase\.rpc\("get_my_attendee_record"/);
+  assert.equal(/\.from\("attendees"\)/.test(source), false);
+});
+
+test("loadPage resets the reauth flag on every run so it never sticks after recovery", () => {
+  const loadPageStart = source.indexOf("const loadPage = useCallback(async () => {");
+  const head = source.slice(loadPageStart, loadPageStart + 250);
+  assert.match(head, /setNeedsReauth\(false\)/);
+});

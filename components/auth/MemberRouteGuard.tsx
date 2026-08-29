@@ -7,10 +7,12 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import {
   getCurrentMemberEvent,
   getStoredMemberAttendeeId,
+  getStoredMemberAuthUserId,
   getStoredMemberEmail,
   getStoredMemberEntryId,
   getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
+import { clearMemberLocalState } from "@/lib/memberAccountSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
@@ -26,12 +28,30 @@ import { supabase } from "@/lib/supabase";
 // contextStatus only ever becomes "invalid" for a genuine authorization
 // loss (see lib/server/workspaceContextResolver.ts).
 //
-// Temporary Event Access (isAccountSession === false, i.e. no Supabase
-// Auth session) keeps its prior, unchanged behavior exactly: localStorage
-// mode/identity/event presence is sufficient, since Temporary Access holds
-// no durable Person link for a server-side established-context check to
-// validate in the first place -- its own governed re-verification already
-// happens per-call, inside each identity-scoped RPC it invokes.
+// This guard now distinguishes three persisted-member states explicitly:
+//
+//   1. Authenticated Account session -- account-origin marker present
+//      (fcoc-member-auth-user-id) AND a live Supabase Auth session
+//      (isAccountSession === true). Allowed only once
+//      MemberWorkspaceProvider's contextStatus is "valid"/"error", exactly
+//      as before.
+//
+//   2. Lapsed Account session -- account-origin marker present but the
+//      Supabase Auth session is gone (isAccountSession === false). This is
+//      NOT Temporary Event Access. localStorage carries no auth.uid(), so
+//      every identity-scoped RPC would dead-end (the My Check-In
+//      "no attendee record" failure). Protected children are never
+//      rendered; the stale account state is cleared and the member is
+//      routed to /member/login?sessionExpired=1. Re-authentication restores
+//      auth.uid() and canonical attendee resolution.
+//
+//   3. Genuine Temporary Event Access -- no account-origin marker,
+//      isAccountSession === false, valid persisted event/identity context.
+//      Behavior is unchanged: localStorage mode/identity/event presence is
+//      sufficient, since Temporary Access holds no durable Person link for
+//      a server-side established-context check to validate, and its own
+//      governed re-verification happens per-call inside each identity-scoped
+//      RPC it invokes.
 export default function MemberRouteGuard({
   children,
 }: {
@@ -50,6 +70,7 @@ export default function MemberRouteGuard({
       const entryId = getStoredMemberEntryId();
       const email = getStoredMemberEmail();
       const memberEvent = getCurrentMemberEvent();
+      const accountOriginMarker = getStoredMemberAuthUserId();
 
       const hasIdentity = !!(attendeeId || entryId || email);
       const hasEvent = !!memberEvent;
@@ -61,10 +82,17 @@ export default function MemberRouteGuard({
       // isAccountSession is not yet known this early (its Auth check is
       // itself async), so this optimistic path only fires once the effect
       // below has already confirmed isAccountSession === false.
+      //
+      // A lapsed Account session (account-origin marker present, Supabase
+      // Auth session gone) is explicitly excluded: it is not Temporary
+      // Event Access and must never be optimistically painted as allowed
+      // from localStorage. The verification effect below routes it to
+      // re-authentication.
       if (
         mode === "member" &&
         hasIdentity &&
         hasEvent &&
+        !accountOriginMarker &&
         workspace.isAccountSession === false
       ) {
         setStatus("allowed");
@@ -85,6 +113,8 @@ export default function MemberRouteGuard({
         const email = getStoredMemberEmail();
         const memberEvent = getCurrentMemberEvent();
 
+        const accountOriginMarker = getStoredMemberAuthUserId();
+
         const hasIdentity = !!(attendeeId || entryId || email);
         const hasEvent = !!memberEvent;
         const hasLegacySession = mode === "member" && hasIdentity && hasEvent;
@@ -102,6 +132,28 @@ export default function MemberRouteGuard({
           router.replace(
             sessionData?.session ? "/member/account" : "/member/login",
           );
+          return;
+        }
+
+        if (accountOriginMarker && workspace.isAccountSession === false) {
+          // Lapsed Account session: account-origin evidence
+          // (fcoc-member-auth-user-id, written only by the authenticated
+          // Account login path) persists in localStorage, but the live
+          // Supabase Auth session is gone. This is NOT Temporary Event
+          // Access -- that path explicitly clears this marker -- so it must
+          // not be admitted from localStorage alone. Without auth.uid()
+          // every identity-scoped RPC (get_my_attendee_record and the rest)
+          // resolves to nothing, which is exactly the My Check-In
+          // "no attendee record" dead-end this guard exists to prevent.
+          // Invalidate the stale account identity/access state and route to
+          // the clean sign-in path; re-authentication restores auth.uid()
+          // and canonical attendee resolution with it.
+          if (!mounted) {
+            return;
+          }
+          setStatus("denied");
+          clearMemberLocalState();
+          router.replace("/member/login?sessionExpired=1");
           return;
         }
 

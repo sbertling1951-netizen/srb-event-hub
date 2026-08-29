@@ -9,6 +9,7 @@ import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapt
 import { logEngagement } from "@/lib/engagement";
 import { preferredDisplayLine } from "@/lib/formatters";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type AttendeeRow = {
@@ -102,11 +103,18 @@ function MemberCheckinPageInner() {
   const [status, setStatus] = useState("Loading check-in...");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Defense-in-depth only: MemberRouteGuard normally intercepts a lapsed
+  // Account session upstream. If one still reaches this page, the identity
+  // lookup fails purely because there is no auth.uid() -- not because
+  // attendee identity is missing -- so we surface a sign-in prompt here
+  // rather than a misleading "login needs to store attendee identity".
+  const [needsReauth, setNeedsReauth] = useState(false);
 
   const loadPage = useCallback(async () => {
     try {
       setStatus("Loading check-in...");
       setError(null);
+      setNeedsReauth(false);
 
       if (!isReady) {
         setStatus("Loading check-in...");
@@ -141,8 +149,29 @@ function MemberCheckinPageInner() {
         setAttendee(null);
         setHousehold([]);
         setConfirmedSite(null);
+
+        // An account-origin session (fcoc-member-auth-user-id present) that
+        // reaches this point with no live Supabase Auth session failed the
+        // identity lookup only because there is no auth.uid() to resolve
+        // the canonical Person -> Participation -> attendee path -- the
+        // attendee record itself is not missing. Present it as an expired
+        // session, not a data problem. (The Guard should normally have
+        // caught this first; this branch is the fallback.)
+        const accountOrigin =
+          typeof window !== "undefined" &&
+          !!localStorage.getItem(STORAGE_KEYS.memberAuthUserId);
+        const { data: sessionData } = await supabase.auth.getSession();
+
+        if (accountOrigin && !sessionData.session) {
+          setNeedsReauth(true);
+          setStatus(
+            "Your account session has expired. Please sign in again to load your check-in.",
+          );
+          return;
+        }
+
         setStatus(
-          "No member identity found for self check-in yet. Member login needs to store attendee identity.",
+          "We couldn't confirm your registration for self check-in. Sign in again, or use temporary event access below.",
         );
         return;
       }
@@ -432,9 +461,36 @@ function MemberCheckinPageInner() {
             background: "white",
             padding: 16,
             color: "#666",
+            display: "grid",
+            gap: 12,
           }}
         >
-          No attendee record is available for self check-in.
+          {needsReauth ? (
+            <>
+              <div>
+                Your account session has expired. Sign in again to load your
+                check-in.
+              </div>
+              <Link
+                href="/member/login?sessionExpired=1"
+                style={{
+                  display: "inline-block",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  background: "#0b5cff",
+                  color: "#fff",
+                  textDecoration: "none",
+                  fontWeight: 700,
+                  justifySelf: "start",
+                }}
+              >
+                Sign in again
+              </Link>
+            </>
+          ) : (
+            "No attendee record is available for self check-in."
+          )}
         </div>
       ) : (
         <div
