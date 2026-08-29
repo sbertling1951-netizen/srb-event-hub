@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { eventAdminStatusTone } from "@/app/admin/events/page";
+import {
+  eventAdminStatusTone,
+  mapEventSaveRpcError,
+} from "@/app/admin/events/page";
 
 // Focused tests for the Event Context Invariant
 // (docs/architecture/ADR-006 Event Context Architecture.md), written
@@ -78,11 +81,136 @@ test("a workspace retarget never silently replaces a dirty Event editor", () => 
 });
 
 test("successful Event and assignment saves establish fresh baselines before their workspace reloads", () => {
-  const saveEvent = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("async function saveEvent"), PAGE_SOURCE.indexOf("async function saveAssignments"));
-  const saveAssignments = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("async function saveAssignments"), PAGE_SOURCE.indexOf("return (", PAGE_SOURCE.indexOf("async function saveAssignments")));
+  const saveEvent = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("async function saveEvent"), PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventDetails"));
+  const saveAssignments = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("async function saveAssignments"), PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventAssignments"));
+  // Details: the confirmed persisted row (returned by the governed op)
+  // becomes the new form AND raw baselines.
   assert.match(saveEvent, /const confirmedForm = eventFormFromEvent\(updatedEvent\)/);
   assert.match(saveEvent, /setFormBaseline\(confirmedForm\)/);
-  assert.match(saveAssignments, /setAssignmentBaseline\(\{ masterMapId: selectedMasterMapId, nearbyListId: selectedNearbyListId \}\)/);
+  assert.match(saveEvent, /setEventDetailsBaseline\(eventDetailsSnapshotFromRow\(updatedEvent\)\)/);
+  // Assignments: the governed op's confirmed persisted values become the
+  // selections AND the new baseline (dirty state cleared).
+  assert.match(saveAssignments, /setAssignmentBaseline\(\{ masterMapId: confirmedMap, nearbyListId: confirmedNearby \}\)/);
+  assert.match(saveAssignments, /setSelectedMasterMapId\(confirmedMap\)/);
+  assert.match(saveAssignments, /setSelectedNearbyListId\(confirmedNearby\)/);
+});
+
+// -- Optimistic save-time concurrency (CMD: Admin Events optimistic
+//    save-time concurrency protection) -----------------------------------
+
+test("Event Details saves through the governed compare-and-swap RPC, not a raw id-only events UPDATE", () => {
+  const saveEvent = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function saveEvent"),
+    PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventDetails"),
+  );
+  assert.match(saveEvent, /supabase\.rpc\(\s*\n?\s*"admin_save_event_details_guarded"/);
+  // no raw compare-only-by-id events UPDATE remains in the save path
+  assert.doesNotMatch(saveEvent, /\.from\("events"\)\s*\n\s*\.update\(/);
+  // every editor-owned field is sent as both proposed and expected baseline
+  for (const field of [
+    "name",
+    "location",
+    "start_date",
+    "end_date",
+    "event_code",
+    "status",
+    "is_active",
+    "visible_to_members",
+  ]) {
+    assert.match(saveEvent, new RegExp(`p_${field}:`));
+    assert.match(saveEvent, new RegExp(`p_expected_${field}:`));
+  }
+  // coordinates: compared/written only on a write|clear plan
+  assert.match(saveEvent, /coordinatePlan\.kind === "write" \|\| coordinatePlan\.kind === "clear"/);
+  assert.match(saveEvent, /p_write_coordinates: writeCoordinates/);
+  assert.match(saveEvent, /p_expected_lat: baseline\?\.lat/);
+  assert.match(saveEvent, /p_expected_lng: baseline\?\.lng/);
+});
+
+test("a raw EventDetailsSnapshot baseline is captured in lock-step with formBaseline and used by the governed save", () => {
+  assert.match(PAGE_SOURCE, /type EventDetailsSnapshot = \{/);
+  assert.match(PAGE_SOURCE, /function eventDetailsSnapshotFromRow\(/);
+  // is_active / visible_to_members captured as loaded, not re-derived
+  assert.match(PAGE_SOURCE, /is_active: row\.is_active \?\? null/);
+  assert.match(PAGE_SOURCE, /visible_to_members: row\.visible_to_members \?\? null/);
+  // set everywhere formBaseline is set
+  const setFormBaselineCount = (PAGE_SOURCE.match(/setFormBaseline\(/g) || []).length;
+  const setSnapshotCount = (PAGE_SOURCE.match(/setEventDetailsBaseline\(/g) || []).length;
+  assert.ok(
+    setSnapshotCount >= setFormBaselineCount,
+    `expected setEventDetailsBaseline (${setSnapshotCount}) to track setFormBaseline (${setFormBaselineCount})`,
+  );
+  assert.match(PAGE_SOURCE, /discardEditorDraft[\s\S]*?setEventDetailsBaseline\(null\)/);
+});
+
+test("Event Assignments save through ONE atomic dual compare-and-swap RPC -- no separate Promise.all writes", () => {
+  const saveAssignments = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function saveAssignments"),
+    PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventAssignments"),
+  );
+  assert.match(saveAssignments, /supabase\.rpc\(\s*\n?\s*"admin_save_event_assignments_guarded"/);
+  assert.doesNotMatch(saveAssignments, /Promise\.all/);
+  assert.doesNotMatch(saveAssignments, /event_map_settings[\s\S]*?\.upsert\(/);
+  assert.match(saveAssignments, /p_master_map_id: selectedMasterMapId \|\| null/);
+  assert.match(saveAssignments, /p_nearby_list_id: selectedNearbyListId \|\| null/);
+  assert.match(saveAssignments, /p_expected_master_map_id: assignmentBaselineRef\.current\.masterMapId \|\| null/);
+  assert.match(saveAssignments, /p_expected_nearby_list_id: assignmentBaselineRef\.current\.nearbyListId \|\| null/);
+});
+
+test("a stale Event Details save preserves the draft, refreshes persisted state, and shows a non-destructive conflict notice -- never auto-retry/overwrite/merge", () => {
+  const saveEvent = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function saveEvent"),
+    PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventDetails"),
+  );
+  assert.match(saveEvent, /eventSaveErrorCode\(error\) === "stale_event_details"/);
+  assert.match(saveEvent, /await reconcileAfterStaleEventDetails\(\)/);
+
+  const reconcile = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventDetails"),
+    PAGE_SOURCE.indexOf("async function saveAssignments"),
+  );
+  // draft (form) is never overwritten here
+  assert.doesNotMatch(reconcile, /setForm\(/);
+  // persisted state is re-read and the baseline re-anchored
+  assert.match(reconcile, /\.from\("events"\)\s*\n\s*\.select\(/);
+  assert.match(reconcile, /setFormBaseline\(eventFormFromEvent\(freshRow\)\)/);
+  assert.match(reconcile, /setEventDetailsBaseline\(eventDetailsSnapshotFromRow\(freshRow\)\)/);
+  assert.match(reconcile, /setStatus\(EVENT_SAVE_ERROR_MESSAGES\.stale_event_details\)/);
+  assert.doesNotMatch(reconcile, /saveEvent\(\)|retry/i);
+});
+
+test("a stale Event Assignments save preserves both local selections and shows a non-destructive conflict notice", () => {
+  const saveAssignments = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function saveAssignments"),
+    PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventAssignments"),
+  );
+  assert.match(saveAssignments, /eventSaveErrorCode\(error\) === "stale_event_assignments"/);
+  assert.match(saveAssignments, /await reconcileAfterStaleEventAssignments\(\)/);
+
+  const reconcile = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventAssignments"),
+    PAGE_SOURCE.indexOf("return (", PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventAssignments")),
+  );
+  // local selections are never touched in reconciliation
+  assert.doesNotMatch(reconcile, /setSelectedMasterMapId\(|setSelectedNearbyListId\(/);
+  assert.match(reconcile, /setAssignmentBaseline\(\{ masterMapId: freshMap, nearbyListId: freshNearby \}\)/);
+  assert.match(reconcile, /setStatus\(EVENT_SAVE_ERROR_MESSAGES\.stale_event_assignments\)/);
+  assert.doesNotMatch(reconcile, /saveAssignments\(\)|retry/i);
+});
+
+test("the governed-save error codes map to friendly text, and stale/conflict notices classify as a non-destructive warning", () => {
+  assert.match(PAGE_SOURCE, /const EVENT_SAVE_ERROR_MESSAGES: Record<string, string> = \{/);
+  for (const code of ["unauthorized", "event_not_found", "stale_event_details", "stale_event_assignments"]) {
+    assert.match(PAGE_SOURCE, new RegExp(`${code}:`));
+  }
+  const staleDetails = mapEventSaveRpcError(new Error("stale_event_details"), "fallback");
+  const staleAssignments = mapEventSaveRpcError(new Error("stale_event_assignments"), "fallback");
+  assert.notEqual(staleDetails, "fallback");
+  assert.match(staleDetails, /was preserved and was NOT saved/i);
+  assert.equal(eventAdminStatusTone(staleDetails), "warning");
+  assert.equal(eventAdminStatusTone(staleAssignments), "warning");
+  // an unmapped code falls through to the caller's fallback
+  assert.equal(mapEventSaveRpcError(new Error("something_else"), "fallback"), "fallback");
 });
 
 test("the shared Event context is resolved against accessibleEvents (the full authorized set), never loadedEvents (the status-filtered list)", () => {
@@ -763,8 +891,16 @@ test("new-Event creation leaves this Event-task page through the governed Tenant
   assert.doesNotMatch(PAGE_SOURCE, /blockNewEventCreation|NEW_EVENT_CREATION_UNAVAILABLE/);
 });
 
-test("existing-Event update remains and raw Event creation is absent", () => {
-  assert.match(PAGE_SOURCE, /\.from\("events"\)\s*\n\s*\.update\(payload\)/);
+test("existing-Event update goes through the governed save RPC, and raw Event creation is absent", () => {
+  // The save-time concurrency repair replaced the raw id-only
+  // events.update(payload) with the governed compare-and-swap RPC; a raw
+  // events UPDATE must not reappear in the Details save path.
+  const saveEvent = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function saveEvent"),
+    PAGE_SOURCE.indexOf("async function reconcileAfterStaleEventDetails"),
+  );
+  assert.match(saveEvent, /supabase\.rpc\(\s*\n?\s*"admin_save_event_details_guarded"/);
+  assert.doesNotMatch(saveEvent, /\.from\("events"\)\s*\n\s*\.update\(/);
   assert.doesNotMatch(PAGE_SOURCE, /\.from\("events"\)\s*\n\s*\.insert\(/);
 });
 

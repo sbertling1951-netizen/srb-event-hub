@@ -128,6 +128,46 @@ function eventFormsEqual(left: EventFormState, right: EventFormState) {
   );
 }
 
+// The exact persisted Event Details values this editor last loaded/confirmed
+// -- the "expected baseline" the governed admin_save_event_details_guarded
+// operation atomically compares against at save time. Captured alongside
+// formBaseline in every place formBaseline is set, so it never drifts from
+// what the editor believes is persisted. is_active / visible_to_members are
+// stored as actually loaded (not re-derived from status) so a direct change
+// to either by another process is still caught as a conflict.
+type EventDetailsSnapshot = {
+  name: string | null;
+  location: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  event_code: string | null;
+  status: string | null;
+  is_active: boolean | null;
+  visible_to_members: boolean | null;
+  lat: number | null;
+  lng: number | null;
+};
+
+function eventDetailsSnapshotFromRow(
+  row: EventRow | null | undefined,
+): EventDetailsSnapshot | null {
+  if (!row) {
+    return null;
+  }
+  return {
+    name: row.name ?? null,
+    location: row.location ?? null,
+    start_date: row.start_date ?? null,
+    end_date: row.end_date ?? null,
+    event_code: row.event_code ?? null,
+    status: row.status ?? null,
+    is_active: row.is_active ?? null,
+    visible_to_members: row.visible_to_members ?? null,
+    lat: row.lat ?? null,
+    lng: row.lng ?? null,
+  };
+}
+
 type EventAssignments = { masterMapId: string; nearbyListId: string };
 
 function assignmentsEqual(left: EventAssignments, right: EventAssignments) {
@@ -195,7 +235,9 @@ export function eventAdminStatusTone(message: string): AlertTone {
     lower.includes("no longer available") ||
     lower.includes("is not shown under this filter") ||
     lower.startsWith("coordinates could not be resolved") ||
-    lower.startsWith("saved event data changed")
+    lower.startsWith("saved event data changed") ||
+    lower.startsWith("this event was changed by another") ||
+    lower.startsWith("the master map or nearby list assignment was changed")
   ) {
     return "warning";
   }
@@ -214,6 +256,48 @@ export function eventAdminStatusTone(message: string): AlertTone {
   }
 
   return "neutral";
+}
+
+// Short, admin-facing text for the recognizable codes the governed save
+// operations (20260907000000) raise. An unrecognized code falls through to
+// the caller's fallback and is logged, so nothing is silently swallowed --
+// same convention as app/admin/agenda/page.tsx's mapAgendaRpcError.
+const EVENT_SAVE_ERROR_MESSAGES: Record<string, string> = {
+  unauthorized: "You do not have management authority for this Event.",
+  event_not_found:
+    "This Event could not be found. It may have been removed by another administrator.",
+  malformed_event: "Enter an event name.",
+  stale_event_details:
+    "This Event was changed by another administrator or process after your edits began. Your draft was preserved and was NOT saved. Review the current values below, then Save again to apply your version.",
+  stale_event_assignments:
+    "The Master Map or Nearby List assignment was changed by another administrator or process after you began editing. Your selections were preserved and nothing was saved. Review the current assignments, then Save Assignments again to apply your version.",
+};
+
+export function mapEventSaveRpcError(err: unknown, fallback: string): string {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : typeof (err as { message?: unknown })?.message === "string"
+          ? ((err as { message: string }).message)
+          : "";
+  const mapped = EVENT_SAVE_ERROR_MESSAGES[raw];
+  if (mapped) {
+    return mapped;
+  }
+  if (raw) {
+    console.error("Unmapped Event save RPC error:", raw);
+  }
+  return fallback;
+}
+
+function eventSaveErrorCode(err: unknown): string {
+  return err instanceof Error
+    ? err.message
+    : typeof (err as { message?: unknown })?.message === "string"
+      ? (err as { message: string }).message
+      : "";
 }
 
 function filterForStatus(status: string | null | undefined): EventStatusFilter {
@@ -239,6 +323,10 @@ function EventAdminPageInner() {
   const [selectedEventId, setSelectedEventId] = useState("");
   const [form, setForm] = useState<EventFormState>(emptyForm);
   const [formBaseline, setFormBaseline] = useState<EventFormState>(emptyForm);
+  // Raw persisted Event Details baseline the governed save compares against
+  // (kept in lock-step with formBaseline). null when no Event is loaded.
+  const [eventDetailsBaseline, setEventDetailsBaseline] =
+    useState<EventDetailsSnapshot | null>(null);
 
   const [selectedMasterMapId, setSelectedMasterMapId] = useState("");
   const [selectedNearbyListId, setSelectedNearbyListId] = useState("");
@@ -262,6 +350,7 @@ function EventAdminPageInner() {
   const formDirtyRef = useRef(false);
   const assignmentDirtyRef = useRef(false);
   const formBaselineRef = useRef<EventFormState>(emptyForm);
+  const eventDetailsBaselineRef = useRef<EventDetailsSnapshot | null>(null);
   const assignmentBaselineRef = useRef<EventAssignments>({ masterMapId: "", nearbyListId: "" });
   const selectedEventIdRef = useRef("");
   const allowEditorSynchronizationRef = useRef(true);
@@ -279,6 +368,7 @@ function EventAdminPageInner() {
   formDirtyRef.current = formDirty;
   assignmentDirtyRef.current = assignmentDirty;
   formBaselineRef.current = formBaseline;
+  eventDetailsBaselineRef.current = eventDetailsBaseline;
   assignmentBaselineRef.current = assignmentBaseline;
   selectedEventIdRef.current = selectedEventId;
 
@@ -598,6 +688,7 @@ function EventAdminPageInner() {
     allowEditorSynchronizationRef.current = true;
     setForm(emptyForm);
     setFormBaseline(emptyForm);
+    setEventDetailsBaseline(null);
     setSelectedMasterMapId("");
     setSelectedNearbyListId("");
     setAssignmentBaseline({ masterMapId: "", nearbyListId: "" });
@@ -664,6 +755,7 @@ function EventAdminPageInner() {
     if (forceSynchronization || !formDirtyRef.current) {
       setForm(nextForm);
       setFormBaseline(nextForm);
+      setEventDetailsBaseline(eventDetailsSnapshotFromRow(selectedEvent));
       allowEditorSynchronizationRef.current = false;
     } else if (!eventFormsEqual(nextForm, formBaselineRef.current)) {
       setStatus("Saved Event data changed while this Event has unsaved edits. Your draft was preserved; saving may overwrite newer persisted values.");
@@ -744,58 +836,75 @@ function EventAdminPageInner() {
           )
         : ({ kind: "preserve", notice: null } as const);
 
-      const payload: {
-        name: string;
-        location: string | null;
-        start_date: string | null;
-        end_date: string | null;
-        event_code: string | null;
-        status: string;
-        is_active: boolean;
-        visible_to_members: boolean;
-        lat?: number | null;
-        lng?: number | null;
-      } = {
-        name: form.name.trim(),
-        location: form.location.trim() || null,
-        start_date: form.start_date || null,
-        end_date: form.end_date || null,
-        event_code: form.event_code.trim() || null,
-        status: nextStatus,
-        is_active: nextIsActive,
-        visible_to_members: nextIsActive,
-      };
+      const nextName = form.name.trim();
+      const nextLocation = form.location.trim() || null;
+      const nextStartDate = form.start_date || null;
+      const nextEndDate = form.end_date || null;
+      const nextEventCode = form.event_code.trim() || null;
 
-      if (coordinatePlan.kind === "write") {
-        payload.lat = coordinatePlan.lat;
-        payload.lng = coordinatePlan.lng;
-      } else if (coordinatePlan.kind === "clear") {
-        payload.lat = null;
-        payload.lng = null;
-      }
-      // coordinatePlan.kind === "preserve" -> lat/lng omitted -> stored values kept.
+      // Only a write/clear plan means this Details save owns the lat/lng
+      // columns this time -- a "preserve" plan neither compares nor rewrites
+      // them (governed op skips the coordinate baseline check).
+      const writeCoordinates =
+        coordinatePlan.kind === "write" || coordinatePlan.kind === "clear";
+      const nextLat =
+        coordinatePlan.kind === "write" ? coordinatePlan.lat : null;
+      const nextLng =
+        coordinatePlan.kind === "write" ? coordinatePlan.lng : null;
 
       if (form.id) {
-        const { data, error } = await supabase
-          .from("events")
-          .update(payload)
-          .eq("id", form.id)
-          .select(
-            "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
-          )
-          .maybeSingle();
+        // Expected persisted baseline this editor loaded/last confirmed --
+        // atomically compared against the current row inside
+        // admin_save_event_details_guarded before any mutation. Falls back
+        // to the currently displayed row only if no snapshot was captured.
+        const baseline =
+          eventDetailsBaselineRef.current ||
+          eventDetailsSnapshotFromRow(selectedEvent);
+
+        const { data, error } = await supabase.rpc(
+          "admin_save_event_details_guarded",
+          {
+            p_event_id: form.id,
+            p_name: nextName,
+            p_location: nextLocation,
+            p_start_date: nextStartDate,
+            p_end_date: nextEndDate,
+            p_event_code: nextEventCode,
+            p_status: nextStatus,
+            p_is_active: nextIsActive,
+            p_visible_to_members: nextIsActive,
+            p_write_coordinates: writeCoordinates,
+            p_lat: nextLat,
+            p_lng: nextLng,
+            p_expected_name: baseline?.name ?? null,
+            p_expected_location: baseline?.location ?? null,
+            p_expected_start_date: baseline?.start_date ?? null,
+            p_expected_end_date: baseline?.end_date ?? null,
+            p_expected_event_code: baseline?.event_code ?? null,
+            p_expected_status: baseline?.status ?? null,
+            p_expected_is_active: baseline?.is_active ?? null,
+            p_expected_visible_to_members: baseline?.visible_to_members ?? null,
+            p_expected_lat: baseline?.lat ?? null,
+            p_expected_lng: baseline?.lng ?? null,
+          },
+        );
 
         if (error) {
+          if (eventSaveErrorCode(error) === "stale_event_details") {
+            await reconcileAfterStaleEventDetails();
+            return;
+          }
           throw error;
         }
 
-        if (!data?.id) {
+        const updatedEvent =
+          (Array.isArray(data) ? data[0] : data) as EventRow | null;
+
+        if (!updatedEvent?.id) {
           throw new Error(
             "Event update did not persist. Check Supabase RLS/update policy for the events table.",
           );
         }
-
-        const updatedEvent = data as EventRow;
 
         setEvents((prev) =>
           prev.map((event) =>
@@ -807,6 +916,7 @@ function EventAdminPageInner() {
         const confirmedForm = eventFormFromEvent(updatedEvent);
         setForm(confirmedForm);
         setFormBaseline(confirmedForm);
+        setEventDetailsBaseline(eventDetailsSnapshotFromRow(updatedEvent));
         allowEditorSynchronizationRef.current = false;
 
         const nextFilter = filterForStatus(updatedEvent.status);
@@ -822,16 +932,49 @@ function EventAdminPageInner() {
         setStatus(
           coordinatePlan.notice
             ? coordinatePlan.notice
-            : `Updated event "${payload.name}" to ${updatedEvent.status || "Draft"}.`,
+            : `Updated event "${nextName}" to ${updatedEvent.status || "Draft"}.`,
         );
       }
     } catch (err: any) {
       console.error("saveEvent error:", err);
-      setError(err?.message || "Failed to save event.");
-      setStatus(err?.message || "Failed to save event.");
+      const message = mapEventSaveRpcError(err, err?.message || "Failed to save event.");
+      setError(message);
+      setStatus(message);
     } finally {
       setSavingEvent(false);
     }
+  }
+
+  // Optimistic-concurrency reconciliation for Event Details: a stale save
+  // was rejected server-side without mutating anything. Preserve the local
+  // draft exactly, re-read the current persisted Event so the admin can see
+  // what changed, and re-anchor the baseline to it so a DELIBERATE second
+  // Save (after reading the notice) applies the draft over the newer data.
+  // Never auto-retries, auto-overwrites, or auto-merges.
+  async function reconcileAfterStaleEventDetails() {
+    try {
+      const { data } = await supabase
+        .from("events")
+        .select(
+          "id,name,location,start_date,end_date,event_code,visible_to_members,status,is_active,lat,lng",
+        )
+        .eq("id", form.id)
+        .maybeSingle();
+
+      if (data?.id) {
+        const freshRow = data as EventRow;
+        setEvents((prev) =>
+          prev.map((event) => (event.id === freshRow.id ? freshRow : event)),
+        );
+        setFormBaseline(eventFormFromEvent(freshRow));
+        setEventDetailsBaseline(eventDetailsSnapshotFromRow(freshRow));
+        allowEditorSynchronizationRef.current = false;
+      }
+    } catch (err) {
+      console.error("reconcileAfterStaleEventDetails error:", err);
+    }
+
+    setStatus(EVENT_SAVE_ERROR_MESSAGES.stale_event_details);
   }
 
   async function saveAssignments() {
@@ -856,45 +999,97 @@ function EventAdminPageInner() {
         return;
       }
 
-      const mapUpsert = supabase
-        .from("event_map_settings")
-        .upsert(
-          {
-            event_id: selectedEventId,
-            selected_master_map_id: selectedMasterMapId || null,
-          },
-          { onConflict: "event_id" },
-        )
-        .select();
+      // One transactional governed operation: verifies BOTH the persisted
+      // Master Map and Nearby List assignments against the editor's
+      // baselines and, only if both still match, writes both atomically.
+      // "" (unselected) maps to NULL for baselines and writes alike.
+      const { data, error } = await supabase.rpc(
+        "admin_save_event_assignments_guarded",
+        {
+          p_event_id: selectedEventId,
+          p_master_map_id: selectedMasterMapId || null,
+          p_nearby_list_id: selectedNearbyListId || null,
+          p_expected_master_map_id: assignmentBaselineRef.current.masterMapId || null,
+          p_expected_nearby_list_id: assignmentBaselineRef.current.nearbyListId || null,
+        },
+      );
 
-      const nearbyUpdate = supabase
-        .from("events")
-        .update({
-          selected_nearby_area_id: selectedNearbyListId || null,
-        })
-        .eq("id", selectedEventId);
-
-      const [mapResult, nearbyResult] = await Promise.all([
-        mapUpsert,
-        nearbyUpdate,
-      ]);
-
-      if (mapResult.error) {
-        throw mapResult.error;
+      if (error) {
+        if (eventSaveErrorCode(error) === "stale_event_assignments") {
+          await reconcileAfterStaleEventAssignments();
+          return;
+        }
+        const message = mapEventSaveRpcError(
+          error,
+          error.message || "Failed to save assignments.",
+        );
+        setError(message);
+        setStatus(message);
+        return;
       }
-      if (nearbyResult.error) {
-        throw nearbyResult.error;
-      }
 
-      setAssignmentBaseline({ masterMapId: selectedMasterMapId, nearbyListId: selectedNearbyListId });
+      const confirmed = (Array.isArray(data) ? data[0] : data) as
+        | { persisted_master_map_id: string | null; persisted_nearby_list_id: string | null }
+        | null;
+      const confirmedMap = confirmed?.persisted_master_map_id || "";
+      const confirmedNearby = confirmed?.persisted_nearby_list_id || "";
+
+      setSelectedMasterMapId(confirmedMap);
+      setSelectedNearbyListId(confirmedNearby);
+      setAssignmentBaseline({ masterMapId: confirmedMap, nearbyListId: confirmedNearby });
 
       setStatus("Saved event assignments.");
     } catch (err: any) {
       console.error("saveAssignments error:", err);
-      setStatus(err?.message || "Failed to save assignments.");
+      const message = mapEventSaveRpcError(
+        err,
+        err?.message || "Failed to save assignments.",
+      );
+      setStatus(message);
     } finally {
       setSavingAssignments(false);
     }
+  }
+
+  // Optimistic-concurrency reconciliation for Event Assignments: the
+  // governed dual compare-and-swap rejected a stale save and mutated
+  // neither assignment. Preserve both local selections exactly, re-read the
+  // current persisted assignments, and re-anchor the baseline to them so a
+  // DELIBERATE second Save Assignments (after reading the notice) applies
+  // the local selections. Never auto-retries, auto-overwrites, or
+  // auto-merges.
+  async function reconcileAfterStaleEventAssignments() {
+    try {
+      const [mapResult, nearbyResult] = await Promise.all([
+        supabase
+          .from("event_map_settings")
+          .select("selected_master_map_id")
+          .eq("event_id", selectedEventId)
+          .limit(1),
+        supabase
+          .from("events")
+          .select("selected_nearby_area_id")
+          .eq("id", selectedEventId)
+          .limit(1),
+      ]);
+
+      const freshMap =
+        ((mapResult.data || [])[0] as
+          | { selected_master_map_id?: string | null }
+          | undefined)?.selected_master_map_id || "";
+      const freshNearby =
+        ((nearbyResult.data || [])[0] as
+          | { selected_nearby_area_id?: string | null }
+          | undefined)?.selected_nearby_area_id || "";
+
+      // Baseline follows the server; the admin's own Master Map / Nearby
+      // List selections are left exactly as they are.
+      setAssignmentBaseline({ masterMapId: freshMap, nearbyListId: freshNearby });
+    } catch (err) {
+      console.error("reconcileAfterStaleEventAssignments error:", err);
+    }
+
+    setStatus(EVENT_SAVE_ERROR_MESSAGES.stale_event_assignments);
   }
 
   return (
