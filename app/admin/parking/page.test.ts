@@ -18,6 +18,10 @@ const SOURCE = readFileSync(
   fileURLToPath(new URL("./page.tsx", import.meta.url)),
   "utf8",
 );
+const GLOBAL_CSS = readFileSync(
+  fileURLToPath(new URL("../../globals.css", import.meta.url)),
+  "utf8",
+);
 
 function extractAssignAttendeeToSite(): string {
   const match = SOURCE.match(/async function assignAttendeeToSite\(\{[\s\S]*?\n  \}\n/);
@@ -124,6 +128,20 @@ test("Parking retains the all-attendee correction surface when Needs Parking is 
   assert.match(SOURCE, /setNeedsParkingOnly\(false\)/);
   assert.match(SOURCE, /label="Needs Parking"/);
   assert.equal(/unassignedOnly|setUnassignedOnly|Unassigned only/.test(SOURCE), false);
+});
+
+test("compact Parking keeps Search / assign in the queue rather than sticking above the sticky map", () => {
+  assert.match(SOURCE, /<TableToolbar className="parking-queue-toolbar">/);
+  assert.match(SOURCE, /position: isNarrow \? "sticky" : "static"/);
+  assert.match(SOURCE, /zIndex: isNarrow \? 40 : undefined/);
+
+  const compactToolbarRule = GLOBAL_CSS.slice(
+    GLOBAL_CSS.indexOf("/* Parking's compact workspace"),
+    GLOBAL_CSS.indexOf("/* ===== NEARBY FILTER CHIPS ===== */"),
+  );
+  assert.match(compactToolbarRule, /@media \(max-width: 899px\)/);
+  assert.match(compactToolbarRule, /position: static;/);
+  assert.match(compactToolbarRule, /z-index: auto;/);
 });
 
 test("Parking rejects stale context and realtime responses before applying them", () => {

@@ -1499,7 +1499,7 @@ function ParkingAdminPageInner() {
         </>
       )}
 
-      <TableToolbar>
+      <TableToolbar className="parking-queue-toolbar">
         <TableToolbarPrimaryRow>
           <SearchField
             label="Search / assign"

@@ -1724,6 +1724,19 @@ textarea.app-control,
   margin-top: var(--space-4);
 }
 
+/* Parking's compact workspace keeps the map sticky while the queue follows
+   in normal document flow. The shared toolbar's desktop sticky behavior
+   would otherwise pin Search / assign above that map (z-index: 900 versus
+   the map card's 40). Keep it in its queue on compact layouts; the desktop
+   queue remains independently scrollable and retains the shared sticky
+   toolbar behavior. */
+@media (max-width: 899px) {
+  .parking-queue-toolbar {
+    position: static;
+    z-index: auto;
+  }
+}
+
 /* ===== NEARBY FILTER CHIPS ===== */
 .nearby-chip {
   padding: 6px 12px;
