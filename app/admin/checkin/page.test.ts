@@ -160,15 +160,17 @@ test("a sharing-preference failure always states check-in already saved, regardl
   assert.match(block!, /\breturn;/);
 });
 
-test("Select all resolves to the explicit set of registered optional keys, never a hidden all-fields flag", () => {
+test("bulk sharing action resolves to the explicit set of registered optional keys", () => {
   const fnBody = source.match(
-    /function selectAllSharedFields[\s\S]*?\n  \}/,
+    /function toggleAllSharedFields[\s\S]*?\n  \}/,
   )?.[0];
-  assert.ok(fnBody, "expected a selectAllSharedFields function");
+  assert.ok(fnBody, "expected a toggleAllSharedFields function");
   assert.match(
     fnBody!,
     /SHARING_OPTIONAL_FIELDS\.map\(\(field\) => field\.key\)/,
   );
+  assert.match(source, /getSharingBulkAction\(/);
+  assert.match(source, /label,?\n|\)\.label/);
 });
 
 test("the browse surface delegates waiting-first filtering to the tested workflow helper", () => {

@@ -30,6 +30,7 @@ import {
   readAdminAttendeeTarget,
   resolveAdminAttendeeTarget,
 } from "@/lib/adminAttendeeTarget";
+import { getSharingBulkAction } from "@/lib/adminCheckinSharing";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -620,9 +621,17 @@ function AdminCheckinPageInner() {
     });
   }
 
-  function selectAllSharedFields(attendeeId: string) {
+  function toggleAllSharedFields(attendeeId: string) {
+    const current = editState[attendeeId];
+    if (!current) {
+      return;
+    }
+
     updateEditState(attendeeId, {
-      sharedFields: SHARING_OPTIONAL_FIELDS.map((field) => field.key),
+      sharedFields: getSharingBulkAction(
+        SHARING_OPTIONAL_FIELDS.map((field) => field.key),
+        current.sharedFields,
+      ).sharedFields,
     });
   }
 
@@ -1224,8 +1233,15 @@ function AdminCheckinPageInner() {
                       />
                     ))}
 
-                    <AppButton onClick={() => selectAllSharedFields(attendee.id)}>
-                      Select all
+                    <AppButton
+                      onClick={() => toggleAllSharedFields(attendee.id)}
+                    >
+                      {
+                        getSharingBulkAction(
+                          SHARING_OPTIONAL_FIELDS.map((field) => field.key),
+                          current.sharedFields,
+                        ).label
+                      }
                     </AppButton>
                   </div>
 
