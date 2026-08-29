@@ -182,27 +182,23 @@ export default function VendorLoginPage() {
           {busy ? "Please wait..." : "Sign In"}
         </LoginActionButton>
 
-        <LoginActionButton
-          variant="recovery"
-          onClick={() => void sendPasswordReset()}
-          disabled={busy}
-        >
-          Forgot Password
-        </LoginActionButton>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
-          <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-          <div style={{ fontSize: 12, color: "#888" }}>or</div>
-          <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-        </div>
-
         <div
+          role="group"
+          aria-label="Other sign-in options"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
             gap: 8,
           }}
         >
+          <LoginActionButton
+            variant="recovery"
+            onClick={() => void sendPasswordReset()}
+            disabled={busy}
+          >
+            Forgot Password
+          </LoginActionButton>
+
           <LoginActionButton
             variant="alternate"
             onClick={() => void sendMagicLink()}
@@ -214,6 +210,10 @@ export default function VendorLoginPage() {
           <LoginActionButton variant="alternate" href="/vendor/register">
             Request Vendor Access
           </LoginActionButton>
+
+          <LoginActionButton variant="back" href="/login">
+            Choose Login Type
+          </LoginActionButton>
         </div>
 
         {status ? <div style={{ fontSize: 14, color: "#555" }}>{status}</div> : null}
@@ -222,9 +222,6 @@ export default function VendorLoginPage() {
         ) : null}
       </div>
 
-      <LoginActionButton variant="back" href="/login">
-        Back to Login
-      </LoginActionButton>
     </div>
   );
 }

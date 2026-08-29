@@ -99,3 +99,11 @@ test("the former large below-card Member Login controls are absent", () => {
   assert.doesNotMatch(SOURCE, />\s*Back to Login\s*</);
   assert.doesNotMatch(SOURCE, /Email me a recovery link/);
 });
+
+test("the affirmative trusted-device choice maps to persistent storage while unchecked stays session-limited", () => {
+  assert.match(SOURCE, /const \[trustDevice, setTrustDevice\] = useState\(false\);/);
+  assert.match(SOURCE, /setSharedDeviceMode\(!trustDevice\);/);
+  assert.match(SOURCE, /Trust this device and keep me signed in\./);
+  assert.match(SOURCE, /your sign-in\s*will end when you close this browser tab or window/i);
+  assert.doesNotMatch(SOURCE, /This is a shared device\./);
+});

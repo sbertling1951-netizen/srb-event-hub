@@ -176,18 +176,27 @@ export default function AdminLoginPage() {
           Login
         </LoginActionButton>
 
-        <LoginActionButton variant="recovery" onClick={handleForgotPassword}>
-          Forgot Password
-        </LoginActionButton>
+        <div
+          role="group"
+          aria-label="Other sign-in options"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+            gap: 8,
+          }}
+        >
+          <LoginActionButton variant="recovery" onClick={handleForgotPassword}>
+            Forget Password
+          </LoginActionButton>
+
+          <LoginActionButton variant="back" href="/login">
+            Choose Login Type
+          </LoginActionButton>
+        </div>
 
         <div style={{ fontSize: 13, color: "#666" }}>{status}</div>
       </form>
 
-      <div style={{ marginTop: 12 }}>
-        <LoginActionButton variant="back" href="/login">
-          Back to Login
-        </LoginActionButton>
-      </div>
     </div>
   );
 }

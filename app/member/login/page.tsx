@@ -99,7 +99,7 @@ export default function MemberLoginPage() {
   // ---- Account sign-in (password fallback; passkey primary when flagged on) ----
   const [signInEmail, setSignInEmail] = useState("");
   const [signInPassword, setSignInPassword] = useState("");
-  const [sharedDevice, setSharedDevice] = useState(false);
+  const [trustDevice, setTrustDevice] = useState(false);
   const [signInBusy, setSignInBusy] = useState(false);
   const [signInStatus, setSignInStatus] = useState<string | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
@@ -220,10 +220,11 @@ export default function MemberLoginPage() {
       setSignInError(null);
       setSignInStatus("Signing in...");
 
-      // Declared explicitly on every sign-in attempt (not inherited from
-      // a prior session) so the storage adapter in lib/supabase.ts knows,
-      // before the session is written, whether to use a tab-only store.
-      setSharedDeviceMode(sharedDevice);
+      // The adapter's shared-device mode is intentionally the inverse of
+      // this affirmative personal-device choice: unchecked uses tab-only
+      // session storage; checked retains the existing persistent storage.
+      // Set it on every sign-in so a prior attempt never carries intent.
+      setSharedDeviceMode(!trustDevice);
 
       let authUserId: string;
 
@@ -586,14 +587,16 @@ export default function MemberLoginPage() {
         >
           <input
             type="checkbox"
-            checked={sharedDevice}
-            onChange={(e) => setSharedDevice(e.target.checked)}
+            checked={trustDevice}
+            onChange={(e) => setTrustDevice(e.target.checked)}
             style={{ marginTop: 2 }}
           />
           <span>
-            <span style={{ fontWeight: 700 }}>This is a shared device.</span>{" "}
-            Your sign-in will end when you close this browser tab or window,
-            instead of staying signed in.
+            <span style={{ fontWeight: 700 }}>
+              Trust this device and keep me signed in.
+            </span>{" "}
+            Select this only on a personal device. Otherwise, your sign-in
+            will end when you close this browser tab or window.
           </span>
         </label>
 
