@@ -91,6 +91,16 @@ test("the report is still submitted through the existing governed /api/member/ch
   assert.match(source, /fetch\("\/api\/member\/checkin"/);
 });
 
+test("Member My Check-In has no member-facing arrival checkbox; its stable request contract carries only the loaded Arrival state", () => {
+  assert.equal(/I have arrived/.test(source), false);
+  assert.equal(/setHasArrived/.test(source), false);
+  assert.match(source, /hasArrived: !!attendee\.has_arrived/);
+  assert.match(
+    source,
+    /String\(updatedAttendee\.has_arrived\)/,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Lapsed-account session messaging (defense-in-depth behind MemberRouteGuard).
 // The old copy blamed the login code for a failure that is really an absent

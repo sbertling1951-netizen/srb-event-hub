@@ -90,7 +90,6 @@ function MemberCheckinPageInner() {
     null,
   );
   const [shareWithAttendees, setShareWithAttendees] = useState(false);
-  const [hasArrived, setHasArrived] = useState(false);
   // Always starts blank -- this is a forward-looking report prompt, never
   // a display of stored state, so it can never be confused with a
   // previously confirmed or previously reported value.
@@ -183,8 +182,6 @@ function MemberCheckinPageInner() {
       setAttendee(attendeeRow);
 
       setShareWithAttendees(!!attendeeRow.share_with_attendees);
-
-      setHasArrived(!!attendeeRow.has_arrived);
 
       if (typeof window !== "undefined") {
         localStorage.setItem(
@@ -321,7 +318,10 @@ function MemberCheckinPageInner() {
         body: JSON.stringify({
           eventId: event.id,
           expectedAttendeeId: attendee.id,
-          hasArrived,
+          // Kept only for submit_member_checkin's stable request contract.
+          // The governed RPC derives Arrival from its locked current state and
+          // this report, never from a browser-supplied arrival decision.
+          hasArrived: !!attendee.has_arrived,
           shareWithAttendees,
           assignedSite: siteReport,
           eventCode: temporaryAccess ? temporaryEventCode.trim() : null,
@@ -399,7 +399,10 @@ function MemberCheckinPageInner() {
 
       // Update local state immediately before navigating.
       if (typeof window !== "undefined") {
-        localStorage.setItem("fcoc-member-has-arrived", String(hasArrived));
+        localStorage.setItem(
+          "fcoc-member-has-arrived",
+          String(updatedAttendee.has_arrived),
+        );
       }
 
       setStatus("Your check-in preferences were saved.");
@@ -581,11 +584,6 @@ function MemberCheckinPageInner() {
                 haven&apos;t parked. This tells us where you are -- it does
                 not assign or reserve a site.
               </div>
-            </label>
-
-            <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <input type="checkbox" checked={hasArrived} onChange={(e) => setHasArrived(e.target.checked)} />
-              I have arrived
             </label>
 
             <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
