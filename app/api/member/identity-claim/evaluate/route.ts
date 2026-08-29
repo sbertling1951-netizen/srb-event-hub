@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
@@ -10,6 +10,40 @@ import {
   parseIdentityClaimInput,
   takeIdentityClaimRateLimitSlot,
 } from "@/lib/identityClaim";
+
+// TEMPORARY DIAGNOSTIC INSTRUMENTATION (activation "already activated" not
+// surfacing in the production browser). Every response from this route
+// carries a `_diag` object with NON-PII signal only -- which stage was
+// reached, evidence-category presence (booleans/counts, never values), the
+// RPC's result string, and any RPC/route error message. Also emitted to
+// the server log as `[activate-eval-diag]`. Remove once the HTTP-boundary
+// mismatch is located.
+type EvalDiag = {
+  cid: string;
+  stage:
+    | "rate_limited"
+    | "bad_json"
+    | "invalid_input"
+    | "no_admin_client"
+    | "event_allowlist_reject"
+    | "rpc_error"
+    | "rpc_ok"
+    | "route_exception";
+  httpStatus: number;
+  evidence: {
+    firstName: boolean;
+    lastName: boolean;
+    email: boolean;
+    phone: boolean;
+    membership: boolean;
+    state: boolean;
+    eventCount: number;
+  } | null;
+  rpcResult: string | null;
+  rpcRowPresent: boolean;
+  sentResult: IdentityClaimPublicResult;
+  error: string | null;
+};
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -47,6 +81,31 @@ function getRequestIp(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const genericResult: IdentityClaimPublicResult = "UNABLE_TO_VERIFY";
   const genericMessage = getIdentityClaimPublicMessage(genericResult);
+  const cid = randomUUID();
+
+  const finish = (
+    responseBody: {
+      result: IdentityClaimPublicResult;
+      message: string;
+      attemptToken?: string | null;
+      expiresAt?: string | null;
+    },
+    init: { status: number; headers?: Record<string, string> },
+    diagPartial: Omit<EvalDiag, "cid" | "httpStatus" | "sentResult">,
+  ) => {
+    const diag: EvalDiag = {
+      cid,
+      httpStatus: init.status,
+      sentResult: responseBody.result,
+      ...diagPartial,
+    };
+    try {
+      console.error("[activate-eval-diag]", JSON.stringify(diag));
+    } catch {
+      // logging must never break the response
+    }
+    return NextResponse.json({ ...responseBody, _diag: diag }, init);
+  };
 
   try {
     const ipHash = hashValue(getRequestIp(req));
@@ -55,16 +114,18 @@ export async function POST(req: NextRequest) {
     const rateLimit = takeIdentityClaimRateLimitSlot(rateLimitKey);
 
     if (!rateLimit.allowed) {
-      return NextResponse.json(
-        {
-          result: genericResult,
-          message: genericMessage,
-        },
+      return finish(
+        { result: genericResult, message: genericMessage },
         {
           status: 429,
-          headers: {
-            "Retry-After": String(rateLimit.retryAfterSeconds),
-          },
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+        {
+          stage: "rate_limited",
+          evidence: null,
+          rpcResult: null,
+          rpcRowPresent: false,
+          error: null,
         },
       );
     }
@@ -74,40 +135,61 @@ export async function POST(req: NextRequest) {
     try {
       body = await req.json();
     } catch {
-      return NextResponse.json(
-        {
-          result: genericResult,
-          message: genericMessage,
-        },
+      return finish(
+        { result: genericResult, message: genericMessage },
         { status: 400 },
+        {
+          stage: "bad_json",
+          evidence: null,
+          rpcResult: null,
+          rpcRowPresent: false,
+          error: null,
+        },
       );
     }
 
     const parsed = parseIdentityClaimInput(body);
 
     if (!parsed.ok) {
-      return NextResponse.json(
-        {
-          result: genericResult,
-          message: genericMessage,
-        },
+      return finish(
+        { result: genericResult, message: genericMessage },
         { status: 400 },
-      );
-    }
-
-    const supabaseAdmin = getSupabaseAdmin();
-
-    if (!supabaseAdmin) {
-      return NextResponse.json(
         {
-          result: genericResult,
-          message: genericMessage,
+          stage: "invalid_input",
+          evidence: null,
+          rpcResult: null,
+          rpcRowPresent: false,
+          error: parsed.error,
         },
-        { status: 500 },
       );
     }
 
     const normalizedInput = parsed.value;
+    const evidence = {
+      firstName: !!normalizedInput.firstName,
+      lastName: !!normalizedInput.lastName,
+      email: !!normalizedInput.email,
+      phone: !!normalizedInput.mobilePhone,
+      membership: !!normalizedInput.membershipNumber,
+      state: !!normalizedInput.homeState,
+      eventCount: normalizedInput.eventIds.length,
+    };
+
+    const supabaseAdmin = getSupabaseAdmin();
+
+    if (!supabaseAdmin) {
+      return finish(
+        { result: genericResult, message: genericMessage },
+        { status: 500 },
+        {
+          stage: "no_admin_client",
+          evidence,
+          rpcResult: null,
+          rpcRowPresent: false,
+          error: null,
+        },
+      );
+    }
 
     if (normalizedInput.eventIds.length > 0) {
       const { data: allowedEvents, error: eventError } = await supabaseAdmin
@@ -131,12 +213,16 @@ export async function POST(req: NextRequest) {
       );
 
       if (allowedEventIds.size !== normalizedInput.eventIds.length) {
-        return NextResponse.json(
-          {
-            result: genericResult,
-            message: genericMessage,
-          },
+        return finish(
+          { result: genericResult, message: genericMessage },
           { status: 400 },
+          {
+            stage: "event_allowlist_reject",
+            evidence,
+            rpcResult: null,
+            rpcRowPresent: false,
+            error: null,
+          },
         );
       }
     }
@@ -158,7 +244,17 @@ export async function POST(req: NextRequest) {
     );
 
     if (error) {
-      throw error;
+      return finish(
+        { result: genericResult, message: genericMessage },
+        { status: 502 },
+        {
+          stage: "rpc_error",
+          evidence,
+          rpcResult: null,
+          rpcRowPresent: false,
+          error: String(error.message || error.code || "rpc_error"),
+        },
+      );
     }
 
     const attempt = Array.isArray(data) ? data[0] : null;
@@ -179,23 +275,38 @@ export async function POST(req: NextRequest) {
         ? (rawClassification as IdentityClaimPublicResult)
         : genericResult;
 
-    return NextResponse.json({
-      result: publicResult,
-      message: getIdentityClaimPublicMessage(publicResult),
-      attemptToken:
-        typeof attempt?.public_attempt_token === "string"
-          ? attempt.public_attempt_token
-          : null,
-      expiresAt:
-        typeof attempt?.expires_at === "string" ? attempt.expires_at : null,
-    });
-  } catch {
-    return NextResponse.json(
+    return finish(
       {
-        result: genericResult,
-        message: genericMessage,
+        result: publicResult,
+        message: getIdentityClaimPublicMessage(publicResult),
+        attemptToken:
+          typeof attempt?.public_attempt_token === "string"
+            ? attempt.public_attempt_token
+            : null,
+        expiresAt:
+          typeof attempt?.expires_at === "string" ? attempt.expires_at : null,
       },
+      { status: 200 },
+      {
+        stage: "rpc_ok",
+        evidence,
+        rpcResult:
+          typeof rawClassification === "string" ? rawClassification : null,
+        rpcRowPresent: !!attempt,
+        error: null,
+      },
+    );
+  } catch (err) {
+    return finish(
+      { result: genericResult, message: genericMessage },
       { status: 500 },
+      {
+        stage: "route_exception",
+        evidence: null,
+        rpcResult: null,
+        rpcRowPresent: false,
+        error: err instanceof Error ? err.message : String(err),
+      },
     );
   }
 }

@@ -64,6 +64,11 @@ export default function MemberActivatePage() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<IdentityClaimPublicResult | null>(null);
   const [attemptToken, setAttemptToken] = useState<string | null>(null);
+  // TEMPORARY: surfaces the raw HTTP-boundary facts for the "already
+  // activated not showing" hunt -- HTTP status, the literal `result` string
+  // the browser received, and the server `_diag`. Remove with the
+  // route-side instrumentation once resolved.
+  const [diag, setDiag] = useState<Record<string, unknown> | null>(null);
 
   // Activation now completes via a single Supabase magic link to the
   // verified email, rather than a custom numeric code. This mirrors the
@@ -206,11 +211,34 @@ export default function MemberActivatePage() {
         }),
       });
 
-      const payload = (await response.json()) as {
+      const rawText = await response.text();
+      let payload: {
         result?: IdentityClaimPublicResult;
         message?: string;
         attemptToken?: string | null;
-      };
+        _diag?: Record<string, unknown>;
+      } = {};
+      let parseOk = true;
+      try {
+        payload = JSON.parse(rawText);
+      } catch {
+        parseOk = false;
+      }
+
+      // TEMPORARY diagnostic: the literal HTTP-boundary facts.
+      setDiag({
+        httpStatus: response.status,
+        contentType: response.headers.get("content-type"),
+        parsedJson: parseOk,
+        receivedResult: parseOk ? (payload.result ?? null) : null,
+        bodyPreview: parseOk ? undefined : rawText.slice(0, 200),
+        serverDiag: payload._diag ?? null,
+        buildId:
+          document
+            .querySelector('script[src*="/_next/static/"]')
+            ?.getAttribute("src")
+            ?.match(/\/_next\/static\/([^/]+)\//)?.[1] ?? null,
+      });
 
       // Trust the server's already-sanitized result string (the API route
       // validates it against the database CHECK constraint). Re-applying a
@@ -237,10 +265,14 @@ export default function MemberActivatePage() {
       setMagicLinkStatus(null);
       setMagicLinkError(null);
       setStatus(payload.message || getIdentityClaimPublicMessage(safeResult));
-    } catch {
+    } catch (err) {
       setResult("UNABLE_TO_VERIFY");
       setStatus(getIdentityClaimPublicMessage("UNABLE_TO_VERIFY"));
       setError(null);
+      setDiag({
+        httpStatus: "fetch_threw",
+        error: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setBusy(false);
     }
@@ -553,6 +585,31 @@ export default function MemberActivatePage() {
           </div>
         ) : null}
       </form>
+
+      {diag ? (
+        <pre
+          data-testid="activate-diag"
+          style={{
+            marginTop: 12,
+            border: "1px dashed #cbd5e1",
+            borderRadius: 8,
+            background: "#0b1020",
+            color: "#a5f3fc",
+            padding: 12,
+            fontSize: 12,
+            lineHeight: 1.5,
+            overflowX: "auto",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {`diagnostic (temporary):\n${JSON.stringify(
+            { clientResultState: result, ...diag },
+            null,
+            2,
+          )}`}
+        </pre>
+      ) : null}
 
       {result === "ALREADY_ACTIVATED" ? (
         <div

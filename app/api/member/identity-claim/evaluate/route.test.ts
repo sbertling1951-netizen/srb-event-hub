@@ -26,7 +26,36 @@ test("a missing/errored RPC row still yields the safe generic result", () => {
   assert.match(SOURCE, /const genericResult: IdentityClaimPublicResult = "UNABLE_TO_VERIFY";/);
 });
 
-test("the route still never returns the matched person id or component id to the client", () => {
-  const responseBlock = SOURCE.slice(SOURCE.indexOf("return NextResponse.json({"));
-  assert.doesNotMatch(responseBlock, /matched_person_id|matched_component_id|matchedPersonId/);
+test("the route never returns the matched person id or component id to the client", () => {
+  assert.doesNotMatch(SOURCE, /matched_person_id|matched_component_id|matchedPersonId/);
+});
+
+test("TEMPORARY _diag carries signal only -- evidence is booleans/counts, never raw values", () => {
+  const evidenceBlock = SOURCE.slice(
+    SOURCE.indexOf("const evidence = {"),
+    SOURCE.indexOf("};", SOURCE.indexOf("const evidence = {")),
+  );
+  assert.match(evidenceBlock, /firstName: !!normalizedInput\.firstName/);
+  assert.match(evidenceBlock, /email: !!normalizedInput\.email/);
+  assert.match(evidenceBlock, /eventCount: normalizedInput\.eventIds\.length/);
+  // no un-negated raw value assigned into the diagnostic
+  assert.doesNotMatch(evidenceBlock, /:\s*normalizedInput\.(firstName|lastName|email|mobilePhone|membershipNumber|homeState)\b/);
+});
+
+test("TEMPORARY: every response path carries a _diag and a distinct stage", () => {
+  assert.match(SOURCE, /_diag: diag/);
+  for (const stage of [
+    "rate_limited",
+    "bad_json",
+    "invalid_input",
+    "no_admin_client",
+    "event_allowlist_reject",
+    "rpc_error",
+    "rpc_ok",
+    "route_exception",
+  ]) {
+    assert.match(SOURCE, new RegExp(`stage: "${stage}"`));
+  }
+  // an RPC error is its own path now, not swallowed by the generic catch
+  assert.match(SOURCE, /status: 502[\s\S]*?stage: "rpc_error"/);
 });
