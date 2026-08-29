@@ -1024,25 +1024,15 @@ function ParkingAdminPageInner() {
   // ─── Attendee/site interaction ────────────────────────────────────────────────
 
   function recenterMap() {
-    if (selectedSite) {
-      focusSite(selectedSite);
+    const currentScale = mapViewportRef.current?.getViewport().scale;
+    if (currentScale === undefined) {
       return;
     }
-    const selectedAttendeeSite = selectedAttendee
-      ? siteLabelByAttendeeId.get(selectedAttendee.id)
-      : null;
-    if (selectedAttendeeSite) {
-      const assignedSite = sites.find(
-        (site) =>
-          siteMatchKey(site.site_number) === siteMatchKey(selectedAttendeeSite) ||
-          siteMatchKey(site.display_label) === siteMatchKey(selectedAttendeeSite),
-      );
-      if (assignedSite) {
-        focusSite(assignedSite);
-        return;
-      }
-    }
-    resetZoom();
+
+    // Center the natural map at the exact current zoom. MapCanvas delegates
+    // the translation calculation to the viewport using its current pixel
+    // dimensions, so this is distinct from reset()'s fit-scale behavior.
+    mapViewportRef.current?.centerOnPercent(50, 50, currentScale);
   }
 
   useEffect(() => {

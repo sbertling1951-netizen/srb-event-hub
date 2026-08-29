@@ -144,6 +144,20 @@ test("compact Parking keeps Search / assign in the queue rather than sticking ab
   assert.match(compactToolbarRule, /z-index: auto;/);
 });
 
+test("Re-center Map preserves the current scale while centering the natural map, distinct from Reset Zoom", () => {
+  const recenterStart = SOURCE.indexOf("function recenterMap()");
+  const recenterEnd = SOURCE.indexOf("\n  useEffect(", recenterStart);
+  const recenter = SOURCE.slice(recenterStart, recenterEnd);
+  const resetStart = SOURCE.indexOf("function resetZoom()");
+  const resetEnd = SOURCE.indexOf("\n\n  // ─── Data loading", resetStart);
+  const reset = SOURCE.slice(resetStart, resetEnd);
+
+  assert.match(recenter, /getViewport\(\)\.scale/);
+  assert.match(recenter, /centerOnPercent\(50, 50, currentScale\)/);
+  assert.equal(/resetZoom\(|focusSite\(|centerOnMarker/.test(recenter), false);
+  assert.match(reset, /mapViewportRef\.current\?\.reset\(\)/);
+});
+
 test("Parking rejects stale context and realtime responses before applying them", () => {
   assert.match(SOURCE, /mayApplyParkingLoad\(\{/);
   assert.match(SOURCE, /if \(!canApply\(\)\) \{\s*return;/);
