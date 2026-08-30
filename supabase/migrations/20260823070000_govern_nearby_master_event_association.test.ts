@@ -52,6 +52,24 @@ const STAGE1_SQL = readFileSync(
   "utf8",
 );
 
+// 20260829000000 intentionally superseded replaceEventListFromStored's
+// browser-side delete/insert of event_nearby_places with the governed,
+// atomic replace_event_nearby_from_stored_area RPC (that migration's own
+// test requires the browser to make no direct delete/insert). Tests 13 &
+// 14 and the field-mapping guard below are reconciled against that later
+// contract: replace's delete-then-insert (and its source_master_id
+// linkage) now live in this RPC's body, while merge is unchanged and
+// still asserted against the page source.
+const ATOMIC_REPLACEMENT_SQL = readFileSync(
+  fileURLToPath(
+    new URL(
+      "./20260829000000_govern_atomic_stored_area_event_nearby_replacement.sql",
+      import.meta.url,
+    ),
+  ),
+  "utf8",
+);
+
 const PAGE_SOURCE = readFileSync(
   fileURLToPath(new URL("../../app/admin/nearby/page.tsx", import.meta.url)),
   "utf8",
@@ -227,27 +245,70 @@ test("12. mergeStoredAreaIntoEvent now stamps source_master_id: place.id on ever
   assert.match(body, /source_master_id: place\.id,/);
 });
 
-test("13. replaceEventListFromStored now stamps source_master_id: place.id on every inserted row", () => {
-  const body = pageFunctionBody("replaceEventListFromStored");
-  assert.match(body, /source_master_id: place\.id,/);
+test("13. every replaced Event Nearby row keeps canonical source_master_id linkage to its Stored Area source row -- the browser replace path no longer inserts; 20260829000000's governed INSERT ... SELECT owns and performs the linkage", () => {
+  // The Stored Area source set is nearby_master, verbatim, for the
+  // resolved parent area -- each such row is the canonical source.
+  assert.match(
+    ATOMIC_REPLACEMENT_SQL,
+    /CREATE TEMP TABLE _stored_area_replacement_source[\s\S]*?FROM public\.nearby_master AS nm\s*\n\s*WHERE nm\.area_id = v_area_id;/,
+  );
+  // The governed INSERT ... SELECT maps that source row's id into the
+  // source_master_id column (both second in their lists) across the whole
+  // source set -- LEFT JOIN to coordinate overrides only.
+  assert.match(
+    ATOMIC_REPLACEMENT_SQL,
+    /INSERT INTO public\.event_nearby_places \(\s*\n\s*event_id, source_master_id,[\s\S]*?SELECT p_event_id, s\.id,[\s\S]*?FROM _stored_area_replacement_source AS s\s*\n\s*LEFT JOIN jsonb_to_recordset\(p_coordinate_overrides\)/,
+  );
+  // No filtering WHERE on that INSERT ... SELECT: the linkage is stamped
+  // on every replaced row, not a subset.
+  const governedInsert = ATOMIC_REPLACEMENT_SQL.slice(
+    ATOMIC_REPLACEMENT_SQL.indexOf("INSERT INTO public.event_nearby_places"),
+  );
+  assert.doesNotMatch(governedInsert.slice(0, governedInsert.indexOf(";") + 1), /\bWHERE\b/);
+  // And the browser replace path itself inserts nothing.
+  assert.doesNotMatch(
+    pageFunctionBody("replaceEventListFromStored"),
+    /\.from\("event_nearby_places"\)\s*\.insert/,
+  );
 });
 
-test("14. bulk merge and bulk replace preserve their prior behavioral distinction -- replace still deletes the existing list first, merge still de-dupes by name+address and never deletes anything", () => {
+test("14. bulk merge and bulk replace preserve their prior behavioral distinction -- replace deletes the existing list first (now atomically, inside the governed RPC), merge still de-dupes by name+address and never deletes anything", () => {
+  // Post-20260829000000: replaceEventListFromStored delegates the
+  // destructive step to replace_event_nearby_from_stored_area and no
+  // longer deletes/inserts event_nearby_places from the browser. The
+  // replace-deletes-first vs merge-never-deletes distinction is intact --
+  // the scoped delete now lives in that RPC.
   const replaceBody = pageFunctionBody("replaceEventListFromStored");
-  assert.match(replaceBody, /\.from\("event_nearby_places"\)\s*\n\s*\.delete\(\)\s*\n\s*\.eq\("event_id", adminEvent\.id\);/);
+  assert.match(replaceBody, /supabase\.rpc\(\s*"replace_event_nearby_from_stored_area"/);
+  assert.doesNotMatch(replaceBody, /\.from\("event_nearby_places"\)\s*\.delete/);
+  assert.doesNotMatch(replaceBody, /\.from\("event_nearby_places"\)\s*\.insert/);
+  assert.match(
+    ATOMIC_REPLACEMENT_SQL,
+    /DELETE FROM public\.event_nearby_places WHERE event_id = p_event_id;/,
+  );
 
   const mergeBody = pageFunctionBody("mergeStoredAreaIntoEvent");
   assert.equal(/\.delete\(\)/.test(mergeBody), false);
   assert.match(mergeBody, /existingKeys\.has\(compareKey\)/);
 });
 
-test("both bulk functions' non-linkage field mapping is otherwise byte-identical to before this stage -- only the one new line was added to each payload", () => {
-  for (const name of ["replaceEventListFromStored", "mergeStoredAreaIntoEvent"]) {
-    const body = pageFunctionBody(name);
-    assert.match(body, /category_id: place\.category_id \?\? null,/);
-    assert.match(body, /distance_miles: null,/);
-    assert.match(body, /is_hidden: false,/);
-  }
+test("both bulk paths' non-linkage field mapping is otherwise unchanged from before this stage -- only the one new source_master_id mapping was added to each", () => {
+  // mergeStoredAreaIntoEvent still assembles the row payload in the
+  // browser -- its field mapping is asserted against the page source.
+  const mergeBody = pageFunctionBody("mergeStoredAreaIntoEvent");
+  assert.match(mergeBody, /category_id: place\.category_id \?\? null,/);
+  assert.match(mergeBody, /distance_miles: null,/);
+  assert.match(mergeBody, /is_hidden: false,/);
+
+  // replace's payload moved into the 20260829000000 RPC's INSERT; the
+  // same non-linkage mapping (category_id from the source row,
+  // distance_miles NULL, is_hidden false) is now expressed there.
+  assert.match(
+    ATOMIC_REPLACEMENT_SQL,
+    /notes, sort_order, is_hidden, distance_miles, location_code, lat, lng/,
+  );
+  assert.match(ATOMIC_REPLACEMENT_SQL, /s\.category, s\.category_id,/);
+  assert.match(ATOMIC_REPLACEMENT_SQL, /s\.description, s\.replacement_sort_order, false, NULL,/);
 });
 
 // ---------------------------------------------------------------------------
