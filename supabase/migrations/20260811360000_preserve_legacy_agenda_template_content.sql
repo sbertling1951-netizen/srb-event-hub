@@ -57,6 +57,37 @@ DECLARE
   v_item_id uuid;
 BEGIN
   -- ============================================================
+  -- FRESH / SHADOW-DATABASE REPLAY GUARD
+  -- (added 2026-08-29, reproducible-database-history reconstruction).
+  --
+  -- BEHAVIOR-PRESERVING FOR THE HISTORICAL PRODUCTION PATH: on the real
+  -- production database every legacy Agenda-template source row this
+  -- migration preserves exists, so this guard falls through and the
+  -- original body below runs UNCHANGED.
+  --
+  -- On a genuinely fresh / shadow database, none of the legacy
+  -- Agenda-template content this migration exists to preserve ever
+  -- existed (agenda_templates, agenda_template_sets, agenda_template_items
+  -- and agenda_template_categories are all empty) -- there is nothing to
+  -- preserve, and the original body would fail only because it hardcodes
+  -- the production FCOC tenant id for the FK. No fake tenant / template /
+  -- item rows are seeded; the migration simply no-ops.
+  --
+  -- FAIL-CLOSED ON PARTIAL STATE: if ANY of those four legacy tables holds
+  -- a row, this is not a fresh database -- the guard does not fire, the
+  -- original body runs, and its existing logic (including the hardcoded
+  -- tenant FK) still fails closed on incomplete / contradictory state.
+  -- ============================================================
+  IF NOT EXISTS (SELECT 1 FROM public.agenda_templates)
+     AND NOT EXISTS (SELECT 1 FROM public.agenda_template_sets)
+     AND NOT EXISTS (SELECT 1 FROM public.agenda_template_items)
+     AND NOT EXISTS (SELECT 1 FROM public.agenda_template_categories)
+  THEN
+    RAISE NOTICE 'agenda legacy preservation (20260811360000): replay-safe no-op -- no legacy Agenda-template content exists in this database (fresh/shadow).';
+    RETURN;
+  END IF;
+
+  -- ============================================================
   -- Root A: "Standard FCOC Event Template" (legacy source:
   -- agenda_template_sets id a28bf6b7 -- there is no corresponding
   -- agenda_templates row, so this set is the sole legacy identity).

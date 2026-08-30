@@ -59,6 +59,43 @@ DECLARE
   v_invalid_count integer;
   v_camp_margaritaville_timezone text;
 BEGIN
+  -- ============================================================
+  -- FRESH / SHADOW-DATABASE REPLAY GUARD
+  -- (added 2026-08-29, reproducible-database-history reconstruction) --
+  -- the same fresh/shadow no-op concept later production-repair
+  -- migrations (20260901000000, 20260902000000) already use.
+  --
+  -- BEHAVIOR-PRESERVING FOR THE HISTORICAL PRODUCTION PATH: on production
+  -- all six referenced Events exist, so this guard falls through and the
+  -- five UPDATEs plus the exact `v_updated_count = 5` assertion and the
+  -- follow-on checks all run UNCHANGED.
+  --
+  -- On a genuinely fresh / shadow database none of the six historical
+  -- Events (the five timezone targets plus Camp Margaritaville) exist --
+  -- there is nothing to backfill and the original `v_updated_count <> 5`
+  -- assertion (0 <> 5) would fail on an empty database. No Events are
+  -- seeded; the migration no-ops.
+  --
+  -- FAIL-CLOSED ON PARTIAL STATE: the guard fires ONLY when NONE of the
+  -- six referenced Events exist. If some but not all exist, the guard does
+  -- not fire, the UPDATEs run, and the existing `v_updated_count <> 5`
+  -- assertion exposes the mismatch exactly as before.
+  -- ============================================================
+  IF NOT EXISTS (
+    SELECT 1 FROM public.events
+    WHERE id IN (
+      '53136dfb-b039-40b1-9adf-dcb4d648ea87',
+      '382a358b-7d2d-4390-a920-8013a70c560b',
+      '853f6934-8672-4219-ad59-520482098577',
+      '9106b34a-b82b-4e7f-9d64-6325fc6ca705',
+      'e0f01c83-cd82-43f4-a0a4-e4d3cb673459',
+      '6bca5b21-2760-4f2e-80e3-e616fcbb35ab'
+    )
+  ) THEN
+    RAISE NOTICE 'legacy Event timezone backfill (20260813160000): replay-safe no-op -- none of the six targeted historical Events exist in this database (fresh/shadow).';
+    RETURN;
+  END IF;
+
   UPDATE public.events SET timezone = 'America/Chicago'
   WHERE id = '53136dfb-b039-40b1-9adf-dcb4d648ea87' AND timezone IS NULL;
   GET DIAGNOSTICS v_rows = ROW_COUNT; v_updated_count := v_updated_count + v_rows;
