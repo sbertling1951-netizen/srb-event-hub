@@ -35,4 +35,5 @@ Report:
 - validation commands and results;
 - database or runtime evidence when the task concerns stored data or operational behavior;
 - remaining risks or unverified assumptions;
-- confirmation that no unrelated files were changed.
+- confirmation that no unrelated files were changed;
+- when the work advanced the development checkpoint through a commit on the active branch, promotion to main, a production deployment, or a production migration-ledger change: confirmation that the Development checkpoint subsection in `docs/ai-context/EPICENTRAX_PROJECT_BRIEF.md` was reconciled and `npm run context:update` was run before closeout.

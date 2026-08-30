@@ -34,11 +34,40 @@ function runGit(args) {
   return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' });
 }
 
+// Best-effort git: returns trimmed stdout, or null if the command fails
+// (e.g. a ref that does not exist in this clone). Never throws.
+function tryGit(args) {
+  try {
+    return execFileSync('git', args, {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
 function getRepoStatus() {
   const branch = runGit(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
   const commitHash = runGit(['rev-parse', 'HEAD']).trim();
   const commitSubject = runGit(['log', '-1', '--format=%s']).trim();
   const commitDate = runGit(['log', '-1', '--format=%aI']).trim();
+
+  // origin/main position and this HEAD's divergence from it. Best-effort:
+  // a clone with no origin/main ref leaves these null rather than failing.
+  let originMainHash = null;
+  let aheadOfOriginMain = null;
+  let behindOriginMain = null;
+  originMainHash = tryGit(['rev-parse', 'origin/main']);
+  if (originMainHash) {
+    const divergence = tryGit(['rev-list', '--left-right', '--count', 'origin/main...HEAD']);
+    if (divergence) {
+      const [behind, ahead] = divergence.split(/\s+/).map((n) => Number.parseInt(n, 10));
+      behindOriginMain = Number.isFinite(behind) ? behind : null;
+      aheadOfOriginMain = Number.isFinite(ahead) ? ahead : null;
+    }
+  }
 
   // -z gives NUL-separated, unquoted paths (safe for spaces); rename/copy
   // records carry an extra old-path field with no leading status code.
@@ -80,7 +109,20 @@ function getRepoStatus() {
 
   const isClean = staged === 0 && modified === 0 && untracked === 0 && conflicted === 0;
 
-  return { branch, commitHash, commitSubject, commitDate, staged, modified, untracked, conflicted, isClean };
+  return {
+    branch,
+    commitHash,
+    commitSubject,
+    commitDate,
+    originMainHash,
+    aheadOfOriginMain,
+    behindOriginMain,
+    staged,
+    modified,
+    untracked,
+    conflicted,
+    isClean,
+  };
 }
 
 function listArchitectureFiles() {
@@ -187,6 +229,18 @@ function buildSection({ generatedAt, status, archFiles, migrations, identityAudi
   lines.push(`**Branch:** \`${status.branch}\``);
   lines.push(`**Commit:** \`${status.commitHash.slice(0, 7)} ${status.commitSubject}\``);
   lines.push(`**Commit date:** \`${status.commitDate}\``);
+  lines.push(
+    `**origin/main:** \`${status.originMainHash ? status.originMainHash.slice(0, 7) : 'unknown'}\``
+  );
+  lines.push(
+    `**HEAD vs origin/main:** ${
+      status.originMainHash === null
+        ? 'unknown (no origin/main ref in this clone)'
+        : status.aheadOfOriginMain === null || status.behindOriginMain === null
+          ? 'unknown'
+          : `${status.aheadOfOriginMain} ahead, ${status.behindOriginMain} behind`
+    }`
+  );
   lines.push(`**Working tree (pre-update snapshot):** ${status.isClean ? 'Clean' : 'Pending changes'}`);
   lines.push(`**Tracked modified:** \`${status.modified}\``);
   lines.push(`**Staged:** \`${status.staged}\``);

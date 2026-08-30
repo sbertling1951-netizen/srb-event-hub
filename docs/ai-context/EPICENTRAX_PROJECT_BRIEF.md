@@ -126,9 +126,15 @@ Deliver the person-centric foundation and connected Engagement Engine, Operation
 
 Near-term work must protect the foundation rather than trading architecture integrity for speed.
 
-## 10. Current migration and identity status
+## 10. Historical migration and identity snapshot (2026-07-30)
 
-Known status entering 2026-07-30:
+This section is a fixed historical snapshot, not current state. Every number
+below was captured on 2026-07-30 and has since been superseded by later
+migrations and identity work. Do not cite any figure here as a present fact.
+For current development position see the Development checkpoint subsection
+below; for current data, query the linked database and state the evidence.
+
+Snapshot as captured 2026-07-30:
 
 - Reconciliation role instances reviewed: 553 total.
 - Validated automatic attribution: 17.
@@ -200,20 +206,54 @@ Every agent completing a task should leave a compact handoff containing:
 - unresolved risks;
 - exact next safe step.
 
-The handoff is a report, not a second project memory system. Durable decisions belong in the authoritative architecture or project documents.
+The handoff is a report, not a second project memory system. Durable decisions belong in the authoritative architecture or project documents. Durable development position — active branch, checkpoint SHA, what is promoted or deployed, pending gates, and the next safe step — belongs in the Development checkpoint subsection below; the task handoff itself stays an ephemeral report and is not persisted.
+
+## Development checkpoint
+
+Hand-maintained. This subsection records the current development position so a
+fresh contributor can recover it without relying on conversation memory. It is
+not an authoritative source: Git history, source, migrations, and verified
+database or runtime state override it whenever they disagree, per the
+`AUTHORITATIVE_SOURCES.md` authority order. Reconcile it whenever work advances
+the checkpoint (a commit on the active branch, promotion to main, a production
+deployment, or a production migration-ledger change), then run
+`npm run context:update`. The machine-generated block below never manages this
+subsection.
+
+- **Active branch:** `feat/nearby-curated-list-builder`
+- **Checkpoint SHA:** `b8cee62` — "Reconcile Nearby replacement migration tests"
+- **Pushed:** yes — in sync with `origin/feat/nearby-curated-list-builder`
+- **Main SHA:** `9a479b8` (`origin/main` identical) — "Repair TEA member check-in capability flow"; the checkpoint is 5 commits ahead, 0 behind
+- **Production deployed SHA / verification:** not verified from repository or server evidence in this session. By deploy design (`deploy`, `do-pull.sh`: main-only, fast-forward-only) production follows `origin/main`; treat production as at or behind `9a479b8` until confirmed against the server deploy log or a live version probe.
+- **Completed but not promoted (`main..b8cee62`):**
+  - `db3c009` Nearby curated-list builder — multi-type discovery, Working List, governed canonical reuse
+  - `0e0c578` Stored Area contribution and catalog authority repair
+  - `9a993eb` Stage 6A — Event Map settings cut over to Event-definition authority
+  - `c6a06fb` Reproducible database history repair — pre-history reconciliation migrations plus `docs/DATABASE_HISTORY.md`
+  - `b8cee62` Nearby replacement migration-test reconciliation
+- **Integrated verification:** fresh from-zero replay clean at 222 migrations through `20260913000000` (local disposable stack); full migration test corpus 1418/1418. Production database and production migration ledger were not changed by this work.
+- **Pending production migration-ledger gate (before promotion):** per `docs/DATABASE_HISTORY.md` §4, the three pre-history reconciliation versions must be marked applied without being executed —
+  `supabase migration repair --linked --status applied 20260617010000 20260619000000 20260619010000` —
+  and only then do the three forward migrations (`20260911000000`, `20260912000000`, `20260913000000`) deploy normally. Requires separate explicit authorization.
+- **Work currently in flight:** none. The feature branch is the standing integration checkpoint awaiting promotion review.
+- **Next safe step:** review `feat/nearby-curated-list-builder` @ `b8cee62` for promotion to `main`, executing the production migration-ledger gate above as part of that promotion under explicit authorization.
+- **Superseded — do not merge or act on independently:** branch `repair/reproducible-database-history` (`6ddc10e`, off `9a479b8`) and any local worktree checked out to it — its reproducible-database-history content is already incorporated in `c6a06fb` on the active branch. Any local worktree at `/private/tmp/epicentrax-replay-audit-20260830` (detached at `9a479b8`) is transient audit scratch and not part of the promotion path.
+- **Last reconciled:** 2026-08-30, from verified repository state (Git, local replay stack, migration test corpus).
 
 <!-- EPICENTRAX_LIBRARIAN_START -->
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-08-15T07:14:17-06:00`
-**Branch:** `main`
-**Commit:** `4fe7e61 Govern vendor profile GET reads through RLS`
-**Commit date:** `2026-08-15T07:06:09-06:00`
+**Generated at:** `2026-08-30T11:22:12-07:00`
+**Branch:** `feat/nearby-curated-list-builder`
+**Commit:** `b8cee62 Reconcile Nearby replacement migration tests`
+**Commit date:** `2026-08-30T11:07:56-07:00`
+**origin/main:** `9a479b8`
+**HEAD vs origin/main:** 5 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `3`
 **Staged:** `0`
-**Untracked:** `1`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -240,6 +280,8 @@ _Git status above was captured before this script wrote this section; writing th
 - `ADR-011 Person-Centered Workspace Resolution.md`
 - `ADR-012 Person–Tenant Relationship Architecture.md`
 - `ADR-013 Event Lifecycle and Historical Preservation Architecture.md`
+- `ADR-014 Tenant Lifecycle and Administration Contract.md`
+- `ADR-015 Tenant Administrator Appointment Reconciliation.md`
 - `DEVELOPMENT_STANDARDS.md`
 - `EPICENTRAX_ADAPTIVE_UI_ARCHITECTURE.md`
 - `EPICENTRAX_ADMIN_MODULE_ARCHITECTURE.md`
@@ -248,10 +290,13 @@ _Git status above was captured before this script wrote this section; writing th
 - `EPICENTRAX_ADMINISTRATIVE_AUTHORITY_FOUNDATION_ARCHITECTURE.md`
 - `EPICENTRAX_ATTENDEES_MODULE_REFACTOR_AUDIT.md`
 - `EPICENTRAX_CANONICAL_PARKING_READ_MIGRATION_PLAN.md`
+- `EPICENTRAX_CANONICAL_SHELL_ARCHITECTURE.md`
+- `EPICENTRAX_CENTRAL_UI_STANDARD_BLUEPRINT.md`
 - `EPICENTRAX_DOMAIN_MODEL_AMENDMENT_PROPOSAL_EVENT_LIFECYCLE_AND_ENTITLEMENT.md`
 - `EPICENTRAX_DOMAIN_MODEL.md`
 - `EPICENTRAX_EXPERIENCE_ARCHITECTURE.md`
 - `EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md`
+- `EPICENTRAX_GOVERNED_IMPORT_STAGING_ARCHITECTURE.md`
 - `EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_IMPLEMENTATION_PLAN.md`
 - `EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_PLAN.md`
 - `EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md`
@@ -267,18 +312,18 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `126`
-- Latest migration: `20260814230000_narrow_authenticated_events_select_to_canonical_authority.sql`
+- Total migration files: `222`
+- Latest migration: `20260913000000_cut_over_event_map_settings_to_event_definition_authority.sql`
 - Latest five:
-  - `20260814190000_create_current_active_event_context_rpc.sql`
-  - `20260814200000_create_tenant_owned_event_ids_rpc.sql`
-  - `20260814210000_retire_anon_public_events_select.sql`
-  - `20260814220000_harden_tenant_owned_event_ids_rpc_acl.sql`
-  - `20260814230000_narrow_authenticated_events_select_to_canonical_authority.sql`
+  - `20260909000000_hash_temporary_member_capability_tokens.sql`
+  - `20260910000000_repair_member_checkin_temporary_capability.sql`
+  - `20260911000000_create_governed_google_place_id_event_reuse.sql`
+  - `20260912000000_repair_stored_area_contribution_and_canonical_authority.sql`
+  - `20260913000000_cut_over_event_map_settings_to_event_definition_authority.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`
-- Markdown files: `24`
+- Markdown files: `25`
 - Latest five:
   - `baseline-diagnostics/stage7_identity_integrity_verification.md`
   - `baseline-diagnostics/stage8a_identity_claim_foundation.md`
