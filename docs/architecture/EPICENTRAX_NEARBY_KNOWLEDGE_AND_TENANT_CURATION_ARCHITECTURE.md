@@ -1,8 +1,8 @@
 # EpicentraX Nearby Knowledge + Tenant Curation Foundation
 
-**Status:** Accepted — Stage 1 (data model, resolver, governance boundaries, minimal admin curation UI); revised (Tenant Admin authority wired in, geographic-constraint defect found and stopped); Nearby Scope Model Stage 0 applied (§14)
-**Version:** 1.2
-**Date:** August 11, 2026 (§14 added August 23, 2026)
+**Status:** Accepted — Stage 1 (data model, resolver, governance boundaries, minimal admin curation UI); revised (Tenant Admin authority wired in, geographic-constraint defect found and stopped); Nearby Scope Model Stage 0 applied (§14); unified editor + curated-list builder shipped (§15)
+**Version:** 1.3
+**Date:** August 11, 2026 (§14 added August 23, 2026; §15 added August 29, 2026)
 
 **Revision note (1.0 -> 1.1):** Two changes, both to the migration this
 document describes, neither to any renderer/map-integration content (§11):
@@ -24,6 +24,18 @@ Tenant provenance plus a Shared-proposal authority correction on
 (`20260823050000_govern_shared_place_contribution.sql`); §14 also records
 an approved requirement for the still-unbuilt Stage 3 unified editor.
 Nothing in §1–§13 above is altered by this revision.
+
+**Revision note (1.2 -> 1.3):** §15 added, recording architecture that is
+now *shipped*, not proposed. The Nearby Scope Model's later stages landed:
+the unified Add/Edit Nearby Place editor (§14.2's requirement — Stage 3),
+per-place Event association (`event_nearby_places.source_master_id`, Stage
+2), the governed canonical-update / reference-counted-retire RPCs (Stage
+1), and a **Nearby curated-list builder** — a client-side "Working List"
+staging surface fed by a multi-type Google Places search, with a single
+governed provider-ID reuse operation for canonical Event association. §15
+describes the shipped shape. Nothing in §1–§14 is rewritten; where §14.2
+said "no editor UI exists yet," §15 records that it now does and meets
+that section's authority-default requirement.
 
 ## Relationship to Governing Architecture
 
@@ -383,7 +395,211 @@ uniformly to the lowest common option:
 
 This requirement is recorded here for the implementation stage that
 eventually builds that editor. No editor UI exists yet; none is
-introduced by this revision.
+introduced by this revision. *(Superseded by §15: the editor is now
+built and meets this requirement — `defaultScopeFor()` /
+`scopeAvailability()` in `app/admin/nearby/page.tsx`.)*
+
+## 15. Unified Editor + Nearby Curated-List Builder — shipped (August 29, 2026)
+
+This section records architecture **as shipped**. It does not re-open
+§1–§14; it states the current, live shape of the Nearby admin surface so a
+future contributor does not treat the "not yet built" language above as
+current.
+
+### 15.1 Unified Add/Edit Nearby Place editor
+
+`app/admin/nearby/page.tsx` renders one dialog editor for every Nearby
+place operation. Its scope selector — **This Event only** / **This Tenant**
+/ **All Tenants** — is offered and defaulted by the operator's *resolved*
+authority (§14.2), via `scopeAvailability()` (This Event always; This
+Tenant only when the destination Event's Tenant is in
+`listMyTenantAdminAccess()`; All Tenants only for a Platform Admin) and
+`defaultScopeFor()` (This Tenant when available, else This Event only).
+The RPCs remain the real gate; the picker only decides what is offered.
+
+- **This Event only** → direct `event_nearby_places` insert/update from
+  the browser (the ratified path; RLS `WITH CHECK
+  has_event_task_authority('event.nearby.manage', event_id)`), never a
+  `nearby_master` row.
+- **This Tenant** → `add_tenant_place_to_event` (`record_tenant_place`
+  scope `tenant_specific` + association, one governed transaction).
+- **All Tenants** → `record_tenant_place` scope `shared_public`
+  (`pending_review`; Super-Admin proposal; approval still Super-Admin-only
+  via `review_shared_place`).
+
+Editing a linked Event place also edits (where authorized) the canonical
+`nearby_master` row via `update_nearby_master_place`; retire is
+`retire_nearby_master_place` (reference-counted — existing Event listings
+are unaffected). A Google discovery candidate promoted to a canonical
+place is linked by exact Place ID via `link_google_place_id_to_nearby_master`.
+
+### 15.2 Curated-list builder — Search Candidates → Working List → additive Event save
+
+A second admin surface on the same page, for rapidly assembling an
+Event's Nearby list:
+
+- **Search Candidates are transient.** A multi-type Google Places search
+  (§15.3) returns candidates only. Nothing is saved or associated by a
+  search. A new search replaces the candidate list; it never touches the
+  Working List.
+- **The Working List is client-side, unsaved staging state.** No database
+  model, no draft table, no cross-device persistence. It survives repeated
+  searches (candidates *accumulate* into it by explicit selection). It is
+  cleared — with a visible notice — when the Admin Working Event changes
+  (it is draft work for one Event), and pending entries arm a
+  `beforeunload` guard.
+- **Exact Google Place ID is the only provider identity.** Dedupe within
+  the Working List and against search results is exact-Place-ID only — no
+  fuzzy / name / address auto-merge anywhere. A manual (non-provider)
+  entry carries `googlePlaceId = null` and is never given a fabricated
+  identity. The Working List model additionally carries a non-sensitive
+  `reuseOutcome` (`reused` / `already_associated` / `not_reusable` /
+  null); it never carries a `nearby_master.id`.
+- **Provider details are lazy.** Google Place Details are fetched only for
+  an entry the moment it enters the Working List, never for every search
+  result. A details failure is non-fatal — the entry keeps its
+  search-derived fields and the admin completes it by hand. Enrichment
+  fills blank fields only; it never overwrites an admin edit and never
+  changes identity.
+- **The same editor is reused.** Working List review/edit and "add manual
+  place" open the §15.1 dialog with `editorTarget = "working_list"`:
+  scope is forced to This Event, the Destination/Availability selectors
+  and the Distance / Hidden-from-members fields are hidden, and Save
+  writes Working List state only — no database write until the explicit
+  final action.
+
+### 15.3 Server-side Google provider routes
+
+`POST /api/google/nearby-search` (`{ eventId, categoryCodes[],
+radiusMiles?, freeText? }` → merged candidates) and `POST
+/api/google/place-details` (`{ eventId, googlePlaceId }` → editor fields;
+HTTP 200 `{ ok:false }` on any provider failure). Both apply a
+**metered-API gate before any Google credential is read or any provider
+request is made**: `resolveAdminActorFromBearer` → the Nearby management
+permission (`adminHasPermission`) → `adminCanManageEvent`
+(`has_event_admin_authority` for the Event). This is deliberately *not* a
+check of the granular `event.nearby.manage` task grant — a route cannot
+call `resolve_task_authority` (it fails closed unless `auth.uid()`
+matches its actor argument, and is not executable by the service-role
+client). The granular grant is still enforced where it matters: by
+`event_nearby_places` RLS and by every governed Nearby RPC. The category
+catalog offered by the search is always live `place_categories`; the
+code→Google-type mapping (`lib/googlePlaceTypeMapping.ts`) is honest
+about approximate matches. Fan-out is bounded (concurrency 3), radius is
+clamped to Google's 50 km ceiling, and the Event's stored `lat/lng` are
+preferred over re-geocoding its location text.
+
+### 15.4 Final save — additive to this Event, per entry
+
+"Add Working List to This Event":
+
+1. **Google entries whose exact Place ID resolves to an approved,
+   in-scope canonical place** are associated via the governed
+   `reuse_nearby_places_by_google_place_id_for_event(p_event_id,
+   p_google_place_ids[]) RETURNS TABLE(google_place_id, outcome)`
+   (`20260911000000`). This is a single SECURITY DEFINER
+   mutation-owning operation: it requires `event.nearby.manage` for the
+   Event, requires the Event lifecycle mutable, applies exactly
+   `associate_nearby_master_place_with_event`'s eligibility predicate
+   (active + `review_status='approved'` + `shared_public` OR
+   `tenant_specific` matching the Event's Tenant), and **delegates every
+   association to `associate_nearby_master_place_with_event`** — which
+   remains the authority backstop and owns snapshot mapping, idempotence,
+   and the `event_nearby_places (event_id, source_master_id)` unique-index
+   race handling. It returns a **collapsed** per-Place-ID outcome only:
+   `not_reusable` never distinguishes "no canonical row" from "wrong
+   Tenant" from "pending_review" from "rejected". The delegated
+   association runs in a subtransaction; on **any** exception the nested
+   error is **discarded unseen** (never classified by SQLSTATE — P0001 is
+   PostgreSQL's generic user-raised code and is used for authority,
+   lifecycle, *and* ineligibility failures). The true reason is
+   re-derived from **current state**: re-check `event.nearby.manage`
+   authority for the Event, re-check Event lifecycle mutability, then
+   re-run the identical eligibility predicate. `not_reusable` is returned
+   **only** when that re-check proves the exact candidate is now
+   genuinely ineligible (retired / rejected / re-scoped / deleted).
+   Authority lost, lifecycle no longer mutable, "still eligible" (the
+   nested failure was genuinely unexpected), or any error in the
+   re-check itself all raise the single identifier-free
+   `Nearby place reuse failed.` — never `not_reusable`, so the client
+   marks the batch failed/retryable and performs **no** Event-only
+   fallback. The re-check runs as one block under a single enclosing
+   `WHEN OTHERS` handler, so a raise from any step (a lifecycle
+   `event_archived`, a `resolve_task_authority` error, anything) is
+   sanitized to that same generic failure and its text cannot leak. The
+   subtransaction rollback guarantees no partial association persists in
+   any of these paths. The RPC does not
+   return `nearby_master.id`, and the migration adds no grant on
+   `nearby_master_provider_identities` (still fully REVOKEd). The
+   `not_reusable` collapse is defense-in-depth, **not** a standalone
+   confidentiality boundary — `nearby_master` itself is readable by any
+   authenticated role under the tracked, unreconciled Stage-1 RLS drift
+   (`nearby_master_authenticated_select_policy`, 20260823080000 Part B),
+   so a catalog row's `id`/scope is not secret; what stays opaque is the
+   Google-Place-ID ↔ `nearby_master` *linkage*.
+2. **Every other entry** (manual, or a Google entry the RPC reports
+   `not_reusable`) is inserted **Event-only** (`event_nearby_places`,
+   `source_master_id = null`) via the ratified browser path, after a
+   conservative normalized name+address check against this Event's
+   already-loaded Nearby list — a confident match is reported *already
+   present / skipped*, never re-inserted. No new `nearby_master` /
+   `tenant_specific` / `shared_public` row is created automatically by
+   the builder; an Event Admin is never escalated into Tenant/Shared
+   catalog management.
+3. **Partial failure is retry-safe.** Per-entry results are collected
+   (`N added, M reused, S already present, K failed`). Reused / added /
+   skipped entries are marked settled and are excluded from any retry;
+   failed entries stay in the Working List, editable and retryable. The
+   Working List is never cleared on partial failure; a destructive
+   replace (`replace_event_nearby_from_stored_area`) is never used.
+
+### 15.5 What remains separate
+
+- **Reusable Nearby Area Lists** (`nearby_area_lists`,
+  `apply_nearby_area_list_to_event`, `EventNearbyAreaListApplication`) are
+  unchanged and still their own additive "Apply a Reusable Nearby List"
+  section. The builder does not create or apply Area Lists.
+- **Saved Area Searches / Stored Areas** (`nearby_area_templates`,
+  `nearby_master` rows with `area_id`) remain the distinct legacy
+  search-template + bulk-library concept. The builder does not read or
+  write them (beyond the pre-existing `nearby_area_templates`
+  last-run stamp on a search).
+- **Member Nearby resolution** (`resolve_effective_nearby_places`,
+  `app/member/nearby/page.tsx`) is untouched (§9, §11).
+
+### 15.6 Known limitation
+
+There is no governed "this canonical place is *already associated* with
+this Event" read for a Google candidate before final save — a Google
+candidate carries no `nearby_master.id` and `event_nearby_places` has no
+provider-identity column. Final-save correctness does not need one: the
+reuse RPC reports `already_associated` and
+`associate_nearby_master_place_with_event` is idempotent. A pre-save
+"already in this Event" badge is therefore not shown for Google
+candidates.
+
+### 15.7 Verification status
+
+`20260911000000` is **created, not applied** — no local Supabase/Docker
+was available, the same constraint recorded for this workstream's earlier
+migrations (§12–§13). What ran: **static / source-shape assertions only**
+(`npx tsx --test` over the migration test and the page/lib test files —
+SQL/TypeScript text shape, byte-equal parity block, authority/scope
+predicate text, the failed-association re-classification structure, grant
+hardening; plus the pure TypeScript reducer tests). The linked rollback
+fixture (`supabase/integration-tests/20260911000000_*`) — including its
+five failed-association re-classification scenarios (still-eligible →
+generic, non-P0001 → generic, lifecycle-immutable → generic,
+genuine-retire → `not_reusable`, authority-lost → generic) — is a
+**ready-to-run `BEGIN…ROLLBACK` script that has NOT been executed against
+any PostgreSQL instance**. No SQL in this change has run against a
+database; the migration has not been applied anywhere. Runtime authority
+resolution, the subtransaction rollback and re-classification behaviour,
+grants/REVOKE taking effect, and RLS remain **unverified** until applied.
+The genuine-concurrent-committed-retire path is additionally
+un-stageable even in that fixture (a single `BEGIN…ROLLBACK` cannot
+contain a committed second transaction) and is simulated there by a stub;
+it too awaits a live database.
 
 ## Non-Goals Honored
 
@@ -393,3 +609,14 @@ deduplication beyond deterministic name/address search, no Experience
 Resolver refactor, no map-system redesign, no Leaflet migration, no Master
 Map architecture change, no authority broadening beyond the accepted (if
 not-yet-implemented) hierarchy, no Person/Tenant Relationship replacement.
+
+*(§15 clarification: the curated-list builder uses admin-triggered Google
+Places **search** for discovery — the same provider the pre-existing
+Stored Area workflow and `/api/google/nearby-search` already used — but
+still performs **no automatic ingestion into `nearby_master`**. Builder
+entries persist Event-only unless an operator explicitly promotes one to a
+canonical place through the §15.1 editor; and its only cross-Event reuse
+is association of an *already-approved* canonical place through the
+existing governed primitive. Deduplication remains deterministic
+exact-Place-ID plus deterministic normalized name/address — never fuzzy
+similarity.)*

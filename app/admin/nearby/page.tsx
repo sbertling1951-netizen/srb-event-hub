@@ -53,6 +53,25 @@ import {
   isCurrentNearbyEventRequest,
   resolveStoredAreaSelection,
 } from "@/lib/nearbyAdminState";
+import {
+  addCandidatesToWorkingList,
+  addManualWorkingListEntry,
+  applyPlaceDetails,
+  clearSavedWorkingListEntries,
+  EMPTY_WORKING_LIST,
+  entriesPendingSave,
+  findExistingEventPlaceMatch,
+  findWorkingListDuplicates,
+  isWorkingListEntrySettled,
+  markWorkingListEntriesReuseOutcome,
+  markWorkingListEntriesSaved,
+  removeWorkingListEntry,
+  resolveWorkingListEventTransition,
+  updateWorkingListEntry,
+  type WorkingListEntry,
+  workingListHasGooglePlaceId,
+  type WorkingListState,
+} from "@/lib/nearbyWorkingList";
 import { supabase } from "@/lib/supabase";
 
 import {
@@ -202,6 +221,12 @@ type GoogleNearbyResult = {
   plusCode?: string | null;
   lat: number | null;
   lng: number | null;
+  // Multi-type discovery provenance from the server fan-out. Purely
+  // explanatory -- never a fabricated identity.
+  googleTypes?: string[];
+  producingCategoryCodes?: string[];
+  fromFreeText?: boolean;
+  mappingExact?: boolean;
 };
 
 function hasGoogleResultCoordinates(
@@ -846,10 +871,14 @@ function AdminNearbyPageInner() {
     setNearbyEventForm(emptyNearbyEventForm);
     setNearbyCanonicalForm(emptyNearbyCanonicalForm);
     setGoogleCandidateInEditor(null);
+    setEditorTarget("event");
+    setEditorWorkingListKey(null);
     setEditorExpanded(false);
   }, []);
 
   function openBlankNearbyEditor() {
+    setEditorTarget("event");
+    setEditorWorkingListKey(null);
     const destinationEventId = adminEvent?.id || "";
     const scope = destinationEventId ? defaultScopeFor(destinationEventId) : null;
 
@@ -882,6 +911,8 @@ function AdminNearbyPageInner() {
     const eventForm = nearbyEventFormFromPlace(place);
 
     setEditorMode("edit");
+    setEditorTarget("event");
+    setEditorWorkingListKey(null);
     setGoogleCandidateInEditor(null);
     setEditorSourceMasterId(place.source_master_id);
     setEditorDestinationEventId("");
@@ -1552,6 +1583,8 @@ function AdminNearbyPageInner() {
       canonicalForm: emptyNearbyCanonicalForm,
     };
     setEditorMode("add");
+    setEditorTarget("event");
+    setEditorWorkingListKey(null);
     setEditorScope(scope);
     setEditorSourceMasterId(null);
     setEditorMasterScope(null);
@@ -1593,13 +1626,56 @@ function AdminNearbyPageInner() {
   const [error, setError] = useState<string | null>(null);
   const { isCompact } = useShellInterfaceCapabilities();
 
+  // Free-text term kept from the original single-field search; it is now
+  // one optional input alongside the multi-category selection.
   const [googleQuery, setGoogleQuery] = useState("");
   const [googleRadius, setGoogleRadius] = useState("10");
+  // Multi-type discovery: category codes chosen from the live
+  // place_categories catalog (never a hard-coded visible list here).
+  const [selectedSearchCategoryCodes, setSelectedSearchCategoryCodes] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [googleResults, setGoogleResults] = useState<GoogleNearbyResult[]>([]);
   const [matchedGooglePlaceIds, setMatchedGooglePlaceIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const [searchingGoogle, setSearchingGoogle] = useState(false);
+  // Search Candidate selection -- transient, independent of the Working
+  // List. Cleared on every new search.
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  // -------------------------------------------------------------------
+  // Working List -- client-side only for this phase. Its lifecycle is
+  // bound to one Event; switching the Admin Working Event clears it
+  // (with a notice) rather than silently carrying it across Events.
+  // -------------------------------------------------------------------
+  const [workingList, setWorkingList] = useState<WorkingListState>(EMPTY_WORKING_LIST);
+  const [workingListEventId, setWorkingListEventId] = useState<string | null>(null);
+  const [savingWorkingListToEvent, setSavingWorkingListToEvent] = useState(false);
+  const [enrichingCandidateKeys, setEnrichingCandidateKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [workingListSaveSummary, setWorkingListSaveSummary] = useState<{
+    /** New Event-only rows inserted. */
+    added: number;
+    /** Canonical places associated with the Event (reused + already-present). */
+    reused: number;
+    /** Entries matched to an existing Event Nearby place and not re-inserted. */
+    skipped: number;
+    failed: Array<{ key: string; name: string; error: string }>;
+  } | null>(null);
+  // "working_list" routes the shared editor's Save into Working List
+  // state instead of a database write; "event" is the pre-existing
+  // behavior. editorWorkingListKey is set when editing an existing entry.
+  const [editorTarget, setEditorTarget] = useState<"event" | "working_list">("event");
+  const [editorWorkingListKey, setEditorWorkingListKey] = useState<string | null>(null);
+
+  const workingListPendingCount = useMemo(
+    () => entriesPendingSave(workingList).length,
+    [workingList],
+  );
   const [storedSearch, setStoredSearch] = useState("");
   const [storedCategoryFilter, setStoredCategoryFilter] = useState("All");
 
@@ -1642,6 +1718,12 @@ function AdminNearbyPageInner() {
     setEventPlaces([]);
     setGoogleResults([]);
     setMatchedGooglePlaceIds(new Set());
+    setSelectedCandidateIds(new Set());
+    setSelectedSearchCategoryCodes(new Set());
+    setWorkingList(EMPTY_WORKING_LIST);
+    setWorkingListEventId(null);
+    setWorkingListSaveSummary(null);
+    setEnrichingCandidateKeys(new Set());
     setSelectedAreaId("");
     setAreaName("");
     setAreaDescription("");
@@ -1727,6 +1809,61 @@ function AdminNearbyPageInner() {
 
     return unsubscribe;
   }, [admin, resetAllState]);
+
+  // Unsaved Working-List protection (Area J). The Working List is
+  // in-memory draft work for one specific Event. `workingListEventId` is
+  // the last *confirmed real* Event the list belongs to.
+  //
+  // D7: a transient loss of Event context (workspace re-subscription,
+  // context loading) surfaces as `adminEvent?.id` momentarily
+  // null/undefined -- Event A -> null -> Event A. That is NOT an Event
+  // switch and must never clear unsaved work. resolveWorkingListEventTransition
+  // clears ONLY on a confirmed real change (A -> B, incl. A -> null -> B);
+  // initial establishment and a re-confirmed same Event only stamp the
+  // id. Explicit user Clear is a separate action and is unaffected.
+  useEffect(() => {
+    const transition = resolveWorkingListEventTransition(
+      workingListEventId,
+      adminEvent?.id,
+    );
+
+    if (transition.action === "hold") {
+      return;
+    }
+
+    if (transition.action === "clear") {
+      const hadEntries = workingList.entries.length > 0;
+      setWorkingList(EMPTY_WORKING_LIST);
+      setWorkingListSaveSummary(null);
+      setEnrichingCandidateKeys(new Set());
+      setGoogleResults([]);
+      setMatchedGooglePlaceIds(new Set());
+      setSelectedCandidateIds(new Set());
+      setWorkingListEventId(transition.eventId);
+      if (hadEntries) {
+        showError(
+          "The Working List was cleared because the Admin Working Event changed. It was draft work for the previous Event and was never saved.",
+        );
+      }
+      return;
+    }
+
+    // transition.action === "stamp"
+    setWorkingListEventId(transition.eventId);
+  }, [adminEvent?.id, workingListEventId, workingList.entries.length]);
+
+  // Browser-level guard for the same in-memory draft work.
+  useEffect(() => {
+    if (workingListPendingCount === 0) {
+      return;
+    }
+    function warnBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [workingListPendingCount]);
 
   // Nearby Scope Model Stage 3 -- the destination Event picker's option
   // source. Same authorization pattern app/admin/dashboard/page.tsx
@@ -2691,32 +2828,50 @@ function AdminNearbyPageInner() {
     void saveEventPlaceOrder(reordered);
   }
 
+  // One visible Search action -> the server fans out into a bounded set of
+  // Google Places requests (one per selected place_categories code, plus
+  // an optional free-text request), merged by exact place_id. The route
+  // applies its own metered-API gate first (authenticated admin + the
+  // Nearby management permission + Event admin authority for this Event);
+  // the browser never mutates a governed table here.
   async function searchGoogleNearby() {
-    if (!adminEvent?.location) {
-      showError("No admin event location available.");
+    if (!adminEvent?.id) {
+      showError("No admin working event selected.");
       return;
     }
 
-    if (!googleQuery.trim()) {
-      showError("Enter a Google nearby search.");
+    const categoryCodes = [...selectedSearchCategoryCodes];
+    const freeText = googleQuery.trim();
+
+    if (categoryCodes.length === 0 && !freeText) {
+      showError("Select at least one place type, or enter a search term.");
       return;
     }
 
     try {
       setSearchingGoogle(true);
-      showStatus("Searching Google nearby places...");
+      showStatus("Searching Google Maps results...");
 
-      const location = adminEvent.location.trim();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        throw new Error("Your admin session has expired. Sign in again to search.");
+      }
 
       const response = await fetch("/api/google/nearby-search", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          query: googleQuery.trim(),
-          location,
+          eventId: adminEvent.id,
+          categoryCodes,
           radiusMiles: Number(googleRadius) || 10,
+          freeText: freeText || undefined,
         }),
       });
 
@@ -2726,28 +2881,17 @@ function AdminNearbyPageInner() {
         throw new Error(data?.error || "Google nearby search failed.");
       }
 
-      const results = Array.isArray(data.places) ? (data.places as GoogleNearbyResult[]) : [];
-      const googlePlaceIds = googlePlaceIdsFromCandidates(results);
-      const { data: matchedRows, error: matchingError } = await supabase.rpc(
-        "list_matching_google_place_ids_for_nearby_administration",
-        {
-          p_event_id: adminEvent.id,
-          p_google_place_ids: googlePlaceIds,
-        },
-      );
+      const results = Array.isArray(data.candidates)
+        ? (data.candidates as GoogleNearbyResult[])
+        : [];
 
-      if (matchingError) {
-        throw matchingError;
-      }
-
+      // A new search replaces Search Candidates ONLY. The Working List is
+      // never touched here. Candidates are NOT pre-classified as
+      // canonical-vs-new: exact Google Place-ID reuse is resolved by the
+      // governed reuse_nearby_places_by_google_place_id_for_event RPC at
+      // final save, which never exposes canonical identity to the browser.
       setGoogleResults(results);
-      setMatchedGooglePlaceIds(
-        new Set(
-          ((matchedRows || []) as Array<{ google_place_id: string }>).map(
-            (row) => row.google_place_id,
-          ),
-        ),
-      );
+      setSelectedCandidateIds(new Set());
 
       if (selectedAreaId) {
         await supabase
@@ -2755,13 +2899,13 @@ function AdminNearbyPageInner() {
           .update({
             google_last_run: new Date().toISOString(),
             google_radius_miles: Number(googleRadius) || 10,
-            google_custom_search: googleQuery.trim() || null,
+            google_custom_search: freeText || null,
           })
           .eq("id", selectedAreaId);
       }
 
       showStatus(
-        `Found ${results.length} Google nearby place${results.length === 1 ? "" : "s"}.`,
+        `Found ${results.length} candidate${results.length === 1 ? "" : "s"} from Google Maps results.`,
       );
     } catch (err: any) {
       console.error("searchGoogleNearby error:", err);
@@ -2769,6 +2913,616 @@ function AdminNearbyPageInner() {
     } finally {
       setSearchingGoogle(false);
     }
+  }
+
+  function toggleSearchCategory(code: string) {
+    setSelectedSearchCategoryCodes((current) => {
+      const next = new Set(current);
+      if (next.has(code)) {
+        next.delete(code);
+      } else {
+        next.add(code);
+      }
+      return next;
+    });
+  }
+
+  // -------------------------------------------------------------------
+  // Search Candidates -> Working List. Only explicit selection moves a
+  // candidate across; matched-canonical candidates are never addable
+  // here (they are shown read-only), and place_id-less results must go
+  // through manual add so no fabricated identity is ever created.
+  // -------------------------------------------------------------------
+  // Every candidate with an exact Google Place ID that is not already in
+  // the Working List is addable. Candidates already promoted to a
+  // canonical place through the editor this session (pendingGoogleResults
+  // excludes them) are still filtered out. Whether an addable candidate
+  // turns out to be a reusable canonical place is decided at final save by
+  // the governed reuse RPC -- never here, and never by exposing canonical
+  // identity to the browser.
+  const addableCandidates = useMemo(
+    () =>
+      pendingGoogleResults.filter(
+        (place) => !!place.id && !workingListHasGooglePlaceId(workingList, place.id),
+      ),
+    [pendingGoogleResults, workingList],
+  );
+
+  function toggleCandidateSelection(id: string) {
+    setSelectedCandidateIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function selectAllCandidates() {
+    setSelectedCandidateIds(
+      new Set(addableCandidates.map((place) => place.id as string)),
+    );
+  }
+
+  function deselectAllCandidates() {
+    setSelectedCandidateIds(new Set());
+  }
+
+  async function addSelectedCandidatesToWorkingList() {
+    const chosen = addableCandidates.filter(
+      (place) => place.id && selectedCandidateIds.has(place.id),
+    );
+
+    if (chosen.length === 0) {
+      showError("Select at least one candidate to add.");
+      return;
+    }
+
+    const result = addCandidatesToWorkingList(
+      workingList,
+      chosen.map((place) => {
+        // D2: resolve the producing EpicentraX category code through the
+        // already-loaded live place_categories catalog -> canonical
+        // category_id. The raw code is never persisted as the label.
+        const producingCode = place.producingCategoryCodes?.[0] ?? "";
+        const matchedCategory = producingCode
+          ? placeCategories.find((category) => category.code === producingCode)
+          : undefined;
+
+        return {
+          id: place.id,
+          name: place.name,
+          address: place.address,
+          category: place.category,
+          categoryCode: matchedCategory?.code ?? "",
+          categoryId: matchedCategory?.id ?? "",
+          lat: place.lat,
+          lng: place.lng,
+          googleTypes: place.googleTypes ?? [],
+          producingCategoryCodes: place.producingCategoryCodes ?? [],
+          mappingExact: place.mappingExact ?? false,
+        };
+      }),
+    );
+
+    setWorkingList(result.state);
+    setSelectedCandidateIds(new Set());
+    setWorkingListSaveSummary(null);
+    showStatus(
+      `Added ${result.added} to the Working List${
+        result.skippedExistingGoogleIds > 0
+          ? ` (${result.skippedExistingGoogleIds} already present)`
+          : ""
+      }.`,
+    );
+
+    // Lazy provider-details enrichment: only for the entries just added,
+    // never for every search result. Failures are non-fatal.
+    for (const place of chosen) {
+      if (place.id) {
+        void enrichWorkingListEntry(`google:${place.id}`, place.id);
+      }
+    }
+  }
+
+  async function enrichWorkingListEntry(entryKey: string, googlePlaceId: string) {
+    if (!adminEvent?.id) {
+      return;
+    }
+    setEnrichingCandidateKeys((current) => new Set([...current, entryKey]));
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setWorkingList((current) => applyPlaceDetails(current, entryKey, "failed"));
+        return;
+      }
+
+      const response = await fetch("/api/google/place-details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          eventId: adminEvent.id,
+          googlePlaceId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data?.ok || !data?.details) {
+        // Non-destructive: entry keeps its search-derived fields.
+        setWorkingList((current) => applyPlaceDetails(current, entryKey, "failed"));
+        return;
+      }
+
+      const details = data.details as {
+        phone: string | null;
+        website: string | null;
+        plusCode: string | null;
+        editorialSummary: string | null;
+        formattedAddress: string | null;
+        lat: number | null;
+        lng: number | null;
+        types: string[];
+      };
+
+      setWorkingList((current) =>
+        applyPlaceDetails(current, entryKey, "fetched", {
+          phone: details.phone,
+          website: details.website,
+          locationCode: details.plusCode,
+          notes: details.editorialSummary,
+          address: details.formattedAddress,
+          lat: details.lat,
+          lng: details.lng,
+          googleTypes: details.types,
+        }),
+      );
+    } catch (err) {
+      console.error("enrichWorkingListEntry error:", err);
+      setWorkingList((current) => applyPlaceDetails(current, entryKey, "failed"));
+    } finally {
+      setEnrichingCandidateKeys((current) => {
+        const next = new Set(current);
+        next.delete(entryKey);
+        return next;
+      });
+    }
+  }
+
+  async function removeWorkingListEntryById(key: string, name: string) {
+    const confirmed = await requestConfirmation({
+      title: "Remove From Working List",
+      message: `Remove "${name}" from the Working List? This does not affect anything already saved to the Event.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    setWorkingList((current) => removeWorkingListEntry(current, key));
+    showStatus(`Removed "${name}" from the Working List.`);
+  }
+
+  // Manual add / Working List entry edit -- both route through the SAME
+  // shared Add/Edit Nearby Place dialog (editorTarget = "working_list"),
+  // never a second editor. Save writes Working List state only.
+  function openManualWorkingListEditor() {
+    if (!adminEvent?.id) {
+      showError("No admin working event selected.");
+      return;
+    }
+    originalNearbyEditorRef.current = {
+      scope: "event_only",
+      destinationEventId: adminEvent.id,
+      eventForm: emptyNearbyEventForm,
+      canonicalForm: emptyNearbyCanonicalForm,
+    };
+    setEditorMode("add");
+    setEditorTarget("working_list");
+    setEditorWorkingListKey(null);
+    setEditorScope("event_only");
+    setEditorSourceMasterId(null);
+    setEditorMasterScope(null);
+    setEditorMasterTenantId(null);
+    setEditorDestinationEventId(adminEvent.id);
+    setEditorMoveDestinationEventId(adminEvent.id);
+    setNearbyEventForm(emptyNearbyEventForm);
+    setNearbyCanonicalForm(emptyNearbyCanonicalForm);
+    setGoogleCandidateInEditor(null);
+    setEditorExpanded(true);
+  }
+
+  function openWorkingListEntryInEditor(entry: WorkingListEntry) {
+    if (!adminEvent?.id) {
+      return;
+    }
+    const eventForm: NearbyEventForm = {
+      ...emptyNearbyEventForm,
+      name: entry.name,
+      category: entry.categoryCode
+        ? categoryLabelById.get(entry.categoryId) || entry.categoryCode
+        : "",
+      category_id: entry.categoryId,
+      address: entry.address,
+      phone: entry.phone,
+      website: entry.website,
+      notes: entry.notes,
+      location_code: entry.locationCode,
+      lat: entry.lat === null ? "" : String(entry.lat),
+      lng: entry.lng === null ? "" : String(entry.lng),
+    };
+    originalNearbyEditorRef.current = {
+      scope: "event_only",
+      destinationEventId: adminEvent.id,
+      eventForm,
+      canonicalForm: emptyNearbyCanonicalForm,
+    };
+    setEditorMode("add");
+    setEditorTarget("working_list");
+    setEditorWorkingListKey(entry.key);
+    setEditorScope("event_only");
+    setEditorSourceMasterId(null);
+    setEditorMasterScope(null);
+    setEditorMasterTenantId(null);
+    setEditorDestinationEventId(adminEvent.id);
+    setEditorMoveDestinationEventId(adminEvent.id);
+    setNearbyEventForm(eventForm);
+    setNearbyCanonicalForm(emptyNearbyCanonicalForm);
+    setGoogleCandidateInEditor(null);
+    setEditorExpanded(true);
+  }
+
+  async function requestOpenManualWorkingListEditor() {
+    if (isNearbyEditorDirty()) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message:
+          "This nearby place has unsaved changes. Discard them and start a new manual place instead?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    openManualWorkingListEditor();
+  }
+
+  async function requestOpenWorkingListEntryInEditor(entry: WorkingListEntry) {
+    if (isNearbyEditorDirty()) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message:
+          "This nearby place has unsaved changes. Discard them and open the selected Working List place instead?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    openWorkingListEntryInEditor(entry);
+  }
+
+  // The shared editor's Save, when editorTarget = "working_list": resolve
+  // coordinates with the SAME helper the Event/Stored saves use, then
+  // add/update Working List state -- no database write until the explicit
+  // "Add Working List to This Event" action.
+  async function saveEditorToWorkingList() {
+    const name = nearbyEventForm.name.trim();
+    if (!name) {
+      showError("Enter a place name.");
+      return;
+    }
+
+    setSavingEventListing(true);
+    try {
+      const { lat: resolvedLat, lng: resolvedLng } = await resolveNearbyCoordinates(
+        nearbyEventForm.lat,
+        nearbyEventForm.lng,
+        nearbyEventForm.location_code,
+        nearbyEventForm.address,
+      );
+
+      // Category identity is carried by category_id only. The label column
+      // is derived from it at final save (D2) -- the editor's free-text
+      // `category` string is never stashed as a code.
+      const fields = {
+        name,
+        categoryCode: "",
+        categoryId: nearbyEventForm.category_id,
+        address: nearbyEventForm.address.trim(),
+        phone: nearbyEventForm.phone.trim(),
+        website: nearbyEventForm.website.trim(),
+        notes: nearbyEventForm.notes.trim(),
+        locationCode: nearbyEventForm.location_code.trim(),
+        lat: resolvedLat,
+        lng: resolvedLng,
+      };
+
+      if (editorWorkingListKey) {
+        setWorkingList((current) =>
+          updateWorkingListEntry(current, editorWorkingListKey, fields),
+        );
+        showStatus(`Updated "${name}" in the Working List.`);
+      } else {
+        const duplicates = findWorkingListDuplicates(workingList, {
+          name,
+          address: fields.address,
+        });
+        if (duplicates.length > 0) {
+          const confirmed = await requestConfirmation({
+            title: "Possible Duplicate",
+            message: `"${name}" looks similar to a place already in the Working List (${duplicates[0].reason === "name+address" ? "same name and address" : "same name"}). Add it anyway?`,
+            confirmLabel: "Add Anyway",
+            cancelLabel: "Cancel",
+          });
+          if (!confirmed) {
+            return;
+          }
+        }
+        setWorkingList((current) => addManualWorkingListEntry(current, fields).state);
+        showStatus(`Added "${name}" to the Working List.`);
+      }
+
+      setWorkingListSaveSummary(null);
+      resetNearbyEditorToClosed();
+    } catch (err: any) {
+      console.error("saveEditorToWorkingList error:", err);
+      showError(err?.message || "Failed to save to the Working List.");
+    } finally {
+      setSavingEventListing(false);
+    }
+  }
+
+  // Final save (Area I). Additive to THIS Event. Per entry:
+  //  - a Google entry whose exact Place ID resolves to an approved,
+  //    in-scope canonical place is ASSOCIATED via the governed
+  //    reuse_nearby_places_by_google_place_id_for_event RPC (which
+  //    delegates to associate_nearby_master_place_with_event and never
+  //    returns canonical identity) -- no Event-only snapshot is created;
+  //  - every other entry (manual, or a Google entry the RPC reports
+  //    not_reusable) is inserted Event-only via the ratified browser
+  //    path, after a conservative name+address check against this Event's
+  //    existing Nearby list (D1) so a re-run does not duplicate a place.
+  // No destructive replace. Settled entries are marked so a retry never
+  // re-sends or re-inserts them.
+  async function addWorkingListToEvent() {
+    if (!adminEvent?.id) {
+      showError("No admin working event selected.");
+      return;
+    }
+
+    const eventId = adminEvent.id;
+    const pending = entriesPendingSave(workingList);
+    if (pending.length === 0) {
+      showError("The Working List has no unsaved entries to add.");
+      return;
+    }
+
+    const confirmed = await requestConfirmation({
+      title: "Add Working List to This Event",
+      message: `Add ${pending.length} Working List place${pending.length === 1 ? "" : "s"} to ${adminEvent.name || "this event"}'s Nearby list? Existing Event Nearby places are kept -- this only adds.`,
+      confirmLabel: "Add to Event",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingWorkingListToEvent(true);
+    setWorkingListSaveSummary(null);
+    showStatus(`Adding ${pending.length} place${pending.length === 1 ? "" : "s"}...`);
+
+    try {
+      // --- 1. Governed canonical reuse for Google entries -------------
+      const googleEntries = pending.filter(
+        (entry) => entry.source === "google" && !!entry.googlePlaceId,
+      );
+      const reuseByPlaceId = new Map<
+        string,
+        "reused" | "already_associated" | "not_reusable"
+      >();
+
+      if (googleEntries.length > 0) {
+        const googlePlaceIds = googlePlaceIdsFromCandidates(
+          googleEntries.map((entry) => ({ id: entry.googlePlaceId })),
+        );
+        const { data: reuseRows, error: reuseError } = await supabase.rpc(
+          "reuse_nearby_places_by_google_place_id_for_event",
+          { p_event_id: eventId, p_google_place_ids: googlePlaceIds },
+        );
+
+        if (reuseError) {
+          // The reuse RPC is transactional -- on any error it associated
+          // nothing. Abort the whole save (no Event-only inserts either)
+          // so an unexpected server failure never turns into a divergent
+          // Event-only row. Everything stays pending for a clean retry.
+          showError(
+            `${reuseError.message || "Nearby place reuse failed."} Nothing was changed; you can retry.`,
+          );
+          return;
+        }
+
+        for (const row of (reuseRows || []) as Array<{
+          google_place_id: string;
+          outcome: "reused" | "already_associated" | "not_reusable";
+        }>) {
+          reuseByPlaceId.set(row.google_place_id, row.outcome);
+        }
+      }
+
+      const saved: Array<{ key: string; eventPlaceId: string }> = [];
+      const skipped: Array<{ key: string; eventPlaceId: string }> = [];
+      const failed: Array<{ key: string; name: string; error: string }> = [];
+
+      const reuseSettled: Array<{
+        key: string;
+        outcome: "reused" | "already_associated" | "not_reusable";
+      }> = [];
+      const notReusableKeys = new Set<string>();
+
+      // Reconcile each Google entry's outcome. A MISSING outcome (the RPC
+      // returned no row for this Place ID -- should not happen) fails
+      // CLOSED: the entry is recorded as failed/retryable, never inferred
+      // as "not_reusable" (which would push it to an Event-only insert
+      // and risk a duplicate of a place that was actually associated).
+      for (const entry of googleEntries) {
+        const outcome = reuseByPlaceId.get(entry.googlePlaceId as string);
+        if (!outcome) {
+          failed.push({
+            key: entry.key,
+            name: entry.name,
+            error: "The reuse service returned no result for this place.",
+          });
+          continue;
+        }
+        reuseSettled.push({ key: entry.key, outcome });
+        if (outcome === "not_reusable") {
+          notReusableKeys.add(entry.key);
+        }
+      }
+
+      if (reuseSettled.length > 0) {
+        setWorkingList((current) =>
+          markWorkingListEntriesReuseOutcome(current, reuseSettled),
+        );
+      }
+      const reusedCount = reuseSettled.filter(
+        (r) => r.outcome === "reused" || r.outcome === "already_associated",
+      ).length;
+
+      // --- 2. Event-only path: manual entries + not_reusable Google ---
+      const eventOnlyEntries = pending.filter(
+        (entry) => entry.source === "manual" || notReusableKeys.has(entry.key),
+      );
+
+      if (eventOnlyEntries.length > 0) {
+        const { data: maxSortRows, error: maxSortError } = await supabase
+          .from("event_nearby_places")
+          .select("sort_order")
+          .eq("event_id", eventId)
+          .order("sort_order", { ascending: false })
+          .limit(1);
+
+        if (maxSortError) {
+          if (reusedCount > 0) {
+            await loadEventPlaces(eventId);
+          }
+          setWorkingListSaveSummary({
+            added: 0,
+            reused: reusedCount,
+            skipped: 0,
+            failed,
+          });
+          showError(
+            `Could not determine the Nearby list order: ${maxSortError.message}. ` +
+              `${reusedCount > 0 ? `${reusedCount} canonical place${reusedCount === 1 ? "" : "s"} were reused; ` : ""}` +
+              `retry to add the remaining places.`,
+          );
+          return;
+        }
+
+        let nextSortOrder = (maxSortRows?.[0]?.sort_order ?? 0) + 1;
+
+        for (const entry of eventOnlyEntries) {
+          // D1: do not re-insert a place this Event already lists.
+          const existingId = findExistingEventPlaceMatch(entry, eventPlaces);
+          if (existingId) {
+            skipped.push({ key: entry.key, eventPlaceId: existingId });
+            continue;
+          }
+
+          const payload = {
+            event_id: eventId,
+            source_master_id: null,
+            name: entry.name,
+            address: entry.address.trim() || null,
+            phone: entry.phone.trim() || null,
+            website: entry.website.trim() || null,
+            // D2: label column carries the human label from the canonical
+            // category, never a raw code.
+            category: entry.categoryId
+              ? categoryLabelById.get(entry.categoryId) ?? null
+              : null,
+            category_id: entry.categoryId || null,
+            notes: entry.notes.trim() || null,
+            location_code: entry.locationCode.trim() || null,
+            lat: entry.lat,
+            lng: entry.lng,
+            sort_order: nextSortOrder,
+            is_hidden: false,
+          };
+
+          const { data: insertedRow, error: insertError } = await supabase
+            .from("event_nearby_places")
+            .insert(payload)
+            .select("id")
+            .single();
+
+          if (insertError || !insertedRow?.id) {
+            failed.push({
+              key: entry.key,
+              name: entry.name,
+              error: insertError?.message || "Insert returned no row.",
+            });
+            continue;
+          }
+
+          saved.push({ key: entry.key, eventPlaceId: insertedRow.id });
+          nextSortOrder += 1;
+        }
+      }
+
+      const settledEventPlaces = [...saved, ...skipped];
+      if (settledEventPlaces.length > 0) {
+        setWorkingList((current) =>
+          markWorkingListEntriesSaved(current, settledEventPlaces),
+        );
+      }
+      if (saved.length > 0 || reusedCount > 0) {
+        await loadEventPlaces(eventId);
+      }
+
+      setWorkingListSaveSummary({
+        added: saved.length,
+        reused: reusedCount,
+        skipped: skipped.length,
+        failed,
+      });
+
+      const settledTotal = saved.length + reusedCount + skipped.length;
+      if (failed.length === 0) {
+        showStatus(
+          `Done: ${saved.length} added, ${reusedCount} reused from catalog, ${skipped.length} already present.`,
+        );
+      } else {
+        showError(
+          `${settledTotal} settled (${saved.length} added, ${reusedCount} reused, ${skipped.length} already present), ` +
+            `${failed.length} failed. Failed entries stay in the Working List for retry.`,
+        );
+      }
+    } catch (err: any) {
+      console.error("addWorkingListToEvent error:", err);
+      showError(err?.message || "Failed to add the Working List to this Event.");
+    } finally {
+      setSavingWorkingListToEvent(false);
+    }
+  }
+
+  function clearSavedFromWorkingList() {
+    setWorkingList((current) => clearSavedWorkingListEntries(current));
+    setWorkingListSaveSummary(null);
+    showStatus("Cleared saved entries from the Working List.");
   }
   async function bulkGeocodeStoredPlaces() {
     if (!admin) {
@@ -2947,6 +3701,11 @@ function AdminNearbyPageInner() {
   // nothing may bubble to the legacy Stored Area surface behind the dialog.
   async function submitNearbyEditor() {
     if (editingBusy || editorMode !== "add") {
+      return;
+    }
+
+    if (editorTarget === "working_list") {
+      await saveEditorToWorkingList();
       return;
     }
 
@@ -3458,21 +4217,50 @@ function AdminNearbyPageInner() {
 
       <PageSection variant="section">
         <PageHeader
-          title="Google Nearby Search"
+          title="Search Candidates"
           headingLevel="h2"
           titleClassName="app-section-title"
-          description="Search Google Places near the current admin event location and quickly add them into the stored nearby list or the current Event's Nearby list."
+          description="Choose one or more place types and a radius, then Search. Google Maps results come back as candidates only -- nothing is added anywhere until you explicitly move a candidate into the Working List."
           descriptionClassName="app-subtle-text"
         />
 
+        <div style={{ display: "grid", gap: "var(--space-2)" }}>
+          <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+            Place types
+          </div>
+          {placeCategories.length === 0 ? (
+            <div className="app-subtle-text" style={{ fontSize: 13 }}>
+              No active place categories are available.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "var(--space-2) var(--space-4)",
+              }}
+            >
+              {placeCategories.map((category) => (
+                <Checkbox
+                  key={category.id}
+                  label={category.label}
+                  checked={selectedSearchCategoryCodes.has(category.code)}
+                  onChange={() => toggleSearchCategory(category.code)}
+                  disabled={searchingGoogle}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="app-form-grid-2" style={{ alignItems: "end" }}>
-          <Field label="Search">
+          <Field label="Also search for (optional)">
             {(controlProps) => (
               <Input
                 {...controlProps}
                 value={googleQuery}
                 onChange={(e) => setGoogleQuery(e.target.value)}
-                placeholder="Search Google nearby (restaurants, fuel, grocery...)"
+                placeholder="Free text, e.g. urgent care, kayak rental"
                 disabled={searchingGoogle}
               />
             )}
@@ -3497,89 +4285,280 @@ function AdminNearbyPageInner() {
             onClick={() => void searchGoogleNearby()}
             disabled={searchingGoogle}
           >
-            {searchingGoogle ? "Searching..." : "Search Google"}
+            {searchingGoogle ? "Searching..." : "Search"}
           </AppButton>
         </FormActions>
 
-        {googleResults.length === 0 ? null : pendingGoogleResults.length === 0 ? (
-          <EmptyState message="All returned Google results are already represented in your authorized canonical Nearby places." />
+        {googleResults.length === 0 ? null : addableCandidates.length === 0 &&
+          pendingGoogleResults.length === 0 ? (
+          <EmptyState message="Every Google Maps result is already in the Working List." />
         ) : (
           <div style={{ display: "grid", gap: "var(--space-3)" }}>
-            <div className="app-subtle-text" style={{ fontSize: 12 }}>
-              Pending Google candidates
-            </div>
-            {pendingGoogleResults.map((place) => (
-              <div key={place.id} className="app-card-section" style={{ display: "grid", gap: "var(--space-2)" }}>
+            <FormActions>
+              <AppButton
+                onClick={selectAllCandidates}
+                disabled={addableCandidates.length === 0}
+              >
+                Select all
+              </AppButton>
+              <AppButton
+                onClick={deselectAllCandidates}
+                disabled={selectedCandidateIds.size === 0}
+              >
+                Deselect all
+              </AppButton>
+              <AppButton
+                variant="primary"
+                onClick={() => void addSelectedCandidatesToWorkingList()}
+                disabled={selectedCandidateIds.size === 0}
+              >
+                Add Selected to Working List
+              </AppButton>
+            </FormActions>
+
+            {pendingGoogleResults.map((place) => {
+              const alreadyInWorkingList =
+                !!place.id && workingListHasGooglePlaceId(workingList, place.id);
+              const noProviderId = !place.id;
+
+              return (
                 <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: "var(--space-3)",
-                    alignItems: "start",
-                    flexWrap: "wrap",
-                  }}
+                  key={place.id || `no-id-${place.name}-${place.address}`}
+                  className="app-card-section"
+                  style={{ display: "grid", gap: "var(--space-2)" }}
                 >
-                  <div>
-                    <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
-                      {place.name}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "var(--space-3)",
+                      alignItems: "start",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "start" }}>
+                      {!noProviderId && !alreadyInWorkingList ? (
+                        <Checkbox
+                          label=""
+                          checked={selectedCandidateIds.has(place.id as string)}
+                          onChange={() => toggleCandidateSelection(place.id as string)}
+                        />
+                      ) : null}
+                      <div>
+                        <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+                          {place.name}
+                        </div>
+                        <div className="app-subtle-text" style={{ fontSize: 13 }}>
+                          {place.category || "Unknown"}
+                          {place.mappingExact === false ? " (approximate match)" : ""}
+                        </div>
+                      </div>
                     </div>
+
+                    <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap" }}>
+                      {place.rating ? (
+                        <StatusBadge tone="warning">⭐ {place.rating}</StatusBadge>
+                      ) : null}
+                      {alreadyInWorkingList ? (
+                        <StatusBadge tone="info">In Working List</StatusBadge>
+                      ) : null}
+                      {noProviderId ? (
+                        <StatusBadge tone="neutral">No Google ID -- add manually</StatusBadge>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {place.address ? (
                     <div className="app-subtle-text" style={{ fontSize: 13 }}>
-                      {place.category || "Unknown"}
-                    </div>
-                  </div>
-
-                  {place.rating ? <StatusBadge tone="warning">⭐ {place.rating}</StatusBadge> : null}
-                </div>
-
-                {place.address ? (
-                  <div className="app-subtle-text" style={{ fontSize: 13 }}>
-                    {place.address}
-                  </div>
-                ) : null}
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "var(--space-3)",
-                    flexWrap: "wrap",
-                    fontSize: 12,
-                  }}
-                  className="app-subtle-text"
-                >
-                  {place.phone ? <div>📞 {place.phone}</div> : null}
-                  {place.website ? <div>🌐 Website Available</div> : null}
-                  {hasGoogleResultCoordinates(place) ? (
-                    <div>
-                      📍 {Number(place.lat).toFixed(5)}, {Number(place.lng).toFixed(5)}
+                      {place.address}
                     </div>
                   ) : null}
+
+                  {place.producingCategoryCodes && place.producingCategoryCodes.length > 0 ? (
+                    <div className="app-subtle-text" style={{ fontSize: 12 }}>
+                      Matched: {place.producingCategoryCodes.join(", ")}
+                      {place.fromFreeText ? ", free text" : ""}
+                    </div>
+                  ) : null}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "var(--space-3)",
+                      flexWrap: "wrap",
+                      fontSize: 12,
+                    }}
+                    className="app-subtle-text"
+                  >
+                    {place.phone ? <div>📞 {place.phone}</div> : null}
+                    {place.website ? <div>🌐 Website Available</div> : null}
+                    {hasGoogleResultCoordinates(place) ? (
+                      <div>
+                        📍 {Number(place.lat).toFixed(5)}, {Number(place.lng).toFixed(5)}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {hasGoogleResultCoordinates(place) || place.address ? (
+                    <AppLinkButton
+                      href={
+                        hasGoogleResultCoordinates(place)
+                          ? `https://www.google.com/maps?q=${place.lat},${place.lng}`
+                          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || "")}`
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ width: "fit-content" }}
+                    >
+                      Open Google Result in Maps
+                    </AppLinkButton>
+                  ) : null}
+
+                  <FormActions>
+                    <AppButton
+                      onClick={() => void requestLoadGooglePlaceIntoNearbyEditor(place)}
+                    >
+                      Add to Nearby
+                    </AppButton>
+                  </FormActions>
                 </div>
+              );
+            })}
+          </div>
+        )}
+      </PageSection>
 
-                {hasGoogleResultCoordinates(place) || place.address ? (
-                  <AppLinkButton
-                    href={
-                      hasGoogleResultCoordinates(place)
-                        ? `https://www.google.com/maps?q=${place.lat},${place.lng}`
-                        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || "")}`
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ width: "fit-content" }}
-                  >
-                    Open Google Result in Maps
-                  </AppLinkButton>
-                ) : null}
+      <PageSection variant="section">
+        <PageHeader
+          title="Working List"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+          description="Places you have curated for this Event. The Working List is kept as you run more searches and is not saved anywhere until you add it to this Event."
+          descriptionClassName="app-subtle-text"
+          actions={
+            <AppButton
+              onClick={() => void requestOpenManualWorkingListEditor()}
+              disabled={!adminEvent?.id}
+            >
+              + Add manual place
+            </AppButton>
+          }
+        />
 
-                <FormActions>
-                  <AppButton
-                    variant="primary"
-                    onClick={() => void requestLoadGooglePlaceIntoNearbyEditor(place)}
+        {workingListSaveSummary ? (
+          <Alert
+            tone={workingListSaveSummary.failed.length > 0 ? "danger" : "neutral"}
+          >
+            {workingListSaveSummary.added} added
+            {workingListSaveSummary.reused > 0
+              ? `, ${workingListSaveSummary.reused} reused from catalog`
+              : ""}
+            {workingListSaveSummary.skipped > 0
+              ? `, ${workingListSaveSummary.skipped} already in this Event`
+              : ""}
+            {workingListSaveSummary.failed.length > 0
+              ? `, ${workingListSaveSummary.failed.length} failed: ${workingListSaveSummary.failed
+                  .map((entry) => `${entry.name} (${entry.error})`)
+                  .join("; ")}`
+              : ""}
+            .
+          </Alert>
+        ) : null}
+
+        {workingList.entries.length === 0 ? (
+          <EmptyState message="No places in the Working List yet." />
+        ) : (
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            {workingList.entries.map((entry) => {
+              const enriching = enrichingCandidateKeys.has(entry.key);
+              return (
+                <div
+                  key={entry.key}
+                  className="app-card-section"
+                  style={{ display: "grid", gap: "var(--space-2)" }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "var(--space-3)",
+                      alignItems: "start",
+                      flexWrap: "wrap",
+                    }}
                   >
-                    Add to Nearby
-                  </AppButton>
-                </FormActions>
-              </div>
-            ))}
+                    <div>
+                      <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+                        {entry.name}
+                      </div>
+                      <div className="app-subtle-text" style={{ fontSize: 13 }}>
+                        {(entry.categoryId && categoryLabelById.get(entry.categoryId)) ||
+                          entry.categoryCode ||
+                          "Uncategorized"}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap" }}>
+                      <StatusBadge tone={entry.source === "google" ? "info" : "neutral"}>
+                        {entry.source === "google" ? "Google" : "Manual"}
+                      </StatusBadge>
+                      {entry.reuseOutcome === "reused" ||
+                      entry.reuseOutcome === "already_associated" ? (
+                        <StatusBadge tone="success">Reused from catalog</StatusBadge>
+                      ) : entry.savedEventPlaceId ? (
+                        <StatusBadge tone="success">In this Event</StatusBadge>
+                      ) : null}
+                      {enriching ? (
+                        <StatusBadge tone="neutral">Fetching details…</StatusBadge>
+                      ) : entry.detailsStatus === "fetched" ? (
+                        <StatusBadge tone="success">Details added</StatusBadge>
+                      ) : entry.detailsStatus === "failed" ? (
+                        <StatusBadge tone="warning">
+                          Details unavailable — complete manually
+                        </StatusBadge>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {entry.address ? (
+                    <div className="app-subtle-text" style={{ fontSize: 13 }}>
+                      {entry.address}
+                    </div>
+                  ) : null}
+
+                  <FormActions>
+                    <AppButton
+                      onClick={() => void requestOpenWorkingListEntryInEditor(entry)}
+                    >
+                      Edit
+                    </AppButton>
+                    <AppButton
+                      variant="danger"
+                      onClick={() => void removeWorkingListEntryById(entry.key, entry.name)}
+                    >
+                      Remove
+                    </AppButton>
+                  </FormActions>
+                </div>
+              );
+            })}
+
+            <FormActions>
+              <AppButton
+                variant="primary"
+                onClick={() => void addWorkingListToEvent()}
+                disabled={savingWorkingListToEvent || workingListPendingCount === 0}
+              >
+                {savingWorkingListToEvent
+                  ? "Adding..."
+                  : `Add Working List to This Event${
+                      workingListPendingCount > 0 ? ` (${workingListPendingCount})` : ""
+                    }`}
+              </AppButton>
+              {workingList.entries.some(isWorkingListEntrySettled) ? (
+                <AppButton onClick={clearSavedFromWorkingList}>
+                  Clear saved entries
+                </AppButton>
+              ) : null}
+            </FormActions>
           </div>
         )}
       </PageSection>
@@ -3678,7 +4657,15 @@ function AdminNearbyPageInner() {
                     </Alert>
                   ) : null}
 
-                  {editorMode === "add" ? (
+                  {editorTarget === "working_list" ? (
+                    <Alert tone="neutral">
+                      This edits the Working List. Nothing is added to the Event
+                      until you choose &ldquo;Add Working List to This
+                      Event.&rdquo;
+                    </Alert>
+                  ) : null}
+
+                  {editorMode === "add" && editorTarget !== "working_list" ? (
                     <>
                       <Field label="Destination Event">
                         {(controlProps) => (
@@ -3854,22 +4841,24 @@ function AdminNearbyPageInner() {
                       </div>
 
                       <div className="app-form-grid-2">
-                        <Field label="Distance (miles)">
-                          {(controlProps) => (
-                            <Input
-                              {...controlProps}
-                              value={nearbyEventForm.distance_miles}
-                              onChange={(e) =>
-                                setNearbyEventForm((prev) => ({
-                                  ...prev,
-                                  distance_miles: e.target.value,
-                                }))
-                              }
-                              placeholder="Miles"
-                              disabled={editingBusy}
-                            />
-                          )}
-                        </Field>
+                        {editorTarget === "working_list" ? null : (
+                          <Field label="Distance (miles)">
+                            {(controlProps) => (
+                              <Input
+                                {...controlProps}
+                                value={nearbyEventForm.distance_miles}
+                                onChange={(e) =>
+                                  setNearbyEventForm((prev) => ({
+                                    ...prev,
+                                    distance_miles: e.target.value,
+                                  }))
+                                }
+                                placeholder="Miles"
+                                disabled={editingBusy}
+                              />
+                            )}
+                          </Field>
+                        )}
                         <Field label="Location Code" help="Plus code, used to resolve coordinates if latitude/longitude are blank.">
                           {(controlProps) => (
                             <Input
@@ -3888,14 +4877,16 @@ function AdminNearbyPageInner() {
                         </Field>
                       </div>
 
-                      <Checkbox
-                        label="Hidden from members"
-                        checked={nearbyEventForm.is_hidden}
-                        onChange={(e) =>
-                          setNearbyEventForm((prev) => ({ ...prev, is_hidden: e.target.checked }))
-                        }
-                        disabled={editingBusy}
-                      />
+                      {editorTarget === "working_list" ? null : (
+                        <Checkbox
+                          label="Hidden from members"
+                          checked={nearbyEventForm.is_hidden}
+                          onChange={(e) =>
+                            setNearbyEventForm((prev) => ({ ...prev, is_hidden: e.target.checked }))
+                          }
+                          disabled={editingBusy}
+                        />
+                      )}
 
                       <FormActions>
                         <AppButton
@@ -3908,7 +4899,13 @@ function AdminNearbyPageInner() {
                           }
                           disabled={editingBusy}
                         >
-                          {editorMode === "add" ? "Add Place" : "Save Listing"}
+                          {editorTarget === "working_list"
+                            ? editorWorkingListKey
+                              ? "Save to Working List"
+                              : "Add to Working List"
+                            : editorMode === "add"
+                              ? "Add Place"
+                              : "Save Listing"}
                         </AppButton>
                       </FormActions>
                     </div>

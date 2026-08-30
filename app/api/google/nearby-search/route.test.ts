@@ -1,219 +1,105 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { POST } from "./route";
 
-const originalFetch = globalThis.fetch;
-const originalApiKey = process.env.GOOGLE_MAPS_API_KEY;
+// The Google fan-out, merge, radius, and geocode behavior is proven
+// directly in lib/googleNearby.test.ts and lib/googlePlaceTypeMapping.test.ts
+// against an injected fetch. This file proves the route's own
+// responsibility: the Event-scoped server authority gate runs, and runs
+// BEFORE any Google credential or provider request -- and the request
+// contract. (No admin-session mock harness exists in this repo; the
+// gate's ordering is asserted from source, its fail-closed behavior
+// behaviorally.)
 
-function request(body: Record<string, unknown>) {
+const SOURCE = readFileSync(
+  fileURLToPath(new URL("./route.ts", import.meta.url)),
+  "utf8",
+);
+const CODE_ONLY = SOURCE.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+const originalFetch = globalThis.fetch;
+
+function request(body: unknown, headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/google/nearby-search", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
 }
 
-function restoreEnvironment() {
-  globalThis.fetch = originalFetch;
-  if (originalApiKey === undefined) {
-    delete process.env.GOOGLE_MAPS_API_KEY;
-  } else {
-    process.env.GOOGLE_MAPS_API_KEY = originalApiKey;
-  }
-}
-
-test("returns mapped Places results after geocoding the complete Event location", async () => {
-  process.env.GOOGLE_MAPS_API_KEY = "test-server-key";
-  const urls: URL[] = [];
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input));
-    urls.push(url);
-    if (url.pathname.endsWith("/geocode/json")) {
-      return Response.json({
-        status: "OK",
-        results: [{ geometry: { location: { lat: 30.25, lng: -87.7 } } }],
-      });
-    }
-    return Response.json({
-      status: "OK",
-      results: [{
-        place_id: "place-1",
-        name: "Example Restaurant",
-        vicinity: "123 Example Road",
-        rating: 4.5,
-        types: ["restaurant"],
-        geometry: { location: { lat: 30.31, lng: -87.75 } },
-      }],
-    });
-  };
-
-  try {
-    const response = await POST(request({
-      query: "restaurants",
-      location: "Gulf Shores RV Resort, 18717 Barefoot Wy, Gulf Shores, AL 36542",
-      radiusMiles: 20,
-    }));
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), {
-      places: [{
-        id: "place-1",
-        name: "Example Restaurant",
-        address: "123 Example Road",
-        rating: 4.5,
-        category: "restaurant",
-        lat: 30.31,
-        lng: -87.75,
-      }],
-      debug: {
-        query: "restaurants",
-        location: "Gulf Shores RV Resort, 18717 Barefoot Wy, Gulf Shores, AL 36542",
-        radiusMiles: 20,
-        lat: 30.25,
-        lng: -87.7,
-      },
-    });
-    assert.equal(urls.length, 2);
-    assert.equal(
-      urls[0].searchParams.get("address"),
-      "Gulf Shores RV Resort, 18717 Barefoot Wy, Gulf Shores, AL 36542",
-    );
-    assert.equal(urls[1].searchParams.get("location"), "30.25,-87.7");
-    assert.equal(urls[1].searchParams.get("radius"), "32180");
-  } finally {
-    restoreEnvironment();
-  }
-});
-
-test("normalizes missing or non-numeric Google result coordinates to null", async () => {
-  process.env.GOOGLE_MAPS_API_KEY = "test-server-key";
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input));
-    return url.pathname.endsWith("/geocode/json")
-      ? Response.json({
-          status: "OK",
-          results: [{ geometry: { location: { lat: 30.25, lng: -87.7 } } }],
-        })
-      : Response.json({
-          status: "OK",
-          results: [
-            { place_id: "missing", name: "Missing geometry" },
-            {
-              place_id: "invalid",
-              name: "Invalid geometry",
-              geometry: { location: { lat: "30.3", lng: -87.8 } },
-            },
-          ],
-        });
-  };
-
-  try {
-    const response = await POST(request({ query: "restaurants", location: "Gulf Shores, AL" }));
-    assert.equal(response.status, 200);
-    assert.deepEqual((await response.json()).places, [
-      {
-        id: "missing",
-        name: "Missing geometry",
-        address: "",
-        category: null,
-        lat: null,
-        lng: null,
-      },
-      {
-        id: "invalid",
-        name: "Invalid geometry",
-        address: "",
-        category: null,
-        lat: null,
-        lng: -87.8,
-      },
-    ]);
-  } finally {
-    restoreEnvironment();
-  }
-});
-
-test("returns an ordinary empty result set for Google Nearby ZERO_RESULTS", async () => {
-  process.env.GOOGLE_MAPS_API_KEY = "test-server-key";
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input));
-    return url.pathname.endsWith("/geocode/json")
-      ? Response.json({
-          status: "OK",
-          results: [{ geometry: { location: { lat: 30.25, lng: -87.7 } } }],
-        })
-      : Response.json({ status: "ZERO_RESULTS", results: [] });
-  };
-
-  try {
-    const response = await POST(request({ query: "restaurants", location: "Gulf Shores, AL" }));
-    assert.equal(response.status, 200);
-    assert.deepEqual((await response.json()).places, []);
-  } finally {
-    restoreEnvironment();
-  }
-});
-
-test("returns a sanitized upstream API failure instead of an empty result set", async () => {
-  process.env.GOOGLE_MAPS_API_KEY = "test-server-key";
-  globalThis.fetch = async () => Response.json({
-    status: "REQUEST_DENIED",
-    error_message: "API keys with referer restrictions cannot be used with this API.",
-  });
-
-  try {
-    const response = await POST(request({ query: "restaurants", location: "Gulf Shores, AL" }));
-    assert.equal(response.status, 502);
-    assert.deepEqual(await response.json(), {
-      error: "Google geocoding request was denied. Check the server Google Maps API configuration.",
-      code: "google_geocoding_request_denied",
-    });
-  } finally {
-    restoreEnvironment();
-  }
-});
-
-test("returns a sanitized Google Places failure after successful geocoding", async () => {
-  process.env.GOOGLE_MAPS_API_KEY = "test-server-key";
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input));
-    return url.pathname.endsWith("/geocode/json")
-      ? Response.json({
-          status: "OK",
-          results: [{ geometry: { location: { lat: 30.25, lng: -87.7 } } }],
-        })
-      : Response.json({ status: "OVER_QUERY_LIMIT" }, { status: 429 });
-  };
-
-  try {
-    const response = await POST(request({ query: "restaurants", location: "Gulf Shores, AL" }));
-    assert.equal(response.status, 502);
-    assert.deepEqual(await response.json(), {
-      error: "Google nearby search request failed (OVER_QUERY_LIMIT).",
-      code: "google_nearby_search_over_query_limit",
-    });
-  } finally {
-    restoreEnvironment();
-  }
-});
-
-test("reports a missing server credential without attempting an upstream request", async () => {
-  delete process.env.GOOGLE_MAPS_API_KEY;
-  let called = false;
-  globalThis.fetch = async () => {
-    called = true;
+test("an unauthenticated caller is rejected before any Google work", async () => {
+  let fetchCalled = false;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
     throw new Error("must not be called");
-  };
+  }) as typeof fetch;
 
   try {
-    const response = await POST(request({ query: "restaurants", location: "Gulf Shores, AL" }));
-    assert.equal(response.status, 500);
-    assert.deepEqual(await response.json(), {
-      error: "Google nearby search is unavailable because its server credential is not configured.",
-      code: "missing_google_maps_api_key",
-    });
-    assert.equal(called, false);
+    const response = await POST(
+      request({
+        eventId: "evt-1",
+        categoryCodes: ["restaurant"],
+        radiusMiles: 10,
+      }),
+    );
+    assert.equal(response.status, 401);
+    assert.equal(fetchCalled, false);
   } finally {
-    restoreEnvironment();
+    globalThis.fetch = originalFetch;
   }
+});
+
+test("the route resolves the admin actor, the nearby permission, then Event authority -- in that order, before reading the API key", () => {
+  const resolveIdx = CODE_ONLY.indexOf("resolveAdminActorFromBearer(");
+  const permissionIdx = CODE_ONLY.indexOf(
+    'adminHasPermission(adminResolved.admin, "can_manage_nearby")',
+  );
+  const eventAuthorityIdx = CODE_ONLY.indexOf(
+    "adminCanManageEvent(adminResolved.admin, eventId)",
+  );
+  const apiKeyIdx = CODE_ONLY.indexOf("process.env.GOOGLE_MAPS_API_KEY");
+  const fanOutIdx = CODE_ONLY.indexOf("runGoogleNearbyFanOut(");
+
+  assert.ok(resolveIdx >= 0 && permissionIdx >= 0 && eventAuthorityIdx >= 0);
+  assert.ok(resolveIdx < permissionIdx, "permission check after actor resolution");
+  assert.ok(permissionIdx < eventAuthorityIdx, "event authority after permission");
+  assert.ok(eventAuthorityIdx < apiKeyIdx, "API key read only after authority passes");
+  assert.ok(apiKeyIdx < fanOutIdx, "fan-out only after the key is confirmed");
+});
+
+test("the request contract is { eventId, categoryCodes, radiusMiles, freeText }", () => {
+  assert.match(CODE_ONLY, /body\.eventId/);
+  assert.match(CODE_ONLY, /body\.categoryCodes/);
+  assert.match(CODE_ONLY, /body\.radiusMiles/);
+  assert.match(CODE_ONLY, /body\.freeText/);
+  assert.doesNotMatch(
+    CODE_ONLY,
+    /body\.(authUserId|adminUserId|isSuperAdmin|permissions)/,
+  );
+});
+
+test("Event coordinates are preferred; the location text is only geocoded when they are missing", () => {
+  assert.match(CODE_ONLY, /\.select\("id,location,lat,lng"\)/);
+  assert.match(
+    CODE_ONLY,
+    /if \(lat === null \|\| lng === null\) \{[\s\S]*?geocodeEventLocationViaGoogle\(/,
+  );
+});
+
+test("the selectable catalog is place_categories, resolved by the requested codes -- never hard-coded here", () => {
+  assert.match(
+    CODE_ONLY,
+    /\.from\("place_categories"\)[\s\S]*?\.eq\("is_active", true\)[\s\S]*?\.in\("code", categoryCodes\)/,
+  );
+  assert.match(CODE_ONLY, /buildGoogleNearbyProviderRequests\(/);
+});
+
+test("an empty request (no categories, no free text) has a dedicated 400 branch", () => {
+  assert.match(
+    CODE_ONLY,
+    /if \(categoryCodes\.length === 0 && !freeText\) \{[\s\S]*?status: 400/,
+  );
 });

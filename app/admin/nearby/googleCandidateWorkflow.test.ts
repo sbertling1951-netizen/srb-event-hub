@@ -16,18 +16,35 @@ function sourceBetween(startNeedle: string, endNeedle: string) {
   return PAGE_SOURCE.slice(start, end);
 }
 
-test("Google discovery candidates use the governed exact-ID surface and suppress only server-proven canonical matches", () => {
+test("Google discovery candidates use the governed exact-ID surface; canonical reuse is resolved at final save without exposing canonical identity", () => {
   assert.match(
     PAGE_SOURCE,
     /import \{[\s\S]*?googlePlaceIdsFromCandidates,[\s\S]*?pendingGooglePlaceCandidates,[\s\S]*?\} from "\.\/googleCandidateIdentity";/,
   );
+  // Nearby curated-list builder (follow-up): matched-canonical candidates
+  // are NO LONGER pre-suppressed via
+  // list_matching_google_place_ids_for_nearby_administration -- they are
+  // addable, and exact Google Place-ID reuse is decided at final save by
+  // the governed mutation-owning RPC, which never returns a master id.
+  assert.doesNotMatch(
+    PAGE_SOURCE,
+    /\.rpc\(\s*"list_matching_google_place_ids_for_nearby_administration"/,
+  );
   assert.match(
     PAGE_SOURCE,
-    /\.rpc\(\s*"list_matching_google_place_ids_for_nearby_administration",\s*\{\s*p_event_id: adminEvent\.id,\s*p_google_place_ids: googlePlaceIds,/,
+    /\.rpc\(\s*\n?\s*"reuse_nearby_places_by_google_place_id_for_event",\s*\n?\s*\{ p_event_id: eventId, p_google_place_ids: googlePlaceIds \}/,
   );
+  // Exact Google Place ID is still the only identity that participates.
+  assert.match(PAGE_SOURCE, /googlePlaceIdsFromCandidates\(/);
+  // pendingGoogleResults still filters candidates promoted to a canonical
+  // place through the editor this session.
   assert.match(PAGE_SOURCE, /const pendingGoogleResults = useMemo\(/);
   assert.match(PAGE_SOURCE, /pendingGooglePlaceCandidates\(googleResults, matchedGooglePlaceIds\)/);
-  assert.match(PAGE_SOURCE, /Pending Google candidates/);
+  assert.match(PAGE_SOURCE, /title="Search Candidates"/);
+  assert.match(
+    PAGE_SOURCE,
+    /const addableCandidates = useMemo\([\s\S]*?pendingGoogleResults\.filter\(/,
+  );
   assert.equal(/similarity|levenshtein|ILIKE/.test(PAGE_SOURCE), false);
 });
 
