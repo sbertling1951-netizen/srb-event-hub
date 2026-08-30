@@ -25,6 +25,44 @@ DECLARE
   v_count integer;
   v_other_fk_count integer;
 BEGIN
+  -- ============================================================
+  -- FRESH / SHADOW-DATABASE REPLAY GUARD
+  -- (added 2026-08-29, reproducible-database-history reconstruction).
+  --
+  -- BEHAVIOR-PRESERVING FOR THE HISTORICAL PRODUCTION PATH: on production
+  -- the full legacy Agenda-template population (2 templates, 2 sets, 12
+  -- items, 5 categories) and its Stage 3B preservation (3 roots, 3
+  -- revisions, 12 revision items, 17 preservation records) all exist, so
+  -- this guard falls through and EVERY exact-count precondition below runs
+  -- UNCHANGED.
+  --
+  -- On a genuinely fresh / shadow database, none of that legacy or
+  -- preservation state ever existed (20260811360000 no-ops there). The
+  -- exact-count assertions below would then fire on the absent state even
+  -- though there is nothing to retire. When the ENTIRE relevant
+  -- population is absent, skip the assertions -- but the destructive DDL
+  -- AFTER this block still runs, dropping the (empty, baseline-created)
+  -- legacy tables and the events pointer so the rebuilt schema converges
+  -- with production. No rows are seeded.
+  --
+  -- FAIL-CLOSED ON PARTIAL STATE: the guard requires EVERY listed table to
+  -- be empty. If any legacy or preservation row exists, the guard does not
+  -- fire and the original exact-count assertions (12 / 5 / 2 / 2 / 3 / 3 /
+  -- 12 / 17 / ...) still expose any incomplete or contradictory state.
+  -- ============================================================
+  IF NOT EXISTS (SELECT 1 FROM public.agenda_templates)
+     AND NOT EXISTS (SELECT 1 FROM public.agenda_template_sets)
+     AND NOT EXISTS (SELECT 1 FROM public.agenda_template_items)
+     AND NOT EXISTS (SELECT 1 FROM public.agenda_template_categories)
+     AND NOT EXISTS (SELECT 1 FROM public.agenda_template_roots)
+     AND NOT EXISTS (SELECT 1 FROM public.agenda_template_revisions)
+     AND NOT EXISTS (SELECT 1 FROM public.agenda_legacy_preservation_record)
+     AND NOT EXISTS (SELECT 1 FROM public.events WHERE assigned_agenda_template_id IS NOT NULL)
+  THEN
+    RAISE NOTICE 'agenda legacy retirement (20260811370000): replay-safe no-op on precondition checks -- no legacy Agenda-template or preservation state exists (fresh/shadow); the DDL below still drops the empty baseline legacy tables so the schema converges.';
+    RETURN;
+  END IF;
+
   -- Step A precondition: exactly the expected historical association is
   -- present and preserved before the Event column/FK is touched.
   IF NOT EXISTS (

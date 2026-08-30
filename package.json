@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "context:update": "node scripts/ai-context/update-project-brief.mjs"
+    "context:update": "node scripts/ai-context/update-project-brief.mjs",
+    "db:verify-replay": "bash scripts/verify-fresh-replay.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

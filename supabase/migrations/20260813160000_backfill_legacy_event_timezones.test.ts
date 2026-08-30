@@ -95,3 +95,32 @@ test("does not alter any table other than public.events", () => {
     assert.equal(table, "events", `expected only public.events to be touched, found public.${table}`);
   }
 });
+
+// --- reproducible-database-history reconstruction (2026-08-29): fresh/shadow guard ---
+
+test("has an explicit fresh/shadow no-op path when none of the six referenced Events exist", () => {
+  assert.match(SQL, /FRESH \/ SHADOW-DATABASE REPLAY GUARD/);
+  assert.match(SQL, /IF NOT EXISTS \([\s\S]*?SELECT 1 FROM public\.events[\s\S]*?WHERE id IN \([\s\S]*?\)[\s\S]*?\) THEN/);
+  assert.match(SQL, /RAISE NOTICE[^\n]*replay-safe no-op[\s\S]*?RETURN;\s*\n\s*END IF;/);
+  // the guard lists all five UPDATE targets plus Camp Margaritaville
+  const guard = SQL.slice(SQL.indexOf("FRESH / SHADOW-DATABASE REPLAY GUARD"), SQL.indexOf("RETURN;") + 8);
+  for (const id of [
+    "53136dfb-b039-40b1-9adf-dcb4d648ea87", "382a358b-7d2d-4390-a920-8013a70c560b",
+    "853f6934-8672-4219-ad59-520482098577", "9106b34a-b82b-4e7f-9d64-6325fc6ca705",
+    "e0f01c83-cd82-43f4-a0a4-e4d3cb673459", "6bca5b21-2760-4f2e-80e3-e616fcbb35ab",
+  ]) {
+    assert.ok(guard.includes(id), `guard must reference Event ${id}`);
+  }
+});
+
+test("partial state does NOT no-op -- exactly one RETURN, and the exact v_updated_count = 5 assertion is retained unchanged", () => {
+  const doBlock = SQL.slice(SQL.indexOf("DO $$"), SQL.indexOf("$$;"));
+  assert.equal((doBlock.match(/\n\s*RETURN;/g) || []).length, 1, "exactly one RETURN -- the fresh/shadow guard");
+  assert.match(SQL, /IF v_updated_count <> 5 THEN\s*\n\s*RAISE EXCEPTION 'timezone backfill: expected to update exactly 5 rows/);
+  assert.doesNotMatch(SQL, /v_updated_count (>=|<=|BETWEEN)/);
+});
+
+test("the fresh/shadow guard seeds no Events and changes no authority/RLS", () => {
+  const added = SQL.slice(SQL.indexOf("FRESH / SHADOW-DATABASE REPLAY GUARD"), SQL.indexOf("UPDATE public.events SET timezone = 'America/Chicago'\n  WHERE id = '53136dfb"));
+  assert.doesNotMatch(added, /INSERT INTO|CREATE POLICY|GRANT|REVOKE|ENABLE ROW LEVEL SECURITY/);
+});
