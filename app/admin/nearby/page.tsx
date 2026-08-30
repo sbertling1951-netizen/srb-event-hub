@@ -54,6 +54,11 @@ import {
   resolveStoredAreaSelection,
 } from "@/lib/nearbyAdminState";
 import {
+  allSearchCategoriesSelected,
+  allSearchCategoryCodes,
+  describeActiveSearch,
+} from "@/lib/nearbySearchSetup";
+import {
   addCandidatesToWorkingList,
   addManualWorkingListEntry,
   applyPlaceDetails,
@@ -1639,6 +1644,15 @@ function AdminNearbyPageInner() {
   const [matchedGooglePlaceIds, setMatchedGooglePlaceIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // Exact Google Place IDs from the latest search that the governed
+  // server-side comparison (list_matching_google_place_ids_for_nearby_
+  // administration) reports are ALREADY represented in the canonical
+  // catalog the admin governs for this Event. Informational only -- these
+  // candidates stay addable; final-save reuse still runs. Empty when the
+  // matcher is unavailable or the caller lacks catalog authority.
+  const [catalogMatchedGooglePlaceIds, setCatalogMatchedGooglePlaceIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [searchingGoogle, setSearchingGoogle] = useState(false);
   // Search Candidate selection -- transient, independent of the Working
   // List. Cleared on every new search.
@@ -1718,6 +1732,7 @@ function AdminNearbyPageInner() {
     setEventPlaces([]);
     setGoogleResults([]);
     setMatchedGooglePlaceIds(new Set());
+    setCatalogMatchedGooglePlaceIds(new Set());
     setSelectedCandidateIds(new Set());
     setSelectedSearchCategoryCodes(new Set());
     setWorkingList(EMPTY_WORKING_LIST);
@@ -1838,6 +1853,7 @@ function AdminNearbyPageInner() {
       setEnrichingCandidateKeys(new Set());
       setGoogleResults([]);
       setMatchedGooglePlaceIds(new Set());
+      setCatalogMatchedGooglePlaceIds(new Set());
       setSelectedCandidateIds(new Set());
       setWorkingListEventId(transition.eventId);
       if (hadEntries) {
@@ -2930,6 +2946,30 @@ function AdminNearbyPageInner() {
       // final save, which never exposes canonical identity to the browser.
       setGoogleResults(results);
       setSelectedCandidateIds(new Set());
+      setCatalogMatchedGooglePlaceIds(new Set());
+
+      // Best-effort: ask the governed matcher which of these exact Google
+      // Place IDs are already in the canonical catalog this admin governs
+      // for the Event. Purely to label candidate state before save -- a
+      // failure (or an Event Admin without catalog authority) just means
+      // no "Already in catalog" badges; the exact-Place-ID reuse at final
+      // save is unchanged and authoritative.
+      const searchPlaceIds = googlePlaceIdsFromCandidates(results);
+      if (searchPlaceIds.length > 0) {
+        const { data: matchRows, error: matchError } = await supabase.rpc(
+          "list_matching_google_place_ids_for_nearby_administration",
+          { p_event_id: adminEvent.id, p_google_place_ids: searchPlaceIds },
+        );
+        if (!matchError && Array.isArray(matchRows)) {
+          setCatalogMatchedGooglePlaceIds(
+            new Set(
+              (matchRows as Array<{ google_place_id: string }>).map(
+                (row) => row.google_place_id,
+              ),
+            ),
+          );
+        }
+      }
 
       if (selectedAreaId) {
         await supabase
@@ -2964,6 +3004,27 @@ function AdminNearbyPageInner() {
       return next;
     });
   }
+
+  // Bulk toggle for the Google Maps Search Setup marker-type list.
+  // selectedSearchCategoryCodes stays the single source of truth.
+  const allSearchCategoriesChecked = allSearchCategoriesSelected(
+    placeCategories,
+    selectedSearchCategoryCodes,
+  );
+
+  function toggleAllSearchCategories() {
+    setSelectedSearchCategoryCodes(
+      allSearchCategoriesChecked
+        ? new Set()
+        : new Set(allSearchCategoryCodes(placeCategories)),
+    );
+  }
+
+  const activeSearchSummary = describeActiveSearch({
+    selectedTypeCount: selectedSearchCategoryCodes.size,
+    radiusMiles: Number(googleRadius) || 10,
+    freeText: googleQuery,
+  });
 
   // -------------------------------------------------------------------
   // Search Candidates -> Working List. Only explicit selection moves a
@@ -4273,16 +4334,34 @@ function AdminNearbyPageInner() {
 
       <PageSection variant="section">
         <PageHeader
-          title="Search Candidates"
+          title="Google Maps Search Setup"
           headingLevel="h2"
           titleClassName="app-section-title"
-          description="Choose one or more place types and a radius, then Search. Google Maps results come back as candidates only -- nothing is added anywhere until you explicitly move a candidate into the Working List."
+          description="Pick the marker types Google discovery should search for, a radius, and (optionally) a free-text term. The selected marker types are exactly what is searched -- one Google request per type. Results come back below as candidates only; nothing is added anywhere until you move a candidate into the Working List."
           descriptionClassName="app-subtle-text"
         />
 
         <div style={{ display: "grid", gap: "var(--space-2)" }}>
-          <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
-            Place types
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+              Search marker types
+            </div>
+            {placeCategories.length > 0 ? (
+              <AppButton
+                onClick={toggleAllSearchCategories}
+                disabled={searchingGoogle}
+              >
+                {allSearchCategoriesChecked ? "Deselect all" : "Select all"}
+              </AppButton>
+            ) : null}
           </div>
           {placeCategories.length === 0 ? (
             <div className="app-subtle-text" style={{ fontSize: 13 }}>
@@ -4335,15 +4414,27 @@ function AdminNearbyPageInner() {
           </Field>
         </div>
 
+        <Alert tone="neutral">{activeSearchSummary}</Alert>
+
         <FormActions>
           <AppButton
             variant="primary"
             onClick={() => void searchGoogleNearby()}
             disabled={searchingGoogle}
           >
-            {searchingGoogle ? "Searching..." : "Search"}
+            {searchingGoogle ? "Searching..." : "Search Google Maps"}
           </AppButton>
         </FormActions>
+      </PageSection>
+
+      <PageSection variant="section">
+        <PageHeader
+          title="Search Candidates"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+          description="Fresh Google Maps results from the search above. These are discovery candidates, kept separate from your stored/canonical places -- move the ones you want into the Working List."
+          descriptionClassName="app-subtle-text"
+        />
 
         {googleResults.length === 0 ? null : addableCandidates.length === 0 &&
           pendingGoogleResults.length === 0 ? (
@@ -4376,6 +4467,8 @@ function AdminNearbyPageInner() {
               const alreadyInWorkingList =
                 !!place.id && workingListHasGooglePlaceId(workingList, place.id);
               const noProviderId = !place.id;
+              const alreadyInCatalog =
+                !!place.id && catalogMatchedGooglePlaceIds.has(place.id);
 
               return (
                 <div
@@ -4414,6 +4507,10 @@ function AdminNearbyPageInner() {
                     <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap" }}>
                       {place.rating ? (
                         <StatusBadge tone="warning">⭐ {place.rating}</StatusBadge>
+                      ) : null}
+                      <StatusBadge tone="info">Google candidate</StatusBadge>
+                      {alreadyInCatalog ? (
+                        <StatusBadge tone="success">Already in catalog</StatusBadge>
                       ) : null}
                       {alreadyInWorkingList ? (
                         <StatusBadge tone="info">In Working List</StatusBadge>

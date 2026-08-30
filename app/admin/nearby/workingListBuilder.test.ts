@@ -236,17 +236,24 @@ test("Working-List Event-context clearing is delegated to resolveWorkingListEven
 // --- Canonical reuse (follow-up) --------------------------------------
 
 test("a candidate that matches a canonical place is NOT blocked -- it is addable, and reuse is resolved at save", () => {
-  // no pre-save classification / suppression of matched-canonical candidates
-  assert.doesNotMatch(PAGE_SOURCE, /catalogMatchedCandidates/);
-  assert.doesNotMatch(
+  // The exact-ID matcher is now called after a search, but ONLY to label
+  // state -- it never removes a candidate from the addable set and never
+  // gates addability.
+  assert.match(
     PAGE_SOURCE,
     /\.rpc\(\s*\n?\s*"list_matching_google_place_ids_for_nearby_administration"/,
   );
-  // addable set is just "has an exact place_id and not already in the list"
+  // addable set is STILL just "has an exact place_id and not already in
+  // the list" -- catalogMatchedGooglePlaceIds does not appear in it.
   assert.match(
     PAGE_SOURCE,
     /pendingGoogleResults\.filter\(\s*\(place\) => !!place\.id && !workingListHasGooglePlaceId\(workingList, place\.id\),/,
   );
+  const addable = functionSlice(
+    "const addableCandidates = useMemo(",
+    "function toggleCandidateSelection",
+  );
+  assert.doesNotMatch(addable, /catalogMatchedGooglePlaceIds/);
 });
 
 test("canonical reuse is retry-safe and never creates a duplicate Event-only row", () => {

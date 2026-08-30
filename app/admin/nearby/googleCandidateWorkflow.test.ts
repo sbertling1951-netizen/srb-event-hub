@@ -21,14 +21,24 @@ test("Google discovery candidates use the governed exact-ID surface; canonical r
     PAGE_SOURCE,
     /import \{[\s\S]*?googlePlaceIdsFromCandidates,[\s\S]*?pendingGooglePlaceCandidates,[\s\S]*?\} from "\.\/googleCandidateIdentity";/,
   );
-  // Nearby curated-list builder (follow-up): matched-canonical candidates
-  // are NO LONGER pre-suppressed via
-  // list_matching_google_place_ids_for_nearby_administration -- they are
-  // addable, and exact Google Place-ID reuse is decided at final save by
-  // the governed mutation-owning RPC, which never returns a master id.
+  // Nearby Admin UX cleanup (Part C): the governed exact-ID matcher
+  // list_matching_google_place_ids_for_nearby_administration is called
+  // after a search purely to LABEL candidate state ("Already in catalog").
+  // It never blocks a candidate (they stay addable), never returns a
+  // master id, and its result feeds only a badge -- exact Google Place-ID
+  // reuse is still decided at final save by the governed mutation-owning
+  // RPC.
+  assert.match(
+    PAGE_SOURCE,
+    /\.rpc\(\s*\n?\s*"list_matching_google_place_ids_for_nearby_administration",\s*\n?\s*\{ p_event_id: adminEvent\.id, p_google_place_ids: searchPlaceIds \}/,
+  );
+  // The match result feeds a display set, not a suppression / addability
+  // gate.
+  assert.match(PAGE_SOURCE, /setCatalogMatchedGooglePlaceIds\(/);
+  assert.match(PAGE_SOURCE, /const alreadyInCatalog =\s*\n?\s*!!place\.id && catalogMatchedGooglePlaceIds\.has\(place\.id\)/);
   assert.doesNotMatch(
     PAGE_SOURCE,
-    /\.rpc\(\s*"list_matching_google_place_ids_for_nearby_administration"/,
+    /catalogMatchedGooglePlaceIds[\s\S]{0,200}?(?:addableCandidates|pendingGoogleResults\.filter|return false)/,
   );
   assert.match(
     PAGE_SOURCE,
