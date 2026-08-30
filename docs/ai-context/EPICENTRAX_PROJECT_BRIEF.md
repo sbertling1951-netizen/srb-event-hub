@@ -227,36 +227,31 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-- **Substantive baseline:** `b8cee62` — "Reconcile Nearby replacement migration tests", on branch `feat/nearby-curated-list-builder`. This is the integration state under promotion review. Commits after `b8cee62` on that branch are continuity/governance machinery, not new product baselines.
-- **Substantive commits ahead of `main` (`main..b8cee62`):**
-  - `db3c009` Nearby curated-list builder — multi-type discovery, Working List, governed canonical reuse
-  - `0e0c578` Stored Area contribution and catalog authority repair
-  - `9a993eb` Stage 6A — Event Map settings cut over to Event-definition authority
-  - `c6a06fb` Reproducible database history repair — pre-history reconciliation migrations plus `docs/DATABASE_HISTORY.md`
-  - `b8cee62` Nearby replacement migration-test reconciliation
-- **Integrated verification of the baseline:** fresh from-zero replay clean at 222 migrations through `20260913000000` (local disposable stack); full migration test corpus 1418/1418. Production database and production migration ledger were not changed by this work.
-- **Live position (branch, HEAD, `origin/main`, ahead/behind):** see the Librarian block below, or run `git status -sb` and `git rev-list --left-right --count origin/main...HEAD`. `origin/main` was `9a479b8` "Repair TEA member check-in capability flow" at last reconcile.
-- **Production deployed state:** not verified from repository or server evidence. By deploy design (`deploy`, `do-pull.sh`: main-only, fast-forward-only) production follows `origin/main`; treat production as at or behind `origin/main` until confirmed against the server deploy log or a live version probe.
-- **Pending production migration-ledger gate (before promotion):** per `docs/DATABASE_HISTORY.md` §4, the three pre-history reconciliation versions must be marked applied without being executed —
-  `supabase migration repair --linked --status applied 20260617010000 20260619000000 20260619010000` —
-  and only then do the three forward migrations (`20260911000000`, `20260912000000`, `20260913000000`) deploy normally. Requires separate explicit authorization.
-- **Work currently in flight:** none. `feat/nearby-curated-list-builder` is the standing integration branch awaiting promotion review of the baseline above.
-- **Next safe step:** review the substantive baseline `b8cee62` (on `feat/nearby-curated-list-builder`) for promotion to `main`, executing the production migration-ledger gate above as part of that promotion under explicit authorization.
-- **Superseded — do not merge or act on independently:** branch `repair/reproducible-database-history` (`6ddc10e`, off `9a479b8`) and any local worktree checked out to it — its reproducible-database-history content is already incorporated in `c6a06fb` on the active branch. Any local worktree at `/private/tmp/epicentrax-replay-audit-20260830` (detached at `9a479b8`) is transient audit scratch and not part of the promotion path.
-- **Baseline last reconciled:** 2026-08-30, at `b8cee62`, verified against repository state (Git, local replay stack, migration test corpus).
+- **Substantive baseline:** `29d6658` — "Organize Nearby admin search and reusable places", on branch `feat/nearby-admin-picker-organization` (off `main` `1a40c45`). Nearby admin UX cleanup plus migration `20260914000000`. This is the integration state awaiting push and promotion review. It is a single product commit; there are no governance-only commits stacked on it.
+- **Substantive commits ahead of `main` (`main..29d6658`):**
+  - `29d6658` Nearby admin search + reusable-place organization — Reusable Area List picker reorganized as Area → marker type → place name with name/marker-type filters, Select-all/Deselect-all over the filtered set, and batch add through the existing governed `set_nearby_area_list_membership`; a dedicated "Google Maps Search Setup" section (Select-all marker types, active-search summary); an exact-Place-ID "Already in catalog" advisory badge on Google candidates (via the existing `list_matching_google_place_ids_for_nearby_administration`, label only — never a gate, never a master id); migration `20260914000000_add_area_identity_to_area_list_candidate_read` (transactional `DROP` + `CREATE` of `list_nearby_master_places_for_area_list`, appending `area_id` / `area_name` from `nearby_master.area_id` → `nearby_areas`; authority gate and eligibility/scope predicate byte-preserved).
+- **Integrated verification of the baseline:** fresh from-zero replay clean at 223 migrations through `20260914000000` (local disposable stack); the linked `20260914000000` rollback fixture was executed against that database (authority gate refuses a non-Platform admin; the byte-preserved predicate still excludes pending_review / archived and still includes a distant-Area shared_public place; `area_id` / `area_name` resolve; a NULL-`area_id` place returns as an Unassigned row and sorts last; eight output columns; clean rollback, no fixture residue). Full migration test corpus 1428/1428; `app` + `components` + `lib` suite 2124/2128 with only four pre-existing unrelated failures (Imports presentation, Print Center, presentation-deck ×2); `npm run build` clean; `tsc` no new errors; `eslint` clean on changed files. Production database and production migration ledger were **not** changed by this work.
+- **Promotion history since the previous reconcile:** the prior baseline `b8cee62` (Nearby curated-list builder + Stored Area contribution/canonical authority + Stage 6A Event Map settings + reproducible-database-history stack: `db3c009` / `0e0c578` / `9a993eb` / `c6a06fb` / `b8cee62`) was fast-forward-promoted to `main` and is now contained in `origin/main` `1a40c45` (along with the `a8a7602` / `8ea8b5e` / `1a40c45` continuity commits). Per the promotion operator's report, the `docs/DATABASE_HISTORY.md` §4 ledger gate was executed against production (`20260617010000` / `20260619000000` / `20260619010000` marked applied without execution) and the three forward migrations `20260911000000` / `20260912000000` / `20260913000000` were applied to the production database. Not independently re-verified from a live server or database probe this session.
+- **Live position (branch, HEAD, `origin/main`, ahead/behind):** see the Librarian block below, or run `git status -sb` and `git rev-list --left-right --count origin/main...HEAD`. `origin/main` was `1a40c45` "Anchor re-entry to authoritative checkout" at last reconcile.
+- **Production deployed state:** reported by the promotion operator as `main` `1a40c45`, with the production migration ledger aligned through `20260913000000`. By deploy design (`deploy`, `do-pull.sh`: main-only, fast-forward-only) production follows `origin/main`. Not independently re-verified against a server deploy log or a live version probe this session.
+- **Pending production migration-ledger gate (before promoting `29d6658`):** migration `20260914000000_add_area_identity_to_area_list_candidate_read` is committed on `feat/nearby-admin-picker-organization` but is **not** applied to production. It is an ordinary transactional forward migration with a linked rollback fixture and no pre-history reconciliation dependency; it deploys normally via `supabase db push` once `29d6658` reaches `main`, under separate explicit authorization. The §4 three-version reconciliation step does **not** apply to it (that gate was consumed by the `b8cee62` promotion above).
+- **Work currently in flight:** none. `feat/nearby-admin-picker-organization` (`29d6658`, 1 ahead / 0 behind `origin/main`) is committed, unpushed, awaiting push and promotion review.
+- **Next safe step:** push `feat/nearby-admin-picker-organization` to `origin`; then, separately and under explicit authorization, review `29d6658` for promotion to `main` and apply `20260914000000` to the production database as part of that promotion.
+- **Superseded — do not merge or act on independently:** branch `repair/reproducible-database-history` (`6ddc10e`) and any local worktree checked out to it — its reproducible-database-history content is already in `main` via `c6a06fb`. Any local worktree at `/private/tmp/epicentrax-replay-audit-20260830` (detached) is transient audit scratch and not part of the promotion path.
+- **Baseline last reconciled:** 2026-08-30, at `29d6658`, verified against repository state (Git, local replay stack at 223 migrations, migration test corpus 1428/1428, executed `20260914000000` rollback fixture).
 
 <!-- EPICENTRAX_LIBRARIAN_START -->
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-08-30T11:22:12-07:00`
-**Branch:** `feat/nearby-curated-list-builder`
-**Commit:** `b8cee62 Reconcile Nearby replacement migration tests`
-**Commit date:** `2026-08-30T11:07:56-07:00`
-**origin/main:** `9a479b8`
-**HEAD vs origin/main:** 5 ahead, 0 behind
+**Generated at:** `2026-08-30T14:02:39-07:00`
+**Branch:** `feat/nearby-admin-picker-organization`
+**Commit:** `29d6658 Organize Nearby admin search and reusable places`
+**Commit date:** `2026-08-30T14:00:00-07:00`
+**origin/main:** `1a40c45`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `3`
+**Tracked modified:** `1`
 **Staged:** `0`
 **Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
@@ -317,14 +312,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `222`
-- Latest migration: `20260913000000_cut_over_event_map_settings_to_event_definition_authority.sql`
+- Total migration files: `223`
+- Latest migration: `20260914000000_add_area_identity_to_area_list_candidate_read.sql`
 - Latest five:
-  - `20260909000000_hash_temporary_member_capability_tokens.sql`
   - `20260910000000_repair_member_checkin_temporary_capability.sql`
   - `20260911000000_create_governed_google_place_id_event_reuse.sql`
   - `20260912000000_repair_stored_area_contribution_and_canonical_authority.sql`
   - `20260913000000_cut_over_event_map_settings_to_event_definition_authority.sql`
+  - `20260914000000_add_area_identity_to_area_list_candidate_read.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`
