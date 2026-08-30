@@ -18,6 +18,25 @@ Do not begin implementation until these steps are complete.
 "Re-anchor and report" is a **read-only** startup operation. It orients a fresh
 or reset agent and changes nothing.
 
+### Authoritative checkout
+
+Before reading any project state, verify the current directory is the
+authoritative EpicentraX Git checkout:
+
+- The authoritative checkout on this development Mac is
+  `/Users/sbertling/Developer/srb-event-hub`.
+- A valid checkout must be a Git repository and contain both `AGENTS.md` and
+  `docs/ai-context/EPICENTRAX_PROJECT_BRIEF.md`.
+- If the current workspace does not satisfy those checks, switch inspection to
+  `/Users/sbertling/Developer/srb-event-hub` before continuing.
+- Do not select sibling backup, broken, scratch, transient worktree, or other
+  plausible copies by inference.
+- Do not use agent or conversation memory to choose an alternate source tree.
+- If the authoritative path is unavailable or fails validation, report that and
+  stop. Do not guess.
+
+This check is itself read-only; re-anchor remains completely read-only.
+
 When asked to re-anchor:
 
 1. Inspect Git (`git status`, `git log`, current branch, HEAD, `origin/main`,
