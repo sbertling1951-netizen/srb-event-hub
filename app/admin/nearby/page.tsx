@@ -2223,6 +2223,13 @@ function AdminNearbyPageInner() {
       showError("Enter a stored area name.");
       return;
     }
+    // Nearby Stored-Area authority repair (P1): creating a Stored Area
+    // container is a governed contribution -- it requires event.nearby.manage
+    // for a real working Event, never a bare privilege_group.
+    if (!adminEvent?.id) {
+      showError("Select a working Event before creating a stored area.");
+      return;
+    }
 
     try {
       setSavingArea(true);
@@ -2237,6 +2244,7 @@ function AdminNearbyPageInner() {
           adminEvent?.location?.split(",")?.[0]?.trim() || null,
         p_google_search_state:
           adminEvent?.location?.split(",")?.[1]?.trim() || null,
+        p_event_id: adminEvent.id,
       };
 
       const { data, error } = await supabase.rpc("create_stored_area", payload);
@@ -2395,6 +2403,23 @@ function AdminNearbyPageInner() {
       return;
     }
 
+    // Nearby Stored-Area authority repair (P1): a blank id is a governed
+    // CONTRIBUTION (Event Admin+ with event.nearby.manage for a real working
+    // Event); an existing id is a CANONICAL edit of shared system data
+    // (System Administrator only). The server RPC is the authority; these
+    // are fail-fast messages, not the gate.
+    const isCanonicalEdit = Boolean(storedForm.id);
+    if (!isCanonicalEdit && !adminEvent?.id) {
+      showError("Select a working Event before contributing a new stored place.");
+      return;
+    }
+    if (isCanonicalEdit && !admin.isSuperAdmin) {
+      showError(
+        "Editing an existing shared catalog place requires System Administrator authority.",
+      );
+      return;
+    }
+
     try {
       setSavingStoredPlace(true);
       showStatus("Saving stored place...");
@@ -2464,6 +2489,9 @@ function AdminNearbyPageInner() {
         p_location_code: storedForm.location_code.trim() || null,
         p_lat: resolvedLat,
         p_lng: resolvedLng,
+        // Contribution authority anchor (ignored by the RPC on the canonical
+        // edit path where p_place_id is set).
+        p_event_id: adminEvent?.id ?? null,
       };
 
       const { error } = await supabase.rpc("upsert_stored_area_place", rpcArgs);
@@ -2501,14 +2529,24 @@ function AdminNearbyPageInner() {
       return;
     }
     if (!storedForm.id) {
-      showError("Select a stored place to delete.");
+      showError("Select a stored place to retire.");
+      return;
+    }
+    // Nearby Stored-Area authority repair (P1): delete_stored_area_place now
+    // performs a governed RETIRE (archive) of shared system data -- System
+    // Administrator only, never a hard delete. The server RPC is the gate;
+    // this is a fail-fast message.
+    if (!admin.isSuperAdmin) {
+      showError(
+        "Retiring a shared catalog place requires System Administrator authority.",
+      );
       return;
     }
 
     const confirmed = await requestConfirmation({
-      title: "Delete Stored Place",
-      message: `Delete stored place "${storedForm.name}"? This cannot be undone.`,
-      confirmLabel: "Delete",
+      title: "Retire Stored Place",
+      message: `Retire stored place "${storedForm.name}"? It is archived from the shared catalog. Event lists that already use it keep their own copy, and other Events are unaffected.`,
+      confirmLabel: "Retire",
       danger: true,
     });
     if (!confirmed) {
@@ -2517,7 +2555,7 @@ function AdminNearbyPageInner() {
 
     try {
       setSavingStoredPlace(true);
-      showStatus("Deleting stored place...");
+      showStatus("Retiring stored place...");
 
       const { error } = await supabase.rpc("delete_stored_area_place", {
         p_place_id: storedForm.id,
@@ -2527,16 +2565,16 @@ function AdminNearbyPageInner() {
         throw error;
       }
 
-      const deletedPlaceName = storedForm.name;
+      const retiredPlaceName = storedForm.name;
 
       if (selectedAreaParentId) {
         await loadStoredPlaces(selectedAreaParentId);
       }
 
-      setStatus(`Deleted stored place "${deletedPlaceName}".`);
+      setStatus(`Retired stored place "${retiredPlaceName}" from the shared catalog.`);
     } catch (err: any) {
       console.error("deleteStoredPlace error:", err);
-      showError(err?.message || "Failed to delete stored place.");
+      showError(err?.message || "Failed to retire stored place.");
     } finally {
       setSavingStoredPlace(false);
     }
@@ -3534,6 +3572,15 @@ function AdminNearbyPageInner() {
       showError("Select a stored area first.");
       return;
     }
+    // Nearby Stored-Area authority repair (P1): bulk geocoding rewrites the
+    // canonical coordinates of existing shared catalog rows -- a canonical
+    // change reserved for System Administrator authority.
+    if (!admin.isSuperAdmin) {
+      showError(
+        "Bulk geocoding shared catalog places requires System Administrator authority.",
+      );
+      return;
+    }
 
     try {
       setBulkGeocoding(true);
@@ -3614,6 +3661,15 @@ function AdminNearbyPageInner() {
 
     if (!storedForm.id) {
       showError("Select a stored place first.");
+      return;
+    }
+    // Nearby Stored-Area authority repair (P1): re-geocoding rewrites the
+    // canonical coordinates of an existing shared catalog row -- System
+    // Administrator authority only.
+    if (!admin.isSuperAdmin) {
+      showError(
+        "Re-geocoding a shared catalog place requires System Administrator authority.",
+      );
       return;
     }
 

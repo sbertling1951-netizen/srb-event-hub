@@ -1,8 +1,8 @@
 # EpicentraX Nearby Knowledge + Tenant Curation Foundation
 
-**Status:** Accepted — Stage 1 (data model, resolver, governance boundaries, minimal admin curation UI); revised (Tenant Admin authority wired in, geographic-constraint defect found and stopped); Nearby Scope Model Stage 0 applied (§14); unified editor + curated-list builder shipped (§15)
-**Version:** 1.3
-**Date:** August 11, 2026 (§14 added August 23, 2026; §15 added August 29, 2026)
+**Status:** Accepted — Stage 1 (data model, resolver, governance boundaries, minimal admin curation UI); revised (Tenant Admin authority wired in, geographic-constraint defect found and stopped); Nearby Scope Model Stage 0 applied (§14); unified editor + curated-list builder shipped (§15); Stored-Area contribution/canonical authority split ratified (§16)
+**Version:** 1.4
+**Date:** August 11, 2026 (§14 added August 23, 2026; §15 added August 29, 2026; §16 added August 29, 2026)
 
 **Revision note (1.0 -> 1.1):** Two changes, both to the migration this
 document describes, neither to any renderer/map-integration content (§11):
@@ -600,6 +600,165 @@ The genuine-concurrent-committed-retire path is additionally
 un-stageable even in that fixture (a single `BEGIN…ROLLBACK` cannot
 contain a committed second transaction) and is simulated there by a stub;
 it too awaits a live database.
+
+## 16. Stored-Area authority + lifecycle repair (P1) — ratified (August 29, 2026)
+
+Migration `20260912000000_repair_stored_area_contribution_and_canonical_authority`.
+
+### 16.1 What was wrong
+
+`public.upsert_stored_area_place`, `public.delete_stored_area_place`, and
+`public.assert_stored_area_management_authority` (introduced by the Stage
+2.5 → Stage 3 bridge, §14, and `20260825010000`) all gated on a single
+**global** check — `admin_users.is_active AND privilege_group IN
+('super_admin','event_admin','content_admin')` — with no tenant, event,
+platform-catalog, or per-row scope. `privilege_group` is one column on the
+admin's row, not a per-tenant or per-event grant. Consequences:
+
+- any active `event_admin` / `content_admin` could rewrite, reassign the
+  parent of, or **hard-delete** (`DELETE FROM public.nearby_master`) any
+  `shared_public` catalog row in the legacy Stored-Area bucket
+  (`area_id IS NOT NULL`) — data every Tenant's Nearby experience reads —
+  merely by knowing or enumerating its id;
+- `delete_stored_area_place` physically deleted the canonical row and
+  cascaded `tenant_place_relevance`, diverging from the canonical
+  archive-only lifecycle (`retire_nearby_master_place`, §5/Stage 1);
+- nothing stopped a caller from turning a "new contribution" into an edit
+  of an existing canonical row by supplying an id.
+
+The unified editor (§15.1) and its `event_nearby_places` Event-relationship
+operations were already correctly governed; only the **legacy Stored-Area
+panel** carried the defect.
+
+### 16.2 The ratified lifecycle / authority model
+
+1. **Contribution.** Event Admin **or higher** may contribute new places
+   into Stored Areas / the shared catalog, and may create a Stored Area
+   container. Contribution requires **real governed Event authority** —
+   `has_event_task_authority('event.nearby.manage', p_event_id)` for a
+   real working Event, the same capability the rest of the Nearby
+   subsystem uses (`associate_nearby_master_place_with_event`,
+   `reuse_nearby_places_by_google_place_id_for_event`) — never a bare
+   `privilege_group`. It fails closed if no Event context is supplied and
+   respects Event lifecycle mutability (an archived / indeterminate Event
+   cannot anchor a contribution). No new broad cross-platform write
+   permission is introduced.
+2. **Contribution does not create catalog ownership.** The new row records
+   `created_by`; that is provenance, not authority. The contributor gets
+   no later edit or retire rights over the row.
+3. **Once saved, the canonical record is system data.** The existing
+   `shared_public` / `tenant_id IS NULL` Stored-Area bucket is treated as
+   system catalog data from creation onward.
+4. **Canonical shared-record governance = platform-admin authority.**
+   Editing name / address / contact / category / coordinates, reassigning
+   the record between Stored Areas, changing shared metadata, and retiring
+   / reactivating the canonical record are all governed by the **existing**
+   `has_platform_admin_authority(auth.uid())` primitive (the current
+   Super Admin / System Admin system-level authority boundary). This
+   migration introduces **no** new System Admin role, **no** platform-task
+   framework, and **no** separate authority primitive — where prose here
+   says "System Administrator" it means exactly that existing predicate.
+   An Event Admin or Tenant Admin cannot mutate an existing platform-shared
+   canonical row merely because they contributed it or know its id.
+5. **Historical Event / Tenant-scoped data = Tenant Admin or higher.**
+   `tenant_specific` rows are out of scope for the Stored-Area functions
+   entirely — both `upsert_stored_area_place` and `delete_stored_area_place`
+   refuse a non-`shared_public` row and point at
+   `update_nearby_master_place` / `retire_nearby_master_place`.
+6. **Event-relationship control stays on `event_nearby_places`.** Hiding a
+   place from members for one Event, or removing it from that Event's
+   list, operates on the Event association via that table's own
+   `has_event_task_authority('event.nearby.manage', event_id)` RLS
+   (`20260811230000`) — it never touches the canonical row. This is the
+   pre-existing `deleteOrRemoveNearbyPlace` / `saveNearbyEventListing`
+   path; no new mechanism was added.
+7. **Archive / retire over hard delete.** `delete_stored_area_place`
+   keeps its callable signature but now delegates to
+   `retire_nearby_master_place` (status → `archived`, idempotent, no
+   cascade). Every `event_nearby_places` / `tenant_place_relevance` /
+   `nearby_area_list_members` / provider-identity reference survives
+   retirement intact, and other Events are unaffected. The name is
+   retained only for caller compatibility and is surfaced UI-side as
+   "Retire".
+
+This mirrors the app's asset-lifecycle model: Event context controls the
+Event's relationship to shared data; it does not own the underlying system
+asset.
+
+### 16.3 Function shape
+
+- `assert_stored_area_contribution_authority(p_event_id uuid)` — new
+  internal helper (REVOKE-only): non-null Event → `event.nearby.manage` →
+  `assert_event_lifecycle_mutable`.
+- `assert_stored_area_canonical_authority()` — new internal helper
+  (REVOKE-only): `has_platform_admin_authority(auth.uid())`.
+- `assert_stored_area_management_authority()` — signature preserved; the
+  global `privilege_group` check removed; now delegates to
+  `assert_stored_area_canonical_authority()`. No longer wired into any
+  mutation path; kept only so an out-of-tree caller fails safe.
+- `upsert_stored_area_place(...)` — gains a trailing `p_event_id uuid
+  DEFAULT NULL`. `p_place_id IS NULL` → contribution branch
+  (`assert_stored_area_contribution_authority(p_event_id)`, insert a
+  `shared_public` / `active` / `approved` row, stamp `created_by`).
+  `p_place_id NOT NULL` → canonical branch
+  (`assert_stored_area_canonical_authority()` **before** the target row is
+  read, then `area_id IS NOT NULL` + `scope = 'shared_public'` guards,
+  then the update). The branch is purely `p_place_id IS NULL`; a supplied
+  id, another row's id, or an alternate template id cannot cross it.
+- `create_stored_area(...)` — gains a trailing `p_event_id uuid DEFAULT
+  NULL`; authority switches to
+  `assert_stored_area_contribution_authority(p_event_id)`. Body otherwise
+  byte-identical to `20260825010000`.
+- `delete_stored_area_place(p_place_id uuid)` — same signature;
+  `area_id IS NOT NULL` + `scope = 'shared_public'` guards, then
+  `PERFORM public.retire_nearby_master_place(p_place_id)`. No
+  `DELETE FROM public.nearby_master` anywhere.
+
+All six stay `SECURITY DEFINER`, `SET search_path TO 'pg_catalog'`, owned
+by `postgres`. The three browser RPCs keep `EXECUTE` for `authenticated`
+only; the internal `assert_*` helpers are REVOKE-only.
+
+### 16.4 Not in this pass
+
+`nearby_master_authenticated_select_policy` (P2 — the tracked Stage-1 RLS
+drift, §14) is **untouched**. No table / column / policy DDL; no
+tenant-data work beyond refusing `tenant_specific` rows. The db3c009
+builder architecture is unchanged — it never calls these functions.
+
+### 16.5 UI compatibility effect
+
+`app/admin/nearby/page.tsx`:
+
+- `saveStoredPlace` / `createStoredArea` pass `p_event_id: adminEvent?.id`
+  and fail fast if no working Event is selected for a new contribution.
+- `deleteStoredPlace` is relabeled **Retire** (dialog copy, status
+  messages) — it archives, it is not "cannot be undone".
+- Editing an existing stored place, retiring one, and bulk / single
+  re-geocoding of existing stored places now carry an advisory
+  `admin.isSuperAdmin` client gate (the RPC is the real authority). A
+  non-System-Admin Event Admin **loses** the ability to edit, reassign,
+  re-geocode, or hard-delete existing shared Stored-Area rows — this is
+  the intended boundary — while retaining full contribution ability
+  (new places, new Stored Areas, plus all Event-relationship operations).
+
+### 16.6 Verification status
+
+`20260912000000` is **created, not applied** — no local Supabase /
+PostgreSQL was available (the same constraint recorded for
+`20260911000000` and this workstream, §13/§15.7). What ran: **static /
+source-shape assertions only** (`npx tsx --test` — SQL/TypeScript text
+shape, byte-equal parity block, the authority-split and branch-ordering
+predicate text, grant hardening, and the page source shape), plus the
+existing Nearby / Stored-Area / authority / lifecycle migration test
+suites (green; the two pre-existing failures in
+`20260823070000_govern_nearby_master_event_association.test.ts` — stale
+assertions about `replaceEventListFromStored` superseded by
+`20260829000000` — were failing before this change and are unrelated).
+The linked `supabase/integration-tests/20260912000000_*` rollback fixture
+is a **ready-to-run `BEGIN…ROLLBACK` script that has NOT been executed
+against any PostgreSQL instance**. Runtime authority resolution, the
+`retire_nearby_master_place` delegation, grants/REVOKE taking effect, and
+RLS remain **unverified** until the migration is applied.
 
 ## Non-Goals Honored
 
