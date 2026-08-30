@@ -86,6 +86,7 @@ type MasterMapRow = {
   is_read_only: boolean;
   site_count: number;
   map_group: string | null;
+  revision: number;
 };
 
 type AdminEventSettings = {
@@ -96,12 +97,6 @@ type AdminEventSettings = {
   locations_map_open_scale: number | null;
 };
 
-type MasterMapSiteCopyRow = {
-  site_number: string;
-  display_label: string | null;
-  map_x: number | null;
-  map_y: number | null;
-};
 
 function normalizeMapGroup(value: string | null | undefined) {
   return String(value || "")
@@ -131,7 +126,6 @@ function MasterMapsPageInner() {
 
   const [showArchived, setShowArchived] = useState(false);
   const [restoringMapId, setRestoringMapId] = useState<string | null>(null);
-  const [deletingMapId, setDeletingMapId] = useState<string | null>(null);
   const [replacingImageMapId, setReplacingImageMapId] = useState<string | null>(
     null,
   );
@@ -147,7 +141,6 @@ function MasterMapsPageInner() {
   const [savingScales, setSavingScales] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingArchiveMap, setPendingArchiveMap] = useState<MasterMapRow | null>(null);
-  const [pendingDeleteMap, setPendingDeleteMap] = useState<MasterMapRow | null>(null);
   const { isCompact: isMobile } = useShellInterfaceCapabilities();
 
   const { admin } = useAdmin();
@@ -176,7 +169,7 @@ function MasterMapsPageInner() {
       const { data, error } = await supabase
         .from("master_maps")
         .select(
-          "id,name,park_name,location,map_image_url,status,is_read_only,site_count,map_group",
+          "id,name,park_name,location,map_image_url,status,is_read_only,site_count,map_group,revision",
         )
         .in("status", ["published", "draft", "archived"])
         .order("park_name", { ascending: true })
@@ -357,67 +350,26 @@ function MasterMapsPageInner() {
         return;
       }
 
-      const draftName = `${stripDraftSuffix(map.name)} Draft`;
+      // Stage 6B: one governed operation creates the editable draft AND
+      // copies the marker set atomically -- platform authority, no direct
+      // browser INSERT.
+      const { data: newMap, error: newMapError } = await supabase.rpc(
+        "create_master_map_draft_from",
+        { p_source_map_id: map.id },
+      );
 
-      const { data: newMap, error: newMapError } = await supabase
-        .from("master_maps")
-        .insert({
-          name: draftName,
-          map_group: mapGroup,
-          park_name: map.park_name,
-          location: map.location,
-          map_image_path: null,
-          map_image_url: map.map_image_url,
-          status: "draft",
-          is_read_only: false,
-          site_count: map.site_count,
-        })
-        .select("id")
-        .single();
+      const newMapRow = newMap as { id: string } | null;
 
-      if (newMapError || !newMap) {
-        setStatus(
-          `Could not create editable draft: ${newMapError?.message || "Unknown error"}`,
-        );
+      if (newMapError || !newMapRow?.id) {
+        const message =
+          newMapError?.message === "master_map_draft_exists"
+            ? "An editable draft already exists for this map. Refresh and open it."
+            : newMapError?.message || "Unknown error";
+        setStatus(`Could not create editable draft: ${message}`);
         return;
       }
 
-      const { data: sourceSites, error: sourceSitesError } = await supabase
-        .from("master_map_sites")
-        .select("site_number,display_label,map_x,map_y")
-        .eq("master_map_id", map.id);
-
-      if (sourceSitesError) {
-        setStatus(
-          `Draft created, but could not load source markers: ${sourceSitesError.message}`,
-        );
-        return;
-      }
-
-      const sourceRows = (sourceSites || []) as MasterMapSiteCopyRow[];
-
-      if (sourceRows.length > 0) {
-        const newSites = sourceRows.map((site) => ({
-          master_map_id: newMap.id,
-          site_number: site.site_number,
-          display_label: site.display_label,
-          map_x: site.map_x,
-          map_y: site.map_y,
-        }));
-
-        const { error: copyError } = await supabase
-          .from("master_map_sites")
-          .insert(newSites);
-
-        if (copyError) {
-          setStatus(
-            `Draft created, but marker copy failed: ${copyError.message}`,
-          );
-          return;
-        }
-      }
-
-      window.location.href = `/admin/master-maps/${newMap.id}`;
+      window.location.href = `/admin/master-maps/${newMapRow.id}`;
     } catch (err) {
       console.error("handleEditMap error:", err);
       setStatus(
@@ -441,17 +393,19 @@ function MasterMapsPageInner() {
       setArchivingMapId(map.id);
       setStatus(`Archiving ${map.name}...`);
 
-      const { error: archiveError } = await supabase
-        .from("master_maps")
-        .update({
-          status: "archived",
-          is_read_only: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", map.id);
+      // Stage 6B: archive is a governed platform-asset lifecycle op. It does
+      // NOT touch Event assignments (that is publish_master_map's job).
+      const { error: archiveError } = await supabase.rpc("archive_master_map", {
+        p_map_id: map.id,
+        p_expected_revision: map.revision,
+      });
 
       if (archiveError) {
-        setStatus(`Could not archive map: ${archiveError.message}`);
+        setStatus(
+          archiveError.message === "stale_master_map"
+            ? "This map changed since the list loaded. Refresh and try again."
+            : `Could not archive map: ${archiveError.message}`,
+        );
         return;
       }
 
@@ -476,83 +430,32 @@ function MasterMapsPageInner() {
       setRestoringMapId(map.id);
       setStatus(`Restoring ${map.name}...`);
 
-      const mapGroup =
-        normalizeMapGroup(map.map_group) ||
-        normalizeMapGroup(map.park_name) ||
-        normalizeMapGroup(stripDraftSuffix(map.name));
-
-      if (!mapGroup) {
-        setStatus("Map group is missing. Cannot restore map.");
-        return;
-      }
-
-      const { data: allMaps, error: allMapsError } = await supabase
-        .from("master_maps")
-        .select("id,name,status,map_group,park_name");
-
-      if (allMapsError) {
-        setStatus(`Could not inspect existing maps: ${allMapsError.message}`);
-        return;
-      }
-
-      const publishedIds = ((allMaps || []) as MasterMapRow[])
-        .filter((row) => {
-          const rowGroup =
-            normalizeMapGroup(row.map_group) ||
-            normalizeMapGroup(row.park_name) ||
-            normalizeMapGroup(stripDraftSuffix(row.name));
-          return row.status === "published" && rowGroup === mapGroup;
-        })
-        .map((row) => row.id);
-
-      if (publishedIds.length > 0) {
-        const { error: archiveError } = await supabase
-          .from("master_maps")
-          .update({
-            status: "archived",
-            is_read_only: true,
-            updated_at: new Date().toISOString(),
-          })
-          .in("id", publishedIds);
-
-        if (archiveError) {
-          setStatus(
-            `Could not archive current published map: ${archiveError.message}`,
-          );
-          return;
-        }
-
-        const { error: reassignError } = await supabase
-          .from("event_map_settings")
-          .update({
-            selected_master_map_id: map.id,
-          })
-          .in("selected_master_map_id", publishedIds);
-
-        if (reassignError) {
-          setStatus(
-            `Map restored, but event reassignment failed: ${reassignError.message}`,
-          );
-          return;
-        }
-      }
-
-      const { error: restoreError } = await supabase
-        .from("master_maps")
-        .update({
-          status: "published",
-          is_read_only: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", map.id);
+      // Stage 6B: restore is asset-lifecycle only -- it brings the retired
+      // map back as an editable DRAFT. It deliberately does NOT republish it
+      // or migrate Event assignments; to make a restored map live again,
+      // open it and use "Save updated map" (publish/promote), which handles
+      // the superseded version and every referencing Event in one governed,
+      // atomic operation.
+      const { error: restoreError } = await supabase.rpc("restore_master_map", {
+        p_map_id: map.id,
+        p_expected_revision: map.revision,
+      });
 
       if (restoreError) {
-        setStatus(`Could not restore map: ${restoreError.message}`);
+        const message =
+          restoreError.message === "stale_master_map"
+            ? "This map changed since the list loaded. Refresh and try again."
+            : restoreError.message === "master_map_draft_exists"
+              ? "An editable draft already exists for this map's group. Open that draft instead."
+              : restoreError.message === "master_map_not_archived"
+                ? "Only an archived map can be restored."
+                : restoreError.message;
+        setStatus(`Could not restore map: ${message}`);
         return;
       }
 
       await loadMasterMaps(showArchived);
-      setStatus(`Restored ${map.name} as the current map.`);
+      setStatus(`Restored ${map.name} as an editable draft. Open it and use "Save updated map" to make it live.`);
     } catch (err: any) {
       console.error("handleRestoreMap error:", err);
       setStatus(err?.message || "Failed to restore map.");
@@ -566,6 +469,15 @@ function MasterMapsPageInner() {
 
     if (!file) {
       setStatus("Choose a replacement image first.");
+      return;
+    }
+
+    // Stage 6B: a published / read-only canonical asset is not re-imaged in
+    // place. The path is Edit -> draft -> replace image -> Save updated map.
+    if (map.status !== "draft") {
+      setStatus(
+        `${map.name} is published and read-only. Use "Edit Map" to open a draft, replace the image there, then "Save updated map".`,
+      );
       return;
     }
 
@@ -605,16 +517,23 @@ function MasterMapsPageInner() {
         return;
       }
 
-      const { error: updateError } = await supabase
-        .from("master_maps")
-        .update({
-          map_image_url: publicUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", map.id);
+      // Stage 6B: image metadata is set through the governed RPC (draft
+      // only), with revision compare-and-swap.
+      const { error: updateError } = await supabase.rpc("set_master_map_image", {
+        p_map_id: map.id,
+        p_expected_revision: map.revision,
+        p_map_image_path: filePath,
+        p_map_image_url: publicUrl,
+      });
 
       if (updateError) {
-        setStatus(`Could not update master map image: ${updateError.message}`);
+        setStatus(
+          updateError.message === "stale_master_map"
+            ? "This map changed since the list loaded. Refresh and try again."
+            : updateError.message === "master_map_not_draft"
+              ? `${map.name} is published and read-only. Open a draft to replace its image.`
+              : `Could not update master map image: ${updateError.message}`,
+        );
         return;
       }
 
@@ -633,48 +552,10 @@ function MasterMapsPageInner() {
     }
   }
 
-  async function handleDeleteArchivedMap(map: MasterMapRow) {
-    setPendingDeleteMap(null);
-
-    try {
-      if (!admin) {
-        setError("No admin access.");
-        setStatus("Access denied.");
-        return;
-      }
-
-      setDeletingMapId(map.id);
-      setStatus(`Deleting ${map.name}...`);
-
-      const { error: siteDeleteError } = await supabase
-        .from("master_map_sites")
-        .delete()
-        .eq("master_map_id", map.id);
-
-      if (siteDeleteError) {
-        setStatus(`Could not delete map markers: ${siteDeleteError.message}`);
-        return;
-      }
-
-      const { error: mapDeleteError } = await supabase
-        .from("master_maps")
-        .delete()
-        .eq("id", map.id);
-
-      if (mapDeleteError) {
-        setStatus(`Could not delete archived map: ${mapDeleteError.message}`);
-        return;
-      }
-
-      await loadMasterMaps(showArchived);
-      setStatus(`Deleted archived map: ${map.name}`);
-    } catch (err: any) {
-      console.error("handleDeleteArchivedMap error:", err);
-      setStatus(err?.message || "Failed to delete archived map.");
-    } finally {
-      setDeletingMapId(null);
-    }
-  }
+  // Stage 6B: the "Delete archived map" browser path is retired. Platform
+  // map lifecycle is archive / retire / restore only -- never hard delete.
+  // (A future physical purge, if ever needed, is a separate explicit
+  // governance feature with reference/integrity checks.)
 
   useEffect(() => {
     if (!admin) {
@@ -720,17 +601,9 @@ function MasterMapsPageInner() {
             <AppButton
               onClick={() => void handleRestoreMap(map)}
               disabled={restoringMapId === map.id || !canManageMaps}
-              aria-label={`Restore "${map.name}"`}
+              aria-label={`Restore "${map.name}" as a draft`}
             >
-              {restoringMapId === map.id ? "Restoring..." : "Restore"}
-            </AppButton>
-            <AppButton
-              variant="danger"
-              onClick={() => setPendingDeleteMap(map)}
-              disabled={deletingMapId === map.id || !canManageMaps}
-              aria-label={`Delete "${map.name}"`}
-            >
-              {deletingMapId === map.id ? "Deleting..." : "Delete"}
+              {restoringMapId === map.id ? "Restoring..." : "Restore as draft"}
             </AppButton>
           </RowActions>
         ) : (
@@ -801,17 +674,6 @@ function MasterMapsPageInner() {
         busy={archivingMapId === pendingArchiveMap?.id}
         onCancel={() => setPendingArchiveMap(null)}
         onConfirm={() => void handleArchiveMap(pendingArchiveMap!)}
-      />
-
-      <ConfirmDialog
-        open={!!pendingDeleteMap}
-        title="Delete Archived Map"
-        message={`Delete "${pendingDeleteMap?.name ?? ""}" permanently? This will also delete its stored site markers.`}
-        confirmLabel="Delete"
-        danger
-        busy={deletingMapId === pendingDeleteMap?.id}
-        onCancel={() => setPendingDeleteMap(null)}
-        onConfirm={() => void handleDeleteArchivedMap(pendingDeleteMap!)}
       />
 
       <p className="app-subtle-text" style={{ margin: 0 }}>

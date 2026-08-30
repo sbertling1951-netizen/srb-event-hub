@@ -69,26 +69,27 @@ function NewMasterMapPageInner() {
       setError(null);
       setStatus("Creating master map...");
 
-      const { data: created, error: createError } = await supabase
-        .from("master_maps")
-        .insert({
-          name: name.trim(),
-          park_name: parkName.trim() || null,
-          location: location.trim() || null,
-          status: "draft",
-          is_read_only: false,
-        })
-        .select("id")
-        .single();
+      // Stage 6B: platform-map creation is a governed, platform-authority
+      // RPC -- never a direct browser INSERT.
+      const { data: created, error: createError } = await supabase.rpc(
+        "create_master_map",
+        {
+          p_name: name.trim(),
+          p_park_name: parkName.trim() || null,
+          p_location: location.trim() || null,
+        },
+      );
 
-      if (createError || !created) {
+      const createdRow = created as { id: string; revision: number } | null;
+
+      if (createError || !createdRow?.id) {
         setStatus(
           `Could not create master map: ${createError?.message || "Unknown error"}`,
         );
         return;
       }
 
-      const path = `${created.id}/base-map.png`;
+      const path = `${createdRow.id}/base-map.png`;
 
       const { error: uploadError } = await supabase.storage
         .from("master-map-images")
@@ -110,14 +111,14 @@ function NewMasterMapPageInner() {
 
       const mapImageUrl = publicUrlData.publicUrl;
 
-      const { error: updateError } = await supabase
-        .from("master_maps")
-        .update({
-          map_image_path: path,
-          map_image_url: mapImageUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", created.id);
+      // Stage 6B: image metadata is set through the governed RPC. The new
+      // draft is at revision 0.
+      const { error: updateError } = await supabase.rpc("set_master_map_image", {
+        p_map_id: createdRow.id,
+        p_expected_revision: createdRow.revision ?? 0,
+        p_map_image_path: path,
+        p_map_image_url: mapImageUrl,
+      });
 
       if (updateError) {
         setStatus(
@@ -126,7 +127,7 @@ function NewMasterMapPageInner() {
         return;
       }
 
-      router.push(`/admin/master-maps/${created.id}`);
+      router.push(`/admin/master-maps/${createdRow.id}`);
     } catch (err: any) {
       console.error("createMasterMap error:", err);
       setError(err?.message || "Failed to create master map.");

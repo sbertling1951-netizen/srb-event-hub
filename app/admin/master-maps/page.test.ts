@@ -19,22 +19,32 @@ test("shell wrapper, AdminRouteGuard, and the existing can_manage_master_maps pe
   assert.match(PAGE_SOURCE, /AdminShellAdapter/);
 });
 
-test("map CRUD/lifecycle writes are unchanged: draft creation, archive, restore, delete, and image replace all retain their exact table/RPC calls", () => {
-  for (const needle of [
-    'from("master_maps")',
-    'from("master_map_sites")',
-    'from("event_map_settings")',
-    'from("events")',
-    "status: \"draft\"",
-    "status: \"archived\"",
-    "status: \"published\"",
-    ".storage",
-    "coach_map_open_scale",
-    "parking_map_open_scale",
-    "locations_map_open_scale",
-  ]) {
+test("Stage 6B: every platform-map lifecycle write goes through a governed RPC -- no direct browser mutation of master_maps / master_map_sites / event_map_settings", () => {
+  // the governed RPCs the list page drives
+  assert.match(PAGE_SOURCE, /\.rpc\(\s*\n?\s*"create_master_map_draft_from"/);
+  assert.match(PAGE_SOURCE, /\.rpc\("archive_master_map", \{\s*\n?\s*p_map_id: map\.id,\s*\n?\s*p_expected_revision: map\.revision,/);
+  assert.match(PAGE_SOURCE, /\.rpc\("restore_master_map", \{\s*\n?\s*p_map_id: map\.id,\s*\n?\s*p_expected_revision: map\.revision,/);
+  assert.match(PAGE_SOURCE, /\.rpc\("set_master_map_image", \{/);
+
+  // no direct browser mutation of the platform-map tables or the Stage 6A
+  // Event-assignment table
+  assert.equal(/\.from\("master_maps"\)\s*\n\s*\.(insert|update|delete|upsert)\(/.test(PAGE_SOURCE), false);
+  assert.equal(/\.from\("master_map_sites"\)/.test(PAGE_SOURCE), false);
+  assert.equal(/\.from\("event_map_settings"\)/.test(PAGE_SOURCE), false);
+
+  // the map-scale settings write on the events table (event-scoped RLS,
+  // out of Stage 6B scope) is retained
+  for (const needle of ['from("events")', "coach_map_open_scale", "parking_map_open_scale", "locations_map_open_scale", ".storage"]) {
     assert.ok(PAGE_SOURCE.includes(needle), `Master Maps must retain ${needle}`);
   }
+});
+
+test("Stage 6B: revision is loaded so every lifecycle RPC can compare-and-swap", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /\.select\(\s*\n?\s*"id,name,park_name,location,map_image_url,status,is_read_only,site_count,map_group,revision",/,
+  );
+  assert.match(PAGE_SOURCE, /revision: number;/);
 });
 
 test("the page-local resize listener is gone -- responsive layout is driven by the canonical shell capability hook", () => {
@@ -50,28 +60,32 @@ test("the page-local resize listener is gone -- responsive layout is driven by t
   );
 });
 
-test("Archive and Delete confirmations now route through the canonical ConfirmDialog, not window.confirm", () => {
+test("Archive confirmation routes through the canonical ConfirmDialog, not window.confirm", () => {
   assert.equal(/window\.confirm/.test(PAGE_SOURCE), false);
   assert.match(PAGE_SOURCE, /import ConfirmDialog from "@\/components\/ui\/ConfirmDialog";/);
-
   assert.match(PAGE_SOURCE, /title="Archive Map"/);
-  assert.match(PAGE_SOURCE, /title="Delete Archived Map"/);
-
-  const deleteDialogIdx = PAGE_SOURCE.indexOf('title="Delete Archived Map"');
-  const deleteDialogBody = PAGE_SOURCE.slice(deleteDialogIdx, deleteDialogIdx + 300);
-  assert.match(deleteDialogBody, /danger/);
 });
 
-test("handleArchiveMap and handleDeleteArchivedMap still perform the exact same mutations -- only the confirmation surface changed", () => {
+test("Stage 6B: the hard-delete browser path is retired -- no Delete action, no delete dialog, no delete state", () => {
+  assert.equal(/title="Delete Archived Map"/.test(PAGE_SOURCE), false);
+  assert.equal(/handleDeleteArchivedMap/.test(PAGE_SOURCE), false);
+  assert.equal(/pendingDeleteMap|deletingMapId|setPendingDeleteMap/.test(PAGE_SOURCE), false);
+  assert.match(PAGE_SOURCE, /the "Delete archived map" browser path is retired/i);
+});
+
+test("handleArchiveMap and handleRestoreMap are governed RPCs, and restore no longer republishes / reassigns Events", () => {
   const archiveIdx = PAGE_SOURCE.indexOf("async function handleArchiveMap(map: MasterMapRow) {");
   const archiveBody = PAGE_SOURCE.slice(archiveIdx, PAGE_SOURCE.indexOf("\n  }", archiveIdx));
-  assert.match(archiveBody, /status: "archived"/);
-  assert.match(archiveBody, /is_read_only: true/);
+  assert.match(archiveBody, /\.rpc\("archive_master_map"/);
+  assert.doesNotMatch(archiveBody, /\.from\(/);
 
-  const deleteIdx = PAGE_SOURCE.indexOf("async function handleDeleteArchivedMap(map: MasterMapRow) {");
-  const deleteBody = PAGE_SOURCE.slice(deleteIdx, PAGE_SOURCE.indexOf("\n  }", deleteIdx));
-  assert.match(deleteBody, /\.from\("master_map_sites"\)\s*\n\s*\.delete\(\)/);
-  assert.match(deleteBody, /\.from\("master_maps"\)\s*\n\s*\.delete\(\)/);
+  const restoreIdx = PAGE_SOURCE.indexOf("async function handleRestoreMap(map: MasterMapRow) {");
+  const restoreBody = PAGE_SOURCE.slice(restoreIdx, PAGE_SOURCE.indexOf("\n  }", restoreIdx));
+  assert.match(restoreBody, /\.rpc\("restore_master_map"/);
+  assert.doesNotMatch(restoreBody, /\.from\(/);
+  assert.doesNotMatch(restoreBody, /status: "published"/);
+  assert.doesNotMatch(restoreBody, /event_map_settings/);
+  assert.match(restoreBody, /editable draft/i);
 });
 
 test("one shared renderRowActions function drives both the DataTable and ResponsiveList presentations, correctly branching on showArchived in both", () => {
@@ -80,7 +94,7 @@ test("one shared renderRowActions function drives both the DataTable and Respons
   const fnBody = PAGE_SOURCE.slice(fnIdx, PAGE_SOURCE.indexOf("\n  }\n\n  return (", PAGE_SOURCE.indexOf("return (\n      <div style={{ display: \"grid\", gap: \"var(--space-2)\"")));
   assert.match(fnBody, /showArchived \?/);
   assert.match(fnBody, /setPendingArchiveMap\(map\)/);
-  assert.match(fnBody, /setPendingDeleteMap\(map\)/);
+  assert.match(fnBody, /handleRestoreMap\(map\)/);
 
   // Called from both the desktop table cell and the narrow-viewport list item.
   const callSites = (PAGE_SOURCE.match(/\{renderRowActions\(map\)\}/g) || []).length;
@@ -121,9 +135,8 @@ test("MAP_STATUS_TONE maps every lifecycle status to a distinct, semantic tone",
 
 test("masterMapStatusTone classifies confirmation/loading/partial-failure text correctly", () => {
   assert.equal(masterMapStatusTone("Archived map: Saint George"), "success");
-  assert.equal(masterMapStatusTone("Restored Saint George as the current map."), "success");
+  assert.equal(masterMapStatusTone("Restored Saint George as an editable draft. Open it and use \"Save updated map\" to make it live."), "success");
   assert.equal(masterMapStatusTone("Replaced map image for Saint George."), "success");
-  assert.equal(masterMapStatusTone("Deleted archived map: Saint George"), "success");
   assert.equal(masterMapStatusTone("Map opening scale settings saved."), "success");
 
   assert.equal(masterMapStatusTone("Opening Saint George..."), "info");

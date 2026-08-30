@@ -29,6 +29,7 @@ type MasterMapRow = {
   is_read_only: boolean;
   site_count: number;
   map_group?: string | null;
+  revision: number;
 };
 
 type MasterMapSiteRow = {
@@ -47,19 +48,22 @@ function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value));
 }
 
-function stripDraftSuffix(value: string | null | undefined) {
-  return String(value || "")
-    .replace(/\s+Draft$/i, "")
-    .trim();
-}
-
-function normalizeMapGroup(value: string | null | undefined) {
-  return String(value || "")
-    .toLowerCase()
-    .trim()
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+// Stage 6B: map the governed-RPC sentinel errors to admin-readable text.
+function describeMapMutationError(message: string, fallback: string): string {
+  switch (message) {
+    case "stale_master_map":
+      return "This map changed since you loaded it. Refresh and try again.";
+    case "master_map_not_draft":
+      return "This map is published and read-only. Create a draft copy to edit it.";
+    case "master_map_not_archived":
+      return "Only an archived map can be restored.";
+    case "master_map_draft_exists":
+      return "An editable draft already exists for this map's group.";
+    case "Platform map management requires System Administrator authority.":
+      return "Master map changes require System Administrator authority.";
+    default:
+      return `${fallback}: ${message}`;
+  }
 }
 
 // ─── Inner component ──────────────────────────────────────────────────────────
@@ -121,6 +125,14 @@ function MasterMapEditorPageInner() {
 
   const readOnlyMarkers =
     masterMap?.status === "published" || masterMap?.is_read_only === true;
+
+  // Stage 6B: the current map row (incl. its revision) is kept in a ref so
+  // the geometry-engine callback and keyboard handlers always compare-and-
+  // swap against the latest revision, never a stale closure value.
+  const masterMapRef = useRef<MasterMapRow | null>(null);
+  useEffect(() => {
+    masterMapRef.current = masterMap;
+  }, [masterMap]);
 
   // Keep refs in sync so keyboard handler is never stale
   useEffect(() => {
@@ -195,7 +207,7 @@ function MasterMapEditorPageInner() {
     const { data, error } = await supabase
       .from("master_maps")
       .select(
-        "id,name,park_name,location,map_image_url,status,is_read_only,site_count,map_group",
+        "id,name,park_name,location,map_image_url,status,is_read_only,site_count,map_group,revision",
       )
       .eq("id", masterMapId)
       .single();
@@ -211,7 +223,7 @@ function MasterMapEditorPageInner() {
     setMapLocation(row.location || "");
   }, [masterMapId]);
 
-  const loadSites = useCallback(async () => {
+  const loadSites = useCallback(async (): Promise<MasterMapSiteRow[]> => {
     const { data, error } = await supabase
       .from("master_map_sites")
       .select("id,master_map_id,site_number,display_label,map_x,map_y")
@@ -222,8 +234,58 @@ function MasterMapEditorPageInner() {
       throw new Error(`Could not load master map sites: ${error.message}`);
     }
 
-    setSites((data || []) as MasterMapSiteRow[]);
+    const rows = (data || []) as MasterMapSiteRow[];
+    setSites(rows);
+    return rows;
   }, [masterMapId]);
+
+  // Stage 6B: the single atomic governed marker-set mutation. adds +
+  // updates + deletes are applied in one server transaction; a failure
+  // cannot leave a half-written marker set. On success the map row (with
+  // its new revision) and the site list are refreshed. Returns false and
+  // sets a status message on failure.
+  const applyMarkerChanges = useCallback(
+    async (delta: {
+      adds?: Array<Record<string, unknown>>;
+      updates?: Array<Record<string, unknown>>;
+      deleteIds?: string[];
+    }): Promise<{ ok: boolean; sites: MasterMapSiteRow[] }> => {
+      const current = masterMapRef.current;
+      if (!current) {
+        setStatus("No master map loaded.");
+        return { ok: false, sites: [] };
+      }
+      const { data, error } = await supabase.rpc(
+        "apply_master_map_marker_changes",
+        {
+          p_map_id: masterMapId,
+          p_expected_revision: current.revision,
+          p_adds: delta.adds ?? [],
+          p_updates: delta.updates ?? [],
+          p_delete_ids: delta.deleteIds ?? [],
+        },
+      );
+      if (error) {
+        if (error.message === "stale_master_map") {
+          setStatus("This map changed elsewhere. Reloading the latest version...");
+        } else if (error.message === "master_map_not_draft") {
+          setStatus("Published master maps are read-only. Create a draft copy to edit markers.");
+        } else {
+          setStatus(`Could not save markers: ${error.message}`);
+        }
+        await loadMasterMap();
+        const recovered = await loadSites();
+        return { ok: false, sites: recovered };
+      }
+      const updatedRow = data as MasterMapRow | null;
+      if (updatedRow?.id) {
+        setMasterMap(updatedRow);
+      }
+      const nextSites = await loadSites();
+      return { ok: true, sites: nextSites };
+    },
+    [masterMapId, loadSites, loadMasterMap],
+  );
 
   const loadPage = useCallback(async () => {
     try {
@@ -426,19 +488,12 @@ function MasterMapEditorPageInner() {
         setEditY(primaryUpdate.yPct);
       }
 
-      // 3. Persist — serial writes preserve audit semantics
-      for (const u of updates) {
-        const { error } = await supabase
-          .from("master_map_sites")
-          .update({ map_x: u.xPct, map_y: u.yPct })
-          .eq("id", u.id);
-
-        if (error) {
-          setStatus(`Could not save position: ${error.message}`);
-          // Reload to recover consistent state
-          await loadSites();
-          return;
-        }
+      // 3. Persist — one atomic governed marker-set update.
+      const { ok } = await applyMarkerChanges({
+        updates: updates.map((u) => ({ id: u.id, map_x: u.xPct, map_y: u.yPct })),
+      });
+      if (!ok) {
+        return;
       }
 
       if (updates.length === 1) {
@@ -450,7 +505,7 @@ function MasterMapEditorPageInner() {
         setStatus(`Saved ${updates.length} marker positions.`);
       }
     },
-    [loadSites],
+    [applyMarkerChanges],
   );
 
   // ─── Marker creation ───────────────────────────────────────────────────────
@@ -491,35 +546,23 @@ function MasterMapEditorPageInner() {
       setIsSavingMarker(true);
       setStatus("Saving marker...");
 
-      const { data: insertedSite, error } = await supabase
-        .from("master_map_sites")
-        .insert({
-          master_map_id: masterMapId,
-          site_number: trimmedSiteNumber,
-          display_label: trimmedSiteNumber,
-          map_x: pendingMarker.xPct,
-          map_y: pendingMarker.yPct,
-        })
-        .select("id,master_map_id,site_number,display_label,map_x,map_y")
-        .single();
-
-      if (error) {
-        throw error;
+      const { ok, sites: nextSites } = await applyMarkerChanges({
+        adds: [
+          {
+            site_number: trimmedSiteNumber,
+            display_label: trimmedSiteNumber,
+            map_x: pendingMarker.xPct,
+            map_y: pendingMarker.yPct,
+          },
+        ],
+      });
+      if (!ok) {
+        return;
       }
 
-      const savedSite = insertedSite as MasterMapSiteRow;
-
-      setSites((prev) => {
-        if (prev.some((s) => s.id === savedSite.id)) {
-          return prev;
-        }
-        return [...prev, savedSite].sort((a, b) =>
-          a.site_number.localeCompare(b.site_number, undefined, {
-            numeric: true,
-            sensitivity: "base",
-          }),
-        );
-      });
+      const savedSite = nextSites.find(
+        (s) => s.site_number === trimmedSiteNumber,
+      );
 
       if (nextMode) {
         setPendingMarker(null);
@@ -528,10 +571,12 @@ function MasterMapEditorPageInner() {
       } else {
         setPendingMarker(null);
         setSiteNumber("");
-        setPrimarySelectedSiteId(savedSite.id);
-        setSelectedSiteIds([savedSite.id]);
-        setEditX(savedSite.map_x);
-        setEditY(savedSite.map_y);
+        if (savedSite) {
+          setPrimarySelectedSiteId(savedSite.id);
+          setSelectedSiteIds([savedSite.id]);
+          setEditX(savedSite.map_x);
+          setEditY(savedSite.map_y);
+        }
         setStatus(`Marker ${trimmedSiteNumber} saved.`);
       }
     } catch (err: unknown) {
@@ -579,20 +624,19 @@ function MasterMapEditorPageInner() {
       return;
     }
 
-    const { error } = await supabase
-      .from("master_map_sites")
-      .update({
-        site_number: trimmedSiteNumber,
-        display_label: trimmedSiteNumber,
-      })
-      .eq("id", primarySelectedSiteId);
-
-    if (error) {
-      setStatus(`Could not update marker: ${error.message}`);
+    const { ok } = await applyMarkerChanges({
+      updates: [
+        {
+          id: primarySelectedSiteId,
+          site_number: trimmedSiteNumber,
+          display_label: trimmedSiteNumber,
+        },
+      ],
+    });
+    if (!ok) {
       return;
     }
 
-    await loadSites();
     setStatus("Marker updated.");
     focusSiteNumber();
   }
@@ -615,17 +659,13 @@ function MasterMapEditorPageInner() {
       return;
     }
 
-    const { error } = await supabase
-      .from("master_map_sites")
-      .update({ map_x: editX, map_y: editY })
-      .eq("id", primarySelectedSiteId);
-
-    if (error) {
-      setStatus(`Could not save position: ${error.message}`);
+    const { ok } = await applyMarkerChanges({
+      updates: [{ id: primarySelectedSiteId, map_x: editX, map_y: editY }],
+    });
+    if (!ok) {
       return;
     }
 
-    await loadSites();
     setStatus("Position saved.");
     focusSiteNumber();
   }
@@ -651,25 +691,17 @@ function MasterMapEditorPageInner() {
     if (!confirmed) {
       return;
     }
-    console.log("DELETE IDS", ids);
 
-    const { error } = await supabase
-      .from("master_map_sites")
-      .delete()
-      .in("id", ids);
-    console.log("DELETE RESULT", error);
-
-    if (error) {
-      setStatus(`Could not delete marker: ${error.message}`);
+    const { ok } = await applyMarkerChanges({ deleteIds: ids });
+    if (!ok) {
       return;
     }
 
     clearFormFields();
     mapRef.current?.clearSelection();
-    await loadSites();
     setStatus(`${ids.length} marker${ids.length === 1 ? "" : "s"} deleted.`);
     focusSiteNumber();
-  }, [loadSites]);
+  }, [applyMarkerChanges]);
 
   // Enter key on the site number input dispatches to the right save action
   async function saveFromKeyboard() {
@@ -695,26 +727,28 @@ function MasterMapEditorPageInner() {
       return;
     }
 
-    const { error } = await supabase
-      .from("master_maps")
-      .update({
-        name: trimmedName,
-        park_name: parkName.trim() || null,
-        location: mapLocation.trim() || null,
-        map_group:
-          normalizeMapGroup(masterMap.map_group) ||
-          normalizeMapGroup(parkName) ||
-          normalizeMapGroup(stripDraftSuffix(trimmedName)) ||
-          null,
-      })
-      .eq("id", masterMap.id);
+    // Stage 6B: draft metadata is saved through the governed RPC with a
+    // revision compare-and-swap. Only a draft is editable.
+    const { data, error } = await supabase.rpc("update_master_map_details", {
+      p_map_id: masterMap.id,
+      p_expected_revision: masterMap.revision,
+      p_name: trimmedName,
+      p_park_name: parkName.trim() || null,
+      p_location: mapLocation.trim() || null,
+    });
 
     if (error) {
-      setStatus(`Could not save map details: ${error.message}`);
+      setStatus(describeMapMutationError(error.message, "Could not save map details"));
+      await loadMasterMap();
       return;
     }
 
-    await loadMasterMap();
+    const updated = data as MasterMapRow | null;
+    if (updated?.id) {
+      setMasterMap(updated);
+    } else {
+      await loadMasterMap();
+    }
     setStatus("Map details saved.");
   }
 
@@ -736,94 +770,83 @@ function MasterMapEditorPageInner() {
     setStatus("Saving updated map...");
 
     try {
-      const baseName = stripDraftSuffix(trimmedName);
-      const nextMapGroup =
-        normalizeMapGroup(masterMap.map_group) ||
-        normalizeMapGroup(parkName) ||
-        normalizeMapGroup(baseName);
+      // 1. Persist the draft's current form fields through the governed RPC
+      //    so name/park/location and the derived map_group are current
+      //    before promotion.
+      const { data: detailsData, error: detailsError } = await supabase.rpc(
+        "update_master_map_details",
+        {
+          p_map_id: masterMap.id,
+          p_expected_revision: masterMap.revision,
+          p_name: trimmedName,
+          p_park_name: parkName.trim() || null,
+          p_location: mapLocation.trim() || null,
+        },
+      );
+      if (detailsError) {
+        setStatus(
+          describeMapMutationError(detailsError.message, "Could not save the draft before publishing"),
+        );
+        await loadMasterMap();
+        return;
+      }
+      const savedDraft = (detailsData as MasterMapRow | null) ?? masterMap;
 
-      const { data: currentPublishedMaps, error: currentPublishedError } =
+      // 2. Resolve the map this group currently publishes (the supersede
+      //    expectation the RPC verifies), then publish/promote + migrate
+      //    Events in ONE atomic governed operation.
+      const { data: currentPublished, error: currentPublishedError } =
         await supabase
           .from("master_maps")
-          .select("id,name,status,map_group,park_name")
-          .eq("status", "published");
+          .select("id")
+          .eq("status", "published")
+          .eq("map_group", savedDraft.map_group ?? "")
+          .maybeSingle();
 
       if (currentPublishedError) {
+        setStatus(`Could not find current published map: ${currentPublishedError.message}`);
+        return;
+      }
+
+      const supersededId =
+        (currentPublished as { id: string } | null)?.id &&
+        (currentPublished as { id: string }).id !== masterMap.id
+          ? (currentPublished as { id: string }).id
+          : null;
+
+      const { data: publishData, error: publishError } = await supabase.rpc(
+        "publish_master_map",
+        {
+          p_draft_map_id: masterMap.id,
+          p_expected_draft_revision: savedDraft.revision,
+          p_expected_superseded_map_id: supersededId,
+          p_expected_superseded_revision: null,
+        },
+      );
+
+      if (publishError) {
         setStatus(
-          `Could not find current published map: ${currentPublishedError.message}`,
+          publishError.message === "stale_master_map_publish_target"
+            ? "The currently published map for this group changed. Refresh and try again."
+            : describeMapMutationError(publishError.message, "Could not publish updated map"),
         );
+        await loadMasterMap();
         return;
       }
 
-      const matchingPublished = (
-        (currentPublishedMaps || []) as MasterMapRow[]
-      ).find((row) => {
-        if (row.id === masterMap.id) {
-          return false;
-        }
-        const rowGroup =
-          normalizeMapGroup(row.map_group) ||
-          normalizeMapGroup(row.park_name) ||
-          normalizeMapGroup(stripDraftSuffix(row.name));
-        if (nextMapGroup && rowGroup === nextMapGroup) {
-          return true;
-        }
-        return stripDraftSuffix(row.name) === baseName;
-      });
-
-      if (matchingPublished?.id) {
-        const { error: archiveError } = await supabase
-          .from("master_maps")
-          .update({
-            status: "archived",
-            is_read_only: true,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", matchingPublished.id);
-
-        if (archiveError) {
-          setStatus(
-            `Could not archive existing published map: ${archiveError.message}`,
-          );
-          return;
-        }
-      }
-
-      const { error: promoteError } = await supabase
-        .from("master_maps")
-        .update({
-          name: baseName,
-          park_name: parkName.trim() || null,
-          location: mapLocation.trim() || null,
-          map_group: nextMapGroup || null,
-          status: "published",
-          is_read_only: true,
-          site_count: sites.length,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", masterMap.id);
-
-      if (promoteError) {
-        setStatus(`Could not publish updated map: ${promoteError.message}`);
-        return;
-      }
-
-      if (matchingPublished?.id) {
-        const { error: reassignError } = await supabase
-          .from("event_map_settings")
-          .update({ selected_master_map_id: masterMap.id })
-          .eq("selected_master_map_id", matchingPublished.id);
-
-        if (reassignError) {
-          setStatus(
-            `Map published, but event reassignment failed: ${reassignError.message}`,
-          );
-          return;
-        }
-      }
+      const result = Array.isArray(publishData) ? publishData[0] : publishData;
+      const reassigned = (result as { events_reassigned?: number } | null)?.events_reassigned ?? 0;
 
       await loadMasterMap();
-      setStatus("Updated map saved. Previous published version archived.");
+      setStatus(
+        supersededId
+          ? `Updated map saved. Previous published version archived${
+              reassigned > 0
+                ? `; ${reassigned} event${reassigned === 1 ? "" : "s"} reassigned`
+                : ""
+            }.`
+          : "Updated map published.",
+      );
       router.replace(`/admin/master-maps/${masterMap.id}`);
       router.refresh();
     } catch (err: unknown) {
@@ -999,56 +1022,25 @@ function MasterMapEditorPageInner() {
       return;
     }
 
-    const mapGroup =
-      normalizeMapGroup(masterMap.map_group) ||
-      normalizeMapGroup(masterMap.park_name) ||
-      normalizeMapGroup(stripDraftSuffix(masterMap.name));
+    // Stage 6B: one governed operation creates the editable draft AND copies
+    // the marker set atomically -- platform authority, no direct INSERT.
+    const { data: newMap, error: newMapError } = await supabase.rpc(
+      "create_master_map_draft_from",
+      { p_source_map_id: masterMap.id },
+    );
 
-    const { data: newMap, error: newMapError } = await supabase
-      .from("master_maps")
-      .insert({
-        name: `${stripDraftSuffix(masterMap.name)} Draft`,
-        park_name: masterMap.park_name,
-        location: masterMap.location,
-        map_group: mapGroup || null,
-        map_image_path: null,
-        map_image_url: masterMap.map_image_url,
-        status: "draft",
-        is_read_only: false,
-        site_count: masterMap.site_count,
-      })
-      .select("id")
-      .single();
+    const newMapRow = newMap as { id: string } | null;
 
-    if (newMapError || !newMap) {
+    if (newMapError || !newMapRow?.id) {
       setStatus(
-        `Could not create draft copy: ${newMapError?.message || "Unknown error"}`,
+        newMapError
+          ? describeMapMutationError(newMapError.message, "Could not create draft copy")
+          : "Could not create draft copy.",
       );
       return;
     }
 
-    const newSites = sites.map((site) => ({
-      master_map_id: newMap.id,
-      site_number: site.site_number,
-      display_label: site.display_label,
-      map_x: site.map_x,
-      map_y: site.map_y,
-    }));
-
-    if (newSites.length > 0) {
-      const { error: copyError } = await supabase
-        .from("master_map_sites")
-        .insert(newSites);
-
-      if (copyError) {
-        setStatus(
-          `Draft copy created, but site copy failed: ${copyError.message}`,
-        );
-        return;
-      }
-    }
-
-    router.push(`/admin/master-maps/${newMap.id}`);
+    router.push(`/admin/master-maps/${newMapRow.id}`);
   }
 
   // ─── Keyboard handler ─────────────────────────────────────────────────────
@@ -1807,7 +1799,7 @@ function MasterMapEditorPageInner() {
 
 export default function MasterMapEditorPage() {
   return (
-    <AdminRouteGuard>
+    <AdminRouteGuard requiredPermission="can_manage_master_maps">
       <AdminShellAdapter
         pageTitle="Master Map Editor"
         backTarget={{ href: "/admin/master-maps", label: "Master Maps" }}
