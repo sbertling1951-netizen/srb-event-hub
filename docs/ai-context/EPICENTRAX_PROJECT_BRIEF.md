@@ -206,39 +206,44 @@ Every agent completing a task should leave a compact handoff containing:
 - unresolved risks;
 - exact next safe step.
 
-The handoff is a report, not a second project memory system. Durable decisions belong in the authoritative architecture or project documents. Durable development position — active branch, checkpoint SHA, what is promoted or deployed, pending gates, and the next safe step — belongs in the Development checkpoint subsection below; the task handoff itself stays an ephemeral report and is not persisted.
+The handoff is a report, not a second project memory system. Durable decisions belong in the authoritative architecture or project documents. Durable development position — the substantive development baseline, what is promoted or deployed, pending gates, and the next safe step — belongs in the Development checkpoint subsection below; literal current HEAD, branch, `origin/main`, and ahead/behind are machine-reported in the Librarian block, and `git` is authoritative for all four. The task handoff itself stays an ephemeral report and is not persisted.
 
 ## Development checkpoint
 
-Hand-maintained. This subsection records the current development position so a
-fresh contributor can recover it without relying on conversation memory. It is
-not an authoritative source: Git history, source, migrations, and verified
-database or runtime state override it whenever they disagree, per the
-`AUTHORITATIVE_SOURCES.md` authority order. Reconcile it whenever work advances
-the checkpoint (a commit on the active branch, promotion to main, a production
-deployment, or a production migration-ledger change), then run
-`npm run context:update`. The machine-generated block below never manages this
-subsection.
+Hand-maintained. This subsection records the **substantive development
+baseline** — the last integration state that changed the product — so a fresh
+contributor can recover where real work stands without relying on conversation
+memory. It deliberately carries **no** literal current HEAD, branch,
+`origin/main`, or ahead/behind figure: those move with every commit and are
+machine-reported by the Librarian-generated block below. The Librarian block
+itself lags the most recent commit until it is regenerated; `git` is
+authoritative for all four.
 
-- **Active branch:** `feat/nearby-curated-list-builder`
-- **Checkpoint SHA:** `b8cee62` — "Reconcile Nearby replacement migration tests"
-- **Pushed:** yes — in sync with `origin/feat/nearby-curated-list-builder`
-- **Main SHA:** `9a479b8` (`origin/main` identical) — "Repair TEA member check-in capability flow"; the checkpoint is 5 commits ahead, 0 behind
-- **Production deployed SHA / verification:** not verified from repository or server evidence in this session. By deploy design (`deploy`, `do-pull.sh`: main-only, fast-forward-only) production follows `origin/main`; treat production as at or behind `9a479b8` until confirmed against the server deploy log or a live version probe.
-- **Completed but not promoted (`main..b8cee62`):**
+Update this subsection only when new substantive product work lands — a feature,
+a migration, a fix that moves the baseline — then run `npm run context:update`.
+A continuity or governance-only commit (including an edit to this subsection, or
+a Librarian regeneration) does not move the baseline and does not require a
+reconcile. Git history, source, migrations, and verified database or runtime
+state override this subsection whenever they disagree, per the
+`AUTHORITATIVE_SOURCES.md` authority order.
+
+- **Substantive baseline:** `b8cee62` — "Reconcile Nearby replacement migration tests", on branch `feat/nearby-curated-list-builder`. This is the integration state under promotion review. Commits after `b8cee62` on that branch are continuity/governance machinery, not new product baselines.
+- **Substantive commits ahead of `main` (`main..b8cee62`):**
   - `db3c009` Nearby curated-list builder — multi-type discovery, Working List, governed canonical reuse
   - `0e0c578` Stored Area contribution and catalog authority repair
   - `9a993eb` Stage 6A — Event Map settings cut over to Event-definition authority
   - `c6a06fb` Reproducible database history repair — pre-history reconciliation migrations plus `docs/DATABASE_HISTORY.md`
   - `b8cee62` Nearby replacement migration-test reconciliation
-- **Integrated verification:** fresh from-zero replay clean at 222 migrations through `20260913000000` (local disposable stack); full migration test corpus 1418/1418. Production database and production migration ledger were not changed by this work.
+- **Integrated verification of the baseline:** fresh from-zero replay clean at 222 migrations through `20260913000000` (local disposable stack); full migration test corpus 1418/1418. Production database and production migration ledger were not changed by this work.
+- **Live position (branch, HEAD, `origin/main`, ahead/behind):** see the Librarian block below, or run `git status -sb` and `git rev-list --left-right --count origin/main...HEAD`. `origin/main` was `9a479b8` "Repair TEA member check-in capability flow" at last reconcile.
+- **Production deployed state:** not verified from repository or server evidence. By deploy design (`deploy`, `do-pull.sh`: main-only, fast-forward-only) production follows `origin/main`; treat production as at or behind `origin/main` until confirmed against the server deploy log or a live version probe.
 - **Pending production migration-ledger gate (before promotion):** per `docs/DATABASE_HISTORY.md` §4, the three pre-history reconciliation versions must be marked applied without being executed —
   `supabase migration repair --linked --status applied 20260617010000 20260619000000 20260619010000` —
   and only then do the three forward migrations (`20260911000000`, `20260912000000`, `20260913000000`) deploy normally. Requires separate explicit authorization.
-- **Work currently in flight:** none. The feature branch is the standing integration checkpoint awaiting promotion review.
-- **Next safe step:** review `feat/nearby-curated-list-builder` @ `b8cee62` for promotion to `main`, executing the production migration-ledger gate above as part of that promotion under explicit authorization.
+- **Work currently in flight:** none. `feat/nearby-curated-list-builder` is the standing integration branch awaiting promotion review of the baseline above.
+- **Next safe step:** review the substantive baseline `b8cee62` (on `feat/nearby-curated-list-builder`) for promotion to `main`, executing the production migration-ledger gate above as part of that promotion under explicit authorization.
 - **Superseded — do not merge or act on independently:** branch `repair/reproducible-database-history` (`6ddc10e`, off `9a479b8`) and any local worktree checked out to it — its reproducible-database-history content is already incorporated in `c6a06fb` on the active branch. Any local worktree at `/private/tmp/epicentrax-replay-audit-20260830` (detached at `9a479b8`) is transient audit scratch and not part of the promotion path.
-- **Last reconciled:** 2026-08-30, from verified repository state (Git, local replay stack, migration test corpus).
+- **Baseline last reconciled:** 2026-08-30, at `b8cee62`, verified against repository state (Git, local replay stack, migration test corpus).
 
 <!-- EPICENTRAX_LIBRARIAN_START -->
 ## Librarian-generated repository status

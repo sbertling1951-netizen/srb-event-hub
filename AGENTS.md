@@ -13,6 +13,28 @@ Before planning, editing, reviewing, or running a migration:
 
 Do not begin implementation until these steps are complete.
 
+## Re-anchor and report
+
+"Re-anchor and report" is a **read-only** startup operation. It orients a fresh
+or reset agent and changes nothing.
+
+When asked to re-anchor:
+
+1. Inspect Git (`git status`, `git log`, current branch, HEAD, `origin/main`,
+   ahead/behind), `AGENTS.md`, the Project Brief — including its Development
+   checkpoint subsection and the Librarian-generated block — and the
+   authoritative sources relevant to any work in progress.
+2. Report: literal current HEAD and branch, the substantive development
+   baseline, `origin/main` and ahead/behind, any pending promotion or
+   production migration-ledger gate, and the next safe step.
+3. Report every discrepancy found — including a Development checkpoint
+   subsection or Librarian block that is stale relative to Git.
+
+Re-anchoring must not modify, reconcile, regenerate, commit, push, or perform
+any database write, and does not run `npm run context:update`. If the
+hand-maintained checkpoint looks stale, state that plainly; repair it only when
+separately instructed.
+
 ## Working rules
 
 - Prefer the simplest, cleanest solution that satisfies the stated requirement.
@@ -36,4 +58,4 @@ Report:
 - database or runtime evidence when the task concerns stored data or operational behavior;
 - remaining risks or unverified assumptions;
 - confirmation that no unrelated files were changed;
-- when the work advanced the development checkpoint through a commit on the active branch, promotion to main, a production deployment, or a production migration-ledger change: confirmation that the Development checkpoint subsection in `docs/ai-context/EPICENTRAX_PROJECT_BRIEF.md` was reconciled and `npm run context:update` was run before closeout.
+- when the work landed a substantive product change that moves the development baseline (a feature, a migration, a fix), promoted the baseline to main, deployed to production, or changed the production migration ledger: confirmation that the Development checkpoint subsection in `docs/ai-context/EPICENTRAX_PROJECT_BRIEF.md` was reconciled to the new baseline and `npm run context:update` was run before closeout. Continuity or governance-only commits — including edits to the checkpoint subsection itself — do not move the baseline and do not trigger this.
