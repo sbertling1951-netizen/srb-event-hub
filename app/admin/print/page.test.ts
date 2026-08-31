@@ -37,6 +37,12 @@ test("Print no longer mislabels its default queue as attendees", () => {
   assert.ok(source.includes('<option value="all">All Active Registrations</option>'));
 });
 
+test("Print Center uses canonical tenant logo branding without an FCOC fallback", () => {
+  assert.match(source, /const clubLogoUrl = tenant\?\.logoUrl \|\| null;/);
+  assert.match(source, /\{clubLogoUrl \? \(/);
+  assert.doesNotMatch(source, /\/fcoc-logo\.svg/);
+});
+
 test("Manual print-queue rows stay operational queue records, not canonical registrations", () => {
   // Manual rows are visually flagged and independently deletable -- they
   // are never routed through fetchEventOperationalSummary or any other

@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
       const response = await fetch(url.toString(), {
         headers: {
-          "User-Agent": "FCOC-Event-Hub/1.0",
+          "User-Agent": "EpicentraX-EventHub/1.0",
           "Accept-Language": "en-US,en;q=0.9",
         },
         cache: "no-store",

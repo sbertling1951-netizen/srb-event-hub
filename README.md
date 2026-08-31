@@ -1,4 +1,4 @@
-# FCOC Event Hub
+# EpicentraX Event Hub
 
 Starter MVP for a cross-device FCOC event PWA.
 

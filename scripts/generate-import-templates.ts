@@ -65,7 +65,7 @@ function buildWorkbook(
   const requiredHeadings = contract.fields.filter((f) => f.required).map((f) => f.preferredHeading);
 
   const dataRows: string[][] = [
-    [`FCOC ${contract.label} Import Template - ${kind === "sample" ? "Sample" : "Blank"}`, ...headers.slice(1).map(() => "")],
+    [`EpicentraX ${contract.label} Import Template - ${kind === "sample" ? "Sample" : "Blank"}`, ...headers.slice(1).map(() => "")],
     [
       `Use this file for either XLSX or CSV-based ${contract.label} imports. Required fields: ${requiredHeadings.join(", ") || "none"}.`,
       ...headers.slice(1).map(() => ""),
@@ -115,7 +115,7 @@ function buildCsv(
 function buildNotesText(contract: ImportTemplateContract): string {
   const required = contract.fields.filter((f) => f.required).map((f) => f.preferredHeading);
   const lines: string[] = [
-    `FCOC ${contract.label} Import Template Notes`,
+    `EpicentraX ${contract.label} Import Template Notes`,
     "",
     "Preferred columns:",
     ...contract.fields.map((f) => f.preferredHeading),

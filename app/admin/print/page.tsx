@@ -974,7 +974,7 @@ function AdminPrintPageInner() {
     printMode === "name_tags"
       ? settings?.name_tag_bg_url || null
       : settings?.coach_plate_bg_url || null;
-  const clubLogoUrl = "/fcoc-logo.svg";
+  const clubLogoUrl = tenant?.logoUrl || null;
   const clubLogoAlt = tenant?.displayName
     ? `${tenant.displayName} logo`
     : "Event logo";
@@ -1780,18 +1780,20 @@ top: 0 !important;
                       <div
                         style={{ display: "flex", justifyContent: "center" }}
                       >
-                        <img
-                          src={clubLogoUrl}
-                          alt={clubLogoAlt}
-                          style={{
-                            width: 150,
-                            maxHeight: 80,
-                            objectFit: "contain",
-                          }}
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                          }}
-                        />
+                        {clubLogoUrl ? (
+                          <img
+                            src={clubLogoUrl}
+                            alt={clubLogoAlt}
+                            style={{
+                              width: 150,
+                              maxHeight: 80,
+                              objectFit: "contain",
+                            }}
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : null}
                       </div>
 
                       <div />
@@ -1939,18 +1941,20 @@ top: 0 !important;
                     </div>
 
                     <div style={{ display: "flex", justifyContent: "center" }}>
-                      <img
-                        src={clubLogoUrl}
-                        alt={clubLogoAlt}
-                        style={{
-                          width: "7in",
-                          maxHeight: "3.2in",
-                          objectFit: "contain",
-                        }}
-                        onError={(e) => {
-                          e.currentTarget.style.display = "none";
-                        }}
-                      />
+                      {clubLogoUrl ? (
+                        <img
+                          src={clubLogoUrl}
+                          alt={clubLogoAlt}
+                          style={{
+                            width: "7in",
+                            maxHeight: "3.2in",
+                            objectFit: "contain",
+                          }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : null}
                     </div>
 
                     <div

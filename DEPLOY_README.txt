@@ -1,4 +1,4 @@
-FCOC Event Hub – Deployment Instructions
+EpicentraX Event Hub - Deployment Instructions
 
 This is a Next.js application.
 

@@ -1,4 +1,4 @@
-FCOC Attendee Roster Import Template Notes
+EpicentraX Attendee Roster Import Template Notes
 
 Preferred columns:
 Entry ID

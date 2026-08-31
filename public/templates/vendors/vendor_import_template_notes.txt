@@ -1,4 +1,4 @@
-FCOC Vendors Import Template Notes
+EpicentraX Vendors Import Template Notes
 
 Preferred columns:
 Business Name

@@ -3,7 +3,7 @@
 echo "Creating deployment README..."
 
 cat <<EOF > READ_ME_FIRST.txt
-FCOC Event Hub – Deployment Instructions
+EpicentraX Event Hub - Deployment Instructions
 
 This is a Next.js application.
 
@@ -24,7 +24,7 @@ EOF
 
 echo "Creating deployment zip..."
 
-zip -r ~/Desktop/fcoc-event-hub-$(date +%Y%m%d-%H%M).zip . \
+zip -r ~/Desktop/epicentrax-event-hub-$(date +%Y%m%d-%H%M).zip . \
 -x "node_modules/*" \
 ".next/*" \
 ".git/*" \

@@ -1,4 +1,4 @@
-# FCOC Event Hub Admin Quick Start
+# EpicentraX Event Hub Admin Quick Start
 
 ## 1. Create the event
 1. Open the app and go to **Admin > New Event**.
