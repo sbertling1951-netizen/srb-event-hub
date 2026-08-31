@@ -397,7 +397,6 @@ export default function MemberLoginPage() {
       if (typeof window !== "undefined") {
         localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendee.id);
         localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
-        localStorage.setItem(STORAGE_KEYS.memberEntryId, attendee.entry_id || "");
         localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(arrived));
         localStorage.setItem(STORAGE_KEYS.userMode, "member");
         localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));

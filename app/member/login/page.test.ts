@@ -68,6 +68,18 @@ test("temporary login does not write retired standalone email or name storage", 
   assert.match(SOURCE, /temporary_capability_hash:\s*responseBody\.capabilityHash/);
 });
 
+test("M1: temporary login no longer writes the retired standalone entry-id key; canonical attendee/session writes unchanged", () => {
+  assert.doesNotMatch(SOURCE, /memberEntryId|fcoc-member-entry-id/);
+  // the coarse compatibility mirror (attendee-id) and the canonical
+  // MemberSession write are both still present
+  assert.match(
+    SOURCE,
+    /localStorage\.setItem\(STORAGE_KEYS\.memberAttendeeId, attendee\.id\);/,
+  );
+  assert.match(SOURCE, /attendee_id:\s*attendee\.id/);
+  assert.match(SOURCE, /temporary_capability_hash:\s*responseBody\.capabilityHash/);
+});
+
 test("displayed selection fields (name, dates) are preserved", () => {
   assert.match(SOURCE, /event\.name \|\| "Untitled event"/);
   assert.match(SOURCE, /formatDateRange\(event\.start_date, event\.end_date\)/);

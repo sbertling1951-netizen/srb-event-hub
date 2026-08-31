@@ -185,12 +185,34 @@ test("still no direct identity/context RPC in this component after the repair", 
   assert.equal(/\.rpc\(/.test(CODE), false);
 });
 
-test("retired email-only browser state is not a legacy member session, while attendee/entry remain compatibility signals only", () => {
+test("retired email-only browser state is not a legacy member session; the attendee-id compatibility signal alone forms the coarse pre-gate", () => {
   assert.doesNotMatch(CODE, /getStoredMemberEmail|memberEmail|fcoc-member-email/);
   assert.match(CODE, /const attendeeId = getStoredMemberAttendeeId\(\);/);
-  assert.match(CODE, /const entryId = getStoredMemberEntryId\(\);/);
-  assert.match(CODE, /const hasIdentity = !!\(attendeeId \|\| entryId\);/);
+  assert.match(CODE, /const hasIdentity = !!attendeeId;/);
   assert.match(CODE, /const hasLegacySession = mode === "member" && hasIdentity && hasEvent;/);
+});
+
+test("M1: the standalone entry-id key is retired from MemberRouteGuard (attendee-id alone is the semantic equivalent of the former OR pre-gate)", () => {
+  assert.doesNotMatch(CODE, /getStoredMemberEntryId|memberEntryId|fcoc-member-entry-id/);
+  assert.doesNotMatch(CODE, /const entryId =/);
+  assert.doesNotMatch(CODE, /attendeeId \|\| entryId/);
+  // both the optimistic pre-paint and the verification effect use the same
+  // attendee-id-only pre-gate
+  assert.equal((CODE.match(/const hasIdentity = !!attendeeId;/g) || []).length, 2);
+});
+
+test("M1: final admission is still gated on the shared MemberSession-derived identity, not the compatibility pre-gate", () => {
+  // this cohort does NOT move the bootstrap onto MemberSession -- the
+  // legacy pre-gate stays, but resolved canonical identity is still required
+  assert.match(CODE, /workspace\.identityStatus === "resolved"/);
+  assert.match(
+    CODE,
+    /if \(workspace\.identityStatus === "recovery_required"\) \{/,
+  );
+  assert.match(
+    CODE,
+    /if \(workspace\.identityStatus === "resolving"\) \{/,
+  );
 });
 
 test("Account and TEA admission remain separated by live Auth, resolved workspace identity, and canonical capability state", () => {

@@ -111,7 +111,6 @@ export function categorizeEventTiming(
 export async function finishMemberLogin(params: {
   event: MinimalEventForSession;
   attendeeId: string;
-  entryId: string | null;
   email: string | null;
   hasArrived: boolean;
   authUserId?: string | null;
@@ -123,7 +122,6 @@ export async function finishMemberLogin(params: {
   const {
     event,
     attendeeId,
-    entryId,
     email,
     hasArrived,
     authUserId,
@@ -140,7 +138,6 @@ export async function finishMemberLogin(params: {
     } else {
       localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
     }
-    localStorage.setItem(STORAGE_KEYS.memberEntryId, entryId || "");
     localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(hasArrived));
     localStorage.setItem(STORAGE_KEYS.userMode, "member");
     localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));
@@ -199,7 +196,6 @@ export async function enterResolvedRegistration(
   return finishMemberLogin({
     event,
     attendeeId: row.attendee_id,
-    entryId: row.entry_id,
     email: row.email,
     hasArrived: !!row.has_arrived,
     authUserId,
@@ -221,7 +217,6 @@ export function clearMemberLocalState() {
 
   if (typeof window !== "undefined") {
     localStorage.removeItem(STORAGE_KEYS.memberAttendeeId);
-    localStorage.removeItem(STORAGE_KEYS.memberEntryId);
     localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
     localStorage.removeItem(STORAGE_KEYS.memberEventContext);
     localStorage.removeItem(STORAGE_KEYS.memberEventChanged);

@@ -32,13 +32,43 @@ test("surviving member storage key strings remain unchanged", () => {
     ["memberEventContext", "fcoc-member-event-context"],
     ["memberEventChanged", "fcoc-member-event-changed"],
     ["memberAttendeeId", "fcoc-member-attendee-id"],
-    ["memberEntryId", "fcoc-member-entry-id"],
     ["memberHasArrived", "fcoc-member-has-arrived"],
-    ["memberEventUpdated", "fcoc-member-event-updated"],
   ]) {
     assert.match(storageKeys, new RegExp(`${name}: "${value}"`));
   }
   assert.doesNotMatch(storageKeys, /member(Name|Email)/);
+});
+
+test("M1: retired compatibility signals are absent from the live storage registry", () => {
+  const storageKeys = readFileSync(
+    fileURLToPath(new URL("./storageKeys.ts", import.meta.url)),
+    "utf8",
+  );
+  // Standalone browser key retired -- attendee-id alone is the Guard
+  // bootstrap pre-gate (every writer that set entry-id also set attendee-id).
+  assert.doesNotMatch(storageKeys, /memberEntryId/);
+  assert.doesNotMatch(storageKeys, /fcoc-member-entry-id/);
+  // Dead cross-tab signal -- no writer anywhere in the tree.
+  assert.doesNotMatch(storageKeys, /activeEventChanged/);
+  assert.doesNotMatch(storageKeys, /fcoc-active-event-changed/);
+  // Orphan same-tab CustomEvent -- no listener anywhere in the tree.
+  assert.doesNotMatch(storageKeys, /memberEventUpdated/);
+  assert.doesNotMatch(storageKeys, /fcoc-member-event-updated/);
+});
+
+test("M1: member account session no longer writes the standalone entry-id key", () => {
+  assert.doesNotMatch(SOURCE, /memberEntryId/);
+  assert.doesNotMatch(SOURCE, /fcoc-member-entry-id/);
+  // The canonical resolve_member_account() row shape still carries entry_id
+  // (used only for the governed display-name fallback, never persisted).
+  assert.match(SOURCE, /entry_id: string \| null;/);
+  assert.match(SOURCE, /row\.entry_id \|\| "Registration"/);
+  // Canonical MemberSession write is unchanged.
+  assert.match(SOURCE, /attendee_id: attendeeId,/);
+  assert.match(
+    SOURCE,
+    /localStorage\.setItem\(STORAGE_KEYS\.memberAttendeeId, attendeeId\);/,
+  );
 });
 
 test("explicit Member logout clears account-origin state before publishing Supabase sign-out", () => {

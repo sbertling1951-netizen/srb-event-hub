@@ -14,16 +14,21 @@ export const STORAGE_KEYS = {
   memberEventContext: "fcoc-member-event-context",
   memberEventChanged: "fcoc-member-event-changed",
 
+  // Compatibility / bootstrap key: mirrored from the canonical
+  // MemberSession as the outcome of a server-validated login, and read by
+  // MemberRouteGuard's coarse "a member session exists" admission pre-gate
+  // and by the root-route arrival redirect. It is NOT identity authority --
+  // MemberWorkspaceProvider derives the attendee from MemberSession only.
   memberAttendeeId: "fcoc-member-attendee-id",
-  memberEntryId: "fcoc-member-entry-id",
+  // Root-route arrival projection: mirrors attendees.has_arrived at login
+  // time so the "/" redirect can skip the check-in step. Not authoritative;
+  // the server value is re-read on every /member and /member/checkin load.
   memberHasArrived: "fcoc-member-has-arrived",
   // Account-origin marker: written only by the authenticated Account
   // login path (finishMemberLogin), and explicitly removed by the
   // Temporary Event Access path. Its presence distinguishes an
   // account-origin MemberSession from a Temporary Event Access one.
   memberAuthUserId: "fcoc-member-auth-user-id",
-
-  activeEventChanged: "fcoc-active-event-changed",
 
   adminEmail: "fcoc-admin-email",
   adminEventsFilter: "fcoc-admin-events-filter",
@@ -58,5 +63,4 @@ export const COOKIE_NAMES = {
 
 export const APP_EVENT_NAMES = {
   adminEventUpdated: "fcoc-admin-event-updated",
-  memberEventUpdated: "fcoc-member-event-updated",
 } as const;

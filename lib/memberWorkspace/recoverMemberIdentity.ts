@@ -47,7 +47,6 @@ export type MemberIdentityRecoveryOutcome =
 
 type AttendeeRecordRow = {
   id?: unknown;
-  entry_id?: unknown;
   email?: unknown;
   has_arrived?: unknown;
   participant_capacity?: unknown;
@@ -163,9 +162,6 @@ export async function recoverMemberIdentity(
   if (typeof window !== "undefined") {
     localStorage.setItem(STORAGE_KEYS.memberAttendeeId, resolvedAttendeeId);
     localStorage.setItem(STORAGE_KEYS.userMode, "member");
-    if (typeof row.entry_id === "string") {
-      localStorage.setItem(STORAGE_KEYS.memberEntryId, row.entry_id);
-    }
     if (typeof row.has_arrived === "boolean") {
       localStorage.setItem(
         STORAGE_KEYS.memberHasArrived,

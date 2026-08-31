@@ -128,6 +128,18 @@ test("recovery no longer writes retired standalone email/name storage and preser
   assert.match(CODE, /participant_name: session\?\.participant_name \?\? null/);
 });
 
+test("M1: recovery no longer writes the retired standalone entry-id key; canonical rewrite + attendee-id/has-arrived mirrors unchanged", () => {
+  assert.doesNotMatch(CODE, /memberEntryId|fcoc-member-entry-id/);
+  assert.doesNotMatch(CODE, /row\.entry_id/);
+  // the governed rewrite and the surviving compatibility mirrors are intact
+  assert.match(CODE, /saveMemberSession\(\{/);
+  assert.match(
+    CODE,
+    /localStorage\.setItem\(STORAGE_KEYS\.memberAttendeeId, resolvedAttendeeId\);/,
+  );
+  assert.match(CODE, /STORAGE_KEYS\.memberHasArrived,/);
+});
+
 test("abort-aware: a superseded attempt does not write a session", () => {
   const writeIdx = CODE.indexOf("saveMemberSession({");
   const guards = CODE.slice(0, writeIdx).match(/if \(signal\?\.aborted\)/g) || [];

@@ -11,7 +11,6 @@ import {
   loadPublicEventBootstrap,
   type PublicEventCandidate,
 } from "@/lib/publicEventBootstrap";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 // Anonymous-safe site geometry (get_event_public_map_sites): no
@@ -221,22 +220,14 @@ export default function CoachMapPage() {
       }
     }
 
-    function handleStorage(e: StorageEvent) {
-      if (e.key === STORAGE_KEYS.activeEventChanged) {
-        void refreshCoachMap();
-      }
-    }
-
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("storage", handleStorage);
 
     return () => {
       cancelled = true;
       window.clearInterval(refreshInterval);
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("storage", handleStorage);
     };
   }, [loadMapData, publicEvent]);
 

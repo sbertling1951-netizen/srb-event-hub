@@ -8,7 +8,6 @@ import {
   getCurrentMemberEvent,
   getStoredMemberAttendeeId,
   getStoredMemberAuthUserId,
-  getStoredMemberEntryId,
   getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
 import { clearMemberLocalState } from "@/lib/memberAccountSession";
@@ -66,11 +65,18 @@ export default function MemberRouteGuard({
     try {
       const mode = getStoredUserMode();
       const attendeeId = getStoredMemberAttendeeId();
-      const entryId = getStoredMemberEntryId();
       const memberEvent = getCurrentMemberEvent();
       const accountOriginMarker = getStoredMemberAuthUserId();
 
-      const hasIdentity = !!(attendeeId || entryId);
+      // Coarse "a member session exists at all" pre-gate. The former
+      // standalone registration-entry compatibility key is retired; every
+      // login/recovery path that ever set it also set the attendee-id
+      // compatibility key in the same flow, so the attendee-id check alone
+      // is the semantic equivalent for every reachable persisted state.
+      // This remains a compatibility bootstrap signal only -- final
+      // admission still requires the shared MemberSession-derived
+      // identityStatus === "resolved" below.
+      const hasIdentity = !!attendeeId;
       const hasEvent = !!memberEvent;
 
       // Only ever an immediate paint for the Temporary Access shape here --
@@ -108,12 +114,14 @@ export default function MemberRouteGuard({
       try {
         const mode = getStoredUserMode();
         const attendeeId = getStoredMemberAttendeeId();
-        const entryId = getStoredMemberEntryId();
         const memberEvent = getCurrentMemberEvent();
 
         const accountOriginMarker = getStoredMemberAuthUserId();
 
-        const hasIdentity = !!(attendeeId || entryId);
+        // See the useLayoutEffect note above: the standalone registration-
+        // entry compatibility key is retired and the attendee-id key alone
+        // is the semantic equivalent of the former two-key pre-gate.
+        const hasIdentity = !!attendeeId;
         const hasEvent = !!memberEvent;
         const hasLegacySession = mode === "member" && hasIdentity && hasEvent;
 

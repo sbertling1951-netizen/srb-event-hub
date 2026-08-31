@@ -22,13 +22,6 @@ export function getStoredMemberAttendeeId() {
   return localStorage.getItem(STORAGE_KEYS.memberAttendeeId);
 }
 
-export function getStoredMemberEntryId() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem(STORAGE_KEYS.memberEntryId);
-}
-
 // The authenticated Account login path (finishMemberLogin) writes this;
 // Temporary Event Access explicitly clears it. Non-null here means the
 // persisted member state originated from an Account session -- used to

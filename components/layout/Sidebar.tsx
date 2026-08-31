@@ -9,10 +9,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useAdmin } from "@/lib/adminContext";
 import { useAdminWorkspace } from "@/lib/AdminWorkspaceProvider";
 import { hasPermission } from "@/lib/getCurrentAdminAccess";
-import {
-  getStoredMemberHasArrived,
-  getStoredUserMode,
-} from "@/lib/getCurrentMemberEvent";
+import { getStoredUserMode } from "@/lib/getCurrentMemberEvent";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
@@ -158,7 +155,6 @@ export default function Sidebar() {
   const { event: workspaceEvent } = useMemberWorkspace();
   const [memberEvent, setMemberEvent] = useState<EventContext | null>(null);
   const [adminEvent, setAdminEvent] = useState<EventContext | null>(null);
-  const [_isCheckedIn, setIsCheckedIn] = useState(false);
   const [userMode, setUserMode] = useState<"member" | "admin" | "none">("none");
   const [isShortScreen, setIsShortScreen] = useState(false);
   const { admin: sharedAdminAccess, loading: adminAccessLoading } = useAdmin();
@@ -173,10 +169,8 @@ export default function Sidebar() {
 
   function loadContextsFromStorage() {
     try {
-      const hasArrived = getStoredMemberHasArrived();
       const storedUserMode = getStoredUserMode();
 
-      setIsCheckedIn(hasArrived === "true");
       setUserMode(
         storedUserMode === "member" || storedUserMode === "admin"
           ? storedUserMode
@@ -186,7 +180,6 @@ export default function Sidebar() {
       console.error("Sidebar load error:", err);
       setMemberEvent(null);
       setAdminEvent(null);
-      setIsCheckedIn(false);
       setUserMode("none");
     }
   }
@@ -272,7 +265,6 @@ export default function Sidebar() {
       if (
         e.key === STORAGE_KEYS.memberEventContext ||
         e.key === STORAGE_KEYS.adminEventContext ||
-        e.key === STORAGE_KEYS.memberHasArrived ||
         e.key === STORAGE_KEYS.memberEventChanged ||
         e.key === STORAGE_KEYS.adminEventChanged ||
         e.key === STORAGE_KEYS.userMode ||
@@ -291,7 +283,6 @@ export default function Sidebar() {
 
       setMemberEvent(null);
       setAdminEvent(null);
-      setIsCheckedIn(false);
       setUserMode("none");
       setAdminAccess(null);
       setAdminDisplayName("");
@@ -408,7 +399,6 @@ export default function Sidebar() {
 
       setMemberEvent(null);
       setAdminEvent(null);
-      setIsCheckedIn(false);
       setUserMode("none");
       setAdminAccess(null);
       setAdminDisplayName("");
@@ -419,7 +409,6 @@ export default function Sidebar() {
       document.documentElement.style.overflow = "";
 
       window.dispatchEvent(new Event(APP_EVENT_NAMES.adminEventUpdated));
-      window.dispatchEvent(new Event(APP_EVENT_NAMES.memberEventUpdated));
     } catch (err) {
       console.error("Failed to clear app state:", err);
     }
