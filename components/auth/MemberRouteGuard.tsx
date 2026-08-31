@@ -16,6 +16,7 @@ import {
 } from "@/lib/memberWorkspace/memberRouteAccess";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { storageEventMatches } from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
 
 // Member Event Context Stage 2 + Member Workspace Continuity + M2. For an
@@ -148,11 +149,14 @@ export default function MemberRouteGuard({
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === STORAGE_KEYS.memberSession ||
-        e.key === STORAGE_KEYS.memberEventContext ||
-        e.key === STORAGE_KEYS.memberEventChanged ||
-        e.key === STORAGE_KEYS.userMode ||
-        e.key === STORAGE_KEYS.userModeChanged
+        storageEventMatches(
+          e.key,
+          STORAGE_KEYS.memberSession,
+          STORAGE_KEYS.memberEventContext,
+          STORAGE_KEYS.memberEventChanged,
+          STORAGE_KEYS.userMode,
+          STORAGE_KEYS.userModeChanged,
+        )
       ) {
         void verifyMember();
       }

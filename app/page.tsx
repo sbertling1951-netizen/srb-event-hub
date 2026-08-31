@@ -10,7 +10,8 @@ import {
   getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
 import { getMemberSession } from "@/lib/memberSession";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
+import { dualRemoveLocal } from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
 
 export default function HomePage() {
@@ -33,7 +34,7 @@ export default function HomePage() {
 
         // 🚨 If no real session, kill fake admin mode
         if (!user && mode === "admin") {
-          localStorage.removeItem(STORAGE_KEYS.userMode);
+          dualRemoveLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode);
         }
 
         // ✅ Only redirect to admin if session is REAL

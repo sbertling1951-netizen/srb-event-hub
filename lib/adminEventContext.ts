@@ -1,8 +1,24 @@
-import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  APP_EVENT_NAMES,
+  LEGACY_APP_EVENT_NAMES,
+  LEGACY_STORAGE_KEYS,
+  STORAGE_KEYS,
+} from "@/lib/storageKeys";
+import {
+  addDualWindowEventListener,
+  dualDispatchWindowEvent,
+  dualRemoveLocal,
+  dualSignalLocal,
+  dualWriteLocal,
+  readMigratingLocal,
+} from "@/lib/storageMigration";
 
 export const ADMIN_EVENT_KEY = STORAGE_KEYS.adminEventContext;
 export const ADMIN_EVENT_CHANGED_KEY = STORAGE_KEYS.adminEventChanged;
 export const ADMIN_EVENT_UPDATED = APP_EVENT_NAMES.adminEventUpdated;
+const LEGACY_ADMIN_EVENT_KEY = LEGACY_STORAGE_KEYS.adminEventContext;
+const LEGACY_ADMIN_EVENT_CHANGED_KEY = LEGACY_STORAGE_KEYS.adminEventChanged;
+const LEGACY_ADMIN_EVENT_UPDATED = LEGACY_APP_EVENT_NAMES.adminEventUpdated;
 
 export interface AdminWorkspaceContext {
   id: string;
@@ -21,7 +37,7 @@ export function getCurrentAdminEvent(): AdminWorkspaceContext | null {
     return null;
   }
 
-  const raw = localStorage.getItem(ADMIN_EVENT_KEY);
+  const raw = readMigratingLocal(ADMIN_EVENT_KEY, LEGACY_ADMIN_EVENT_KEY);
 
   if (!raw) {
     return null;
@@ -41,10 +57,11 @@ export function setCurrentAdminEvent(event: AdminWorkspaceContext | null): void 
   }
 
   if (!event) {
-    localStorage.removeItem(ADMIN_EVENT_KEY);
+    dualRemoveLocal(ADMIN_EVENT_KEY, LEGACY_ADMIN_EVENT_KEY);
   } else {
-    localStorage.setItem(
+    dualWriteLocal(
       ADMIN_EVENT_KEY,
+      LEGACY_ADMIN_EVENT_KEY,
       JSON.stringify({
         ...event,
         updatedAt: Date.now(),
@@ -53,9 +70,13 @@ export function setCurrentAdminEvent(event: AdminWorkspaceContext | null): void 
     );
   }
 
-  localStorage.setItem(ADMIN_EVENT_CHANGED_KEY, String(Date.now()));
+  dualSignalLocal(
+    ADMIN_EVENT_CHANGED_KEY,
+    LEGACY_ADMIN_EVENT_CHANGED_KEY,
+    String(Date.now()),
+  );
 
-  window.dispatchEvent(new CustomEvent(ADMIN_EVENT_UPDATED));
+  dualDispatchWindowEvent(ADMIN_EVENT_UPDATED, LEGACY_ADMIN_EVENT_UPDATED);
 }
 
 export function clearCurrentAdminEvent(): void {
@@ -116,11 +137,18 @@ export function subscribeToAdminEvent(
 
   const handler = () => callback();
 
-  window.addEventListener(ADMIN_EVENT_UPDATED, handler as EventListener);
+  // Same-tab / persisted-provider-across-deploy: accept both the canonical
+  // and legacy CustomEvent names. The generic "storage" listener already
+  // covers both key names for cross-tab writes.
+  const removeCustomEventListeners = addDualWindowEventListener(
+    ADMIN_EVENT_UPDATED,
+    LEGACY_ADMIN_EVENT_UPDATED,
+    handler as EventListener,
+  );
   window.addEventListener("storage", handler);
 
   return () => {
-    window.removeEventListener(ADMIN_EVENT_UPDATED, handler as EventListener);
+    removeCustomEventListeners();
     window.removeEventListener("storage", handler);
   };
 }

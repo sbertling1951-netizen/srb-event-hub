@@ -9,6 +9,7 @@ import { logEngagement } from "@/lib/engagement";
 import { fullName } from "@/lib/formatters";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { storageEventMatches } from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
 
 type MemberEventRow = {
@@ -389,7 +390,7 @@ function CoachMapPublicPageInner() {
     void loadMap();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === STORAGE_KEYS.memberEventChanged) {
+      if (storageEventMatches(e.key, STORAGE_KEYS.memberEventChanged)) {
         setViewerAttendeeId(attendeeId ?? null);
         void loadMap();
       }

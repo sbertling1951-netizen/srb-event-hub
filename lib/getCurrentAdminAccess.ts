@@ -1,4 +1,5 @@
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
+import { dualRemoveLocal, readMigratingLocal } from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
 
 export type AdminUserAccessRow = {
@@ -114,8 +115,14 @@ function getCachedAdminAccess(): AdminAccessResult | null {
     return null;
   }
   try {
+    // Stage A: canonical-first read with legacy fallback + migrate-on-read.
+    // (New writes are canonical-only -- the TTL cache is deliberately not
+    // dual-written.)
     const savedAt = Number(
-      localStorage.getItem(STORAGE_KEYS.adminAccessCacheTime) || 0,
+      readMigratingLocal(
+        STORAGE_KEYS.adminAccessCacheTime,
+        LEGACY_STORAGE_KEYS.adminAccessCacheTime,
+      ) || 0,
     );
 
     const cacheVersion =
@@ -133,7 +140,10 @@ function getCachedAdminAccess(): AdminAccessResult | null {
       return null;
     }
 
-    const raw = localStorage.getItem(STORAGE_KEYS.adminAccessCache);
+    const raw = readMigratingLocal(
+      STORAGE_KEYS.adminAccessCache,
+      LEGACY_STORAGE_KEYS.adminAccessCache,
+    );
     return raw ? JSON.parse(raw) : null;
   } catch {
     clearAdminAccessCache();
@@ -157,8 +167,14 @@ export function clearAdminAccessCache() {
   if (typeof window === "undefined") {
     return;
   }
-  localStorage.removeItem(STORAGE_KEYS.adminAccessCache);
-  localStorage.removeItem(STORAGE_KEYS.adminAccessCacheTime);
+  dualRemoveLocal(
+    STORAGE_KEYS.adminAccessCache,
+    LEGACY_STORAGE_KEYS.adminAccessCache,
+  );
+  dualRemoveLocal(
+    STORAGE_KEYS.adminAccessCacheTime,
+    LEGACY_STORAGE_KEYS.adminAccessCacheTime,
+  );
 }
 
 export function bumpAdminPermissionsVersion() {

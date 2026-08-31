@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 
 import {
   createVendorTokenBoundClient,
+  readVendorAuthCookie,
   resolveVendorAccessFromCookies,
-  VENDOR_AUTH_COOKIE,
 } from "@/lib/server/vendorAccess";
 
 type ProfilePatchBody = {
@@ -46,7 +46,7 @@ export async function GET() {
     );
   }
 
-  const accessToken = cookieStore.get(VENDOR_AUTH_COOKIE)?.value;
+  const accessToken = readVendorAuthCookie(cookieStore);
   if (!accessToken) {
     return NextResponse.json(
       { ok: false, error: "Vendor authentication is required.", reason: "missing_vendor_session" },
@@ -157,7 +157,7 @@ export async function PATCH(req: Request) {
     preferred_contact_method: preferredContactMethod,
   };
 
-  const accessToken = cookieStore.get(VENDOR_AUTH_COOKIE)?.value;
+  const accessToken = readVendorAuthCookie(cookieStore);
   if (!accessToken) {
     return NextResponse.json(
       { ok: false, error: "Vendor authentication is required.", reason: "missing_vendor_session" },

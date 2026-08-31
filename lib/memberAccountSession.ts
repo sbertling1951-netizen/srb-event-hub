@@ -16,7 +16,12 @@ import {
   clearMemberSession,
   saveMemberSession,
 } from "@/lib/memberSession";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  dualRemoveLocal,
+  dualSignalLocal,
+  dualWriteLocal,
+} from "@/lib/storageMigration";
 import { setSharedDeviceMode, supabase } from "@/lib/supabase";
 
 export type MinimalEventForSession = {
@@ -133,13 +138,28 @@ export async function finishMemberLogin(params: {
 
   if (typeof window !== "undefined") {
     if (authUserId) {
-      localStorage.setItem(STORAGE_KEYS.memberAuthUserId, authUserId);
+      dualWriteLocal(
+        STORAGE_KEYS.memberAuthUserId,
+        LEGACY_STORAGE_KEYS.memberAuthUserId,
+        authUserId,
+      );
     } else {
-      localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
+      dualRemoveLocal(
+        STORAGE_KEYS.memberAuthUserId,
+        LEGACY_STORAGE_KEYS.memberAuthUserId,
+      );
     }
-    localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(hasArrived));
-    localStorage.setItem(STORAGE_KEYS.userMode, "member");
-    localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));
+    dualWriteLocal(
+      STORAGE_KEYS.memberHasArrived,
+      LEGACY_STORAGE_KEYS.memberHasArrived,
+      String(hasArrived),
+    );
+    dualWriteLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode, "member");
+    dualSignalLocal(
+      STORAGE_KEYS.userModeChanged,
+      LEGACY_STORAGE_KEYS.userModeChanged,
+      String(Date.now()),
+    );
   }
 
   saveMemberSession({
@@ -218,10 +238,22 @@ export function clearMemberLocalState() {
   clearMemberSession();
 
   if (typeof window !== "undefined") {
-    localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
-    localStorage.removeItem(STORAGE_KEYS.memberEventContext);
-    localStorage.removeItem(STORAGE_KEYS.memberEventChanged);
-    localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
+    dualRemoveLocal(
+      STORAGE_KEYS.memberHasArrived,
+      LEGACY_STORAGE_KEYS.memberHasArrived,
+    );
+    dualRemoveLocal(
+      STORAGE_KEYS.memberEventContext,
+      LEGACY_STORAGE_KEYS.memberEventContext,
+    );
+    dualRemoveLocal(
+      STORAGE_KEYS.memberEventChanged,
+      LEGACY_STORAGE_KEYS.memberEventChanged,
+    );
+    dualRemoveLocal(
+      STORAGE_KEYS.memberAuthUserId,
+      LEGACY_STORAGE_KEYS.memberAuthUserId,
+    );
   }
 }
 

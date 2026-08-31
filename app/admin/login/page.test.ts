@@ -58,19 +58,24 @@ test("clearMemberLocalState() runs AFTER every auth / missing-session exit and B
   assert.ok(noSessionThrow >= 0 && noSessionThrow < cleanupIdx);
   assert.ok(loginComplete >= 0 && loginComplete < cleanupIdx);
 
-  // and the cleanup precedes establishing Admin mode
+  // and the cleanup precedes establishing Admin mode. Stage A: the mode is
+  // now written under both the canonical and legacy names via the shared
+  // migration helper.
   const adminModeWrite = SOURCE.indexOf(
-    'localStorage.setItem(STORAGE_KEYS.userMode, "admin");',
+    'dualWriteLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode, "admin");',
   );
   assert.ok(adminModeWrite >= 0, "expected the Admin mode write");
   assert.ok(cleanupIdx < adminModeWrite, "cleanup must precede the Admin mode write");
 
-  // establishment order preserved: mode -> adminEmail -> user-mode-changed -> clearCurrentAdminEvent
+  // The retired write-only fcoc-admin-email key is no longer written.
+  assert.doesNotMatch(SOURCE, /adminEmail/);
+
+  // establishment order preserved: mode -> user-mode-changed -> clearCurrentAdminEvent
   assert.ok(
-    adminModeWrite < SOURCE.indexOf("localStorage.setItem(STORAGE_KEYS.adminEmail"),
+    adminModeWrite < SOURCE.indexOf("dualSignalLocal(\n        STORAGE_KEYS.userModeChanged"),
   );
   assert.ok(
-    SOURCE.indexOf("localStorage.setItem(STORAGE_KEYS.userModeChanged") <
+    SOURCE.indexOf("STORAGE_KEYS.userModeChanged") <
       SOURCE.indexOf("clearCurrentAdminEvent();"),
   );
 });

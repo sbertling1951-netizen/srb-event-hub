@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import {
+  CANONICAL_VENDOR_AUTH_COOKIE,
+  CANONICAL_VENDOR_SELECTED_COOKIE,
   VENDOR_AUTH_COOKIE,
   VENDOR_SELECTED_COOKIE,
 } from "@/lib/server/vendorAccess";
@@ -160,25 +162,26 @@ export async function POST(req: Request) {
 export async function DELETE() {
   const response = NextResponse.json({ ok: true });
 
-  response.cookies.set({
-    name: VENDOR_AUTH_COOKIE,
-    value: "",
-    maxAge: 0,
-    httpOnly: true,
-    secure: secureCookieEnabled(),
-    sameSite: "lax",
-    path: "/",
-  });
+  // Stage A: clear BOTH the legacy and canonical cookie names so a logout
+  // cannot leave a stale vendor session cookie behind under either name.
+  const expiredCookieNames = [
+    VENDOR_AUTH_COOKIE,
+    VENDOR_SELECTED_COOKIE,
+    CANONICAL_VENDOR_AUTH_COOKIE,
+    CANONICAL_VENDOR_SELECTED_COOKIE,
+  ];
 
-  response.cookies.set({
-    name: VENDOR_SELECTED_COOKIE,
-    value: "",
-    maxAge: 0,
-    httpOnly: true,
-    secure: secureCookieEnabled(),
-    sameSite: "lax",
-    path: "/",
-  });
+  for (const name of expiredCookieNames) {
+    response.cookies.set({
+      name,
+      value: "",
+      maxAge: 0,
+      httpOnly: true,
+      secure: secureCookieEnabled(),
+      sameSite: "lax",
+      path: "/",
+    });
+  }
 
   return response;
 }

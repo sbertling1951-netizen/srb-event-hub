@@ -14,6 +14,8 @@ import {
   resolveAdminWorkingEvent,
   setCurrentAdminEvent,
 } from "@/lib/adminEventContext";
+import { LEGACY_APP_EVENT_NAMES } from "@/lib/storageKeys";
+import { addDualWindowEventListener } from "@/lib/storageMigration";
 
 export {
   clearCurrentAdminEvent,
@@ -89,10 +91,12 @@ export function subscribeToAdminWorkspace(callback: () => void): () => void {
     return () => {};
   }
 
-  window.addEventListener(ADMIN_EVENT_UPDATED, callback);
-
-  return () => {
-    window.removeEventListener(ADMIN_EVENT_UPDATED, callback);
-  };
+  // Stage A: a persisted provider running old JS after a deploy may still
+  // dispatch the legacy CustomEvent name -- accept both.
+  return addDualWindowEventListener(
+    ADMIN_EVENT_UPDATED,
+    LEGACY_APP_EVENT_NAMES.adminEventUpdated,
+    callback,
+  );
 }
 

@@ -118,8 +118,13 @@ test("on success it rewrites a coherent MemberSession for the anchored Event + r
   // Temporary Event Access recovery preserves its capability + expiry
   assert.match(CODE, /temporary_capability_hash: isCapabilityRecovery \? capabilityHash : null,/);
   assert.match(CODE, /expires_at: session\?\.expires_at \?\? null,/);
-  // surviving compatibility mirrors: user-mode + arrival projection
-  assert.match(CODE, /localStorage\.setItem\(STORAGE_KEYS\.userMode, "member"\);/);
+  // surviving compatibility mirrors: user-mode + arrival projection. Stage A
+  // writes each under both the canonical and legacy name via the shared
+  // migration helper.
+  assert.match(
+    CODE,
+    /dualWriteLocal\(STORAGE_KEYS\.userMode, LEGACY_STORAGE_KEYS\.userMode, "member"\)/,
+  );
   assert.match(CODE, /STORAGE_KEYS\.memberHasArrived,/);
 });
 
@@ -138,7 +143,10 @@ test("M1/M2: recovery no longer writes the retired standalone entry-id OR attend
   assert.doesNotMatch(CODE, /memberAttendeeId|fcoc-member-attendee-id/);
   assert.match(CODE, /saveMemberSession\(\{/);
   assert.match(CODE, /attendee_id: resolvedAttendeeId,/);
-  assert.match(CODE, /localStorage\.setItem\(STORAGE_KEYS\.userMode, "member"\);/);
+  assert.match(
+    CODE,
+    /dualWriteLocal\(STORAGE_KEYS\.userMode, LEGACY_STORAGE_KEYS\.userMode, "member"\)/,
+  );
   assert.match(CODE, /STORAGE_KEYS\.memberHasArrived,/);
 });
 

@@ -4,7 +4,8 @@ import {
   memberIdentityRpcArgs,
   saveMemberSession,
 } from "@/lib/memberSession";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
+import { dualWriteLocal } from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
 
 // Member Workspace Continuity: the ONE shared recovery of a member's
@@ -159,16 +160,18 @@ export async function recoverMemberIdentity(
   // the repaired MemberSession. (The retired legacy standalone attendee-id key is
   // no longer written — MemberSession.attendee_id is the identity source.)
   if (typeof window !== "undefined") {
-    localStorage.setItem(STORAGE_KEYS.userMode, "member");
+    dualWriteLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode, "member");
     if (typeof row.has_arrived === "boolean") {
-      localStorage.setItem(
+      dualWriteLocal(
         STORAGE_KEYS.memberHasArrived,
+        LEGACY_STORAGE_KEYS.memberHasArrived,
         String(row.has_arrived),
       );
     }
     if (authSession?.user?.id) {
-      localStorage.setItem(
+      dualWriteLocal(
         STORAGE_KEYS.memberAuthUserId,
+        LEGACY_STORAGE_KEYS.memberAuthUserId,
         authSession.user.id,
       );
     }

@@ -95,10 +95,13 @@ test("the verification effect keeps its shared-signal dependency array (no depen
 });
 
 test("the Guard re-verifies on the member session / event / mode storage keys and on pageshow", () => {
-  assert.match(CODE, /e\.key === STORAGE_KEYS\.memberSession/);
-  assert.match(CODE, /e\.key === STORAGE_KEYS\.memberEventContext/);
-  assert.match(CODE, /e\.key === STORAGE_KEYS\.memberEventChanged/);
-  assert.match(CODE, /e\.key === STORAGE_KEYS\.userMode/);
+  // Stage A: the storage-event key match runs through the shared
+  // storageEventMatches() helper, which also accepts the legacy fcoc- names.
+  assert.match(CODE, /storageEventMatches\(\s*e\.key,/);
+  assert.match(CODE, /STORAGE_KEYS\.memberSession/);
+  assert.match(CODE, /STORAGE_KEYS\.memberEventContext/);
+  assert.match(CODE, /STORAGE_KEYS\.memberEventChanged/);
+  assert.match(CODE, /STORAGE_KEYS\.userMode/);
   assert.match(CODE, /addEventListener\("pageshow", handlePageShow\)/);
 });
 

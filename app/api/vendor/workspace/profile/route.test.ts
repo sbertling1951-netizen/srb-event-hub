@@ -73,11 +73,14 @@ test("route.ts no longer imports getSupabaseAdminClient", () => {
   assert.equal(/getSupabaseAdminClient/.test(SOURCE), false);
 });
 
-test("GET obtains the vendor access token from VENDOR_AUTH_COOKIE before querying vendors", () => {
+test("GET obtains the vendor access token via the Stage A dual-name cookie read before querying vendors", () => {
   const get = section("GET");
-  const tokenIdx = get.indexOf("cookieStore.get(VENDOR_AUTH_COOKIE)");
+  // Stage A: the token is read through readVendorAuthCookie(), which tries
+  // the canonical epicentrax- cookie first and falls back to the legacy
+  // fcoc- cookie so every already-authenticated vendor session survives.
+  const tokenIdx = get.indexOf("readVendorAuthCookie(cookieStore)");
   const queryIdx = get.indexOf('.from("vendors")');
-  assert.ok(tokenIdx !== -1, "expected GET to read VENDOR_AUTH_COOKIE");
+  assert.ok(tokenIdx !== -1, "expected GET to read the vendor auth cookie via readVendorAuthCookie");
   assert.ok(queryIdx !== -1, "expected GET to query vendors");
   assert.ok(tokenIdx < queryIdx, "token must be obtained before the vendors query");
 });

@@ -4,7 +4,7 @@ import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension
 
 import {
   createVendorTokenBoundClient,
-  VENDOR_AUTH_COOKIE,
+  readVendorAuthCookie,
 } from "@/lib/server/vendorAccess";
 
 export type VendorNoticesShadowOperation = "update" | "delete";
@@ -35,7 +35,7 @@ export async function recordVendorNoticesAuthorityShadow(
   params: RecordVendorNoticesAuthorityShadowParams,
 ): Promise<void> {
   try {
-    const accessToken = params.cookies.get(VENDOR_AUTH_COOKIE)?.value;
+    const accessToken = readVendorAuthCookie(params.cookies);
     if (!accessToken) {
       return;
     }

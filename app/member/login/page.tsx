@@ -11,7 +11,12 @@ import {
   type ResolvedRegistration,
 } from "@/lib/memberAccountSession";
 import { saveMemberSession } from "@/lib/memberSession";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  dualRemoveLocal,
+  dualSignalLocal,
+  dualWriteLocal,
+} from "@/lib/storageMigration";
 import { setSharedDeviceMode, supabase } from "@/lib/supabase";
 
 const PASSKEY_AUTH_ENABLED =
@@ -395,10 +400,25 @@ export default function MemberLoginPage() {
       const arrived = !!attendee.has_arrived;
 
       if (typeof window !== "undefined") {
-        localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
-        localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(arrived));
-        localStorage.setItem(STORAGE_KEYS.userMode, "member");
-        localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));
+        dualRemoveLocal(
+          STORAGE_KEYS.memberAuthUserId,
+          LEGACY_STORAGE_KEYS.memberAuthUserId,
+        );
+        dualWriteLocal(
+          STORAGE_KEYS.memberHasArrived,
+          LEGACY_STORAGE_KEYS.memberHasArrived,
+          String(arrived),
+        );
+        dualWriteLocal(
+          STORAGE_KEYS.userMode,
+          LEGACY_STORAGE_KEYS.userMode,
+          "member",
+        );
+        dualSignalLocal(
+          STORAGE_KEYS.userModeChanged,
+          LEGACY_STORAGE_KEYS.userModeChanged,
+          String(Date.now()),
+        );
       }
 
       saveMemberSession({

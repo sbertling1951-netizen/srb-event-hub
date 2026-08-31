@@ -9,7 +9,6 @@ import {
 } from "@/lib/adminTenantAuthority";
 import { ensureAdminIdentityLinked } from "@/lib/ensureAdminIdentityLinked";
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type AdminContextType = {
@@ -52,23 +51,11 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return result;
       });
       setTenantAuthority(resolvedTenantAuthority);
-
-      if (typeof window !== "undefined") {
-        if (result) {
-          sessionStorage.setItem(STORAGE_KEYS.adminAccess, JSON.stringify(result));
-        } else {
-          sessionStorage.removeItem(STORAGE_KEYS.adminAccess);
-        }
-      }
     } catch (err) {
       console.error("loadAdmin error:", err);
 
       setAdmin(null);
       setTenantAuthority(null);
-
-      if (typeof window !== "undefined") {
-        sessionStorage.removeItem(STORAGE_KEYS.adminAccess);
-      }
     } finally {
       setLoading(false);
     }
@@ -110,7 +97,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = supabase.auth.onAuthStateChange((event) => {
       if (!mounted) {
         return;
       }
@@ -131,10 +118,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
       setAdmin(null);
       setTenantAuthority(null);
-
-      if (typeof window !== "undefined") {
-        sessionStorage.removeItem(STORAGE_KEYS.adminAccess);
-      }
 
       setLoading(false);
     });

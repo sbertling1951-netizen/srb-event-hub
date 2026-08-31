@@ -1,5 +1,11 @@
 import { setCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  dualRemoveLocal,
+  dualSignalLocal,
+  dualWriteLocal,
+  readMigratingLocal,
+} from "@/lib/storageMigration";
 
 export type MemberSession = {
   event_id: string;
@@ -44,13 +50,20 @@ export function memberIdentityRpcArgs(session: MemberSession | null) {
 }
 
 const MEMBER_SESSION_KEY = STORAGE_KEYS.memberSession;
+const LEGACY_MEMBER_SESSION_KEY = LEGACY_STORAGE_KEYS.memberSession;
 
 export function saveMemberSession(session: MemberSession) {
   if (typeof window === "undefined") {
     return;
   }
 
-  localStorage.setItem(MEMBER_SESSION_KEY, JSON.stringify(session));
+  // Stage A: the MemberSession blob (attendee identity + Event context +
+  // any TEA capability hash) is written intact under both names.
+  dualWriteLocal(
+    MEMBER_SESSION_KEY,
+    LEGACY_MEMBER_SESSION_KEY,
+    JSON.stringify(session),
+  );
   setCurrentMemberEvent({
     id: session.event_id,
     name: session.event_name,
@@ -63,8 +76,12 @@ export function saveMemberSession(session: MemberSession) {
     lat: session.lat || null,
     lng: session.lng || null,
   });
-  localStorage.setItem(STORAGE_KEYS.memberEventChanged, String(Date.now()));
-  localStorage.setItem(STORAGE_KEYS.userMode, "member");
+  dualSignalLocal(
+    STORAGE_KEYS.memberEventChanged,
+    LEGACY_STORAGE_KEYS.memberEventChanged,
+    String(Date.now()),
+  );
+  dualWriteLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode, "member");
 }
 
 export function getMemberSession(): MemberSession | null {
@@ -73,7 +90,10 @@ export function getMemberSession(): MemberSession | null {
   }
 
   try {
-    const raw = localStorage.getItem(MEMBER_SESSION_KEY);
+    const raw = readMigratingLocal(
+      MEMBER_SESSION_KEY,
+      LEGACY_MEMBER_SESSION_KEY,
+    );
     if (!raw) {
       return null;
     }
@@ -148,8 +168,14 @@ export function clearMemberSession() {
     return;
   }
 
-  localStorage.removeItem(MEMBER_SESSION_KEY);
-  localStorage.removeItem(STORAGE_KEYS.memberEventContext);
-  localStorage.removeItem(STORAGE_KEYS.memberEventChanged);
-  localStorage.removeItem(STORAGE_KEYS.userMode);
+  dualRemoveLocal(MEMBER_SESSION_KEY, LEGACY_MEMBER_SESSION_KEY);
+  dualRemoveLocal(
+    STORAGE_KEYS.memberEventContext,
+    LEGACY_STORAGE_KEYS.memberEventContext,
+  );
+  dualRemoveLocal(
+    STORAGE_KEYS.memberEventChanged,
+    LEGACY_STORAGE_KEYS.memberEventChanged,
+  );
+  dualRemoveLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode);
 }

@@ -21,7 +21,15 @@ import { useAdmin } from "@/lib/adminContext";
 import type { AdminWorkspaceContext } from "@/lib/adminEventContext";
 import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
-import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  APP_EVENT_NAMES,
+  LEGACY_APP_EVENT_NAMES,
+  STORAGE_KEYS,
+} from "@/lib/storageKeys";
+import {
+  addDualWindowEventListener,
+  storageEventMatches,
+} from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
 
 type Announcement = {
@@ -263,10 +271,13 @@ function AdminAnnouncementsPageInner() {
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === STORAGE_KEYS.adminEventContext ||
-        e.key === STORAGE_KEYS.adminEventChanged ||
-        e.key === STORAGE_KEYS.userMode ||
-        e.key === STORAGE_KEYS.userModeChanged
+        storageEventMatches(
+          e.key,
+          STORAGE_KEYS.adminEventContext,
+          STORAGE_KEYS.adminEventChanged,
+          STORAGE_KEYS.userMode,
+          STORAGE_KEYS.userModeChanged,
+        )
       ) {
         loadCurrentEvent();
       }
@@ -277,17 +288,15 @@ function AdminAnnouncementsPageInner() {
     }
 
     window.addEventListener("storage", handleStorage);
-    window.addEventListener(
+    const removeAdminEventListeners = addDualWindowEventListener(
       APP_EVENT_NAMES.adminEventUpdated,
+      LEGACY_APP_EVENT_NAMES.adminEventUpdated,
       handleAdminEventUpdated,
     );
 
     return () => {
       window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(
-        APP_EVENT_NAMES.adminEventUpdated,
-        handleAdminEventUpdated,
-      );
+      removeAdminEventListeners();
     };
   }, [admin]);
 

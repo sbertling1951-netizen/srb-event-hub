@@ -11,7 +11,17 @@ import { useAdminWorkspace } from "@/lib/AdminWorkspaceProvider";
 import { hasPermission } from "@/lib/getCurrentAdminAccess";
 import { getStoredUserMode } from "@/lib/getCurrentMemberEvent";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
-import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  APP_EVENT_NAMES,
+  LEGACY_APP_EVENT_NAMES,
+  LEGACY_STORAGE_KEYS,
+  RETIRED_LEGACY_STORAGE_KEYS,
+  STORAGE_KEYS,
+} from "@/lib/storageKeys";
+import {
+  dualDispatchWindowEvent,
+  storageEventMatches,
+} from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 
@@ -263,12 +273,15 @@ export default function Sidebar() {
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === STORAGE_KEYS.memberEventContext ||
-        e.key === STORAGE_KEYS.adminEventContext ||
-        e.key === STORAGE_KEYS.memberEventChanged ||
-        e.key === STORAGE_KEYS.adminEventChanged ||
-        e.key === STORAGE_KEYS.userMode ||
-        e.key === STORAGE_KEYS.userModeChanged
+        storageEventMatches(
+          e.key,
+          STORAGE_KEYS.memberEventContext,
+          STORAGE_KEYS.adminEventContext,
+          STORAGE_KEYS.memberEventChanged,
+          STORAGE_KEYS.adminEventChanged,
+          STORAGE_KEYS.userMode,
+          STORAGE_KEYS.userModeChanged,
+        )
       ) {
         loadContextsFromStorage();
       }
@@ -387,7 +400,15 @@ export default function Sidebar() {
   }, [mounted, isAdminRoute, adminAccessLoading, sharedAdminAccess]);
 
   function clearKnownAppStorageKeys() {
-    Object.values(STORAGE_KEYS).forEach((key) => {
+    // Stage A: a global logout must remove BOTH the canonical epicentrax-*
+    // names and every legacy fcoc-* name (including the retired write-only
+    // orphans) so stale legacy identity/context state cannot resurrect.
+    const keys = [
+      ...Object.values(STORAGE_KEYS),
+      ...Object.values(LEGACY_STORAGE_KEYS),
+      ...RETIRED_LEGACY_STORAGE_KEYS,
+    ];
+    keys.forEach((key) => {
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
     });
@@ -408,7 +429,10 @@ export default function Sidebar() {
       document.body.style.touchAction = "";
       document.documentElement.style.overflow = "";
 
-      window.dispatchEvent(new Event(APP_EVENT_NAMES.adminEventUpdated));
+      dualDispatchWindowEvent(
+        APP_EVENT_NAMES.adminEventUpdated,
+        LEGACY_APP_EVENT_NAMES.adminEventUpdated,
+      );
     } catch (err) {
       console.error("Failed to clear app state:", err);
     }

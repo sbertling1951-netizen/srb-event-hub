@@ -25,10 +25,12 @@ test("M1: the dead check-in arrival state and its storage listener are removed",
 
 test("M1: the orphan member-event-updated CustomEvent dispatch is removed; the admin one remains", () => {
   assert.doesNotMatch(SOURCE, /APP_EVENT_NAMES\.memberEventUpdated/);
-  assert.doesNotMatch(SOURCE, /fcoc-member-event-updated/);
+  assert.doesNotMatch(SOURCE, /member-event-updated/);
+  // Stage A: the admin-event-updated dispatch now fires under both the
+  // canonical and legacy CustomEvent names via the shared migration helper.
   assert.match(
     SOURCE,
-    /window\.dispatchEvent\(new Event\(APP_EVENT_NAMES\.adminEventUpdated\)\)/,
+    /dualDispatchWindowEvent\(\s*APP_EVENT_NAMES\.adminEventUpdated,\s*LEGACY_APP_EVENT_NAMES\.adminEventUpdated,\s*\)/,
   );
 });
 

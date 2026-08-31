@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { storageEventMatches } from "@/lib/storageMigration";
 
 type MemberEventRow = {
   id?: string | null;
@@ -33,7 +34,7 @@ function ActivitiesPageInner() {
     loadPage();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === STORAGE_KEYS.memberEventChanged) {
+      if (storageEventMatches(e.key, STORAGE_KEYS.memberEventChanged)) {
         loadPage();
       }
     }

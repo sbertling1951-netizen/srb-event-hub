@@ -74,8 +74,13 @@ test("M1/M2: temporary login no longer writes the retired standalone entry-id OR
   // the canonical MemberSession attendee id + capability hash are still written
   assert.match(SOURCE, /attendee_id:\s*attendee\.id/);
   assert.match(SOURCE, /temporary_capability_hash:\s*responseBody\.capabilityHash/);
-  // the account-origin marker is still explicitly cleared for a TEA login
-  assert.match(SOURCE, /localStorage\.removeItem\(STORAGE_KEYS\.memberAuthUserId\);/);
+  // the account-origin marker is still explicitly cleared for a TEA login.
+  // Stage A: the clear removes both the canonical and legacy names via the
+  // shared migration helper.
+  assert.match(
+    SOURCE,
+    /dualRemoveLocal\(\s*STORAGE_KEYS\.memberAuthUserId,\s*LEGACY_STORAGE_KEYS\.memberAuthUserId,\s*\)/,
+  );
 });
 
 test("displayed selection fields (name, dates) are preserved", () => {

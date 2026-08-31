@@ -2,10 +2,44 @@ import { createClient } from "@supabase/supabase-js";
 import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { COOKIE_NAMES } from "@/lib/storageKeys";
+import { COOKIE_NAMES, LEGACY_COOKIE_NAMES } from "@/lib/storageKeys";
 
-export const VENDOR_AUTH_COOKIE = COOKIE_NAMES.vendorAccessToken;
-export const VENDOR_SELECTED_COOKIE = COOKIE_NAMES.vendorSelectedVendorId;
+// Stage A: cookie SET behavior is unchanged -- every set/refresh site still
+// writes the legacy name. These exports name that legacy cookie so the SET
+// sites (login, vendor selection, session refresh) keep working exactly as
+// today and every currently authenticated vendor session survives.
+export const VENDOR_AUTH_COOKIE = LEGACY_COOKIE_NAMES.vendorAccessToken;
+export const VENDOR_SELECTED_COOKIE = LEGACY_COOKIE_NAMES.vendorSelectedVendorId;
+
+// The canonical (neutral) cookie names. Stage A only reads these -- it never
+// sets them -- so a future Stage can switch the SET name without another
+// server change. Logout/session DELETE clears both name sets.
+export const CANONICAL_VENDOR_AUTH_COOKIE = COOKIE_NAMES.vendorAccessToken;
+export const CANONICAL_VENDOR_SELECTED_COOKIE =
+  COOKIE_NAMES.vendorSelectedVendorId;
+
+type CookieReader = Pick<ReadonlyRequestCookies, "get">;
+
+/**
+ * Stage A vendor-cookie read: canonical (neutral) name first, then the
+ * legacy name. Every vendor session authenticated before this change only
+ * has the legacy cookie, so the legacy fallback must remain.
+ */
+export function readVendorAuthCookie(cookies: CookieReader): string | null {
+  return (
+    cookies.get(CANONICAL_VENDOR_AUTH_COOKIE)?.value ||
+    cookies.get(VENDOR_AUTH_COOKIE)?.value ||
+    null
+  );
+}
+
+export function readVendorSelectedCookie(cookies: CookieReader): string | null {
+  return (
+    cookies.get(CANONICAL_VENDOR_SELECTED_COOKIE)?.value ||
+    cookies.get(VENDOR_SELECTED_COOKIE)?.value ||
+    null
+  );
+}
 
 /**
  * A non-persistent client bound to the vendor's own already-validated
@@ -141,13 +175,6 @@ function first<T>(value: T | T[] | null | undefined): T | null {
   return value || null;
 }
 
-function cookieValue(
-  cookies: ReadonlyRequestCookies,
-  key: string,
-): string | null {
-  return cookies.get(key)?.value || null;
-}
-
 export async function resolveVendorAccessFromCookies(
   cookies: ReadonlyRequestCookies,
 ): Promise<VendorAccessResolution> {
@@ -161,7 +188,7 @@ export async function resolveVendorAccessFromCookies(
     };
   }
 
-  const accessToken = cookieValue(cookies, VENDOR_AUTH_COOKIE);
+  const accessToken = readVendorAuthCookie(cookies);
   if (!accessToken) {
     return {
       ok: false,
@@ -277,7 +304,7 @@ export async function resolveVendorAccessFromCookies(
     };
   }
 
-  const selectedFromCookie = cookieValue(cookies, VENDOR_SELECTED_COOKIE);
+  const selectedFromCookie = readVendorSelectedCookie(cookies);
   let selectedVendor: VendorAccessEntry | null = null;
 
   if (selectedFromCookie) {

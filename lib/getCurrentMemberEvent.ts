@@ -1,5 +1,10 @@
 import { getCurrentAttendeeId, getMemberSession } from "@/lib/memberSession";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  dualSignalLocal,
+  dualWriteLocal,
+  readMigratingLocal,
+} from "@/lib/storageMigration";
 
 export type CurrentMemberEvent = {
   id: string;
@@ -24,7 +29,10 @@ export function getStoredMemberAuthUserId() {
   if (typeof window === "undefined") {
     return null;
   }
-  return localStorage.getItem(STORAGE_KEYS.memberAuthUserId);
+  return readMigratingLocal(
+    STORAGE_KEYS.memberAuthUserId,
+    LEGACY_STORAGE_KEYS.memberAuthUserId,
+  );
 }
 
 export function getStoredMemberHasArrived() {
@@ -32,7 +40,10 @@ export function getStoredMemberHasArrived() {
     return null;
   }
 
-  return localStorage.getItem(STORAGE_KEYS.memberHasArrived);
+  return readMigratingLocal(
+    STORAGE_KEYS.memberHasArrived,
+    LEGACY_STORAGE_KEYS.memberHasArrived,
+  );
 }
 
 export function getStoredUserMode() {
@@ -40,7 +51,7 @@ export function getStoredUserMode() {
     return null;
   }
 
-  return localStorage.getItem(STORAGE_KEYS.userMode);
+  return readMigratingLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode);
 }
 
 export type SetCurrentMemberEventInput = {
@@ -61,8 +72,9 @@ export function setCurrentMemberEvent(event: SetCurrentMemberEventInput) {
     return;
   }
 
-  localStorage.setItem(
+  dualWriteLocal(
     STORAGE_KEYS.memberEventContext,
+    LEGACY_STORAGE_KEYS.memberEventContext,
     JSON.stringify({
       id: event.id,
       name: event.name || null,
@@ -78,7 +90,11 @@ export function setCurrentMemberEvent(event: SetCurrentMemberEventInput) {
     }),
   );
 
-  localStorage.setItem(STORAGE_KEYS.memberEventChanged, String(Date.now()));
+  dualSignalLocal(
+    STORAGE_KEYS.memberEventChanged,
+    LEGACY_STORAGE_KEYS.memberEventChanged,
+    String(Date.now()),
+  );
 }
 
 export function getCurrentMemberEvent(): CurrentMemberEvent | null {
@@ -106,7 +122,10 @@ export function getCurrentMemberEvent(): CurrentMemberEvent | null {
   }
 
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.memberEventContext);
+    const raw = readMigratingLocal(
+      STORAGE_KEYS.memberEventContext,
+      LEGACY_STORAGE_KEYS.memberEventContext,
+    );
 
     if (!raw) {
       return null;
