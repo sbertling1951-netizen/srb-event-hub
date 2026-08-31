@@ -117,7 +117,6 @@ export async function finishMemberLogin(params: {
   authUserId?: string | null;
   participantId?: string | null;
   participantName?: string | null;
-  participantRole?: string | null;
   identifierIsPhone?: boolean;
   rawIdentifier?: string;
 }): Promise<string> {
@@ -130,18 +129,11 @@ export async function finishMemberLogin(params: {
     authUserId,
     participantId,
     participantName,
-    participantRole,
     identifierIsPhone,
     rawIdentifier,
   } = params;
 
   if (typeof window !== "undefined") {
-    // TODO (post-Amana): These legacy localStorage keys should be retired.
-    // MemberSession is becoming the authoritative session source. Keep these
-    // only for compatibility until all member pages read from MemberSession.
-    localStorage.removeItem("member-participant-id");
-    localStorage.removeItem("member-participant-name");
-    localStorage.removeItem("member-participant-role");
     localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendeeId);
     localStorage.setItem(STORAGE_KEYS.memberEmail, email || "");
     if (authUserId) {
@@ -153,15 +145,6 @@ export async function finishMemberLogin(params: {
     localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(hasArrived));
     localStorage.setItem(STORAGE_KEYS.userMode, "member");
     localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));
-    if (participantId) {
-      localStorage.setItem("member-participant-id", participantId);
-    }
-    if (participantName) {
-      localStorage.setItem("member-participant-name", participantName);
-    }
-    if (participantRole) {
-      localStorage.setItem("member-participant-role", participantRole);
-    }
   }
 
   saveMemberSession({
@@ -244,9 +227,6 @@ export function clearMemberLocalState() {
     localStorage.removeItem(STORAGE_KEYS.memberEventContext);
     localStorage.removeItem(STORAGE_KEYS.memberEventChanged);
     localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
-    localStorage.removeItem("member-participant-id");
-    localStorage.removeItem("member-participant-name");
-    localStorage.removeItem("member-participant-role");
   }
 }
 

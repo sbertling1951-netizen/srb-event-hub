@@ -395,12 +395,6 @@ export default function MemberLoginPage() {
       const arrived = !!attendee.has_arrived;
 
       if (typeof window !== "undefined") {
-        // TODO (post-Amana): These legacy localStorage keys should be retired.
-        // MemberSession is becoming the authoritative session source. Keep these
-        // only for compatibility until all member pages read from MemberSession.
-        localStorage.removeItem("member-participant-id");
-        localStorage.removeItem("member-participant-name");
-        localStorage.removeItem("member-participant-role");
         localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendee.id);
         localStorage.setItem(STORAGE_KEYS.memberEmail, attendee.email || "");
         localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
@@ -408,24 +402,6 @@ export default function MemberLoginPage() {
         localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(arrived));
         localStorage.setItem(STORAGE_KEYS.userMode, "member");
         localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));
-        if (attendee.participant_id) {
-          localStorage.setItem(
-            "member-participant-id",
-            attendee.participant_id,
-          );
-        }
-        if (attendee.participant_name) {
-          localStorage.setItem(
-            "member-participant-name",
-            attendee.participant_name,
-          );
-        }
-        if (attendee.participant_role) {
-          localStorage.setItem(
-            "member-participant-role",
-            attendee.participant_role,
-          );
-        }
       }
 
       saveMemberSession({

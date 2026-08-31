@@ -57,6 +57,10 @@ test("temporary login stores only the issued capability for later identity resol
   assert.match(SOURCE, /expires_at:\s*new Date\(Date\.now\(\) \+ 8 \* 60 \* 60 \* 1000\)/);
 });
 
+test("temporary login does not write retired standalone participant keys", () => {
+  assert.doesNotMatch(SOURCE, /member-participant-(id|name|role)/);
+});
+
 test("displayed selection fields (name, dates) are preserved", () => {
   assert.match(SOURCE, /event\.name \|\| "Untitled event"/);
   assert.match(SOURCE, /formatDateRange\(event\.start_date, event\.end_date\)/);

@@ -8,6 +8,10 @@ const SOURCE = readFileSync(
   "utf8",
 );
 
+test("retired participant keys are not written or cleared by member account session handling", () => {
+  assert.doesNotMatch(SOURCE, /member-participant-(id|name|role)/);
+});
+
 test("explicit Member logout clears account-origin state before publishing Supabase sign-out", () => {
   const logout = SOURCE.slice(SOURCE.indexOf("export async function signOutOfMemberAccount"));
   const clearBeforeSignOut = logout.indexOf("clearMemberLocalState();");
