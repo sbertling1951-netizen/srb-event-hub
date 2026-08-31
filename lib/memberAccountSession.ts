@@ -202,11 +202,14 @@ export async function enterResolvedRegistration(
   });
 }
 
-// Local-storage cleanup shared by full logout and by Member Event Context
-// Stage 2's invalid-established-context handling. Clears every piece of
-// legacy/local member and account-picker state -- MemberSession plus every
-// standalone legacy key -- but never touches the Supabase Auth session
-// itself; callers that are actually signing the account out call
+// Local-storage cleanup shared by full member logout, by Member Event
+// Context Stage 2's invalid-established-context handling, and by a
+// successful transition into Administrator login. Clears every piece of
+// legacy/local member and account-picker state -- MemberSession (including
+// any TEA capability material it carries), the account-origin marker, the
+// Event hint/change signals, arrival state, and user mode -- but never
+// touches the Supabase Auth session itself or any fcoc-admin-* state;
+// callers that are actually signing the account out call
 // supabase.auth.signOut() separately (see signOutOfMemberAccount below).
 // An invalid Event context is not an invalid account: the Person may still
 // be legitimately signed in and simply needs to choose a different, valid

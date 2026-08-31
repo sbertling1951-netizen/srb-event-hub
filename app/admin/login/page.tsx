@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import LoginActionButton from "@/components/auth/LoginActionButton";
 import { clearCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
+import { clearMemberLocalState } from "@/lib/memberAccountSession";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
@@ -74,16 +75,20 @@ export default function AdminLoginPage() {
 
       console.log("LOGIN COMPLETE");
 
+      // Administrator authentication is definitively confirmed above (a
+      // successful signInWithPassword with a live session). Retire the
+      // prior member-local session state -- MemberSession, the account-
+      // origin marker, the Event hint/change signal, arrival state, and
+      // any TEA capability material carried inside MemberSession -- BEFORE
+      // establishing Admin mode. This never touches the Supabase Auth
+      // session just created or any fcoc-admin-* state.
+      clearMemberLocalState();
+
       localStorage.setItem(STORAGE_KEYS.userMode, "admin");
       localStorage.setItem(STORAGE_KEYS.adminEmail, normalizedEmail);
       localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));
 
       clearCurrentAdminEvent();
-
-      // clear old member session
-      localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
-      localStorage.removeItem(STORAGE_KEYS.memberEventContext);
-      localStorage.removeItem(STORAGE_KEYS.memberEventChanged);
 
       setStatus("Login successful. Opening dashboard...");
 
