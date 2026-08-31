@@ -12,6 +12,7 @@ import {
   getCurrentAdminEvent,
   resolveAdminWorkingEvent,
   setCurrentAdminEvent,
+  shouldPersistResolvedAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { isActiveEventStatus, normalizeEventStatus } from "@/lib/eventStatus";
@@ -391,14 +392,27 @@ function AdminDashboardPageInner() {
 
       setSelectedEventId(resolved.id);
       setStatus("");
-      setCurrentAdminEvent({
-        id: resolved.id,
-        name: resolved.name || "Selected Event",
-        eventName: resolved.name || "Selected Event",
-        location: resolved.location || null,
-        start_date: resolved.start_date || null,
-        end_date: resolved.end_date || null,
-      });
+
+      // Persist the resolved working Event back to storage ONLY when it
+      // actually differs from what is already stored. setCurrentAdminEvent()
+      // dispatches the same-tab ADMIN_EVENT_UPDATED CustomEvent that this
+      // page's own subscribeToAdminWorkspace() listens for; writing it on
+      // every load re-triggers loadPage() (a loop the Stage-A dual
+      // dispatch/listen compatibility layer fans out geometrically). When
+      // stored === resolved the store is already correct -- no write, no
+      // event, no self-trigger. A genuine change (first establishment, or a
+      // different Event) persists once; the follow-up load then sees
+      // equality and converges.
+      if (shouldPersistResolvedAdminEvent(stored?.id, resolved.id)) {
+        setCurrentAdminEvent({
+          id: resolved.id,
+          name: resolved.name || "Selected Event",
+          eventName: resolved.name || "Selected Event",
+          location: resolved.location || null,
+          start_date: resolved.start_date || null,
+          end_date: resolved.end_date || null,
+        });
+      }
     } catch (err: any) {
       console.error("loadDashboard error:", err);
       setStatus("We couldn't load the dashboard. Please try again.");

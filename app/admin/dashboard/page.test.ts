@@ -228,6 +228,38 @@ test("an invalid stored context (Event no longer exists) surfaces its own explic
   assert.match(source, /no longer available/i);
 });
 
+test("loadPage persists the resolved working Event only when it differs from the stored one (self-trigger guard)", () => {
+  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+
+  // the guard helper is imported from the canonical module
+  assert.match(
+    source,
+    /import\s*\{[^}]*shouldPersistResolvedAdminEvent[^}]*\}\s*from\s*["']@\/lib\/adminWorkspaceContext["']/,
+  );
+
+  // loadPage's setCurrentAdminEvent call sits INSIDE the guard, never
+  // unconditional (that is what fed the same-tab ADMIN_EVENT_UPDATED loop
+  // that N1's dual dispatch/listen fanned out into a request storm).
+  const loadIdx = source.indexOf("const loadPage = useCallback");
+  const catchIdx = source.indexOf("} catch (err: any) {", loadIdx);
+  const loadBody = source.slice(loadIdx, catchIdx);
+
+  assert.match(
+    loadBody,
+    /if\s*\(\s*shouldPersistResolvedAdminEvent\(\s*stored\?\.id\s*,\s*resolved\.id\s*\)\s*\)\s*\{[\s\S]*setCurrentAdminEvent\(\{/,
+    "setCurrentAdminEvent in loadPage must be guarded by shouldPersistResolvedAdminEvent(stored?.id, resolved.id)",
+  );
+  assert.equal(
+    /setStatus\("\"\);\s*setCurrentAdminEvent\(\{/.test(loadBody),
+    false,
+    "the unconditional setCurrentAdminEvent call must be gone",
+  );
+
+  // local selected state is still always updated
+  assert.match(loadBody, /setSelectedEventId\(resolved\.id\)/);
+});
+
 test("explicit user selection (handleSwitchEvent) is unconditional and unaffected by the resolver", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");

@@ -13,6 +13,7 @@ import {
   getCurrentAdminEvent,
   resolveAdminWorkingEvent,
   setCurrentAdminEvent,
+  shouldPersistResolvedAdminEvent,
 } from "@/lib/adminEventContext";
 import { LEGACY_APP_EVENT_NAMES } from "@/lib/storageKeys";
 import { addDualWindowEventListener } from "@/lib/storageMigration";
@@ -22,6 +23,7 @@ export {
   getCurrentAdminEvent,
   resolveAdminWorkingEvent,
   setCurrentAdminEvent,
+  shouldPersistResolvedAdminEvent,
 };
 
 export type AdminWorkspaceStatus = "loading" | "ready" | "unavailable";

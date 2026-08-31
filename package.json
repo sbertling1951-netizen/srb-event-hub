@@ -11,7 +11,7 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "tsx --test lib/memberWorkspace/memberRouteAccess.test.ts lib/memberWorkspace/recoverMemberIdentity.behavior.test.ts lib/memberAccountSession.behavior.test.ts lib/storageMigration.test.ts lib/storageMigration.canonicalOnly.test.ts",
+    "test": "tsx --test lib/memberWorkspace/memberRouteAccess.test.ts lib/memberWorkspace/recoverMemberIdentity.behavior.test.ts lib/memberAccountSession.behavior.test.ts lib/storageMigration.test.ts lib/storageMigration.canonicalOnly.test.ts lib/adminEventContext.test.ts app/admin/dashboard/selfTrigger.test.ts",
     "test:member-workspace": "tsx --test lib/memberWorkspace/*.test.ts components/auth/MemberRouteGuard.test.ts lib/memberAccountSession.behavior.test.ts app/admin/login/page.test.ts",
     "check:storage-keys": "node scripts/check-storage-key-literals.mjs",
     "context:update": "node scripts/ai-context/update-project-brief.mjs",

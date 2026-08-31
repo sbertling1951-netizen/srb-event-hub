@@ -127,6 +127,27 @@ export function resolveAdminWorkingEvent<T extends AdminEventCandidate>(
   return { event: initialEstablishmentDefault, invalidStoredContext: false };
 }
 
+/**
+ * Self-trigger guard for callers that persist a freshly *resolved* working
+ * Event at the end of a load (the Admin Dashboard's `loadPage`).
+ *
+ * `setCurrentAdminEvent()` emits the same-tab `ADMIN_EVENT_UPDATED`
+ * CustomEvent that those same pages subscribe to via
+ * `subscribeToAdminWorkspace()`. Persisting on *every* load -- even when the
+ * resolved Event already equals what is stored -- makes the loader
+ * re-trigger itself. The Stage-A namespace compatibility layer
+ * (dual-dispatch + dual-listen) fans that latent 1:1 loop out
+ * geometrically. The resolved Event only needs to be written back when it
+ * genuinely differs from the stored one: nothing was ever stored, or a
+ * different Event id resolved. When they match, the store is already
+ * correct and no notification (or reload) is warranted.
+ */
+export function shouldPersistResolvedAdminEvent(
+  storedEventId: string | null | undefined,
+  resolvedEventId: string,
+): boolean {
+  return (storedEventId ?? null) !== resolvedEventId;
+}
 
 export function subscribeToAdminEvent(
   callback: () => void,
