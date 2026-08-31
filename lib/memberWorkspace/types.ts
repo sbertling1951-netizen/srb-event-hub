@@ -18,6 +18,25 @@ export type EstablishedContextStatus =
   | "invalid"
   | "error";
 
+// Member Workspace Continuity. The single coherent answer to "does this
+// admitted member workspace have a usable attendee identity" that
+// MemberRouteGuard, MemberWorkspaceProvider consumers, and the member
+// dashboard all share:
+//   "idle"              -- not yet evaluated
+//   "resolving"         -- a governed recovery of the attendee identity is
+//                          in flight (a present-but-incomplete MemberSession)
+//   "resolved"          -- MemberSession is coherent (Event id + attendee
+//                          id); the workspace is usable
+//   "recovery_required" -- no coherent identity and it cannot be re-derived
+//                          here; the UI must route to / render explicit
+//                          sign-in or Temporary Event Access recovery,
+//                          never a silent null-identity workspace
+export type MemberIdentityStatus =
+  | "idle"
+  | "resolving"
+  | "resolved"
+  | "recovery_required";
+
 export type MemberWorkspaceContextValue = {
   session: MemberSession | null;
   attendeeId: string | null;
@@ -35,5 +54,14 @@ export type MemberWorkspaceContextValue = {
   // Governed established-context validity for an Account session's
   // persisted Event. Always "idle" for Temporary Event Access.
   contextStatus: EstablishedContextStatus;
+  // Shared attendee-identity continuity state (see MemberIdentityStatus).
+  // Both account and Temporary Event Access sessions participate. When a
+  // persisted MemberSession has an Event id but no attendee id, the
+  // provider attempts one governed recovery and this moves
+  // "idle" -> "resolving" -> "resolved" | "recovery_required".
+  identityStatus: MemberIdentityStatus;
+  // Convenience: identityStatus === "recovery_required". True means an
+  // admitted route must surface explicit recovery, not a null workspace.
+  needsIdentityRecovery: boolean;
   refresh: () => void;
 };

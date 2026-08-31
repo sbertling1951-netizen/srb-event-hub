@@ -176,6 +176,69 @@ test("the empty-attendee view offers a sign-in action for the expired-session ca
   assert.equal(/\.from\("attendees"\)/.test(source), false);
 });
 
+// ---------------------------------------------------------------------------
+// Member Workspace Continuity -- My Check-In consumes the shared workspace
+// identity state; the "no attendee record" terminal dead-end is removed.
+// ---------------------------------------------------------------------------
+
+test("the !attendeeId precondition that blocked a self-healing RPC call is gone -- the page consumes identityStatus, not its own identity gate", () => {
+  assert.match(source, /identityStatus \} =\s*\n?\s*useMemberWorkspace\(\);/);
+  // the load effect no longer bails purely because attendeeId is absent;
+  // it only skips while resolving, or once resolved-but-not-yet-propagated
+  const effect = source.slice(
+    source.indexOf("useEffect(() => {\n    if (!isReady || identityStatus"),
+    source.indexOf("}, [attendeeId, event?.id, identityStatus, isReady, loadPage]);"),
+  );
+  assert.match(effect, /identityStatus === "resolving"/);
+  assert.match(effect, /identityStatus === "resolved" &&\s*\n\s*\(!event\?\.id \|\| !attendeeId\)/);
+});
+
+test("recovery_required renders explicit sign-in + Temporary Event Access actions, never a terminal 'No attendee record is available'", () => {
+  assert.equal(
+    /No attendee record is available for self check-in/.test(source),
+    false,
+  );
+  assert.match(source, /if \(identityStatus === "recovery_required"\) \{[\s\S]{0,320}?setNeedsRecovery\(true\)/);
+  assert.match(source, /const \[needsRecovery, setNeedsRecovery\] = useState\(false\)/);
+  // the recovery view -- both actions reachable
+  const recoveryView = source.slice(
+    source.indexOf("needsRecovery ? ("),
+    source.indexOf('"Loading check-in..."\n          )}'),
+  );
+  assert.ok(recoveryView.length > 0, "expected the needsRecovery render branch");
+  assert.match(recoveryView, /href="\/member\/login\?sessionExpired=1"/);
+  assert.match(recoveryView, /href="\/member\/login"/);
+  assert.match(recoveryView, /Use temporary event access/);
+});
+
+test("on a successful attendee resolution the canonical MemberSession is kept coherent -- not only the legacy fcoc-member-attendee-id key", () => {
+  assert.match(source, /ensureMemberSessionAttendee\(attendeeRow\.id\)/);
+  const successRegion = source.slice(
+    source.indexOf("ensureMemberSessionAttendee(attendeeRow.id)"),
+    source.indexOf("setAttendee(attendeeRow);"),
+  );
+  assert.match(successRegion, /localStorage\.setItem\("fcoc-member-attendee-id", attendeeRow\.id\)/);
+});
+
+test("the residual empty-result branch also offers recovery, not a dead end", () => {
+  const branch = source.match(/if \(!attendeeRow\) \{[\s\S]*?\n {6}\}/)?.[0];
+  assert.ok(branch);
+  assert.match(branch!, /setNeedsRecovery\(true\)/);
+  // capability / lapsed-account redirects preserved
+  assert.match(branch!, /capabilityOrigin && !sessionData\.session/);
+  assert.match(branch!, /router\.replace\("\/member\/login\?sessionExpired=1"\)/);
+});
+
+test("arrival / parking separation is untouched by the continuity repair", () => {
+  // arrival from has_arrived only; confirmed site read-only from Parking
+  assert.match(source, /get_my_confirmed_site_placement/);
+  assert.match(source, /String\(!!attendeeRow\.has_arrived\)/);
+  // no parking inference / occupancy mutation added
+  assert.equal(/parking_sites/.test(source), false);
+  // the member-reported site is still submitted as evidence only
+  assert.match(source, /assignedSite: siteReport/);
+});
+
 test("loadPage resets the reauth flag on every run so it never sticks after recovery", () => {
   const loadPageStart = source.indexOf("const loadPage = useCallback(async () => {");
   const head = source.slice(loadPageStart, loadPageStart + 250);

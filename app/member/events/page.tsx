@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { setCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { getMemberSession } from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
 
 type EventRow = {
@@ -67,10 +68,26 @@ export default function MemberEventsPage() {
   }, [loadEvents]);
 
   function handleSelectEvent(event: EventRow) {
+    // PUBLIC EVENT DISCOVERY -- not the authenticated "My Events" switcher.
+    // This selects an Event for public Nearby / browsing context only. It
+    // must NOT establish or mutate an authenticated / Temporary Event
+    // Access member workspace: the canonical member workspace lives solely
+    // in MemberSession (fcoc-member-session), established via
+    // /member/account -> enterResolvedRegistration() -> finishMemberLogin()
+    // or a Temporary Event Access login -- never here. MemberRouteGuard and
+    // MemberWorkspaceProvider derive member-workspace identity from
+    // MemberSession only, so this write cannot manufacture a member
+    // session. As belt-and-suspenders it is also skipped entirely when a
+    // real MemberSession already exists, so a member's public browsing
+    // never perturbs (or reinforces a mixed state around) the shared
+    // public/compat Event pointer their own session governs.
+    //
     // event_code is not part of the public discovery contract (Stage 1
-    // audit: neither member login nor activation reads it from
-    // discovery -- the member types it, and it's verified server-side).
-    setCurrentMemberEvent({ ...event, event_code: null });
+    // audit: neither member login nor activation reads it from discovery --
+    // the member types it, and it's verified server-side).
+    if (!getMemberSession()) {
+      setCurrentMemberEvent({ ...event, event_code: null });
+    }
     router.push("/nearby");
   }
 

@@ -16,13 +16,12 @@ import {
   type CurrentMemberEvent,
   getCurrentMemberAttendeeId,
   getCurrentMemberEvent,
-  getStoredMemberEmail,
-  getStoredMemberEntryId,
 } from "@/lib/getCurrentMemberEvent";
 import {
   getMemberSession,
   memberIdentityRpcArgs,
 } from "@/lib/memberSession";
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 import { getTenantLabel } from "@/lib/tenantLabels";
 import { formatVendorNoticeDisplay, type VendorNotice } from "@/lib/vendorNotice";
@@ -105,6 +104,12 @@ export default function MemberDashboardPage() {
   const [now, setNow] = useState(new Date());
 
   const router = useRouter();
+  // Member Workspace Continuity: the dashboard consumes the SAME shared
+  // workspace identity state as MemberRouteGuard and every other admitted
+  // member page -- it must not keep rendering a "valid" Event Hub from
+  // legacy fallback keys while the shared layer says identity is
+  // unresolved.
+  const workspace = useMemberWorkspace();
   const dashboardTitle = getTenantLabel("dashboard_title");
   const announcementsNavLabel = getTenantLabel("announcements_nav_label");
   const attendeesNavLabel = getTenantLabel("attendees_nav_label");
@@ -122,30 +127,40 @@ export default function MemberDashboardPage() {
 
     async function verifyAccess() {
       try {
-        const memberEvent = getCurrentMemberEvent();
-        // Prefer the canonical MemberSession identity via the compatibility helper.
-        const attendeeId = getCurrentMemberAttendeeId();
-        const entryId = getStoredMemberEntryId();
-        const email = getStoredMemberEmail();
+        if (!workspace.isReady || workspace.identityStatus === "resolving") {
+          // Shared layer is still bootstrapping / re-deriving identity --
+          // keep the dashboard in its loading state.
+          if (!cancelled) {
+            setReady(false);
+          }
+          return;
+        }
 
-        const hasLegacyIdentity = !!(attendeeId || entryId || email);
-
-        if (!memberEvent || !hasLegacyIdentity) {
-          // No selected-event workspace session (the legacy identity
-          // this dashboard requires). Decision order: an authenticated
-          // Supabase account with no selected event goes to the account
-          // picker to choose one -- not back through login, and not into
-          // an incomplete workspace. Only a visitor with neither a
-          // selected event nor an authenticated account goes to
-          // /member/login.
+        if (
+          workspace.identityStatus === "recovery_required" ||
+          !workspace.event?.id ||
+          !workspace.attendeeId
+        ) {
+          // The shared workspace has no usable member identity. Never
+          // render a "valid" Event Hub in this state -- route to explicit
+          // recovery, matching MemberRouteGuard: an authenticated account
+          // to the registration picker, anyone else to sign-in / Temporary
+          // Event Access.
           const { data: sessionData } = await supabase.auth.getSession();
           if (cancelled) {
             return;
           }
 
           router.replace(
-            sessionData?.session ? "/member/account" : "/member/login",
+            sessionData?.session
+              ? "/member/account?contextInvalid=1"
+              : "/member/login?sessionExpired=1",
           );
+          return;
+        }
+
+        const memberEvent = getCurrentMemberEvent();
+        if (!memberEvent?.id) {
           return;
         }
 
@@ -154,10 +169,6 @@ export default function MemberDashboardPage() {
         // Load participant capacity and household members
         (async () => {
           try {
-            if (!attendeeId) {
-              return;
-            }
-
             const session = getMemberSession();
             const rpcArgs = {
               p_event_id: memberEvent.id,
@@ -188,15 +199,14 @@ export default function MemberDashboardPage() {
             console.error("Participant summary load failed:", err);
           }
         })();
+        if (!cancelled) {
+          setReady(true);
+        }
       } catch (err) {
         console.error("Member dashboard load error:", err);
         if (!cancelled) {
-          router.replace("/member/login");
-        }
-        return;
-      } finally {
-        if (!cancelled) {
           setReady(true);
+          router.replace("/member/login");
         }
       }
     }
@@ -206,7 +216,14 @@ export default function MemberDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [
+    router,
+    workspace.isReady,
+    workspace.identityStatus,
+    workspace.event?.id,
+    workspace.attendeeId,
+    workspace.isAccountSession,
+  ]);
 
   useEffect(() => {
     const interval = setInterval(() => {

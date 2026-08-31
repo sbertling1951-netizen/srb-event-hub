@@ -2,13 +2,14 @@
 
 import React, { useEffect, useRef, useState } from "react";
 
+import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { logEngagement } from "@/lib/engagement";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
 
-export default function MemberPhotosPage() {
+function MemberPhotosPageInner() {
   const {
     event: workspaceEvent,
     attendeeId,
@@ -979,5 +980,18 @@ export default function MemberPhotosPage() {
       </div>
       </div>
     </MemberShellAdapter>
+  );
+}
+
+export default function MemberPhotosPage() {
+  // Member Workspace Continuity: this identity-dependent page consumes
+  // useMemberWorkspace() and must be under the same MemberRouteGuard
+  // boundary as the rest of the protected member workspace -- a
+  // recovery_required workspace routes to explicit recovery here instead
+  // of rendering through with a null Event / attendee.
+  return (
+    <MemberRouteGuard>
+      <MemberPhotosPageInner />
+    </MemberRouteGuard>
   );
 }

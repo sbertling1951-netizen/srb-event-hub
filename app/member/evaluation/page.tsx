@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
@@ -24,7 +25,7 @@ const QUESTION_KEYS = Object.entries(QUESTION_IDS).reduce(
   {} as Record<string, string>,
 );
 
-export default function MemberEvaluationPage() {
+function MemberEvaluationPageInner() {
   const { event, attendeeId, isReady, isInitializing } = useMemberWorkspace();
   const [currentQuestion, setCurrentQuestion] = useState(1);
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -685,5 +686,18 @@ export default function MemberEvaluationPage() {
       </div>
       </div>
     </MemberShellAdapter>
+  );
+}
+
+export default function MemberEvaluationPage() {
+  // Member Workspace Continuity: this identity-dependent page consumes
+  // useMemberWorkspace() and must be under the same MemberRouteGuard
+  // boundary as the rest of the protected member workspace -- a
+  // recovery_required workspace routes to explicit recovery here instead
+  // of rendering through with a null Event / attendee.
+  return (
+    <MemberRouteGuard>
+      <MemberEvaluationPageInner />
+    </MemberRouteGuard>
   );
 }

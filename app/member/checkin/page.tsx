@@ -9,7 +9,10 @@ import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapt
 import { logEngagement } from "@/lib/engagement";
 import { preferredDisplayLine } from "@/lib/formatters";
 import { clearMemberLocalState } from "@/lib/memberAccountSession";
-import { memberIdentityRpcArgs } from "@/lib/memberSession";
+import {
+  ensureMemberSessionAttendee,
+  memberIdentityRpcArgs,
+} from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
@@ -85,7 +88,8 @@ function householdLine(member: HouseholdMember) {
 
 function MemberCheckinPageInner() {
   const router = useRouter();
-  const { event, attendeeId, isReady, session } = useMemberWorkspace();
+  const { event, attendeeId, isReady, session, identityStatus } =
+    useMemberWorkspace();
   const [attendee, setAttendee] = useState<AttendeeRow | null>(null);
   const [household, setHousehold] = useState<HouseholdMember[]>([]);
   const [confirmedSite, setConfirmedSite] = useState<ConfirmedSitePlacement | null>(
@@ -105,20 +109,40 @@ function MemberCheckinPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // Defense-in-depth only: MemberRouteGuard normally intercepts a lapsed
-  // Account session upstream. If one still reaches this page, the identity
-  // lookup fails purely because there is no auth.uid() -- not because
-  // attendee identity is missing -- so we surface a sign-in prompt here
-  // rather than a misleading "login needs to store attendee identity".
+  // Account session (or any unrecoverable identity) upstream. If one still
+  // reaches this page, we surface explicit recovery here -- a sign-in
+  // prompt and the Temporary Event Access form -- rather than a misleading
+  // "no attendee record" terminal state.
   const [needsReauth, setNeedsReauth] = useState(false);
+  // True when the shared workspace layer could not resolve an attendee
+  // identity for this Event. The page renders sign-in + Temporary Event
+  // Access recovery actions, never a dead-end.
+  const [needsRecovery, setNeedsRecovery] = useState(false);
 
   const loadPage = useCallback(async () => {
     try {
       setStatus("Loading check-in...");
       setError(null);
       setNeedsReauth(false);
+      setNeedsRecovery(false);
 
-      if (!isReady) {
+      if (!isReady || identityStatus === "resolving") {
         setStatus("Loading check-in...");
+        return;
+      }
+
+      // The shared workspace layer already re-derives a missing attendee
+      // identity through the governed resolver (MemberWorkspaceProvider).
+      // If it settled on "recovery_required", do not silently dead-end --
+      // offer explicit recovery.
+      if (identityStatus === "recovery_required") {
+        setAttendee(null);
+        setHousehold([]);
+        setConfirmedSite(null);
+        setNeedsRecovery(true);
+        setStatus(
+          "We couldn't confirm your registration for self check-in. Sign in again, or use temporary event access below.",
+        );
         return;
       }
 
@@ -176,12 +200,19 @@ function MemberCheckinPageInner() {
           return;
         }
 
+        // Identity could not be resolved even though the shared workspace
+        // layer believed it was resolved (e.g. the Event changed under us).
+        // Offer explicit recovery -- never a terminal "no attendee record".
+        setNeedsRecovery(true);
         setStatus(
           "We couldn't confirm your registration for self check-in. Sign in again, or use temporary event access below.",
         );
         return;
       }
 
+      // Keep the canonical MemberSession (not only the legacy
+      // fcoc-member-attendee-id compat key) coherent with the resolved id.
+      ensureMemberSessionAttendee(attendeeRow.id);
       if (typeof window !== "undefined") {
         localStorage.setItem("fcoc-member-attendee-id", attendeeRow.id);
       }
@@ -238,19 +269,25 @@ function MemberCheckinPageInner() {
       );
       setStatus("");
     }
-  }, [attendeeId, event?.id, isReady, router, session]);
+  }, [attendeeId, event?.id, identityStatus, isReady, router, session]);
 
   useEffect(() => {
-    if (!isReady) {
+    if (!isReady || identityStatus === "resolving") {
       return;
     }
 
-    if (!event?.id || !attendeeId) {
+    // "recovery_required" still runs loadPage -- it sets the explicit
+    // recovery view. Only skip while the shared layer is still resolving
+    // or when it is resolved but the ids haven't propagated yet.
+    if (
+      identityStatus === "resolved" &&
+      (!event?.id || !attendeeId)
+    ) {
       return;
     }
 
     void loadPage();
-  }, [attendeeId, event?.id, isReady, loadPage]);
+  }, [attendeeId, event?.id, identityStatus, isReady, loadPage]);
 
   useEffect(() => {
     let active = true;
@@ -526,8 +563,50 @@ function MemberCheckinPageInner() {
                 Sign in again
               </Link>
             </>
+          ) : needsRecovery ? (
+            <>
+              <div>
+                We couldn&apos;t confirm your registration for this event on
+                this device. Sign in again, or use temporary event access, to
+                load your check-in.
+              </div>
+              <div
+                style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+              >
+                <Link
+                  href="/member/login?sessionExpired=1"
+                  style={{
+                    display: "inline-block",
+                    padding: "10px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    background: "#0b5cff",
+                    color: "#fff",
+                    textDecoration: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  Sign in again
+                </Link>
+                <Link
+                  href="/member/login"
+                  style={{
+                    display: "inline-block",
+                    padding: "10px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    background: "#fff",
+                    color: "#0b5cff",
+                    textDecoration: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  Use temporary event access
+                </Link>
+              </div>
+            </>
           ) : (
-            "No attendee record is available for self check-in."
+            "Loading check-in..."
           )}
         </div>
       ) : (

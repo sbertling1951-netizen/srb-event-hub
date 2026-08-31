@@ -16,6 +16,7 @@ const SOURCE = readFileSync(
   fileURLToPath(new URL("./page.tsx", import.meta.url)),
   "utf8",
 );
+const CODE = SOURCE.replace(/^\s*\/\/.*$/gm, "");
 
 test("event list uses the public discovery RPC, not a direct events table read", () => {
   assert.match(SOURCE, /supabase\.rpc\(\s*\n?\s*"get_public_discoverable_events",?\s*\n?\s*\)/);
@@ -59,4 +60,24 @@ test("other displayed fields (name, venue, location, dates, select action) are p
   assert.match(SOURCE, /event\.location/);
   assert.match(SOURCE, /formatDateRange\(event\.start_date, event\.end_date\)/);
   assert.match(SOURCE, /Select Event/);
+});
+
+// ---------------------------------------------------------------------------
+// Member Workspace Continuity -- /member/events is PUBLIC EVENT DISCOVERY,
+// not the authenticated "My Events" switcher.
+// ---------------------------------------------------------------------------
+
+test("selecting an Event never establishes or mutates the canonical MemberSession", () => {
+  assert.doesNotMatch(CODE, /saveMemberSession/);
+  assert.doesNotMatch(CODE, /"fcoc-member-session"/);
+  assert.doesNotMatch(CODE, /finishMemberLogin|enterResolvedRegistration/);
+});
+
+test("the public/compat Event pointer write is skipped when a real MemberSession already exists (no mixed member state)", () => {
+  assert.match(SOURCE, /import \{ getMemberSession \} from "@\/lib\/memberSession";/);
+  assert.match(
+    SOURCE,
+    /if \(!getMemberSession\(\)\) \{\s*\n\s*setCurrentMemberEvent\(\{ \.\.\.event, event_code: null \}\);\s*\n\s*\}/,
+  );
+  assert.match(SOURCE, /PUBLIC EVENT DISCOVERY/);
 });

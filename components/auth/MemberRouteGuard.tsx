@@ -93,14 +93,15 @@ export default function MemberRouteGuard({
         hasIdentity &&
         hasEvent &&
         !accountOriginMarker &&
-        workspace.isAccountSession === false
+        workspace.isAccountSession === false &&
+        workspace.identityStatus === "resolved"
       ) {
         setStatus("allowed");
       }
     } catch {
       // Fall through to the normal verification effect.
     }
-  }, [workspace.isAccountSession]);
+  }, [workspace.isAccountSession, workspace.identityStatus]);
 
   useEffect(() => {
     let mounted = true;
@@ -157,11 +158,47 @@ export default function MemberRouteGuard({
           return;
         }
 
+        // Member Workspace Continuity. The Guard consumes the SAME shared
+        // attendee-identity state the admitted pages consume: a member is
+        // only "allowed" once identityStatus is "resolved"; "resolving"
+        // holds the checking state; "recovery_required" is routed to
+        // explicit recovery here, never admitted into a null-identity
+        // workspace. This closes the gap where legacy keys satisfied
+        // hasLegacySession while useMemberWorkspace() had no usable
+        // identity (a stale Event-A attendee id + a public Event-B context
+        // can never be admitted as Event-B identity because MemberSession
+        // -- the only identity source -- carries neither a coherent pair).
+        if (workspace.identityStatus === "recovery_required") {
+          if (!mounted) {
+            return;
+          }
+          setStatus("denied");
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (!mounted) {
+            return;
+          }
+          clearMemberLocalState();
+          router.replace(
+            sessionData?.session
+              ? "/member/account?contextInvalid=1"
+              : "/member/login?sessionExpired=1",
+          );
+          return;
+        }
+
+        if (workspace.identityStatus === "resolving") {
+          if (mounted) {
+            setStatus("checking");
+          }
+          return;
+        }
+
         if (workspace.isAccountSession === false) {
-          // Temporary Event Access: unchanged. It holds no durable Person
-          // link for governed established-context validation to check, so
-          // localStorage presence remains sufficient here, exactly as
-          // before this stage.
+          // Temporary Event Access: localStorage presence plus a resolved
+          // shared identity is sufficient (it holds no durable Person link
+          // for governed established-context validation). identityStatus is
+          // "resolved" here -- "resolving"/"recovery_required" returned
+          // above.
           if (mounted) {
             setStatus("allowed");
           }
@@ -190,8 +227,9 @@ export default function MemberRouteGuard({
         // children as if the (now-superseded) workspace were still valid
         // while that navigation is in flight.
         if (
-          workspace.contextStatus === "valid" ||
-          workspace.contextStatus === "error"
+          (workspace.contextStatus === "valid" ||
+            workspace.contextStatus === "error") &&
+          workspace.identityStatus === "resolved"
         ) {
           if (mounted) {
             setStatus("allowed");
@@ -215,6 +253,7 @@ export default function MemberRouteGuard({
 
     function handleStorage(e: StorageEvent) {
       if (
+        e.key === STORAGE_KEYS.memberSession ||
         e.key === STORAGE_KEYS.memberEventContext ||
         e.key === STORAGE_KEYS.memberEventChanged ||
         e.key === STORAGE_KEYS.userMode ||
@@ -236,7 +275,12 @@ export default function MemberRouteGuard({
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("pageshow", handlePageShow);
     };
-  }, [router, workspace.isAccountSession, workspace.contextStatus]);
+  }, [
+    router,
+    workspace.isAccountSession,
+    workspace.contextStatus,
+    workspace.identityStatus,
+  ]);
 
   if (status === "checking") {
     return <div style={{ padding: 24 }}>Checking member access...</div>;

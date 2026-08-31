@@ -75,3 +75,12 @@ test("photo authorization is scoped by event_id and photo/attendee ownership onl
   assert.match(loadBody, /\.eq\("event_id", eventId\)/);
   assert.equal(/is_active|lifecycle|archived/i.test(loadBody), false);
 });
+
+test("Member Workspace Continuity: this identity-dependent page is under MemberRouteGuard; the page body renders only a resolved workspace", () => {
+  assert.match(PAGE_SOURCE, /import MemberRouteGuard from "@\/components\/auth\/MemberRouteGuard";/);
+  assert.match(PAGE_SOURCE, /function MemberPhotosPageInner\(\) \{/);
+  assert.match(
+    PAGE_SOURCE,
+    /export default function MemberPhotosPage\(\) \{[\s\S]{0,360}?<MemberRouteGuard>\s*\n\s*<MemberPhotosPageInner \/>\s*\n\s*<\/MemberRouteGuard>/,
+  );
+});

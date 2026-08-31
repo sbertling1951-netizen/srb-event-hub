@@ -11,17 +11,24 @@ import {
   useState,
 } from "react";
 
-import { type CurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import {
+  type CurrentMemberEvent,
+  getCurrentMemberEvent,
+} from "@/lib/getCurrentMemberEvent";
 import { clearMemberLocalState } from "@/lib/memberAccountSession";
 import {
-  getCurrentAttendeeId,
   getCurrentParticipantId,
   getMemberSession,
   isMemberAuthenticated,
   type MemberSession,
 } from "@/lib/memberSession";
+import {
+  type MemberIdentityRecoveryOutcome,
+  recoverMemberIdentity,
+} from "@/lib/memberWorkspace/recoverMemberIdentity";
 import type {
   EstablishedContextStatus,
+  MemberIdentityStatus,
   MemberWorkspaceContextValue,
 } from "@/lib/memberWorkspace/types";
 import { supabase } from "@/lib/supabase";
@@ -45,6 +52,7 @@ type MemberWorkspaceSnapshot = {
   hasAttendee: boolean;
   isAccountSession: boolean | null;
   contextStatus: EstablishedContextStatus;
+  identityStatus: MemberIdentityStatus;
 };
 
 type EstablishedContextResponseState =
@@ -73,12 +81,44 @@ type EstablishedEventPayload = {
 export const MemberWorkspaceContext =
   createContext<MemberWorkspaceContextValue | null>(null);
 
+// Governed established-context validation AND shared attendee-identity
+// recovery apply wherever protected member workspace identity is consumed
+// -- an architectural fact, NOT a single "/member" pathname prefix.
+// MemberRouteGuard wraps route trees both inside and outside /member; each
+// consumes useMemberWorkspace() (directly, or transitively via the Guard
+// and MemberShellAdapter). This is the exact set of MemberRouteGuard-
+// wrapped prefixes; a MemberRouteGuard.protectedRoutes test keeps it in
+// sync with actual <MemberRouteGuard> usage. Genuinely public routes
+// (/nearby, /locations, /map, ...) are deliberately absent -- public
+// browsing there must not trigger member recovery or an invalid-context
+// redirect.
+export const PROTECTED_MEMBER_WORKSPACE_ROUTE_PREFIXES = [
+  "/member",
+  "/coach-map",
+  "/activities",
+  "/announcements",
+] as const;
+
+function isProtectedMemberWorkspaceRoute(pathname: string): boolean {
+  return PROTECTED_MEMBER_WORKSPACE_ROUTE_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
 function readSnapshot(
-  previous: Pick<MemberWorkspaceSnapshot, "isAccountSession" | "contextStatus">,
+  previous: Pick<
+    MemberWorkspaceSnapshot,
+    "isAccountSession" | "contextStatus" | "identityStatus"
+  > & { eventId?: string | null },
 ): MemberWorkspaceSnapshot {
   const nextSession = getMemberSession();
-  const nextAttendeeId =
-    nextSession?.attendee_id ?? getCurrentAttendeeId() ?? null;
+  // Attendee identity comes from the canonical MemberSession only. A legacy
+  // fcoc-member-attendee-id is compatibility data and is deliberately NOT
+  // used here as a fallback answer -- a stale one must never manufacture a
+  // usable workspace identity. When the session is incomplete the provider
+  // re-derives the attendee through a governed RPC (see the recovery effect
+  // below) instead of trusting the legacy key.
+  const nextAttendeeId = nextSession?.attendee_id ?? null;
   const nextParticipantId =
     nextSession?.participant_id ?? getCurrentParticipantId() ?? null;
   const nextEvent = nextSession?.event_id
@@ -97,6 +137,30 @@ function readSnapshot(
       } satisfies CurrentMemberEvent)
     : null;
 
+  const coherentIdentity = !!(nextSession?.event_id && nextAttendeeId);
+
+  // A coherent MemberSession is immediately "resolved" -- the common path,
+  // zero recovery work. Otherwise keep a sticky "recovery_required" for the
+  // same Event (so a settled recovery decision is not re-litigated on every
+  // storage/focus refresh) but reset to "idle" whenever the persisted Event
+  // changes, so a fresh session gets a fresh evaluation.
+  let nextIdentityStatus: MemberIdentityStatus;
+  if (coherentIdentity) {
+    nextIdentityStatus = "resolved";
+  } else if (
+    previous.identityStatus === "recovery_required" &&
+    (previous.eventId ?? null) === (nextSession?.event_id ?? null)
+  ) {
+    nextIdentityStatus = "recovery_required";
+  } else if (
+    previous.identityStatus === "resolving" &&
+    (previous.eventId ?? null) === (nextSession?.event_id ?? null)
+  ) {
+    nextIdentityStatus = "resolving";
+  } else {
+    nextIdentityStatus = "idle";
+  }
+
   return {
     session: nextSession,
     attendeeId: nextAttendeeId,
@@ -109,6 +173,7 @@ function readSnapshot(
     hasAttendee: !!nextAttendeeId,
     isAccountSession: previous.isAccountSession,
     contextStatus: previous.contextStatus,
+    identityStatus: nextIdentityStatus,
   };
 }
 
@@ -127,6 +192,7 @@ export function MemberWorkspaceProvider({ children }: { children: ReactNode }) {
     hasAttendee: false,
     isAccountSession: null,
     contextStatus: "idle",
+    identityStatus: "idle",
   });
 
   const refresh = useCallback(() => {
@@ -138,6 +204,8 @@ export function MemberWorkspaceProvider({ children }: { children: ReactNode }) {
       readSnapshot({
         isAccountSession: prev.isAccountSession,
         contextStatus: prev.contextStatus,
+        identityStatus: prev.identityStatus,
+        eventId: prev.session?.event_id ?? prev.event?.id ?? null,
       }),
     );
   }, []);
@@ -204,7 +272,7 @@ export function MemberWorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!pathname.startsWith("/member")) {
+    if (!isProtectedMemberWorkspaceRoute(pathname)) {
       return;
     }
 
@@ -359,9 +427,119 @@ export function MemberWorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [pathname, workspace.event?.id, workspace.isAccountSession, router]);
 
+  // ---------------------------------------------------------------------------
+  // Member Workspace Continuity -- shared attendee-identity recovery.
+  //
+  // The "half-session" state (a persisted MemberSession with an Event id but
+  // no attendee id -- from a partial write, corrupted JSON, or a pre-
+  // MemberSession browser) used to leave `attendeeId` null forever while the
+  // dashboard and Guard still admitted the member (they tolerated the legacy
+  // keys). This effect makes ONE governed recovery attempt per persisted
+  // Event + auth shape: it re-derives the attendee through the existing
+  // get_my_attendee_record RPC (never trusting a legacy attendee id) and, on
+  // success, rewrites a coherent MemberSession. On failure it settles on
+  // "recovery_required" so MemberRouteGuard / the dashboard route to explicit
+  // sign-in / Temporary Event Access recovery instead of a null workspace.
+  //
+  // Temporary Event Access participates too, but only when the session still
+  // carries a valid capability hash -- a stale TEA state (only legacy keys)
+  // is never reconstructed from an old attendee id.
+  // ---------------------------------------------------------------------------
+  const recoverySeqRef = useRef(0);
+  const recoveryKeyRef = useRef<string | null>(null);
+  const recoveryAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!isProtectedMemberWorkspaceRoute(pathname)) {
+      return;
+    }
+    if (!workspace.isReady) {
+      return;
+    }
+
+    // Coherent session -- nothing to recover.
+    if (workspace.attendeeId && workspace.event?.id) {
+      return;
+    }
+
+    // Anchor for the recovery attempt: the persisted MemberSession's Event,
+    // or -- for a live authenticated account only -- the current-Event
+    // context as a HINT (recoverMemberIdentity enforces that auth-only
+    // rule; Temporary Event Access never uses the hint). A legacy attendee
+    // id is never an anchor.
+    const anchorEventId =
+      getMemberSession()?.event_id ?? getCurrentMemberEvent()?.id ?? null;
+
+    if (!anchorEventId) {
+      setWorkspace((prev) =>
+        prev.identityStatus === "recovery_required"
+          ? prev
+          : { ...prev, identityStatus: "recovery_required" },
+      );
+      return;
+    }
+
+    // One attempt per (anchor Event id + auth shape). A sign-in / sign-out
+    // or an Event change flips the key and allows a fresh attempt.
+    const attemptKey = `${anchorEventId}|${String(workspace.isAccountSession)}`;
+    if (recoveryKeyRef.current === attemptKey) {
+      return;
+    }
+    recoveryKeyRef.current = attemptKey;
+
+    const attemptSeq = ++recoverySeqRef.current;
+    recoveryAbortRef.current?.abort();
+    const controller = new AbortController();
+    recoveryAbortRef.current = controller;
+
+    setWorkspace((prev) =>
+      prev.identityStatus === "resolving"
+        ? prev
+        : { ...prev, identityStatus: "resolving" },
+    );
+
+    void (async () => {
+      let outcome: MemberIdentityRecoveryOutcome;
+      try {
+        outcome = await recoverMemberIdentity(controller.signal);
+      } catch {
+        outcome = { status: "recovery_required", reason: "not_resolvable" };
+      }
+
+      if (controller.signal.aborted || attemptSeq !== recoverySeqRef.current) {
+        return;
+      }
+
+      if (outcome.status === "resolved") {
+        // The MemberSession was rewritten coherently -- re-read it so
+        // identityStatus settles on "resolved".
+        refresh();
+        return;
+      }
+
+      setWorkspace((prev) => ({ ...prev, identityStatus: "recovery_required" }));
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    pathname,
+    workspace.isReady,
+    workspace.attendeeId,
+    workspace.event?.id,
+    workspace.isAccountSession,
+    workspace.session?.temporary_capability_hash,
+    refresh,
+  ]);
+
   const value = useMemo<MemberWorkspaceContextValue>(
     () => ({
       ...workspace,
+      needsIdentityRecovery: workspace.identityStatus === "recovery_required",
       refresh,
     }),
     [refresh, workspace],
