@@ -61,6 +61,13 @@ test("temporary login does not write retired standalone participant keys", () =>
   assert.doesNotMatch(SOURCE, /member-participant-(id|name|role)/);
 });
 
+test("temporary login does not write retired standalone email or name storage", () => {
+  assert.doesNotMatch(SOURCE, /fcoc-member-(email|name)/);
+  assert.doesNotMatch(SOURCE, /STORAGE_KEYS\.(memberEmail|memberName)/);
+  assert.match(SOURCE, /attendee_email:\s*null/);
+  assert.match(SOURCE, /temporary_capability_hash:\s*responseBody\.capabilityHash/);
+});
+
 test("displayed selection fields (name, dates) are preserved", () => {
   assert.match(SOURCE, /event\.name \|\| "Untitled event"/);
   assert.match(SOURCE, /formatDateRange\(event\.start_date, event\.end_date\)/);

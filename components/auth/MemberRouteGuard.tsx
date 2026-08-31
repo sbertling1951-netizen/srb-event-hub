@@ -8,7 +8,6 @@ import {
   getCurrentMemberEvent,
   getStoredMemberAttendeeId,
   getStoredMemberAuthUserId,
-  getStoredMemberEmail,
   getStoredMemberEntryId,
   getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
@@ -68,11 +67,10 @@ export default function MemberRouteGuard({
       const mode = getStoredUserMode();
       const attendeeId = getStoredMemberAttendeeId();
       const entryId = getStoredMemberEntryId();
-      const email = getStoredMemberEmail();
       const memberEvent = getCurrentMemberEvent();
       const accountOriginMarker = getStoredMemberAuthUserId();
 
-      const hasIdentity = !!(attendeeId || entryId || email);
+      const hasIdentity = !!(attendeeId || entryId);
       const hasEvent = !!memberEvent;
 
       // Only ever an immediate paint for the Temporary Access shape here --
@@ -111,12 +109,11 @@ export default function MemberRouteGuard({
         const mode = getStoredUserMode();
         const attendeeId = getStoredMemberAttendeeId();
         const entryId = getStoredMemberEntryId();
-        const email = getStoredMemberEmail();
         const memberEvent = getCurrentMemberEvent();
 
         const accountOriginMarker = getStoredMemberAuthUserId();
 
-        const hasIdentity = !!(attendeeId || entryId || email);
+        const hasIdentity = !!(attendeeId || entryId);
         const hasEvent = !!memberEvent;
         const hasLegacySession = mode === "member" && hasIdentity && hasEvent;
 

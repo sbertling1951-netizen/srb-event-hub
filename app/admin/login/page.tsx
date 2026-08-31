@@ -82,7 +82,6 @@ export default function AdminLoginPage() {
 
       // clear old member session
       localStorage.removeItem(STORAGE_KEYS.memberAttendeeId);
-      localStorage.removeItem(STORAGE_KEYS.memberEmail);
       localStorage.removeItem(STORAGE_KEYS.memberEntryId);
       localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
       localStorage.removeItem(STORAGE_KEYS.memberEventContext);

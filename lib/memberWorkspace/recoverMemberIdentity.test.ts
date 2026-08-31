@@ -121,6 +121,13 @@ test("on success it rewrites a coherent MemberSession for the anchored Event + r
   assert.match(CODE, /localStorage\.setItem\(STORAGE_KEYS\.memberAttendeeId, resolvedAttendeeId\);/);
 });
 
+test("recovery no longer writes retired standalone email/name storage and preserves canonical session identity fields", () => {
+  assert.doesNotMatch(CODE, /fcoc-member-(email|name)/);
+  assert.doesNotMatch(CODE, /STORAGE_KEYS\.(memberEmail|memberName)/);
+  assert.match(CODE, /attendee_email: session\?\.attendee_email \?\? null/);
+  assert.match(CODE, /participant_name: session\?\.participant_name \?\? null/);
+});
+
 test("abort-aware: a superseded attempt does not write a session", () => {
   const writeIdx = CODE.indexOf("saveMemberSession({");
   const guards = CODE.slice(0, writeIdx).match(/if \(signal\?\.aborted\)/g) || [];

@@ -185,6 +185,22 @@ test("still no direct identity/context RPC in this component after the repair", 
   assert.equal(/\.rpc\(/.test(CODE), false);
 });
 
+test("retired email-only browser state is not a legacy member session, while attendee/entry remain compatibility signals only", () => {
+  assert.doesNotMatch(CODE, /getStoredMemberEmail|memberEmail|fcoc-member-email/);
+  assert.match(CODE, /const attendeeId = getStoredMemberAttendeeId\(\);/);
+  assert.match(CODE, /const entryId = getStoredMemberEntryId\(\);/);
+  assert.match(CODE, /const hasIdentity = !!\(attendeeId \|\| entryId\);/);
+  assert.match(CODE, /const hasLegacySession = mode === "member" && hasIdentity && hasEvent;/);
+});
+
+test("Account and TEA admission remain separated by live Auth, resolved workspace identity, and canonical capability state", () => {
+  assert.match(CODE, /workspace\.identityStatus === "resolved"/);
+  assert.match(CODE, /accountOriginMarker && workspace\.isAccountSession === false/);
+  assert.match(CODE, /workspace\.isAccountSession === false/);
+  assert.match(CODE, /getStoredMemberAuthUserId\(\)/);
+  assert.doesNotMatch(CODE, /temporary_capability_hash/);
+});
+
 test("Member Workspace Continuity: PROTECTED_MEMBER_WORKSPACE_ROUTE_PREFIXES covers every route tree that actually renders <MemberRouteGuard>", () => {
   // the provider's protected-route set that gates both the recovery effect
   // and the established-context validation effect
@@ -245,9 +261,13 @@ test("INVARIANT: every page that consumes useMemberWorkspace() enforces the shar
         walk(full);
         continue;
       }
-      if (entry.name !== "page.tsx") continue;
+      if (entry.name !== "page.tsx") {
+        continue;
+      }
       const src = readFileSync(full, "utf8");
-      if (!/useMemberWorkspace\(/.test(src)) continue;
+      if (!/useMemberWorkspace\(/.test(src)) {
+        continue;
+      }
       consumers.push({
         route:
           "/" +

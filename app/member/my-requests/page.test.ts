@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   buildStatusChangeBody,
   parseStatusChangeResponseData,
   toRequestRow,
 } from "@/app/member/my-requests/page";
+
+const SOURCE = readFileSync(
+  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  "utf8",
+);
 
 // Focused test for the governed-boundary audit/refactor of
 // app/member/my-requests/page.tsx: the page previously read
@@ -115,4 +122,28 @@ test("parseStatusChangeResponseData fails closed (null) on a malformed or missin
   assert.equal(parseStatusChangeResponseData({ error: "vendor_request_status_change_failed" }), null);
   assert.equal(parseStatusChangeResponseData({ data: [{ id: "x" }] }), null);
   assert.equal(parseStatusChangeResponseData({ data: [{ request_status: 123 }] }), null);
+});
+
+test("My Requests uses canonical workspace/session identity and never reads retired standalone name/email keys", () => {
+  assert.match(SOURCE, /useMemberWorkspace\(\)/);
+  assert.match(SOURCE, /const \{ event, isReady, session \} = useMemberWorkspace\(\);/);
+  assert.match(SOURCE, /if \(!isReady \|\| !event\?\.id \|\| !session\)/);
+  assert.doesNotMatch(SOURCE, /fcoc-member-(name|email)/);
+  assert.doesNotMatch(SOURCE, /STORAGE_KEYS\.(memberName|memberEmail)/);
+  assert.doesNotMatch(SOURCE, /localStorage\.getItem/);
+});
+
+test("My Requests scopes reads and mutations to the resolved workspace Event and governed session evidence", () => {
+  assert.match(SOURCE, /const params = new URLSearchParams\(\{ eventId: event\.id \}\);/);
+  assert.match(SOURCE, /const identityArgs = memberIdentityRpcArgs\(session\);/);
+  assert.match(SOURCE, /identityArgs\.p_event_code/);
+  assert.match(SOURCE, /identityArgs\.p_registration_identifier/);
+  assert.match(SOURCE, /buildStatusChangeBody\([\s\S]{0,240}?event,[\s\S]{0,240}?identityArgs\.p_registration_identifier/);
+});
+
+test("My Requests greeting is driven by canonical participant_name, so stale standalone browser values cannot override it", () => {
+  assert.match(SOURCE, /session\?\.participant_name/);
+  assert.match(SOURCE, /session\.participant_name, here are your service requests/);
+  assert.doesNotMatch(SOURCE, /memberName/);
+  assert.doesNotMatch(SOURCE, /memberEmail/);
 });

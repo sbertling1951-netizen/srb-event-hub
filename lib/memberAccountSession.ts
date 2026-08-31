@@ -135,7 +135,6 @@ export async function finishMemberLogin(params: {
 
   if (typeof window !== "undefined") {
     localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendeeId);
-    localStorage.setItem(STORAGE_KEYS.memberEmail, email || "");
     if (authUserId) {
       localStorage.setItem(STORAGE_KEYS.memberAuthUserId, authUserId);
     } else {
@@ -204,6 +203,7 @@ export async function enterResolvedRegistration(
     email: row.email,
     hasArrived: !!row.has_arrived,
     authUserId,
+    participantName: registrationDisplayName(row),
   });
 }
 
@@ -222,7 +222,6 @@ export function clearMemberLocalState() {
   if (typeof window !== "undefined") {
     localStorage.removeItem(STORAGE_KEYS.memberAttendeeId);
     localStorage.removeItem(STORAGE_KEYS.memberEntryId);
-    localStorage.removeItem(STORAGE_KEYS.memberEmail);
     localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
     localStorage.removeItem(STORAGE_KEYS.memberEventContext);
     localStorage.removeItem(STORAGE_KEYS.memberEventChanged);

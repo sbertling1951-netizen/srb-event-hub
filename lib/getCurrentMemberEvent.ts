@@ -1,5 +1,5 @@
+import { getCurrentAttendeeId, getMemberSession } from "@/lib/memberSession";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { getMemberSession, getCurrentAttendeeId } from "@/lib/memberSession";
 
 export type CurrentMemberEvent = {
   id: string;
@@ -27,13 +27,6 @@ export function getStoredMemberEntryId() {
     return null;
   }
   return localStorage.getItem(STORAGE_KEYS.memberEntryId);
-}
-
-export function getStoredMemberEmail() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem(STORAGE_KEYS.memberEmail);
 }
 
 // The authenticated Account login path (finishMemberLogin) writes this;

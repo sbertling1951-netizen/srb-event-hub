@@ -396,7 +396,6 @@ export default function MemberLoginPage() {
 
       if (typeof window !== "undefined") {
         localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendee.id);
-        localStorage.setItem(STORAGE_KEYS.memberEmail, attendee.email || "");
         localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
         localStorage.setItem(STORAGE_KEYS.memberEntryId, attendee.entry_id || "");
         localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(arrived));

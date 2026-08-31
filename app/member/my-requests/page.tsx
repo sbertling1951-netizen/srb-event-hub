@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { memberIdentityRpcArgs } from "@/lib/memberSession";
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 type RequestVendorRow = {
@@ -60,14 +61,14 @@ export function buildStatusChangeBody(
   requestId: string,
   nextStatus: "cancelled" | "new",
   event: { id: string; event_code?: string | null },
-  memberEmail: string | null,
+  registrationIdentifier: string | null,
 ): VendorRequestStatusChangeBody {
   return {
     requestId,
     nextStatus,
     eventId: event.id,
     eventCode: event.event_code || null,
-    registrationIdentifier: memberEmail || null,
+    registrationIdentifier: registrationIdentifier || null,
   };
 }
 
@@ -180,7 +181,7 @@ export default function MyRequestsPage() {
 }
 
 function MyRequestsInner() {
-  const [memberName, setMemberName] = useState<string | null>(null);
+  const { event, isReady, session } = useMemberWorkspace();
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [status, setStatus] = useState("Loading your requests...");
   const [error, setError] = useState<string | null>(null);
@@ -200,25 +201,13 @@ function MyRequestsInner() {
         return;
       }
 
-      const rawEvent = localStorage.getItem(STORAGE_KEYS.memberEventContext);
-      const memberEmail = localStorage.getItem(STORAGE_KEYS.memberEmail);
-      const name = localStorage.getItem(STORAGE_KEYS.memberName);
-
-      setMemberName(name);
-
-      if (!rawEvent || !memberEmail) {
+      if (!isReady || !event?.id || !session) {
         setRequests([]);
         setStatus("No member session found.");
         return;
       }
 
-      const event = JSON.parse(rawEvent);
-
-      if (!event?.id) {
-        setRequests([]);
-        setStatus("No event selected.");
-        return;
-      }
+      const identityArgs = memberIdentityRpcArgs(session);
 
       // Governed read boundary: GET /api/member/vendor-requests ->
       // public.get_my_vendor_service_requests, which independently
@@ -233,11 +222,14 @@ function MyRequestsInner() {
       const accessToken = sessionData.session?.access_token;
 
       const params = new URLSearchParams({ eventId: event.id });
-      if (event.event_code) {
-        params.set("eventCode", event.event_code);
+      if (identityArgs.p_event_code) {
+        params.set("eventCode", identityArgs.p_event_code);
       }
-      if (memberEmail) {
-        params.set("registrationIdentifier", memberEmail);
+      if (identityArgs.p_registration_identifier) {
+        params.set(
+          "registrationIdentifier",
+          identityArgs.p_registration_identifier,
+        );
       }
 
       const response = await fetch(
@@ -284,7 +276,7 @@ function MyRequestsInner() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [event, isReady, session]);
 
   // Governed write boundary: PATCH /api/member/vendor-requests ->
   // public.set_my_vendor_service_request_status, which independently
@@ -303,17 +295,11 @@ function MyRequestsInner() {
       throw new Error("No member session found.");
     }
 
-    const rawEvent = localStorage.getItem(STORAGE_KEYS.memberEventContext);
-    const memberEmail = localStorage.getItem(STORAGE_KEYS.memberEmail);
-
-    if (!rawEvent) {
+    if (!isReady || !event?.id || !session) {
       throw new Error("No member session found.");
     }
 
-    const event = JSON.parse(rawEvent);
-    if (!event?.id) {
-      throw new Error("No event selected.");
-    }
+    const identityArgs = memberIdentityRpcArgs(session);
 
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
@@ -325,7 +311,12 @@ function MyRequestsInner() {
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
       body: JSON.stringify(
-        buildStatusChangeBody(id, nextStatus, event, memberEmail),
+        buildStatusChangeBody(
+          id,
+          nextStatus,
+          event,
+          identityArgs.p_registration_identifier,
+        ),
       ),
     });
 
@@ -408,9 +399,9 @@ function MyRequestsInner() {
           background: "#fff",
         }}
       >
-        {memberName ? (
+        {session?.participant_name ? (
           <div style={{ fontSize: 14, color: "#555" }}>
-            {memberName}, here are your service requests.
+            {session.participant_name}, here are your service requests.
           </div>
         ) : null}
         {status ? (

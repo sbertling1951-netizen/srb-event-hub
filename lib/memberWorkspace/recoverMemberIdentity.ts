@@ -166,9 +166,6 @@ export async function recoverMemberIdentity(
     if (typeof row.entry_id === "string") {
       localStorage.setItem(STORAGE_KEYS.memberEntryId, row.entry_id);
     }
-    if (typeof row.email === "string") {
-      localStorage.setItem(STORAGE_KEYS.memberEmail, row.email);
-    }
     if (typeof row.has_arrived === "boolean") {
       localStorage.setItem(
         STORAGE_KEYS.memberHasArrived,
