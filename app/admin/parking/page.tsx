@@ -37,6 +37,7 @@ import {
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 import { ParkingMapDebugPanel } from "./ParkingMapDebugPanel";
@@ -512,7 +513,7 @@ function ParkingAdminPageInner() {
     setAttendees(attendeeRows);
     setLatestMemberReportByAttendee(nextLatestMemberReportByAttendee);
 
-    const focusSiteNumber = localStorage.getItem("fcoc-parking-focus-site");
+    const focusSiteNumber = localStorage.getItem(STORAGE_KEYS.parkingFocusSite);
 
     if (focusSiteNumber) {
       const normalizedFocus = siteMatchKey(focusSiteNumber);
@@ -542,7 +543,7 @@ function ParkingAdminPageInner() {
         showError(`Could not find site ${focusSiteNumber} on this map.`);
       }
 
-      localStorage.removeItem("fcoc-parking-focus-site");
+      localStorage.removeItem(STORAGE_KEYS.parkingFocusSite);
     }
 
     showStatus(

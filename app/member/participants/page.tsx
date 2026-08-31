@@ -8,6 +8,7 @@ import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapt
 import { logEngagement } from "@/lib/engagement";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type AttendeeRecordRpcRow = {
@@ -145,7 +146,7 @@ function ParticipantsPageInner() {
       return;
     }
 
-    const storedAttendeeId = localStorage.getItem("fcoc-member-attendee-id");
+    const storedAttendeeId = localStorage.getItem(STORAGE_KEYS.memberAttendeeId);
     if (!storedAttendeeId) {
       return;
     }

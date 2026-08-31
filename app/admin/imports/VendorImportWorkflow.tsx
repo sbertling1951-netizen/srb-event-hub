@@ -26,6 +26,7 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
+import { EVENT_SCOPED_STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 import {
   classifyVendorFileAmbiguities,
@@ -61,7 +62,7 @@ type VendorEventOption = {
 // actual persisted row states; nothing about matching/commit truth is ever
 // read back out of localStorage.
 function activeVendorRunStorageKey(eventId: string) {
-  return `fcoc-vendor-import-run::${eventId}`;
+  return EVENT_SCOPED_STORAGE_KEYS.vendorImportRun(eventId);
 }
 
 function loadActiveVendorRunId(eventId: string): string | null {

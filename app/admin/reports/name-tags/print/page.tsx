@@ -2,9 +2,9 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
-
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type PrintTag = {
@@ -83,8 +83,8 @@ function NameTagsPrintPageInner() {
   useEffect(() => {
     async function load() {
       try {
-        const raw = sessionStorage.getItem("fcoc-name-tags");
-        const rawEvent = sessionStorage.getItem("fcoc-name-tags-event");
+        const raw = sessionStorage.getItem(STORAGE_KEYS.nameTags);
+        const rawEvent = sessionStorage.getItem(STORAGE_KEYS.nameTagsEvent);
 
         if (raw) {
           setTags(JSON.parse(raw));

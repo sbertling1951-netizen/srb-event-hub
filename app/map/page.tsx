@@ -11,6 +11,7 @@ import {
   loadPublicEventBootstrap,
   type PublicEventCandidate,
 } from "@/lib/publicEventBootstrap";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 // Anonymous-safe site geometry (get_event_public_map_sites): no
@@ -221,7 +222,7 @@ export default function CoachMapPage() {
     }
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-active-event-changed") {
+      if (e.key === STORAGE_KEYS.activeEventChanged) {
         void refreshCoachMap();
       }
     }

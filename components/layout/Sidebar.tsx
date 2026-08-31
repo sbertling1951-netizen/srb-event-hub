@@ -271,10 +271,10 @@ export default function Sidebar() {
     function handleStorage(e: StorageEvent) {
       if (
         e.key === STORAGE_KEYS.memberEventContext ||
-        e.key === "fcoc-admin-event-context" ||
+        e.key === STORAGE_KEYS.adminEventContext ||
         e.key === STORAGE_KEYS.memberHasArrived ||
         e.key === STORAGE_KEYS.memberEventChanged ||
-        e.key === "fcoc-admin-event-changed" ||
+        e.key === STORAGE_KEYS.adminEventChanged ||
         e.key === STORAGE_KEYS.userMode ||
         e.key === STORAGE_KEYS.userModeChanged
       ) {

@@ -12,6 +12,7 @@ import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 type ChecklistSection = {
   title: string;
@@ -66,7 +67,7 @@ const CHECKLIST_SECTIONS: ChecklistSection[] = [
   },
 ];
 
-const STORAGE_KEY_BASE = "fcoc-pre-rally-checklist";
+const STORAGE_KEY_BASE: string = STORAGE_KEYS.preRallyChecklistPrefix;
 
 export function checklistStorageKeyForEvent(eventId: string | null | undefined) {
   return eventId ? `${STORAGE_KEY_BASE}-${eventId}` : STORAGE_KEY_BASE;

@@ -1,4 +1,6 @@
-export const REPORT_PRESETS_STORAGE_KEY = "fcoc-admin-report-presets";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+
+export const REPORT_PRESETS_STORAGE_KEY = STORAGE_KEYS.adminReportPresets;
 
 export type ReportDataStatusFilter =
   | "all"

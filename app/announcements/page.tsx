@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type Announcement = {
@@ -86,7 +87,7 @@ function AnnouncementsPageInner() {
     void loadAnnouncements();
 
     function handleStorage(e: StorageEvent) {
-      if (e.key === "fcoc-member-event-changed") {
+      if (e.key === STORAGE_KEYS.memberEventChanged) {
         void loadAnnouncements();
       }
     }

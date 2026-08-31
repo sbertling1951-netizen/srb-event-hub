@@ -1,6 +1,8 @@
-export const ADMIN_EVENT_KEY = "fcoc-admin-event-context";
-export const ADMIN_EVENT_CHANGED_KEY = "fcoc-admin-event-changed";
-export const ADMIN_EVENT_UPDATED = "fcoc-admin-event-updated";
+import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
+
+export const ADMIN_EVENT_KEY = STORAGE_KEYS.adminEventContext;
+export const ADMIN_EVENT_CHANGED_KEY = STORAGE_KEYS.adminEventChanged;
+export const ADMIN_EVENT_UPDATED = APP_EVENT_NAMES.adminEventUpdated;
 
 export interface AdminWorkspaceContext {
   id: string;

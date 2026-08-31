@@ -11,6 +11,7 @@ import {
   type ResolvedRegistration,
 } from "@/lib/memberAccountSession";
 import { saveMemberSession } from "@/lib/memberSession";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { setSharedDeviceMode, supabase } from "@/lib/supabase";
 
 const PASSKEY_AUTH_ENABLED =
@@ -400,13 +401,13 @@ export default function MemberLoginPage() {
         localStorage.removeItem("member-participant-id");
         localStorage.removeItem("member-participant-name");
         localStorage.removeItem("member-participant-role");
-        localStorage.setItem("fcoc-member-attendee-id", attendee.id);
-        localStorage.setItem("fcoc-member-email", attendee.email || "");
-        localStorage.removeItem("fcoc-member-auth-user-id");
-        localStorage.setItem("fcoc-member-entry-id", attendee.entry_id || "");
-        localStorage.setItem("fcoc-member-has-arrived", String(arrived));
-        localStorage.setItem("fcoc-user-mode", "member");
-        localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
+        localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendee.id);
+        localStorage.setItem(STORAGE_KEYS.memberEmail, attendee.email || "");
+        localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
+        localStorage.setItem(STORAGE_KEYS.memberEntryId, attendee.entry_id || "");
+        localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(arrived));
+        localStorage.setItem(STORAGE_KEYS.userMode, "member");
+        localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));
         if (attendee.participant_id) {
           localStorage.setItem(
             "member-participant-id",

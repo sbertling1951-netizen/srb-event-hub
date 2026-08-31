@@ -77,6 +77,7 @@ import {
   workingListHasGooglePlaceId,
   type WorkingListState,
 } from "@/lib/nearbyWorkingList";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 import {
@@ -1956,7 +1957,7 @@ function AdminNearbyPageInner() {
       return;
     }
 
-    localStorage.setItem("fcoc-nearby-selected-area-id", selectedAreaId);
+    localStorage.setItem(STORAGE_KEYS.nearbySelectedAreaId, selectedAreaId);
   }, [selectedAreaId]);
 
   const duplicateKeys = useMemo(() => {
@@ -2062,7 +2063,7 @@ function AdminNearbyPageInner() {
         resolveStoredAreaSelection(
           rows,
           current,
-          localStorage.getItem("fcoc-nearby-selected-area-id"),
+          localStorage.getItem(STORAGE_KEYS.nearbySelectedAreaId),
           adminEvent,
         ),
       );

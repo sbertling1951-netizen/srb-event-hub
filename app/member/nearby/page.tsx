@@ -15,6 +15,7 @@ import { logEngagement } from "@/lib/engagement";
 import type { MapObject } from "@/lib/mapSurface/contract";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 const EpicentraxMapSurface = dynamic(
   () => import("@/components/map/surface/EpicentraxMapSurface"),
@@ -358,7 +359,7 @@ function NearbyPageInner() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("fcoc-nearby-favorites");
+      const stored = localStorage.getItem(STORAGE_KEYS.nearbyFavorites);
 
       if (stored) {
         setFavoriteIds(JSON.parse(stored));
@@ -517,7 +518,7 @@ function NearbyPageInner() {
         ? prev.filter((id) => id !== placeId)
         : [...prev, placeId];
 
-      localStorage.setItem("fcoc-nearby-favorites", JSON.stringify(next));
+      localStorage.setItem(STORAGE_KEYS.nearbyFavorites, JSON.stringify(next));
 
       return next;
     });

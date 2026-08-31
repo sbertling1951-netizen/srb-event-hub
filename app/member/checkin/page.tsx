@@ -214,7 +214,7 @@ function MemberCheckinPageInner() {
       // fcoc-member-attendee-id compat key) coherent with the resolved id.
       ensureMemberSessionAttendee(attendeeRow.id);
       if (typeof window !== "undefined") {
-        localStorage.setItem("fcoc-member-attendee-id", attendeeRow.id);
+        localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendeeRow.id);
       }
 
       setAttendee(attendeeRow);
@@ -223,7 +223,7 @@ function MemberCheckinPageInner() {
 
       if (typeof window !== "undefined") {
         localStorage.setItem(
-          "fcoc-member-has-arrived",
+          STORAGE_KEYS.memberHasArrived,
           String(!!attendeeRow.has_arrived),
         );
       }
@@ -310,7 +310,7 @@ function MemberCheckinPageInner() {
       return;
     }
 
-    const storedAttendeeId = localStorage.getItem("fcoc-member-attendee-id");
+    const storedAttendeeId = localStorage.getItem(STORAGE_KEYS.memberAttendeeId);
     if (!storedAttendeeId) {
       return;
     }
@@ -472,7 +472,7 @@ function MemberCheckinPageInner() {
       // Update local state immediately before navigating.
       if (typeof window !== "undefined") {
         localStorage.setItem(
-          "fcoc-member-has-arrived",
+          STORAGE_KEYS.memberHasArrived,
           String(updatedAttendee.has_arrived),
         );
       }

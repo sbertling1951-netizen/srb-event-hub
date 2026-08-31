@@ -27,6 +27,7 @@ import {
 import { isActiveEventStatus, normalizeEventStatus } from "@/lib/eventStatus";
 import { geocodeLocation } from "@/lib/geocodeLocation";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type EventRow = {
@@ -192,7 +193,7 @@ const EVENT_STATUS_FILTER_VALUES: EventStatusFilter[] = [
 // page-local key -- never read by, written by, or otherwise part of
 // adminEventContext.ts's shared Admin working Event. No canonical event
 // authority is persisted or derived here.
-const EVENT_STATUS_FILTER_STORAGE_KEY = "fcoc-admin-events-filter";
+const EVENT_STATUS_FILTER_STORAGE_KEY = STORAGE_KEYS.adminEventsFilter;
 
 function readPersistedEventStatusFilter(): EventStatusFilter {
   if (typeof window === "undefined") {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 type CoachPlate = {
   eventName: string;
@@ -19,7 +20,7 @@ function CoachPlatesPrintPageInner() {
 
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem("fcoc-coach-plates");
+      const raw = sessionStorage.getItem(STORAGE_KEYS.coachPlates);
       if (raw) {setPlates(JSON.parse(raw));}
     } catch (err) {
       console.error("Failed to load coach plates:", err);

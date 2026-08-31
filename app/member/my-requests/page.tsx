@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type RequestVendorRow = {
@@ -199,9 +200,9 @@ function MyRequestsInner() {
         return;
       }
 
-      const rawEvent = localStorage.getItem("fcoc-member-event-context");
-      const memberEmail = localStorage.getItem("fcoc-member-email");
-      const name = localStorage.getItem("fcoc-member-name");
+      const rawEvent = localStorage.getItem(STORAGE_KEYS.memberEventContext);
+      const memberEmail = localStorage.getItem(STORAGE_KEYS.memberEmail);
+      const name = localStorage.getItem(STORAGE_KEYS.memberName);
 
       setMemberName(name);
 
@@ -302,8 +303,8 @@ function MyRequestsInner() {
       throw new Error("No member session found.");
     }
 
-    const rawEvent = localStorage.getItem("fcoc-member-event-context");
-    const memberEmail = localStorage.getItem("fcoc-member-email");
+    const rawEvent = localStorage.getItem(STORAGE_KEYS.memberEventContext);
+    const memberEmail = localStorage.getItem(STORAGE_KEYS.memberEmail);
 
     if (!rawEvent) {
       throw new Error("No member session found.");

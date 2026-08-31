@@ -8,6 +8,7 @@ import type { MapMarker } from "@/components/map/canvas/types";
 import { logEngagement } from "@/lib/engagement";
 import { fullName } from "@/lib/formatters";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type MemberEventRow = {
@@ -156,7 +157,7 @@ function getStoredViewerAttendeeId() {
   if (typeof window === "undefined") {
     return null;
   }
-  return localStorage.getItem("fcoc-member-attendee-id");
+  return localStorage.getItem(STORAGE_KEYS.memberAttendeeId);
 }
 
 function CoachMapPublicPageInner() {
@@ -396,8 +397,8 @@ function CoachMapPublicPageInner() {
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === "fcoc-member-event-changed" ||
-        e.key === "fcoc-member-attendee-id"
+        e.key === STORAGE_KEYS.memberEventChanged ||
+        e.key === STORAGE_KEYS.memberAttendeeId
       ) {
         setViewerAttendeeId(attendeeId ?? getStoredViewerAttendeeId());
         void loadMap();

@@ -2,9 +2,10 @@ import { createClient } from "@supabase/supabase-js";
 import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
+import { COOKIE_NAMES } from "@/lib/storageKeys";
 
-export const VENDOR_AUTH_COOKIE = "fcoc-vendor-access-token";
-export const VENDOR_SELECTED_COOKIE = "fcoc-vendor-selected-vendor-id";
+export const VENDOR_AUTH_COOKIE = COOKIE_NAMES.vendorAccessToken;
+export const VENDOR_SELECTED_COOKIE = COOKIE_NAMES.vendorSelectedVendorId;
 
 /**
  * A non-persistent client bound to the vendor's own already-validated

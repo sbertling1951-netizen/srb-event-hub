@@ -9,6 +9,7 @@ import {
 } from "@/lib/adminTenantAuthority";
 import { ensureAdminIdentityLinked } from "@/lib/ensureAdminIdentityLinked";
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type AdminContextType = {
@@ -54,9 +55,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
       if (typeof window !== "undefined") {
         if (result) {
-          sessionStorage.setItem("fcoc-admin-access", JSON.stringify(result));
+          sessionStorage.setItem(STORAGE_KEYS.adminAccess, JSON.stringify(result));
         } else {
-          sessionStorage.removeItem("fcoc-admin-access");
+          sessionStorage.removeItem(STORAGE_KEYS.adminAccess);
         }
       }
     } catch (err) {
@@ -66,7 +67,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       setTenantAuthority(null);
 
       if (typeof window !== "undefined") {
-        sessionStorage.removeItem("fcoc-admin-access");
+        sessionStorage.removeItem(STORAGE_KEYS.adminAccess);
       }
     } finally {
       setLoading(false);
@@ -132,7 +133,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       setTenantAuthority(null);
 
       if (typeof window !== "undefined") {
-        sessionStorage.removeItem("fcoc-admin-access");
+        sessionStorage.removeItem(STORAGE_KEYS.adminAccess);
       }
 
       setLoading(false);

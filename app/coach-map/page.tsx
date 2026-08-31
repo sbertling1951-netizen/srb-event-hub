@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
-import { logEngagement } from "@/lib/engagement";
+import { useEffect } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
+import { logEngagement } from "@/lib/engagement";
+import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 function CoachMapPageInner() {
   const router = useRouter();
 
   useEffect(() => {
     const context = getCurrentMemberEvent();
-    const attendeeId = sessionStorage.getItem("fcoc-member-attendee-id");
+    const attendeeId = sessionStorage.getItem(STORAGE_KEYS.memberAttendeeId);
 
     if (context?.id && attendeeId) {
       void logEngagement({

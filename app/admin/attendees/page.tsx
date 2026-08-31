@@ -34,8 +34,8 @@ import {
   filterAttendees,
   formatCancellationDetail,
   fullName,
-  normalizeMemberNumber,
   normalizeDataStatusFilter,
+  normalizeMemberNumber,
   type PageSize,
   PARTICIPANT_TYPE_OPTIONS,
   type ParticipantTypeFilter,
@@ -93,6 +93,7 @@ import {
 } from "@/lib/eventOperationalSummary";
 import { isActiveEventStatus } from "@/lib/eventStatus";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 // Fixed audit note for the post-save capacity reconciliation
@@ -128,7 +129,7 @@ type AttendeeCommandCenterPrefs = {
   showResolvedInfo?: boolean;
 };
 
-const ATTENDEE_COMMAND_CENTER_PREFS_KEY = "fcoc-attendee-command-center-prefs";
+const ATTENDEE_COMMAND_CENTER_PREFS_KEY = STORAGE_KEYS.attendeeCommandCenterPrefs;
 
 function getStoredAttendeeCommandCenterPrefs(): AttendeeCommandCenterPrefs {
   if (typeof window === "undefined") {
@@ -2770,7 +2771,7 @@ created_at
       return;
     }
 
-    const pendingEditId = localStorage.getItem("fcoc-attendee-open-edit-id");
+    const pendingEditId = localStorage.getItem(STORAGE_KEYS.attendeeOpenEditId);
     if (!pendingEditId) {
       return;
     }
@@ -2780,7 +2781,7 @@ created_at
       return;
     }
 
-    localStorage.removeItem("fcoc-attendee-open-edit-id");
+    localStorage.removeItem(STORAGE_KEYS.attendeeOpenEditId);
     void selectAttendeeForEdit(attendee);
     // selectAttendeeForEdit is intentionally omitted because it is declared later in this component.
     // eslint-disable-next-line react-hooks/exhaustive-deps

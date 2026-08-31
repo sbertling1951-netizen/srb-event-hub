@@ -10,6 +10,7 @@ import {
   getStoredMemberHasArrived,
 } from "@/lib/getCurrentMemberEvent";
 import { getStoredUserMode } from "@/lib/getCurrentMemberEvent";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 export default function HomePage() {
@@ -32,7 +33,7 @@ export default function HomePage() {
 
         // 🚨 If no real session, kill fake admin mode
         if (!user && mode === "admin") {
-          localStorage.removeItem("fcoc-user-mode");
+          localStorage.removeItem(STORAGE_KEYS.userMode);
         }
 
         // ✅ Only redirect to admin if session is REAL

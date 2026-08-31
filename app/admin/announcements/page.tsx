@@ -21,6 +21,7 @@ import { useAdmin } from "@/lib/adminContext";
 import type { AdminWorkspaceContext } from "@/lib/adminEventContext";
 import { getCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { APP_EVENT_NAMES, STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type Announcement = {
@@ -262,10 +263,10 @@ function AdminAnnouncementsPageInner() {
 
     function handleStorage(e: StorageEvent) {
       if (
-        e.key === "fcoc-admin-event-context" ||
-        e.key === "fcoc-admin-event-changed" ||
-        e.key === "fcoc-user-mode" ||
-        e.key === "fcoc-user-mode-changed"
+        e.key === STORAGE_KEYS.adminEventContext ||
+        e.key === STORAGE_KEYS.adminEventChanged ||
+        e.key === STORAGE_KEYS.userMode ||
+        e.key === STORAGE_KEYS.userModeChanged
       ) {
         loadCurrentEvent();
       }
@@ -277,14 +278,14 @@ function AdminAnnouncementsPageInner() {
 
     window.addEventListener("storage", handleStorage);
     window.addEventListener(
-      "fcoc-admin-event-updated",
+      APP_EVENT_NAMES.adminEventUpdated,
       handleAdminEventUpdated,
     );
 
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(
-        "fcoc-admin-event-updated",
+        APP_EVENT_NAMES.adminEventUpdated,
         handleAdminEventUpdated,
       );
     };

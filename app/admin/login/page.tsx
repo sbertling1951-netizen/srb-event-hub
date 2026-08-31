@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import LoginActionButton from "@/components/auth/LoginActionButton";
 import { clearCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 export default function AdminLoginPage() {
@@ -73,19 +74,19 @@ export default function AdminLoginPage() {
 
       console.log("LOGIN COMPLETE");
 
-      localStorage.setItem("fcoc-user-mode", "admin");
-      localStorage.setItem("fcoc-admin-email", normalizedEmail);
-      localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
+      localStorage.setItem(STORAGE_KEYS.userMode, "admin");
+      localStorage.setItem(STORAGE_KEYS.adminEmail, normalizedEmail);
+      localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));
 
       clearCurrentAdminEvent();
 
       // clear old member session
-      localStorage.removeItem("fcoc-member-attendee-id");
-      localStorage.removeItem("fcoc-member-email");
-      localStorage.removeItem("fcoc-member-entry-id");
-      localStorage.removeItem("fcoc-member-has-arrived");
-      localStorage.removeItem("fcoc-member-event-context");
-      localStorage.removeItem("fcoc-member-event-changed");
+      localStorage.removeItem(STORAGE_KEYS.memberAttendeeId);
+      localStorage.removeItem(STORAGE_KEYS.memberEmail);
+      localStorage.removeItem(STORAGE_KEYS.memberEntryId);
+      localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
+      localStorage.removeItem(STORAGE_KEYS.memberEventContext);
+      localStorage.removeItem(STORAGE_KEYS.memberEventChanged);
 
       setStatus("Login successful. Opening dashboard...");
 

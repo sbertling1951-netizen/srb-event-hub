@@ -33,6 +33,7 @@ import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
 import { ATTENDEE_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 import { buildImportsHref, readImportType } from "@/lib/importTypeRouting";
+import { EVENT_SCOPED_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 import { ActiveRunsPanel } from "./ActiveRunsPanel";
@@ -151,7 +152,7 @@ type SavedAttendeeManagementView = {
 };
 
 function getAttendeeManagementViewStorageKey(eventId: string) {
-  return `fcoc-attendee-management-view::${eventId}`;
+  return EVENT_SCOPED_STORAGE_KEYS.attendeeManagementView(eventId);
 }
 
 function loadSavedAttendeeManagementView(
@@ -197,7 +198,7 @@ function saveAttendeeManagementView(
 // authority and returns the actual persisted row states on every reload; the
 // run ID itself conveys no authority.
 function getActiveImportRunStorageKey(eventId: string) {
-  return `fcoc-attendee-import-run::${eventId}`;
+  return EVENT_SCOPED_STORAGE_KEYS.attendeeImportRun(eventId);
 }
 
 function loadActiveImportRunId(eventId: string): string | null {
@@ -1171,7 +1172,7 @@ function AdminAttendeeImportsPageInner() {
     }
 
     setError(null);
-    localStorage.setItem("fcoc-attendee-open-edit-id", match.id);
+    localStorage.setItem(STORAGE_KEYS.attendeeOpenEditId, match.id);
 
     window.top?.location.assign("/admin/attendees");
   }
@@ -1181,7 +1182,7 @@ function AdminAttendeeImportsPageInner() {
   }) {
     setError(null);
     setStatus("Opening saved attendee in Attendee Management...");
-    localStorage.setItem("fcoc-attendee-open-edit-id", issue.attendee.id);
+    localStorage.setItem(STORAGE_KEYS.attendeeOpenEditId, issue.attendee.id);
     window.top?.location.assign("/admin/attendees");
   }
 

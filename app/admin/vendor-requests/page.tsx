@@ -21,6 +21,7 @@ import {
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { copyTextToClipboard } from "@/lib/copyTextToClipboard";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type RequestRow = {
@@ -182,7 +183,7 @@ function openParkingMapForSite(siteNumber: string | null) {
   const site = (siteNumber || "").trim();
 
   if (site) {
-    localStorage.setItem("fcoc-parking-focus-site", site);
+    localStorage.setItem(STORAGE_KEYS.parkingFocusSite, site);
   }
 
   window.location.href = "/admin/parking";

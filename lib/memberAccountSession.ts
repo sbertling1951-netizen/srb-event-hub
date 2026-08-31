@@ -142,17 +142,17 @@ export async function finishMemberLogin(params: {
     localStorage.removeItem("member-participant-id");
     localStorage.removeItem("member-participant-name");
     localStorage.removeItem("member-participant-role");
-    localStorage.setItem("fcoc-member-attendee-id", attendeeId);
-    localStorage.setItem("fcoc-member-email", email || "");
+    localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendeeId);
+    localStorage.setItem(STORAGE_KEYS.memberEmail, email || "");
     if (authUserId) {
-      localStorage.setItem("fcoc-member-auth-user-id", authUserId);
+      localStorage.setItem(STORAGE_KEYS.memberAuthUserId, authUserId);
     } else {
-      localStorage.removeItem("fcoc-member-auth-user-id");
+      localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
     }
-    localStorage.setItem("fcoc-member-entry-id", entryId || "");
-    localStorage.setItem("fcoc-member-has-arrived", String(hasArrived));
-    localStorage.setItem("fcoc-user-mode", "member");
-    localStorage.setItem("fcoc-user-mode-changed", String(Date.now()));
+    localStorage.setItem(STORAGE_KEYS.memberEntryId, entryId || "");
+    localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(hasArrived));
+    localStorage.setItem(STORAGE_KEYS.userMode, "member");
+    localStorage.setItem(STORAGE_KEYS.userModeChanged, String(Date.now()));
     if (participantId) {
       localStorage.setItem("member-participant-id", participantId);
     }
@@ -243,7 +243,7 @@ export function clearMemberLocalState() {
     localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
     localStorage.removeItem(STORAGE_KEYS.memberEventContext);
     localStorage.removeItem(STORAGE_KEYS.memberEventChanged);
-    localStorage.removeItem("fcoc-member-auth-user-id");
+    localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
     localStorage.removeItem("member-participant-id");
     localStorage.removeItem("member-participant-name");
     localStorage.removeItem("member-participant-role");
