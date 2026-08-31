@@ -27,6 +27,7 @@ import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import {
   type CanonicalEventOperationalSummary,
@@ -448,8 +449,36 @@ function AdminReportsPageInner() {
     setCanExport(false);
   }
 
+  const reportsLoadGenerationRef = useRef(0);
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // attendee / activity / parking data so an export can never be produced
+  // from Event A's rows under an Event B label, then reload.
+  useAdminWorkingEventScope(() => {
+    reportsLoadGenerationRef.current += 1;
+    resetPageState();
+    const nextEvent = getCurrentAdminEvent();
+    if (!nextEvent?.id) {
+      setStatus("No admin event selected.");
+      setLoading(false);
+      return;
+    }
+    if (!canAccessEvent(admin, nextEvent.id)) {
+      setError("You do not have access to this event.");
+      setStatus("Access denied.");
+      setLoading(false);
+      return;
+    }
+    setCurrentEvent(nextEvent);
+    void loadData(nextEvent.id);
+  });
+
   const loadData = useCallback(
     async (activeEventId: string) => {
+      const generation = ++reportsLoadGenerationRef.current;
+      const stillCurrent = () =>
+        generation === reportsLoadGenerationRef.current &&
+        getCurrentAdminEvent()?.id === activeEventId;
       setLoading(true);
       setError(null);
       setStatus("Loading reports...");
@@ -535,6 +564,12 @@ function AdminReportsPageInner() {
         fetchEventOperationalSummary(activeEventId),
       ]);
 
+      // Reject a superseded load: the working Event changed while this was
+      // in flight; a newer load is populating Event B's reports.
+      if (!stillCurrent()) {
+        return;
+      }
+
       if (attendeeError) {
         setError(attendeeError.message);
         setStatus("Could not load attendees.");
@@ -610,30 +645,7 @@ function AdminReportsPageInner() {
 
     setCurrentEvent(event);
     void loadData(event.id);
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      const nextEvent = getCurrentAdminEvent();
-
-      if (!nextEvent?.id) {
-        resetPageState();
-        setStatus("No admin event selected.");
-        setLoading(false);
-        return;
-      }
-
-      if (!canAccessEvent(admin, nextEvent.id)) {
-        resetPageState();
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
-
-      setCurrentEvent(nextEvent);
-      void loadData(nextEvent.id);
-    });
-
-    return unsubscribe;
+    // Working-Event changes are handled by useAdminWorkingEventScope above.
   }, [admin, loadData]);
 
   useEffect(() => {

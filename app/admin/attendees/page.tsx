@@ -79,6 +79,7 @@ import {
   resolveAdminWorkingEvent,
   setCurrentAdminEvent,
   subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import {
   type CanonicalAttendeePlacementMap,
@@ -2210,6 +2211,22 @@ function AdminAttendeesPageInner() {
   const isDirtyRef = useRef(false);
   const selectedBaselineFingerprintRef = useRef<string | null>(null);
   const loadGenerationRef = useRef(0);
+  const loadEventAndDataRef = useRef<() => void>(() => {});
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // roster/rules and bump the load generation so an in-flight Event-A load
+  // cannot repopulate the queue, then reload for Event B. (`canEditAttendees`
+  // is separately reset to false by runAttendeeManageAuthorityCheck, so
+  // mutation controls fail closed until Event B's authority resolves.)
+  useAdminWorkingEventScope(() => {
+    loadGenerationRef.current += 1;
+    setAttendees([]);
+    setRules([]);
+    setOperationalSummary(null);
+    setOperationalSummaryError(null);
+    setLoading(true);
+    loadEventAndDataRef.current();
+  });
 
   const isDirty = useMemo(
     () => editorMode === "edit" && editorStateIsDirty(editorBaseline, editorState),
@@ -2444,11 +2461,22 @@ created_at
     setStatus("Loading attendee records...");
 
     const storedEvent = getCurrentAdminEvent();
+    const requestedEventId = storedEvent?.id ?? null;
 
     const { data: eventsData, error: eventsError } = await supabase
       .from("events")
       .select("id, name, location, start_date, end_date, status")
       .order("start_date", { ascending: false });
+
+    // The working Event changed (this tab or another) while the events list
+    // was loading. A newer loadEventAndData() is already running for Event B;
+    // abandon this one BEFORE it can resolve Event A and -- fatally -- write
+    // Event A's id back into the shared working-Event store (reverting the
+    // switch for every tab). loadQueue's own generation guard covers the
+    // roster; this guard covers the resolution + write-back that precede it.
+    if ((getCurrentAdminEvent()?.id ?? null) !== requestedEventId) {
+      return;
+    }
 
     if (eventsError) {
       setCurrentEvent(null);
@@ -2594,12 +2622,8 @@ created_at
       return;
     }
 
+    loadEventAndDataRef.current = () => void loadEventAndData();
     void loadEventAndData();
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadEventAndData();
-    });
-
-    return unsubscribe;
   }, [admin?.adminUser?.id, loadEventAndData]);
 
   // Stage D requirement 5: same-record concurrency protection. Reuses the

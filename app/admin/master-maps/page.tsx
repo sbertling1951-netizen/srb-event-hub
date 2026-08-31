@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
@@ -20,7 +20,7 @@ import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -199,8 +199,27 @@ function MasterMapsPageInner() {
     [showArchived],
   );
 
+  const loadSelectedEventSettingsRef = useRef<() => void>(() => {});
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // selected-event id + map-scale form values so "Save map scales" can never
+  // write to Event A while the header reads Event B, then reload.
+  const { captureGeneration, isCurrent: isWorkingEventCurrent } =
+    useAdminWorkingEventScope(() => {
+      setSelectedEventId("");
+      setSelectedEventName("");
+      setCoachMapOpenScale("0.6");
+      setParkingMapOpenScale("0.6");
+      setLocationsMapOpenScale("0.6");
+      loadSelectedEventSettingsRef.current();
+    });
+
   const loadSelectedEventSettings = useCallback(async () => {
+    const generation = captureGeneration();
     const currentEvent = getCurrentAdminEvent();
+    const stillCurrent = () =>
+      isWorkingEventCurrent(generation) &&
+      getCurrentAdminEvent()?.id === currentEvent?.id;
 
     if (!currentEvent?.id) {
       setSelectedEventId("");
@@ -229,6 +248,9 @@ function MasterMapsPageInner() {
       .single();
 
     if (eventError || !eventRow) {
+      if (!stillCurrent()) {
+        return;
+      }
       setSelectedEventId("");
       setSelectedEventName("");
       setCoachMapOpenScale("0.6");
@@ -240,13 +262,17 @@ function MasterMapsPageInner() {
       return;
     }
 
+    if (!stillCurrent()) {
+      return;
+    }
+
     const event = eventRow as AdminEventSettings;
     setSelectedEventId(event.id);
     setSelectedEventName(event.name || "");
     setCoachMapOpenScale(String(event.coach_map_open_scale ?? 0.6));
     setParkingMapOpenScale(String(event.parking_map_open_scale ?? 0.6));
     setLocationsMapOpenScale(String(event.locations_map_open_scale ?? 0.6));
-  }, [admin]);
+  }, [admin, captureGeneration, isWorkingEventCurrent]);
 
   async function saveMapScales() {
     if (!selectedEventId) {
@@ -570,13 +596,11 @@ function MasterMapsPageInner() {
       setLoading(false);
     }
     void load();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadSelectedEventSettings();
-    });
-
-    return unsubscribe;
   }, [admin, loadMasterMaps, loadSelectedEventSettings]);
+
+  useEffect(() => {
+    loadSelectedEventSettingsRef.current = () => void loadSelectedEventSettings();
+  }, [loadSelectedEventSettings]);
 
   useEffect(() => {
     if (loading) {

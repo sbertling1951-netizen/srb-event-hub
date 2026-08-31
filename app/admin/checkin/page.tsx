@@ -34,7 +34,7 @@ import { getSharingBulkAction } from "@/lib/adminCheckinSharing";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { fullName, preferredDisplayLine } from "@/lib/formatters";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
@@ -280,13 +280,27 @@ function AdminCheckinPageInner() {
     }
 
     void loadPage();
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadPage();
-    });
-    return unsubscribe;
     // loadPage is intentionally omitted from deps to avoid changing the established admin event reload flow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // roster so it can never render under Event B's header, and neutralize row
+  // actions (they early-return while `event` is null) until the reload of
+  // Event B completes. The reload bumps `loadGenerationRef`, so any in-flight
+  // Event-A fetch is already rejected by the existing generation check below.
+  useAdminWorkingEventScope(() => {
+    setEvent(null);
+    setAttendees([]);
+    setHouseholdMembers([]);
+    setSharingByAttendee({});
+    setSelectedAttendeeId(null);
+    setUndoAttendee(null);
+    setEditState({});
+    setLoading(true);
+    showStatus("Loading check-in...");
+    void loadPage();
+  });
 
   useEffect(() => {
     if (!event?.id) {
@@ -349,6 +363,13 @@ function AdminCheckinPageInner() {
 
       if (eventError) {
         throw eventError;
+      }
+
+      // A working-Event change while this fetch was in flight already
+      // started a newer loadPage() (bumping loadGenerationRef). Bail before
+      // re-showing the previous Event's header row.
+      if (generation !== loadGenerationRef.current) {
+        return;
       }
 
       const loadedEvent = eventRow as AdminEventRow;

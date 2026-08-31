@@ -1,7 +1,13 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as XLSX from "xlsx";
 
 import {
@@ -18,7 +24,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { interpretAttendeeImportRow } from "@/lib/attendeeImportContract";
 import {
@@ -463,8 +469,29 @@ function AdminAttendeeImportsPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [showFullImportTable, setShowFullImportTable] = useState(false);
 
+  const loadEventsRef = useRef<() => void>(() => {});
+  const eventsLoadGenerationRef = useRef(0);
+
+  // Working-Event change (this tab or another): synchronously realign the
+  // import target to the new working Event and drop any parsed file that was
+  // staged for the previous target, so an import can never be committed
+  // against Event A while the header reads Event B, then reload.
+  useAdminWorkingEventScope((nextEventId) => {
+    eventsLoadGenerationRef.current += 1;
+    if (nextEventId) {
+      setSelectedImportEventId(nextEventId);
+    }
+    setLoadedForEventId("");
+    setRows([]);
+    setHeaders([]);
+    setFileName("");
+    setShowFullImportTable(false);
+    loadEventsRef.current();
+  });
+
   useEffect(() => {
     async function loadEvents() {
+      const generation = ++eventsLoadGenerationRef.current;
       setLoadingEvent(true);
       setError(null);
 
@@ -511,6 +538,12 @@ function AdminAttendeeImportsPageInner() {
           throw rulesError;
         }
 
+        // Reject a superseded load: the working Event changed while this was
+        // in flight; a newer loadEvents() is realigning the import target.
+        if (generation !== eventsLoadGenerationRef.current) {
+          return;
+        }
+
         setRules((rulesData || []) as ValidationRule[]);
 
         const accessibleEvents = ((data || []) as EventContext[]).filter(
@@ -534,6 +567,9 @@ function AdminAttendeeImportsPageInner() {
         }
       } catch (err) {
         console.error("Error loading events:", err);
+        if (generation !== eventsLoadGenerationRef.current) {
+          return;
+        }
         setCurrentEvent(null);
         setAvailableEvents([]);
         setSelectedImportEventId("");
@@ -544,17 +580,15 @@ function AdminAttendeeImportsPageInner() {
         setShowFullImportTable(false);
         setStatus("Could not load events.");
       } finally {
-        setLoadingEvent(false);
+        if (generation === eventsLoadGenerationRef.current) {
+          setLoadingEvent(false);
+        }
       }
     }
 
+    loadEventsRef.current = () => void loadEvents();
     void loadEvents();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadEvents();
-    });
-
-    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

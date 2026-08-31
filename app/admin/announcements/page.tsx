@@ -207,7 +207,14 @@ function AdminAnnouncementsPageInner() {
     setConfirmDialog(null);
   }
 
+  const announcementsLoadGenerationRef = useRef(0);
+
   const loadAnnouncements = useCallback(async (activeEventId: string) => {
+    const generation = ++announcementsLoadGenerationRef.current;
+    const stillCurrent = () =>
+      generation === announcementsLoadGenerationRef.current &&
+      getCurrentAdminEvent()?.id === activeEventId;
+
     setLoadingAnnouncements(true);
     setError(null);
     setStatus("Loading announcements...");
@@ -220,6 +227,12 @@ function AdminAnnouncementsPageInner() {
       .eq("event_id", activeEventId)
       .order("is_pinned", { ascending: false })
       .order("created_at", { ascending: false });
+
+    // Reject a superseded load: the working Event changed while this was in
+    // flight and a newer load is populating Event B's announcements.
+    if (!stillCurrent()) {
+      return;
+    }
 
     if (error) {
       setError(error.message || "Could not load announcements.");
@@ -309,6 +322,10 @@ function AdminAnnouncementsPageInner() {
       return;
     }
 
+    // Drop the previous Event's announcements immediately so a pin / publish
+    // / delete can never be issued against an Event A announcement while the
+    // header reads Event B.
+    setAnnouncements([]);
     void loadAnnouncements(eventId);
   }, [eventId, loadAnnouncements]);
 

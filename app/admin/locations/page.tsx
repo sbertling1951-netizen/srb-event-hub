@@ -18,7 +18,7 @@ import { PageSection } from "@/components/ui/PageSection";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -131,7 +131,27 @@ function AdminLocationsPageInner() {
     setIsPlacing(false);
   }, []);
 
+  const loadPageRef = useRef<() => void>(() => {});
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // event + locations so a create/edit can never be issued against Event A
+  // while the header reads Event B, then reload.
+  const { captureGeneration, isCurrent: isWorkingEventCurrent } =
+    useAdminWorkingEventScope(() => {
+      setEvent(null);
+      setLocations([]);
+      setSelectedLocationId("");
+      setIsPlacing(false);
+      setLoading(true);
+      loadPageRef.current();
+    });
+
   const loadPage = useCallback(async () => {
+    const generation = captureGeneration();
+    const requestedEventId = getCurrentAdminEvent()?.id ?? null;
+    const stillCurrent = () =>
+      isWorkingEventCurrent(generation) &&
+      getCurrentAdminEvent()?.id === requestedEventId;
     setLoading(true);
     setError(null);
     setStatus("Loading...");
@@ -214,6 +234,10 @@ function AdminLocationsPageInner() {
           : null,
     };
 
+    if (!stillCurrent()) {
+      return;
+    }
+
     setEvent(typedEvent);
 
     const { data: locationData, error: locationError } = await supabase
@@ -226,6 +250,10 @@ function AdminLocationsPageInner() {
     if (locationError) {
       setStatus(`Could not load event locations: ${locationError.message}`);
       setLoading(false);
+      return;
+    }
+
+    if (!stillCurrent()) {
       return;
     }
 
@@ -244,8 +272,14 @@ function AdminLocationsPageInner() {
       }
     }
 
-    setLoading(false);
-  }, [loadLocationIntoForm, selectedLocationId]);
+    if (stillCurrent()) {
+      setLoading(false);
+    }
+  }, [loadLocationIntoForm, selectedLocationId, captureGeneration, isWorkingEventCurrent]);
+
+  useEffect(() => {
+    loadPageRef.current = () => void loadPage();
+  }, [loadPage]);
 
   useEffect(() => {
     if (!admin) {
@@ -274,10 +308,6 @@ function AdminLocationsPageInner() {
     }
 
     void loadPage();
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadPage();
-    });
-    return unsubscribe;
   }, [admin, loadPage]);
   // Workspace layout — removes max-width cap while this page is mounted
   useEffect(() => {

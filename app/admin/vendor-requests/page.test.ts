@@ -29,11 +29,15 @@ test("no direct has_event_task_authority RPC call is introduced -- authority is 
   assert.equal(/checkAdminEventTaskAuthority/.test(source), false);
 });
 
-test("Event-context wiring is unchanged -- the page still lists only the current admin working Event's requests", () => {
+test("Event-context wiring -- the page still lists only the current admin working Event's requests", () => {
   assert.match(
     source,
-    /import \{\s*\n\s*getCurrentAdminEvent,\s*\n\s*subscribeToAdminWorkspace,\s*\n\s*\} from "@\/lib\/adminWorkspaceContext";/,
+    /import \{\s*\n\s*getCurrentAdminEvent,\s*\n\s*useAdminWorkingEventScope,\s*\n\s*\} from "@\/lib\/adminWorkspaceContext";/,
   );
+  // Working-Event changes (same-tab and cross-tab) run through the shared
+  // scope hook: it drops Event A's request list synchronously and rejects a
+  // superseded loadRequests().
+  assert.match(source, /useAdminWorkingEventScope\(/);
   assert.match(source, /const event = getCurrentAdminEvent\(\);/);
   assert.match(source, /\.eq\("event_id", event\.id\)/);
   assert.match(source, /No admin event selected\./);

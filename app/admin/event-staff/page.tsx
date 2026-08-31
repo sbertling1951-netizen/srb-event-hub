@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
@@ -17,7 +17,7 @@ import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
   setCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import {
   canAccessEvent,
@@ -205,6 +205,23 @@ function EventStaffPageInner() {
   const [adding, setAdding] = useState(false);
   const [pendingRemoveRow, setPendingRemoveRow] = useState<StaffRow | null>(null);
 
+  const reloadRef = useRef<() => void>(() => {});
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // staff rows / available-admin list / event so a grant or revoke can never
+  // be issued against Event A while the header reads Event B, then reload.
+  const { captureGeneration, isCurrent: isWorkingEventCurrent } =
+    useAdminWorkingEventScope(() => {
+      setEvent(null);
+      setRows([]);
+      setAvailableAdmins([]);
+      setBusyAccessId(null);
+      setBusyTaskKey(null);
+      setPendingRemoveRow(null);
+      setLoading(true);
+      reloadRef.current();
+    });
+
   useEffect(() => {
     if (!admin) return;
     const safeAdmin = admin;
@@ -240,12 +257,9 @@ function EventStaffPageInner() {
       await loadPage(adminEvent.id);
     }
 
+    reloadRef.current = () => void loadForCurrentEvent();
     void loadForCurrentEvent();
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadForCurrentEvent();
-    });
-
-    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
 
   // Pure read: lists Events/admin users (unrelated to Event authority
@@ -254,6 +268,13 @@ function EventStaffPageInner() {
   // opening this page never creates an assignment, a grant, or an audit
   // row.
   async function loadPage(eventId: string) {
+    const generation = captureGeneration();
+    // Never load an Event that is not the current working Event -- e.g. a
+    // stale mutation's follow-up reload issued with the Event id captured
+    // when its button was clicked, before a since-completed switch.
+    const isForCurrentEvent = () =>
+      isWorkingEventCurrent(generation) &&
+      getCurrentAdminEvent()?.id === eventId;
     try {
       setLoading(true);
       setError(null);
@@ -278,6 +299,10 @@ function EventStaffPageInner() {
       if (adminUsersError) { throw adminUsersError; }
       if (assignmentsError) { throw new Error(describeRpcError(assignmentsError)); }
       if (catalogError) { throw new Error(describeRpcError(catalogError)); }
+
+      // Reject a superseded load: the working Event changed while this was
+      // in flight; a newer load is populating Event B.
+      if (!isForCurrentEvent()) { return; }
 
       const eventRow = eventData as EventRow;
       const allEvents = (eventsData || []) as EventRow[];
@@ -319,11 +344,14 @@ function EventStaffPageInner() {
       setStatus(`Loaded ${mergedRows.length} staff assignments.`);
     } catch (err: any) {
       console.error("loadPage error:", err);
+      if (!isForCurrentEvent()) { return; }
       const message = err?.message || "Failed to load event staff.";
       setError(message);
       setStatus(message);
     } finally {
-      setLoading(false);
+      if (isForCurrentEvent()) {
+        setLoading(false);
+      }
     }
   }
 

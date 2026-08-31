@@ -52,8 +52,11 @@ test("upload/remove behavior for both backgrounds is unchanged", () => {
   }
 });
 
-test("Event context handling is unchanged: reads getCurrentAdminEvent and re-syncs on Admin workspace change", () => {
+test("Event context: reads getCurrentAdminEvent and re-syncs on Admin working-Event change via the shared scope hook", () => {
   assert.match(source, /const adminEvent = getCurrentAdminEvent\(\);/);
-  assert.match(source, /subscribeToAdminWorkspace\(\(\) => \{/);
+  // Working-Event changes (same-tab AND cross-tab) run through the shared
+  // useAdminWorkingEventScope, which synchronously clears the event + pending
+  // uploads and rejects superseded loads.
+  assert.match(source, /useAdminWorkingEventScope\(/);
   assert.equal(/setCurrentAdminEvent/.test(source), false);
 });

@@ -27,7 +27,7 @@ import { useAdmin } from "@/lib/adminContext";
 import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { getAgendaColor } from "@/lib/agendaColors";
 import {
@@ -609,6 +609,27 @@ function AdminAgendaPageInner() {
   // has_event_task_authority's semantics itself -- it only asks the
   // existing governed resolver the one question it needs answered.
   const [hasAgendaAccess, setHasAgendaAccess] = useState<boolean | null>(null);
+
+  const agendaReloadRef = useRef<() => void>(() => {});
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // agenda so it can never render under Event B's header, gate mutation
+  // buttons (hasAgendaAccess === null disables them) until Event B's access
+  // check completes, then reload. `captureAgendaGeneration` / `isAgendaScopeCurrent`
+  // let loadPage() reject an in-flight Event-A response.
+  const {
+    captureGeneration: captureAgendaGeneration,
+    isCurrent: isAgendaScopeCurrent,
+  } = useAdminWorkingEventScope(() => {
+    setActiveEvent(null);
+    activeEventRef.current = null;
+    setItems([]);
+    setHasAgendaAccess(null);
+    setLoading(true);
+    showStatus("Loading...");
+    agendaReloadRef.current();
+  });
+
   const { isCompact, viewportClass } = useShellInterfaceCapabilities();
   // The two-pane Catalog/Working-pane split only earns its keep at the
   // shell's "wide" tier (>=1200px). Measured with the real shell chrome
@@ -851,6 +872,12 @@ function AdminAgendaPageInner() {
   }, [editorExpanded]);
 
   const loadPage = useCallback(async () => {
+    // A working-Event change starts a newer loadPage(); every await below
+    // is followed by this guard so an in-flight Event-A response cannot
+    // repopulate the agenda, access state, or version after the switch.
+    const generation = captureAgendaGeneration();
+    const superseded = () => !isAgendaScopeCurrent(generation);
+
     setLoading(true);
     showStatus("Loading...");
 
@@ -888,6 +915,10 @@ function AdminAgendaPageInner() {
       selectedEvent.id,
     );
 
+    if (superseded()) {
+      return;
+    }
+
     if (viewResult.status === "check_failed") {
       showError(
         mapAgendaRpcError(
@@ -905,6 +936,10 @@ function AdminAgendaPageInner() {
         "event.agenda.manage",
         selectedEvent.id,
       );
+
+      if (superseded()) {
+        return;
+      }
 
       if (manageResult.status !== "allowed") {
         setHasAgendaAccess(false);
@@ -932,6 +967,10 @@ function AdminAgendaPageInner() {
       { p_event_id: selectedEvent.id },
     );
 
+    if (superseded()) {
+      return;
+    }
+
     if (versionError) {
       showError(
         mapAgendaRpcError(
@@ -956,6 +995,10 @@ function AdminAgendaPageInner() {
       .order("sort_order", { ascending: true, nullsFirst: false })
       .order("title", { ascending: true });
 
+    if (superseded()) {
+      return;
+    }
+
     if (error) {
       showError(error.message || "Could not load agenda items.");
       setLoading(false);
@@ -965,7 +1008,7 @@ function AdminAgendaPageInner() {
     setItems((data || []) as AgendaItem[]);
     setStatus(`Loaded ${(data || []).length} items for ${selectedEvent.name}.`);
     setLoading(false);
-  }, []);
+  }, [captureAgendaGeneration, isAgendaScopeCurrent]);
 
   const loadTemplates = useCallback(async (eventIdOverride?: string) => {
     // Accepts an explicit event id because this can run concurrently
@@ -1071,20 +1114,19 @@ function AdminAgendaPageInner() {
     void loadTemplates();
     void loadApplicationHistory();
     void loadAgendaCategories();
+  }, [admin, loadPage, loadTemplates, loadApplicationHistory, loadAgendaCategories]);
 
-    // Listener logic copied from events admin:
-    function handleAdminEventUpdated() {
+  // Working-Event changes (same-tab or cross-tab) are handled by
+  // useAdminWorkingEventScope above: it clears Event A's state
+  // synchronously and then calls this to load Event B.
+  useEffect(() => {
+    agendaReloadRef.current = () => {
       void loadPage();
       void loadTemplates();
       void loadApplicationHistory();
       void loadAgendaCategories();
-    }
-    const unsubscribe = subscribeToAdminWorkspace(handleAdminEventUpdated);
-
-    return () => {
-      unsubscribe();
     };
-  }, [admin, loadPage, loadTemplates, loadApplicationHistory, loadAgendaCategories]);
+  }, [loadPage, loadTemplates, loadApplicationHistory, loadAgendaCategories]);
 
   // The browser stores only a run-id locator. Persisted candidates, row
   // states, commit results, and lifecycle status always come back through

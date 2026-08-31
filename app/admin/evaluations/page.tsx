@@ -1,7 +1,13 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
@@ -9,7 +15,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSection } from "@/components/ui/PageSection";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 
 import {
@@ -86,7 +92,30 @@ function AdminEvaluationsPageInner() {
   const [mostValuableCounts, setMostValuableCounts] = useState<Record<string, number>>({});
   const [futureInterestCounts, setFutureInterestCounts] = useState<Record<string, number>>({});
 
+  const loadStatsRef = useRef<() => void>(() => {});
+
+  const clearEventScopedStats = () => {
+    setStarted(0);
+    setCompleted(0);
+    setLastSubmission("--");
+    setFavoriteMemories([]);
+    setImprovements([]);
+    setAdditionalComments([]);
+    setOverallRatings({});
+    setAttendAgainRatings({});
+    setMostValuableCounts({});
+    setFutureInterestCounts({});
+  };
+
+  const { captureGeneration, isCurrent } = useAdminWorkingEventScope(() => {
+    // Working Event changed (this tab or another): drop Event A's evaluation
+    // aggregates immediately, then reload for Event B.
+    clearEventScopedStats();
+    loadStatsRef.current();
+  });
+
   const loadStats = useCallback(async () => {
+    const generation = captureGeneration();
     const currentEvent = getCurrentAdminEvent();
     if (!currentEvent?.id) {
       setStarted(0);
@@ -119,6 +148,12 @@ function AdminEvaluationsPageInner() {
 
       if (error) {
         console.error(error);
+        return;
+      }
+
+      // Reject a superseded load: the working Event changed while this was
+      // in flight and a newer loadStats() is already populating Event B.
+      if (!isCurrent(generation)) {
         return;
       }
 
@@ -157,6 +192,10 @@ function AdminEvaluationsPageInner() {
                 .select("question_id, answer_text, comment_text, evaluation_id")
                 .in("evaluation_id", evaluationIds)
             ).data ?? []);
+
+      if (!isCurrent(generation)) {
+        return;
+      }
 
       // Same defense-in-depth guarantee as evaluationsForEvent above.
       const answerRows = answersForEvaluationIds(fetchedAnswers, evaluationIds);
@@ -242,18 +281,18 @@ function AdminEvaluationsPageInner() {
           .map((r) => r.comment_text),
       );
     } finally {
-      setLoading(false);
+      if (isCurrent(generation)) {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [captureGeneration, isCurrent]);
+
+  useEffect(() => {
+    loadStatsRef.current = () => void loadStats();
+  }, [loadStats]);
 
   useEffect(() => {
     void loadStats();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadStats();
-    });
-
-    return unsubscribe;
   }, [loadStats]);
 
   const completionRate =

@@ -130,10 +130,14 @@ test("the retired Vendor Library's can_manage_vendors UI-alignment check is gone
   assert.equal(/hasPermission\(admin, "can_manage_vendors"\)/.test(source), false);
 });
 
-test("Event context handling is unchanged: reads getCurrentAdminEvent and re-syncs on Admin workspace change", () => {
+test("Event context: reads getCurrentAdminEvent and re-syncs on Admin working-Event change via the shared scope hook", () => {
   const source = readSource();
   assert.match(source, /const stored = getCurrentAdminEvent\(\);/);
-  assert.match(source, /subscribeToAdminWorkspace\(/);
+  // Working-Event changes (same-tab AND cross-tab) run through the shared
+  // useAdminWorkingEventScope, which realigns the import target, drops any
+  // parsed file staged for the previous target, and rejects superseded
+  // loadEvents() results.
+  assert.match(source, /useAdminWorkingEventScope\(/);
   assert.equal(/setCurrentAdminEvent/.test(source), false);
 });
 

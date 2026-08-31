@@ -1,13 +1,19 @@
 "use client";
 
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -79,6 +85,20 @@ function AdminPrintSettingsPageInner() {
   const [savingCoachPlateBg, setSavingCoachPlateBg] = useState(false);
 
   const { admin } = useAdmin();
+  const reloadRef = useRef<() => void>(() => {});
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // event + settings + pending file selections so a background upload can
+  // never be written to Event A while the header reads Event B, then reload.
+  const { captureGeneration, isCurrent: isWorkingEventCurrent } =
+    useAdminWorkingEventScope(() => {
+      setEvent(null);
+      setSettings(null);
+      setNameTagFile(null);
+      setCoachPlateFile(null);
+      setLoading(true);
+      reloadRef.current();
+    });
 
   useEffect(() => {
     if (!admin) return;
@@ -104,16 +124,16 @@ function AdminPrintSettingsPageInner() {
       void loadPage(adminEvent.id);
     }
 
+    reloadRef.current = loadForCurrentEvent;
     loadForCurrentEvent();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      loadForCurrentEvent();
-    });
-
-    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
 
   async function loadPage(eventId: string) {
+    const generation = captureGeneration();
+    const stillCurrent = () =>
+      isWorkingEventCurrent(generation) &&
+      getCurrentAdminEvent()?.id === eventId;
     try {
       setLoading(true);
       setError(null);
@@ -142,6 +162,10 @@ function AdminPrintSettingsPageInner() {
         throw settingsError;
       }
 
+      if (!stillCurrent()) {
+        return;
+      }
+
       const eventRow = eventData as EventRow;
       const settingsRow = (settingsData as PrintSettingsRow | null) || {
         event_id: eventId,
@@ -149,16 +173,20 @@ function AdminPrintSettingsPageInner() {
         coach_plate_bg_url: null,
       };
 
-      console.log("Loaded print settings row:", settingsRow);
       setEvent(eventRow);
       setSettings(settingsRow);
       setStatus("Print settings loaded.");
     } catch (err: any) {
       console.error("loadPage error:", err);
+      if (!stillCurrent()) {
+        return;
+      }
       setError(err?.message || "Failed to load print settings.");
       setStatus(err?.message || "Failed to load print settings.");
     } finally {
-      setLoading(false);
+      if (stillCurrent()) {
+        setLoading(false);
+      }
     }
   }
 

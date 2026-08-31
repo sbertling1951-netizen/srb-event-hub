@@ -19,7 +19,7 @@ import {
 } from "@/lib/adminPhotoCache";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { supabase } from "@/lib/supabase";
 
@@ -143,13 +143,19 @@ function PhotoLibraryPageInner() {
     if (generation === loadGenerationRef.current) {setLoading(false);}
   }, []);
 
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // library and any open modal so an edit/feature/delete can never be issued
+  // against an Event A photo while the header reads Event B, then reload.
+  // isCurrentLoad-style guards already reject a superseded fetch's results.
+  useAdminWorkingEventScope(() => {
+    loadGenerationRef.current += 1;
+    setPhotos([]);
+    setModalPhoto(null);
+    void fetchPhotos();
+  });
+
   useEffect(() => {
     void fetchPhotos();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      loadGenerationRef.current += 1;
-      void fetchPhotos();
-    });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       const previousUserId = currentUserIdRef.current;
@@ -164,7 +170,6 @@ function PhotoLibraryPageInner() {
     return () => {
       loadGenerationRef.current += 1;
       authListener.subscription.unsubscribe();
-      unsubscribe();
     };
   }, [fetchPhotos]);
 

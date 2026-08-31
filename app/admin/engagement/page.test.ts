@@ -96,11 +96,14 @@ test("AdminShellAdapter still wraps EngagementPageInner unchanged, inside the ne
   );
 });
 
-test("Event-context wiring is unchanged: still reads/subscribes via the canonical adminWorkspaceContext, never a page-local store", () => {
+test("Event-context wiring: reads/subscribes via the canonical adminWorkspaceContext, never a page-local store", () => {
   assert.match(
     source,
-    /import \{\s*\n\s*getCurrentAdminEvent,\s*\n\s*subscribeToAdminWorkspace,\s*\n\s*\} from "@\/lib\/adminWorkspaceContext";/,
+    /import \{\s*\n\s*getCurrentAdminEvent,\s*\n\s*useAdminWorkingEventScope,\s*\n\s*\} from "@\/lib\/adminWorkspaceContext";/,
   );
-  assert.equal((source.match(/getCurrentAdminEvent\(\)/g) || []).length, 1);
-  assert.equal((source.match(/subscribeToAdminWorkspace\(/g) || []).length, 1);
+  // The shared working-Event scope hook is the single re-sync path (same-tab
+  // and cross-tab); it synchronously clears Event A's numbers and rejects a
+  // superseded loadStats().
+  assert.equal((source.match(/useAdminWorkingEventScope\(/g) || []).length, 1);
+  assert.equal(/subscribeToAdminWorkspace/.test(source), false);
 });

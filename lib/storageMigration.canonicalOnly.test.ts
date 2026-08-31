@@ -322,25 +322,38 @@ test("8b. every key-filtered storage listener routes the canonical STORAGE_KEYS.
 // ---------------------------------------------------------------------------
 // 9. Admin CustomEvent -- canonical dispatch alone drives each subscriber.
 // ---------------------------------------------------------------------------
-test("9. subscribeToAdminEvent responds to a canonical-only epicentrax-admin-event-updated dispatch", () => {
+test("9. subscribeToAdminEvent responds to a canonical-only epicentrax-admin-event-updated dispatch (with a real scope change)", () => {
   let hits = 0;
   const unsubscribe = subscribeToAdminEvent(() => {
     hits += 1;
   });
   assert.ok(ADMIN_EVENT_UPDATED.startsWith("epicentrax-"));
 
+  // A same-tab working-Event change: context is written, then only the
+  // canonical CustomEvent is dispatched (no legacy dispatch here at all).
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: "evt-canon", name: "Canonical" }),
+  );
   fakeWindow.dispatchEvent(new CustomEvent(ADMIN_EVENT_UPDATED));
   assert.equal(hits, 1, "canonical dispatch alone fired the subscriber");
 
-  // no legacy dispatch happens here at all
+  // A redundant canonical dispatch with no further scope change is coalesced.
+  fakeWindow.dispatchEvent(new CustomEvent(ADMIN_EVENT_UPDATED));
+  assert.equal(hits, 1, "no scope change -> coalesced");
+
   unsubscribe();
 });
 
-test("9b. subscribeToAdminWorkspace responds to a canonical-only epicentrax-admin-event-updated dispatch", () => {
+test("9b. subscribeToAdminWorkspace responds to a canonical-only epicentrax-admin-event-updated dispatch (with a real scope change)", () => {
   let hits = 0;
   const unsubscribe = subscribeToAdminWorkspace(() => {
     hits += 1;
   });
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: "evt-canon", name: "Canonical" }),
+  );
   fakeWindow.dispatchEvent(new CustomEvent(ADMIN_EVENT_UPDATED));
   assert.equal(hits, 1);
   unsubscribe();

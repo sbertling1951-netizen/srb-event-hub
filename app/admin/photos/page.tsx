@@ -18,7 +18,7 @@ import {
 } from "@/lib/adminPhotoCache";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { supabase } from "@/lib/supabase";
 
@@ -273,13 +273,19 @@ function AdminPhotosPageInner() {
     }
   }, []);
 
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // pending-photo list and any open moderation so an approve/reject can never
+  // be issued against an Event A photo while the header reads Event B, then
+  // reload. isCurrentLoad() already rejects a superseded fetch's results.
+  useAdminWorkingEventScope(() => {
+    loadGenerationRef.current += 1;
+    setPhotos([]);
+    setSelectedPhoto(null);
+    void loadPendingPhotos();
+  });
+
   useEffect(() => {
     void loadPendingPhotos();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      loadGenerationRef.current += 1;
-      void loadPendingPhotos();
-    });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       const previousUserId = currentUserIdRef.current;
@@ -294,7 +300,6 @@ function AdminPhotosPageInner() {
     return () => {
       loadGenerationRef.current += 1;
       authListener.subscription.unsubscribe();
-      unsubscribe();
     };
   }, [loadPendingPhotos]);
 

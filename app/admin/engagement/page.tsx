@@ -1,12 +1,12 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 "use client";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { fetchEventOperationalSummary } from "@/lib/eventOperationalSummary";
 
@@ -29,6 +29,17 @@ const ACTIVITY_LABELS: Record<string, string> = {
   participants_view: "Participants",
   evaluation_started: "Evaluation Started",
   evaluation_submitted: "Evaluation Submitted",
+};
+
+const EMPTY_FEATURE_STATS = {
+  attendeeLocator: 0,
+  agenda: 0,
+  announcements: 0,
+  nearby: 0,
+  photos: 0,
+  coachMap: 0,
+  checkIn: 0,
+  participants: 0,
 };
 
 function formatActivityLabel(activityType: string): string {
@@ -75,7 +86,21 @@ function EngagementPageInner() {
     participants: 0,
   });
 
+  const loadStatsRef = useRef<() => void>(() => {});
+
+  const { captureGeneration, isCurrent } = useAdminWorkingEventScope(() => {
+    // Working Event changed (this tab or another): drop Event A's numbers
+    // immediately so they never sit under Event B's header, then reload.
+    setStats({ loggedIn: 0, started: 0, submitted: 0 });
+    setActiveRegistrations(null);
+    setActiveRegistrationsError(null);
+    setRecentActivity([]);
+    setFeatureStats(EMPTY_FEATURE_STATS);
+    loadStatsRef.current();
+  });
+
   const loadStats = useCallback(async () => {
+    const generation = captureGeneration();
     const currentEvent = getCurrentAdminEvent();
     if (!currentEvent?.id) {
       setStats({ loggedIn: 0, started: 0, submitted: 0 });
@@ -96,6 +121,12 @@ function EngagementPageInner() {
     }
 
     const summaryResult = await fetchEventOperationalSummary(currentEvent.id);
+
+    // Reject a superseded load: the working Event changed while this was in
+    // flight and a newer loadStats() is already populating Event B.
+    if (!isCurrent(generation)) {
+      return;
+    }
 
     if (summaryResult.ok) {
       setActiveRegistrations(summaryResult.summary.activeRegistrations);
@@ -204,6 +235,10 @@ function EngagementPageInner() {
       }
     });
 
+    if (!isCurrent(generation)) {
+      return;
+    }
+
     setStats({
       loggedIn,
       started,
@@ -212,7 +247,7 @@ function EngagementPageInner() {
 
     setRecentActivity(recentActivity ?? []);
     setFeatureStats(featureCounts);
-  }, [activityLimit]);
+  }, [activityLimit, captureGeneration, isCurrent]);
 
   useEffect(() => {
     try {
@@ -229,13 +264,11 @@ function EngagementPageInner() {
   }, []);
 
   useEffect(() => {
+    loadStatsRef.current = () => void loadStats();
+  }, [loadStats]);
+
+  useEffect(() => {
     void loadStats();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadStats();
-    });
-
-    return unsubscribe;
   }, [loadStats]);
 
   function handleActivityLimitChange(

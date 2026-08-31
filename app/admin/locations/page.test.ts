@@ -51,9 +51,12 @@ test("location CRUD writes event_locations directly under RLS, unchanged by this
   }
 });
 
-test("Event context handling is unchanged: reads getCurrentAdminEvent and re-syncs on Admin workspace change", () => {
+test("Event context: reads getCurrentAdminEvent and re-syncs on Admin working-Event change via the shared scope hook", () => {
   assert.match(PAGE_SOURCE, /const adminEvent = getCurrentAdminEvent\(\)/);
-  assert.match(PAGE_SOURCE, /subscribeToAdminWorkspace\(/);
+  // Working-Event changes (same-tab AND cross-tab) are handled through the
+  // shared useAdminWorkingEventScope, which synchronously clears the
+  // event-scoped state and rejects superseded loads.
+  assert.match(PAGE_SOURCE, /useAdminWorkingEventScope\(/);
   assert.equal(/setCurrentAdminEvent/.test(PAGE_SOURCE), false);
 });
 

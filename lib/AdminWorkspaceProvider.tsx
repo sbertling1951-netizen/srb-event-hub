@@ -13,7 +13,7 @@ import {
 
 import {
   getCurrentAdminEvent,
-  subscribeToAdminEvent,
+  subscribeToAdminEventChange,
 } from "@/lib/adminEventContext";
 
 export interface AdminWorkspace {
@@ -42,7 +42,7 @@ export function AdminWorkspaceProvider({ children }: { children: ReactNode }) {
     setWorkspace(readWorkspace());
   };
 
-  useEffect(() => subscribeToAdminEvent(refresh), []);
+  useEffect(() => subscribeToAdminEventChange(refresh), []);
 
   const value = useMemo(
     () => ({

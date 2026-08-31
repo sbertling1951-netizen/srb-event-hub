@@ -9,7 +9,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { FormActions } from "@/components/ui/FormActions";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { supabase } from "@/lib/supabase";
 
@@ -147,8 +147,6 @@ function AdminSlideshowPageInner() {
 
   useEffect(() => {
     syncCurrentAdminEvent();
-
-    return subscribeToAdminWorkspace(syncCurrentAdminEvent);
   }, [syncCurrentAdminEvent]);
 
   const [decks, setDecks] = useState<PresentationDeck[] | null>(null);
@@ -315,6 +313,13 @@ function AdminSlideshowPageInner() {
       .eq("event_id", currentEventId)
       .eq("lifecycle_status", "active")
       .order("created_at", { ascending: false });
+
+    // The working Event changed while this was in flight (e.g. a stale
+    // mutation's follow-up reload): never apply Event A's decks to Event B.
+    // Matches loadLiveSession/loadRestartCandidate's own guard.
+    if (eventIdRef.current !== currentEventId) {
+      return;
+    }
 
     if (loadError) {
       console.error("Failed to load presentation decks", loadError);
@@ -723,6 +728,21 @@ function AdminSlideshowPageInner() {
     setSelectedDeckId("");
     setRestartCandidateDeckId(null);
   }, [eventId]);
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // deck list / live session / selection so Start can never be pressed for an
+  // Event A deck while the header reads Event B, and supersede any in-flight
+  // reads. The eventId state update then drives the reload effect above.
+  useAdminWorkingEventScope(() => {
+    stateGenerationRef.current += 1;
+    setDecks(null);
+    setSelectedDeckId("");
+    setItems([]);
+    // session is only ever cleared/set through acceptSessionRow (its
+    // documented single write path); a null row resets acceptedSessionRef.
+    acceptSessionRow(null);
+    syncCurrentAdminEvent();
+  });
 
   useEffect(() => {
     if (!selectedManualDeckId || !eventId) {

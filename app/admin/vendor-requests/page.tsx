@@ -18,7 +18,7 @@ import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import { SearchField, TableToolbar, TableToolbarPrimaryRow } from "@/components/ui/TableToolbar";
 import {
   getCurrentAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { copyTextToClipboard } from "@/lib/copyTextToClipboard";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -246,7 +246,11 @@ function VendorRequestsInner() {
   const { isCompact } = useShellInterfaceCapabilities();
 
   async function loadRequests() {
+    const generation = captureGeneration();
     const event = getCurrentAdminEvent();
+    const stillCurrent = () =>
+      isWorkingEventCurrent(generation) &&
+      getCurrentAdminEvent()?.id === event?.id;
     if (!event?.id) {
       setStatus("No admin event selected.");
       setRequests([]);
@@ -283,6 +287,10 @@ function VendorRequestsInner() {
       .eq("event_id", event.id)
       .order("created_at", { ascending: false });
 
+    if (!stillCurrent()) {
+      return;
+    }
+
     if (error) {
       console.error("load vendor requests error:", error);
       setStatus("We couldn't load vendor requests. Please try again.");
@@ -293,14 +301,21 @@ function VendorRequestsInner() {
     setStatus(`Loaded ${(data || []).length} vendor requests.`);
   }
 
-  useEffect(() => {
-    void loadRequests();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // request list so a status change can never be issued against an Event A
+  // request while the header reads Event B, then reload.
+  const { captureGeneration, isCurrent: isWorkingEventCurrent } =
+    useAdminWorkingEventScope(() => {
+      setRequests([]);
+      setUpdatingId(null);
+      setSendingEmailId(null);
+      setStatus("Loading...");
       void loadRequests();
     });
 
-    return unsubscribe;
+  useEffect(() => {
+    void loadRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {

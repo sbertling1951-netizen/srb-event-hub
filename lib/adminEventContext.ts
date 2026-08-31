@@ -11,6 +11,7 @@ import {
   dualSignalLocal,
   dualWriteLocal,
   readMigratingLocal,
+  storageEventMatches,
 } from "@/lib/storageMigration";
 
 export const ADMIN_EVENT_KEY = STORAGE_KEYS.adminEventContext;
@@ -149,27 +150,98 @@ export function shouldPersistResolvedAdminEvent(
   return (storedEventId ?? null) !== resolvedEventId;
 }
 
-export function subscribeToAdminEvent(
-  callback: () => void,
-): () => void {
+/**
+ * A stable string identity for the *scope* the persisted Admin working
+ * Event describes -- everything a consumer keys data or actions off, but
+ * NOT the `updatedAt` / `version` write metadata.
+ *
+ * Excluding the metadata is what lets `subscribeToAdminEventChange` coalesce:
+ * the dual-name context write, the separate `-changed` signal ping, and the
+ * same-tab dual CustomEvent dispatch that a single `setCurrentAdminEvent()`
+ * produces all resolve to the SAME signature -> one callback. A genuine
+ * switch (different `id`) or an in-place edit of the current Event's
+ * displayed fields still changes the signature and still notifies.
+ */
+function readAdminEventScopeSignature(): string {
+  const event = getCurrentAdminEvent();
+
+  if (!event) {
+    return "";
+  }
+
+  const { updatedAt: _updatedAt, version: _version, ...scope } = event;
+
+  return JSON.stringify(scope, Object.keys(scope).sort());
+}
+
+/**
+ * Canonical subscription to Admin working-Event changes. `callback` fires
+ * once per DISTINCT change, whether it originates:
+ *
+ *   - same-tab, via the `ADMIN_EVENT_UPDATED` CustomEvent (canonical +
+ *     legacy name), or
+ *   - cross-tab, via the browser `storage` event -- filtered to the
+ *     admin-event context / `-changed` signal keys (canonical + legacy) so
+ *     an unrelated `localStorage` write in another tab is ignored.
+ *
+ * The same change arrives several times (the dual CustomEvent dispatch;
+ * the up-to-four `storage` events one `setCurrentAdminEvent()` emits in
+ * another tab -- context + signal, each under two names). A synchronous
+ * distinct-until-changed filter keyed on `readAdminEventScopeSignature()`
+ * collapses those repeats to one `callback()`. It never reorders or defers
+ * a change and still delivers every step of a real A -> B -> C sequence.
+ * It also means a caller that re-persists the Event it just resolved
+ * cannot self-trigger a reload loop through this subscription, regardless
+ * of any guard at the call site.
+ */
+export function subscribeToAdminEventChange(callback: () => void): () => void {
   if (typeof window === "undefined") {
     return () => {};
   }
 
-  const handler = () => callback();
+  let lastSignature = readAdminEventScopeSignature();
 
-  // Same-tab / persisted-provider-across-deploy: accept both the canonical
-  // and legacy CustomEvent names. The generic "storage" listener already
-  // covers both key names for cross-tab writes.
+  const handler = (event: Event) => {
+    if (event.type === "storage") {
+      const key = (event as StorageEvent).key;
+
+      // A null key means the whole store was cleared -- treat as relevant.
+      if (
+        key !== null &&
+        !storageEventMatches(key, ADMIN_EVENT_KEY, ADMIN_EVENT_CHANGED_KEY)
+      ) {
+        return;
+      }
+    }
+
+    const signature = readAdminEventScopeSignature();
+
+    if (signature === lastSignature) {
+      return;
+    }
+
+    lastSignature = signature;
+    callback();
+  };
+
   const removeCustomEventListeners = addDualWindowEventListener(
     ADMIN_EVENT_UPDATED,
     LEGACY_ADMIN_EVENT_UPDATED,
     handler as EventListener,
   );
-  window.addEventListener("storage", handler);
+  window.addEventListener("storage", handler as EventListener);
 
   return () => {
     removeCustomEventListeners();
-    window.removeEventListener("storage", handler);
+    window.removeEventListener("storage", handler as EventListener);
   };
 }
+
+/**
+ * Back-compat alias. `subscribeToAdminEventChange` is the canonical name;
+ * this keeps existing imports (lib/AdminWorkspaceProvider.tsx, tests)
+ * working. Before this change `subscribeToAdminEvent` fired on *every*
+ * cross-tab `storage` write; it is now filtered and coalesced like every
+ * other admin-event subscriber.
+ */
+export const subscribeToAdminEvent = subscribeToAdminEventChange;

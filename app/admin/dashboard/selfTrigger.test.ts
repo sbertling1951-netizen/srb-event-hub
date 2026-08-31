@@ -10,8 +10,10 @@ import {
   subscribeToAdminEvent,
 } from "@/lib/adminEventContext";
 import {
+  createAdminWorkingEventScopeCore,
   resolveAdminWorkingEvent,
   shouldPersistResolvedAdminEvent as shouldPersistViaWorkspace,
+  subscribeToAdminEventChange,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
 import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
@@ -204,6 +206,9 @@ test("2. stored Event absent: resolved Event persisted exactly once; dual callba
 
   // Further stray Admin-event notifications (another surface, a stale
   // provider) must not restart the storm now that stored == resolved.
+  // subscribeToAdminEventChange coalesces on the persisted Event scope, so
+  // a duplicate notification that does not change the scope now costs
+  // nothing at all (previously it cost one O(1) load each).
   for (let i = 0; i < 5; i += 1) {
     fakeWindow.dispatchEvent(new CustomEvent("epicentrax-admin-event-updated"));
     fakeWindow.dispatchEvent(new CustomEvent("fcoc-admin-event-updated"));
@@ -212,10 +217,10 @@ test("2. stored Event absent: resolved Event persisted exactly once; dual callba
   assert.equal(result.persistCalls, 1, "still exactly one persist -- loop dead");
   assert.equal(
     result.loadCalls - settledLoads,
-    10,
-    "each stray event costs exactly one O(1) load that persists nothing",
+    0,
+    "a stray notification with no scope change is coalesced away entirely",
   );
-  assert.equal(result.eventsQueries - settledQueries, 10);
+  assert.equal(result.eventsQueries - settledQueries, 0);
   assert.equal(result.runaway, false);
 
   // canonical value is what got written
@@ -280,11 +285,15 @@ test("3b. guard convergence contract: different -> persist once; equal thereafte
 });
 
 // ---------------------------------------------------------------------------
-// 4. Repeated canonical + legacy Admin Event CustomEvents cannot restart a
-//    runaway request loop after convergence -- and the UNGUARDED variant
-//    proves the loop is real (regression fence).
+// 4. Two independent defenses stop the request storm:
+//      (a) shouldPersistResolvedAdminEvent -- no redundant WRITE (unit +
+//          3b + test 1/5), and
+//      (b) subscribeToAdminEventChange's distinct-until-changed coalescing
+//          -- no redundant CALLBACK for a notification that does not change
+//          the persisted Event scope.
+//    Either one alone bounds the loop; together the storm is impossible.
 // ---------------------------------------------------------------------------
-test("4a. after convergence, a burst of canonical+legacy events stays O(1) per event -- no runaway", () => {
+test("4a. after convergence, a burst of canonical+legacy events is coalesced to zero extra loads", () => {
   memory.setItem(
     STORAGE_KEYS.adminEventContext,
     JSON.stringify({ id: NEW_EVENT.id, name: NEW_EVENT.name }),
@@ -304,28 +313,37 @@ test("4a. after convergence, a burst of canonical+legacy events stays O(1) per e
 
   assert.equal(result.persistCalls, 0);
   assert.equal(result.runaway, false);
-  assert.equal(result.loadCalls, 1 + 30, "linear in events, never geometric");
+  assert.equal(
+    result.loadCalls,
+    1,
+    "the burst describes no scope change -> coalesced away; only the initial load ran",
+  );
 
   unsubscribe();
 });
 
-test("4b. REGRESSION FENCE: the unguarded persist-on-every-load behavior does run away", () => {
+test("4b. defense in depth: coalescing ALSO neutralizes the unguarded persist-on-every-load loop", () => {
   const { result, loadPageSim, unsubscribe } = makeDashboardSim(
     [NEW_EVENT],
     NEW_EVENT,
     { unguarded: true },
   );
 
-  loadPageSim(); // one initial load is enough to ignite the unguarded loop
+  // Pre-fix this ignited a geometric storm (loadPage persists -> dual
+  // dispatch -> loadPage persists -> ...). Now the second persist writes
+  // the SAME Event scope, so subscribeToAdminEventChange coalesces the
+  // notification and the chain stops after one bounce -- even though the
+  // persist guard has been deliberately disabled here.
+  loadPageSim();
 
-  assert.equal(
-    result.runaway,
-    true,
-    "without the guard, loadPage re-triggers itself past the runaway ceiling",
+  assert.equal(result.runaway, false, "no runaway even without the persist guard");
+  assert.ok(
+    result.loadCalls <= 2,
+    `bounded by coalescing, got ${result.loadCalls}`,
   );
   assert.ok(
-    result.persistCalls > 5,
-    `unguarded persisted ${result.persistCalls} times before the ceiling`,
+    result.persistCalls <= 2,
+    `bounded by coalescing, got ${result.persistCalls}`,
   );
 
   unsubscribe();
@@ -435,44 +453,204 @@ test("6b. the cross-tab 'storage' key filter (Sidebar's path) matches both names
   assert.match(sidebarSrc, /window\.addEventListener\("storage", handleStorage\)/);
 });
 
-test("6c. DISCOVERED GAP: the dashboard PAGE's own subscribeToAdminWorkspace is CustomEvent-only (no cross-tab reload)", () => {
-  // subscribeToAdminWorkspace (lib/adminWorkspaceContext.tsx) wires only
-  // addDualWindowEventListener(...) -- CustomEvent names, which never cross
-  // tabs -- with no window "storage" listener. So loadPage() does NOT
-  // re-run when ANOTHER tab changes the Admin Event. This is pre-existing
-  // (introduced when b13005c replaced the page's old
-  // addEventListener("storage", ...) filter), unrelated to N1 and to this
-  // self-trigger repair. Documented here, not fixed here.
+test("6c. FIXED: subscribeToAdminWorkspace now reloads on a cross-tab 'storage' change, filtered and coalesced", () => {
+  // The former gap: subscribeToAdminWorkspace wired only the same-tab
+  // CustomEvent, so an event-scoped page (Dashboard, Agenda, Check-In)
+  // never re-ran loadPage() when ANOTHER tab changed the working Event.
+  // It now delegates to subscribeToAdminEventChange -- CustomEvent AND a
+  // key-filtered, scope-coalesced 'storage' listener.
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: OLD_EVENT.id, name: OLD_EVENT.name }),
+  );
+
   let hits = 0;
   const unsubscribe = subscribeToAdminWorkspace(() => {
     hits += 1;
   });
 
-  const storageEvent = new Event("storage") as Event & { key?: string };
-  storageEvent.key = STORAGE_KEYS.adminEventChanged;
-  fakeWindow.dispatchEvent(storageEvent);
+  // (a) an unrelated key's cross-tab write is ignored.
+  const unrelated = new Event("storage") as Event & { key?: string };
+  unrelated.key = "fcoc-some-unrelated-key";
+  fakeWindow.dispatchEvent(unrelated);
+  assert.equal(hits, 0, "unrelated 'storage' key does not trigger a reload");
+
+  // (b) another tab switches the working Event: shared storage is written,
+  //     then the browser delivers a 'storage' event (no CustomEvent here).
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: NEW_EVENT.id, name: NEW_EVENT.name }),
+  );
+  memory.setItem(STORAGE_KEYS.adminEventChanged, String(Date.now()));
+
+  const contextEvent = new Event("storage") as Event & { key?: string };
+  contextEvent.key = STORAGE_KEYS.adminEventContext;
+  fakeWindow.dispatchEvent(contextEvent);
+  const changedEvent = new Event("storage") as Event & { key?: string };
+  changedEvent.key = STORAGE_KEYS.adminEventChanged;
+  fakeWindow.dispatchEvent(changedEvent);
 
   assert.equal(
     hits,
-    0,
-    "subscribeToAdminWorkspace does not react to a browser 'storage' event",
+    1,
+    "the cross-tab switch triggers exactly one reload -- the paired context + " +
+      "changed 'storage' events describe one scope change and are coalesced",
   );
 
-  // ...but it DOES react to the same-tab CustomEvent (its actual purpose).
+  // (c) it still reacts to the same-tab CustomEvent, and still coalesces a
+  //     duplicate that carries no scope change.
   fakeWindow.dispatchEvent(new CustomEvent("epicentrax-admin-event-updated"));
-  assert.equal(hits, 1);
+  assert.equal(hits, 1, "no scope change since last callback -> coalesced");
 
   const wsSrc = readFileSync(
     fileURLToPath(new URL("../../../lib/adminWorkspaceContext.tsx", import.meta.url)),
     "utf8",
   );
-  const fnIdx = wsSrc.indexOf("export function subscribeToAdminWorkspace");
-  const fnBody = wsSrc.slice(fnIdx, fnIdx + 400);
-  assert.equal(
-    /addEventListener\(\s*["']storage["']/.test(fnBody),
-    false,
-    "subscribeToAdminWorkspace has no storage listener -- confirms the documented gap",
+  assert.match(
+    wsSrc,
+    /subscribeToAdminWorkspace[\s\S]{0,200}subscribeToAdminEventChange/,
+    "subscribeToAdminWorkspace delegates to the one canonical subscriber",
   );
 
   unsubscribe();
+});
+
+// ---------------------------------------------------------------------------
+// 7. Cross-tab continuity fix: the shared subscriber's storage handling and
+//    coalescing, and the shared stale-result guard.
+// ---------------------------------------------------------------------------
+
+test("7a. synthetic cross-tab 'storage' event: distinct working-Event writes each deliver one callback, in order", () => {
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: OLD_EVENT.id, name: OLD_EVENT.name }),
+  );
+
+  const seen: (string | null)[] = [];
+  const unsubscribe = subscribeToAdminEventChange(() => {
+    seen.push(getCurrentAdminEvent()?.id ?? null);
+  });
+
+  function otherTabSwitchesTo(evt: { id: string; name: string }) {
+    memory.setItem(
+      STORAGE_KEYS.adminEventContext,
+      JSON.stringify({ id: evt.id, name: evt.name }),
+    );
+    const e = new Event("storage") as Event & { key?: string };
+    e.key = STORAGE_KEYS.adminEventContext;
+    fakeWindow.dispatchEvent(e);
+  }
+
+  otherTabSwitchesTo(NEW_EVENT);
+  otherTabSwitchesTo(OLD_EVENT); // switch back is itself a distinct change
+  otherTabSwitchesTo(NEW_EVENT);
+
+  assert.deepEqual(
+    seen,
+    [NEW_EVENT.id, OLD_EVENT.id, NEW_EVENT.id],
+    "every distinct step of A -> B -> A -> B is delivered, none dropped or reordered",
+  );
+
+  unsubscribe();
+});
+
+test("7b. coalescing: the up-to-four 'storage' events one setCurrentAdminEvent emits collapse to one callback", () => {
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: OLD_EVENT.id, name: OLD_EVENT.name }),
+  );
+
+  let calls = 0;
+  const unsubscribe = subscribeToAdminEventChange(() => {
+    calls += 1;
+  });
+
+  // Another tab's dual-name write: context (canonical + legacy) and the
+  // `-changed` signal ping (canonical + legacy) -> four 'storage' events
+  // for ONE switch.
+  const value = JSON.stringify({ id: NEW_EVENT.id, name: NEW_EVENT.name });
+  memory.setItem(STORAGE_KEYS.adminEventContext, value);
+  memory.setItem(LEGACY_STORAGE_KEYS.adminEventContext, value);
+  memory.setItem(STORAGE_KEYS.adminEventChanged, "1");
+  memory.setItem(LEGACY_STORAGE_KEYS.adminEventChanged, "1");
+
+  for (const key of [
+    STORAGE_KEYS.adminEventContext,
+    LEGACY_STORAGE_KEYS.adminEventContext,
+    STORAGE_KEYS.adminEventChanged,
+    LEGACY_STORAGE_KEYS.adminEventChanged,
+  ]) {
+    const e = new Event("storage") as Event & { key?: string };
+    e.key = key;
+    fakeWindow.dispatchEvent(e);
+  }
+
+  assert.equal(calls, 1, "one effective reload for one working-Event change");
+
+  unsubscribe();
+});
+
+test("7c. filtering: an unrelated cross-tab 'storage' write never triggers a callback", () => {
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: NEW_EVENT.id, name: NEW_EVENT.name }),
+  );
+
+  let calls = 0;
+  const unsubscribe = subscribeToAdminEventChange(() => {
+    calls += 1;
+  });
+
+  for (const key of [
+    "fcoc-nearby-favorites",
+    "epicentrax-member-event-context",
+    "some-third-party-key",
+  ]) {
+    const e = new Event("storage") as Event & { key?: string };
+    e.key = key;
+    fakeWindow.dispatchEvent(e);
+  }
+
+  assert.equal(calls, 0, "only admin-event context / -changed keys are relevant");
+
+  // ...but a whole-store clear (key === null) is treated as relevant.
+  memory.removeItem(STORAGE_KEYS.adminEventContext);
+  const cleared = new Event("storage") as Event & { key?: string };
+  cleared.key = null as unknown as string;
+  fakeWindow.dispatchEvent(cleared);
+  assert.equal(calls, 1, "a cleared store (null key) is not filtered out");
+
+  unsubscribe();
+});
+
+test("7d. stale-result guard: a load that began before the switch cannot commit after it", () => {
+  const scope = createAdminWorkingEventScopeCore(OLD_EVENT.id);
+
+  // A load for Event A starts and snapshots the generation.
+  const loadAGeneration = scope.generation;
+  assert.equal(scope.isCurrent(loadAGeneration), true);
+
+  // The working Event switches to B (same-tab or cross-tab -- the hook
+  // calls sync() either way).
+  const switchToB = scope.sync(NEW_EVENT.id);
+  assert.equal(switchToB.changed, true);
+  assert.equal(switchToB.generation, loadAGeneration + 1);
+
+  // Load A's response now comes back -- it must be rejected.
+  assert.equal(
+    scope.isCurrent(loadAGeneration),
+    false,
+    "Event A's late response is stale and must not repopulate Event B",
+  );
+
+  // Load B (started after the switch) snapshots the new generation and is
+  // still current when it resolves.
+  const loadBGeneration = scope.generation;
+  assert.equal(scope.isCurrent(loadBGeneration), true);
+
+  // A redundant notification that does not change the id is not a switch:
+  // no generation bump, so an in-flight load B still commits.
+  const noChange = scope.sync(NEW_EVENT.id);
+  assert.equal(noChange.changed, false);
+  assert.equal(scope.isCurrent(loadBGeneration), true);
 });

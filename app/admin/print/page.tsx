@@ -19,6 +19,7 @@ import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent, hasPermission } from "@/lib/getCurrentAdminAccess";
 import { useTenant } from "@/lib/providers/TenantProvider";
@@ -469,6 +470,23 @@ function AdminPrintPageInner() {
   // any non-super-admin.
   const [canManagePrintSettings, setCanManagePrintSettings] = useState(false);
   const printSettingsCheckGeneration = useRef(0);
+  const printLoadGenerationRef = useRef(0);
+  const printInitRef = useRef<() => void>(() => {});
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // roster / parking / selection so a print job can never be produced for
+  // Event A while the header reads Event B, then re-run init().
+  useAdminWorkingEventScope(() => {
+    printLoadGenerationRef.current += 1;
+    setEvent(null);
+    setSettings(null);
+    setAttendees([]);
+    setParkingSites([]);
+    setManualAttendees([]);
+    setSelectedIds([]);
+    setLoading(true);
+    printInitRef.current();
+  });
 
   const runPrintSettingsAuthorityCheck = useCallback(() => {
     const generation = ++printSettingsCheckGeneration.current;
@@ -572,11 +590,8 @@ function AdminPrintPageInner() {
       await loadPage(adminEvent.id);
     }
 
+    printInitRef.current = () => void init();
     void init();
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void init();
-    });
-    return unsubscribe;
   }, [admin, selectedEventId]);
 
   async function handleSelectedPrintEventChange(eventId: string) {
@@ -587,6 +602,12 @@ function AdminPrintPageInner() {
   }
 
   async function loadPage(eventId: string) {
+    // The print target can change from two sources -- a working-Event switch
+    // (via init()) and the super-admin event selector. Whichever load ran
+    // most recently wins; an older one must not repopulate the roster the
+    // newer one is building (which would print Event A's name tags under an
+    // Event B heading).
+    const generation = ++printLoadGenerationRef.current;
     try {
       setLoading(true);
       setError(null);
@@ -656,6 +677,10 @@ function AdminPrintPageInner() {
         throw parkingError;
       }
 
+      if (generation !== printLoadGenerationRef.current) {
+        return;
+      }
+
       const eventRow = eventData as EventRow;
       const attendeeRows = (attendeeData || []) as AttendeeRow[];
       const parkingRows = (parkingData || []) as ParkingSiteRow[];
@@ -674,10 +699,15 @@ function AdminPrintPageInner() {
       setStatus(`Loaded ${attendeeRows.length} attendees.`);
     } catch (err: any) {
       console.error("loadPage error:", err);
+      if (generation !== printLoadGenerationRef.current) {
+        return;
+      }
       setError(err?.message || "Failed to load print center.");
       setStatus(err?.message || "Failed to load print center.");
     } finally {
-      setLoading(false);
+      if (generation === printLoadGenerationRef.current) {
+        setLoading(false);
+      }
     }
   }
 

@@ -13,7 +13,7 @@ import {
   resolveAdminWorkingEvent,
   setCurrentAdminEvent,
   shouldPersistResolvedAdminEvent,
-  subscribeToAdminWorkspace,
+  useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { isActiveEventStatus, normalizeEventStatus } from "@/lib/eventStatus";
 import {
@@ -311,6 +311,19 @@ function AdminDashboardPageInner() {
   >(adminAccess?.isSuperAdmin ? "loading" : "idle");
 
   const didInitialLoad = useRef(false);
+  const loadPageRef = useRef<() => void>(() => {});
+
+  // Working-Event change (this tab or another): synchronously realign the
+  // selector and drop Event A's summary data so nothing stale renders under
+  // Event B's header, then reload. `captureGeneration` / `isCurrent` let
+  // loadPage() reject an in-flight Event-A response.
+  const { captureGeneration, isCurrent: isWorkingEventScopeCurrent } =
+    useAdminWorkingEventScope(() => {
+      setEvents([]);
+      setSelectedEventId(getCurrentAdminEvent()?.id ?? "");
+      setLoading(true);
+      loadPageRef.current();
+    });
 
   // ADR-006 §2.1/§3.1/§4: this is the admin's full *accessible* Event set
   // -- authorization-filtered only. Lifecycle status (including
@@ -345,6 +358,7 @@ function AdminDashboardPageInner() {
   }
 
   const loadPage = useCallback(async () => {
+    const generation = captureGeneration();
     try {
       setLoading(true);
       if (!adminAccess) {
@@ -355,6 +369,12 @@ function AdminDashboardPageInner() {
       }
 
       const loadedEvents = await loadEvents(adminAccess);
+      // A working-Event change started a newer load while this one was in
+      // flight -- discard this (Event A) result rather than clobbering the
+      // selector and summary the newer load is populating for Event B.
+      if (!isWorkingEventScopeCurrent(generation)) {
+        return;
+      }
       setEvents(loadedEvents);
 
       if (loadedEvents.length === 0) {
@@ -395,14 +415,14 @@ function AdminDashboardPageInner() {
 
       // Persist the resolved working Event back to storage ONLY when it
       // actually differs from what is already stored. setCurrentAdminEvent()
-      // dispatches the same-tab ADMIN_EVENT_UPDATED CustomEvent that this
-      // page's own subscribeToAdminWorkspace() listens for; writing it on
-      // every load re-triggers loadPage() (a loop the Stage-A dual
-      // dispatch/listen compatibility layer fans out geometrically). When
-      // stored === resolved the store is already correct -- no write, no
-      // event, no self-trigger. A genuine change (first establishment, or a
-      // different Event) persists once; the follow-up load then sees
-      // equality and converges.
+      // notifies this page's own working-Event subscription (now
+      // useAdminWorkingEventScope); writing it on every load re-triggers
+      // loadPage(). subscribeToAdminEventChange's scope coalescing now also
+      // absorbs a redundant same-scope write, but this guard is still the
+      // first line of defense: when stored === resolved the store is
+      // already correct -- no write, no event, no self-trigger. A genuine
+      // change (first establishment, or a different Event) persists once;
+      // the follow-up load then sees equality and converges.
       if (shouldPersistResolvedAdminEvent(stored?.id, resolved.id)) {
         setCurrentAdminEvent({
           id: resolved.id,
@@ -415,11 +435,21 @@ function AdminDashboardPageInner() {
       }
     } catch (err: any) {
       console.error("loadDashboard error:", err);
-      setStatus("We couldn't load the dashboard. Please try again.");
+      if (isWorkingEventScopeCurrent(generation)) {
+        setStatus("We couldn't load the dashboard. Please try again.");
+      }
     } finally {
-      setLoading(false);
+      // A superseded (Event A) load must not clear the loading state the
+      // newer Event-B load has set.
+      if (isWorkingEventScopeCurrent(generation)) {
+        setLoading(false);
+      }
     }
-  }, [adminAccess]);
+  }, [adminAccess, captureGeneration, isWorkingEventScopeCurrent]);
+
+  useEffect(() => {
+    loadPageRef.current = () => void loadPage();
+  }, [loadPage]);
 
   useEffect(() => {
     if (didInitialLoad.current) {
@@ -428,12 +458,6 @@ function AdminDashboardPageInner() {
     didInitialLoad.current = true;
 
     void loadPage();
-
-    const unsubscribe = subscribeToAdminWorkspace(() => {
-      void loadPage();
-    });
-
-    return unsubscribe;
   }, [loadPage]);
 
   useEffect(() => {

@@ -529,8 +529,11 @@ test("no-Event behavior is checked before either task-authority call and never r
   assert.ok(noEventIdx < viewCallIdx);
 });
 
-test("Agenda access is re-evaluated on Admin working-Event change via loadPage, subscribed through subscribeToAdminWorkspace", () => {
-  assert.match(PAGE_SOURCE, /subscribeToAdminWorkspace/);
+test("Agenda access is re-evaluated on Admin working-Event change via loadPage, driven by the shared working-Event scope hook", () => {
+  // useAdminWorkingEventScope replaces the bare subscribeToAdminWorkspace
+  // reload: same-tab AND cross-tab changes now clear Event A's agenda
+  // synchronously and reject a superseded loadPage().
+  assert.match(PAGE_SOURCE, /useAdminWorkingEventScope\(/);
   assert.match(PAGE_SOURCE, /loadPage/);
 });
 

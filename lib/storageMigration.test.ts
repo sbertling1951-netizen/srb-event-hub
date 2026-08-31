@@ -380,20 +380,37 @@ test("a dual-delivered signal re-runs an idempotent listener to the SAME resulti
 // ---------------------------------------------------------------------------
 // 10. Canonical AND legacy admin CustomEvent names are both accepted.
 // ---------------------------------------------------------------------------
-test("subscribeToAdminEvent fires its callback for BOTH the canonical and the legacy CustomEvent name, and unsubscribes both", () => {
+test("subscribeToAdminEvent listens for BOTH the canonical and the legacy CustomEvent name (one callback per distinct scope), and unsubscribes both", () => {
   let hits = 0;
   const unsubscribe = subscribeToAdminEvent(() => {
     hits += 1;
   });
 
+  // Canonical name delivers a real scope change.
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: "evt-a", name: "A" }),
+  );
   fakeWindow.dispatchEvent(new CustomEvent(ADMIN_EVENT_UPDATED));
   fakeWindow.dispatchEvent(new CustomEvent(LEGACY_ADMIN_EVENT_UPDATED));
-  assert.equal(hits, 2);
+  assert.equal(hits, 1, "the dual dispatch for one change is coalesced to one callback");
+
+  // Legacy name alone still drives the subscriber (proves it is wired).
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: "evt-b", name: "B" }),
+  );
+  fakeWindow.dispatchEvent(new CustomEvent(LEGACY_ADMIN_EVENT_UPDATED));
+  assert.equal(hits, 2, "legacy CustomEvent name is also listened for");
 
   unsubscribe();
+  memory.setItem(
+    STORAGE_KEYS.adminEventContext,
+    JSON.stringify({ id: "evt-c", name: "C" }),
+  );
   fakeWindow.dispatchEvent(new CustomEvent(ADMIN_EVENT_UPDATED));
   fakeWindow.dispatchEvent(new CustomEvent(LEGACY_ADMIN_EVENT_UPDATED));
-  assert.equal(hits, 2, "no leak after unsubscribe");
+  assert.equal(hits, 2, "no leak after unsubscribe -- both names removed");
 });
 
 test("addDualWindowEventListener wires + tears down both names", () => {

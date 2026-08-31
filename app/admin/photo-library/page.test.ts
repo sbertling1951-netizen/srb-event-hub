@@ -63,7 +63,9 @@ test("no direct has_event_task_authority RPC call is introduced -- authority is 
 
 test("photo library remains Event-scoped: every read and the one mutation are keyed to getCurrentAdminEvent()", () => {
   assert.match(PAGE_SOURCE, /const currentEvent = getCurrentAdminEvent\(\);/);
-  assert.match(PAGE_SOURCE, /subscribeToAdminWorkspace\(/);
+  // Re-fetch on working-Event change now runs through the shared scope hook,
+  // which also drops Event A's library + open modal synchronously.
+  assert.match(PAGE_SOURCE, /useAdminWorkingEventScope\(/);
 });
 
 test("page uses the canonical Admin shell (migrated by a later, separate shell-migration stage)", () => {
