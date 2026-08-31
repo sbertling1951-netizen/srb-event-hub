@@ -39,10 +39,6 @@ export const STORAGE_KEYS = {
   attendeeCommandCenterPrefs: "fcoc-attendee-command-center-prefs",
   attendeeOpenEditId: "fcoc-attendee-open-edit-id",
 
-  coachPlates: "fcoc-coach-plates",
-  nameTags: "fcoc-name-tags",
-  nameTagsEvent: "fcoc-name-tags-event",
-
   announcementBannerDismissedPrefix: "fcoc-announcement-banner-dismissed",
 
   announcementPopupSeenPrefix: "fcoc-announcement-popup-seen",

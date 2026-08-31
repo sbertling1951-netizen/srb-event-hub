@@ -114,8 +114,8 @@ conceptual module they most belong to.
 | `/admin/reports` | General reporting console: 11 report types, CSV/XLSX export, saved presets, "print packs" | Generate/export a report | Linked from Attendees and Dashboard grid only | Recomputes participant-type/data-status/first-timer/volunteer/vendor breakdowns that Attendees *also* computes independently. Supports a vestigial `?embedded=1` mode (same dead-embed situation as Validation Rules). |
 | `/admin/print` | The actual, current name-tag/coach-plate print center (browser print, live preview) | Print name tags or coach plates | Sidebar (Operations, labeled "Print Center") | **Zero outbound links of any kind** — not even a breadcrumb to Dashboard/Attendees — and critically, no link to `/admin/print-settings`, its own background-image configuration page. |
 | `/admin/print-settings` | Upload/remove name-tag and coach-plate background images | Upload a print background | **Orphaned** — zero inbound links, including from Print itself | Fully functional, completely undiscoverable in the live UI. |
-| `/admin/reports/coach-plates/print` | Print-styled render reading from `sessionStorage["fcoc-coach-plates"]` | — | **Dead** — nothing in the repo ever writes that sessionStorage key; no page links here | Fully superseded by `/admin/print`'s built-in coach-plate renderer. |
-| `/admin/reports/name-tags/print` | Print-styled render reading from `sessionStorage["fcoc-name-tags"]` | — | **Dead** — same situation | Fully superseded by `/admin/print`. |
+| `/admin/reports/coach-plates/print` | Retained print-styled legacy route with no current data source | — | **Dead** — no page links here; its former sessionStorage input was retired | Fully superseded by `/admin/print`'s built-in coach-plate renderer. |
+| `/admin/reports/name-tags/print` | Retained print-styled legacy route with Event-scoped background lookup | — | **Dead** — no page links here; its former sessionStorage input was retired | Fully superseded by `/admin/print`. |
 
 ### Agenda
 
