@@ -77,7 +77,7 @@ const ATTENDEE_FIELD_META: Record<
   special_events_raw: { required: false, format: "text", instructions: "Free-text notes on special-event selections not captured by a dedicated activity column.", sample: "Welcome Dinner" },
   share_with_attendees: { required: false, format: "boolean_yes_no", instructions: "Whether the Pilot agreed to share their email with other attendees. Yes/Y/True/1 is Yes; anything else (including blank) is No.", sample: "Yes" },
   wants_to_volunteer: { required: false, format: "boolean_yes_no", instructions: "Whether the Pilot wants to volunteer. Yes/Y/True/1 is Yes; anything else (including blank) is No.", sample: "No" },
-  is_first_timer: { required: false, format: "boolean_yes_no", instructions: "Whether this is the Pilot's first time at an FCOC event. Yes/Y/True/1 is Yes; anything else (including blank) is No.", sample: "No" },
+  is_first_timer: { required: false, format: "boolean_yes_no", instructions: "Whether this is the Pilot's first time at one of your events. Yes/Y/True/1 is Yes; anything else (including blank) is No.", sample: "No" },
 };
 
 // Column order mirrors the approved field list, not object insertion order.
@@ -111,7 +111,7 @@ export const AGENDA_IMPORT_TEMPLATE_CONTRACT: ImportTemplateContract = {
   label: "Agenda",
   fields: [
     { key: "title", preferredHeading: "Title", aliases: ["Title", "title"], required: true, format: "text", instructions: "The agenda item's title. Required.", sample: "Welcome Breakfast" },
-    { key: "description", preferredHeading: "Description", aliases: ["Description", "description"], required: false, format: "text", instructions: "Optional longer description shown on the item's detail view.", sample: "Coffee, pastries, and a welcome from the FCOC board." },
+    { key: "description", preferredHeading: "Description", aliases: ["Description", "description"], required: false, format: "text", instructions: "Optional longer description shown on the item's detail view.", sample: "Coffee, pastries, and a welcome from the organizing committee." },
     { key: "location", preferredHeading: "Location", aliases: ["Location", "location", "Room", "Venue"], required: false, format: "text", instructions: "Where the item takes place.", sample: "Main Pavilion" },
     { key: "speaker", preferredHeading: "Speaker", aliases: ["Speaker", "speaker", "Presenter", "Host"], required: false, format: "text", instructions: "Optional presenter/host.", sample: "Event Staff" },
     { key: "agenda_date", preferredHeading: "Agenda Date", aliases: ["Agenda Date", "AgendaDate", "Date", "date", "agenda_date", "AGENDA DATE"], required: true, format: "date", instructions: "Required. Enter an ordinary US date such as 11/4/26 or 11/04/2026. M/D without a year uses the selected Event's scheduled date context. Canonical YYYY-MM-DD is also accepted. Impossible or ambiguous dates are rejected.", sample: "2026-09-12" },

@@ -1,6 +1,6 @@
 # EpicentraX Event Hub
 
-Starter MVP for a cross-device FCOC event PWA.
+Starter MVP for a cross-device event PWA.
 
 ## Included in this starter
 
@@ -41,7 +41,7 @@ Starter MVP for a cross-device FCOC event PWA.
 
 ## Notes
 
-This is a solid starter scaffold, not a finished production deployment. The structure is designed so you can extend it into a full event platform for multiple FCOC events.
+This is a solid starter scaffold, not a finished production deployment. The structure is designed so you can extend it into a full event platform for multiple events.
 
 # SRB Event Hub
 

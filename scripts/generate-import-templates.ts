@@ -1,10 +1,11 @@
-// Stage 5A template generator. Regenerates the Attendee Roster and Vendor
+// Template generator. Regenerates the Attendee Roster, Vendor, and Agenda
 // downloadable templates directly from the shared field contract
 // (lib/importTemplateContract.ts) so a template can never silently drift
-// from the field list it advertises. Agenda's existing template files are
-// intentionally NOT regenerated here -- they predate this generator and
-// are preserved as-is per Stage 5A item 9 (only their Instructions content
-// was hand-corrected for the Published blank-value documentation gap).
+// from the field list it advertises -- and can never silently reintroduce
+// tenant-specific branding into sample content. Agenda joined this
+// generator in FCOC Cohort 3's D1 follow-up (previously its files were
+// hand-maintained); its published filenames keep the "_with_speaker" infix
+// so the existing download links are unchanged.
 //
 // Run with: npx tsx scripts/generate-import-templates.ts
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -13,6 +14,7 @@ import path from "node:path";
 import * as XLSX from "xlsx";
 
 import {
+  AGENDA_IMPORT_TEMPLATE_CONTRACT,
   ATTENDEE_IMPORT_TEMPLATE_CONTRACT,
   type ImportFieldContractEntry,
   type ImportTemplateContract,
@@ -136,17 +138,21 @@ function writeTemplateSet(
   dirName: string,
   fileStem: string,
   sampleRows: Record<string, string>[],
+  // Inserted before the extension on every generated file. Agenda's
+  // published templates use "_with_speaker" so the existing download links
+  // (AgendaImportPanel.tsx / importDoorTemplates.tsx) keep working.
+  fileSuffix = "",
 ) {
   const dir = path.join(PUBLIC_ROOT, dirName);
   mkdirSync(dir, { recursive: true });
 
-  writeFileSync(path.join(dir, `${fileStem}_blank.csv`), buildCsv(contract, "blank", sampleRows));
-  writeFileSync(path.join(dir, `${fileStem}_sample.csv`), buildCsv(contract, "sample", sampleRows));
-  XLSX.writeFile(buildWorkbook(contract, "blank", sampleRows), path.join(dir, `${fileStem}_blank.xlsx`));
-  XLSX.writeFile(buildWorkbook(contract, "sample", sampleRows), path.join(dir, `${fileStem}_sample.xlsx`));
-  writeFileSync(path.join(dir, `${fileStem}_notes.txt`), buildNotesText(contract));
+  writeFileSync(path.join(dir, `${fileStem}_blank${fileSuffix}.csv`), buildCsv(contract, "blank", sampleRows));
+  writeFileSync(path.join(dir, `${fileStem}_sample${fileSuffix}.csv`), buildCsv(contract, "sample", sampleRows));
+  XLSX.writeFile(buildWorkbook(contract, "blank", sampleRows), path.join(dir, `${fileStem}_blank${fileSuffix}.xlsx`));
+  XLSX.writeFile(buildWorkbook(contract, "sample", sampleRows), path.join(dir, `${fileStem}_sample${fileSuffix}.xlsx`));
+  writeFileSync(path.join(dir, `${fileStem}_notes${fileSuffix}.txt`), buildNotesText(contract));
 
-  console.warn(`Generated ${dirName}/${fileStem}_{blank,sample}.{csv,xlsx} + _notes.txt`);
+  console.warn(`Generated ${dirName}/${fileStem}_{blank,sample}${fileSuffix}.{csv,xlsx} + _notes${fileSuffix}.txt`);
 }
 
 // Fictional, obviously-not-real sample data -- teaches the shape of the
@@ -189,5 +195,35 @@ const VENDOR_SAMPLE_ROWS: Record<string, string>[] = [
   },
 ];
 
+// Fictional, obviously-not-real agenda rows -- neutral illustrative
+// speakers and locations, no tenant-specific names.
+const AGENDA_SAMPLE_ROWS: Record<string, string>[] = [
+  {
+    title: "Welcome & Opening Remarks", description: "Kickoff for all attendees with an overview of the event schedule.",
+    location: "Main Pavilion", speaker: "Event Staff",
+    agenda_date: "2026-09-12", start_time: "09:00", end_time: "09:30",
+    category: "General", color: "#DBEAFE", is_published: "Yes", sort_order: "10",
+  },
+  {
+    title: "Getting the Most From the Event", description: "Practical tips for navigating sessions, activities, and the venue.",
+    location: "Seminar Room B", speaker: "Guest Presenter",
+    agenda_date: "2026-09-12", start_time: "10:00", end_time: "11:00",
+    category: "Seminar", color: "#DCFCE7", is_published: "Yes", sort_order: "20",
+  },
+  {
+    title: "Open Q&A", description: "Bring your questions for an informal discussion with the organizers.",
+    location: "Conference Room A", speaker: "Organizing Committee",
+    agenda_date: "2026-09-12", start_time: "13:00", end_time: "14:00",
+    category: "General", color: "#FEF3C7", is_published: "Yes", sort_order: "30",
+  },
+  {
+    title: "Evening Social", description: "Informal gathering for attendees and guests.",
+    location: "Courtyard", speaker: "Event Staff",
+    agenda_date: "2026-09-12", start_time: "17:00", end_time: "18:00",
+    category: "Social", color: "#FCE7F3", is_published: "Yes", sort_order: "40",
+  },
+];
+
 writeTemplateSet(ATTENDEE_IMPORT_TEMPLATE_CONTRACT, "attendee-roster", "attendee_roster_import_template", ATTENDEE_SAMPLE_ROWS);
 writeTemplateSet(VENDOR_IMPORT_TEMPLATE_CONTRACT, "vendors", "vendor_import_template", VENDOR_SAMPLE_ROWS);
+writeTemplateSet(AGENDA_IMPORT_TEMPLATE_CONTRACT, "agenda", "agenda_import_template", AGENDA_SAMPLE_ROWS, "_with_speaker");

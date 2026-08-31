@@ -105,9 +105,12 @@ test("Agenda blank XLSX: the live worksheet parser finds canonical headings with
   }
   assert.equal(
     rows.some((row) =>
-      Object.keys(row).some((key) => key.startsWith("FCOC Agenda Import")),
+      Object.keys(row).some((key) =>
+        /fcoc|freightliner|chassis owners/i.test(key),
+      ),
     ),
     false,
+    "the generated Agenda blank template must not leak tenant-branded title/instruction keys",
   );
 });
 
@@ -120,10 +123,10 @@ test("Agenda sample XLSX: the live worksheet parser reaches the normalized impor
 
   assert.deepEqual(sample, {
     title: "Welcome & Opening Remarks",
-    description: "Kickoff for all attendees with overview of the event schedule.",
-    location: "Camp Margaritaville Resort",
-    speaker: "Steve Bertling",
-    agenda_date: "2026-04-22",
+    description: "Kickoff for all attendees with an overview of the event schedule.",
+    location: "Main Pavilion",
+    speaker: "Event Staff",
+    agenda_date: "2026-09-12",
     start_time: "09:00",
     end_time: "09:30",
     category: "General",
@@ -152,10 +155,10 @@ test("Agenda CSV templates retain the canonical header contract and sample mappi
   assert.deepEqual(sample.meta.fields, AGENDA_HEADINGS);
   assert.deepEqual(normalizeAgendaSampleRow(sample.data[0]), {
     title: "Welcome & Opening Remarks",
-    description: "Kickoff for all attendees with overview of the event schedule.",
-    location: "Camp Margaritaville Resort",
-    speaker: "Steve Bertling",
-    agenda_date: "2026-04-22",
+    description: "Kickoff for all attendees with an overview of the event schedule.",
+    location: "Main Pavilion",
+    speaker: "Event Staff",
+    agenda_date: "2026-09-12",
     start_time: "09:00",
     end_time: "09:30",
     category: "General",

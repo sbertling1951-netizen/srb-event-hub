@@ -183,7 +183,6 @@ export default function AttendeeProfilePage() {
 
       <div
         style={{
-          border: "1px solid var(--fcoc-border)",
           borderRadius: 10,
           padding: 18,
           background: "white",
@@ -283,7 +282,6 @@ export default function AttendeeProfilePage() {
 
       <div
         style={{
-          border: "1px solid var(--fcoc-border)",
           borderRadius: 10,
           padding: 18,
           background: "white",

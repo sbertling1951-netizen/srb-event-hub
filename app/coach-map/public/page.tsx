@@ -635,7 +635,7 @@ function CoachMapPublicPageInner() {
                 borderRadius: "50%",
                 background: "rgba(255,59,48,0.4)",
                 transform: "translate(-50%, -50%)",
-                animation: "fcoc-pulse 1.5s ease-out",
+                animation: "epx-pulse 1.5s ease-out",
                 pointerEvents: "none",
                 zIndex: 1,
               }}
@@ -751,12 +751,12 @@ function CoachMapPublicPageInner() {
       }}
     >
       <style>{`
-        @keyframes fcoc-pulse {
+        @keyframes epx-pulse {
           0%   { transform: scale(1);   opacity: 0.6; }
           70%  { transform: scale(2.5); opacity: 0;   }
           100% { transform: scale(2.5); opacity: 0;   }
         }
-        @keyframes fcoc-panel-in {
+        @keyframes epx-panel-in {
           0%   { opacity: 0; transform: translateY(8px); }
           100% { opacity: 1; transform: translateY(0);   }
         }

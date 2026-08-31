@@ -4,7 +4,11 @@ import { join, relative } from "node:path";
 const ROOT = process.cwd();
 const SOURCE_ROOTS = ["app", "lib", "components"];
 const REGISTRY = "lib/storageKeys.ts";
-const NON_PLATFORM_LITERALS = new Set(["fcoc-pulse 1.5s ease-out"]);
+// Raw "fcoc-*" string literals that are NOT platform storage/event keys and
+// are therefore exempt from the registry rule. Currently empty: the former
+// CSS animation literal ("fcoc-pulse 1.5s ease-out") was renamed to a
+// neutral identifier.
+const NON_PLATFORM_LITERALS = new Set([]);
 const SOURCE_FILE = /\.(?:ts|tsx|js|jsx)$/;
 const TEST_FILE = /\.(?:test|spec)\.[^.]+$/;
 const RAW_FCOC_LITERAL = /(["'`])(fcoc-[A-Za-z0-9_-]+[^"'`\n]*)\1/g;

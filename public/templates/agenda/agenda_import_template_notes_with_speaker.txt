@@ -1,4 +1,4 @@
-FCOC Agenda Import Template Notes
+EpicentraX Agenda Import Template Notes
 
 Preferred columns:
 Title
@@ -18,22 +18,17 @@ Required:
 - Agenda Date
 - Start Time
 
-Date and time entry:
-- Agenda Date accepts ordinary US dates such as 11/4/26 or 11/04/2026.
-- Month/day without a year, such as 11/4, uses the selected Event's scheduled
-  date context. Impossible or ambiguous dates are rejected.
-- YYYY-MM-DD remains accepted, but is not required. EpicentraX normalizes
-  accepted dates internally to YYYY-MM-DD.
-- Start Time / End Time accept 9 AM, 1:00 PM, 900, 1300, or 24-hour HH:MM.
-  EpicentraX normalizes accepted times internally to HH:MM.
-- Published: Yes or No. Blank, or any value other than Yes/Y/True/1, imports
-  the item as NOT published (draft) -- there is no separate default; blank
-  is treated identically to No.
-- Color: hex value like #DBEAFE
-- Sort Order: integer like 10, 20, 30
-
-Speaker:
-- Optional presenter/host field
-- Example values: Steve Bertling, FCCC Team, Event Staff
+Field-by-field notes:
+- Title (required, text): The agenda item's title. Required.
+- Description (optional, text): Optional longer description shown on the item's detail view.
+- Location (optional, text): Where the item takes place.
+- Speaker (optional, text): Optional presenter/host.
+- Agenda Date (required, date): Required. Enter an ordinary US date such as 11/4/26 or 11/04/2026. M/D without a year uses the selected Event's scheduled date context. Canonical YYYY-MM-DD is also accepted. Impossible or ambiguous dates are rejected.
+- Start Time (required, time): Required. Enter a clock time such as 9 AM, 1:00 PM, 900, 1300, or 24-hour HH:MM. EpicentraX normalizes accepted values to HH:MM.
+- End Time (optional, time): Optional. Accepts the same clock forms as Start Time and normalizes them to HH:MM.
+- Category (optional, text): Optional category, used for the item's default color if Color is blank.
+- Color (optional, hex_color): Optional hex color like #DBEAFE. If blank, a color is derived from Category.
+- Published (optional, boolean_yes_no): Yes/Y/True/1 publishes the item immediately. Blank, or any other value, imports the item as NOT published (draft) -- there is no separate default; blank is treated identically to No.
+- Sort Order (optional, integer): Optional display order (e.g. 10, 20, 30). If blank, items are ordered by file row order.
 
 The sample template can be used as the model for either XLSX or CSV imports.

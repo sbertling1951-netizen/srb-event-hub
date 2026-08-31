@@ -49,7 +49,7 @@ Field-by-field notes:
 - Coach Model (optional, text): Coach/motorhome model.
 - Participant Capacity (optional, integer): Total paid participant capacity for this registration, if your registration platform tracks it explicitly. Leave blank to let the import evidence the minimum from Pilot/Co-Pilot names.
 - Volunteer (optional, boolean_yes_no): Whether the Pilot wants to volunteer. Yes/Y/True/1 is Yes; anything else (including blank) is No.
-- First Timer (optional, boolean_yes_no): Whether this is the Pilot's first time at an FCOC event. Yes/Y/True/1 is Yes; anything else (including blank) is No.
+- First Timer (optional, boolean_yes_no): Whether this is the Pilot's first time at one of your events. Yes/Y/True/1 is Yes; anything else (including blank) is No.
 - Share Email With Attendees (optional, boolean_yes_no): Whether the Pilot agreed to share their email with other attendees. Yes/Y/True/1 is Yes; anything else (including blank) is No.
 - Special Events (optional, text): Free-text notes on special-event selections not captured by a dedicated activity column.
 - Additional Attendees (optional, text): Reference-only free text (e.g. names/ages of additional household members riding along). Never creates a Person, participation, or household-member record -- for context only.

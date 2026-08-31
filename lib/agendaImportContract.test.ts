@@ -465,7 +465,7 @@ test("shipped XLSX assets use row 4 headings and normalize through the pure cont
   assert.equal(findAgendaWorkbookHeaderRow(sampleSheet), 3);
   const candidate = sampleCandidate(parseAgendaWorkbookWorksheet(sampleSheet)[0]);
   assert.equal(candidate.title, "Welcome & Opening Remarks");
-  assert.equal(candidate.agenda_date, "2026-04-22");
+  assert.equal(candidate.agenda_date, "2026-09-12");
   assert.equal(candidate.start_time, "09:00");
   assert.equal(candidate.is_published, true);
 });
