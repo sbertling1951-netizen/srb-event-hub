@@ -41,6 +41,22 @@ type MasterMapSiteRow = {
   map_y: number | null;
 };
 
+// Stage 6C: one row returned by sync_master_map_parking_inventory_to_event.
+type SyncResultRow = {
+  outcome: "previewed" | "applied" | "rejected";
+  rejection_code: string | null;
+  added: number;
+  reconciled: number;
+  relinked: number;
+  orphaned_vacant: number;
+  manual_rows: number;
+  conflicts: Array<{
+    kind: string;
+    site_number: string | null;
+    detail: string;
+  }>;
+};
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -857,163 +873,159 @@ function MasterMapEditorPageInner() {
     }
   }
 
-  async function publishToSelectedEvent() {
-    if (!masterMap) {
-      setStatus("No master map loaded.");
-      return;
-    }
+  // Stage 6C: Event parking inventory is synchronized through ONE governed,
+  // Event-scoped RPC -- there are no direct browser parking_sites writes in
+  // this editor any more. The RPC reads the Event's OWN currently-selected
+  // master map as the source of truth (not whatever map is open here),
+  // adds missing vacant inventory, refreshes only template display
+  // metadata, migrates master_site_id across map versions when identity is
+  // unambiguous, and REPORTS a conflict -- never deletes, never renumbers
+  // an occupied row -- for an occupied orphan, an ambiguous successor
+  // match, or an occupied renumber. It never touches assigned_attendee_id,
+  // attendees.assigned_site, or site_placement_history. The old
+  // destructive "replace all sites" browser path is retired.
+  async function syncInventoryToSelectedEvent() {
     const currentEvent = getCurrentAdminEvent();
     if (!currentEvent?.id) {
       setStatus("No admin working event selected.");
       return;
     }
 
+    const { data: settings, error: settingsError } = await supabase
+      .from("event_map_settings")
+      .select("selected_master_map_id")
+      .eq("event_id", currentEvent.id)
+      .maybeSingle();
+
+    if (settingsError) {
+      setStatus(
+        `Could not read the event's map selection: ${settingsError.message}`,
+      );
+      return;
+    }
+
+    const selectedMapId = settings?.selected_master_map_id as
+      | string
+      | null
+      | undefined;
+    if (!selectedMapId) {
+      setStatus(
+        `"${currentEvent.name}" has no master map selected. Assign one in the event's map settings first.`,
+      );
+      return;
+    }
+
+    const { data: mapRow, error: mapError } = await supabase
+      .from("master_maps")
+      .select("revision")
+      .eq("id", selectedMapId)
+      .single();
+
+    if (mapError || typeof mapRow?.revision !== "number") {
+      setStatus(
+        `Could not read the selected map revision: ${mapError?.message ?? "unknown error"}`,
+      );
+      return;
+    }
+
+    const readRow = (data: unknown): SyncResultRow | null =>
+      Array.isArray(data)
+        ? ((data[0] as SyncResultRow) ?? null)
+        : ((data as SyncResultRow) ?? null);
+
+    const describeSyncRow = (row: SyncResultRow) => {
+      const parts = [
+        `${row.added} to add`,
+        `${row.reconciled} to update`,
+        `${row.relinked} to relink`,
+      ];
+      if (row.orphaned_vacant > 0) {
+        parts.push(`${row.orphaned_vacant} vacant orphan(s) reported`);
+      }
+      if (row.manual_rows > 0) {
+        parts.push(`${row.manual_rows} manual row(s) left untouched`);
+      }
+      const conflicts = Array.isArray(row.conflicts) ? row.conflicts : [];
+      if (conflicts.length > 0) {
+        parts.push(
+          `${conflicts.length} CONFLICT(s): ${conflicts
+            .map((c) => c.kind)
+            .join(", ")}`,
+        );
+      }
+      return parts.join("; ");
+    };
+
+    const rpcArgs = {
+      p_event_id: currentEvent.id,
+      p_expected_selected_master_map_id: selectedMapId,
+      p_expected_map_revision: mapRow.revision,
+    };
+
+    const { data: previewData, error: previewError } = await supabase.rpc(
+      "sync_master_map_parking_inventory_to_event",
+      { ...rpcArgs, p_apply: false },
+    );
+
+    if (previewError) {
+      setStatus(`Could not preview the inventory sync: ${previewError.message}`);
+      return;
+    }
+
+    const preview = readRow(previewData);
+    if (!preview) {
+      setStatus("The inventory sync preview returned nothing.");
+      return;
+    }
+    if (preview.outcome === "rejected") {
+      setStatus(
+        `Inventory sync unavailable (${preview.rejection_code}). Refresh and try again.`,
+      );
+      return;
+    }
+
+    const conflictCount = Array.isArray(preview.conflicts)
+      ? preview.conflicts.length
+      : 0;
+
     const confirmed = window.confirm(
-      `This will replace all parking sites for the selected event "${currentEvent.name}" with the sites from this master map. Continue?`,
+      `Sync parking inventory for "${currentEvent.name}" from its selected master map?\n\n` +
+        `${describeSyncRow(preview)}\n\n` +
+        (conflictCount > 0
+          ? "Conflicts must be resolved in Parking Admin before apply can succeed. Continue to see the full result?"
+          : "Assignments, notes, and placement history are never changed. Continue?"),
     );
     if (!confirmed) {
       return;
     }
 
-    const { error: deleteError } = await supabase
-      .from("parking_sites")
-      .delete()
-      .eq("event_id", currentEvent.id);
+    const { data: applyData, error: applyError } = await supabase.rpc(
+      "sync_master_map_parking_inventory_to_event",
+      { ...rpcArgs, p_apply: true },
+    );
 
-    if (deleteError) {
+    if (applyError) {
+      setStatus(`Could not sync parking inventory: ${applyError.message}`);
+      return;
+    }
+
+    const applied = readRow(applyData);
+    if (!applied) {
+      setStatus("The inventory sync returned nothing.");
+      return;
+    }
+    if (applied.outcome === "rejected") {
+      const n = Array.isArray(applied.conflicts) ? applied.conflicts.length : 0;
       setStatus(
-        `Could not clear existing parking sites: ${deleteError.message}`,
+        applied.rejection_code === "unresolved_conflicts"
+          ? `Inventory sync blocked: ${n} conflict(s) need resolution in Parking Admin. Nothing was changed.`
+          : `Inventory sync rejected (${applied.rejection_code}). Nothing was changed.`,
       );
       return;
     }
 
-    const rowsToInsert = sites.map((site) => ({
-      event_id: currentEvent.id,
-      site_number: site.site_number,
-      notes: null,
-      map_x: site.map_x,
-      map_y: site.map_y,
-      assigned_attendee_id: null,
-      display_label: site.display_label || site.site_number,
-      map_image_url: masterMap.map_image_url,
-    }));
-
-    if (rowsToInsert.length === 0) {
-      setStatus("No master map sites found to publish.");
-      return;
-    }
-
-    const { error: insertError } = await supabase
-      .from("parking_sites")
-      .insert(rowsToInsert);
-
-    if (insertError) {
-      setStatus(`Could not publish to selected event: ${insertError.message}`);
-      return;
-    }
-
     setStatus(
-      `Published ${rowsToInsert.length} parking sites to selected event "${currentEvent.name}".`,
-    );
-  }
-
-  async function safeSyncToSelectedEvent() {
-    if (!masterMap) {
-      setStatus("No master map loaded.");
-      return;
-    }
-    const currentEvent = getCurrentAdminEvent();
-    if (!currentEvent?.id) {
-      setStatus("No admin working event selected.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Safe Sync will update matching parking sites for "${currentEvent.name}" by site number, preserve assignments and notes, and add any new sites from this master map. Continue?`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    const { data: existingSites, error: existingError } = await supabase
-      .from("parking_sites")
-      .select("id, site_number")
-      .eq("event_id", currentEvent.id);
-
-    if (existingError) {
-      setStatus(
-        `Could not load existing event parking sites: ${existingError.message}`,
-      );
-      return;
-    }
-
-    const existingBySiteNumber = new Map<
-      string,
-      { id: string; site_number: string | null }
-    >();
-    (existingSites || []).forEach((site) => {
-      const key = (site.site_number || "").trim().toLowerCase();
-      if (key) {
-        existingBySiteNumber.set(key, site);
-      }
-    });
-
-    let updatedCount = 0;
-    let insertedCount = 0;
-
-    for (const site of sites) {
-      const normalizedSiteNumber = (site.site_number || "")
-        .trim()
-        .toLowerCase();
-      if (!normalizedSiteNumber) {
-        continue;
-      }
-
-      const existing = existingBySiteNumber.get(normalizedSiteNumber);
-      if (existing) {
-        const { error: updateError } = await supabase
-          .from("parking_sites")
-          .update({
-            display_label: site.display_label || site.site_number,
-            map_x: site.map_x,
-            map_y: site.map_y,
-            map_image_url: masterMap.map_image_url,
-          })
-          .eq("id", existing.id);
-
-        if (updateError) {
-          setStatus(
-            `Could not safe sync site ${site.site_number}: ${updateError.message}`,
-          );
-          return;
-        }
-        updatedCount += 1;
-      } else {
-        const { error: insertError } = await supabase
-          .from("parking_sites")
-          .insert({
-            event_id: currentEvent.id,
-            site_number: site.site_number,
-            notes: null,
-            map_x: site.map_x,
-            map_y: site.map_y,
-            assigned_attendee_id: null,
-            display_label: site.display_label || site.site_number,
-            map_image_url: masterMap.map_image_url,
-          });
-
-        if (insertError) {
-          setStatus(
-            `Could not insert new site ${site.site_number}: ${insertError.message}`,
-          );
-          return;
-        }
-        insertedCount += 1;
-      }
-    }
-
-    setStatus(
-      `Safe Sync complete for "${currentEvent.name}". Updated ${updatedCount} site(s), inserted ${insertedCount} new site(s), preserved assignments and notes on existing sites.`,
+      `Parking inventory synced for "${currentEvent.name}": ${applied.added} added, ${applied.reconciled} updated, ${applied.relinked} relinked. Assignments and notes preserved.`,
     );
   }
 
@@ -1692,34 +1704,23 @@ function MasterMapEditorPageInner() {
               </div>
             </div>
 
-            {/* Map publish / sync actions */}
+            {/* Map save / Event inventory sync actions */}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {!readOnlyMarkers && (
-                <>
-                  <button
-                    onClick={() => void saveUpdatedMap()}
-                    style={{ flex: 1 }}
-                    disabled={loading}
-                  >
-                    Save Updated Map
-                  </button>
-                  <button
-                    onClick={() => void publishToSelectedEvent()}
-                    style={{ flex: 1 }}
-                    disabled={loading}
-                  >
-                    Replace Selected Event Sites From Map
-                  </button>
-                </>
+                <button
+                  onClick={() => void saveUpdatedMap()}
+                  style={{ flex: 1 }}
+                  disabled={loading}
+                >
+                  Save Updated Map
+                </button>
               )}
               <button
-                onClick={() => void safeSyncToSelectedEvent()}
+                onClick={() => void syncInventoryToSelectedEvent()}
                 style={{ flex: 1 }}
                 disabled={loading}
               >
-                {readOnlyMarkers
-                  ? "Sync Published Map to Selected Event"
-                  : "Update Selected Event From Map"}
+                Sync Selected Event Parking Inventory
               </button>
               {readOnlyMarkers && (
                 <button
