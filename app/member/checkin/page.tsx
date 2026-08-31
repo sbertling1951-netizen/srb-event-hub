@@ -210,12 +210,9 @@ function MemberCheckinPageInner() {
         return;
       }
 
-      // Keep the canonical MemberSession (not only the legacy
-      // fcoc-member-attendee-id compat key) coherent with the resolved id.
+      // Keep the canonical MemberSession coherent with the server-resolved
+      // attendee id -- MemberSession is the single client identity source.
       ensureMemberSessionAttendee(attendeeRow.id);
-      if (typeof window !== "undefined") {
-        localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendeeRow.id);
-      }
 
       setAttendee(attendeeRow);
 
@@ -306,21 +303,16 @@ function MemberCheckinPageInner() {
   }, [session?.temporary_capability_hash]);
 
   useEffect(() => {
-    if (!event?.id) {
-      return;
-    }
-
-    const storedAttendeeId = localStorage.getItem(STORAGE_KEYS.memberAttendeeId);
-    if (!storedAttendeeId) {
+    if (!event?.id || !attendeeId) {
       return;
     }
 
     void logEngagement({
       eventId: event.id,
-      attendeeId: storedAttendeeId,
+      attendeeId,
       activityType: "checkin_view",
     });
-  }, [event?.id]);
+  }, [event?.id, attendeeId]);
 
   async function saveCheckin() {
     if (!attendee?.id || !event?.id) {

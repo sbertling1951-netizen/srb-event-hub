@@ -153,13 +153,6 @@ function normalizeSiteKey(value: string | null | undefined) {
     .replace(/[^a-z0-9]/g, "");
 }
 
-function getStoredViewerAttendeeId() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem(STORAGE_KEYS.memberAttendeeId);
-}
-
 function CoachMapPublicPageInner() {
   const { event: workspaceEvent, attendeeId, isReady, session } = useMemberWorkspace();
   const [event, setEvent] = useState<ActiveEvent | null>(null);
@@ -386,21 +379,18 @@ function CoachMapPublicPageInner() {
 
   useEffect(() => {
     if (!isReady || !workspaceEvent?.id || !attendeeId) {
-      setViewerAttendeeId(attendeeId ?? getStoredViewerAttendeeId());
+      setViewerAttendeeId(attendeeId ?? null);
       setStatus("Loading map...");
       return;
     }
 
-    setViewerAttendeeId(attendeeId ?? getStoredViewerAttendeeId());
+    setViewerAttendeeId(attendeeId);
     setIsNarrow(window.innerWidth < 800);
     void loadMap();
 
     function handleStorage(e: StorageEvent) {
-      if (
-        e.key === STORAGE_KEYS.memberEventChanged ||
-        e.key === STORAGE_KEYS.memberAttendeeId
-      ) {
-        setViewerAttendeeId(attendeeId ?? getStoredViewerAttendeeId());
+      if (e.key === STORAGE_KEYS.memberEventChanged) {
+        setViewerAttendeeId(attendeeId ?? null);
         void loadMap();
       }
     }

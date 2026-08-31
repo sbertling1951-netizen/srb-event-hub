@@ -31,7 +31,6 @@ test("surviving member storage key strings remain unchanged", () => {
     ["memberAuthUserId", "fcoc-member-auth-user-id"],
     ["memberEventContext", "fcoc-member-event-context"],
     ["memberEventChanged", "fcoc-member-event-changed"],
-    ["memberAttendeeId", "fcoc-member-attendee-id"],
     ["memberHasArrived", "fcoc-member-has-arrived"],
   ]) {
     assert.match(storageKeys, new RegExp(`${name}: "${value}"`));
@@ -44,31 +43,34 @@ test("M1: retired compatibility signals are absent from the live storage registr
     fileURLToPath(new URL("./storageKeys.ts", import.meta.url)),
     "utf8",
   );
-  // Standalone browser key retired -- attendee-id alone is the Guard
-  // bootstrap pre-gate (every writer that set entry-id also set attendee-id).
+  // M1 — standalone entry-id key retired.
   assert.doesNotMatch(storageKeys, /memberEntryId/);
   assert.doesNotMatch(storageKeys, /fcoc-member-entry-id/);
-  // Dead cross-tab signal -- no writer anywhere in the tree.
+  // M1 — dead cross-tab signal (no writer anywhere in the tree).
   assert.doesNotMatch(storageKeys, /activeEventChanged/);
   assert.doesNotMatch(storageKeys, /fcoc-active-event-changed/);
-  // Orphan same-tab CustomEvent -- no listener anywhere in the tree.
+  // M1 — orphan same-tab CustomEvent (no listener anywhere in the tree).
   assert.doesNotMatch(storageKeys, /memberEventUpdated/);
   assert.doesNotMatch(storageKeys, /fcoc-member-event-updated/);
+  // M2 — the legacy standalone attendee-id compatibility key is retired;
+  // MemberSession.attendee_id is the single client identity source.
+  assert.doesNotMatch(storageKeys, /memberAttendeeId/);
+  assert.doesNotMatch(storageKeys, /fcoc-member-attendee-id/);
 });
 
-test("M1: member account session no longer writes the standalone entry-id key", () => {
-  assert.doesNotMatch(SOURCE, /memberEntryId/);
-  assert.doesNotMatch(SOURCE, /fcoc-member-entry-id/);
+test("M2: member account session no longer writes the legacy attendee-id compatibility key; canonical MemberSession attendee write is unchanged", () => {
+  assert.doesNotMatch(SOURCE, /memberEntryId|fcoc-member-entry-id/);
+  assert.doesNotMatch(SOURCE, /memberAttendeeId|fcoc-member-attendee-id/);
   // The canonical resolve_member_account() row shape still carries entry_id
   // (used only for the governed display-name fallback, never persisted).
   assert.match(SOURCE, /entry_id: string \| null;/);
   assert.match(SOURCE, /row\.entry_id \|\| "Registration"/);
-  // Canonical MemberSession write is unchanged.
+  // Canonical MemberSession write is unchanged -- attendee_id still flows
+  // into saveMemberSession.
   assert.match(SOURCE, /attendee_id: attendeeId,/);
-  assert.match(
-    SOURCE,
-    /localStorage\.setItem\(STORAGE_KEYS\.memberAttendeeId, attendeeId\);/,
-  );
+  // and the account-origin marker + arrival projection are still written.
+  assert.match(SOURCE, /STORAGE_KEYS\.memberAuthUserId/);
+  assert.match(SOURCE, /STORAGE_KEYS\.memberHasArrived/);
 });
 
 test("explicit Member logout clears account-origin state before publishing Supabase sign-out", () => {

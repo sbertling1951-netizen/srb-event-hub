@@ -95,10 +95,9 @@ export function requireMemberSession(): MemberSession {
 // Persist a governed, server-resolved attendee id onto the canonical
 // MemberSession when the persisted session is missing it or holds a
 // different value. Used by the shared member-identity recovery layer and
-// by My Check-In after it resolves an attendee record -- so the canonical
-// session, not just the legacy fcoc-member-attendee-id compatibility key,
-// carries the repaired identity. No-op when the session is absent (nothing
-// coherent to attach it to) or already carries the same id.
+// by My Check-In after it resolves an attendee record -- MemberSession is
+// the single client identity source. No-op when the session is absent
+// (nothing coherent to attach it to) or already carries the same id.
 export function ensureMemberSessionAttendee(attendeeId: string): boolean {
   if (typeof window === "undefined") {
     return false;

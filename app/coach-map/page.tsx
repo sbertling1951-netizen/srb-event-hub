@@ -4,26 +4,14 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
-import { logEngagement } from "@/lib/engagement";
-import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 function CoachMapPageInner() {
   const router = useRouter();
 
-  useEffect(() => {
-    const context = getCurrentMemberEvent();
-    const attendeeId = sessionStorage.getItem(STORAGE_KEYS.memberAttendeeId);
-
-    if (context?.id && attendeeId) {
-      void logEngagement({
-        eventId: context.id,
-        attendeeId,
-        activityType: "coach_map_view",
-      });
-    }
-  }, []);
-
+  // This stub only redirects to /coach-map/public. Its former
+  // "coach_map_view" engagement log read the retired attendee-id key from
+  // sessionStorage (never written there — the log never fired); per M2 the
+  // dead read is removed and the telemetry gap is accepted (not relocated).
   useEffect(() => {
     router.replace("/coach-map/public");
   }, [router]);

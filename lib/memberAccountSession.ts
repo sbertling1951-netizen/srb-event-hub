@@ -132,7 +132,6 @@ export async function finishMemberLogin(params: {
   } = params;
 
   if (typeof window !== "undefined") {
-    localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendeeId);
     if (authUserId) {
       localStorage.setItem(STORAGE_KEYS.memberAuthUserId, authUserId);
     } else {
@@ -216,7 +215,6 @@ export function clearMemberLocalState() {
   clearMemberSession();
 
   if (typeof window !== "undefined") {
-    localStorage.removeItem(STORAGE_KEYS.memberAttendeeId);
     localStorage.removeItem(STORAGE_KEYS.memberHasArrived);
     localStorage.removeItem(STORAGE_KEYS.memberEventContext);
     localStorage.removeItem(STORAGE_KEYS.memberEventChanged);

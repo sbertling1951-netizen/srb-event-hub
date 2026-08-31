@@ -395,7 +395,6 @@ export default function MemberLoginPage() {
       const arrived = !!attendee.has_arrived;
 
       if (typeof window !== "undefined") {
-        localStorage.setItem(STORAGE_KEYS.memberAttendeeId, attendee.id);
         localStorage.removeItem(STORAGE_KEYS.memberAuthUserId);
         localStorage.setItem(STORAGE_KEYS.memberHasArrived, String(arrived));
         localStorage.setItem(STORAGE_KEYS.userMode, "member");

@@ -4,12 +4,17 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-// Structural/source assertions for Member Event Context Stage 2's
-// MemberRouteGuard: an Account session must pass governed established-
-// context validation to be allowed; Temporary Event Access is unchanged.
+// Structural/source assertions for MemberRouteGuard. As of M2 the full
+// bootstrap + admission decision lives in the pure function
+// lib/memberWorkspace/memberRouteAccess.ts; its BEHAVIOUR (the A–L state
+// matrix, no-flash, redirect-loop safety, Option A) is proven executably in
+// lib/memberWorkspace/memberRouteAccess.test.ts and
+// lib/memberWorkspace/recoverMemberIdentity.behavior.test.ts. This file
+// asserts only that the component delegates to that decision correctly,
+// performs no identity resolution of its own, and that the protected-route
+// wiring is complete.
 //
-// Run with:
-//   npx tsx --test components/auth/MemberRouteGuard.test.ts
+// Run with:  npm run test:member-workspace
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = dirname(dirname(HERE));
@@ -20,212 +25,114 @@ const SOURCE = readFileSync(
 );
 const CODE = SOURCE.replace(/^\s*\/\/.*$/gm, "");
 
+const ACCESS_SOURCE = readFileSync(
+  `${REPO_ROOT}/lib/memberWorkspace/memberRouteAccess.ts`,
+  "utf8",
+);
+const ACCESS_CODE = ACCESS_SOURCE.replace(/^\s*\/\/.*$/gm, "");
+
 const PROVIDER_SOURCE = readFileSync(
   `${REPO_ROOT}/lib/memberWorkspace/MemberWorkspaceProvider.tsx`,
   "utf8",
 );
 
-test("consumes MemberWorkspaceProvider's governed context, not a second identity/context source", () => {
-  assert.match(CODE, /useMemberWorkspace\(\)/);
-});
+// ---------------------------------------------------------------------------
+// Delegation to the pure decision.
+// ---------------------------------------------------------------------------
 
-test("Temporary Event Access (isAccountSession === false) keeps the prior localStorage-sufficient contract", () => {
+test("the Guard delegates the whole bootstrap + admission decision to evaluateMemberRouteAccess / canOptimisticallyPaintAllow", () => {
   assert.match(
     CODE,
-    /if \(workspace\.isAccountSession === false\) \{[\s\S]{0,300}?setStatus\("allowed"\);/,
+    /import \{[\s\S]*?canOptimisticallyPaintAllow,[\s\S]*?evaluateMemberRouteAccess,[\s\S]*?\} from "@\/lib\/memberWorkspace\/memberRouteAccess"/,
   );
+  assert.match(CODE, /const decision = evaluateMemberRouteAccess\(\{/);
+  assert.match(CODE, /canOptimisticallyPaintAllow\(\{/);
 });
 
-test("an Account session is allowed only once contextStatus is valid/error AND the shared identity is resolved (never merely from localStorage)", () => {
-  assert.match(
-    CODE,
-    /\(workspace\.contextStatus === "valid" \|\|\s*\n\s*workspace\.contextStatus === "error"\) &&\s*\n\s*workspace\.identityStatus === "resolved"\s*\n\s*\) \{[\s\S]{0,200}?setStatus\("allowed"\);/,
-  );
+test("the Guard performs exactly the returned action -- setStatus / clearMemberLocalState / router.replace(decision.destination)", () => {
+  assert.match(CODE, /if \(decision\.action === "allow"\) \{[\s\S]{0,120}?setStatus\("allowed"\);/);
+  assert.match(CODE, /if \(decision\.action === "checking"\) \{[\s\S]{0,120}?setStatus\("checking"\);/);
+  assert.match(CODE, /setStatus\("denied"\);/);
+  assert.match(CODE, /if \(decision\.clearState\) \{\s*\n\s*clearMemberLocalState\(\);\s*\n\s*\}/);
+  assert.match(CODE, /router\.replace\(decision\.destination\);/);
+  // the optimistic layout-effect only ever acts on an "allow"
+  assert.match(CODE, /canOptimisticallyPaintAllow\(\{[\s\S]{0,400}?\}\)\s*\n?\s*\)\s*\{\s*\n\s*setStatus\("allowed"\);/);
 });
 
-test("Member Workspace Continuity: a member is admitted ONLY when the shared identityStatus is resolved -- resolving holds, recovery_required routes to explicit recovery", () => {
-  // resolving -> checking
-  assert.match(
-    CODE,
-    /if \(workspace\.identityStatus === "resolving"\) \{[\s\S]{0,120}?setStatus\("checking"\);/,
-  );
-  // recovery_required -> denied + deliberate redirect to an existing
-  // recovery surface (never a silent null-identity workspace)
-  const recoveryIdx = CODE.indexOf(
-    'if (workspace.identityStatus === "recovery_required") {',
-  );
-  assert.ok(recoveryIdx >= 0, "expected the recovery_required branch");
-  const teaAllowIdx = CODE.indexOf(
-    'if (workspace.isAccountSession === false) {',
-  );
-  assert.ok(
-    recoveryIdx < teaAllowIdx,
-    "recovery_required must be decided before the Temporary Access allow",
-  );
-  const branch = CODE.slice(recoveryIdx, teaAllowIdx);
-  assert.match(branch, /setStatus\("denied"\)/);
-  assert.match(branch, /clearMemberLocalState\(\)/);
-  assert.match(branch, /"\/member\/account\?contextInvalid=1"/);
-  assert.match(branch, /"\/member\/login\?sessionExpired=1"/);
-  assert.equal(/setStatus\("allowed"\)/.test(branch), false);
-});
-
-test("the Temporary Event Access allow is now gated: reached only after resolving / recovery_required have returned", () => {
-  const teaIdx = CODE.indexOf('if (workspace.isAccountSession === false) {');
-  const resolvingIdx = CODE.indexOf(
-    'if (workspace.identityStatus === "resolving") {',
-  );
-  const recoveryIdx = CODE.indexOf(
-    'if (workspace.identityStatus === "recovery_required") {',
-  );
-  assert.ok(resolvingIdx >= 0 && recoveryIdx >= 0 && teaIdx >= 0);
-  assert.ok(recoveryIdx < teaIdx && resolvingIdx < teaIdx);
-});
-
-test("an Account session is never optimistically allowed pre-paint from localStorage alone", () => {
-  const preLayoutEffect = CODE.slice(
-    0,
-    CODE.indexOf("useEffect(() => {\n    let mounted"),
-  );
-  assert.match(
-    preLayoutEffect,
-    /workspace\.isAccountSession === false/,
-  );
-});
-
-test("does not re-derive attendee identity or Event choice independently -- no direct RPC calls in this component", () => {
+test("the Guard does NOT resolve identity or Event choice itself -- no RPC call in this component", () => {
   assert.equal(/\.rpc\(/.test(CODE), false);
 });
 
-test("the Provider still owns the invalid-established-context navigation; the Guard's only redirect-with-reason is the shared identity recovery_required case", () => {
-  // The Guard does not re-run the Provider's established-context "invalid"
-  // redirect. It DOES own the shared attendee-identity recovery redirect
-  // (recovery_required) -- a distinct state the Provider does not act on.
-  const recoveryIdx = CODE.indexOf(
-    'if (workspace.identityStatus === "recovery_required") {',
-  );
-  assert.ok(recoveryIdx >= 0);
-  // contextInvalid appears ONLY inside that recovery branch, as a
-  // destination (reusing the existing account recovery surface).
-  const firstContextInvalid = CODE.indexOf("contextInvalid");
-  assert.ok(firstContextInvalid > recoveryIdx);
-  assert.doesNotMatch(
-    CODE,
-    /contextStatus === "invalid"/,
-  );
+test("M2: the retired attendee-id key / helper is not referenced anywhere in the Guard", () => {
+  assert.doesNotMatch(CODE, /getStoredMemberAttendeeId|memberAttendeeId/);
 });
 
-// ---------------------------------------------------------------------------
-// Lapsed Account session (account-origin marker present, Supabase Auth
-// session gone). Must NOT be reclassified as Temporary Event Access and
-// must NOT render protected children -- route to re-authentication instead.
-// ---------------------------------------------------------------------------
-
-test("account-vs-temporary is decided by the existing fcoc-member-auth-user-id marker, read via the shared helper (no new MemberSession origin field)", () => {
-  assert.match(CODE, /getStoredMemberAuthUserId/);
-  assert.match(CODE, /const accountOriginMarker = getStoredMemberAuthUserId\(\);/);
+test("hasEvent stays hint-inclusive (!!getCurrentMemberEvent()) in BOTH the layout-effect and the verification effect, and is NEVER getMemberSession()?.event_id", () => {
+  assert.doesNotMatch(CODE, /getMemberSession\(\)\?\.event_id/);
+  // both the optimistic layout-effect and the async effect derive hasEvent
+  // from the hint-inclusive helper
+  assert.match(CODE, /hasEvent: !!getCurrentMemberEvent\(\)/); // layout-effect (object literal)
+  assert.match(CODE, /const hasEvent = !!getCurrentMemberEvent\(\);/); // verification effect
 });
 
-test("a lapsed Account session is denied and routed to sign-in BEFORE the Temporary Event Access allow path", () => {
-  const lapsedIdx = CODE.indexOf(
-    "if (accountOriginMarker && workspace.isAccountSession === false) {",
-  );
-  const tempAllowIdx = CODE.indexOf(
-    "if (workspace.isAccountSession === false) {",
-  );
-  assert.ok(lapsedIdx >= 0, "expected the lapsed-account branch");
-  assert.ok(tempAllowIdx >= 0, "expected the Temporary Access allow branch");
-  assert.ok(
-    lapsedIdx < tempAllowIdx,
-    "the lapsed-account check must run before the Temporary Access allow",
-  );
-
-  const branch = CODE.slice(lapsedIdx, tempAllowIdx);
-  assert.match(branch, /setStatus\("denied"\)/);
-  assert.match(branch, /clearMemberLocalState\(\)/);
-  assert.match(branch, /router\.replace\("\/member\/login\?sessionExpired=1"\)/);
-  assert.match(branch, /return;/);
-  // never "allowed" for this state
-  assert.equal(/setStatus\("allowed"\)/.test(branch), false);
+test("account-vs-temporary is still decided by the existing fcoc-member-auth-user-id marker, read via the shared helper", () => {
+  assert.match(CODE, /getStoredMemberAuthUserId\(\)/);
+  assert.match(CODE, /accountOriginMarker: getStoredMemberAuthUserId\(\)/);
+  // the decision function is what compares it against isAccountSession
+  assert.match(ACCESS_CODE, /!!i\.accountOriginMarker && i\.isAccountSession === false/);
 });
 
-test("a lapsed Account session is never optimistically painted as allowed pre-paint", () => {
-  const preLayoutEffect = CODE.slice(
-    0,
-    CODE.indexOf("useEffect(() => {\n    let mounted"),
-  );
-  // the optimistic allow explicitly excludes the account-origin marker
-  assert.match(
-    preLayoutEffect,
-    /!accountOriginMarker &&\s*\n\s*workspace\.isAccountSession === false/,
-  );
+test("hasLiveAuthSession comes from a fresh supabase.auth.getSession() at decision time", () => {
+  assert.match(CODE, /const \{ data: sessionData \} = await supabase\.auth\.getSession\(\);/);
+  assert.match(CODE, /hasLiveAuthSession: !!sessionData\.session/);
 });
 
-test("re-auth navigation cannot loop: the lapsed branch returns immediately and the effect's deps do not include anything clearMemberLocalState mutates", () => {
-  // single router.replace to the sign-in path in the lapsed branch
-  const matches = CODE.match(
-    /router\.replace\("\/member\/login\?sessionExpired=1"\)/g,
-  );
-  assert.equal(matches?.length, 1);
-  // the verification effect still keys only off router + workspace signals,
-  // never off a localStorage value the clear would change
+test("the verification effect keeps its shared-signal dependency array (no dependency on cleared localStorage values)", () => {
   assert.match(
     CODE,
     /\}, \[\s*\n\s*router,\s*\n\s*workspace\.isAccountSession,\s*\n\s*workspace\.contextStatus,\s*\n\s*workspace\.identityStatus,\s*\n\s*\]\);/,
   );
-  // the recovery_required redirect also runs at most once per firing and
-  // its destinations are fixed strings, not derived from cleared state
-  const recoveryRedirects = CODE.match(
-    /router\.replace\(\s*\n?\s*sessionData\?\.session\s*\n?\s*\? "\/member\/account\?contextInvalid=1"\s*\n?\s*: "\/member\/login\?sessionExpired=1"/,
-  );
-  assert.ok(recoveryRedirects, "expected the single fixed-destination recovery redirect");
 });
 
-test("still no direct identity/context RPC in this component after the repair", () => {
-  assert.equal(/\.rpc\(/.test(CODE), false);
+test("the Guard re-verifies on the member session / event / mode storage keys and on pageshow", () => {
+  assert.match(CODE, /e\.key === STORAGE_KEYS\.memberSession/);
+  assert.match(CODE, /e\.key === STORAGE_KEYS\.memberEventContext/);
+  assert.match(CODE, /e\.key === STORAGE_KEYS\.memberEventChanged/);
+  assert.match(CODE, /e\.key === STORAGE_KEYS\.userMode/);
+  assert.match(CODE, /addEventListener\("pageshow", handlePageShow\)/);
 });
 
-test("retired email-only browser state is not a legacy member session; the attendee-id compatibility signal alone forms the coarse pre-gate", () => {
-  assert.doesNotMatch(CODE, /getStoredMemberEmail|memberEmail|fcoc-member-email/);
-  assert.match(CODE, /const attendeeId = getStoredMemberAttendeeId\(\);/);
-  assert.match(CODE, /const hasIdentity = !!attendeeId;/);
-  assert.match(CODE, /const hasLegacySession = mode === "member" && hasIdentity && hasEvent;/);
+// ---------------------------------------------------------------------------
+// Option A is encoded in the pure decision, not the component.
+// ---------------------------------------------------------------------------
+
+test("M2 Option A: the pre-gate is `mode === \"member\" && hasEvent` -- no attendee-id term", () => {
+  assert.match(ACCESS_CODE, /const hasLegacySession = i\.mode === "member" && i\.hasEvent;/);
+  assert.doesNotMatch(ACCESS_SOURCE, /attendeeId|memberAttendeeId|fcoc-member-attendee-id/);
 });
 
-test("M1: the standalone entry-id key is retired from MemberRouteGuard (attendee-id alone is the semantic equivalent of the former OR pre-gate)", () => {
-  assert.doesNotMatch(CODE, /getStoredMemberEntryId|memberEntryId|fcoc-member-entry-id/);
-  assert.doesNotMatch(CODE, /const entryId =/);
-  assert.doesNotMatch(CODE, /attendeeId \|\| entryId/);
-  // both the optimistic pre-paint and the verification effect use the same
-  // attendee-id-only pre-gate
-  assert.equal((CODE.match(/const hasIdentity = !!attendeeId;/g) || []).length, 2);
+test("M2 invariant: evaluateMemberRouteAccess never returns allow while identityStatus is idle / resolving / recovery_required (idle is an explicit checking branch)", () => {
+  assert.match(ACCESS_CODE, /if \(i\.identityStatus === "recovery_required"\) \{/);
+  assert.match(ACCESS_CODE, /if \(i\.identityStatus === "resolving"\) \{\s*\n\s*return \{ action: "checking" \};\s*\n\s*\}/);
+  assert.match(ACCESS_CODE, /if \(i\.identityStatus === "idle"\) \{[\s\S]{0,320}?return \{ action: "checking" \};/);
+  // the two allow returns both sit AFTER those identity guards
+  const idleIdx = ACCESS_CODE.indexOf('i.identityStatus === "idle"');
+  const firstAllow = ACCESS_CODE.indexOf('return { action: "allow" }');
+  assert.ok(idleIdx > 0 && firstAllow > idleIdx);
 });
 
-test("M1: final admission is still gated on the shared MemberSession-derived identity, not the compatibility pre-gate", () => {
-  // this cohort does NOT move the bootstrap onto MemberSession -- the
-  // legacy pre-gate stays, but resolved canonical identity is still required
-  assert.match(CODE, /workspace\.identityStatus === "resolved"/);
+test("M2: canOptimisticallyPaintAllow is TEA-only, non-lapsed, and requires identityStatus === \"resolved\"", () => {
   assert.match(
-    CODE,
-    /if \(workspace\.identityStatus === "recovery_required"\) \{/,
-  );
-  assert.match(
-    CODE,
-    /if \(workspace\.identityStatus === "resolving"\) \{/,
+    ACCESS_CODE,
+    /i\.mode === "member" &&\s*\n\s*i\.hasEvent &&\s*\n\s*!i\.accountOriginMarker &&\s*\n\s*i\.isAccountSession === false &&\s*\n\s*i\.identityStatus === "resolved"/,
   );
 });
 
-test("Account and TEA admission remain separated by live Auth, resolved workspace identity, and canonical capability state", () => {
-  assert.match(CODE, /workspace\.identityStatus === "resolved"/);
-  assert.match(CODE, /accountOriginMarker && workspace\.isAccountSession === false/);
-  assert.match(CODE, /workspace\.isAccountSession === false/);
-  assert.match(CODE, /getStoredMemberAuthUserId\(\)/);
-  assert.doesNotMatch(CODE, /temporary_capability_hash/);
-});
+// ---------------------------------------------------------------------------
+// Protected-route wiring (unchanged by M2) -- fs walks.
+// ---------------------------------------------------------------------------
 
-test("Member Workspace Continuity: PROTECTED_MEMBER_WORKSPACE_ROUTE_PREFIXES covers every route tree that actually renders <MemberRouteGuard>", () => {
-  // the provider's protected-route set that gates both the recovery effect
-  // and the established-context validation effect
+test("PROTECTED_MEMBER_WORKSPACE_ROUTE_PREFIXES covers every route tree that actually renders <MemberRouteGuard>", () => {
   const listMatch = PROVIDER_SOURCE.match(
     /PROTECTED_MEMBER_WORKSPACE_ROUTE_PREFIXES = \[([\s\S]*?)\] as const/,
   );
@@ -236,8 +143,6 @@ test("Member Workspace Continuity: PROTECTED_MEMBER_WORKSPACE_ROUTE_PREFIXES cov
     ["/activities", "/announcements", "/coach-map", "/member"],
   );
 
-  // every file that renders <MemberRouteGuard> must sit under one of those
-  // prefixes (derived from its app/ route path)
   const APP_DIR = join(REPO_ROOT, "app");
   const wrapped: string[] = [];
   const walk = (dir: string) => {
@@ -306,10 +211,6 @@ test("INVARIANT: every page that consumes useMemberWorkspace() enforces the shar
   assert.ok(consumers.length >= 10, "expected the known useMemberWorkspace consumers");
   for (const { route, src } of consumers) {
     const wrapped = src.includes("<MemberRouteGuard");
-    // the member dashboard self-enforces: it consumes identityStatus and
-    // routes to explicit recovery on recovery_required (it is not
-    // <MemberRouteGuard>-wrapped by design -- it IS the recovery landing
-    // decision surface).
     const selfEnforces =
       route === "/member" &&
       /workspace\.identityStatus === "recovery_required"/.test(src) &&

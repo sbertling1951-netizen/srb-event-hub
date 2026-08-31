@@ -155,12 +155,10 @@ export async function recoverMemberIdentity(
     expires_at: session?.expires_at ?? null,
   });
 
-  // Legacy compatibility keys remain compatibility data only -- they never
-  // independently establish identity -- but older readers (the dashboard,
-  // the Guard's bootstrap check, engagement logging) still consult them,
-  // so keep them consistent with the repaired MemberSession.
+  // The surviving compatibility keys are refreshed to stay consistent with
+  // the repaired MemberSession. (The retired legacy standalone attendee-id key is
+  // no longer written — MemberSession.attendee_id is the identity source.)
   if (typeof window !== "undefined") {
-    localStorage.setItem(STORAGE_KEYS.memberAttendeeId, resolvedAttendeeId);
     localStorage.setItem(STORAGE_KEYS.userMode, "member");
     if (typeof row.has_arrived === "boolean") {
       localStorage.setItem(

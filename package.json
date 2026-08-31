@@ -11,6 +11,8 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "test": "tsx --test lib/memberWorkspace/memberRouteAccess.test.ts lib/memberWorkspace/recoverMemberIdentity.behavior.test.ts",
+    "test:member-workspace": "tsx --test lib/memberWorkspace/*.test.ts components/auth/MemberRouteGuard.test.ts",
     "check:storage-keys": "node scripts/check-fcoc-storage-key-literals.mjs",
     "context:update": "node scripts/ai-context/update-project-brief.mjs",
     "db:verify-replay": "bash scripts/verify-fresh-replay.sh"
@@ -45,6 +47,7 @@
     "eslint-config-prettier": "^10.1.2",
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "eslint-plugin-unused-imports": "^4.1.4",
+    "tsx": "4.20.6",
     "typescript": "^5.8.2"
   }
 }

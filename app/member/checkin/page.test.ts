@@ -211,13 +211,12 @@ test("recovery_required renders explicit sign-in + Temporary Event Access action
   assert.match(recoveryView, /Use temporary event access/);
 });
 
-test("on a successful attendee resolution the canonical MemberSession is kept coherent -- not only the legacy fcoc-member-attendee-id key", () => {
+test("M2: on a successful attendee resolution the canonical MemberSession is kept coherent via ensureMemberSessionAttendee -- the retired attendee-id compat key is no longer written", () => {
   assert.match(source, /ensureMemberSessionAttendee\(attendeeRow\.id\)/);
-  const successRegion = source.slice(
-    source.indexOf("ensureMemberSessionAttendee(attendeeRow.id)"),
-    source.indexOf("setAttendee(attendeeRow);"),
-  );
-  assert.match(successRegion, /localStorage\.setItem\("fcoc-member-attendee-id", attendeeRow\.id\)/);
+  assert.doesNotMatch(source, /memberAttendeeId|fcoc-member-attendee-id/);
+  // check-in telemetry uses the shared workspace attendee id, not a legacy key
+  assert.match(source, /useMemberWorkspace\(\)/);
+  assert.match(source, /if \(!event\?\.id \|\| !attendeeId\) \{[\s\S]{0,140}?activityType: "checkin_view"/);
 });
 
 test("the residual empty-result branch also offers recovery, not a dead end", () => {

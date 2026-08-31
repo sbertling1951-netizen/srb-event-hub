@@ -6,10 +6,10 @@ import { useEffect, useState } from "react";
 import { LoginSelector } from "@/components/auth/LoginSelector";
 import {
   getCurrentMemberEvent,
-  getStoredMemberAttendeeId,
   getStoredMemberHasArrived,
+  getStoredUserMode,
 } from "@/lib/getCurrentMemberEvent";
-import { getStoredUserMode } from "@/lib/getCurrentMemberEvent";
+import { getMemberSession } from "@/lib/memberSession";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
@@ -43,7 +43,10 @@ export default function HomePage() {
         }
 
         console.log("D: before member session reads");
-        const attendeeId = getStoredMemberAttendeeId();
+        // Canonical MemberSession attendee id (the retired
+        // legacy standalone attendee-id key is no longer read).
+        // fcoc-member-has-arrived behaviour is unchanged.
+        const attendeeId = getMemberSession()?.attendee_id ?? null;
         const memberEvent = getCurrentMemberEvent();
         const hasArrived = getStoredMemberHasArrived();
 

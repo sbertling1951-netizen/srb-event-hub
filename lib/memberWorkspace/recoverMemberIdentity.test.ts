@@ -112,13 +112,15 @@ test("C: absent MemberSession + no live auth + only legacy keys -> no TEA recons
   assert.ok(elseIdx > 0 && elseIdx < CODE.indexOf('supabase.rpc("get_my_attendee_record"'));
 });
 
-test("on success it rewrites a coherent MemberSession for the anchored Event + resolved attendee, then refreshes legacy compat keys", () => {
+test("on success it rewrites a coherent MemberSession for the anchored Event + resolved attendee, then refreshes the surviving compat keys", () => {
   assert.match(CODE, /saveMemberSession\(\{[\s\S]{0,1400}?attendee_id: resolvedAttendeeId,/);
   assert.match(CODE, /event_id: eventId,/);
   // Temporary Event Access recovery preserves its capability + expiry
   assert.match(CODE, /temporary_capability_hash: isCapabilityRecovery \? capabilityHash : null,/);
   assert.match(CODE, /expires_at: session\?\.expires_at \?\? null,/);
-  assert.match(CODE, /localStorage\.setItem\(STORAGE_KEYS\.memberAttendeeId, resolvedAttendeeId\);/);
+  // surviving compatibility mirrors: user-mode + arrival projection
+  assert.match(CODE, /localStorage\.setItem\(STORAGE_KEYS\.userMode, "member"\);/);
+  assert.match(CODE, /STORAGE_KEYS\.memberHasArrived,/);
 });
 
 test("recovery no longer writes retired standalone email/name storage and preserves canonical session identity fields", () => {
@@ -128,15 +130,15 @@ test("recovery no longer writes retired standalone email/name storage and preser
   assert.match(CODE, /participant_name: session\?\.participant_name \?\? null/);
 });
 
-test("M1: recovery no longer writes the retired standalone entry-id key; canonical rewrite + attendee-id/has-arrived mirrors unchanged", () => {
+test("M1/M2: recovery no longer writes the retired standalone entry-id OR attendee-id keys; the governed rewrite + surviving mirrors are intact", () => {
   assert.doesNotMatch(CODE, /memberEntryId|fcoc-member-entry-id/);
   assert.doesNotMatch(CODE, /row\.entry_id/);
-  // the governed rewrite and the surviving compatibility mirrors are intact
+  // M2 — the legacy standalone attendee-id compatibility key is no longer
+  // written; MemberSession.attendee_id (via saveMemberSession) is canonical.
+  assert.doesNotMatch(CODE, /memberAttendeeId|fcoc-member-attendee-id/);
   assert.match(CODE, /saveMemberSession\(\{/);
-  assert.match(
-    CODE,
-    /localStorage\.setItem\(STORAGE_KEYS\.memberAttendeeId, resolvedAttendeeId\);/,
-  );
+  assert.match(CODE, /attendee_id: resolvedAttendeeId,/);
+  assert.match(CODE, /localStorage\.setItem\(STORAGE_KEYS\.userMode, "member"\);/);
   assert.match(CODE, /STORAGE_KEYS\.memberHasArrived,/);
 });
 

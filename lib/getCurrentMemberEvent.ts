@@ -15,13 +15,6 @@ export type CurrentMemberEvent = {
   lng: number | null;
 };
 
-export function getStoredMemberAttendeeId() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem(STORAGE_KEYS.memberAttendeeId);
-}
-
 // The authenticated Account login path (finishMemberLogin) writes this;
 // Temporary Event Access explicitly clears it. Non-null here means the
 // persisted member state originated from an Account session -- used to
@@ -146,8 +139,9 @@ export function getCurrentMemberEvent(): CurrentMemberEvent | null {
   }
 }
 
-// Prefer the canonical MemberSession identity. Fall back to the legacy
-// storage helper during the member-session migration.
+// The canonical MemberSession attendee identity. The legacy standalone
+// attendee-id compatibility key is retired -- MemberSession is the single
+// client identity source.
 export function getCurrentMemberAttendeeId(): string | null {
-  return getCurrentAttendeeId() || getStoredMemberAttendeeId();
+  return getCurrentAttendeeId();
 }

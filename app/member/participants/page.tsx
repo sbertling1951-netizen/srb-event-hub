@@ -8,7 +8,6 @@ import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapt
 import { logEngagement } from "@/lib/engagement";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 type AttendeeRecordRpcRow = {
@@ -142,21 +141,16 @@ function ParticipantsPageInner() {
   }, []);
 
   useEffect(() => {
-    if (!currentAttendee?.event_id) {
-      return;
-    }
-
-    const storedAttendeeId = localStorage.getItem(STORAGE_KEYS.memberAttendeeId);
-    if (!storedAttendeeId) {
+    if (!currentAttendee?.event_id || !currentAttendee.id) {
       return;
     }
 
     void logEngagement({
       eventId: currentAttendee.event_id,
-      attendeeId: storedAttendeeId,
+      attendeeId: currentAttendee.id,
       activityType: "participants_view",
     });
-  }, [currentAttendee?.event_id]);
+  }, [currentAttendee?.event_id, currentAttendee?.id]);
 
   // registeredParticipantCount is the governed Participation fact: every
   // household-member row already represents one identified roster slot

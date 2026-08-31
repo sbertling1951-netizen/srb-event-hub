@@ -14,12 +14,6 @@ export const STORAGE_KEYS = {
   memberEventContext: "fcoc-member-event-context",
   memberEventChanged: "fcoc-member-event-changed",
 
-  // Compatibility / bootstrap key: mirrored from the canonical
-  // MemberSession as the outcome of a server-validated login, and read by
-  // MemberRouteGuard's coarse "a member session exists" admission pre-gate
-  // and by the root-route arrival redirect. It is NOT identity authority --
-  // MemberWorkspaceProvider derives the attendee from MemberSession only.
-  memberAttendeeId: "fcoc-member-attendee-id",
   // Root-route arrival projection: mirrors attendees.has_arrived at login
   // time so the "/" redirect can skip the check-in step. Not authoritative;
   // the server value is re-read on every /member and /member/checkin load.
