@@ -798,19 +798,220 @@ test("saveEvent's incidental filter adjustment to keep an updated Event visible 
   );
 });
 
-test("a persisted filter unavailable to a non-super-admin's picker is clamped in-memory to Active, without overwriting the persisted preference", () => {
-  const clampIdx = PAGE_SOURCE.indexOf(
-    '!admin.isSuperAdmin && eventStatusFilter !== "active"',
-  );
-  assert.notEqual(clampIdx, -1);
-  const clampBlock = PAGE_SOURCE.slice(clampIdx, clampIdx + 200);
+// Event Admin filter consistency (2026-09-18): the Event Filter picker used
+// to render only "Active events" for a non-super-admin, backed by a
+// useEffect that force-reset eventStatusFilter to "active" for any
+// non-super-admin. That locked an Event Admin out of their own authorized
+// inactive/archived/draft Events on the one page built to manage Events --
+// even though the query (tests 1-4 above) already fetches the full
+// authorized set and loadedEvents is only a downstream display subset of
+// it. Both the option gate and the clamp effect are removed: every
+// authorized admin gets the same five lifecycle filter values, and none of
+// them can define or expand authority (loadedEvents = accessibleEvents
+// .filter(...), always a subset of the canAccessEvent-gated set).
 
-  assert.match(clampBlock, /setEventStatusFilter\("active"\)/);
+test("the non-super-admin clamp effect (force-reset eventStatusFilter to 'active') is gone", () => {
   assert.equal(
-    /persistEventStatusFilter/.test(clampBlock),
+    /!admin\.isSuperAdmin && eventStatusFilter !== "active"/.test(PAGE_SOURCE),
     false,
-    "the clamp is a session-local display fix, not a rewrite of another admin's saved preference on a shared device",
+    "found the retired clamp that forced non-super-admins back to the Active filter",
   );
+  // No remaining code path resets the filter to a fixed value based on the
+  // admin's global role.
+  assert.equal(/isSuperAdmin/.test(PAGE_SOURCE), false);
+});
+
+test("every authorized admin gets all five Event Filter options -- the picker is no longer role-gated to Active-only", () => {
+  const fieldIdx = PAGE_SOURCE.indexOf('<Field label="Event Filter">');
+  assert.notEqual(fieldIdx, -1);
+  const selectClose = PAGE_SOURCE.indexOf("</Select>", fieldIdx);
+  const optionsBlock = PAGE_SOURCE.slice(fieldIdx, selectClose);
+
+  for (const [value, label] of [
+    ["active", "Active events"],
+    ["inactive", "Inactive events"],
+    ["archived", "Archived events"],
+    ["draft", "Draft events"],
+    ["all", "All events"],
+  ]) {
+    assert.ok(
+      optionsBlock.includes(`<option value="${value}">${label}</option>`),
+      `Event Filter must always offer "${label}"`,
+    );
+  }
+  // Every EventStatusFilter value is represented, exactly once.
+  for (const value of ["active", "inactive", "archived", "draft", "all"]) {
+    assert.equal(
+      (optionsBlock.match(new RegExp(`<option value="${value}">`, "g")) || []).length,
+      1,
+      `exactly one <option> for "${value}"`,
+    );
+  }
+  // The options are not wrapped in an admin-role conditional.
+  assert.equal(
+    /\?\s*\(\s*<>\s*<option value="active">Active events<\/option>/.test(optionsBlock),
+    false,
+    "the Event Filter options must not be gated on a role branch",
+  );
+});
+
+test("the default filter is still the persisted display preference (defaulting to Active), not a role-derived value", () => {
+  // Unchanged: initialization remains the browser-local display preference.
+  assert.match(
+    PAGE_SOURCE,
+    /useState<EventStatusFilter>\(readPersistedEventStatusFilter\)/,
+  );
+  const readFnIdx = PAGE_SOURCE.indexOf("function readPersistedEventStatusFilter()");
+  const readFnBody = PAGE_SOURCE.slice(readFnIdx, PAGE_SOURCE.indexOf("\n}", readFnIdx));
+  assert.match(readFnBody, /return "active";/);
+  assert.equal(/isSuperAdmin/.test(readFnBody), false);
+});
+
+test("under EVERY filter value, the picker list stays a subset of the canAccessEvent-gated authorized set -- unauthorized Events are never exposed", () => {
+  const loadedIdx = PAGE_SOURCE.indexOf("const loadedEvents = accessibleEvents.filter(");
+  assert.notEqual(loadedIdx, -1);
+  const loadedBlock = PAGE_SOURCE.slice(loadedIdx, loadedIdx + 500);
+
+  // The list is derived by filtering the already-authorized array...
+  assert.match(loadedBlock, /const loadedEvents = accessibleEvents\.filter\(/);
+  // ...for each of the five values, and never re-queries or re-derives authority.
+  assert.match(loadedBlock, /eventStatusFilter === "all"/);
+  assert.match(loadedBlock, /eventStatusFilter === "active"/);
+  assert.match(loadedBlock, /normalizedStatus === eventStatusFilter/);
+  assert.equal(/canAccessEvent|from\("events"\)|\.rpc\(/.test(loadedBlock), false);
+
+  // `accessibleEvents` itself is and stays the canAccessEvent gate.
+  const accessibleIdx = PAGE_SOURCE.indexOf("const accessibleEvents =");
+  const accessibleBlock = PAGE_SOURCE.slice(accessibleIdx, accessibleIdx + 200);
+  assert.match(
+    accessibleBlock,
+    /\(\(eventsResult\.data \|\| \[\]\) as EventRow\[\]\)\.filter\(\s*\n?\s*\(event\) => !!event\.id && canAccessEvent\(admin, event\.id\)/,
+  );
+});
+
+// Behavioral: with all five filter values now selectable, prove that a
+// filter change alone still never mutates canonical working-event context,
+// including when the working Event is excluded by the newly-selected
+// filter. Models loadPage's own resolution: context resolves against the
+// full accessibleEvents set, the picker selection against the filtered
+// loadedEvents subset, and applyEventStatusFilter touches neither the
+// shared context nor authority.
+function createFilterChangeModel() {
+  const accessibleEvents = [
+    { id: "active-evt", status: "Active" },
+    { id: "archived-evt", status: "Archived" },
+    { id: "draft-evt", status: "Draft" },
+  ];
+  const unauthorizedEvent = { id: "other-tenant-evt", status: "Active" };
+
+  const shared = { workingEventId: "archived-evt" };
+  let filter: "active" | "inactive" | "archived" | "draft" | "all" = "active";
+  let pickerSelection = "";
+  let setWorkspaceCalls = 0;
+
+  function isActive(status: string) {
+    return status.toLowerCase() === "active";
+  }
+
+  function loadedEvents() {
+    // Authority gate first (unauthorizedEvent is never in accessibleEvents),
+    // then the display filter -- always a subset.
+    return accessibleEvents.filter((e) => {
+      if (filter === "all") {
+        return true;
+      }
+      if (filter === "active") {
+        return isActive(e.status);
+      }
+      return e.status.toLowerCase() === filter;
+    });
+  }
+
+  function applyEventStatusFilter(next: typeof filter) {
+    // Mirrors the real applyEventStatusFilter: clears local list/selection,
+    // sets + persists the filter, never calls setWorkspaceEvent.
+    pickerSelection = "";
+    filter = next;
+    // loadPage re-runs: context resolves against the FULL authorized set.
+    const contextStillAuthorized = accessibleEvents.some(
+      (e) => e.id === shared.workingEventId,
+    );
+    // picker selection is only pre-filled when context is visible under the
+    // current filter; otherwise left genuinely unselected.
+    pickerSelection = contextStillAuthorized
+      && loadedEvents().some((e) => e.id === shared.workingEventId)
+      ? shared.workingEventId
+      : "";
+  }
+
+  function pickEvent(id: string) {
+    // Only an explicit pick from the visible list writes shared context.
+    if (!loadedEvents().some((e) => e.id === id)) {
+      return;
+    }
+    pickerSelection = id;
+    shared.workingEventId = id;
+    setWorkspaceCalls += 1;
+  }
+
+  return {
+    get filter() { return filter; },
+    get pickerSelection() { return pickerSelection; },
+    get workingEventId() { return shared.workingEventId; },
+    get setWorkspaceCalls() { return setWorkspaceCalls; },
+    loadedEvents: () => loadedEvents().map((e) => e.id),
+    unauthorizedEventId: unauthorizedEvent.id,
+    applyEventStatusFilter,
+    pickEvent,
+  };
+}
+
+test("EA can select every one of the five filter values, and each list is authorized + status-correct", () => {
+  const m = createFilterChangeModel();
+
+  m.applyEventStatusFilter("active");
+  assert.deepEqual(m.loadedEvents(), ["active-evt"]);
+
+  m.applyEventStatusFilter("archived");
+  assert.deepEqual(m.loadedEvents(), ["archived-evt"]);
+
+  m.applyEventStatusFilter("draft");
+  assert.deepEqual(m.loadedEvents(), ["draft-evt"]);
+
+  m.applyEventStatusFilter("inactive");
+  assert.deepEqual(m.loadedEvents(), []);
+
+  m.applyEventStatusFilter("all");
+  assert.deepEqual(m.loadedEvents().sort(), ["active-evt", "archived-evt", "draft-evt"]);
+
+  // The unauthorized Event never appears under any filter, including "all".
+  assert.equal(m.loadedEvents().includes(m.unauthorizedEventId), false);
+});
+
+test("changing the filter never mutates working-event context -- even when the working Event is excluded by the new filter", () => {
+  const m = createFilterChangeModel();
+  // Working Event is the Archived one; start on the Active filter.
+  assert.equal(m.workingEventId, "archived-evt");
+
+  m.applyEventStatusFilter("active");
+  // Working Event is excluded -> picker unselected, context untouched.
+  assert.equal(m.pickerSelection, "");
+  assert.equal(m.workingEventId, "archived-evt");
+  assert.equal(m.setWorkspaceCalls, 0);
+
+  m.applyEventStatusFilter("all");
+  assert.equal(m.workingEventId, "archived-evt");
+  assert.equal(m.setWorkspaceCalls, 0);
+
+  // Switching to a filter that DOES include it still does not auto-switch
+  // context; only an explicit pick does.
+  m.applyEventStatusFilter("archived");
+  assert.equal(m.pickerSelection, "archived-evt");
+  assert.equal(m.setWorkspaceCalls, 0);
+
+  m.pickEvent("archived-evt");
+  assert.equal(m.setWorkspaceCalls, 1);
+  assert.equal(m.workingEventId, "archived-evt");
 });
 
 test("a persistent 'Working event' line reads canonical context directly, independent of this page's own filtered selection", () => {

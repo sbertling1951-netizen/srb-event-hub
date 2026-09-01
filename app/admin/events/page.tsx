@@ -729,19 +729,6 @@ function EventAdminPageInner() {
     return unsubscribe;
   }, [admin, loadPage]);
 
-  // A non-super-admin's Event Filter picker only ever renders the
-  // "active" option (see the select's options below). A broader filter
-  // persisted on this device by a different admin (e.g. a shared iPad)
-  // would otherwise leave the control showing no matching option at all.
-  // This only clamps the in-memory display value for this session -- it
-  // never overwrites the persisted preference, so a super admin's own
-  // choice on the same device is unaffected next time they sign in.
-  useEffect(() => {
-    if (admin && !admin.isSuperAdmin && eventStatusFilter !== "active") {
-      setEventStatusFilter("active");
-    }
-  }, [admin, eventStatusFilter]);
-
   useEffect(() => {
     if (!selectedEvent) {
       if (!formDirtyRef.current && !assignmentDirtyRef.current) {
@@ -1149,19 +1136,17 @@ function EventAdminPageInner() {
                   applyEventStatusFilter(nextFilter);
                 }}
               >
-                {admin?.isSuperAdmin ? (
-                  <>
-                    <option value="active">Active events</option>
-                    <option value="inactive">Inactive events</option>
-                    <option value="archived">Archived events</option>
-                    <option value="draft">Draft events</option>
-                    <option value="all">All events</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="active">Active events</option>
-                  </>
-                )}
+                {/* Presentation/discovery filter only -- every option
+                    produces a subset of `accessibleEvents` (canAccessEvent),
+                    so no value can define or expand authority. Available to
+                    every authorized admin, not just Super Admins: an Event
+                    Admin with authority over an inactive/archived/draft
+                    Event must be able to reach it here. */}
+                <option value="active">Active events</option>
+                <option value="inactive">Inactive events</option>
+                <option value="archived">Archived events</option>
+                <option value="draft">Draft events</option>
+                <option value="all">All events</option>
               </Select>
             )}
           </Field>
