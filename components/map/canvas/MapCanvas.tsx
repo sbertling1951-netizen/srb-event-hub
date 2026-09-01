@@ -32,7 +32,9 @@ import {
   type Size,
   viewportToState,
 } from "./coords";
+import { markerHitRadiusContentPx, pickNearestMarker } from "./hitTest";
 import { MarkerLayer } from "./MarkerLayer";
+import { MARKER_MIN_HIT_AREA_PX } from "./markerVisuals";
 import type {
   MapCanvasHandle,
   MapCanvasProps,
@@ -92,10 +94,13 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
 
     const [imgReady, setImgReady] = useState(false);
 
-    const natural: Size = {
-      width: naturalWidth || measuredNatural.width,
-      height: naturalHeight || measuredNatural.height,
-    };
+    const natural: Size = useMemo(
+      () => ({
+        width: naturalWidth || measuredNatural.width,
+        height: naturalHeight || measuredNatural.height,
+      }),
+      [naturalWidth, naturalHeight, measuredNatural.width, measuredNatural.height],
+    );
 
     const seedScale = initialScale ?? 0.6;
 
@@ -208,7 +213,17 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       [selectionMode, toggle, selectSingle, onMarkerTap],
     );
 
-    // ---- empty-map tap (placement) routed through V2's tap path --------------
+    // ---- tap routed through V2's tap path -----------------------------------
+    // V2 has already converted the raw pointer position to content-space px
+    // (args.mapX / args.mapY) using the live pan/zoom transform, so everything
+    // below is transform-, container- and DPR-independent.
+    //
+    // For selectionMode="none" consumers (Parking, Locations, Coach Map) this
+    // is ALSO the marker-selection path: a deterministic nearest-centre hit
+    // test (hitTest.ts). It replaces MarkerLayer's per-marker DOM click boxes,
+    // whose MARKER_MIN_HIT_AREA_PX floor overlaps badly on dense maps and let
+    // an assigned/z-elevated marker steal taps from its neighbours. Authoring
+    // modes keep MarkerLayer's own click path (it carries shift-key state).
     const handleViewportTap = useCallback(
       (args: {
         screenX: number;
@@ -216,12 +231,29 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
         mapX: number;
         mapY: number;
       }) => {
+        if (
+          selectionMode === "none" &&
+          markers.length > 0 &&
+          !suppressActivateRef.current
+        ) {
+          const hitId = pickNearestMarker(
+            { cx: args.mapX, cy: args.mapY },
+            markers,
+            natural,
+            markerHitRadiusContentPx(markers, MARKER_MIN_HIT_AREA_PX),
+          );
+          if (hitId) {
+            onMarkerActivate(hitId, false);
+            return;
+          }
+        }
+
         const { xPct, yPct } = contentToPercent(args.mapX, args.mapY, natural);
         if (editable) {
           onMapTap?.({ xPct, yPct });
         }
       },
-      [editable, natural, onMapTap],
+      [editable, natural, onMapTap, selectionMode, markers, onMarkerActivate],
     );
 
     // ---- page scroll lock (generalized coach-map-lock) -----------------------
@@ -499,6 +531,10 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
               pendingLabel={pendingLabel}
               onMarkerActivate={onMarkerActivate}
               renderMarker={renderMarker}
+              // selectionMode="none" selection is resolved by the engine
+              // nearest-marker hit test in handleViewportTap, not per-marker
+              // DOM click boxes -- see hitTest.ts.
+              interactive={selectionMode !== "none"}
             />
 
             {/* page-supplied overlay layers (e.g. amenity locations) */}

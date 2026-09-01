@@ -1,6 +1,8 @@
 // components/map/canvas/index.ts
 export { alignMarkers, distributeMarkers, nudgeMarkers } from "./alignment";
 export * as coords from "./coords";
+export type { HitTestMarker } from "./hitTest";
+export { markerHitRadiusContentPx, pickNearestMarker } from "./hitTest";
 export { default as MapCanvas } from "./MapCanvas";
 export { MarkerLayer } from "./MarkerLayer";
 export type { MarkerSpacingStats } from "./markerSizing";

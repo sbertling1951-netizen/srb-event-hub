@@ -66,6 +66,40 @@ test("clearSite calls record_site_placement with action 'clear', not a direct pa
   assert.equal(/\.from\("parking_sites"\)/.test(fn![0]), false);
 });
 
+test("an Unassign action is reachable whenever a selected site is occupied -- not gated behind having no attendee selected", () => {
+  // The contextual action zone (always rendered, desktop + mobile) offers
+  // Unassign for any occupied selected site.
+  const panel = SOURCE.slice(
+    SOURCE.indexOf("const actionPanel = ("),
+    SOURCE.indexOf("// ─── Queue panel"),
+  );
+  assert.match(
+    panel,
+    /selectedSite\?\.assigned_attendee_id && !selectionStale && \(/,
+    "actionPanel must show an unassign control for an occupied selected site",
+  );
+  assert.match(panel, /setClearConfirmation\(selectedSite\)/);
+  assert.match(panel, /Unassign /);
+
+  // The Selected Site detail panel's unassign button is no longer suppressed
+  // when an attendee is also selected (the normal correction workflow).
+  assert.equal(
+    /assigned_attendee_id && !selectedAttendee && \(/.test(SOURCE),
+    false,
+    "the unassign button must not require !selectedAttendee",
+  );
+});
+
+test("Unassign routes through the governed clearSite path and states Arrival is untouched", () => {
+  assert.match(SOURCE, /onConfirm=\{async \(\) => \{ if \(!clearConfirmation\).*await clearSite\(site\); \}\}/);
+  const dialog = SOURCE.slice(
+    SOURCE.indexOf("open={!!clearConfirmation}"),
+    SOURCE.indexOf("open={!!clearConfirmation}") + 700,
+  );
+  assert.match(dialog, /Check-In \/ Arrival status is not affected/);
+  assert.match(dialog, /returns to Open/);
+});
+
 test("evidence_source is 'parking_staff' for every record_site_placement call on this page", () => {
   const calls = SOURCE.match(/p_evidence_source: "[a-z_]+"/g) || [];
   assert.ok(calls.length >= 2, "expected at least two record_site_placement calls with an evidence source");

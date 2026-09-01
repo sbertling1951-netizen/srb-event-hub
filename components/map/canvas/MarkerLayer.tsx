@@ -26,6 +26,16 @@ type Props = {
     marker: MapMarker,
     state: { selected: boolean; primary: boolean },
   ) => React.ReactNode;
+  /**
+   * When false, markers do NOT carry their own click handler -- selection is
+   * resolved by MapCanvas's engine-level nearest-marker hit test instead (see
+   * components/map/canvas/hitTest.ts). This is how the selectionMode="none"
+   * consumers (Parking, Locations, Coach Map) avoid the overlapping-hit-box /
+   * z-index misrouting on dense maps. Authoring modes keep interactive markers
+   * (their own DOM click path carries shift-key additive selection). Defaults
+   * to true so nothing changes for callers that don't opt in.
+   */
+  interactive?: boolean;
 };
 
 const SELECTED_COLOR = "#60a5fa";
@@ -41,6 +51,7 @@ function MarkerLayerImpl({
   pendingLabel,
   onMarkerActivate,
   renderMarker,
+  interactive = true,
 }: Props) {
   return (
     <>
@@ -68,14 +79,20 @@ function MarkerLayerImpl({
           >
             {renderMarker ? (
               <div
-                onClick={(e) => {
-                  console.log("CUSTOM MARKER CLICK", m.id);
-                  e.stopPropagation();
-                  onMarkerActivate(m.id, e.shiftKey);
-                }}
+                onClick={
+                  interactive
+                    ? (e) => {
+                        e.stopPropagation();
+                        onMarkerActivate(m.id, e.shiftKey);
+                      }
+                    : undefined
+                }
                 style={{
+                  // Non-interactive markers keep pointer-events so the hover
+                  // title tooltip still works; they simply carry no click
+                  // handler -- MapCanvas's engine hit test owns selection.
                   pointerEvents: m.selectable === false ? "none" : "auto",
-                  cursor: "pointer",
+                  cursor: m.selectable === false ? "default" : "pointer",
                 }}
               >
                 {renderMarker(m, { selected, primary })}
@@ -85,12 +102,15 @@ function MarkerLayerImpl({
                 type="button"
                 tabIndex={-1}
                 title={m.label || m.id}
-                onClick={(e) => {
-                  console.log("MARKER BUTTON CLICK", m.id);
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onMarkerActivate(m.id, e.shiftKey);
-                }}
+                onClick={
+                  interactive
+                    ? (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onMarkerActivate(m.id, e.shiftKey);
+                      }
+                    : undefined
+                }
                 style={{
                   width: size,
                   height: size,

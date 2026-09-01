@@ -826,6 +826,20 @@ function ParkingAdminPageInner() {
   const selectedAttendeeSite = selectedAttendee
     ? siteLabelByAttendeeId.get(selectedAttendee.id) || null
     : null;
+  const selectedSiteOccupant = selectedSite?.assigned_attendee_id
+    ? attendeeById.get(selectedSite.assigned_attendee_id) || null
+    : null;
+  const selectedSiteOccupantName = selectedSiteOccupant
+    ? `${selectedSiteOccupant.pilot_first || ""} ${selectedSiteOccupant.pilot_last || ""}`.trim() ||
+      "the attendee"
+    : "the attendee";
+  const clearConfirmationOccupant = clearConfirmation?.assigned_attendee_id
+    ? attendeeById.get(clearConfirmation.assigned_attendee_id) || null
+    : null;
+  const clearConfirmationOccupantName = clearConfirmationOccupant
+    ? `${clearConfirmationOccupant.pilot_first || ""} ${clearConfirmationOccupant.pilot_last || ""}`.trim() ||
+      "the attendee"
+    : "the attendee";
   const placementAction = useMemo(() => {
     if (selectionStale) {return { label: "Review current state", detail: selectionStale, enabled: false };}
     if (!selectedAttendee && !selectedSite) {return { label: "Find attendee or select site", detail: "Start with the queue or the map.", enabled: false };}
@@ -1321,6 +1335,15 @@ function ParkingAdminPageInner() {
           {placementAction.label === "Review conflict" ? "Review conflict" : placementAction.label}
         </AppButton>
       )}
+      {selectedSite?.assigned_attendee_id && !selectionStale && (
+        <AppButton
+          variant="secondary"
+          onClick={() => setClearConfirmation(selectedSite)}
+        >
+          Unassign {selectedSiteOccupantName} from{" "}
+          {selectedSite.display_label || selectedSite.site_number}
+        </AppButton>
+      )}
       {selectionStale && (
         <AppButton
           variant="secondary"
@@ -1473,14 +1496,22 @@ function ParkingAdminPageInner() {
                 <div className="app-subtle-text">
                   {selectedSite.assigned_attendee_id ? "Occupied" : "Open"}
                 </div>
-                {selectedSite.assigned_attendee_id && !selectedAttendee && (
-                  <AppButton
-                    variant="danger"
-                    style={{ marginTop: "var(--space-3)" }}
-                    onClick={() => setClearConfirmation(selectedSite)}
-                  >
-                    Clear site (correction)
-                  </AppButton>
+                {selectedSite.assigned_attendee_id && (
+                  <>
+                    <div
+                      className="app-subtle-text"
+                      style={{ fontSize: "var(--font-size-small)" }}
+                    >
+                      {selectedSiteOccupantName}
+                    </div>
+                    <AppButton
+                      variant="danger"
+                      style={{ marginTop: "var(--space-3)" }}
+                      onClick={() => setClearConfirmation(selectedSite)}
+                    >
+                      Unassign attendee
+                    </AppButton>
+                  </>
                 )}
               </>
             ) : (
@@ -1587,9 +1618,9 @@ function ParkingAdminPageInner() {
       />
       <ConfirmDialog
         open={!!clearConfirmation}
-        title="Clear site assignment"
-        message={clearConfirmation ? `Clear ${clearConfirmation.display_label || clearConfirmation.site_number}. The attendee will return to the Parking queue.` : ""}
-        confirmLabel="Clear site"
+        title="Unassign attendee"
+        message={clearConfirmation ? `Unassign ${clearConfirmationOccupantName} from ${clearConfirmation.display_label || clearConfirmation.site_number}. The site returns to Open and the attendee returns to the Parking queue as Unassigned. Their Check-In / Arrival status is not affected.` : ""}
+        confirmLabel="Unassign"
         danger
         onCancel={() => setClearConfirmation(null)}
         onConfirm={async () => { if (!clearConfirmation) {return;} const site = clearConfirmation; setClearConfirmation(null); await clearSite(site); }}
