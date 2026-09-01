@@ -83,6 +83,19 @@ test("T1: authenticated Account, resolved identity + valid context -> allow (no 
   }
 });
 
+test("fresh coherent Account handoff holds for governed validation instead of redirecting to contextInvalid", () => {
+  assert.deepEqual(
+    evaluateMemberRouteAccess(
+      inputs({
+        isAccountSession: true,
+        identityStatus: "resolved",
+        contextStatus: "idle",
+      }),
+    ),
+    { action: "checking" },
+  );
+});
+
 // ---------------------------------------------------------------------------
 // T2 / T5 — TEA, coherent MemberSession, capability hash, NO AK.
 // ---------------------------------------------------------------------------

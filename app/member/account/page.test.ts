@@ -28,6 +28,29 @@ test("account/session data is always re-loaded fresh via resolve_member_account 
   assert.equal(/contextInvalid/.test(loadFn), false);
 });
 
+test("Open Event refreshes the shared workspace after canonical session completion and before navigation", () => {
+  assert.match(
+    SOURCE,
+    /import \{ useMemberWorkspace \} from "@\/lib\/memberWorkspace\/useMemberWorkspace"/,
+  );
+  assert.match(SOURCE, /const workspace = useMemberWorkspace\(\);/);
+
+  const openRegistration = SOURCE.slice(
+    SOURCE.indexOf("async function openRegistration"),
+    SOURCE.indexOf("async function handleSignOut"),
+  );
+  const complete = openRegistration.indexOf(
+    "await enterResolvedRegistration(row, authUserId)",
+  );
+  const refresh = openRegistration.indexOf("workspace.refresh();");
+  const navigate = openRegistration.indexOf("router.push(destination);");
+
+  assert.ok(complete >= 0, "shared session completion must run");
+  assert.ok(refresh > complete, "workspace refresh follows session completion");
+  assert.ok(navigate > refresh, "navigation follows workspace refresh");
+  assert.equal(/contextInvalid/.test(openRegistration), false);
+});
+
 test("shows an explicit, non-alarming message and does not expose internal authorization detail", () => {
   assert.match(
     SOURCE,

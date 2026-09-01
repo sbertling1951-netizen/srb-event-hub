@@ -12,6 +12,7 @@ import {
   type ResolvedRegistration,
   signOutOfMemberAccount,
 } from "@/lib/memberAccountSession";
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
 const PASSKEY_AUTH_ENABLED =
@@ -92,6 +93,7 @@ function deriveDisplayName(
 
 export default function MemberAccountPage() {
   const router = useRouter();
+  const workspace = useMemberWorkspace();
   const searchParams = useSearchParams();
   // Member Event Context Stage 2: set by MemberWorkspaceProvider when a
   // previously-established Event context failed governed server-side
@@ -193,6 +195,11 @@ export default function MemberAccountPage() {
       setError(null);
 
       const destination = await enterResolvedRegistration(row, authUserId);
+      // The root provider persists across this route transition. Refresh its
+      // snapshot before navigation so MemberRouteGuard cannot consume the
+      // chooser's stale recovery_required state ahead of this new, coherent
+      // canonical MemberSession.
+      workspace.refresh();
       router.push(destination);
     } catch (err) {
       console.error(err);

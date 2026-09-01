@@ -218,8 +218,16 @@ test("INVARIANT: every page that consumes useMemberWorkspace() enforces the shar
       route === "/member" &&
       /workspace\.identityStatus === "recovery_required"/.test(src) &&
       /router\.replace\(/.test(src);
+    // The Account chooser is the explicit recovery surface for a
+    // recovery_required workspace, not an admitted member workspace page.
+    // It may consume the context solely to refresh a newly established
+    // session before navigating into a guarded route.
+    const isAccountChooserHandoff =
+      route === "/member/account" &&
+      /workspace\.refresh\(\);/.test(src) &&
+      /await enterResolvedRegistration\(/.test(src);
     assert.ok(
-      wrapped || selfEnforces,
+      wrapped || selfEnforces || isAccountChooserHandoff,
       `${route} consumes useMemberWorkspace() but neither renders <MemberRouteGuard> nor self-enforces the shared identity state -- a recovery_required workspace could render through with null identity`,
     );
   }
