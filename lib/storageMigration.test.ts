@@ -17,6 +17,7 @@ import {
 } from "@/lib/getCurrentMemberEvent";
 import {
   clearMemberSession,
+  ensureMemberSessionAttendee,
   getMemberSession,
   saveMemberSession,
 } from "@/lib/memberSession";
@@ -145,9 +146,9 @@ test("legacy member session migrates to canonical on read and remains usable (TE
 });
 
 // ---------------------------------------------------------------------------
-// 2. A fresh member login writes BOTH Stage-A names where required.
+// 2. A fresh member login writes canonical names only.
 // ---------------------------------------------------------------------------
-test("saveMemberSession writes the session, Event context, changed-signal and user-mode under BOTH names", () => {
+test("saveMemberSession writes the session, Event context, changed-signal and user-mode under canonical names only", () => {
   saveMemberSession(fullSession());
 
   for (const prop of [
@@ -160,13 +161,26 @@ test("saveMemberSession writes the session, Event context, changed-signal and us
       memory.getItem(STORAGE_KEYS[prop]),
       `canonical ${prop} written`,
     );
-    assert.ok(
-      memory.getItem(LEGACY_STORAGE_KEYS[prop]),
-      `legacy ${prop} written`,
-    );
+    assert.equal(memory.getItem(LEGACY_STORAGE_KEYS[prop]), null, `legacy ${prop} not written`);
   }
   assert.equal(memory.getItem(STORAGE_KEYS.userMode), "member");
-  assert.equal(memory.getItem(LEGACY_STORAGE_KEYS.userMode), "member");
+});
+
+test("ensureMemberSessionAttendee refreshes only canonical member state", () => {
+  const session = fullSession();
+  session.attendee_id = "att-old";
+  saveMemberSession(session);
+
+  assert.equal(ensureMemberSessionAttendee("att-server"), true);
+  assert.equal(getMemberSession()?.attendee_id, "att-server");
+  for (const prop of [
+    "memberSession",
+    "memberEventContext",
+    "memberEventChanged",
+    "userMode",
+  ] as const) {
+    assert.equal(memory.getItem(LEGACY_STORAGE_KEYS[prop]), null, `legacy ${prop} not repopulated`);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -227,7 +241,7 @@ test("a legacy fcoc-member-event-context is read and migrated when no MemberSess
   );
 });
 
-test("setCurrentMemberEvent dual-writes the context and dual-signals the change", () => {
+test("setCurrentMemberEvent writes canonical context and change signal only", () => {
   setCurrentMemberEvent({
     id: "evt-9",
     name: "Nine",
@@ -240,13 +254,13 @@ test("setCurrentMemberEvent dual-writes the context and dual-signals the change"
     lng: null,
   });
   assert.ok(memory.getItem(STORAGE_KEYS.memberEventContext));
-  assert.ok(memory.getItem(LEGACY_STORAGE_KEYS.memberEventContext));
+  assert.equal(memory.getItem(LEGACY_STORAGE_KEYS.memberEventContext), null);
   assert.ok(memory.getItem(STORAGE_KEYS.memberEventChanged));
-  assert.ok(memory.getItem(LEGACY_STORAGE_KEYS.memberEventChanged));
+  assert.equal(memory.getItem(LEGACY_STORAGE_KEYS.memberEventChanged), null);
 });
 
 // ---------------------------------------------------------------------------
-// 6. A legacy admin Event context migrates; setter dual-writes.
+// 6. A legacy admin Event context migrates; fresh setter is canonical-only.
 // ---------------------------------------------------------------------------
 test("a legacy fcoc-admin-event-context is read and migrated to canonical", () => {
   memory.setItem(
@@ -262,7 +276,7 @@ test("a legacy fcoc-admin-event-context is read and migrated to canonical", () =
   );
 });
 
-test("setCurrentAdminEvent dual-writes context + dual-signals + dual-dispatches; clearing removes both", () => {
+test("setCurrentAdminEvent writes canonical context/change and dispatches only the canonical event; clearing removes both", () => {
   const canonicalHits: string[] = [];
   fakeWindow.addEventListener(ADMIN_EVENT_UPDATED, () =>
     canonicalHits.push("canonical"),
@@ -274,11 +288,12 @@ test("setCurrentAdminEvent dual-writes context + dual-signals + dual-dispatches;
   setCurrentAdminEvent({ id: "admin-evt-1", name: "Admin Evt 1" });
 
   assert.ok(memory.getItem(STORAGE_KEYS.adminEventContext));
-  assert.ok(memory.getItem(LEGACY_STORAGE_KEYS.adminEventContext));
+  assert.equal(memory.getItem(LEGACY_STORAGE_KEYS.adminEventContext), null);
   assert.ok(memory.getItem(STORAGE_KEYS.adminEventChanged));
-  assert.ok(memory.getItem(LEGACY_STORAGE_KEYS.adminEventChanged));
-  assert.deepEqual(canonicalHits, ["canonical", "legacy"]);
+  assert.equal(memory.getItem(LEGACY_STORAGE_KEYS.adminEventChanged), null);
+  assert.deepEqual(canonicalHits, ["canonical"]);
 
+  memory.setItem(LEGACY_STORAGE_KEYS.adminEventContext, JSON.stringify({ id: "stale" }));
   setCurrentAdminEvent(null);
   assert.equal(memory.getItem(STORAGE_KEYS.adminEventContext), null);
   assert.equal(memory.getItem(LEGACY_STORAGE_KEYS.adminEventContext), null);
@@ -506,10 +521,9 @@ test("vendorAccess retains explicit legacy and canonical cookie-name exports for
 });
 
 // ---------------------------------------------------------------------------
-// 13. A fresh Stage-A install creates canonical names + ONLY the required
-//     compatibility legacy writes -- nothing else.
+// 13. A fresh install creates canonical member state without legacy mirrors.
 // ---------------------------------------------------------------------------
-test("a fresh member login writes exactly the canonical + required-legacy key set (no orphans, no admin keys)", () => {
+test("a fresh member login writes exactly the canonical key set (no legacy mirrors, orphans, or admin keys)", () => {
   saveMemberSession(fullSession());
 
   const expected = new Set<string>([
@@ -517,10 +531,6 @@ test("a fresh member login writes exactly the canonical + required-legacy key se
     STORAGE_KEYS.memberEventContext,
     STORAGE_KEYS.memberEventChanged,
     STORAGE_KEYS.userMode,
-    LEGACY_STORAGE_KEYS.memberSession,
-    LEGACY_STORAGE_KEYS.memberEventContext,
-    LEGACY_STORAGE_KEYS.memberEventChanged,
-    LEGACY_STORAGE_KEYS.userMode,
   ]);
 
   assert.deepEqual(new Set(memory.keys()), expected);

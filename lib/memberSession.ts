@@ -2,9 +2,9 @@ import { setCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   dualRemoveLocal,
-  dualSignalLocal,
-  dualWriteLocal,
   readMigratingLocal,
+  signalCanonicalLocal,
+  writeCanonicalLocal,
 } from "@/lib/storageMigration";
 
 export type MemberSession = {
@@ -57,13 +57,9 @@ export function saveMemberSession(session: MemberSession) {
     return;
   }
 
-  // Stage A: the MemberSession blob (attendee identity + Event context +
-  // any TEA capability hash) is written intact under both names.
-  dualWriteLocal(
-    MEMBER_SESSION_KEY,
-    LEGACY_MEMBER_SESSION_KEY,
-    JSON.stringify(session),
-  );
+  // Fresh member state is canonical-only. Legacy state remains readable and
+  // migrates forward through readMigratingLocal during the compatibility window.
+  writeCanonicalLocal(MEMBER_SESSION_KEY, JSON.stringify(session));
   setCurrentMemberEvent({
     id: session.event_id,
     name: session.event_name,
@@ -76,12 +72,8 @@ export function saveMemberSession(session: MemberSession) {
     lat: session.lat || null,
     lng: session.lng || null,
   });
-  dualSignalLocal(
-    STORAGE_KEYS.memberEventChanged,
-    LEGACY_STORAGE_KEYS.memberEventChanged,
-    String(Date.now()),
-  );
-  dualWriteLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode, "member");
+  signalCanonicalLocal(STORAGE_KEYS.memberEventChanged, String(Date.now()));
+  writeCanonicalLocal(STORAGE_KEYS.userMode, "member");
 }
 
 export function getMemberSession(): MemberSession | null {

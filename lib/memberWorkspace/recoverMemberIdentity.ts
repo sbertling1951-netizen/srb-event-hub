@@ -4,8 +4,8 @@ import {
   memberIdentityRpcArgs,
   saveMemberSession,
 } from "@/lib/memberSession";
-import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
-import { dualWriteLocal } from "@/lib/storageMigration";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { writeCanonicalLocal } from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
 
 // Member Workspace Continuity: the ONE shared recovery of a member's
@@ -156,22 +156,19 @@ export async function recoverMemberIdentity(
     expires_at: session?.expires_at ?? null,
   });
 
-  // The surviving compatibility keys are refreshed to stay consistent with
-  // the repaired MemberSession. (The retired legacy standalone attendee-id key is
-  // no longer written — MemberSession.attendee_id is the identity source.)
+  // Refresh canonical projections after the governed repair. Legacy values
+  // remain fallback-only and are never republished by fresh recovery.
   if (typeof window !== "undefined") {
-    dualWriteLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode, "member");
+    writeCanonicalLocal(STORAGE_KEYS.userMode, "member");
     if (typeof row.has_arrived === "boolean") {
-      dualWriteLocal(
+      writeCanonicalLocal(
         STORAGE_KEYS.memberHasArrived,
-        LEGACY_STORAGE_KEYS.memberHasArrived,
         String(row.has_arrived),
       );
     }
     if (authSession?.user?.id) {
-      dualWriteLocal(
+      writeCanonicalLocal(
         STORAGE_KEYS.memberAuthUserId,
-        LEGACY_STORAGE_KEYS.memberAuthUserId,
         authSession.user.id,
       );
     }

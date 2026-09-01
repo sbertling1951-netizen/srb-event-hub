@@ -112,20 +112,18 @@ test("C: absent MemberSession + no live auth + only legacy keys -> no TEA recons
   assert.ok(elseIdx > 0 && elseIdx < CODE.indexOf('supabase.rpc("get_my_attendee_record"'));
 });
 
-test("on success it rewrites a coherent MemberSession for the anchored Event + resolved attendee, then refreshes the surviving compat keys", () => {
+test("on success it rewrites a coherent MemberSession for the anchored Event + resolved attendee, then refreshes canonical projections only", () => {
   assert.match(CODE, /saveMemberSession\(\{[\s\S]{0,1400}?attendee_id: resolvedAttendeeId,/);
   assert.match(CODE, /event_id: eventId,/);
   // Temporary Event Access recovery preserves its capability + expiry
   assert.match(CODE, /temporary_capability_hash: isCapabilityRecovery \? capabilityHash : null,/);
   assert.match(CODE, /expires_at: session\?\.expires_at \?\? null,/);
-  // surviving compatibility mirrors: user-mode + arrival projection. Stage A
-  // writes each under both the canonical and legacy name via the shared
-  // migration helper.
+  // Fresh recovery writes only canonical mode + arrival projections.
   assert.match(
     CODE,
-    /dualWriteLocal\(STORAGE_KEYS\.userMode, LEGACY_STORAGE_KEYS\.userMode, "member"\)/,
+    /writeCanonicalLocal\(STORAGE_KEYS\.userMode, "member"\)/,
   );
-  assert.match(CODE, /STORAGE_KEYS\.memberHasArrived,/);
+  assert.match(CODE, /writeCanonicalLocal\(\s*STORAGE_KEYS\.memberHasArrived,/);
 });
 
 test("recovery no longer writes retired standalone email/name storage and preserves canonical session identity fields", () => {
@@ -135,7 +133,7 @@ test("recovery no longer writes retired standalone email/name storage and preser
   assert.match(CODE, /participant_name: session\?\.participant_name \?\? null/);
 });
 
-test("M1/M2: recovery no longer writes the retired standalone entry-id OR attendee-id keys; the governed rewrite + surviving mirrors are intact", () => {
+test("M1/M2: recovery no longer writes retired standalone keys or legacy mirrors; governed canonical rewrite remains intact", () => {
   assert.doesNotMatch(CODE, /memberEntryId|fcoc-member-entry-id/);
   assert.doesNotMatch(CODE, /row\.entry_id/);
   // M2 — the legacy standalone attendee-id compatibility key is no longer
@@ -143,10 +141,7 @@ test("M1/M2: recovery no longer writes the retired standalone entry-id OR attend
   assert.doesNotMatch(CODE, /memberAttendeeId|fcoc-member-attendee-id/);
   assert.match(CODE, /saveMemberSession\(\{/);
   assert.match(CODE, /attendee_id: resolvedAttendeeId,/);
-  assert.match(
-    CODE,
-    /dualWriteLocal\(STORAGE_KEYS\.userMode, LEGACY_STORAGE_KEYS\.userMode, "member"\)/,
-  );
+  assert.match(CODE, /writeCanonicalLocal\(STORAGE_KEYS\.userMode, "member"\)/);
   assert.match(CODE, /STORAGE_KEYS\.memberHasArrived,/);
 });
 

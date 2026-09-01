@@ -14,8 +14,8 @@ import { saveMemberSession } from "@/lib/memberSession";
 import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   dualRemoveLocal,
-  dualSignalLocal,
-  dualWriteLocal,
+  signalCanonicalLocal,
+  writeCanonicalLocal,
 } from "@/lib/storageMigration";
 import { setSharedDeviceMode, supabase } from "@/lib/supabase";
 
@@ -404,19 +404,16 @@ export default function MemberLoginPage() {
           STORAGE_KEYS.memberAuthUserId,
           LEGACY_STORAGE_KEYS.memberAuthUserId,
         );
-        dualWriteLocal(
+        writeCanonicalLocal(
           STORAGE_KEYS.memberHasArrived,
-          LEGACY_STORAGE_KEYS.memberHasArrived,
           String(arrived),
         );
-        dualWriteLocal(
+        writeCanonicalLocal(
           STORAGE_KEYS.userMode,
-          LEGACY_STORAGE_KEYS.userMode,
           "member",
         );
-        dualSignalLocal(
+        signalCanonicalLocal(
           STORAGE_KEYS.userModeChanged,
-          LEGACY_STORAGE_KEYS.userModeChanged,
           String(Date.now()),
         );
       }

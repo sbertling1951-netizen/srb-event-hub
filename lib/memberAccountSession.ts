@@ -19,8 +19,8 @@ import {
 import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   dualRemoveLocal,
-  dualSignalLocal,
-  dualWriteLocal,
+  signalCanonicalLocal,
+  writeCanonicalLocal,
 } from "@/lib/storageMigration";
 import { setSharedDeviceMode, supabase } from "@/lib/supabase";
 
@@ -138,9 +138,8 @@ export async function finishMemberLogin(params: {
 
   if (typeof window !== "undefined") {
     if (authUserId) {
-      dualWriteLocal(
+      writeCanonicalLocal(
         STORAGE_KEYS.memberAuthUserId,
-        LEGACY_STORAGE_KEYS.memberAuthUserId,
         authUserId,
       );
     } else {
@@ -149,15 +148,13 @@ export async function finishMemberLogin(params: {
         LEGACY_STORAGE_KEYS.memberAuthUserId,
       );
     }
-    dualWriteLocal(
+    writeCanonicalLocal(
       STORAGE_KEYS.memberHasArrived,
-      LEGACY_STORAGE_KEYS.memberHasArrived,
       String(hasArrived),
     );
-    dualWriteLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode, "member");
-    dualSignalLocal(
+    writeCanonicalLocal(STORAGE_KEYS.userMode, "member");
+    signalCanonicalLocal(
       STORAGE_KEYS.userModeChanged,
-      LEGACY_STORAGE_KEYS.userModeChanged,
       String(Date.now()),
     );
   }

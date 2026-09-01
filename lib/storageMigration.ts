@@ -1,11 +1,10 @@
 // ---------------------------------------------------------------------------
 // Namespace migration — Stage A compatibility helpers (Cohort N1).
 //
-// During the Stage A window every Tier 1–4 identity / session / Event-context
-// / cross-tab signal key exists under BOTH its canonical `epicentrax-` name
-// and its legacy `fcoc-` name, so a browser tab running pre-Stage-A code and
-// a tab running Stage-A code never disagree about identity, Event context,
-// or cross-tab notifications.
+// During the compatibility window, fresh Tier 1–4 identity / session /
+// Event-context / cross-tab state is written under canonical `epicentrax-`
+// names only. Legacy `fcoc-` values remain readable, migrate forward when
+// canonical state is absent, and remain accepted by listeners.
 //
 // This module contains the ONLY fallback / dual-write logic; consumers never
 // hand-roll it. It performs no React work and no network I/O.
@@ -78,11 +77,26 @@ export function dualWriteLocal(
   }
 }
 
+/** Write a newly established value under its canonical name only. */
+export function writeCanonicalLocal(canonicalKey: string, value: string): void {
+  if (!hasWindow()) {
+    return;
+  }
+  try {
+    localStorage.setItem(canonicalKey, value);
+  } catch {
+    // ignore storage failures (private mode / quota)
+  }
+}
+
 /**
  * Emit a cross-tab `storage`-event signal under both key names. Identical to
  * dualWriteLocal; named for intent at the call sites that fire signal pings.
  */
 export const dualSignalLocal = dualWriteLocal;
+
+/** Emit a cross-tab storage signal under its canonical name only. */
+export const signalCanonicalLocal = writeCanonicalLocal;
 
 /** Remove both the canonical and the legacy key. */
 export function dualRemoveLocal(canonicalKey: string, legacyKey: string): void {
@@ -131,6 +145,14 @@ export function dualDispatchWindowEvent(
   }
   window.dispatchEvent(new CustomEvent(canonicalName));
   window.dispatchEvent(new CustomEvent(legacyName));
+}
+
+/** Dispatch a same-tab CustomEvent under its canonical name only. */
+export function dispatchCanonicalWindowEvent(canonicalName: string): void {
+  if (!hasWindow()) {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(canonicalName));
 }
 
 /**

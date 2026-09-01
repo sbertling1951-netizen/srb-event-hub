@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { beforeEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { getCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { clearMemberLocalState } from "@/lib/memberAccountSession";
@@ -50,6 +52,11 @@ const MEMBER_EVENT_CONTEXT = "fcoc-member-event-context";
 const MEMBER_EVENT_CHANGED = "fcoc-member-event-changed";
 const MEMBER_HAS_ARRIVED = "fcoc-member-has-arrived";
 const USER_MODE = "fcoc-user-mode";
+const CANONICAL_USER_MODE = "epicentrax-user-mode";
+const MEMBER_ACCOUNT_SESSION_SOURCE = readFileSync(
+  fileURLToPath(new URL("./memberAccountSession.ts", import.meta.url)),
+  "utf8",
+);
 
 // Decoy admin / Auth state that must survive a member-local clear.
 const ADMIN_ACCESS = "fcoc-admin-access";
@@ -124,11 +131,10 @@ test("B: clearMemberLocalState() is a no-op on already-absent keys (fresh browse
 
 // ---------------------------------------------------------------------------
 // C — after clearMemberLocalState() + establishing Admin mode, a later
-//     member session-establishment still works end-to-end at the helper
-//     level (fcoc-user-mode flips back to "member"; Event + attendee
-//     identity populate normally).
+//     member session-establishment writes canonical member mode and Event +
+//     attendee identity populate normally.
 // ---------------------------------------------------------------------------
-test("C: a later member session-establishment works after clearMemberLocalState() cleared fcoc-user-mode and the browser sat in Admin mode", () => {
+test("C: a later member session-establishment writes canonical member mode after the browser sat in legacy Admin mode", () => {
   // 1. prior member session + admin login clearing it
   memory.setItem(
     MEMBER_SESSION,
@@ -162,8 +168,9 @@ test("C: a later member session-establishment works after clearMemberLocalState(
     expires_at: null,
   });
 
-  // fcoc-user-mode flips back to "member"
-  assert.equal(memory.getItem(USER_MODE), "member");
+  // Canonical mode wins over the stale legacy Admin value.
+  assert.equal(memory.getItem(CANONICAL_USER_MODE), "member");
+  assert.equal(memory.getItem(USER_MODE), "admin");
   // coherent MemberSession
   const session = getMemberSession();
   assert.equal(session?.event_id, "evt-new");
@@ -172,4 +179,16 @@ test("C: a later member session-establishment works after clearMemberLocalState(
   assert.equal(getCurrentMemberEvent()?.id, "evt-new");
   assert.equal(getCurrentMemberEvent()?.name, "Fresh Rally");
   assert.equal(getCurrentAttendeeId(), "att-new");
+});
+
+test("finishMemberLogin writes fresh Account identity, arrival, and mode state under canonical names only", () => {
+  const finish = MEMBER_ACCOUNT_SESSION_SOURCE.slice(
+    MEMBER_ACCOUNT_SESSION_SOURCE.indexOf("export async function finishMemberLogin"),
+    MEMBER_ACCOUNT_SESSION_SOURCE.indexOf("export async function enterResolvedRegistration"),
+  );
+  assert.match(finish, /writeCanonicalLocal\(\s*STORAGE_KEYS\.memberAuthUserId,/);
+  assert.match(finish, /writeCanonicalLocal\(\s*STORAGE_KEYS\.memberHasArrived,/);
+  assert.match(finish, /writeCanonicalLocal\(STORAGE_KEYS\.userMode, "member"\)/);
+  assert.match(finish, /signalCanonicalLocal\(\s*STORAGE_KEYS\.userModeChanged,/);
+  assert.doesNotMatch(finish, /dualWriteLocal|dualSignalLocal/);
 });

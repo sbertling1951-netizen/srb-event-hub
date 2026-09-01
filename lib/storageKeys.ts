@@ -4,10 +4,10 @@
 // Namespace migration — Stage A (Cohort N1). The canonical runtime prefix is
 // `epicentrax-`. Tier 1–4 identity / session / Event-context / cross-tab
 // signal / admin-permission-cache keys have been migrated to canonical names;
-// their legacy `fcoc-` names live in LEGACY_STORAGE_KEYS for the Stage A
-// compatibility window. Consumers must NOT read/write these keys directly --
-// use the helpers in lib/storageMigration.ts (read-canonical-then-legacy +
-// migrate-on-read, dual-write, dual-remove, dual-signal, dual-match).
+// their legacy `fcoc-` names live in LEGACY_STORAGE_KEYS for the compatibility
+// window. New state writes canonical names only; consumers must use the
+// helpers in lib/storageMigration.ts for canonical writes, legacy fallback /
+// migrate-on-read, dual-key cleanup, and legacy event matching.
 //
 // Tier 5 preference / filter / handoff keys are intentionally NOT migrated in
 // N1 (Cohort N2). They keep their `fcoc-` names and have no LEGACY_ entry.
@@ -91,9 +91,8 @@ export const LEGACY_COOKIE_NAMES = {
   vendorSelectedVendorId: "fcoc-vendor-selected-vendor-id",
 } as const;
 
-// Same-tab `window` CustomEvent. Stage A: dispatch both names, listen for
-// both (covers a persisted layout provider still running pre-Stage-A code
-// across a client-side navigation during the deploy window).
+// Same-tab `window` CustomEvent. New writes dispatch the canonical name;
+// listeners accept both names during the compatibility window.
 export const APP_EVENT_NAMES = {
   adminEventUpdated: "epicentrax-admin-event-updated",
 } as const;

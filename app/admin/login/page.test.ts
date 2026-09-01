@@ -58,11 +58,9 @@ test("clearMemberLocalState() runs AFTER every auth / missing-session exit and B
   assert.ok(noSessionThrow >= 0 && noSessionThrow < cleanupIdx);
   assert.ok(loginComplete >= 0 && loginComplete < cleanupIdx);
 
-  // and the cleanup precedes establishing Admin mode. Stage A: the mode is
-  // now written under both the canonical and legacy names via the shared
-  // migration helper.
+  // and the cleanup precedes establishing canonical Admin mode.
   const adminModeWrite = SOURCE.indexOf(
-    'dualWriteLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode, "admin");',
+    'writeCanonicalLocal(STORAGE_KEYS.userMode, "admin");',
   );
   assert.ok(adminModeWrite >= 0, "expected the Admin mode write");
   assert.ok(cleanupIdx < adminModeWrite, "cleanup must precede the Admin mode write");
@@ -72,7 +70,7 @@ test("clearMemberLocalState() runs AFTER every auth / missing-session exit and B
 
   // establishment order preserved: mode -> user-mode-changed -> clearCurrentAdminEvent
   assert.ok(
-    adminModeWrite < SOURCE.indexOf("dualSignalLocal(\n        STORAGE_KEYS.userModeChanged"),
+    adminModeWrite < SOURCE.indexOf("signalCanonicalLocal(\n        STORAGE_KEYS.userModeChanged"),
   );
   assert.ok(
     SOURCE.indexOf("STORAGE_KEYS.userModeChanged") <

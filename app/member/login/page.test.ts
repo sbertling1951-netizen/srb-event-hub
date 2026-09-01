@@ -83,6 +83,13 @@ test("M1/M2: temporary login no longer writes the retired standalone entry-id OR
   );
 });
 
+test("Temporary Event Access writes fresh arrival and mode state under canonical names only", () => {
+  assert.match(SOURCE, /writeCanonicalLocal\(\s*STORAGE_KEYS\.memberHasArrived,/);
+  assert.match(SOURCE, /writeCanonicalLocal\(\s*STORAGE_KEYS\.userMode,/);
+  assert.match(SOURCE, /signalCanonicalLocal\(\s*STORAGE_KEYS\.userModeChanged,/);
+  assert.doesNotMatch(SOURCE, /dualWriteLocal\(/);
+});
+
 test("displayed selection fields (name, dates) are preserved", () => {
   assert.match(SOURCE, /event\.name \|\| "Untitled event"/);
   assert.match(SOURCE, /formatDateRange\(event\.start_date, event\.end_date\)/);

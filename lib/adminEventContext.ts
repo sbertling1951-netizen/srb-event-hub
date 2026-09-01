@@ -6,19 +6,18 @@ import {
 } from "@/lib/storageKeys";
 import {
   addDualWindowEventListener,
-  dualDispatchWindowEvent,
+  dispatchCanonicalWindowEvent,
   dualRemoveLocal,
-  dualSignalLocal,
-  dualWriteLocal,
   readMigratingLocal,
+  signalCanonicalLocal,
   storageEventMatches,
+  writeCanonicalLocal,
 } from "@/lib/storageMigration";
 
 export const ADMIN_EVENT_KEY = STORAGE_KEYS.adminEventContext;
 export const ADMIN_EVENT_CHANGED_KEY = STORAGE_KEYS.adminEventChanged;
 export const ADMIN_EVENT_UPDATED = APP_EVENT_NAMES.adminEventUpdated;
 const LEGACY_ADMIN_EVENT_KEY = LEGACY_STORAGE_KEYS.adminEventContext;
-const LEGACY_ADMIN_EVENT_CHANGED_KEY = LEGACY_STORAGE_KEYS.adminEventChanged;
 const LEGACY_ADMIN_EVENT_UPDATED = LEGACY_APP_EVENT_NAMES.adminEventUpdated;
 
 export interface AdminWorkspaceContext {
@@ -60,9 +59,8 @@ export function setCurrentAdminEvent(event: AdminWorkspaceContext | null): void 
   if (!event) {
     dualRemoveLocal(ADMIN_EVENT_KEY, LEGACY_ADMIN_EVENT_KEY);
   } else {
-    dualWriteLocal(
+    writeCanonicalLocal(
       ADMIN_EVENT_KEY,
-      LEGACY_ADMIN_EVENT_KEY,
       JSON.stringify({
         ...event,
         updatedAt: Date.now(),
@@ -71,13 +69,12 @@ export function setCurrentAdminEvent(event: AdminWorkspaceContext | null): void 
     );
   }
 
-  dualSignalLocal(
+  signalCanonicalLocal(
     ADMIN_EVENT_CHANGED_KEY,
-    LEGACY_ADMIN_EVENT_CHANGED_KEY,
     String(Date.now()),
   );
 
-  dualDispatchWindowEvent(ADMIN_EVENT_UPDATED, LEGACY_ADMIN_EVENT_UPDATED);
+  dispatchCanonicalWindowEvent(ADMIN_EVENT_UPDATED);
 }
 
 export function clearCurrentAdminEvent(): void {

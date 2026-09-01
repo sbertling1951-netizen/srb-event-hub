@@ -1,9 +1,9 @@
 import { getCurrentAttendeeId, getMemberSession } from "@/lib/memberSession";
 import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
 import {
-  dualSignalLocal,
-  dualWriteLocal,
   readMigratingLocal,
+  signalCanonicalLocal,
+  writeCanonicalLocal,
 } from "@/lib/storageMigration";
 
 export type CurrentMemberEvent = {
@@ -72,9 +72,8 @@ export function setCurrentMemberEvent(event: SetCurrentMemberEventInput) {
     return;
   }
 
-  dualWriteLocal(
+  writeCanonicalLocal(
     STORAGE_KEYS.memberEventContext,
-    LEGACY_STORAGE_KEYS.memberEventContext,
     JSON.stringify({
       id: event.id,
       name: event.name || null,
@@ -90,11 +89,7 @@ export function setCurrentMemberEvent(event: SetCurrentMemberEventInput) {
     }),
   );
 
-  dualSignalLocal(
-    STORAGE_KEYS.memberEventChanged,
-    LEGACY_STORAGE_KEYS.memberEventChanged,
-    String(Date.now()),
-  );
+  signalCanonicalLocal(STORAGE_KEYS.memberEventChanged, String(Date.now()));
 }
 
 export function getCurrentMemberEvent(): CurrentMemberEvent | null {

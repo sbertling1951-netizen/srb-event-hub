@@ -6,8 +6,11 @@ import { useState } from "react";
 import LoginActionButton from "@/components/auth/LoginActionButton";
 import { clearCurrentAdminEvent } from "@/lib/adminWorkspaceContext";
 import { clearMemberLocalState } from "@/lib/memberAccountSession";
-import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
-import { dualSignalLocal, dualWriteLocal } from "@/lib/storageMigration";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  signalCanonicalLocal,
+  writeCanonicalLocal,
+} from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
 
 export default function AdminLoginPage() {
@@ -85,10 +88,9 @@ export default function AdminLoginPage() {
       // session just created or any fcoc-admin-* state.
       clearMemberLocalState();
 
-      dualWriteLocal(STORAGE_KEYS.userMode, LEGACY_STORAGE_KEYS.userMode, "admin");
-      dualSignalLocal(
+      writeCanonicalLocal(STORAGE_KEYS.userMode, "admin");
+      signalCanonicalLocal(
         STORAGE_KEYS.userModeChanged,
-        LEGACY_STORAGE_KEYS.userModeChanged,
         String(Date.now()),
       );
 
