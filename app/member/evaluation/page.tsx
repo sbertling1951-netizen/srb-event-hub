@@ -1,691 +1,597 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { EmptyState } from "@/components/ui/EmptyState";
+import {
+  type DraftAnswer,
+  draftFromStored,
+  emptyDraft,
+  missingRequired,
+  toggleChoice,
+  toSavePayload,
+} from "@/lib/evaluations/answerModel";
+import { createSaveQueue } from "@/lib/evaluations/saveQueue";
+import {
+  type EvaluationFormQuestion,
+  type EvaluationTargetType,
+  type GetEvaluationResult,
+} from "@/lib/evaluations/types";
+import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
-const QUESTION_IDS = {
-  q1: "5bbb3f53-11fe-46e6-87a4-5aa7ff2737f3",
-  q2: "478a0769-1663-4697-9e47-9e4164c449f6",
-  q3: "94e4dfa7-2b18-4ee1-816c-86dacd60e5cb",
-  q4: "d8325ddf-4090-446b-8607-543adea7b4c4",
-  q5: "e7bc22d8-3b6c-4ab0-9031-5241e52999fa",
-  q6: "1158884d-d26b-4d63-bb69-c37b07f374b7",
-  q7: "58c7f13d-db0f-493f-8e37-a4af9a8acbd9",
-} as const;
+const TEXT_DEBOUNCE_MS = 700;
 
-const QUESTION_KEYS = Object.entries(QUESTION_IDS).reduce(
-  (acc, [key, id]) => {
-    acc[id] = key;
-    return acc;
-  },
-  {} as Record<string, string>,
-);
+function readTarget(): { type: EvaluationTargetType; id: string | null } {
+  if (typeof window === "undefined") {
+    return { type: "event", id: null };
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("target") === "agenda_item" && params.get("id")) {
+    return { type: "agenda_item", id: params.get("id") };
+  }
+  return { type: "event", id: null };
+}
 
 function MemberEvaluationPageInner() {
-  const { event, attendeeId, isReady, isInitializing } = useMemberWorkspace();
-  const [currentQuestion, setCurrentQuestion] = useState(1);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [evaluationId, setEvaluationId] = useState<string | null>(null);
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const totalQuestions = 7;
-  const progressPercent = Math.round((currentQuestion / totalQuestions) * 100);
+  const { session, event, isReady, isInitializing } = useMemberWorkspace();
+
+  const [target] = useState(readTarget);
+  const [result, setResult] = useState<GetEvaluationResult | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, DraftAnswer>>({});
+  const [step, setStep] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // serverComplete mirrors evaluation_responses.is_complete; hasSubmittedBefore
+  // mirrors "submitted_at is set" and never goes back to false in-session.
+  const [serverComplete, setServerComplete] = useState(false);
+  const [hasSubmittedBefore, setHasSubmittedBefore] = useState(false);
+
+  const targetId = target.type === "event" ? (event?.id ?? null) : target.id;
+
+  // Latest draft per question, always current -- flushed on navigate /
+  // submit / unmount even if a debounce timer hasn't fired.
+  const draftsRef = useRef<Record<string, DraftAnswer>>({});
+  draftsRef.current = drafts;
+  const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const questionsRef = useRef<EvaluationFormQuestion[]>([]);
+
+  // One serialized save queue for this response. Recreated only if the
+  // event / target / identity changes.
+  const saveQueue = useMemo(
+    () =>
+      createSaveQueue(async (questionId, draft) => {
+        const q = questionsRef.current.find((item) => item.id === questionId);
+        if (!q || !event?.id || !targetId) {
+          return { error: null };
+        }
+        const { data, error } = await supabase.rpc("save_evaluation_answer", {
+          p_event_id: event.id,
+          p_target_type: target.type,
+          p_target_id: targetId,
+          ...memberIdentityRpcArgs(session),
+          ...toSavePayload(q, draft),
+        });
+        // The server is the authority on is_complete. If this edit made a
+        // required question unanswered it downgrades the response; reflect
+        // that immediately so the UI stops claiming a full submission.
+        // An autosave can only ever turn completion OFF (mirror a
+        // server-side downgrade). Completion is turned back ON exclusively
+        // by submit_evaluation.
+        if (!error && data && typeof data === "object") {
+          const d = data as { is_complete?: boolean; downgraded?: boolean };
+          if (d.downgraded === true || d.is_complete === false) {
+            setServerComplete(false);
+          }
+        }
+        return { error: error ?? null };
+      }),
+    [event?.id, targetId, target.type, session],
+  );
+
+  const load = useCallback(async () => {
+    if (!isReady || !event?.id || !targetId) {
+      return;
+    }
+    try {
+      const { data, error } = await supabase.rpc("get_evaluation", {
+        p_event_id: event.id,
+        p_target_type: target.type,
+        p_target_id: targetId,
+        ...memberIdentityRpcArgs(session),
+      });
+      if (error) {
+        setLoadError(true);
+        return;
+      }
+      const payload = data as GetEvaluationResult;
+      setResult(payload);
+      setLoadError(false);
+      const restored: Record<string, DraftAnswer> = {};
+      for (const a of payload?.response?.answers ?? []) {
+        restored[a.assignment_question_id] = draftFromStored(a);
+      }
+      setDrafts(restored);
+      setServerComplete(Boolean(payload?.response?.is_complete));
+      setHasSubmittedBefore(Boolean(payload?.response?.submitted_at));
+    } catch {
+      setLoadError(true);
+    }
+  }, [isReady, event?.id, targetId, target.type, session]);
 
   useEffect(() => {
-    if (!isReady) {
-      return;
-    }
+    void load();
+  }, [load]);
 
-    loadEvaluation();
-  }, [event?.id, attendeeId, isReady]);
+  const questions = useMemo(
+    () =>
+      [...(result?.form?.questions ?? [])].sort(
+        (a, b) => a.position - b.position,
+      ),
+    [result],
+  );
+  questionsRef.current = questions;
 
-  const loadEvaluation = async () => {
-    try {
-      if (!event?.id || !attendeeId) {
-        return;
+  // Enqueue the current draft for every question whose debounce is still
+  // pending, then wait for the whole queue to settle. Used before
+  // navigation, submit, and unmount so nothing typed is lost.
+  const flushPendingSaves = useCallback(async () => {
+    Object.values(debounceTimers.current).forEach(clearTimeout);
+    debounceTimers.current = {};
+    for (const q of questionsRef.current) {
+      const d = draftsRef.current[q.id];
+      if (d) {
+        saveQueue.enqueue(q.id, d);
       }
-
-      const { data: existingEvaluation, error: lookupError } = await supabase
-        .from("event_evaluations")
-        .select("id,is_complete")
-        .eq("event_id", event.id)
-        .eq("attendee_id", attendeeId)
-        .maybeSingle();
-
-      let evaluation = existingEvaluation;
-
-      console.log("Evaluation lookup", {
-        evaluation,
-        lookupError,
-        eventId: event.id,
-        attendeeId,
-      });
-
-      if (!evaluation) {
-        const { data: created, error: createError } = await supabase
-          .from("event_evaluations")
-          .insert({
-            event_id: event.id,
-            attendee_id: attendeeId,
-          })
-          .select("id,is_complete")
-          .single();
-
-        console.log("Evaluation create result", {
-          created,
-          createError,
-          eventId: event.id,
-          attendeeId,
-        });
-
-        evaluation = created;
-      }
-
-      if (!evaluation?.id) {
-        return;
-      }
-
-      setEvaluationId(evaluation.id);
-      setIsSubmitted(Boolean(evaluation.is_complete));
-
-      const { data: savedAnswers } = await supabase
-        .from("event_evaluation_answers")
-        .select("question_id, answer_text, comment_text")
-        .eq("evaluation_id", evaluation.id);
-
-      if (savedAnswers?.length) {
-        const restored: Record<string, any> = {};
-
-        const multiSelectQuestions = ["q2", "q3", "q4"];
-
-        savedAnswers.forEach((row: any) => {
-          const questionKey = QUESTION_KEYS[row.question_id] ?? row.question_id;
-
-          if (multiSelectQuestions.includes(questionKey)) {
-            try {
-              restored[questionKey] = row.answer_text
-                ? JSON.parse(row.answer_text)
-                : [];
-            } catch {
-              restored[questionKey] = [];
-            }
-          } else {
-            restored[questionKey] = row.answer_text;
-          }
-
-          if (row.comment_text) {
-            restored[`${questionKey}_comment`] = row.comment_text;
-          }
-        });
-
-        setAnswers(restored);
-      }
-    } catch (error) {
-      console.error("Evaluation load failed", error);
     }
-  };
-
-  const saveAnswer = async (key: string, value: any) => {
-    if (!evaluationId) {
-      return;
-    }
-
-    console.log("saveAnswer", {
-      key,
-      value,
-      evaluationId,
-    });
-
-    try {
-      const isComment = key.endsWith("_comment");
-      const baseKey = isComment ? key.replace("_comment", "") : key;
-      const { data, error } = await supabase
-        .from("event_evaluation_answers")
-        .upsert(
-          {
-            evaluation_id: evaluationId,
-            question_id:
-              QUESTION_IDS[baseKey as keyof typeof QUESTION_IDS] ?? baseKey,
-            ...(isComment
-              ? {
-                  comment_text: String(value ?? ""),
-                }
-              : {
-                  answer_text: Array.isArray(value)
-                    ? JSON.stringify(value)
-                    : String(value ?? ""),
-                }),
-          },
-          {
-            onConflict: "evaluation_id,question_id",
-          },
-        );
-
-      console.log("Answer upsert", {
-        data,
-        error,
-        key,
-        baseKey,
-        isComment,
-        evaluationId,
-      });
-    } catch (error) {
-      console.error("Answer save failed", error);
-    }
-  };
-
-  const updateAnswer = (key: string, value: any) => {
-    setAnswers((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-
-    saveAnswer(key, value);
-  };
-
-  const toggleCheckbox = (questionKey: string, choice: string) => {
-    const current = answers[questionKey] ?? [];
-    const normalizedCurrent = Array.isArray(current) ? current : [];
-
-    if (normalizedCurrent.includes(choice)) {
-      updateAnswer(
-        questionKey,
-        normalizedCurrent.filter((item: string) => item !== choice),
+    const outcome = await saveQueue.flush();
+    if (!outcome.ok) {
+      setSaveError(
+        "Some answers didn't save. Check your connection — your changes are still on screen. Use Retry.",
       );
     } else {
-      updateAnswer(questionKey, [...normalizedCurrent, choice]);
+      setSaveError(null);
     }
-  };
+    return outcome;
+  }, [saveQueue]);
 
-  const nextQuestion = () => {
-    if (currentQuestion < totalQuestions) {
-      setCurrentQuestion(currentQuestion + 1);
+  const updateDraft = useCallback(
+    (questionId: string, next: DraftAnswer, immediate: boolean) => {
+      setDrafts((prev) => ({ ...prev, [questionId]: next }));
+      const timers = debounceTimers.current;
+      if (timers[questionId]) {
+        clearTimeout(timers[questionId]);
+        delete timers[questionId];
+      }
+      if (immediate) {
+        saveQueue.enqueue(questionId, next);
+      } else {
+        timers[questionId] = setTimeout(() => {
+          delete timers[questionId];
+          saveQueue.enqueue(questionId, next);
+        }, TEXT_DEBOUNCE_MS);
+      }
+    },
+    [saveQueue],
+  );
+
+  // Best-effort flush on unmount / tab close.
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimers.current).forEach(clearTimeout);
+      for (const q of questionsRef.current) {
+        const d = draftsRef.current[q.id];
+        if (d) {
+          saveQueue.enqueue(q.id, d);
+        }
+      }
+      void saveQueue.flush();
+    };
+  }, [saveQueue]);
+
+  const goToStep = useCallback(
+    (nextStep: number) => {
+      void flushPendingSaves();
+      setStep(nextStep);
+    },
+    [flushPendingSaves],
+  );
+
+  const submit = useCallback(async () => {
+    if (!event?.id || !targetId) {
+      return;
     }
-  };
-
-  const previousQuestion = () => {
-    if (currentQuestion > 1) {
-      setCurrentQuestion(currentQuestion - 1);
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const flushOutcome = await flushPendingSaves();
+      if (!flushOutcome.ok) {
+        setSubmitError(
+          "Your answers aren't fully saved yet, so the evaluation wasn't submitted. Fix the save error above and try again.",
+        );
+        return;
+      }
+      const missing = missingRequired(questions, draftsRef.current);
+      if (missing.length > 0) {
+        setSubmitError(`Please answer: ${missing.join("; ")}`);
+        return;
+      }
+      const { error } = await supabase.rpc("submit_evaluation", {
+        p_event_id: event.id,
+        p_target_type: target.type,
+        p_target_id: targetId,
+        ...memberIdentityRpcArgs(session),
+      });
+      if (error) {
+        setSubmitError(error.message);
+        return;
+      }
+      setServerComplete(true);
+      setHasSubmittedBefore(true);
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not submit.");
+    } finally {
+      setSubmitting(false);
     }
-  };
+  }, [
+    event?.id,
+    targetId,
+    target.type,
+    session,
+    questions,
+    flushPendingSaves,
+    load,
+  ]);
 
-  // Option card reusable style
-  const optionCardClass = (selected: boolean) =>
-    `evaluation-option-card ${selected ? "evaluation-option-card-selected" : ""}`;
+  const presentationTitle =
+    target.type === "agenda_item"
+      ? (result?.target_context?.title ?? "This Presentation")
+      : null;
+  const pageTitle = presentationTitle
+    ? `Evaluate: ${presentationTitle}`
+    : "Event Evaluation";
 
-  // Q4 split choices
-  const q4TopChoices = [
-    "More Technical Content",
-    "More Social Activities",
-    "More Vendor Participation",
-    "More Coach Tours",
-    "More Local Tours",
-    "More Entertainment",
-  ];
-  const q4BottomChoices = [
-    "More Free Time",
-    "More Freightliner Topics",
-    "Other",
-  ];
+  if (isInitializing || (!result && !loadError && isReady)) {
+    return (
+      <MemberShellAdapter pageTitle={pageTitle}>
+        <div style={{ padding: 24 }}>Loading evaluation…</div>
+      </MemberShellAdapter>
+    );
+  }
 
-  // Option card style override (diagnostic)
-  const optionCardStyle = (selected: boolean) => ({
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    width: "100%",
-    minWidth: 0,
-    flex: "1 1 0",
-    minHeight: "56px",
-    padding: "12px 16px",
-    borderRadius: "10px",
-    border: selected ? "2px solid #2563eb" : "2px solid #d1d5db",
-    backgroundColor: selected ? "#eff6ff" : "#ffffff",
-    cursor: "pointer",
-    marginBottom: "0px",
-    boxShadow: selected
-      ? "0 2px 6px rgba(37,99,235,0.25)"
-      : "0 1px 3px rgba(0,0,0,0.08)",
-  });
+  if (loadError) {
+    return (
+      <MemberShellAdapter pageTitle={pageTitle}>
+        <EmptyState message="We couldn't load this evaluation right now. Please try again in a moment." />
+      </MemberShellAdapter>
+    );
+  }
+
+  if (!result?.configured) {
+    return (
+      <MemberShellAdapter pageTitle={pageTitle}>
+        <EmptyState
+          message={
+            target.type === "agenda_item"
+              ? "There's no evaluation for this session."
+              : "The evaluation for this event isn't available yet. Check back later."
+          }
+        />
+      </MemberShellAdapter>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <MemberShellAdapter pageTitle={pageTitle}>
+        <EmptyState message="This evaluation has no questions yet." />
+      </MemberShellAdapter>
+    );
+  }
+
+  const total = questions.length;
+  const current = questions[Math.min(step, total - 1)];
+  const draft = drafts[current.id] ?? emptyDraft();
+  const progress = Math.round(((step + 1) / total) * 100);
+  // Post-submit editing is allowed by policy: inputs stay editable after
+  // submission. Only an admin preview is read-only.
+  const readOnly = result.preview_only === true;
+
+  const ctx = result.target_context;
+  const contextLine =
+    target.type === "agenda_item" && ctx
+      ? [ctx.presenter, ctx.location].filter(Boolean).join(" · ")
+      : null;
 
   return (
     <MemberShellAdapter
-      pageTitle="Event Evaluation"
-      pageSubtitle="We value your feedback. Help us improve future events."
+      pageTitle={pageTitle}
+      pageSubtitle={
+        contextLine || "We value your feedback. Help us improve future events."
+      }
     >
-      <div className="w-full space-y-8" style={{ maxWidth: 760 }}>
-        <div className="space-y-6 w-full">
-          <div className="w-full max-w-none">
-          <div>
-            <div className="text-sm font-medium mb-2">
-              Question {currentQuestion} of {totalQuestions}
-            </div>
-            <div className="text-sm mb-2">Progress = {progressPercent}%</div>
-
-            <div
-              style={{
-                width: "min(100%, 480px)",
-                height: "28px",
-                backgroundColor: "#d1d5db",
-                border: "1px solid #9ca3af",
-                marginBottom: "24px",
-                marginLeft: "auto",
-                marginRight: "auto",
-                borderRadius: "14px",
-                overflow: "hidden",
-              }}
-            >
-              {" "}
-              <div
-                style={{
-                  width: `${progressPercent}%`,
-                  height: "100%",
-                  backgroundColor: "#2563eb",
-                  borderRadius: "14px",
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-          </div>
-
-          {currentQuestion === 1 && (
-            <section className="block w-full">
-              <h2 className="font-semibold mb-4">
-                What was your overall impression of this event?
-              </h2>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-                  gap: "12px",
-                  marginBottom: "24px",
-                }}
-              >
-                {["Excellent", "Very Good", "Good", "Fair", "Poor"].map(
-                  (choice) => (
-                    <label
-                      key={choice}
-                      className={optionCardClass(answers.q1 === choice)}
-                      style={{
-                        ...optionCardStyle(answers.q1 === choice),
-                        minHeight: "48px",
-                        padding: "10px 12px",
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="q1"
-                        checked={Boolean(answers.q1 === choice)}
-                        value={choice}
-                        onChange={() => updateAnswer("q1", choice)}
-                      />
-                      {choice}
-                    </label>
-                  ),
-                )}
-              </div>
-              <div className="font-medium mt-8 mb-2">Additional Comments</div>
-              <textarea
-                style={{ width: "100%" }}
-                className="block border rounded p-3 mt-2"
-                rows={8}
-                placeholder="Share any additional thoughts about your overall impression of this event."
-                value={answers.q1_comment ?? ""}
-                onChange={(e) => updateAnswer("q1_comment", e.target.value)}
-              />
-            </section>
-          )}
-
-          {currentQuestion === 2 && (
-            <section className="block w-full">
-              <h2 className="font-semibold mb-4">
-                What parts of the event provided the most value?
-              </h2>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-                  gap: "12px",
-                  marginBottom: "24px",
-                }}
-              >
-                {[
-                  "Technical Seminars",
-                  "Social Activities",
-                  "Friendships & Camaraderie",
-                  "Vendor Displays",
-                  "Coach Tours",
-                  "Local Tours",
-                  "Entertainment",
-                  "Meals",
-                  "Other",
-                ].map((choice) => (
-                  <label
-                    key={choice}
-                    className={optionCardClass(
-                      (answers.q2 ?? []).includes(choice),
-                    )}
-                    style={{
-                      ...optionCardStyle((answers.q2 ?? []).includes(choice)),
-                      minHeight: "48px",
-                      padding: "10px 12px",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={Boolean((answers.q2 ?? []).includes(choice))}
-                      value={choice}
-                      onChange={() => toggleCheckbox("q2", choice)}
-                    />
-                    {choice}
-                  </label>
-                ))}
-              </div>
-              <div className="font-medium mt-6 mb-2">Additional Comments</div>
-              <textarea
-                style={{ width: "100%" }}
-                className="block border rounded p-3 mt-2"
-                rows={8}
-                placeholder="Share any additional thoughts about your overall impression of this event."
-                value={answers.q2_comment ?? ""}
-                onChange={(e) => updateAnswer("q2_comment", e.target.value)}
-              />{" "}
-            </section>
-          )}
-
-          {currentQuestion === 3 && (
-            <section className="block w-full">
-              <h2 className="font-semibold mb-4">
-                Where did we miss the mark?
-              </h2>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-                  gap: "12px",
-                  marginBottom: "24px",
-                }}
-              >
-                {[
-                  "Registration",
-                  "Check-In",
-                  "Parking",
-                  "Communications",
-                  "Agenda",
-                  "Venue",
-                  "Activities",
-                  "Technology/App",
-                  "Meals",
-                  "Other",
-                ].map((choice) => (
-                  <label
-                    key={choice}
-                    className={optionCardClass(
-                      (answers.q3 ?? []).includes(choice),
-                    )}
-                    style={{
-                      ...optionCardStyle((answers.q3 ?? []).includes(choice)),
-                      minHeight: "48px",
-                      padding: "10px 12px",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={Boolean((answers.q3 ?? []).includes(choice))}
-                      value={choice}
-                      onChange={() => toggleCheckbox("q3", choice)}
-                    />
-                    {choice}
-                  </label>
-                ))}
-              </div>
-              <div className="font-medium mt-6 mb-2">Additional Comments</div>
-              <textarea
-                style={{ width: "100%" }}
-                className="block border rounded p-3 mt-2"
-                rows={5}
-                placeholder="Additional comments"
-                value={answers.q3_comment ?? ""}
-                onChange={(e) => updateAnswer("q3_comment", e.target.value)}
-              />
-            </section>
-          )}
-
-          {currentQuestion === 4 && (
-            <section className="block w-full">
-              <h2 className="font-semibold mb-4">
-                What would you like to see at future events?
-              </h2>
-              <>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-                    gap: "12px",
-                    marginBottom: "16px",
-                  }}
-                >
-                  {q4TopChoices.map((choice) => (
-                    <label
-                      key={choice}
-                      className={optionCardClass(
-                        (answers.q4 ?? []).includes(choice),
-                      )}
-                      style={optionCardStyle(
-                        (answers.q4 ?? []).includes(choice),
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={Boolean((answers.q4 ?? []).includes(choice))}
-                        value={choice}
-                        onChange={() => toggleCheckbox("q4", choice)}
-                      />
-                      {choice}
-                    </label>
-                  ))}
-                </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-                    gap: "12px",
-                    marginBottom: "12px",
-                  }}
-                >
-                  {q4BottomChoices.slice(0, 2).map((choice) => (
-                    <label
-                      key={choice}
-                      className={optionCardClass(
-                        (answers.q4 ?? []).includes(choice),
-                      )}
-                      style={optionCardStyle(
-                        (answers.q4 ?? []).includes(choice),
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={Boolean((answers.q4 ?? []).includes(choice))}
-                        value={choice}
-                        onChange={() => toggleCheckbox("q4", choice)}
-                      />
-                      {choice}
-                    </label>
-                  ))}
-                </div>
-                <label
-                  className={optionCardClass(
-                    (answers.q4 ?? []).includes("Other"),
-                  )}
-                  style={{
-                    ...optionCardStyle((answers.q4 ?? []).includes("Other")),
-                    width: "100%",
-                    marginBottom: "24px",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={Boolean((answers.q4 ?? []).includes("Other"))}
-                    value="Other"
-                    onChange={() => toggleCheckbox("q4", "Other")}
-                  />
-                  Other
-                </label>
-              </>
-              <div className="font-medium mt-6 mb-2">Additional Comments</div>
-              <textarea
-                style={{ width: "100%" }}
-                className="block border rounded p-3 mt-2"
-                rows={5}
-                placeholder="Additional comments"
-                value={answers.q4_comment ?? ""}
-                onChange={(e) => updateAnswer("q4_comment", e.target.value)}
-              />
-            </section>
-          )}
-
-          {currentQuestion === 5 && (
-            <section className="block w-full">
-              <h2 className="font-semibold mb-4">
-                What was your favorite memory from this event?
-              </h2>
-              <textarea
-                style={{ width: "100%" }}
-                className="block border rounded p-3 mt-2"
-                rows={8}
-                value={answers.q5 ?? ""}
-                onChange={(e) => updateAnswer("q5", e.target.value)}
-              />
-            </section>
-          )}
-
-          {currentQuestion === 6 && (
-            <section className="block w-full">
-              <h2 className="font-semibold mb-4">
-                Anything else you would like us to know?
-              </h2>
-              <textarea
-                style={{ width: "100%" }}
-                className="block border rounded p-3 mt-2"
-                rows={8}
-                value={answers.q6 ?? ""}
-                onChange={(e) => updateAnswer("q6", e.target.value)}
-              />
-            </section>
-          )}
-
-          {currentQuestion === 7 && (
-            <section className="block w-full">
-              <h2 className="font-semibold mb-4">
-                How likely are you to attend another event?
-              </h2>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-                  gap: "12px",
-                  marginBottom: "24px",
-                }}
-              >
-                {["Definitely", "Likely", "Maybe", "Unlikely", "No"].map(
-                  (choice) => (
-                    <label
-                      key={choice}
-                      className={optionCardClass(answers.q7 === choice)}
-                      style={{
-                        ...optionCardStyle(answers.q7 === choice),
-                        minHeight: "48px",
-                        padding: "10px 12px",
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="q7"
-                        checked={Boolean(answers.q7 === choice)}
-                        value={choice}
-                        onChange={() => updateAnswer("q7", choice)}
-                      />
-                      {choice}
-                    </label>
-                  ),
-                )}
-              </div>
-              <div className="font-medium mt-6 mb-2">Additional Comments</div>
-              <textarea
-                style={{ width: "100%" }}
-                className="block border rounded p-3 mt-2"
-                rows={5}
-                placeholder="Optional comments"
-                value={answers.q7_comment ?? ""}
-                onChange={(e) => updateAnswer("q7_comment", e.target.value)}
-              />
-            </section>
-          )}
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: "16px",
-          flexWrap: "wrap",
-          width: "100%",
-          marginTop: "24px",
-        }}
-      >
-        <button
-          onClick={previousQuestion}
-          disabled={currentQuestion === 1}
-          className="app-button app-button-muted"
-        >
-          ← Previous
-        </button>
-        {currentQuestion < totalQuestions ? (
-          <button
-            onClick={nextQuestion}
-            className="app-button app-button-primary"
-          >
-            Next →
-          </button>
-        ) : (
-          <button
-            className="app-button app-button-success"
-            onClick={async () => {
-              if (!evaluationId) {
-                return;
-              }
-              await supabase
-                .from("event_evaluations")
-                .update({
-                  is_complete: true,
-                  submitted_at: new Date().toISOString(),
-                })
-                .eq("id", evaluationId);
-              setIsSubmitted(true);
-              alert(
-                isSubmitted
-                  ? "Evaluation updated. Thank you for keeping your feedback current."
-                  : "Evaluation submitted. Thank you for your feedback.",
-              );
+      <div style={{ width: "100%", maxWidth: 760, margin: "0 auto" }}>
+        {result.preview_only && (
+          <div
+            style={{
+              padding: "8px 12px",
+              marginBottom: 16,
+              borderRadius: 8,
+              background: "#fef3c7",
+              fontSize: 13,
             }}
           >
-            {isSubmitted ? "Update Evaluation" : "Submit Evaluation"}
+            Admin preview — responses are not recorded.
+          </div>
+        )}
+
+        {saveError && (
+          <div
+            style={{
+              padding: "8px 12px",
+              marginBottom: 16,
+              borderRadius: 8,
+              background: "#fee2e2",
+              color: "#991b1b",
+              fontSize: 13,
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <span>{saveError}</span>
+            <button
+              className="app-button app-button-muted"
+              onClick={() => void flushPendingSaves()}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        <div className="text-sm font-medium" style={{ marginBottom: 8 }}>
+          Question {step + 1} of {total}
+        </div>
+        <div
+          style={{
+            width: "min(100%, 480px)",
+            height: 24,
+            background: "#d1d5db",
+            borderRadius: 12,
+            overflow: "hidden",
+            margin: "0 auto 24px",
+          }}
+        >
+          <div
+            style={{
+              width: `${progress}%`,
+              height: "100%",
+              background: "#2563eb",
+              transition: "width .3s ease",
+            }}
+          />
+        </div>
+
+        <section>
+          <h2 className="font-semibold" style={{ marginBottom: 16 }}>
+            {current.prompt}
+            {current.is_required && (
+              <span style={{ color: "#dc2626" }} aria-hidden>
+                {" *"}
+              </span>
+            )}
+          </h2>
+
+          <QuestionInput
+            question={current}
+            draft={draft}
+            disabled={readOnly}
+            onChange={(next, immediate) =>
+              updateDraft(current.id, next, immediate)
+            }
+          />
+
+          {current.allow_comment && (
+            <div style={{ marginTop: 20 }}>
+              <div className="font-medium" style={{ marginBottom: 6 }}>
+                Additional comments
+              </div>
+              <textarea
+                style={{ width: "100%" }}
+                className="block border rounded p-3"
+                rows={4}
+                disabled={readOnly}
+                value={draft.commentText}
+                onChange={(e) =>
+                  updateDraft(
+                    current.id,
+                    { ...draft, commentText: e.target.value },
+                    false,
+                  )
+                }
+                onBlur={() => saveQueue.enqueue(current.id, draftsRef.current[current.id] ?? draft)}
+              />
+            </div>
+          )}
+        </section>
+
+        {submitError && (
+          <div style={{ color: "#dc2626", marginTop: 16, fontSize: 14 }}>
+            {submitError}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 16,
+            flexWrap: "wrap",
+            marginTop: 24,
+          }}
+        >
+          <button
+            className="app-button app-button-muted"
+            onClick={() => goToStep(Math.max(0, step - 1))}
+            disabled={step === 0}
+          >
+            ← Previous
           </button>
+          {step < total - 1 ? (
+            <button
+              className="app-button app-button-primary"
+              onClick={() => goToStep(Math.min(total - 1, step + 1))}
+            >
+              Next →
+            </button>
+          ) : (
+            <button
+              className="app-button app-button-success"
+              onClick={submit}
+              disabled={submitting || result.preview_only === true}
+            >
+              {submitting
+                ? "Saving…"
+                : hasSubmittedBefore
+                  ? "Update Evaluation"
+                  : "Submit Evaluation"}
+            </button>
+          )}
+        </div>
+
+        {hasSubmittedBefore && serverComplete && (
+          <p
+            className="app-subtle-text"
+            style={{ textAlign: "center", marginTop: 16 }}
+          >
+            Submitted — thank you. You can still change any answer above; use
+            “Update Evaluation” to save your revisions.
+          </p>
+        )}
+
+        {hasSubmittedBefore && !serverComplete && (
+          <p
+            style={{
+              textAlign: "center",
+              marginTop: 16,
+              color: "#991b1b",
+              fontSize: 14,
+            }}
+          >
+            Your change left a required question unanswered, so this evaluation
+            is no longer submitted. Answer it, then press{" "}
+            <strong>Update Evaluation</strong>.
+          </p>
         )}
       </div>
-      </div>
     </MemberShellAdapter>
+  );
+}
+
+function QuestionInput({
+  question,
+  draft,
+  disabled,
+  onChange,
+}: {
+  question: EvaluationFormQuestion;
+  draft: DraftAnswer;
+  disabled: boolean;
+  onChange: (next: DraftAnswer, immediate: boolean) => void;
+}) {
+  const cardStyle = (selected: boolean): CSSProperties => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 48,
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: selected ? "2px solid #2563eb" : "2px solid #d1d5db",
+    background: selected ? "#eff6ff" : "#fff",
+    cursor: disabled ? "default" : "pointer",
+  });
+
+  if (question.question_type === "free_text") {
+    return (
+      <textarea
+        style={{ width: "100%" }}
+        className="block border rounded p-3"
+        rows={7}
+        disabled={disabled}
+        value={draft.answerText}
+        onChange={(e) => onChange({ ...draft, answerText: e.target.value }, false)}
+        onBlur={() => onChange({ ...draft, answerText: draft.answerText }, true)}
+      />
+    );
+  }
+
+  if (question.question_type === "rating") {
+    const values: number[] = [];
+    for (let v = question.rating_min; v <= question.rating_max; v += 1) {
+      values.push(v);
+    }
+    return (
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {values.map((v) => (
+          <button
+            key={v}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange({ ...draft, ratingValue: v }, true)}
+            style={{
+              ...cardStyle(draft.ratingValue === v),
+              minWidth: 48,
+              justifyContent: "center",
+            }}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  const options =
+    question.question_type === "yes_no"
+      ? [
+          { id: "yes", label: "Yes" },
+          { id: "no", label: "No" },
+        ]
+      : question.choices.map((c) => ({ id: c.id, label: c.label }));
+  const multi = question.question_type === "multi_select";
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
+        gap: 12,
+      }}
+    >
+      {options.map((opt) => {
+        const selected = draft.selectedLabels.includes(opt.label);
+        return (
+          <label key={opt.id} style={cardStyle(selected)}>
+            <input
+              type={multi ? "checkbox" : "radio"}
+              name={question.id}
+              checked={selected}
+              disabled={disabled}
+              onChange={() => onChange(toggleChoice(draft, opt.label, multi), true)}
+            />
+            {opt.label}
+          </label>
+        );
+      })}
+    </div>
   );
 }
 

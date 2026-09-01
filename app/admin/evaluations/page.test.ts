@@ -3,92 +3,83 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-// Focused tests for the Admin Batch 3 Central UI Standard migration of
-// Evaluations. The page previously used Tailwind-shaped utility classes
-// (text-gray-500, border rounded-lg p-4, md:grid-cols-4, space-y-2, ...)
-// that have no matching rule anywhere in app/globals.css and no Tailwind
-// config exists in this repo -- the entire page rendered essentially
-// unstyled. This migration is a real visual-bug fix, not just a style
-// pass. Run with:
+// /admin/evaluations after the tenant-scoped / target-addressed rebuild:
+// a dynamic report + a template/assignment builder, both driven purely by
+// governed RPCs. No hardcoded question UUIDs, no answer-text question
+// identification, no FCOC/Freightliner wording.
 //   npx tsx --test app/admin/evaluations/page.test.ts
 
-const source = readFileSync(
+const PAGE = readFileSync(
   fileURLToPath(new URL("./page.tsx", import.meta.url)),
   "utf8",
 );
+const CLIENT = readFileSync(
+  fileURLToPath(new URL("./AdminEvaluationsClient.tsx", import.meta.url)),
+  "utf8",
+);
 
-test("the previously-undefined Tailwind-shaped utility classes are gone", () => {
-  for (const needle of [
-    "text-gray-500",
-    "rounded-lg",
-    "md:grid-cols-4",
-    "lg:grid-cols-2",
-    "space-y-2",
-    "space-y-3",
-    "text-2xl font-semibold",
-    "bg-gray-50",
-  ]) {
-    assert.equal(source.includes(needle), false, `expected the undefined utility class "${needle}" to be gone`);
-  }
+test("the page is a thin guard + shell wrapper gated on event.reports.view", () => {
+  assert.match(PAGE, /<AdminRouteGuard requiredTask="event\.reports\.view">/);
+  assert.match(PAGE, /<AdminShellAdapter/);
+  assert.match(PAGE, /<AdminEvaluationsClient \/>/);
 });
 
-test("empty-response states use the canonical EmptyState primitive across all seven panels", () => {
-  assert.match(
-    source,
-    /import\s*\{\s*EmptyState\s*\}\s*from\s*["']@\/components\/ui\/EmptyState["']/,
-  );
-  const emptyStateCount = (source.match(/<EmptyState message="No responses yet\." \/>/g) || []).length;
-  assert.equal(emptyStateCount, 7);
-});
-
-test("every response-breakdown/testimonial panel renders through the canonical PageSection primitive", () => {
-  assert.match(
-    source,
-    /import\s*\{\s*PageSection\s*\}\s*from\s*["']@\/components\/ui\/PageSection["']/,
-  );
-  for (const title of [
-    'title="Overall Impression"',
-    'title="Likelihood to Attend Again"',
-    'title="Most Valuable Parts of Event"',
-    'title="Future Topic Interests"',
-    "title={`Favorite Memories (",
-    "title={`Where Did We Miss The Mark? (",
-    "title={`Additional Comments (",
-  ]) {
-    assert.ok(source.includes(title), `expected a PageSection for ${title}`);
-  }
-});
-
-test("the shell wrapper and page-access guard are unchanged", () => {
-  assert.match(source, /<AdminRouteGuard>/);
-  assert.match(source, /<AdminShellAdapter pageTitle="Event Evaluations">/);
-});
-
-test("cross-Event scoping (evaluationsForEvent/answersForEvaluationIds) and every question-id constant remain byte-identical -- only presentation changed", () => {
-  assert.match(source, /evaluationsForEvent\(data \?\? \[\], currentEvent\.id\)/);
-  assert.match(source, /answersForEvaluationIds\(fetchedAnswers, evaluationIds\)/);
-  for (const id of [
+test("NO hardcoded evaluation question / answer UUIDs anywhere on the surface", () => {
+  const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  assert.equal(uuid.test(PAGE), false);
+  assert.equal(uuid.test(CLIENT), false);
+  for (const retired of [
     "e7bc22d8-3b6c-4ab0-9031-5241e52999fa",
-    "94e4dfa7-2b18-4ee1-816c-86dacd60e5cb",
-    "1158884d-d26b-4d63-bb69-c37b07f374b7",
     "5bbb3f53-11fe-46e6-87a4-5aa7ff2737f3",
-    "58c7f13d-db0f-493f-8e37-a4af9a8acbd9",
-    "478a0769-1663-4697-9e47-9e4164c449f6",
-    "d8325ddf-4090-446b-8607-543adea7b4c4",
+    "FAVORITE_MEMORY_ID",
+    "MISSED_MARK_ID",
+    "overallQuestionId",
   ]) {
-    assert.ok(source.includes(id), `question/answer id ${id} must be retained`);
+    assert.equal(CLIENT.includes(retired), false, `retired constant ${retired}`);
   }
 });
 
-test("multi-select parsing (parseMultiSelectAnswer) is untouched", () => {
-  assert.match(source, /function parseMultiSelectAnswer\(raw: string\): string\[\] \{/);
-  assert.match(source, /const matches = raw\.match\(\/"\(\[\^"\]\{2,\}\)"\/g\) \?\? \[\];/);
+test("reporting discovers questions dynamically and never identifies them by answer text", () => {
+  assert.ok(CLIENT.includes('"list_event_evaluation_assignments"'));
+  assert.ok(CLIENT.includes('"get_evaluation_report"'));
+  assert.match(CLIENT, /report\.questions/);
+  assert.match(CLIENT, /assignment_question_id/);
+  // no equality test against a stored answer string to pick a question
+  assert.equal(/answer_text === |=== "More |=== "Excellent"/.test(CLIENT), false);
+  assert.equal(/from\("event_evaluations"\)|from\("event_evaluation_answers"\)/.test(CLIENT), false);
 });
 
-test("no database write of any kind exists -- Evaluations remains a pure read/aggregate surface", () => {
-  assert.equal(/\.update\(/.test(source), false);
-  assert.equal(/\.upsert\(/.test(source), false);
-  assert.equal(/\.insert\(/.test(source), false);
-  assert.equal(/\.delete\(/.test(source), false);
-  assert.equal(/\.rpc\(/.test(source), false);
+test("reporting distinguishes the overall Event Evaluation from per-agenda-item evaluations", () => {
+  assert.match(CLIENT, /Overall Event Evaluation/);
+  assert.match(CLIENT, /Presentation \/ Session Evaluations/);
+  assert.match(CLIENT, /target_type === "agenda_item"/);
+  assert.match(CLIENT, /target_type === "event"/);
+});
+
+test("the builder drives every mutation through the governed config RPCs", () => {
+  for (const rpc of [
+    "list_event_evaluation_config",
+    "create_evaluation_template",
+    "update_evaluation_template",
+    "upsert_evaluation_template_question",
+    "delete_evaluation_template_question",
+    "reorder_evaluation_template_questions",
+    "assign_evaluation",
+  ]) {
+    assert.ok(CLIENT.includes(`"${rpc}"`), `builder calls ${rpc}`);
+  }
+  // no direct table writes
+  assert.equal(/\.insert\(|\.update\(|\.upsert\(|\.delete\(/.test(CLIENT), false);
+});
+
+test("assignment supports event + agenda-item targets and reuse of one template across items", () => {
+  assert.match(CLIENT, /targetType="event"/);
+  assert.match(CLIENT, /targetType="agenda_item"/);
+  assert.match(CLIENT, /config\.agenda_items\.map/);
+  assert.match(CLIENT, /frozen/); // frozen assignments protect historical responses
+});
+
+test("no FCOC / Freightliner wording in the admin surface", () => {
+  assert.equal(/freightliner/i.test(CLIENT), false);
+  assert.equal(/\bFCOC\b/.test(CLIENT), false);
 });

@@ -8,6 +8,7 @@ import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapt
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { logEngagement } from "@/lib/engagement";
+import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
 
@@ -259,7 +260,9 @@ function MemberAgendaPageInner() {
     event: workspaceEvent,
     attendeeId,
     isReady,
+    session,
   } = useMemberWorkspace();
+  const [evalItemIds, setEvalItemIds] = useState<Set<string>>(new Set());
   const { isCompact } = useShellInterfaceCapabilities();
   const [event, setEvent] = useState<MemberEvent | null>(null);
   const [items, setItems] = useState<AgendaItem[]>([]);
@@ -345,6 +348,32 @@ function MemberAgendaPageInner() {
 
     void loadAgenda();
   }, [isReady, loadAgenda]);
+
+  // Which agenda items carry a presentation evaluation the member can open.
+  useEffect(() => {
+    let active = true;
+    if (!isReady || !workspaceEvent?.id) {
+      setEvalItemIds(new Set());
+      return;
+    }
+    void supabase
+      .rpc("list_member_agenda_evaluations", {
+        p_event_id: workspaceEvent.id,
+        ...memberIdentityRpcArgs(session),
+      })
+      .then(({ data }) => {
+        if (!active) {
+          return;
+        }
+        const ids = Array.isArray(data)
+          ? data.map((row: { agenda_item_id: string }) => row.agenda_item_id)
+          : [];
+        setEvalItemIds(new Set(ids));
+      });
+    return () => {
+      active = false;
+    };
+  }, [isReady, workspaceEvent?.id, session]);
 
   useEffect(() => {
     if (!event?.id || !attendeeId) {
@@ -873,6 +902,16 @@ function MemberAgendaPageInner() {
               <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
                 {selectedAgendaItem.description}
               </p>
+            ) : null}
+
+            {evalItemIds.has(selectedAgendaItem.id) ? (
+              <a
+                className="app-button app-button-primary"
+                href={`/member/evaluation?target=agenda_item&id=${selectedAgendaItem.id}`}
+                style={{ display: "inline-block", textDecoration: "none" }}
+              >
+                Evaluate this presentation
+              </a>
             ) : null}
 
             {selectedAgendaItem.category ||

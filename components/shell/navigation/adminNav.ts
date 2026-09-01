@@ -65,6 +65,11 @@ export function buildAdminNavSections(
     hasPermission(admin, "can_manage_checkin") && { id: "checkin", label: "Check-In", href: "/admin/checkin" },
     hasPermission(admin, "can_manage_parking") && { id: "parking", label: "Parking Admin", href: "/admin/parking" },
     hasPermission(admin, "can_manage_reports") && { id: "print", label: "Print Center", href: "/admin/print" },
+    hasPermission(admin, "can_manage_reports") && {
+      id: "evaluations",
+      label: "Evaluations",
+      href: "/admin/evaluations",
+    },
     hasPermission(admin, "can_manage_vendors") && { id: "vendors", label: "Vendor Management", href: "/admin/vendors" },
   ].filter(Boolean) as ShellNavItem[];
 
