@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { checklistStorageKeyForEvent } from "@/app/admin/checklist/page";
+import {
+  checklistStorageKeyForEvent,
+  previousChecklistStorageKeyForEvent,
+} from "@/app/admin/checklist/page";
 
 const PAGE_SOURCE = readFileSync(
   fileURLToPath(new URL("./page.tsx", import.meta.url)),
@@ -11,9 +14,17 @@ const PAGE_SOURCE = readFileSync(
 );
 
 test("checklist persistence remains device-local and partitioned by Event", () => {
-  assert.equal(checklistStorageKeyForEvent("event-a"), "fcoc-pre-rally-checklist-event-a");
-  assert.equal(checklistStorageKeyForEvent("event-b"), "fcoc-pre-rally-checklist-event-b");
-  assert.equal(checklistStorageKeyForEvent(null), "fcoc-pre-rally-checklist");
+  assert.equal(checklistStorageKeyForEvent("event-a"), "epicentrax-pre-rally-checklist-event-a");
+  assert.equal(checklistStorageKeyForEvent("event-b"), "epicentrax-pre-rally-checklist-event-b");
+  assert.equal(checklistStorageKeyForEvent(null), "epicentrax-pre-rally-checklist");
+});
+
+test("a prior checklist value is read only as a narrow migrate-on-read source", () => {
+  assert.equal(
+    previousChecklistStorageKeyForEvent("event-a"),
+    "fcoc-pre-rally-checklist-event-a",
+  );
+  assert.match(PAGE_SOURCE, /readAndMigrateTier5LocalStorage\(/);
 });
 
 test("an Admin Event A to Event B switch rebinds the checklist through canonical workspace context", () => {

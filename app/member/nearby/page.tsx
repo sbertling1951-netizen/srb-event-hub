@@ -15,8 +15,12 @@ import { logEngagement } from "@/lib/engagement";
 import type { MapObject } from "@/lib/mapSurface/contract";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { sanitizeCardColor } from "@/lib/sanitizeCardColor";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  STORAGE_KEYS,
+  TIER5_MIGRATION_SOURCE_KEYS,
+} from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
+import { readAndMigrateTier5LocalStorage } from "@/lib/tier5StorageMigration";
 const EpicentraxMapSurface = dynamic(
   () => import("@/components/map/surface/EpicentraxMapSurface"),
   { ssr: false },
@@ -359,7 +363,10 @@ function NearbyPageInner() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.nearbyFavorites);
+      const stored = readAndMigrateTier5LocalStorage(
+        STORAGE_KEYS.nearbyFavorites,
+        TIER5_MIGRATION_SOURCE_KEYS.nearbyFavorites,
+      );
 
       if (stored) {
         setFavoriteIds(JSON.parse(stored));

@@ -602,7 +602,7 @@ test("7c. filtering: an unrelated cross-tab 'storage' write never triggers a cal
   });
 
   for (const key of [
-    "fcoc-nearby-favorites",
+    "epicentrax-nearby-favorites",
     "epicentrax-member-event-context",
     "some-third-party-key",
   ]) {

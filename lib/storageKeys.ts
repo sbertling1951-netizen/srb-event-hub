@@ -9,8 +9,8 @@
 // helpers in lib/storageMigration.ts for canonical writes, legacy fallback /
 // migrate-on-read, dual-key cleanup, and legacy event matching.
 //
-// Tier 5 preference / filter / handoff keys are intentionally NOT migrated in
-// N1 (Cohort N2). They keep their `fcoc-` names and have no LEGACY_ entry.
+// Tier 5 preference / filter / handoff keys are canonicalized in Cohort N2.
+// They are deliberately outside the N1 identity/session compatibility map.
 // ---------------------------------------------------------------------------
 
 export const STORAGE_KEYS = {
@@ -27,20 +27,29 @@ export const STORAGE_KEYS = {
   adminAccessCache: "epicentrax-admin-access-cache",
   adminAccessCacheTime: "epicentrax-admin-access-cache-time",
 
-  // --- Tier 5: not yet migrated (Cohort N2) ---
-  adminEventsFilter: "fcoc-admin-events-filter",
-  adminReportPresets: "fcoc-admin-report-presets",
+  // --- Tier 5: canonical device-local preferences / handoffs (Cohort N2) ---
+  adminEventsFilter: "epicentrax-admin-events-filter",
+  adminReportPresets: "epicentrax-admin-report-presets",
 
+  nearbyFavorites: "epicentrax-nearby-favorites",
+  nearbySelectedAreaId: "epicentrax-nearby-selected-area-id",
+  parkingFocusSite: "epicentrax-parking-focus-site",
+
+  preRallyChecklistPrefix: "epicentrax-pre-rally-checklist",
+  attendeeCommandCenterPrefs: "epicentrax-attendee-command-center-prefs",
+  attendeeOpenEditId: "epicentrax-attendee-open-edit-id",
+
+  announcementBannerDismissedPrefix: "epicentrax-announcement-banner-dismissed",
+  announcementPopupSeenPrefix: "epicentrax-announcement-popup-seen",
+} as const;
+
+// Narrow migration sources for the few Tier 5 values where losing a
+// browser-local value would disrupt an in-progress workflow. These are not
+// part of LEGACY_STORAGE_KEYS: they carry no identity, session, authority, or
+// cross-tab admission meaning and are read only by lib/tier5StorageMigration.
+export const TIER5_MIGRATION_SOURCE_KEYS = {
   nearbyFavorites: "fcoc-nearby-favorites",
-  nearbySelectedAreaId: "fcoc-nearby-selected-area-id",
-  parkingFocusSite: "fcoc-parking-focus-site",
-
   preRallyChecklistPrefix: "fcoc-pre-rally-checklist",
-  attendeeCommandCenterPrefs: "fcoc-attendee-command-center-prefs",
-  attendeeOpenEditId: "fcoc-attendee-open-edit-id",
-
-  announcementBannerDismissedPrefix: "fcoc-announcement-banner-dismissed",
-  announcementPopupSeenPrefix: "fcoc-announcement-popup-seen",
 } as const;
 
 // Legacy `fcoc-` names for the N1-migrated keys ONLY. Property names match
@@ -69,10 +78,19 @@ export const RETIRED_LEGACY_STORAGE_KEYS = [
   "fcoc-admin-email", // was STORAGE_KEYS.adminEmail (never read)
 ] as const;
 
-// Not migrated in N1 (Cohort N2).
+// Event-scoped device-local preferences and import-run locators (Cohort N2).
 export const EVENT_SCOPED_STORAGE_KEYS = {
   attendeeManagementView: (eventId: string) =>
-    `fcoc-attendee-management-view::${eventId}`,
+    `epicentrax-attendee-management-view::${eventId}`,
+  attendeeImportRun: (eventId: string) =>
+    `epicentrax-attendee-import-run::${eventId}`,
+  vendorImportRun: (eventId: string) =>
+    `epicentrax-vendor-import-run::${eventId}`,
+} as const;
+
+// Narrow migration sources for governed import-run locators only. The IDs
+// remain non-authoritative: each recovery path revalidates server authority.
+export const TIER5_EVENT_SCOPED_MIGRATION_SOURCE_KEYS = {
   attendeeImportRun: (eventId: string) =>
     `fcoc-attendee-import-run::${eventId}`,
   vendorImportRun: (eventId: string) =>

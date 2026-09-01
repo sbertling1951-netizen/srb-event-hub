@@ -39,8 +39,13 @@ import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
 import { ATTENDEE_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 import { buildImportsHref, readImportType } from "@/lib/importTypeRouting";
-import { EVENT_SCOPED_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  EVENT_SCOPED_STORAGE_KEYS,
+  STORAGE_KEYS,
+  TIER5_EVENT_SCOPED_MIGRATION_SOURCE_KEYS,
+} from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
+import { readAndMigrateTier5LocalStorage } from "@/lib/tier5StorageMigration";
 
 import { ActiveRunsPanel } from "./ActiveRunsPanel";
 import {
@@ -212,7 +217,10 @@ function loadActiveImportRunId(eventId: string): string | null {
     return null;
   }
   try {
-    return localStorage.getItem(getActiveImportRunStorageKey(eventId));
+    return readAndMigrateTier5LocalStorage(
+      getActiveImportRunStorageKey(eventId),
+      TIER5_EVENT_SCOPED_MIGRATION_SOURCE_KEYS.attendeeImportRun(eventId),
+    );
   } catch {
     return null;
   }

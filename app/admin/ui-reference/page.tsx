@@ -1696,7 +1696,7 @@ export function AdminUiReferenceContent() {
                 <td>Attendees</td>
                 <td>Yes -- search, both filters, view mode, sort, page size, and a display toggle, all together</td>
                 <td>
-                  <code className="ui-ref-code">localStorage[&quot;fcoc-attendee-command-center-prefs&quot;]</code>
+                  <code className="ui-ref-code">localStorage[&quot;epicentrax-attendee-command-center-prefs&quot;]</code>
                 </td>
               </tr>
               <tr>

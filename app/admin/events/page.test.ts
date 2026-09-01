@@ -735,7 +735,7 @@ test("Event Filter initializes from browser-local persisted storage, not a hardc
 test("the filter persistence key is a distinct, page-local display preference -- not a second event-context authority", () => {
   assert.match(
     PAGE_SOURCE,
-    /const EVENT_STATUS_FILTER_STORAGE_KEY = "fcoc-admin-events-filter";/,
+    /const EVENT_STATUS_FILTER_STORAGE_KEY = STORAGE_KEYS\.adminEventsFilter;/,
   );
   // Never reads or writes the canonical Admin event-context storage key
   // directly -- canonical context is only ever touched through

@@ -98,7 +98,7 @@ test("existing direct Parking navigation (no target param) still no-ops through 
   assert.match(fn, /if \(!attendeeTarget \|\| loading\) \{\s*return;\s*\}/);
 });
 
-test("the pre-existing Check-In -> Parking site-focus handoff (fcoc-parking-focus-site) is untouched by this work", () => {
-  assert.match(SOURCE, /localStorage\.getItem\("fcoc-parking-focus-site"\)/);
-  assert.match(SOURCE, /localStorage\.removeItem\("fcoc-parking-focus-site"\)/);
+test("the pre-existing Check-In -> Parking site-focus handoff remains a registry-owned, non-authoritative device-local handoff", () => {
+  assert.match(SOURCE, /localStorage\.getItem\(STORAGE_KEYS\.parkingFocusSite\)/);
+  assert.match(SOURCE, /localStorage\.removeItem\(STORAGE_KEYS\.parkingFocusSite\)/);
 });

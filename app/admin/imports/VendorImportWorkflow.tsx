@@ -26,8 +26,12 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
-import { EVENT_SCOPED_STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  EVENT_SCOPED_STORAGE_KEYS,
+  TIER5_EVENT_SCOPED_MIGRATION_SOURCE_KEYS,
+} from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
+import { readAndMigrateTier5LocalStorage } from "@/lib/tier5StorageMigration";
 import {
   classifyVendorFileAmbiguities,
   interpretVendorImportRow,
@@ -70,7 +74,10 @@ function loadActiveVendorRunId(eventId: string): string | null {
     return null;
   }
   try {
-    return localStorage.getItem(activeVendorRunStorageKey(eventId));
+    return readAndMigrateTier5LocalStorage(
+      activeVendorRunStorageKey(eventId),
+      TIER5_EVENT_SCOPED_MIGRATION_SOURCE_KEYS.vendorImportRun(eventId),
+    );
   } catch {
     return null;
   }

@@ -12,7 +12,11 @@ import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+import {
+  STORAGE_KEYS,
+  TIER5_MIGRATION_SOURCE_KEYS,
+} from "@/lib/storageKeys";
+import { readAndMigrateTier5LocalStorage } from "@/lib/tier5StorageMigration";
 
 type ChecklistSection = {
   title: string;
@@ -68,9 +72,19 @@ const CHECKLIST_SECTIONS: ChecklistSection[] = [
 ];
 
 const STORAGE_KEY_BASE: string = STORAGE_KEYS.preRallyChecklistPrefix;
+const PREVIOUS_STORAGE_KEY_BASE: string =
+  TIER5_MIGRATION_SOURCE_KEYS.preRallyChecklistPrefix;
 
 export function checklistStorageKeyForEvent(eventId: string | null | undefined) {
   return eventId ? `${STORAGE_KEY_BASE}-${eventId}` : STORAGE_KEY_BASE;
+}
+
+export function previousChecklistStorageKeyForEvent(
+  eventId: string | null | undefined,
+) {
+  return eventId
+    ? `${PREVIOUS_STORAGE_KEY_BASE}-${eventId}`
+    : PREVIOUS_STORAGE_KEY_BASE;
 }
 
 export default function AdminChecklistPage() {
@@ -100,7 +114,10 @@ function AdminChecklistPageInner() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(storageKey);
+      const raw = readAndMigrateTier5LocalStorage(
+        storageKey,
+        previousChecklistStorageKeyForEvent(getCurrentAdminEvent()?.id),
+      );
       if (raw) {
         setChecked(JSON.parse(raw));
       } else {

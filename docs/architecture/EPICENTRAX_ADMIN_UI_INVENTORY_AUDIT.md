@@ -99,7 +99,7 @@ conceptual module they most belong to.
 
 | Page | Current Purpose | Primary Action | Reachability | Findings |
 | --- | --- | --- | --- | --- |
-| `/admin/checkin` | Day-of check-in: mark arrived, assign/confirm parking site | Check an attendee in | Sidebar (Operations) | Independently re-implements the same site-assignment/conflict logic as `/admin/parking` against the same `attendees`/`parking_sites` columns — two unrelated codepaths, coordinated only by a `localStorage["fcoc-parking-focus-site"]` handoff, not shared logic. |
+| `/admin/checkin` | Day-of check-in: mark arrived, assign/confirm parking site | Check an attendee in | Sidebar (Operations) | Independently re-implements the same site-assignment/conflict logic as `/admin/parking` against the same `attendees`/`parking_sites` columns — two unrelated codepaths, coordinated only by a `localStorage["epicentrax-parking-focus-site"]` handoff, not shared logic. |
 
 ### Parking
 
@@ -146,7 +146,7 @@ conceptual module they most belong to.
 | Page | Current Purpose | Primary Action | Reachability | Findings |
 | --- | --- | --- | --- | --- |
 | `/admin/vendors` | Master vendor directory CRUD + per-event assignment/visibility | Add or assign a vendor | Sidebar (Operations, labeled "Vendor Management") | Contains an embedded "Vendor Dashboard" quick-link grid (6 buttons) that is the *only* discovery path to Vendor Requests and Vendor User Access. Leftover `console.log("Vendor payload", ...)` debug statement; writes both a legacy `name` and current `business_name` field to the same row. |
-| `/admin/vendor-requests` | Triage/dispatch member-submitted vendor service requests | Change a request's status / contact a vendor | Linked from Vendors' quick-link grid only | Sole owner of its own data — not itself duplicative. Its own code comment elsewhere confirms it's intended as "the sole place" for this. Links out to `/admin/parking` (site-lookup handoff via `localStorage["fcoc-parking-focus-site"]`). |
+| `/admin/vendor-requests` | Triage/dispatch member-submitted vendor service requests | Change a request's status / contact a vendor | Linked from Vendors' quick-link grid only | Sole owner of its own data — not itself duplicative. Its own code comment elsewhere confirms it's intended as "the sole place" for this. Links out to `/admin/parking` (site-lookup handoff via `localStorage["epicentrax-parking-focus-site"]`). |
 | `/admin/vendors/access` | Invite/manage vendor-portal login accounts | Send a vendor-portal invitation | Linked from Vendors' quick-link grid only | Self-contained, API-backed (not direct table queries); no duplication found. |
 
 **Confirmed duplication**: Vendor CRUD/assignment exists in full in **two** places — here and inside `/admin/imports`' "Vendor Library" — using different field names for the same underlying `vendors`/`event_vendors` schema.
