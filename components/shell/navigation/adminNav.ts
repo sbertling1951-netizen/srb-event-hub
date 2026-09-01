@@ -84,7 +84,15 @@ export function buildAdminNavSections(
   ].filter(Boolean) as ShellNavItem[];
 
   const staffSection: ShellNavItem[] = [
-    (hasPermission(admin, "can_manage_event_staff") || hasPermission(admin, "can_manage_admins")) && {
+    // Event Staff visibility hint only -- NOT an authorization boundary.
+    // can_manage_event_staff is the coarse Event-Admin-preset hint;
+    // tenantAuthority "allowed" covers a legitimate Tenant/Platform admin
+    // regardless of an unrelated legacy global privilege preset. The
+    // authoritative gate is the route's own
+    // requiredEventStaffDelegationAuthority check
+    // (has_any_event_staff_delegation_authority) plus, per operation,
+    // resolve_event_staff_delegation() inside each governed RPC.
+    (hasPermission(admin, "can_manage_event_staff") || tenantAuthority?.status === "allowed") && {
       id: "event-staff",
       label: "Event Staff",
       href: "/admin/event-staff",

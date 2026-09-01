@@ -19,10 +19,6 @@ import {
   setCurrentAdminEvent,
   useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
-import {
-  canAccessEvent,
-  hasPermission,
-} from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 type EventRow = {
@@ -98,13 +94,28 @@ type StaffRow = {
   pendingProfileChoice: CanonicalProfile;
 };
 
-const EVENT_ROLE_OPTIONS: Array<{ value: CanonicalProfile; label: string }> = [
-  { value: "event_admin", label: "Event Admin" },
-  { value: "content", label: "Content" },
-  { value: "checkin", label: "Check-In" },
-  { value: "parking", label: "Parking" },
-  { value: "view_only", label: "View Only" },
-];
+// Display-only fallback labels. The AUTHORITATIVE, tier-filtered list of
+// which profiles this admin may actually assign comes from the governed
+// list_event_authority_profile_catalog RPC (profileCatalog state) -- for an
+// Event Admin delegate that RPC returns only content/checkin/parking/
+// view_only. This map is used solely to render a human label for a profile
+// value the catalog does not include (e.g. an existing, read-only
+// event_admin row shown to an Event Admin delegate).
+const PROFILE_LABEL_FALLBACK: Record<string, string> = {
+  event_admin: "Event Admin",
+  content: "Content",
+  checkin: "Check-In",
+  parking: "Parking",
+  view_only: "View Only",
+};
+
+function profileLabel(catalog: ProfileCatalogEntry[], key: string): string {
+  return (
+    catalog.find((p) => p.profile_key === key)?.display_name ||
+    PROFILE_LABEL_FALLBACK[key] ||
+    key
+  );
+}
 
 function formatDateRange(startDate: string | null | undefined, endDate: string | null | undefined) {
   if (!startDate && !endDate) { return ""; }
@@ -132,7 +143,8 @@ function formatPrivilegeGroup(value?: string | null) {
 function describeRpcError(err: any): string {
   const msg: string = err?.message || String(err || "Unknown error");
   if (/not an active (super_admin|admin)|caller is not/i.test(msg)) return "You are not authorized to govern this Event's assignments.";
-  if (/lacks Event governance authority/i.test(msg)) return "You do not have Platform or Tenant authority over this Event.";
+  if (/lacks Event (governance|staff delegation) authority/i.test(msg)) return "You do not have delegation authority over this Event.";
+  if (/Event Admin delegation may not/i.test(msg)) return "You cannot make this change with Event Admin delegation authority.";
   if (/event or tenant not found/i.test(msg)) return "This Event (or its Tenant) could not be found.";
   if (/self-elevation is forbidden/i.test(msg)) return "You cannot change your own assignment.";
   if (/unknown profile|invalid profile change/i.test(msg)) return "That is not a recognized canonical profile.";
@@ -224,19 +236,15 @@ function EventStaffPageInner() {
 
   useEffect(() => {
     if (!admin) return;
-    const safeAdmin = admin;
 
-    if (
-      !hasPermission(safeAdmin, "can_manage_event_staff") &&
-      !hasPermission(safeAdmin, "can_manage_event_admins") &&
-      !hasPermission(safeAdmin, "can_manage_admins")
-    ) {
-      setError("You do not have permission to manage event staff.");
-      setStatus("Access denied.");
-      setLoading(false);
-      return;
-    }
-
+    // Authorization is owned end-to-end by the canonical Event Staff
+    // delegation model: the route guard's
+    // requiredEventStaffDelegationAuthority (coarse reachability) plus
+    // resolve_event_staff_delegation() inside every governed RPC (the
+    // authoritative per-Event, per-tier decision). This page carries no
+    // legacy client permission gate and no per-Event pre-check of its own --
+    // an unauthorized load simply surfaces the governed RPC's raised
+    // exception, mapped by describeRpcError.
     async function loadForCurrentEvent() {
       const adminEvent = getCurrentAdminEvent();
 
@@ -247,14 +255,23 @@ function EventStaffPageInner() {
         return;
       }
 
-      if (!canAccessEvent(safeAdmin, adminEvent.id)) {
-        setError("You do not have access to this event.");
-        setStatus("Access denied.");
-        setLoading(false);
-        return;
-      }
+      // The header must always reflect the canonical working Event, even if
+      // the governed authority load below is denied or fails.
+      const workingEventId = adminEvent.id;
+      setEvent((prev) =>
+        prev && prev.id === workingEventId
+          ? prev
+          : {
+              id: workingEventId,
+              name: adminEvent.name ?? adminEvent.eventName ?? null,
+              location: adminEvent.location ?? null,
+              start_date: adminEvent.start_date ?? null,
+              end_date: adminEvent.end_date ?? null,
+            },
+      );
+      setSelectedEventId(workingEventId);
 
-      await loadPage(adminEvent.id);
+      await loadPage(workingEventId);
     }
 
     reloadRef.current = () => void loadForCurrentEvent();
@@ -562,9 +579,13 @@ function EventStaffPageInner() {
                   {...controlProps}
                   value={newProfile}
                   onChange={(e) => setNewProfile(e.target.value as CanonicalProfile)}
-                  disabled={adding}
+                  disabled={adding || profileCatalog.length === 0}
                 >
-                  {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                  {/* Governed, tier-filtered: an Event Admin delegate is
+                      offered only content/checkin/parking/view_only here. */}
+                  {profileCatalog.map((p) => (
+                    <option key={p.profile_key} value={p.profile_key}>{p.display_name}</option>
+                  ))}
                 </Select>
               )}
             </Field>
@@ -574,7 +595,7 @@ function EventStaffPageInner() {
             <AppButton
               variant="primary"
               onClick={() => void handleAddStaff()}
-              disabled={adding || !newAdminUserId || !event?.id}
+              disabled={adding || !newAdminUserId || !event?.id || profileCatalog.length === 0}
             >
               {adding ? "Adding..." : "Add Staff"}
             </AppButton>
@@ -620,7 +641,9 @@ function EventStaffPageInner() {
                       <div className="data-table-cell-meta" style={{ marginTop: "var(--space-1)" }}>Base group: {formatPrivilegeGroup(row.privilegeGroup)}</div>
                       {!row.canGovern ? (
                         <p style={{ fontSize: "var(--font-size-caption)", color: "var(--color-status-error)", marginTop: "var(--space-1)" }}>
-                          This is your own assignment -- self-elevation is not permitted.
+                          {admin?.adminUser?.id === row.adminUserId
+                            ? "This is your own assignment -- self-elevation is not permitted."
+                            : "This Event Admin assignment is outside your delegation authority -- visible but read-only."}
                         </p>
                       ) : null}
                     </div>
@@ -629,7 +652,7 @@ function EventStaffPageInner() {
                       help={
                         <>
                           Current:{" "}
-                          <strong>{EVENT_ROLE_OPTIONS.find((o) => o.value === row.canonicalProfile)?.label || row.canonicalProfile}</strong>
+                          <strong>{profileLabel(profileCatalog, row.canonicalProfile)}</strong>
                         </>
                       }
                     >
@@ -640,7 +663,20 @@ function EventStaffPageInner() {
                           onChange={(e) => updatePendingProfileChoice(row.accessId, e.target.value as CanonicalProfile)}
                           disabled={rowBusy || !row.canGovern}
                         >
-                          {EVENT_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                          {/* Governed, tier-filtered profile options. The
+                              row's own current profile is always shown as an
+                              option even when the catalog omits it (an
+                              existing event_admin row is visible but
+                              read-only to an Event Admin delegate). */}
+                          {(profileCatalog.some((p) => p.profile_key === row.canonicalProfile)
+                            ? profileCatalog.map((p) => ({ value: p.profile_key, label: p.display_name }))
+                            : [
+                                { value: row.canonicalProfile, label: profileLabel(profileCatalog, row.canonicalProfile) },
+                                ...profileCatalog.map((p) => ({ value: p.profile_key, label: p.display_name })),
+                              ]
+                          ).map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
                         </Select>
                       )}
                     </Field>
@@ -718,7 +754,7 @@ function EventStaffPageInner() {
 
 export default function EventStaffPage() {
   return (
-    <AdminRouteGuard requiredPermission="can_manage_event_staff">
+    <AdminRouteGuard requiredEventStaffDelegationAuthority>
       <AdminShellAdapter pageTitle="Event Staff">
         <EventStaffPageInner />
       </AdminShellAdapter>

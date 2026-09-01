@@ -264,3 +264,53 @@ test("every other existing nav item and section is unchanged for a full-access a
     assert.ok(allItemIds.includes(expectedId), `expected pre-existing nav item "${expectedId}" to still be present`);
   }
 });
+
+// ---- Event Staff nav visibility (downward delegation, 2026-09-18). ----
+// The Event Staff nav gate is a COARSE visibility HINT, never an
+// authorization boundary: can_manage_event_staff (the Event-Admin preset
+// hint) OR a canonical Tenant/Platform authority ("allowed"). The route's
+// own requiredEventStaffDelegationAuthority check is the real gate.
+
+test("an Event Admin preset admin (can_manage_event_staff) sees Event Staff", () => {
+  const eventAdmin = buildAdmin({ permissionMap: { can_manage_event_staff: true } });
+  assert.ok(findItem(buildAdminNavSections(eventAdmin), "event-staff"));
+});
+
+test("a Super Admin sees Event Staff (via the isSuperAdmin hasPermission bypass)", () => {
+  const superAdmin = buildAdmin({ isSuperAdmin: true, permissionMap: {} });
+  assert.ok(findItem(buildAdminNavSections(superAdmin), "event-staff"));
+});
+
+test("a legitimate Tenant Admin with an unrelated legacy global privilege preset still sees Event Staff -- via canonical tenant authority, not the preset", () => {
+  const oddPresetTenantAdmin = buildAdmin({
+    privilege_group: "read_only",
+    privilegeGroup: "read_only",
+    permissionMap: {},
+  });
+  // No preset hint...
+  assert.equal(findItem(buildAdminNavSections(oddPresetTenantAdmin), "event-staff"), null);
+  // ...but canonical Tenant/Platform authority "allowed" reveals it.
+  assert.ok(
+    findItem(buildAdminNavSections(oddPresetTenantAdmin, { status: "allowed" }), "event-staff"),
+  );
+});
+
+test("a subordinate-profile admin (no event-staff preset hint, no tenant authority) does NOT see Event Staff", () => {
+  for (const group of ["checkin", "parking", "content_admin", "read_only"] as const) {
+    const subordinate = buildAdmin({
+      privilege_group: group,
+      privilegeGroup: group,
+      permissionMap: {},
+    });
+    assert.equal(
+      findItem(buildAdminNavSections(subordinate, { status: "denied" }), "event-staff"),
+      null,
+      `${group} must not see Event Staff`,
+    );
+  }
+});
+
+test("can_manage_admins alone no longer reveals Event Staff -- that legacy OR was removed", () => {
+  const adminsOnly = buildAdmin({ permissionMap: { can_manage_admins: true } });
+  assert.equal(findItem(buildAdminNavSections(adminsOnly, { status: "denied" }), "event-staff"), null);
+});

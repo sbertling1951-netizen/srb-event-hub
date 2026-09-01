@@ -14,9 +14,14 @@ const PAGE_SOURCE = readFileSync(
   "utf8",
 );
 
-test("shell wrapper, AdminRouteGuard, and the existing can_manage_event_staff permission gate are unchanged", () => {
-  assert.match(PAGE_SOURCE, /AdminRouteGuard requiredPermission="can_manage_event_staff"/);
+test("the route is gated by the canonical Event Staff delegation authority check, NOT the legacy client permission gate", () => {
+  assert.match(PAGE_SOURCE, /<AdminRouteGuard requiredEventStaffDelegationAuthority>/);
   assert.match(PAGE_SOURCE, /AdminShellAdapter pageTitle="Event Staff"/);
+  // The old legacy gates are gone entirely.
+  assert.equal(/requiredPermission="can_manage_event_staff"/.test(PAGE_SOURCE), false);
+  assert.equal(/can_manage_event_staff/.test(PAGE_SOURCE), false);
+  assert.equal(/hasPermission\(/.test(PAGE_SOURCE), false);
+  assert.equal(/canAccessEvent\(/.test(PAGE_SOURCE), false);
 });
 
 test("the duplicate in-page <h1>Event Staff</h1> is gone -- the canonical shell header (pageTitle) is the page's only h1", () => {
@@ -41,12 +46,56 @@ test("every governed RPC name and the direct read-only table names are still pre
   }
 });
 
-test("the three-way permission check (can_manage_event_staff / can_manage_event_admins / can_manage_admins) is unchanged", () => {
-  const fnIdx = PAGE_SOURCE.indexOf("useEffect(() => {");
-  const fnBody = PAGE_SOURCE.slice(fnIdx, fnIdx + 700);
-  assert.match(fnBody, /hasPermission\(safeAdmin, "can_manage_event_staff"\)/);
-  assert.match(fnBody, /hasPermission\(safeAdmin, "can_manage_event_admins"\)/);
-  assert.match(fnBody, /hasPermission\(safeAdmin, "can_manage_admins"\)/);
+test("the page carries NO client-side authorization gate of its own -- authz is the route guard plus the governed RPCs", () => {
+  // No legacy permission-map check, no per-Event pre-check.
+  assert.equal(/hasPermission\(/.test(PAGE_SOURCE), false);
+  assert.equal(/canAccessEvent\(/.test(PAGE_SOURCE), false);
+  assert.equal(/You do not have permission to manage event staff/.test(PAGE_SOURCE), false);
+  // The governed RPC names remain the only write/read authority path.
+  for (const rpc of [
+    "list_event_authority_assignments",
+    "list_event_authority_profile_catalog",
+    "create_event_authority_assignment",
+    "grant_event_authority_task",
+    "revoke_event_authority_task",
+    "remove_event_authority_assignment",
+    "change_event_authority_profile",
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(rpc), `Event Staff must retain ${rpc}`);
+  }
+});
+
+test("the working-event header is seeded from the canonical working Event before the governed load, so it survives a denied or failed load", () => {
+  const fnIdx = PAGE_SOURCE.indexOf("async function loadForCurrentEvent() {");
+  const fnBody = PAGE_SOURCE.slice(fnIdx, PAGE_SOURCE.indexOf("await loadPage(workingEventId);", fnIdx));
+  assert.match(fnBody, /const adminEvent = getCurrentAdminEvent\(\);/);
+  assert.match(fnBody, /setEvent\(\(prev\) =>/);
+  assert.match(fnBody, /name: adminEvent\.name \?\? adminEvent\.eventName \?\? null/);
+  // loadPage's catch must NOT clear the seeded event.
+  const loadPageIdx = PAGE_SOURCE.indexOf("async function loadPage(eventId: string) {");
+  const catchBody = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("} catch (err: any) {", loadPageIdx),
+    PAGE_SOURCE.indexOf("} finally {", loadPageIdx),
+  );
+  assert.equal(/setEvent\(null\)/.test(catchBody), false);
+});
+
+test("the profile <Select> options come from the governed, tier-filtered profileCatalog RPC feed -- never a hardcoded five-profile array", () => {
+  // No array of {value,label} profile options literally listing event_admin.
+  assert.equal(/value: "event_admin", label: "Event Admin"/.test(PAGE_SOURCE), false);
+  // Add-staff select renders straight from profileCatalog.
+  assert.match(PAGE_SOURCE, /profileCatalog\.map\(\(p\) => \(\s*\n?\s*<option key=\{p\.profile_key\} value=\{p\.profile_key\}>\{p\.display_name\}<\/option>/);
+  // The label fallback map exists only for display of a catalog-omitted value.
+  assert.match(PAGE_SOURCE, /const PROFILE_LABEL_FALLBACK: Record<string, string>/);
+  assert.match(PAGE_SOURCE, /function profileLabel\(catalog: ProfileCatalogEntry\[\], key: string\)/);
+});
+
+test("an existing event_admin row stays visible but its profile <Select> still shows the correct current label even though the EA catalog omits event_admin", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /profileCatalog\.some\(\(p\) => p\.profile_key === row\.canonicalProfile\)/,
+  );
+  assert.match(PAGE_SOURCE, /outside your delegation authority -- visible but read-only/);
 });
 
 test("self-elevation protection (row.canGovern) still gates every mutation button, unchanged", () => {
@@ -142,7 +191,11 @@ test("eventStaffStatusTone classifies confirmation/loading/authority-denial text
 
   assert.equal(eventStaffStatusTone("Access denied."), "danger");
   assert.equal(
-    eventStaffStatusTone("You do not have Platform or Tenant authority over this Event."),
+    eventStaffStatusTone("You do not have delegation authority over this Event."),
+    "danger",
+  );
+  assert.equal(
+    eventStaffStatusTone("You cannot make this change with Event Admin delegation authority."),
     "danger",
   );
   assert.equal(eventStaffStatusTone("You cannot change your own assignment."), "danger");

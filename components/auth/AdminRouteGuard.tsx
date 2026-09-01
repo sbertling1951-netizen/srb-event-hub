@@ -5,6 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAdmin } from "@/lib/adminContext";
 import {
+  type AdminEventStaffAuthorityResult,
+  checkAdminEventStaffDelegationAuthority,
+} from "@/lib/adminEventStaffAuthority";
+import {
   type AdminTaskAuthorityResult,
   checkAdminEventTaskAuthority,
 } from "@/lib/adminTaskAuthority";
@@ -27,6 +31,7 @@ type Props = {
   requiredPermission?: string;
   requiredTask?: string;
   requiredTenantAuthority?: boolean;
+  requiredEventStaffDelegationAuthority?: boolean;
   requiredVendorCatalogAuthority?: boolean;
   requiredPlatformAuthority?: boolean;
   fallbackPath?: string;
@@ -37,6 +42,7 @@ export default function AdminRouteGuard({
   requiredPermission,
   requiredTask,
   requiredTenantAuthority,
+  requiredEventStaffDelegationAuthority,
   requiredVendorCatalogAuthority,
   requiredPlatformAuthority,
   fallbackPath = "/admin/login",
@@ -114,6 +120,37 @@ export default function AdminRouteGuard({
     });
   }, [requiredTenantAuthority]);
 
+  // requiredEventStaffDelegationAuthority only. null = checking (or not yet
+  // started) -- never a stale prior result, same discipline as
+  // tenantAuthority above. This has NO Event dimension: the coarse
+  // has_any_event_staff_delegation_authority() RPC answers only the
+  // route-reachability question ("Platform, any Tenant Admin, or Event
+  // Admin on some Event"), so it is never re-checked on Admin working-Event
+  // change (deliberately no subscribeToAdminWorkspace subscription below,
+  // matching requiredTenantAuthority). The authoritative per-Event, per-tier
+  // decision stays server-side in resolve_event_staff_delegation(), called
+  // by every Event Staff RPC with the actually-selected Event. Re-runs only
+  // when the authenticated Admin identity itself changes (userId).
+  const [eventStaffDelegationAuthority, setEventStaffDelegationAuthority] =
+    useState<AdminEventStaffAuthorityResult | null>(null);
+  const eventStaffDelegationCheckGeneration = useRef(0);
+
+  const runEventStaffDelegationCheck = useCallback(() => {
+    if (!requiredEventStaffDelegationAuthority) {
+      return;
+    }
+
+    const generation = ++eventStaffDelegationCheckGeneration.current;
+
+    setEventStaffDelegationAuthority(null);
+
+    void checkAdminEventStaffDelegationAuthority().then((result) => {
+      if (eventStaffDelegationCheckGeneration.current === generation) {
+        setEventStaffDelegationAuthority(result);
+      }
+    });
+  }, [requiredEventStaffDelegationAuthority]);
+
   // requiredVendorCatalogAuthority only. null = checking (or not yet
   // started) -- never a stale prior result, same discipline as
   // tenantAuthority above. This has no Event dimension and no Tenant
@@ -176,6 +213,14 @@ export default function AdminRouteGuard({
   }, [requiredTenantAuthority, userId, runTenantCheck]);
 
   useEffect(() => {
+    if (!requiredEventStaffDelegationAuthority || !userId) {
+      return;
+    }
+
+    runEventStaffDelegationCheck();
+  }, [requiredEventStaffDelegationAuthority, userId, runEventStaffDelegationCheck]);
+
+  useEffect(() => {
     if (!requiredVendorCatalogAuthority || !userId) {
       return;
     }
@@ -215,6 +260,16 @@ export default function AdminRouteGuard({
     }
 
     if (tenantAuthority.status !== "allowed") {
+      return <div style={{ padding: 24 }}>No permission</div>;
+    }
+  }
+
+  if (requiredEventStaffDelegationAuthority) {
+    if (eventStaffDelegationAuthority === null) {
+      return null;
+    }
+
+    if (eventStaffDelegationAuthority.status !== "allowed") {
       return <div style={{ padding: 24 }}>No permission</div>;
     }
   }
