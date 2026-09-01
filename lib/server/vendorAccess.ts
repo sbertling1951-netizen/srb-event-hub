@@ -4,16 +4,15 @@ import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { COOKIE_NAMES, LEGACY_COOKIE_NAMES } from "@/lib/storageKeys";
 
-// Stage A: cookie SET behavior is unchanged -- every set/refresh site still
-// writes the legacy name. These exports name that legacy cookie so the SET
-// sites (login, vendor selection, session refresh) keep working exactly as
-// today and every currently authenticated vendor session survives.
+// Compatibility phase: these exports retain the legacy cookie names so
+// existing vendor sessions and legacy readers continue to work while the
+// issuance routes write both cookie names.
 export const VENDOR_AUTH_COOKIE = LEGACY_COOKIE_NAMES.vendorAccessToken;
 export const VENDOR_SELECTED_COOKIE = LEGACY_COOKIE_NAMES.vendorSelectedVendorId;
 
-// The canonical (neutral) cookie names. Stage A only reads these -- it never
-// sets them -- so a future Stage can switch the SET name without another
-// server change. Logout/session DELETE clears both name sets.
+// The canonical (neutral) cookie names. Issuance routes write these alongside
+// their legacy counterparts; reads remain canonical-first with legacy
+// fallback. Logout/session DELETE clears both name sets.
 export const CANONICAL_VENDOR_AUTH_COOKIE = COOKIE_NAMES.vendorAccessToken;
 export const CANONICAL_VENDOR_SELECTED_COOKIE =
   COOKIE_NAMES.vendorSelectedVendorId;

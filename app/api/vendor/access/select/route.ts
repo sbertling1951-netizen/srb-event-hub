@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import {
+  CANONICAL_VENDOR_SELECTED_COOKIE,
   resolveVendorAccessFromCookies,
   VENDOR_SELECTED_COOKIE,
 } from "@/lib/server/vendorAccess";
@@ -55,14 +56,19 @@ export async function POST(req: Request) {
   }
 
   const response = NextResponse.json({ ok: true, vendorId });
-  response.cookies.set({
-    name: VENDOR_SELECTED_COOKIE,
-    value: vendorId,
-    httpOnly: true,
-    secure: secureCookieEnabled(),
-    sameSite: "lax",
-    path: "/",
-  });
+  for (const name of [
+    CANONICAL_VENDOR_SELECTED_COOKIE,
+    VENDOR_SELECTED_COOKIE,
+  ]) {
+    response.cookies.set({
+      name,
+      value: vendorId,
+      httpOnly: true,
+      secure: secureCookieEnabled(),
+      sameSite: "lax",
+      path: "/",
+    });
+  }
 
   return response;
 }

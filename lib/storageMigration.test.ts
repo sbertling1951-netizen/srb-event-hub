@@ -490,7 +490,7 @@ test("vendor session DELETE expires the legacy AND canonical auth + selected coo
   assert.match(del, /maxAge: 0/);
 });
 
-test("vendorAccess source: SET names stay legacy; canonical names are read-only in Stage A", () => {
+test("vendorAccess retains explicit legacy and canonical cookie-name exports for compatibility", () => {
   const src = readFileSync(
     fileURLToPath(new URL("./server/vendorAccess.ts", import.meta.url)),
     "utf8",

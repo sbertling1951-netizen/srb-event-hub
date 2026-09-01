@@ -147,14 +147,16 @@ export async function POST(req: Request) {
   }
 
   const response = NextResponse.json({ ok: true, userId: user.id });
-  response.cookies.set({
-    name: VENDOR_AUTH_COOKIE,
-    value: accessToken,
-    httpOnly: true,
-    secure: secureCookieEnabled(),
-    sameSite: "lax",
-    path: "/",
-  });
+  for (const name of [CANONICAL_VENDOR_AUTH_COOKIE, VENDOR_AUTH_COOKIE]) {
+    response.cookies.set({
+      name,
+      value: accessToken,
+      httpOnly: true,
+      secure: secureCookieEnabled(),
+      sameSite: "lax",
+      path: "/",
+    });
+  }
 
   return response;
 }

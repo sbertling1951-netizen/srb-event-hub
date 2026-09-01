@@ -82,11 +82,19 @@ test("a verifyOtp failure returns generic failure and never attempts to unconsum
 
 // ---- Role-branch response shape ----
 
-test("vendor success sets the existing canonical vendor cookie, not a new one", () => {
-  assert.match(SOURCE, /import \{ VENDOR_AUTH_COOKIE \} from "@\/lib\/server\/vendorAccess"/);
-  assert.match(SOURCE, /name:\s*VENDOR_AUTH_COOKIE/);
+test("vendor success dual-writes the canonical and legacy vendor access-token cookies", () => {
+  assert.match(SOURCE, /CANONICAL_VENDOR_AUTH_COOKIE/);
+  assert.match(SOURCE, /VENDOR_AUTH_COOKIE/);
+  assert.match(
+    SOURCE,
+    /for \(const name of \[CANONICAL_VENDOR_AUTH_COOKIE, VENDOR_AUTH_COOKIE\]\)/,
+  );
   const cookieSetCalls = SOURCE.match(/\.cookies\.set\(/g) || [];
-  assert.equal(cookieSetCalls.length, 1, "exactly one cookie must be set (the existing vendor cookie)");
+  assert.equal(cookieSetCalls.length, 1, "both vendor cookie names share one identical options object");
+  assert.match(SOURCE, /httpOnly:\s*true/);
+  assert.match(SOURCE, /secure:\s*secureCookieEnabled\(\)/);
+  assert.match(SOURCE, /sameSite:\s*"lax"/);
+  assert.match(SOURCE, /path:\s*"\/"/);
 });
 
 test("vendor success JSON body never includes access_token/refresh_token (the access token is used only as the cookie value)", () => {

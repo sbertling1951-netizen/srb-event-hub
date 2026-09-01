@@ -2,7 +2,10 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { VENDOR_AUTH_COOKIE } from "@/lib/server/vendorAccess";
+import {
+  CANONICAL_VENDOR_AUTH_COOKIE,
+  VENDOR_AUTH_COOKIE,
+} from "@/lib/server/vendorAccess";
 
 // Legacy Login Transfer -- canonical redemption boundary (Stage 3B).
 //
@@ -116,14 +119,16 @@ export async function POST(req: Request) {
 
     if (row.role_class === "vendor") {
       const response = jsonNoStore({ ok: true, destination });
-      response.cookies.set({
-        name: VENDOR_AUTH_COOKIE,
-        value: verifyData.session.access_token,
-        httpOnly: true,
-        secure: secureCookieEnabled(),
-        sameSite: "lax",
-        path: "/",
-      });
+      for (const name of [CANONICAL_VENDOR_AUTH_COOKIE, VENDOR_AUTH_COOKIE]) {
+        response.cookies.set({
+          name,
+          value: verifyData.session.access_token,
+          httpOnly: true,
+          secure: secureCookieEnabled(),
+          sameSite: "lax",
+          path: "/",
+        });
+      }
       return response;
     }
 
