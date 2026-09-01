@@ -16,7 +16,12 @@ export function readAndMigrateTier5LocalStorage(
 
     const previous = window.localStorage.getItem(previousKey);
     if (previous !== null) {
-      window.localStorage.setItem(canonicalKey, previous);
+      try {
+        window.localStorage.setItem(canonicalKey, previous);
+      } catch {
+        // A full or unavailable browser store must not discard a valid
+        // low-value preference or non-authoritative recovery locator.
+      }
     }
 
     return previous;
