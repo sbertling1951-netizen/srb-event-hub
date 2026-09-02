@@ -113,7 +113,7 @@ function readSnapshot(
 ): MemberWorkspaceSnapshot {
   const nextSession = getMemberSession();
   // Attendee identity comes from the canonical MemberSession only. A legacy
-  // fcoc-member-attendee-id is compatibility data and is deliberately NOT
+  // standalone attendee-id key is compatibility data and is deliberately NOT
   // used here as a fallback answer -- a stale one must never manufacture a
   // usable workspace identity. When the session is incomplete the provider
   // re-derives the attendee through a governed RPC (see the recovery effect

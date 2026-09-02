@@ -72,7 +72,7 @@ export default function MemberEventsPage() {
     // This selects an Event for public Nearby / browsing context only. It
     // must NOT establish or mutate an authenticated / Temporary Event
     // Access member workspace: the canonical member workspace lives solely
-    // in MemberSession (fcoc-member-session), established via
+    // in MemberSession, established via
     // /member/account -> enterResolvedRegistration() -> finishMemberLogin()
     // or a Temporary Event Access login -- never here. MemberRouteGuard and
     // MemberWorkspaceProvider derive member-workspace identity from

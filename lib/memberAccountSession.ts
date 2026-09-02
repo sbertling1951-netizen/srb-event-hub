@@ -225,7 +225,7 @@ export async function enterResolvedRegistration(
 // legacy/local member and account-picker state -- MemberSession (including
 // any TEA capability material it carries), the account-origin marker, the
 // Event hint/change signals, arrival state, and user mode -- but never
-// touches the Supabase Auth session itself or any fcoc-admin-* state;
+// touches the Supabase Auth session itself or any admin-local storage state;
 // callers that are actually signing the account out call
 // supabase.auth.signOut() separately (see signOutOfMemberAccount below).
 // An invalid Event context is not an invalid account: the Person may still

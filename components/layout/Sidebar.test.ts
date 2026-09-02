@@ -26,12 +26,32 @@ test("M1: the dead check-in arrival state and its storage listener are removed",
 test("M1: the orphan member-event-updated CustomEvent dispatch is removed; the admin one remains", () => {
   assert.doesNotMatch(SOURCE, /APP_EVENT_NAMES\.memberEventUpdated/);
   assert.doesNotMatch(SOURCE, /member-event-updated/);
-  // Stage A: the admin-event-updated dispatch now fires under both the
-  // canonical and legacy CustomEvent names via the shared migration helper.
+});
+
+test("N3: the Sidebar emits the admin-event-updated CustomEvent under the CANONICAL name only", () => {
+  // The redundant legacy same-document `fcoc-admin-event-updated` emit is
+  // retired -- the Sidebar dispatches the canonical name once.
   assert.match(
     SOURCE,
-    /dualDispatchWindowEvent\(\s*APP_EVENT_NAMES\.adminEventUpdated,\s*LEGACY_APP_EVENT_NAMES\.adminEventUpdated,\s*\)/,
+    /dispatchCanonicalWindowEvent\(APP_EVENT_NAMES\.adminEventUpdated\)/,
   );
+  // no legacy same-document emit remains
+  assert.doesNotMatch(SOURCE, /dualDispatchWindowEvent/);
+  assert.doesNotMatch(SOURCE, /LEGACY_APP_EVENT_NAMES/);
+  assert.doesNotMatch(SOURCE, /fcoc-admin-event-updated/);
+});
+
+test("N3: the legacy admin-event listener acceptance is UNCHANGED (still dual-listens during the bake)", () => {
+  const ctx = readFileSync(
+    fileURLToPath(new URL("../../lib/adminEventContext.ts", import.meta.url)),
+    "utf8",
+  );
+  // subscribeToAdminEventChange keeps dual-listening (canonical + legacy)
+  assert.match(
+    ctx,
+    /addDualWindowEventListener\(\s*ADMIN_EVENT_UPDATED,\s*LEGACY_ADMIN_EVENT_UPDATED,/,
+  );
+  assert.match(ctx, /LEGACY_APP_EVENT_NAMES\.adminEventUpdated/);
 });
 
 test("M1: root arrival-routing behavior is untouched -- the arrival key stays live for the '/' redirect", () => {

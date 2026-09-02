@@ -3,9 +3,9 @@
 // (lib/importTemplateContract.ts) so a template can never silently drift
 // from the field list it advertises -- and can never silently reintroduce
 // tenant-specific branding into sample content. Agenda joined this
-// generator in FCOC Cohort 3's D1 follow-up (previously its files were
-// hand-maintained); its published filenames keep the "_with_speaker" infix
-// so the existing download links are unchanged.
+// generator in a later template-consolidation cohort (previously its files
+// were hand-maintained); its published filenames keep the "_with_speaker"
+// infix so the existing download links are unchanged.
 //
 // Run with: npx tsx scripts/generate-import-templates.ts
 import { mkdirSync, writeFileSync } from "node:fs";

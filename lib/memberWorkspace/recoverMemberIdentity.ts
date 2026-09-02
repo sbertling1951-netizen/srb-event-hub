@@ -18,12 +18,12 @@ import { supabase } from "@/lib/supabase";
 // Rules this enforces (see the approved repair scope + pre-commit
 // correction):
 //   * MemberSession is the canonical persisted client workspace source.
-//     The current-Event context (MemberSession first, then the
-//     fcoc-member-event-context pointer that /member/events public
+//     The current-Event context (MemberSession first, then the legacy
+//     member-event-context pointer that /member/events public
 //     discovery also writes) is used as a recovery HINT ONLY for a live
 //     authenticated account, and ONLY when no persisted MemberSession
 //     Event exists. Temporary Event Access never uses the hint.
-//   * A legacy fcoc-member-attendee-id is NEVER an anchor and is NEVER
+//   * A legacy standalone attendee-id key is NEVER an anchor and is NEVER
 //     paired with the (possibly hinted) Event. The attendee identity is
 //     always re-derived through the existing governed
 //     public.get_my_attendee_record RPC -- its authenticated branch
@@ -57,8 +57,8 @@ export async function recoverMemberIdentity(
   signal?: AbortSignal,
 ): Promise<MemberIdentityRecoveryOutcome> {
   const session = getMemberSession();
-  // The current-Event context (MemberSession first, then the
-  // fcoc-member-event-context discovery pointer). Used ONLY as a recovery
+  // The current-Event context (MemberSession first, then the legacy
+  // member-event-context discovery pointer). Used ONLY as a recovery
   // hint when there is no persisted MemberSession Event, and ONLY for a
   // live authenticated account (see below). A legacy attendee id is never
   // an anchor and is never paired with the hinted Event.

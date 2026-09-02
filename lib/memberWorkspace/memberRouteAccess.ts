@@ -35,9 +35,9 @@ import type {
 
 export type MemberRouteAccessInputs = {
   // localStorage-derived, read by the caller (never mutated here):
-  mode: string | null; // fcoc-user-mode
+  mode: string | null; // canonical user-mode key
   hasEvent: boolean; // !!getCurrentMemberEvent()  (MemberSession event, then hint)
-  accountOriginMarker: string | null; // fcoc-member-auth-user-id
+  accountOriginMarker: string | null; // canonical member-auth-user-id marker
   // Live Supabase Auth session presence, resolved by the caller from a
   // fresh supabase.auth.getSession() before calling. Used only to pick a
   // redirect destination (account picker vs. sign-in).

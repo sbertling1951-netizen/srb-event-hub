@@ -85,7 +85,7 @@ export default function AdminLoginPage() {
       // origin marker, the Event hint/change signal, arrival state, and
       // any TEA capability material carried inside MemberSession -- BEFORE
       // establishing Admin mode. This never touches the Supabase Auth
-      // session just created or any fcoc-admin-* state.
+      // session just created or any admin-local storage state.
       clearMemberLocalState();
 
       writeCanonicalLocal(STORAGE_KEYS.userMode, "admin");

@@ -36,7 +36,7 @@ import { supabase } from "@/lib/supabase";
 // M2 (Option A): the coarse "is this a member browser" pre-gate is
 //   hasLegacySession = mode === "member" && hasEvent
 // where hasEvent = !!getCurrentMemberEvent() -- the persisted MemberSession
-// Event first, then the fcoc-member-event-context discovery hint. The
+// Event first, then the legacy member-event-context discovery hint. The
 // hint-inclusive form is a hard compatibility requirement: an authenticated
 // old-browser session with no MemberSession must still reach the governed
 // recovery path from the hint. The retired legacy standalone attendee-id key is

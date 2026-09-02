@@ -173,7 +173,7 @@ function MemberCheckinPageInner() {
         setHousehold([]);
         setConfirmedSite(null);
 
-        // An account-origin session (fcoc-member-auth-user-id present) that
+        // An account-origin session (the account-origin marker present) that
         // reaches this point with no live Supabase Auth session failed the
         // identity lookup only because there is no auth.uid() to resolve
         // the canonical Person -> Participation -> attendee path -- the

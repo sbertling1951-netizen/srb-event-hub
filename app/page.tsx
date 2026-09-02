@@ -46,7 +46,7 @@ export default function HomePage() {
         console.log("D: before member session reads");
         // Canonical MemberSession attendee id (the retired
         // legacy standalone attendee-id key is no longer read).
-        // fcoc-member-has-arrived behaviour is unchanged.
+        // member-has-arrived behaviour is unchanged.
         const attendeeId = getMemberSession()?.attendee_id ?? null;
         const memberEvent = getCurrentMemberEvent();
         const hasArrived = getStoredMemberHasArrived();

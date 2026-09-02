@@ -13,13 +13,12 @@ import { getStoredUserMode } from "@/lib/getCurrentMemberEvent";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import {
   APP_EVENT_NAMES,
-  LEGACY_APP_EVENT_NAMES,
   LEGACY_STORAGE_KEYS,
   RETIRED_LEGACY_STORAGE_KEYS,
   STORAGE_KEYS,
 } from "@/lib/storageKeys";
 import {
-  dualDispatchWindowEvent,
+  dispatchCanonicalWindowEvent,
   storageEventMatches,
 } from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
@@ -400,9 +399,9 @@ export default function Sidebar() {
   }, [mounted, isAdminRoute, adminAccessLoading, sharedAdminAccess]);
 
   function clearKnownAppStorageKeys() {
-    // Stage A: a global logout must remove BOTH the canonical epicentrax-*
-    // names and every legacy fcoc-* name (including the retired write-only
-    // orphans) so stale legacy identity/context state cannot resurrect.
+    // A global logout must remove BOTH the canonical key names and every
+    // legacy/retired key name (including the retired write-only orphans) so
+    // stale legacy identity/context state cannot resurrect.
     const keys = [
       ...Object.values(STORAGE_KEYS),
       ...Object.values(LEGACY_STORAGE_KEYS),
@@ -429,10 +428,12 @@ export default function Sidebar() {
       document.body.style.touchAction = "";
       document.documentElement.style.overflow = "";
 
-      dualDispatchWindowEvent(
-        APP_EVENT_NAMES.adminEventUpdated,
-        LEGACY_APP_EVENT_NAMES.adminEventUpdated,
-      );
+      // Canonical same-document notification only. The redundant legacy
+      // same-tab admin CustomEvent emit is retired here;
+      // subscribeToAdminEventChange still dual-listens (canonical + legacy)
+      // during the compatibility bake, and cross-tab `storage` signalling is
+      // unchanged.
+      dispatchCanonicalWindowEvent(APP_EVENT_NAMES.adminEventUpdated);
     } catch (err) {
       console.error("Failed to clear app state:", err);
     }
