@@ -52,6 +52,7 @@ import {
   AGENDA_TEMPLATE_FILES,
   ATTENDEE_TEMPLATE_FILES,
   TemplateDownloadList,
+  type TemplateFile,
   VENDOR_TEMPLATE_FILES,
 } from "./importDoorTemplates";
 import { ImportHistoryPanel } from "./ImportHistoryPanel";
@@ -326,6 +327,45 @@ export default function AdminAttendeeImportsPage() {
 // doors, one governed workflow per import type -- see
 // docs/architecture/EPICENTRAX_GOVERNED_IMPORT_STAGING_ARCHITECTURE.md.
 
+// One landing "door" card. All three doors share this exact structure so
+// their primary buttons -- and the template-download sections below them --
+// line up when the cards sit in the same row, regardless of how each
+// description happens to wrap. The card is a flex column (a stretched grid
+// item, so every card in a row is the same height); the description takes
+// the flexible space, which keeps the button + links at a consistent
+// vertical position without any per-card margin or fixed height.
+function ImportDoorCard({
+  title,
+  description,
+  href,
+  openLabel,
+  templateFiles,
+}: {
+  title: string;
+  description: string;
+  href: string;
+  openLabel: string;
+  templateFiles: TemplateFile[];
+}) {
+  return (
+    <PageSection variant="card" style={{ display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", flex: 1 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
+          <h2 className="app-section-title" style={{ margin: 0 }}>{title}</h2>
+          <StatusBadge tone="success">Available</StatusBadge>
+        </div>
+        <p className="app-subtle-text" style={{ margin: 0, flex: 1 }}>
+          {description}
+        </p>
+        <AppLinkButton variant="primary" href={href}>
+          {openLabel}
+        </AppLinkButton>
+        <TemplateDownloadList files={templateFiles} />
+      </div>
+    </PageSection>
+  );
+}
+
 function ImportsLandingDoors() {
   return (
     <>
@@ -343,54 +383,27 @@ function ImportsLandingDoors() {
           gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
         }}
       >
-        <PageSection variant="card">
-          <div style={{ display: "grid", gap: "var(--space-3)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
-              <h2 className="app-section-title" style={{ margin: 0 }}>Attendee Roster</h2>
-              <StatusBadge tone="success">Available</StatusBadge>
-            </div>
-            <p className="app-subtle-text" style={{ margin: 0 }}>
-              Governed roster import: staged, validated, and committed through the Stage 1-3.1 pipeline.
-            </p>
-            <AppLinkButton variant="primary" href={buildImportsHref("attendee-roster")}>
-              Open Attendee Import
-            </AppLinkButton>
-            <TemplateDownloadList files={ATTENDEE_TEMPLATE_FILES} />
-          </div>
-        </PageSection>
-
-        <PageSection variant="card">
-          <div style={{ display: "grid", gap: "var(--space-3)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
-              <h2 className="app-section-title" style={{ margin: 0 }}>Agenda</h2>
-              <StatusBadge tone="success">Available</StatusBadge>
-            </div>
-            <p className="app-subtle-text" style={{ margin: 0 }}>
-              Import a schedule file into the existing governed Agenda import workflow.
-            </p>
-            <AppLinkButton variant="primary" href={buildImportsHref("agenda")}>
-              Open Agenda Import
-            </AppLinkButton>
-            <TemplateDownloadList files={AGENDA_TEMPLATE_FILES} />
-          </div>
-        </PageSection>
-
-        <PageSection variant="card">
-          <div style={{ display: "grid", gap: "var(--space-3)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
-              <h2 className="app-section-title" style={{ margin: 0 }}>Vendors</h2>
-              <StatusBadge tone="success">Available</StatusBadge>
-            </div>
-            <p className="app-subtle-text" style={{ margin: 0 }}>
-              Governed Vendor import: staged, matched to an existing canonical Vendor, and committed
-              through the Stage 1 / Stage 5B.1 / Stage 5B.2 / Stage 1.1 pipeline.
-            </p>
-            <AppLinkButton variant="primary" href={buildImportsHref("vendors")}>
-              Open Vendor Import
-            </AppLinkButton>
-            <TemplateDownloadList files={VENDOR_TEMPLATE_FILES} />
-          </div>
-        </PageSection>
+        <ImportDoorCard
+          title="Attendee Roster"
+          description="Import attendees for this event."
+          href={buildImportsHref("attendee-roster")}
+          openLabel="Open Attendee Import"
+          templateFiles={ATTENDEE_TEMPLATE_FILES}
+        />
+        <ImportDoorCard
+          title="Agenda"
+          description="Import the event agenda."
+          href={buildImportsHref("agenda")}
+          openLabel="Open Agenda Import"
+          templateFiles={AGENDA_TEMPLATE_FILES}
+        />
+        <ImportDoorCard
+          title="Vendors"
+          description="Import vendors for this event."
+          href={buildImportsHref("vendors")}
+          openLabel="Open Vendor Import"
+          templateFiles={VENDOR_TEMPLATE_FILES}
+        />
       </div>
     </>
   );

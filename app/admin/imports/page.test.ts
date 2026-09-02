@@ -218,18 +218,76 @@ test("showFullImportTable (the Attendee row-preview toggle) survived the Vendor/
 
 test("all three import types have a door on the landing view, each showing its truthful status", () => {
   const source = readSource();
+  const cardStart = source.indexOf("function ImportDoorCard(");
+  const landingBody = source.slice(cardStart, source.indexOf("\nfunction AgendaImportDoor"));
+  assert.match(landingBody, /title="Attendee Roster"/);
+  assert.match(landingBody, /title="Agenda"/);
+  assert.match(landingBody, /title="Vendors"/);
+  // Stage 5B.3: all three doors are real, working governed workflows -- the
+  // shared ImportDoorCard renders one "Available" badge per door.
+  assert.match(landingBody, /<StatusBadge tone="success">Available<\/StatusBadge>/);
+  assert.equal((landingBody.match(/<ImportDoorCard\b/g) || []).length, 3);
+  assert.match(landingBody, /openLabel="Open Attendee Import"/);
+  assert.match(landingBody, /openLabel="Open Agenda Import"/);
+  assert.match(landingBody, /openLabel="Open Vendor Import"/);
+  assert.match(landingBody, /href=\{buildImportsHref\("attendee-roster"\)\}/);
+  assert.match(landingBody, /href=\{buildImportsHref\("agenda"\)\}/);
+  assert.match(landingBody, /href=\{buildImportsHref\("vendors"\)\}/);
+  assert.match(landingBody, /templateFiles=\{ATTENDEE_TEMPLATE_FILES\}/);
+  assert.match(landingBody, /templateFiles=\{AGENDA_TEMPLATE_FILES\}/);
+  assert.match(landingBody, /templateFiles=\{VENDOR_TEMPLATE_FILES\}/);
+});
+
+// -- KISS UI polish: plain-English door copy + consistent card alignment --
+
+test("landing door descriptions are plain-English, with no implementation/governance jargon", () => {
+  const source = readSource();
+  const cardStart = source.indexOf("function ImportDoorCard(");
+  const landingBody = source.slice(cardStart, source.indexOf("\nfunction AgendaImportDoor"));
+
+  assert.match(landingBody, /description="Import attendees for this event\."/);
+  assert.match(landingBody, /description="Import the event agenda\."/);
+  assert.match(landingBody, /description="Import vendors for this event\."/);
+
+  for (const jargon of [
+    /\bgoverned\b/i,
+    /\bstaged\b/i,
+    /\bvalidated\b/i,
+    /canonical Vendor/i,
+    /\bcommitted\b/i,
+    /\bpipeline\b/i,
+    /Stage \d/,
+    /Stage 5B/,
+  ]) {
+    assert.doesNotMatch(landingBody, jargon, `landing door copy still exposes ${jargon}`);
+  }
+});
+
+test("all three landing doors share one ImportDoorCard -- structural alignment, no Vendor-specific hack", () => {
+  const source = readSource();
+  const cardStart = source.indexOf("function ImportDoorCard(");
   const landingStart = source.indexOf("function ImportsLandingDoors()");
+  const cardBody = source.slice(cardStart, landingStart);
   const landingBody = source.slice(landingStart, source.indexOf("\nfunction AgendaImportDoor"));
-  assert.match(landingBody, />Attendee Roster</);
-  assert.match(landingBody, />Agenda</);
-  assert.match(landingBody, />Vendors</);
-  // Stage 5B.3: all three doors are now real, working governed workflows.
-  const statusBadges = [...landingBody.matchAll(/<StatusBadge tone="(\w+)">(\w+)<\/StatusBadge>/g)];
-  assert.deepEqual(
-    statusBadges.map((m) => m[2]),
-    ["Available", "Available", "Available"],
-  );
-  assert.match(landingBody, /Open Vendor Import/);
+
+  assert.equal((source.match(/function ImportDoorCard\(/g) || []).length, 1);
+  assert.equal((landingBody.match(/<ImportDoorCard\b/g) || []).length, 3);
+
+  // the alignment is structural: flex-column card + flex-growing description
+  assert.match(cardBody, /flexDirection: "column"/);
+  assert.match(cardBody, /flex: 1/);
+
+  // every <ImportDoorCard> takes content props only -- no per-card style /
+  // margin / offset override on any of the three doors
+  const doorInvocations = landingBody.match(/<ImportDoorCard[\s\S]*?\/>/g) || [];
+  assert.equal(doorInvocations.length, 3);
+  for (const inv of doorInvocations) {
+    assert.equal(/\bstyle=/.test(inv), false, "a door carries a per-card style override");
+    assert.equal(/margin|padding|position|minHeight/i.test(inv), false, "a door carries a spacing hack");
+  }
+  // and the shared card body itself has no absolute positioning or fixed height
+  assert.doesNotMatch(cardBody, /position: "absolute"/);
+  assert.doesNotMatch(cardBody, /minHeight/);
 });
 
 test("?type= is read via next/navigation's useSearchParams and the shared readImportType contract, not localStorage", () => {
