@@ -2,10 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 import { getSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import {
-  CANONICAL_VENDOR_AUTH_COOKIE,
-  VENDOR_AUTH_COOKIE,
-} from "@/lib/server/vendorAccess";
+import { CANONICAL_VENDOR_AUTH_COOKIE } from "@/lib/server/vendorAccess";
 
 // Legacy Login Transfer -- canonical redemption boundary (Stage 3B).
 //
@@ -119,16 +116,21 @@ export async function POST(req: Request) {
 
     if (row.role_class === "vendor") {
       const response = jsonNoStore({ ok: true, destination });
-      for (const name of [CANONICAL_VENDOR_AUTH_COOKIE, VENDOR_AUTH_COOKIE]) {
-        response.cookies.set({
-          name,
-          value: verifyData.session.access_token,
-          httpOnly: true,
-          secure: secureCookieEnabled(),
-          sameSite: "lax",
-          path: "/",
-        });
-      }
+      // Stage B: a transferred vendor session lands on the canonical
+      // epicentrax.com origin (the transfer URL is built with CANONICAL_HOST),
+      // and this response's Set-Cookie is scoped host-only to that origin.
+      // Downstream vendor reads are canonical-first with legacy fallback, so
+      // only the canonical cookie is minted here -- no new fcoc-vendor-*
+      // cookie. Legacy cookies already in browsers still resolve via the
+      // fallback, and logout still expires both name sets.
+      response.cookies.set({
+        name: CANONICAL_VENDOR_AUTH_COOKIE,
+        value: verifyData.session.access_token,
+        httpOnly: true,
+        secure: secureCookieEnabled(),
+        sameSite: "lax",
+        path: "/",
+      });
       return response;
     }
 

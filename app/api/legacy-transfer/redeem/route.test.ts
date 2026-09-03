@@ -82,19 +82,43 @@ test("a verifyOtp failure returns generic failure and never attempts to unconsum
 
 // ---- Role-branch response shape ----
 
-test("vendor success dual-writes the canonical and legacy vendor access-token cookies", () => {
-  assert.match(SOURCE, /CANONICAL_VENDOR_AUTH_COOKIE/);
-  assert.match(SOURCE, /VENDOR_AUTH_COOKIE/);
-  assert.match(
-    SOURCE,
-    /for \(const name of \[CANONICAL_VENDOR_AUTH_COOKIE, VENDOR_AUTH_COOKIE\]\)/,
-  );
+test("vendor success mints ONLY the canonical vendor access-token cookie", () => {
+  assert.match(SOURCE, /name:\s*CANONICAL_VENDOR_AUTH_COOKIE/);
+  assert.match(CODE_ONLY, /value:\s*verifyData\.session\.access_token/);
   const cookieSetCalls = SOURCE.match(/\.cookies\.set\(/g) || [];
-  assert.equal(cookieSetCalls.length, 1, "both vendor cookie names share one identical options object");
+  assert.equal(cookieSetCalls.length, 1, "exactly one vendor cookie is set");
   assert.match(SOURCE, /httpOnly:\s*true/);
   assert.match(SOURCE, /secure:\s*secureCookieEnabled\(\)/);
   assert.match(SOURCE, /sameSite:\s*"lax"/);
   assert.match(SOURCE, /path:\s*"\/"/);
+});
+
+test("vendor success never mints a legacy fcoc-vendor-* cookie", () => {
+  assert.doesNotMatch(CODE_ONLY, /(?<!CANONICAL_)VENDOR_AUTH_COOKIE/);
+  assert.doesNotMatch(CODE_ONLY, /VENDOR_SELECTED_COOKIE/);
+  assert.doesNotMatch(CODE_ONLY, /fcoc-vendor/);
+  assert.doesNotMatch(
+    SOURCE,
+    /for \(const name of \[[^\]]*VENDOR_AUTH_COOKIE/,
+    "no dual-write loop over legacy + canonical names",
+  );
+});
+
+test("legacy vendor cookie constants and canonical-first fallback reads are untouched by this route", () => {
+  const vendorAccess = readFileSync(
+    fileURLToPath(
+      new URL("../../../../lib/server/vendorAccess.ts", import.meta.url),
+    ),
+    "utf8",
+  );
+  // The route stops MINTING the legacy name, but the shared helper still
+  // exports it and still reads it as the fallback for cookies already in
+  // browsers.
+  assert.match(
+    vendorAccess,
+    /export const VENDOR_AUTH_COOKIE = LEGACY_COOKIE_NAMES\.vendorAccessToken;/,
+  );
+  assert.match(vendorAccess, /cookies\.get\(CANONICAL_VENDOR_AUTH_COOKIE\)\?\.value \|\|\s*\n\s*cookies\.get\(VENDOR_AUTH_COOKIE\)\?\.value/);
 });
 
 test("vendor success JSON body never includes access_token/refresh_token (the access token is used only as the cookie value)", () => {
