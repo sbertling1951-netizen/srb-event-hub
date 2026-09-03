@@ -288,3 +288,16 @@ test("Check-In's Arrival task is not granted or referenced by the Parking route"
   assert.equal(/event\.checkin\.manage/.test(SOURCE), false);
   assert.equal(/can_mark_arrived/.test(SOURCE), false);
 });
+
+// -- Owner-workspace return navigation (Attendees -> Parking status handoff) --
+
+test("Parking renders the shared AdminReturnLink from its own URL params -- an explicit validated target, never browser history/back", () => {
+  assert.match(
+    SOURCE,
+    /import \{ AdminReturnLink \} from "@\/components\/admin\/AdminReturnLink";/,
+  );
+  assert.match(SOURCE, /<AdminReturnLink searchParams=\{searchParams\} \/>/);
+  // The pre-existing attendee-target handoff is untouched.
+  assert.match(SOURCE, /readAdminAttendeeTarget\(searchParams\)/);
+  assert.equal(/history\.back\(\)|router\.back\(\)/.test(SOURCE), false);
+});

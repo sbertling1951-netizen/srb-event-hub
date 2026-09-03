@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import React, {
   type CSSProperties,
@@ -26,6 +27,7 @@ import {
   dataStatusLabel,
   dataStatusOptionLabel,
   decideCapacityReconciliation,
+  deriveHouseholdPeople,
   dirtySectionIds,
   displayCopilotName,
   displayPilotName,
@@ -34,6 +36,7 @@ import {
   filterAttendees,
   formatCancellationDetail,
   fullName,
+  type HouseholdPerson,
   normalizeDataStatusFilter,
   normalizeMemberNumber,
   type PageSize,
@@ -81,6 +84,7 @@ import {
   subscribeToAdminWorkspace,
   useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
+import { withAdminReturnTarget } from "@/lib/adminWorkspaceReturn";
 import {
   type CanonicalAttendeePlacementMap,
   type CanonicalAttendeePlacementResult,
@@ -672,6 +676,54 @@ function attendeeArrivalPresentation(
     : { label: "Not Arrived", tone: "neutral" };
 }
 
+// Owner-workspace handoff hrefs for one attendee. Attendees Management
+// displays each status; the status control routes to the workspace that
+// OWNS that truth (Check-In owns Arrival, Parking owns placement),
+// targeted to this attendee and carrying a validated return target so the
+// destination can offer "← Previous" back to Attendees. No Event switch
+// travels with either link (ADR-006 §2).
+function attendeeOwnerHrefs(attendeeId: string): {
+  checkin: string;
+  parking: string;
+} {
+  return {
+    checkin: withAdminReturnTarget(
+      buildAdminAttendeeTargetHref("/admin/checkin", attendeeId),
+      "attendees",
+    ),
+    parking: withAdminReturnTarget(
+      buildAdminAttendeeTargetHref("/admin/parking", attendeeId),
+      "attendees",
+    ),
+  };
+}
+
+// A status shown by Attendees that links to its owner workspace. Renders
+// as the standard status pill; clicking navigates and never bubbles to the
+// row-open action underneath it.
+function AttendeeStatusLink(props: {
+  href: string;
+  tone: StatusBadgeTone;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  const { href, tone, ariaLabel, children } = props;
+  return (
+    <Link
+      href={href}
+      aria-label={ariaLabel}
+      className={["app-status-pill", "app-status-pill-link", `app-status-pill-${tone}`]
+        .filter((c) => c && c !== "app-status-pill-neutral")
+        .join(" ")}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      {children}
+      <span aria-hidden="true"> →</span>
+    </Link>
+  );
+}
+
 // Read-only Placement, sourced only from the canonical
 // fetchCanonicalAttendeePlacementsForEvent map (never attendees.
 // assigned_site) -- Parking alone owns placement mutation; this page only
@@ -683,6 +735,7 @@ export function AttendeeParkingNeedControl(props: {
   placementKnown: boolean;
   canEdit: boolean;
   saving: boolean;
+  parkingHref: string;
   onSetParkingNeed: (attendee: AttendeeRow, needsParking: boolean) => Promise<void>;
 }) {
   const {
@@ -691,6 +744,7 @@ export function AttendeeParkingNeedControl(props: {
     placementKnown,
     canEdit,
     saving,
+    parkingHref,
     onSetParkingNeed,
   } = props;
   const needsParking = attendee.needs_parking !== false;
@@ -705,13 +759,21 @@ export function AttendeeParkingNeedControl(props: {
   }
 
   // Preserve the useful Site label, while making the intent and its
-  // Parking-first safety rule visible. There is intentionally no toggle here:
-  // changing a placed attendee to "Doesn't Need Parking" must first happen
-  // through Parking's governed placement-clear workflow.
+  // Parking-first safety rule visible. The placement status routes to
+  // Parking Admin (the owner) for this attendee; there is intentionally
+  // no need-toggle here -- changing a placed attendee to "Doesn't Need
+  // Parking" must first happen through Parking's governed placement-clear
+  // workflow.
   if (placement) {
     return (
       <div style={{ display: "grid", gap: "var(--space-1)" }}>
-        <StatusBadge tone="success">{placement.label}</StatusBadge>
+        <AttendeeStatusLink
+          href={parkingHref}
+          tone="success"
+          ariaLabel={`View "${attendeeName}"'s placement (${placement.label}) in Parking Admin`}
+        >
+          {placement.label}
+        </AttendeeStatusLink>
         <span style={{ fontSize: "var(--font-size-small)", color: "var(--color-text-secondary)" }}>
           {needsParking ? "Needs Parking" : "Doesn't Need Parking"} · Remove the
           assignment in Parking before changing this.
@@ -721,6 +783,7 @@ export function AttendeeParkingNeedControl(props: {
   }
 
   return (
+    <div style={{ display: "grid", gap: "var(--space-1)", justifyItems: "start" }}>
     <AppButton
       variant={needsParking ? "secondary" : "tertiary"}
       loading={saving}
@@ -745,6 +808,14 @@ export function AttendeeParkingNeedControl(props: {
       {needsParking ? "Needs Parking" : "Doesn't Need Parking"}
       <span aria-hidden="true"> ↔</span>
     </AppButton>
+    <AttendeeStatusLink
+      href={parkingHref}
+      tone="neutral"
+      ariaLabel={`View "${attendeeName}"'s placement (Unassigned) in Parking Admin`}
+    >
+      Unassigned
+    </AttendeeStatusLink>
+    </div>
   );
 }
 
@@ -809,8 +880,6 @@ function AttendeeList(props: {
   isCompact: boolean;
   onSelect: (attendee: AttendeeRow) => void;
   onSetParkingNeed: (attendee: AttendeeRow, needsParking: boolean) => Promise<void>;
-  onUpdateDataStatus: (attendeeId: string, nextStatus: string) => Promise<void>;
-  onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
 }) {
   const {
     loading,
@@ -828,8 +897,6 @@ function AttendeeList(props: {
     isCompact,
     onSelect,
     onSetParkingNeed,
-    onUpdateDataStatus,
-    onCancelRegistration,
   } = props;
 
   function dataStatusBadges(attendee: AttendeeRow) {
@@ -922,29 +989,25 @@ function AttendeeList(props: {
               </div>
 
               <div className="responsive-list-item-badges">
-                <StatusBadge tone={arrival.tone}>{arrival.label}</StatusBadge>
+                <AttendeeStatusLink
+                  href={attendeeOwnerHrefs(attendee.id).checkin}
+                  tone={arrival.tone}
+                  ariaLabel={`View "${displayPilotName(attendee)}"'s arrival in Check-In`}
+                >
+                  {arrival.label}
+                </AttendeeStatusLink>
                 <AttendeeParkingNeedControl
                   attendee={attendee}
                   placement={placement}
                   placementKnown={!placementsLoading && !placementsError}
                   canEdit={canEdit}
                   saving={parkingNeedSavingIds.has(attendee.id)}
+                  parkingHref={attendeeOwnerHrefs(attendee.id).parking}
                   onSetParkingNeed={onSetParkingNeed}
                 />
               </div>
 
               {dataStatusBadges(attendee)}
-
-              <div onClick={(event) => event.stopPropagation()}>
-                <AttendeeActionRow
-                  attendee={attendee}
-                  canEdit={canEdit}
-                  showBackToPending={false}
-                  onSelect={onSelect}
-                  onUpdateDataStatus={onUpdateDataStatus}
-                  onCancelRegistration={onCancelRegistration}
-                />
-              </div>
             </div>
           </li>
         );
@@ -958,7 +1021,6 @@ function AttendeeList(props: {
           <th scope="col">Data Status</th>
           <th scope="col">Arrival</th>
           <th scope="col">Placement</th>
-          <th scope="col">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -977,17 +1039,30 @@ function AttendeeList(props: {
             <React.Fragment key={attendee.id}>
               {showSiteHeader ? (
                 <tr>
-                  <td colSpan={5} style={{ background: "var(--color-bg-muted)" }}>
+                  <td colSpan={4} style={{ background: "var(--color-bg-muted)" }}>
                     {groupHeader(currentSiteLabel, `${attendee.id}-group`)}
                   </td>
                 </tr>
               ) : null}
-              <tr className={isSelected ? "data-table-row-selected" : undefined}>
+              {/* The row is not a button: it carries a pointer-only
+                  onClick so a mouse click anywhere on a non-interactive
+                  area opens the record, while the name cell holds the
+                  real keyboard-focusable control (a proper <button>).
+                  Nested controls (status links, parking-need) own their
+                  own clicks and stop propagation. */}
+              <tr
+                className={isSelected ? "data-table-row-selected" : undefined}
+                style={{ cursor: "pointer" }}
+                onClick={() => onSelect(attendee)}
+              >
                 <td>
                   <button
                     type="button"
-                    onClick={() => onSelect(attendee)}
-                    aria-label={`View "${displayPilotName(attendee)}"'s record`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelect(attendee);
+                    }}
+                    aria-label={`Open "${displayPilotName(attendee)}"'s record`}
                     style={{
                       all: "unset",
                       cursor: "pointer",
@@ -1009,7 +1084,13 @@ function AttendeeList(props: {
                 </td>
                 <td>{dataStatusBadges(attendee)}</td>
                 <td>
-                  <StatusBadge tone={arrival.tone}>{arrival.label}</StatusBadge>
+                  <AttendeeStatusLink
+                    href={attendeeOwnerHrefs(attendee.id).checkin}
+                    tone={arrival.tone}
+                    ariaLabel={`View "${displayPilotName(attendee)}"'s arrival in Check-In`}
+                  >
+                    {arrival.label}
+                  </AttendeeStatusLink>
                 </td>
                 <td>
                   <AttendeeParkingNeedControl
@@ -1018,17 +1099,8 @@ function AttendeeList(props: {
                     placementKnown={!placementsLoading && !placementsError}
                     canEdit={canEdit}
                     saving={parkingNeedSavingIds.has(attendee.id)}
+                    parkingHref={attendeeOwnerHrefs(attendee.id).parking}
                     onSetParkingNeed={onSetParkingNeed}
-                  />
-                </td>
-                <td>
-                  <AttendeeActionRow
-                    attendee={attendee}
-                    canEdit={canEdit}
-                    showBackToPending={false}
-                    onSelect={onSelect}
-                    onUpdateDataStatus={onUpdateDataStatus}
-                    onCancelRegistration={onCancelRegistration}
                   />
                 </td>
               </tr>
@@ -1149,7 +1221,17 @@ export function AttendeeRecordWorkspace(props: {
     operationalStatus,
   } = props;
   const mode = editorMode;
+  // Which non-pilot role's field editor is currently expanded in "People on
+  // this Registration". A role with data on record auto-expands (effects
+  // below); an empty role expands only when the operator picks it from "Add
+  // Person". The canonical household is exactly pilot + (optional) co-pilot
+  // + (optional) additional -- there is no generic member flow to build.
   const [showAdditionalParticipant, setShowAdditionalParticipant] =
+    useState(false);
+  const [showCopilotFields, setShowCopilotFields] = useState(false);
+  // Whether the "Add Person" role picker (Co-Pilot / Additional Participant)
+  // is open. Only shown when more than one role is still available.
+  const [householdMemberChooserOpen, setHouseholdMemberChooserOpen] =
     useState(false);
 
   // Governed product rule: an administrator's own authorized action of
@@ -1179,6 +1261,9 @@ export function AttendeeRecordWorkspace(props: {
   const isNewAdditional =
     mode === "edit" && hasAdditionalNow && !state.had_additional_at_load;
   const isAddingNewParticipant = isNewCopilot || isNewAdditional;
+  // Both supported non-pilot roles are on the registration -- "Add Person"
+  // has nothing left to offer.
+  const householdIsFull = hasCopilotNow && hasAdditionalNow;
   const resultingRosterCount =
     1 + (hasCopilotNow ? 1 : 0) + (hasAdditionalNow ? 1 : 0);
   const currentStoredCapacity = state.registration_capacity_was_unset
@@ -1213,6 +1298,32 @@ export function AttendeeRecordWorkspace(props: {
     state.additional_email,
     state.additional_cell_phone,
   ]);
+  // A Co-Pilot already on record keeps its fields visible for editing.
+  useEffect(() => {
+    if (
+      state.copilot_first ||
+      state.copilot_last ||
+      state.copilot_nickname ||
+      state.copilot_email ||
+      state.copilot_cell_phone
+    ) {
+      setShowCopilotFields(true);
+    }
+  }, [
+    state.copilot_first,
+    state.copilot_last,
+    state.copilot_nickname,
+    state.copilot_email,
+    state.copilot_cell_phone,
+  ]);
+  // When the workspace switches to a different record, collapse the
+  // person-field editors back to that record's own data (the auto-show
+  // effects above re-open any role that is populated).
+  useEffect(() => {
+    setShowCopilotFields(false);
+    setShowAdditionalParticipant(false);
+    setHouseholdMemberChooserOpen(false);
+  }, [state.id]);
   // Insert membership_number after copilot_email if not already present there
   // Remove assigned_site from the main textFields array
   // Stage D requirement 2: fields are grouped into the same coherent
@@ -1294,6 +1405,376 @@ export function AttendeeRecordWorkspace(props: {
     background: "var(--color-bg-muted)",
   };
 
+  // -------------------------------------------------------------------------
+  // "People on this Registration" (Phase 1). One card per actual person,
+  // rendered identically in view and edit mode. Edit mode adds Add / Edit /
+  // Remove affordances that bind to the SAME AttendeeEditorState fields --
+  // no new modal, no new write path. Save Changes remains the one canonical
+  // save: it still routes through handleSaveAttendeeRecord ->
+  // syncHouseholdMembers -> manage_attendee_household_member (and
+  // record_participant_capacity_increase where a new participant/raise is
+  // involved). "Edit"/"Add" here only toggle which role's fields are shown;
+  // "Remove" is the existing clear-then-Save flow (onRemoveHouseholdMember),
+  // still ConfirmDialog-gated.
+  const householdPeople = deriveHouseholdPeople(state);
+  const filledHouseholdRoles = new Set(householdPeople.map((p) => p.role));
+  const roleEditorOpen = (role: "copilot" | "additional") =>
+    role === "copilot" ? showCopilotFields : showAdditionalParticipant;
+  // The only roles "Add Person" may offer: a supported role that has no
+  // person AND whose field editor is not already open as a draft.
+  const openHouseholdRoles = (["copilot", "additional"] as const).filter(
+    (role) => !filledHouseholdRoles.has(role) && !roleEditorOpen(role),
+  );
+  const namedPersonCount = householdPeople.length;
+  // Preserve null ("never established") semantics: an untouched, unset
+  // capacity reads as "—", never as a number.
+  const authorizedPartySizeDisplay = state.registration_capacity_was_unset
+    ? "—"
+    : String(state.registration_capacity);
+  const namedExceedsAuthorized =
+    !state.registration_capacity_was_unset &&
+    namedPersonCount > state.registration_capacity;
+
+  function householdPersonDisplayName(person: HouseholdPerson) {
+    const name = fullName(person.firstName, person.lastName);
+    if (name) {
+      return person.nickname ? `${name} "${person.nickname}"` : name;
+    }
+    return person.nickname ? `"${person.nickname}"` : "Name not provided";
+  }
+
+  function renderHouseholdPersonCard(person: HouseholdPerson, editable: boolean) {
+    const removable = editable && person.role !== "pilot";
+    const editorOpen =
+      person.role === "pilot"
+        ? false
+        : roleEditorOpen(person.role as "copilot" | "additional");
+    return (
+      <div
+        key={person.role}
+        style={{
+          border: "var(--border-width-default) solid var(--color-border-default)",
+          borderRadius: "var(--radius-medium)",
+          padding: "var(--space-4)",
+          background: "var(--color-bg-default)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "var(--space-3)",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "grid", gap: 2, fontSize: 14 }}>
+            <div style={{ fontWeight: 700 }}>{person.roleLabel}</div>
+            <div>{householdPersonDisplayName(person)}</div>
+            <div className="app-subtle-text" style={{ fontSize: 13 }}>
+              Email: {person.email || "—"}
+            </div>
+            <div className="app-subtle-text" style={{ fontSize: 13 }}>
+              Phone: {person.cellPhone || "—"}
+            </div>
+          </div>
+          {removable ? (
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--space-2)",
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+              }}
+            >
+              {!editorOpen ? (
+                <AppButton
+                  onClick={() =>
+                    person.role === "copilot"
+                      ? setShowCopilotFields(true)
+                      : setShowAdditionalParticipant(true)
+                  }
+                  aria-label={`Edit ${person.roleLabel}`}
+                >
+                  Edit
+                </AppButton>
+              ) : null}
+              <AppButton
+                variant="danger"
+                onClick={() =>
+                  void onRemoveHouseholdMember(
+                    person.role as "copilot" | "additional",
+                  )
+                }
+                aria-label={`Remove ${person.roleLabel}`}
+              >
+                Remove
+              </AppButton>
+            </div>
+          ) : null}
+        </div>
+        {editable && person.role === "pilot" ? (
+          <p
+            className="app-subtle-text"
+            style={{ margin: "var(--space-2) 0 0", fontSize: 13 }}
+          >
+            Edit the Pilot in the Pilot Identity and Contact sections. The
+            Pilot cannot be removed from the registration.
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  const roleFieldEditorStyle: CSSProperties = {
+    marginTop: "var(--space-3)",
+    padding: "var(--space-4)",
+    border: "var(--border-width-default) dashed var(--color-border-default)",
+    borderRadius: "var(--radius-medium)",
+    background: "var(--color-bg-default)",
+  };
+
+  function renderCopilotFieldEditor() {
+    return (
+      <div style={roleFieldEditorStyle}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Co-Pilot details</div>
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          }}
+        >
+          {SECTION_TEXT_FIELDS.household.map(renderTextField)}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <AppButton
+            variant="tertiary"
+            onClick={() => setShowCopilotFields(false)}
+          >
+            {hasCopilotNow ? "Done" : "Don't add a Co-Pilot"}
+          </AppButton>
+        </div>
+      </div>
+    );
+  }
+
+  function renderAdditionalFieldEditor() {
+    return (
+      <div style={roleFieldEditorStyle}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>
+          Additional Participant details
+        </div>
+        {/* Responsive auto-fit grid, not a fixed 5-column layout, so it
+            never forces horizontal overflow on phone/tablet widths
+            (Refactor Audit E.1 / Test Expectation M). */}
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            alignItems: "end",
+          }}
+        >
+          <Field label="Participant First Name">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                placeholder="First name"
+                value={state.additional_first_name}
+                onChange={(e) =>
+                  onChange("additional_first_name", e.target.value)
+                }
+              />
+            )}
+          </Field>
+
+          <Field label="Participant Last Name">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                placeholder="Last name"
+                value={state.additional_last_name}
+                onChange={(e) =>
+                  onChange("additional_last_name", e.target.value)
+                }
+              />
+            )}
+          </Field>
+
+          <Field label="Participant Nickname">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                placeholder="Nickname"
+                value={state.additional_nickname}
+                onChange={(e) =>
+                  onChange("additional_nickname", e.target.value)
+                }
+              />
+            )}
+          </Field>
+
+          <Field label="Participant Email">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                placeholder="Email address"
+                value={state.additional_email}
+                onChange={(e) => onChange("additional_email", e.target.value)}
+              />
+            )}
+          </Field>
+
+          <Field label="Participant Cell Phone">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                placeholder="Cell phone (optional)"
+                value={state.additional_cell_phone}
+                onChange={(e) =>
+                  onChange("additional_cell_phone", e.target.value)
+                }
+              />
+            )}
+          </Field>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <AppButton
+            variant="tertiary"
+            onClick={() => setShowAdditionalParticipant(false)}
+          >
+            {hasAdditionalNow ? "Done" : "Don't add an Additional Participant"}
+          </AppButton>
+        </div>
+      </div>
+    );
+  }
+
+  function renderHouseholdPeopleSection(editable: boolean) {
+    return (
+      <div style={sectionStyle}>
+        {sectionHeading("household", "People on this Registration")}
+        <p
+          className="app-subtle-text"
+          style={{ margin: "0 0 var(--space-3)" }}
+        >
+          Everyone on this registration for this Event. The Pilot is always on
+          the registration; a Co-Pilot and one Additional Participant may also
+          be added.
+        </p>
+
+        <div style={{ display: "grid", gap: "var(--space-3)" }}>
+          {householdPeople.map((person) =>
+            renderHouseholdPersonCard(person, editable),
+          )}
+          {!editable && !filledHouseholdRoles.has("copilot") ? (
+            <div className="app-subtle-text" style={{ fontSize: 13 }}>
+              Co-Pilot: none on record
+            </div>
+          ) : null}
+          {!editable && !filledHouseholdRoles.has("additional") ? (
+            <div className="app-subtle-text" style={{ fontSize: 13 }}>
+              Additional Participant: none on record
+            </div>
+          ) : null}
+        </div>
+
+        {editable && showCopilotFields ? renderCopilotFieldEditor() : null}
+        {editable && showAdditionalParticipant
+          ? renderAdditionalFieldEditor()
+          : null}
+
+        {editable && openHouseholdRoles.length > 0 ? (
+          <div style={{ marginTop: "var(--space-4)" }}>
+            {!householdMemberChooserOpen ? (
+              <AppButton
+                onClick={() => {
+                  if (openHouseholdRoles.length === 1) {
+                    if (openHouseholdRoles[0] === "copilot") {
+                      setShowCopilotFields(true);
+                    } else {
+                      setShowAdditionalParticipant(true);
+                    }
+                  } else {
+                    setHouseholdMemberChooserOpen(true);
+                  }
+                }}
+                style={{ width: "100%" }}
+              >
+                + Add Person
+              </AppButton>
+            ) : (
+              <div
+                role="group"
+                aria-label="Add a person to this registration"
+                style={{ display: "grid", gap: "var(--space-2)" }}
+              >
+                <div className="app-subtle-text">
+                  Add a person to this registration:
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "var(--space-2)",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {openHouseholdRoles.includes("copilot") ? (
+                    <AppButton
+                      onClick={() => {
+                        setShowCopilotFields(true);
+                        setHouseholdMemberChooserOpen(false);
+                      }}
+                    >
+                      Add Co-Pilot
+                    </AppButton>
+                  ) : null}
+                  {openHouseholdRoles.includes("additional") ? (
+                    <AppButton
+                      onClick={() => {
+                        setShowAdditionalParticipant(true);
+                        setHouseholdMemberChooserOpen(false);
+                      }}
+                    >
+                      Add Additional Participant
+                    </AppButton>
+                  ) : null}
+                  <AppButton
+                    onClick={() => setHouseholdMemberChooserOpen(false)}
+                  >
+                    Cancel
+                  </AppButton>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : editable && householdIsFull ? (
+          <p
+            className="app-subtle-text"
+            style={{ marginTop: "var(--space-4)", marginBottom: 0 }}
+          >
+            This registration has its full household — Pilot, Co-Pilot, and one
+            Additional Participant are all on record.
+          </p>
+        ) : null}
+
+        <div
+          className="app-subtle-text"
+          style={{ fontSize: 13, marginTop: "var(--space-3)" }}
+        >
+          {namedPersonCount} named{" "}
+          {namedPersonCount === 1 ? "person" : "people"}
+          {/* In view mode there is no separate Authorized Party Size block,
+              so the authorized number is surfaced here; edit mode has its
+              own dedicated block below. */}
+          {editable
+            ? ""
+            : ` · Authorized party size: ${authorizedPartySizeDisplay}`}
+        </div>
+      </div>
+    );
+  }
+
   // Read-only Arrival/Placement (Part 7/Non-negotiable architecture) --
   // Check-In and Parking alone own mutation; this panel only ever reads
   // (state.has_arrived from the already-loaded record; operationalStatus
@@ -1325,10 +1806,10 @@ export function AttendeeRecordWorkspace(props: {
           </StatusBadge>
         </div>
         <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
-          <AppLinkButton href={buildAdminAttendeeTargetHref("/admin/checkin", state.id)}>
+          <AppLinkButton href={attendeeOwnerHrefs(state.id).checkin}>
             View in Check-In
           </AppLinkButton>
-          <AppLinkButton href={buildAdminAttendeeTargetHref("/admin/parking", state.id)}>
+          <AppLinkButton href={attendeeOwnerHrefs(state.id).parking}>
             View in Parking
           </AppLinkButton>
         </div>
@@ -1400,31 +1881,7 @@ export function AttendeeRecordWorkspace(props: {
 
       {operationalStatusBlock}
 
-      <div>
-        <strong>Household</strong>
-        <div style={{ marginTop: 6, display: "grid", gap: 10, fontSize: 14 }}>
-          <div>
-            <div style={{ fontWeight: 700 }}>Pilot</div>
-            <div>
-              {fullName(state.pilot_first, state.pilot_last) || "Unnamed"}
-              {state.nickname ? ` "${state.nickname}"` : ""}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontWeight: 700 }}>Co-Pilot</div>
-            <div>
-              {fullName(state.copilot_first, state.copilot_last) || "None on record"}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontWeight: 700 }}>Additional Participant</div>
-            <div>
-              {fullName(state.additional_first_name, state.additional_last_name) ||
-                "None on record"}
-            </div>
-          </div>
-        </div>
-      </div>
+      {renderHouseholdPeopleSection(false)}
 
       <details>
         <summary style={{ cursor: "pointer", fontWeight: 700 }}>More details</summary>
@@ -1584,128 +2041,128 @@ export function AttendeeRecordWorkspace(props: {
         </div>
       </div>
 
+      {renderHouseholdPeopleSection(true)}
+
       <div style={sectionStyle}>
-        {sectionHeading("household", "Household")}
+        {sectionHeading("party_size", "Authorized Party Size")}
+        <p className="app-subtle-text" style={{ margin: "0 0 var(--space-3)" }}>
+          Named people are managed above. Authorized party size is the
+          paid/approved number of participants and may be larger than the
+          number of named people.
+        </p>
         <div
           style={{
-            display: "grid",
-            gap: 14,
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-4)",
+            flexWrap: "wrap",
           }}
         >
-          {SECTION_TEXT_FIELDS.household.map(renderTextField)}
-        </div>
-        {hasCopilotNow ? (
-          <div style={{ marginTop: 10 }}>
-            <AppButton
-              variant="danger"
-              onClick={() => void onRemoveHouseholdMember("copilot")}
-            >
-              Remove Co-Pilot
-            </AppButton>
+          <Field label="Authorized Party Size">
+            {(controlProps) => (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--space-2)",
+                }}
+              >
+                <AppButton
+                  aria-label="Decrease authorized party size"
+                  onClick={() => {
+                    onChange(
+                      "registration_capacity",
+                      Math.max(1, state.registration_capacity - 1) as any,
+                    );
+                    onChange("registration_capacity_was_unset", false);
+                  }}
+                >
+                  −
+                </AppButton>
+                <Input
+                  {...controlProps}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={state.registration_capacity}
+                  onChange={(e) => {
+                    onChange(
+                      "registration_capacity",
+                      Math.max(1, Number(e.target.value) || 1) as any,
+                    );
+                    onChange("registration_capacity_was_unset", false);
+                  }}
+                  style={{ width: 70, textAlign: "center" }}
+                />
+                <AppButton
+                  aria-label="Increase authorized party size"
+                  onClick={() => {
+                    onChange(
+                      "registration_capacity",
+                      (state.registration_capacity + 1) as any,
+                    );
+                    onChange("registration_capacity_was_unset", false);
+                  }}
+                >
+                  +
+                </AppButton>
+              </div>
+            )}
+          </Field>
+          <div className="app-subtle-text" style={{ fontSize: 13 }}>
+            {namedPersonCount} named / {authorizedPartySizeDisplay} authorized
+            {state.registration_capacity_was_unset
+              ? " (not yet established)"
+              : ""}
           </div>
+        </div>
+
+        {namedExceedsAuthorized ? (
+          <p
+            className="app-subtle-text"
+            style={{
+              marginTop: "var(--space-2)",
+              marginBottom: 0,
+              color: "var(--color-status-warning)",
+            }}
+          >
+            The named people exceed the authorized party size. Adding a person
+            or raising the party size resolves this.
+          </p>
         ) : null}
 
-        <div style={{ marginTop: 14 }}>
-          <AppButton
-            onClick={() => setShowAdditionalParticipant((current) => !current)}
-            style={{ width: "100%" }}
-          >
-            {showAdditionalParticipant
-              ? "− Hide Additional Participant"
-              : "+ Add Additional Participant"}
-          </AppButton>
-        </div>
-
-        {/* Responsive auto-fit grid, not a fixed 5-column layout, so it
-            never forces horizontal overflow on phone/tablet widths
-            (Refactor Audit E.1 / Test Expectation M). */}
-        {showAdditionalParticipant ? (
+        {isCapacityIncrease && (
           <div
             style={{
               marginTop: 14,
-              display: "grid",
-              gap: 14,
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              alignItems: "end",
+              padding: 14,
+              border: "1px solid #bfdbfe",
+              background: "#eff6ff",
+              borderRadius: 8,
             }}
           >
-            <Field label="Participant First Name">
-              {(controlProps) => (
-                <Input
-                  {...controlProps}
-                  placeholder="First name"
-                  value={state.additional_first_name}
-                  onChange={(e) =>
-                    onChange("additional_first_name", e.target.value)
-                  }
-                />
-              )}
-            </Field>
-
-            <Field label="Participant Last Name">
-              {(controlProps) => (
-                <Input
-                  {...controlProps}
-                  placeholder="Last name"
-                  value={state.additional_last_name}
-                  onChange={(e) =>
-                    onChange("additional_last_name", e.target.value)
-                  }
-                />
-              )}
-            </Field>
-
-            <Field label="Participant Nickname">
-              {(controlProps) => (
-                <Input
-                  {...controlProps}
-                  placeholder="Nickname"
-                  value={state.additional_nickname}
-                  onChange={(e) =>
-                    onChange("additional_nickname", e.target.value)
-                  }
-                />
-              )}
-            </Field>
-
-            <Field label="Participant Email">
-              {(controlProps) => (
-                <Input
-                  {...controlProps}
-                  placeholder="Email address"
-                  value={state.additional_email}
-                  onChange={(e) =>
-                    onChange("additional_email", e.target.value)
-                  }
-                />
-              )}
-            </Field>
-
-            <Field label="Participant Cell Phone">
-              {(controlProps) => (
-                <Input
-                  {...controlProps}
-                  placeholder="Cell phone (optional)"
-                  value={state.additional_cell_phone}
-                  onChange={(e) =>
-                    onChange("additional_cell_phone", e.target.value)
-                  }
-                />
-              )}
-            </Field>
+            <div style={{ fontSize: 14, color: "#1e3a8a" }}>
+              {isAddingNewParticipant
+                ? "Adding this participant will also authorize one additional participant slot."
+                : `This will authorize ${targetCapacity} total participant ${targetCapacity === 1 ? "slot" : "slots"}.`}{" "}
+              Participant Capacity will be set to {targetCapacity} (from{" "}
+              {state.registration_capacity_original ?? "unset"}).
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <Field label="Note (optional)">
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    value={state.capacity_increase_note}
+                    onChange={(e) =>
+                      onChange("capacity_increase_note", e.target.value)
+                    }
+                  />
+                )}
+              </Field>
+            </div>
           </div>
-        ) : null}
-        {hasAdditionalNow ? (
-          <div style={{ marginTop: 10 }}>
-            <AppButton
-              variant="danger"
-              onClick={() => void onRemoveHouseholdMember("additional")}
-            >
-              Remove Additional Participant
-            </AppButton>
-          </div>
-        ) : null}
+        )}
       </div>
 
       <div style={sectionStyle}>
@@ -1867,49 +2324,6 @@ export function AttendeeRecordWorkspace(props: {
             alignItems: "end",
           }}
         >
-          <Field label="Registration Capacity">
-            {(controlProps) => (
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-                <AppButton
-                  onClick={() => {
-                    onChange(
-                      "registration_capacity",
-                      Math.max(1, state.registration_capacity - 1) as any,
-                    );
-                    onChange("registration_capacity_was_unset", false);
-                  }}
-                >
-                  −
-                </AppButton>
-                <Input
-                  {...controlProps}
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={state.registration_capacity}
-                  onChange={(e) => {
-                    onChange(
-                      "registration_capacity",
-                      Math.max(1, Number(e.target.value) || 1) as any,
-                    );
-                    onChange("registration_capacity_was_unset", false);
-                  }}
-                  style={{ width: 70, textAlign: "center" }}
-                />
-                <AppButton
-                  onClick={() => {
-                    onChange(
-                      "registration_capacity",
-                      (state.registration_capacity + 1) as any,
-                    );
-                    onChange("registration_capacity_was_unset", false);
-                  }}
-                >
-                  +
-                </AppButton>
-              </div>
-            )}
-          </Field>
           <Field label="Participant Type">
             {(controlProps) => (
               <Select
@@ -1952,39 +2366,6 @@ export function AttendeeRecordWorkspace(props: {
             />
           </div>
         </div>
-
-        {isCapacityIncrease && (
-          <div
-            style={{
-              marginTop: 14,
-              padding: 14,
-              border: "1px solid #bfdbfe",
-              background: "#eff6ff",
-              borderRadius: 8,
-            }}
-          >
-            <div style={{ fontSize: 14, color: "#1e3a8a" }}>
-              {isAddingNewParticipant
-                ? "Adding this participant will also authorize one additional participant slot."
-                : `This will authorize ${targetCapacity} total participant ${targetCapacity === 1 ? "slot" : "slots"}.`}{" "}
-              Participant Capacity will be set to {targetCapacity} (from{" "}
-              {state.registration_capacity_original ?? "unset"}).
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <Field label="Note (optional)">
-                {(controlProps) => (
-                  <Input
-                    {...controlProps}
-                    value={state.capacity_increase_note}
-                    onChange={(e) =>
-                      onChange("capacity_increase_note", e.target.value)
-                    }
-                  />
-                )}
-              </Field>
-            </div>
-          </div>
-        )}
       </div>
 
       <div style={sectionStyle}>
@@ -2060,6 +2441,7 @@ export function AttendeeRecordWorkspace(props: {
       secondaryActions={secondaryActions}
       onPrevious={viewState === "view" ? onPrevious : undefined}
       onNext={viewState === "view" ? onNext : undefined}
+      presentation="centered"
     >
       {viewState === "view" ? viewBody : editBody}
     </ObjectPanel>
@@ -3746,7 +4128,7 @@ created_at
       !!editorState.additional_cell_phone?.trim();
 
     // Governed product rule: an administrator's own authorized action of
-    // adding a participant, or explicitly raising Registration Capacity,
+    // adding a participant, or explicitly raising the Authorized Party Size,
     // itself authorizes the resulting participant_capacity -- no separate
     // confirmation, accounting status, or payment attestation is required.
     // "New" means this participant did not exist when the editor loaded --
@@ -3958,8 +4340,8 @@ created_at
           // together inside this one RPC call. Calling this RPC requires
           // only valid Event-scoped admin authority: the administrator's
           // own authorized action of adding a participant, or explicitly
-          // raising Registration Capacity, itself authorizes the resulting
-          // capacity -- no separate confirmation, accounting status, or
+          // raising the Authorized Party Size, itself authorizes the
+          // resulting capacity -- no separate confirmation, accounting status, or
           // payment attestation is requested or recorded. See
           // record_participant_capacity_increase in
           // 20260805150000_create_participant_capacity_adjustments.sql.
@@ -4310,8 +4692,6 @@ created_at
             void selectAttendee(attendee, { listContext: "browse" })
           }
           onSetParkingNeed={setAttendeeParkingNeed}
-          onUpdateDataStatus={updateDataStatus}
-          onCancelRegistration={onCancelRegistration}
         />
       </>
 

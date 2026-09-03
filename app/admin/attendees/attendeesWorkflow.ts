@@ -709,6 +709,120 @@ export function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorStat
   };
 }
 
+// ---------------------------------------------------------------------------
+// "People on this Registration" projection.
+//
+// The canonical household is exactly Pilot + (optional) Co-Pilot + (optional)
+// Additional Participant (public.attendee_household_members,
+// UNIQUE(attendee_id, person_role), 3-value CHECK). This projects the flat
+// AttendeeEditorState into the actual people it represents so the record
+// workspace can render one card per person -- in both view and edit mode --
+// without a second household model or a new write path. Purely derived: no
+// I/O, and capacity is deliberately never consulted here (party size is a
+// separate fact -- see the "party_size" section below).
+//
+// The "has this role" predicates match syncHouseholdMembers exactly:
+//   - Co-Pilot exists iff first OR last OR email is non-empty (the same
+//     three fields the generic save path writes for the copilot role).
+//   - Additional exists iff any of its five fields is non-empty.
+// so a card never appears for data that Save would not persist.
+// ---------------------------------------------------------------------------
+
+export type HouseholdPersonRole = "pilot" | "copilot" | "additional";
+
+export type HouseholdPerson = {
+  role: HouseholdPersonRole;
+  roleLabel: string;
+  firstName: string;
+  lastName: string;
+  nickname: string;
+  email: string;
+  cellPhone: string;
+  // Whether this person was already on the registration when the editor
+  // loaded (always true for the Pilot). Mirrors had_copilot_at_load /
+  // had_additional_at_load; used only for presentation, never for a write.
+  presentAtLoad: boolean;
+};
+
+export const HOUSEHOLD_PERSON_ROLE_LABELS: Record<HouseholdPersonRole, string> = {
+  pilot: "Pilot",
+  copilot: "Co-Pilot",
+  additional: "Additional Participant",
+};
+
+export function householdHasCopilot(state: AttendeeEditorState): boolean {
+  return (
+    state.copilot_first.trim() !== "" ||
+    state.copilot_last.trim() !== "" ||
+    state.copilot_email.trim() !== ""
+  );
+}
+
+export function householdHasAdditional(state: AttendeeEditorState): boolean {
+  return (
+    (state.additional_first_name ?? "").trim() !== "" ||
+    (state.additional_last_name ?? "").trim() !== "" ||
+    (state.additional_email ?? "").trim() !== "" ||
+    (state.additional_nickname ?? "").trim() !== "" ||
+    (state.additional_cell_phone ?? "").trim() !== ""
+  );
+}
+
+export function deriveHouseholdPeople(
+  state: AttendeeEditorState,
+): HouseholdPerson[] {
+  const people: HouseholdPerson[] = [
+    {
+      role: "pilot",
+      roleLabel: HOUSEHOLD_PERSON_ROLE_LABELS.pilot,
+      firstName: state.pilot_first.trim(),
+      lastName: state.pilot_last.trim(),
+      nickname: state.nickname.trim(),
+      email: state.email.trim(),
+      cellPhone: state.cell_phone.trim() || state.primary_phone.trim(),
+      presentAtLoad: true,
+    },
+  ];
+
+  if (householdHasCopilot(state)) {
+    people.push({
+      role: "copilot",
+      roleLabel: HOUSEHOLD_PERSON_ROLE_LABELS.copilot,
+      firstName: state.copilot_first.trim(),
+      lastName: state.copilot_last.trim(),
+      nickname: state.copilot_nickname.trim(),
+      email: state.copilot_email.trim(),
+      cellPhone: state.copilot_cell_phone.trim(),
+      presentAtLoad: state.had_copilot_at_load,
+    });
+  }
+
+  if (householdHasAdditional(state)) {
+    people.push({
+      role: "additional",
+      roleLabel: HOUSEHOLD_PERSON_ROLE_LABELS.additional,
+      firstName: (state.additional_first_name ?? "").trim(),
+      lastName: (state.additional_last_name ?? "").trim(),
+      nickname: (state.additional_nickname ?? "").trim(),
+      email: (state.additional_email ?? "").trim(),
+      cellPhone: (state.additional_cell_phone ?? "").trim(),
+      presentAtLoad: state.had_additional_at_load,
+    });
+  }
+
+  return people;
+}
+
+// The supported household roles that currently have no person -- the only
+// roles "Add Person" may ever offer. Never more than {copilot, additional};
+// arbitrary-N people are not representable in the canonical model.
+export function unfilledHouseholdRoles(
+  state: AttendeeEditorState,
+): Array<"copilot" | "additional"> {
+  const filled = new Set(deriveHouseholdPeople(state).map((p) => p.role));
+  return (["copilot", "additional"] as const).filter((role) => !filled.has(role));
+}
+
 export type HouseholdRemovalWarning = {
   role: "copilot" | "additional";
   name: string;
@@ -925,6 +1039,15 @@ export const ATTENDEE_EDIT_SECTIONS: AttendeeEditSection[] = [
     ],
   },
   {
+    // Authorized party size (paid/approved participant capacity). Its own
+    // section, separate from "Registration" and from "Household", so a
+    // change to it badges the block the operator actually edited and the
+    // party-size fact reads as distinct from managing named people.
+    id: "party_size",
+    label: "Authorized Party Size",
+    fields: ["registration_capacity", "capacity_increase_note"],
+  },
+  {
     id: "registration",
     label: "Registration",
     fields: [
@@ -932,8 +1055,6 @@ export const ATTENDEE_EDIT_SECTIONS: AttendeeEditSection[] = [
       "entry_id",
       "participant_type",
       "data_status",
-      "registration_capacity",
-      "capacity_increase_note",
       "is_active",
     ],
   },

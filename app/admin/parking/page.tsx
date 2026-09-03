@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { AdminReturnLink } from "@/components/admin/AdminReturnLink";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import {
   computeNearestNeighborSpacingPx,
@@ -1634,6 +1635,7 @@ function ParkingAdminPageInner() {
       `}</style>
 
       <div style={{ display: "grid", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
+        <AdminReturnLink searchParams={searchParams} />
         <Alert tone="neutral">{status}</Alert>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {selectionStale ? <Alert tone="warning">{selectionStale}</Alert> : null}

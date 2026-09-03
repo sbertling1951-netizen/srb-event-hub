@@ -29,11 +29,10 @@ test("density is an opt-in prop that defaults to comfortable", () => {
   assert.match(PANEL, /density = "comfortable",/);
 });
 
-test('density="compact" only adds a modifier class -- no behavior/semantics change', () => {
-  assert.match(
-    PANEL,
-    /className=\{\s*\n\s*density === "compact"\s*\n\s*\? "object-panel object-panel--compact"\s*\n\s*: "object-panel"\s*\n\s*\}/,
-  );
+test('density="compact" and presentation="centered" only add modifier classes -- no behavior/semantics change', () => {
+  // Panel class list is built additively: the base class plus an opt-in
+  // modifier per prop, defaults ("comfortable" / "side") contributing none.
+  assert.match(PANEL, /"object-panel",\s*\n\s*density === "compact" \? "object-panel--compact" : null,\s*\n\s*presentation === "centered" \? "object-panel--centered" : null,/);
   // dialog semantics unchanged
   assert.match(PANEL, /role="dialog"/);
   assert.match(PANEL, /aria-modal="true"/);
@@ -42,6 +41,31 @@ test('density="compact" only adds a modifier class -- no behavior/semantics chan
   assert.match(PANEL, /handleTrapKeyDown/);
   assert.match(PANEL, /e\.key === "Escape"/);
   assert.match(PANEL, /HISTORY_MARKER/);
+});
+
+test('presentation is an opt-in prop that defaults to "side" (every existing consumer unchanged)', () => {
+  assert.match(PANEL, /presentation\?: "side" \| "centered";/);
+  assert.match(PANEL, /presentation = "side",/);
+  // The backdrop only gains its centered modifier when explicitly asked.
+  assert.match(
+    PANEL,
+    /presentation === "centered"\s*\n\s*\? "object-panel-backdrop object-panel-backdrop--centered"\s*\n\s*: "object-panel-backdrop"/,
+  );
+});
+
+test('centered CSS is a bounded, desktop-only opt-in that keeps the mobile bottom sheet intact', () => {
+  // Scoped to .object-panel--centered only, inside a min-width media query.
+  assert.match(CSS, /@media \(min-width: 900px\) \{\s*\n\s*\.object-panel--centered\.object-panel \{/);
+  assert.match(CSS, /\.object-panel-backdrop--centered \{[\s\S]*?align-items: center;[\s\S]*?justify-content: center;/);
+  assert.match(CSS, /@keyframes object-panel-enter-centered/);
+  // No unscoped .object-panel rule was altered for this.
+  assert.doesNotMatch(CSS, /\n\.object-panel \{[^}]*translateY\(12px\)/);
+});
+
+test("only Attendees Management adopts the centered presentation", () => {
+  assert.match(ATTENDEES, /<ObjectPanel[\s\S]*?presentation="centered"/);
+  assert.doesNotMatch(NEARBY, /presentation=/);
+  assert.doesNotMatch(AGENDA, /presentation=/);
 });
 
 test("prev/next still hidden when both callbacks are omitted (unchanged)", () => {

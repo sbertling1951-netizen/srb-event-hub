@@ -65,6 +65,14 @@ export type ObjectPanelProps = {
    * presentational; changes no behavior, semantics, or which content
    * renders. */
   density?: "comfortable" | "compact";
+  /** Desktop presentation. "side" (default) is the right-edge panel that
+   * leaves the discovery surface visible -- unchanged for every existing
+   * consumer. "centered" renders a centered, comfortably-wide record
+   * workspace over a dimmed page, for surfaces where the object IS the
+   * work (attendee record entry/editing) rather than a glance. Purely
+   * presentational: dialog semantics, focus trap, Escape/backdrop/Back,
+   * and the mobile bottom-sheet fallback are identical. */
+  presentation?: "side" | "centered";
 };
 
 /**
@@ -113,6 +121,7 @@ export function ObjectPanel({
   nextLabel = "Next",
   closeLabel = "Close",
   density = "comfortable",
+  presentation = "side",
 }: ObjectPanelProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -298,7 +307,11 @@ export function ObjectPanel({
 
   return createPortal(
     <div
-      className="object-panel-backdrop"
+      className={
+        presentation === "centered"
+          ? "object-panel-backdrop object-panel-backdrop--centered"
+          : "object-panel-backdrop"
+      }
       role="presentation"
       onClick={requestClose}
     >
@@ -307,11 +320,13 @@ export function ObjectPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={
-          density === "compact"
-            ? "object-panel object-panel--compact"
-            : "object-panel"
-        }
+        className={[
+          "object-panel",
+          density === "compact" ? "object-panel--compact" : null,
+          presentation === "centered" ? "object-panel--centered" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleTrapKeyDown}
         tabIndex={-1}

@@ -5,10 +5,12 @@ import {
   ATTENDEE_EDIT_SECTIONS,
   attendeeChangedRemotelyWhileDirty,
   attendeeConcurrencyFingerprint,
+  type AttendeeEditorState,
   type AttendeeRow,
   attendeeToEditorState,
   computeReviewItems,
   decideCapacityReconciliation,
+  deriveHouseholdPeople,
   dirtySectionIds,
   editorStateDiffKeys,
   editorStateIsDirty,
@@ -16,6 +18,7 @@ import {
   filterAttendees,
   matchesViewMode,
   sortAttendees,
+  unfilledHouseholdRoles,
   type ValidationRule,
 } from "@/app/admin/attendees/attendeesWorkflow";
 
@@ -432,5 +435,115 @@ test("decideCapacityReconciliation: solo Pilot (roster 1) at stored capacity 1 -
       adminSelectedCapacity: 1,
     }),
     { action: "none", reason: "capacity-covers-roster" },
+  );
+});
+
+// --- "People on this Registration" projection (Phase 1) --------------------
+
+function editorState(overrides: Partial<AttendeeEditorState> = {}): AttendeeEditorState {
+  return { ...emptyAttendeeEditorState(), ...overrides };
+}
+
+test("deriveHouseholdPeople: a solo Pilot yields exactly one person card", () => {
+  const people = deriveHouseholdPeople(
+    editorState({ pilot_first: "Jane", pilot_last: "Doe", email: "jane@example.com" }),
+  );
+  assert.equal(people.length, 1);
+  assert.equal(people[0].role, "pilot");
+  assert.equal(people[0].roleLabel, "Pilot");
+  assert.equal(people[0].firstName, "Jane");
+  assert.equal(people[0].email, "jane@example.com");
+  assert.equal(people[0].presentAtLoad, true);
+});
+
+test("deriveHouseholdPeople: Pilot phone falls back to primary_phone when cell_phone is blank", () => {
+  const withCell = deriveHouseholdPeople(editorState({ cell_phone: "555-1", primary_phone: "555-2" }));
+  assert.equal(withCell[0].cellPhone, "555-1");
+  const withPrimaryOnly = deriveHouseholdPeople(editorState({ cell_phone: "", primary_phone: "555-2" }));
+  assert.equal(withPrimaryOnly[0].cellPhone, "555-2");
+});
+
+test("deriveHouseholdPeople: Co-Pilot and Additional Participant appear only when their own fields carry data", () => {
+  const two = deriveHouseholdPeople(
+    editorState({
+      pilot_first: "Jane",
+      copilot_first: "Sam",
+      copilot_last: "Rivera",
+      copilot_email: "sam@example.com",
+      copilot_cell_phone: "555-9",
+    }),
+  );
+  assert.deepEqual(two.map((p) => p.role), ["pilot", "copilot"]);
+  assert.equal(two[1].roleLabel, "Co-Pilot");
+  assert.equal(two[1].cellPhone, "555-9");
+
+  const three = deriveHouseholdPeople(
+    editorState({
+      pilot_first: "Jane",
+      copilot_first: "Sam",
+      additional_first_name: "Pat",
+      additional_last_name: "Lee",
+    }),
+  );
+  assert.deepEqual(three.map((p) => p.role), ["pilot", "copilot", "additional"]);
+  assert.equal(three[2].roleLabel, "Additional Participant");
+});
+
+test("deriveHouseholdPeople: an Additional Participant with only a nickname still yields a card (five-field test, matches syncHouseholdMembers)", () => {
+  const people = deriveHouseholdPeople(editorState({ additional_nickname: "Buzz" }));
+  assert.deepEqual(people.map((p) => p.role), ["pilot", "additional"]);
+});
+
+test("deriveHouseholdPeople: a Co-Pilot with only a nickname does NOT yield a card (three-field test, matches syncHouseholdMembers)", () => {
+  const people = deriveHouseholdPeople(editorState({ copilot_nickname: "Ace" }));
+  assert.deepEqual(people.map((p) => p.role), ["pilot"]);
+});
+
+test("deriveHouseholdPeople: presentAtLoad mirrors had_copilot_at_load / had_additional_at_load", () => {
+  const people = deriveHouseholdPeople(
+    editorState({
+      copilot_first: "Sam",
+      had_copilot_at_load: true,
+      additional_first_name: "Pat",
+      had_additional_at_load: false,
+    }),
+  );
+  assert.equal(people.find((p) => p.role === "copilot")?.presentAtLoad, true);
+  assert.equal(people.find((p) => p.role === "additional")?.presentAtLoad, false);
+});
+
+test("deriveHouseholdPeople: capacity is never consulted -- roster of one with a large authorized party size still yields one card", () => {
+  const people = deriveHouseholdPeople(
+    editorState({ pilot_first: "Jane", registration_capacity: 9 }),
+  );
+  assert.equal(people.length, 1);
+});
+
+test("unfilledHouseholdRoles: offers only the currently-missing supported roles, never the pilot, never more than two", () => {
+  assert.deepEqual(unfilledHouseholdRoles(editorState()), ["copilot", "additional"]);
+  assert.deepEqual(
+    unfilledHouseholdRoles(editorState({ copilot_first: "Sam" })),
+    ["additional"],
+  );
+  assert.deepEqual(
+    unfilledHouseholdRoles(
+      editorState({ copilot_first: "Sam", additional_first_name: "Pat" }),
+    ),
+    [],
+  );
+});
+
+test("ATTENDEE_EDIT_SECTIONS: authorized party size is its own section, distinct from Registration", () => {
+  const partySize = ATTENDEE_EDIT_SECTIONS.find((s) => s.id === "party_size");
+  const registration = ATTENDEE_EDIT_SECTIONS.find((s) => s.id === "registration");
+  assert.ok(partySize, "a party_size section must exist");
+  assert.deepEqual(partySize!.fields.sort(), [
+    "capacity_increase_note",
+    "registration_capacity",
+  ]);
+  assert.equal(partySize!.label, "Authorized Party Size");
+  assert.ok(
+    !registration!.fields.includes("registration_capacity"),
+    "registration_capacity moved out of the Registration section",
   );
 });

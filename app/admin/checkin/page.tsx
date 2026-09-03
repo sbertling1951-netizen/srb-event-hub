@@ -9,6 +9,7 @@ import {
   reconcileCheckinEditState,
   selectedAttendeeChangedRemotely,
 } from "@/app/admin/checkin/checkinWorkflow";
+import { AdminReturnLink } from "@/components/admin/AdminReturnLink";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
@@ -851,6 +852,8 @@ function AdminCheckinPageInner() {
 
   return (
     <div style={{ display: "grid", gap: "var(--space-6)", minWidth: 0 }}>
+      <AdminReturnLink searchParams={searchParams} />
+
       <ConfirmDialog
         open={!!undoAttendee}
         title="Undo Check-In"

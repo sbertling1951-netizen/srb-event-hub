@@ -83,8 +83,8 @@ test("manual create defers universal onboarding needs to database defaults while
     /editorState\.needs_parking === false\s*\? \{ needs_parking: false \}/,
   );
   assert.match(source, /fetchCanonicalAttendeePlacement/);
-  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/checkin", state\.id\)/);
-  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
+  assert.match(source, /attendeeOwnerHrefs\(state\.id\)\.checkin/);
+  assert.match(source, /attendeeOwnerHrefs\(state\.id\)\.parking/);
 });
 
 test("attendee detail renders accessible governed Name Tag and Coach Plate controls independently", () => {
@@ -167,7 +167,7 @@ test("Arrival remains read-only while the roster parking-need control uses the g
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
   const arrivalFn = source.slice(
     source.indexOf("function attendeeArrivalPresentation("),
-    source.indexOf("export function AttendeeParkingNeedControl("),
+    source.indexOf("function attendeeOwnerHrefs("),
   );
   const parkingControl = source.slice(
     source.indexOf("export function AttendeeParkingNeedControl("),
@@ -191,20 +191,27 @@ test("the roster list never reads or displays attendees.assigned_site directly -
   assert.match(attendeeListSource, /placementsByAttendeeId/);
 });
 
-test("the roster retains a read-only Arrival badge and renders an accessible governed parking-need control", () => {
+test("the roster surfaces Arrival as a link to its owner workspace (Check-In) and renders an accessible governed parking-need control", () => {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
   const attendeeListSource = source.slice(
     source.indexOf("function AttendeeList("),
     source.indexOf("export function AttendeeRecordWorkspace("),
   );
 
-  assert.match(attendeeListSource, /<StatusBadge tone=\{arrival\.tone\}>\{arrival\.label\}<\/StatusBadge>/);
+  // Arrival is displayed truthfully but is not mutated here -- the pill is
+  // a link that routes to Check-In (the owner) for this attendee.
+  assert.match(
+    attendeeListSource,
+    /<AttendeeStatusLink\s+href=\{attendeeOwnerHrefs\(attendee\.id\)\.checkin\}\s+tone=\{arrival\.tone\}/,
+  );
+  assert.equal(/<StatusBadge tone=\{arrival\.tone\}>/.test(attendeeListSource), false);
   assert.match(attendeeListSource, /<AttendeeParkingNeedControl/);
+  assert.match(attendeeListSource, /parkingHref=\{attendeeOwnerHrefs\(attendee\.id\)\.parking\}/);
   assert.match(attendeeListSource, /placementKnown=\{!placementsLoading && !placementsError\}/);
   assert.equal(/type="checkbox"|type="radio"/.test(attendeeListSource), false);
 });
 
-test("unplaced parking intent is a real keyboard/touch button, while a placed attendee keeps the site label and Parking-first explanation", () => {
+test("unplaced parking intent is a real keyboard/touch button plus a link to Parking, while a placed attendee keeps the site label as a Parking link and Parking-first explanation", () => {
   const unplaced = renderToStaticMarkup(
     <AttendeeParkingNeedControl
       attendee={baseAttendee({ needs_parking: true })}
@@ -212,6 +219,7 @@ test("unplaced parking intent is a real keyboard/touch button, while a placed at
       placementKnown
       canEdit
       saving={false}
+      parkingHref="/admin/parking?attendee=11111111-1111-1111-1111-111111111111&returnTo=attendees"
       onSetParkingNeed={asyncNoop}
     />,
   );
@@ -219,6 +227,9 @@ test("unplaced parking intent is a real keyboard/touch button, while a placed at
   assert.match(unplaced, /aria-pressed="true"/);
   assert.match(unplaced, /Needs Parking/);
   assert.match(unplaced, /Toggle Jane Doe/);
+  // The status itself ("Unassigned") routes to the owner workspace.
+  assert.match(unplaced, /<a[^>]+href="[^"]*\/admin\/parking[^"]*returnTo=attendees[^"]*"[^>]*>/);
+  assert.match(unplaced, /Unassigned/);
 
   const placed = renderToStaticMarkup(
     <AttendeeParkingNeedControl
@@ -231,10 +242,12 @@ test("unplaced parking intent is a real keyboard/touch button, while a placed at
       placementKnown
       canEdit
       saving={false}
+      parkingHref="/admin/parking?attendee=11111111-1111-1111-1111-111111111111&returnTo=attendees"
       onSetParkingNeed={asyncNoop}
     />,
   );
   assert.match(placed, /Site A12/);
+  assert.match(placed, /<a[^>]+href="[^"]*\/admin\/parking[^"]*"[^>]*>/);
   assert.match(placed, /Remove the assignment in Parking before changing this/);
   assert.doesNotMatch(placed, /<button/);
 });
@@ -859,7 +872,7 @@ test("the three unreferenced *EmbedPanel components and the dead top-banner nav 
 
 // --- 4. Duplicated action rows normalized ---------------------------------
 
-test("the duplicated action rows are consolidated into one shared component, referenced only by ReviewQueue and AttendeeList", () => {
+test("the shared action row is now referenced only by ReviewQueue -- the roster row itself carries no per-row action cluster", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
@@ -867,13 +880,11 @@ test("the duplicated action rows are consolidated into one shared component, ref
     source.indexOf("function ReviewQueue("),
     source.indexOf("function AttendeeList("),
   );
-  // UI Phase 4: AttendeeList itself now renders two responsive
-  // presentations of the same roster (DataTable / ResponsiveList, per
-  // the Shell's isCompact signal) -- both legitimately render
-  // AttendeeActionRow once each, so its own usage count is 2, not the
-  // drifted-second-implementation case this test originally guarded
-  // against. The guard that matters is unchanged: no *other* component
-  // anywhere in the file may define its own competing action row.
+  // Household Management + Interaction Repair: the roster row (AttendeeList)
+  // no longer renders AttendeeActionRow at all. "View Record" is gone (the
+  // whole row opens the record) and "Cancel Registration" moved into the
+  // record workspace as a separated destructive action. AttendeeActionRow
+  // survives only for the Review Queue's membership-correction cards.
   const attendeeListSource = source.slice(
     source.indexOf("function AttendeeList("),
     source.indexOf("export function AttendeeRecordWorkspace("),
@@ -885,13 +896,13 @@ test("the duplicated action rows are consolidated into one shared component, ref
   assert.equal(reviewQueueUsageCount, 1, "ReviewQueue must render AttendeeActionRow exactly once");
   assert.equal(
     attendeeListUsageCount,
-    2,
-    "AttendeeList renders AttendeeActionRow once per responsive presentation (table, list)",
+    0,
+    "AttendeeList's roster row renders no AttendeeActionRow",
   );
   assert.equal(
     totalUsageCount,
-    reviewQueueUsageCount + attendeeListUsageCount,
-    "no third, independent AttendeeActionRow usage exists outside ReviewQueue/AttendeeList",
+    1,
+    "AttendeeActionRow is used exactly once, by ReviewQueue",
   );
   assert.ok(
     !source.includes("overflowX: \"auto\""),
@@ -1195,14 +1206,26 @@ test("removeHouseholdMember: builds a confirmation naming the specific participa
   assert.match(fnSource, /role === "copilot" \? "Co-Pilot" : "Additional Participant"/);
 });
 
-test("explicit Remove Co-Pilot / Remove Additional Participant controls exist in the edit form, conditioned on that participant currently having data", () => {
+test("each non-pilot person card carries Edit + Remove; the Pilot card carries neither and says so", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
-  assert.match(source, /hasCopilotNow \? \(/);
-  assert.match(source, />\s*Remove Co-Pilot\s*</);
-  assert.match(source, /hasAdditionalNow \? \(/);
-  assert.match(source, />\s*Remove Additional Participant\s*</);
+  const cardSource = source.slice(
+    source.indexOf("function renderHouseholdPersonCard("),
+    source.indexOf("const roleFieldEditorStyle"),
+  );
+
+  // Edit / Remove exist only for a removable (non-pilot) person, and Remove
+  // routes through the existing clear-then-Save flow (onRemoveHouseholdMember),
+  // not a new write path.
+  assert.match(cardSource, /const removable = editable && person\.role !== "pilot";/);
+  assert.match(cardSource, /\{removable \? \(/);
+  assert.match(cardSource, /aria-label=\{`Edit \$\{person\.roleLabel\}`\}/);
+  assert.match(
+    cardSource,
+    /onRemoveHouseholdMember\(\s*person\.role as "copilot" \| "additional",\s*\)/,
+  );
+  assert.match(cardSource, /The\s+Pilot cannot be removed from the registration\./);
 });
 
 // Test Expectation K: consequential actions use the canonical confirmation
@@ -1496,8 +1519,12 @@ test("Check-In/Parking ownership remains intact: no Arrival or placement mutatio
   assert.equal(/assigned_site:/.test(payload), false);
   assert.equal(/has_arrived:/.test(payload), false);
   assert.equal(/arrival_status:/.test(payload), false);
-  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/checkin", state\.id\)/);
-  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", state\.id\)/);
+  // The check-in / parking handoffs remain, targeted to this attendee, now
+  // via the shared attendeeOwnerHrefs helper (adds the validated returnTo).
+  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/checkin", attendeeId\)/);
+  assert.match(source, /buildAdminAttendeeTargetHref\("\/admin\/parking", attendeeId\)/);
+  assert.match(source, /attendeeOwnerHrefs\(state\.id\)\.checkin/);
+  assert.match(source, /attendeeOwnerHrefs\(state\.id\)\.parking/);
 });
 
 // -- Admin Batch 2: Central UI Standard migration ---------------------------
@@ -1699,4 +1726,308 @@ test("save handler: hasAdditional recognizes the same five fields syncHouseholdM
   assert.match(block, /additional_email\?\.trim\(\)/);
   assert.match(block, /additional_nickname\?\.trim\(\)/);
   assert.match(block, /additional_cell_phone\?\.trim\(\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Household Management + Interaction Repair
+// ---------------------------------------------------------------------------
+
+function attendeeListSource(): string {
+  const source = pageSource();
+  return source.slice(
+    source.indexOf("function AttendeeList("),
+    source.indexOf("export function AttendeeRecordWorkspace("),
+  );
+}
+
+test("row-open: the desktop row is NOT modeled as a button -- it carries a pointer-only onClick, and the name cell holds the real keyboard-focusable open control", () => {
+  const list = attendeeListSource();
+
+  // The <tr> is a plain row: no button role, no tabIndex, no key handler.
+  assert.match(
+    list,
+    /<tr\s*\n\s*className=\{isSelected \? "data-table-row-selected" : undefined\}\s*\n\s*style=\{\{ cursor: "pointer" \}\}\s*\n\s*onClick=\{\(\) => onSelect\(attendee\)\}\s*\n\s*>/,
+  );
+  const rowTag = list.slice(list.indexOf("<tr\n"), list.indexOf("<td>", list.indexOf("<tr\n")));
+  assert.equal(/role="button"/.test(rowTag), false);
+  assert.equal(/tabIndex/.test(rowTag), false);
+  assert.equal(/onKeyDown/.test(rowTag), false);
+
+  // The name cell is a real <button> with an accessible label; it opens
+  // the record and stops the click from also firing the row handler.
+  assert.match(
+    list,
+    /<td>\s*<button\s+type="button"\s+onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*onSelect\(attendee\);\s*\}\}\s+aria-label=\{`Open "\$\{displayPilotName\(attendee\)\}"'s record`\}/,
+  );
+  // The reintroduced control is the name itself -- never a "View Record" button.
+  assert.equal(list.includes("View Record"), false);
+});
+
+test("row-open: the compact list item keeps its pre-existing full-item button semantics (a div, not a table row)", () => {
+  const list = attendeeListSource();
+  assert.match(
+    list,
+    /"responsive-list-item"[\s\S]*?role="button"\s*\n\s*tabIndex=\{0\}\s*\n\s*onClick=\{\(\) => onSelect\(attendee\)\}/,
+  );
+});
+
+test("nested-control isolation: status links and the parking-need control own their clicks; non-interactive cells fall through to row-open", () => {
+  const list = attendeeListSource();
+  const source = pageSource();
+
+  // The Data Status cell is non-interactive, so clicking it opens the
+  // record like any other empty area of the row (no stopPropagation).
+  assert.match(list, /<td>\{dataStatusBadges\(attendee\)\}<\/td>/);
+  // AttendeeStatusLink (the arrival / placement pills) owns its click.
+  const statusLink = source.slice(
+    source.indexOf("function AttendeeStatusLink("),
+    source.indexOf("function AttendeeParkingNeedControl("),
+  );
+  assert.match(statusLink, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(statusLink, /onKeyDown=\{\(event\) => event\.stopPropagation\(\)\}/);
+  // The parking-need toggle button also stops propagation.
+  const parkingControl = source.slice(
+    source.indexOf("function AttendeeParkingNeedControl("),
+    source.indexOf("function attendeeGroupSiteLabel("),
+  );
+  assert.match(parkingControl, /event\.stopPropagation\(\);\s*\n\s*void onSetParkingNeed/);
+});
+
+test("status pills are owner-workspace handoffs: Arrival -> Check-In, Placement -> Parking, each targeted to this attendee and carrying the validated returnTo", () => {
+  const source = pageSource();
+  const helper = source.slice(
+    source.indexOf("function attendeeOwnerHrefs("),
+    source.indexOf("function AttendeeStatusLink("),
+  );
+
+  assert.match(
+    helper,
+    /checkin: withAdminReturnTarget\(\s*buildAdminAttendeeTargetHref\("\/admin\/checkin", attendeeId\),\s*"attendees",\s*\)/,
+  );
+  assert.match(
+    helper,
+    /parking: withAdminReturnTarget\(\s*buildAdminAttendeeTargetHref\("\/admin\/parking", attendeeId\),\s*"attendees",\s*\)/,
+  );
+  assert.match(
+    source,
+    /import \{ withAdminReturnTarget \} from "@\/lib\/adminWorkspaceReturn";/,
+  );
+
+  // Attendees never mutates Check-In / Parking canonical state: the pills
+  // are links, not writes. (Arrival stays read-only; needs_parking keeps
+  // its own governed RPC, unchanged.)
+  const list = attendeeListSource();
+  assert.match(list, /href=\{attendeeOwnerHrefs\(attendee\.id\)\.checkin\}/);
+  assert.match(list, /parkingHref=\{attendeeOwnerHrefs\(attendee\.id\)\.parking\}/);
+});
+
+test("roster row no longer carries a redundant View Record control or a Cancel Registration control", () => {
+  const list = attendeeListSource();
+
+  assert.equal(list.includes("View Record"), false);
+  assert.equal(list.includes("Cancel Registration"), false);
+  assert.equal(list.includes("<AttendeeActionRow"), false);
+  // The empty Actions column is gone from the desktop table.
+  assert.equal(/<th scope="col">Actions<\/th>/.test(list), false);
+});
+
+test("Cancel Registration now lives in the record workspace as a separated destructive (danger) action, still confirmed via dialog", () => {
+  const source = pageSource();
+  const primaryActionsSource = source.slice(
+    source.indexOf("const primaryActions ="),
+    source.indexOf("const secondaryActions ="),
+  );
+
+  assert.match(
+    primaryActionsSource,
+    /<AppButton\s+variant="danger"\s+disabled=\{!canEdit \|\| !attendee\}\s+onClick=\{\(\) => attendee && void onCancelRegistration\(attendee\)\}\s*>\s*Cancel Registration/,
+  );
+});
+
+test("the record workspace opens as a centered modal (presentation=\"centered\"), not the side drawer", () => {
+  const source = pageSource();
+  const workspaceSource = source.slice(
+    source.indexOf("export function AttendeeRecordWorkspace("),
+    source.indexOf("function AdminAttendeesPageInner()"),
+  );
+  assert.match(workspaceSource, /<ObjectPanel[\s\S]*?presentation="centered"/);
+});
+
+function householdSectionSource(): string {
+  const source = pageSource();
+  return source.slice(
+    source.indexOf("function renderHouseholdPeopleSection("),
+    source.indexOf("\n  }\n", source.indexOf("function renderHouseholdPeopleSection(")),
+  );
+}
+
+test("People on this Registration: one shared section, rendered in both view mode and edit mode", () => {
+  const source = pageSource();
+
+  const viewBody = source.slice(
+    source.indexOf("const viewBody = ("),
+    source.indexOf("const editBody = ("),
+  );
+  const editBody = source.slice(
+    source.indexOf("const editBody = ("),
+    source.indexOf("const primaryActions ="),
+  );
+
+  assert.match(viewBody, /\{renderHouseholdPeopleSection\(false\)\}/);
+  assert.match(editBody, /\{renderHouseholdPeopleSection\(true\)\}/);
+  assert.match(householdSectionSource(), /sectionHeading\("household", "People on this Registration"\)/);
+  // Cards are driven by the pure projection, not ad-hoc field reads.
+  assert.match(source, /const householdPeople = deriveHouseholdPeople\(state\);/);
+  assert.match(householdSectionSource(), /householdPeople\.map\(\(person\) =>\s*renderHouseholdPersonCard\(person, editable\)/);
+});
+
+test("person card shows role, name, email, and phone", () => {
+  const source = pageSource();
+  const card = source.slice(
+    source.indexOf("function renderHouseholdPersonCard("),
+    source.indexOf("const roleFieldEditorStyle"),
+  );
+  assert.match(card, /\{person\.roleLabel\}/);
+  assert.match(card, /householdPersonDisplayName\(person\)/);
+  assert.match(card, /Email: \{person\.email \|\| "—"\}/);
+  assert.match(card, /Phone: \{person\.cellPhone \|\| "—"\}/);
+});
+
+test("Add Person only offers currently-unfilled supported roles, and says the household is full otherwise", () => {
+  const source = pageSource();
+  const section = householdSectionSource();
+
+  assert.match(
+    source,
+    /const openHouseholdRoles = \(\["copilot", "additional"\] as const\)\.filter\(\s*\(role\) => !filledHouseholdRoles\.has\(role\) && !roleEditorOpen\(role\),\s*\)/,
+  );
+  assert.match(section, /\+ Add Person/);
+  assert.match(section, /\{editable && openHouseholdRoles\.length > 0 \? \(/);
+  assert.match(section, /openHouseholdRoles\.includes\("copilot"\) \? \(/);
+  assert.match(section, /openHouseholdRoles\.includes\("additional"\) \? \(/);
+  assert.match(section, /\) : editable && householdIsFull \? \(/);
+  assert.match(section, /This registration has its full household/);
+  // No arbitrary-N: the picker vocabulary is exactly the two canonical roles.
+  assert.equal(section.includes('"pilot"'), false);
+});
+
+test("Add Person / Edit / role editors bind to existing AttendeeEditorState fields via onChange -- no new modal, no new write path", () => {
+  const source = pageSource();
+  const section = householdSectionSource();
+  const editors = source.slice(
+    source.indexOf("function renderCopilotFieldEditor("),
+    source.indexOf("function renderHouseholdPeopleSection("),
+  );
+
+  // The section and its editors issue no Supabase call of their own.
+  assert.equal(/supabase\.rpc\(|supabase\.from\(/.test(section), false);
+  assert.equal(/supabase\.rpc\(|supabase\.from\(/.test(editors), false);
+  // Adding a role only toggles which fields are shown.
+  assert.match(section, /setShowCopilotFields\(true\);\s*\n\s*setHouseholdMemberChooserOpen\(false\);/);
+  assert.match(section, /setShowAdditionalParticipant\(true\);\s*\n\s*setHouseholdMemberChooserOpen\(false\);/);
+  // The copilot editor reuses the existing household text fields; the
+  // additional editor binds each field back through onChange.
+  assert.match(editors, /SECTION_TEXT_FIELDS\.household\.map\(renderTextField\)/);
+  assert.match(editors, /onChange\("additional_first_name", e\.target\.value\)/);
+  assert.match(editors, /onChange\("additional_email", e\.target\.value\)/);
+
+  // No second ObjectPanel / dialog was introduced for people.
+  assert.equal(
+    (source.match(/<ObjectPanel/g) || []).length,
+    1,
+    "exactly one ObjectPanel still owns the record workspace",
+  );
+});
+
+test("household writes still go only through the governed RPCs -- no direct attendee_household_members mutation, one Save path", () => {
+  const source = pageSource();
+
+  const householdRpcCalls =
+    (source.match(/manage_attendee_household_member/g) || []).length +
+    (source.match(/record_participant_capacity_increase/g) || []).length;
+  assert.ok(householdRpcCalls > 0);
+  assert.equal(
+    /attendee_household_members"\)\s*\n?\s*\.(insert|upsert|delete)\(/.test(source),
+    false,
+  );
+  // Remove Person is still the clear-then-Save flow.
+  assert.match(source, /onRemoveHouseholdMember=\{removeHouseholdMember\}/);
+});
+
+test("switching to a different record collapses the person-field editors so they never leak across records", () => {
+  const source = pageSource();
+  assert.match(
+    source,
+    /useEffect\(\(\) => \{\s*setShowCopilotFields\(false\);\s*setShowAdditionalParticipant\(false\);\s*setHouseholdMemberChooserOpen\(false\);\s*\}, \[state\.id\]\);/,
+  );
+});
+
+test("+ Add Attendee (create mode) renders the same People on this Registration section", () => {
+  const source = pageSource();
+  // openCreateAttendeeEditor drives the one AttendeeRecordWorkspace in edit
+  // mode, so it inherits renderHouseholdPeopleSection(true) with no
+  // create-specific household code path.
+  assert.match(source, /function openCreateAttendeeEditor\(\)/);
+  assert.match(source, /setEditorMode\("create"\)/);
+  assert.equal(
+    (source.match(/renderHouseholdPeopleSection\(true\)/g) || []).length,
+    1,
+    "one edit-mode household section, shared by create and edit",
+  );
+});
+
+// --- Phase 2: Authorized Party Size ---------------------------------------
+
+test("Authorized Party Size is its own labelled block, visually separate from People on this Registration and from Registration", () => {
+  const source = pageSource();
+  const editBody = source.slice(
+    source.indexOf("const editBody = ("),
+    source.indexOf("const primaryActions ="),
+  );
+
+  // Its own section with the renamed label and its own dirty-badge section id.
+  assert.match(editBody, /sectionHeading\("party_size", "Authorized Party Size"\)/);
+  assert.match(editBody, /<Field label="Authorized Party Size">/);
+  // Helper text distinguishing party size from named-people management.
+  assert.match(
+    editBody,
+    /Named people are managed above\. Authorized party size is the[\s\S]*?paid\/approved number of participants and may be larger than the[\s\S]*?number of named people\./,
+  );
+  // Named / authorized read-out.
+  assert.match(editBody, /\{namedPersonCount\} named \/ \{authorizedPartySizeDisplay\} authorized/);
+
+  // The stepper is no longer inside the Registration field grid.
+  const registrationSection = editBody.slice(
+    editBody.indexOf('sectionHeading("registration"'),
+    editBody.indexOf('sectionHeading("notes"'),
+  );
+  assert.equal(registrationSection.includes("Registration Capacity"), false);
+  assert.equal(registrationSection.includes("Authorized Party Size"), false);
+  assert.equal(registrationSection.includes("registration_capacity"), false);
+});
+
+test("Authorized Party Size preserves null semantics and does not auto-derive capacity from the roster", () => {
+  const source = pageSource();
+
+  // "—" / "not yet established" for an untouched unset capacity; the stepper
+  // still clears the unset flag on interaction exactly as before.
+  assert.match(
+    source,
+    /const authorizedPartySizeDisplay = state\.registration_capacity_was_unset\s*\?\s*"—"\s*:\s*String\(state\.registration_capacity\)/,
+  );
+  assert.match(source, /onChange\("registration_capacity_was_unset", false\)/);
+  // The over-capacity condition is surfaced, never silently resolved by
+  // widening the authorized number.
+  assert.match(
+    source,
+    /const namedExceedsAuthorized =\s*!state\.registration_capacity_was_unset &&\s*namedPersonCount > state\.registration_capacity;/,
+  );
+  assert.match(source, /The named people exceed the authorized party size\./);
+
+  // Capacity still only ever rises through the governed RPC; the generic
+  // edit payload's participant_capacity expression is unchanged.
+  assert.match(
+    source,
+    /participant_capacity:\s*\n\s*editorMode === "create"\s*\n\s*\? initialCapacityForCreate\s*\n\s*: isCapacityIncrease\s*\n\s*\? editorState\.registration_capacity_original\s*\n\s*: requiredCapacity,/,
+  );
 });

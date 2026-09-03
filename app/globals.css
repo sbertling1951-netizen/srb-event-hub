@@ -1105,6 +1105,25 @@ textarea.app-control,
   background: var(--color-status-info-bg);
 }
 
+/* A status pill that is a link to the workspace owning that status
+   (Attendees -> Check-In / Parking). Looks like the pill it replaces;
+   adds only the affordances of a link. */
+a.app-status-pill-link {
+  text-decoration: none;
+  cursor: pointer;
+  gap: 2px;
+}
+
+a.app-status-pill-link:hover {
+  border-color: var(--color-border-strong);
+  filter: brightness(0.97);
+}
+
+a.app-status-pill-link:focus-visible {
+  outline: var(--border-width-thick, 2px) solid var(--color-focus-ring, currentColor);
+  outline-offset: 2px;
+}
+
 @media (max-width: 899px) {
   .app-form-grid-2 {
     grid-template-columns: 1fr;
@@ -3243,6 +3262,44 @@ body.slideshow-view-mode .app-header-card {
   }
   to {
     transform: translateX(0);
+  }
+}
+
+/* Opt-in "centered" presentation (presentation="centered"). Only surfaces
+   where the object IS the work -- currently just the Attendees Management
+   record workspace -- use this. Every other ObjectPanel consumer keeps the
+   default side panel. Mobile keeps the base bottom-sheet layout. */
+@media (min-width: 900px) {
+  .object-panel--centered.object-panel {
+    width: min(920px, 100% - 2 * var(--space-8));
+    max-width: 950px;
+    height: auto;
+    max-height: min(88vh, 88dvh);
+    border-radius: var(--radius-large);
+    border: var(--border-width-default) solid var(--color-border-default);
+    padding-top: 0;
+    padding-right: 0;
+    animation: object-panel-enter-centered 0.22s ease;
+  }
+
+  .object-panel-backdrop--centered {
+    align-items: center;
+    justify-content: center;
+  }
+
+  .object-panel--centered .object-panel-body {
+    padding-bottom: var(--space-6);
+  }
+}
+
+@keyframes object-panel-enter-centered {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

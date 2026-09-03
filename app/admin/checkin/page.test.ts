@@ -445,6 +445,19 @@ test("authority and Event context continue through existing guards and canonical
   );
 });
 
+// -- Owner-workspace return navigation (Attendees -> Check-In status handoff) --
+
+test("Check-In renders the shared AdminReturnLink from its own URL params -- an explicit validated target, never browser history/back", () => {
+  assert.match(
+    source,
+    /import \{ AdminReturnLink \} from "@\/components\/admin\/AdminReturnLink";/,
+  );
+  assert.match(source, /<AdminReturnLink searchParams=\{searchParams\} \/>/);
+  // The pre-existing attendee-target handoff is untouched.
+  assert.match(source, /readAdminAttendeeTarget\(searchParams\)/);
+  assert.equal(/history\.back\(\)|router\.back\(\)/.test(source), false);
+});
+
 // Task-Authority Guard Design, Check-In consumer migration -- Check-In no
 // longer uses the legacy can_mark_arrived permission for route access or
 // any in-page re-check; event.checkin.manage (server-enforced already by
