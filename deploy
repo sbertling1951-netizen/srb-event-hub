@@ -13,7 +13,7 @@ trap on_error ERR
 SSH_TARGET="root@167.71.97.103"
 REMOTE_PROJECT_DIR="~/srb-event-hub"
 PM2_PROCESS_NAME="srb-event-hub"
-PRODUCTION_URL="https://app.eventsyncapp.com"
+PRODUCTION_URL="https://epicentrax.com"
 DRY_RUN="${DEPLOY_DRY_RUN:-0}"
 
 section() {

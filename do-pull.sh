@@ -5,7 +5,7 @@ set -Eeuo pipefail
 LOCK_PATH="${DEPLOY_LOCK_PATH:-/var/lock/srb-event-hub-deploy.lock}"
 PROJECT_DIR="${DEPLOY_PROJECT_DIR:-${HOME}/srb-event-hub}"
 PM2_PROCESS_NAME="srb-event-hub"
-PRODUCTION_URL="https://app.eventsyncapp.com"
+PRODUCTION_URL="https://epicentrax.com"
 EXPECTED_SHA="${1:-}"
 
 log() {
