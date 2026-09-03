@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 import {
   CANONICAL_VENDOR_SELECTED_COOKIE,
   resolveVendorAccessFromCookies,
-  VENDOR_SELECTED_COOKIE,
 } from "@/lib/server/vendorAccess";
 
 type SelectBody = {
@@ -56,19 +55,17 @@ export async function POST(req: Request) {
   }
 
   const response = NextResponse.json({ ok: true, vendorId });
-  for (const name of [
-    CANONICAL_VENDOR_SELECTED_COOKIE,
-    VENDOR_SELECTED_COOKIE,
-  ]) {
-    response.cookies.set({
-      name,
-      value: vendorId,
-      httpOnly: true,
-      secure: secureCookieEnabled(),
-      sameSite: "lax",
-      path: "/",
-    });
-  }
+  // Stage B: issue the canonical (neutral) selected-vendor cookie only. The
+  // resolver still reads canonical-first with legacy fallback and logout/DELETE
+  // still clears both name sets, so no new legacy-named vendor cookie is minted.
+  response.cookies.set({
+    name: CANONICAL_VENDOR_SELECTED_COOKIE,
+    value: vendorId,
+    httpOnly: true,
+    secure: secureCookieEnabled(),
+    sameSite: "lax",
+    path: "/",
+  });
 
   return response;
 }

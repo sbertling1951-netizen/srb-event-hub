@@ -97,8 +97,9 @@ export const TIER5_EVENT_SCOPED_MIGRATION_SOURCE_KEYS = {
     `fcoc-vendor-import-run::${eventId}`,
 } as const;
 
-// Vendor auth cookies. Stage A: server READS accept canonical then legacy;
-// cookie SET behaviour is unchanged (legacy name); DELETE clears both.
+// Vendor auth cookies. Server READS accept canonical then legacy. Stage B:
+// cookie SET writes the canonical name only (no new fcoc-vendor-* cookie);
+// DELETE still clears both name sets.
 export const COOKIE_NAMES = {
   vendorAccessToken: "epicentrax-vendor-access-token",
   vendorSelectedVendorId: "epicentrax-vendor-selected-vendor-id",

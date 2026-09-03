@@ -147,16 +147,18 @@ export async function POST(req: Request) {
   }
 
   const response = NextResponse.json({ ok: true, userId: user.id });
-  for (const name of [CANONICAL_VENDOR_AUTH_COOKIE, VENDOR_AUTH_COOKIE]) {
-    response.cookies.set({
-      name,
-      value: accessToken,
-      httpOnly: true,
-      secure: secureCookieEnabled(),
-      sameSite: "lax",
-      path: "/",
-    });
-  }
+  // Stage B: issue the canonical (neutral) vendor access-token cookie only.
+  // Reads stay canonical-first with legacy fallback and logout/DELETE still
+  // clears both name sets, so pre-existing legacy-only sessions keep working
+  // while no new legacy-named vendor cookie is ever minted.
+  response.cookies.set({
+    name: CANONICAL_VENDOR_AUTH_COOKIE,
+    value: accessToken,
+    httpOnly: true,
+    secure: secureCookieEnabled(),
+    sameSite: "lax",
+    path: "/",
+  });
 
   return response;
 }
