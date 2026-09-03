@@ -80,6 +80,8 @@ The truth of a data workflow is the data actually persisted and retrievable. Sou
 - Do not create new people, UUIDs, links, merges, or attribution outside the explicitly authorized evidence set for a task.
 - The frozen reconciliation manifest is the sole input for automatic attribution when a task says so. Later scripts may not silently expand it.
 
+For the authoritative current-state description of how registration/household records converge onto a canonical Person, what account activation does (`finalize_member_identity_activation`), the four identity layers, the matching rules, and the known gaps in automatic convergence, see `docs/ai-context/EPICENTRAX_IDENTITY_CONVERGENCE.md` (baseline: repo `97ee9cf`, migrations through `20260922000000`). It is a read-only inspection reference, not a feature proposal.
+
 ## 6. Coding standard
 
 - Clear and direct, not clever or cute.
