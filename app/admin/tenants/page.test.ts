@@ -43,7 +43,7 @@ test("Add Tenant communicates inactive-first side effects and contains no Active
 
 test("metadata editing is bounded to the T3 allowlist while immutable identity is display-only", () => {
   const fields = SOURCE.slice(
-    SOURCE.indexOf("function TenantMetadataFields"),
+    SOURCE.indexOf("function TenantBrandingFields"),
     SOURCE.indexOf("function TenantAdministrationWorkspace"),
   );
   assert.equal(/organization_code|slug|is_active|tenant_id/.test(fields), false);
@@ -51,6 +51,90 @@ test("metadata editing is bounded to the T3 allowlist while immutable identity i
   assert.match(SOURCE, /<dt>Organization code<\/dt><dd>\{detail\.organization_code\}<\/dd>/);
   assert.match(SOURCE, /<dt>Slug<\/dt><dd>\{detail\.slug\}<\/dd>/);
   assert.match(SOURCE, /updateTenantMetadataForAdministration\(detail\.id, metadataForm, metadataReason\)/);
+});
+
+// -- Tenant Branding P-1 -----------------------------------------------------
+
+test("branding fields group under Branding & Appearance, operational fields under Operational settings", () => {
+  assert.match(SOURCE, /title="Branding & Appearance"/);
+  assert.match(SOURCE, /title="Operational settings"/);
+
+  const brandingFields = SOURCE.slice(
+    SOURCE.indexOf("function TenantBrandingFields"),
+    SOURCE.indexOf("function TenantOperationalFields"),
+  );
+  for (const key of [
+    "organization_name",
+    "display_name",
+    "app_title",
+    "app_tagline",
+    "logo_url",
+    "favicon_url",
+  ]) {
+    assert.ok(brandingFields.includes(key), `Branding & Appearance owns ${key}`);
+  }
+  assert.match(brandingFields, /BRANDING_COLOR_FIELDS\.map/);
+
+  const operationalFields = SOURCE.slice(
+    SOURCE.indexOf("function TenantOperationalFields"),
+    SOURCE.indexOf("function TenantMetadataFields"),
+  );
+  assert.ok(operationalFields.includes("tenant_type_id"));
+  assert.ok(operationalFields.includes("post_event_edit_window_days"));
+  assert.equal(/logo_url|primary_color|app_title/.test(operationalFields), false);
+});
+
+test("the split is presentational: still exactly one governed save path", () => {
+  assert.equal(
+    (SOURCE.match(/updateTenantMetadataForAdministration\(/g) || []).length,
+    1,
+  );
+  assert.equal((SOURCE.match(/onSubmit=\{saveMetadata\}/g) || []).length, 1);
+  assert.equal((SOURCE.match(/onSubmit=\{createTenant\}/g) || []).length, 1);
+  assert.match(SOURCE, /<TenantBrandingPreview form=\{metadataForm\} \/>/);
+  assert.match(SOURCE, /<TenantBrandingFields[\s\S]{0,200}colorErrors=\{metadataColorErrors\}/);
+  assert.match(SOURCE, /<TenantOperationalFields[\s\S]{0,200}form=\{metadataForm\}/);
+});
+
+test("client color validation flows through the shared validateMetadata path and blocks save/create on error", () => {
+  assert.match(SOURCE, /isValidBrandColor,?\n?\s*\} from "@\/lib\/tenantBrandingColor"/);
+  assert.match(SOURCE, /function brandingColorErrors\(/);
+  assert.match(SOURCE, /const colorErrors = brandingColorErrors\(form\);/);
+  assert.match(SOURCE, /disabled=\{!metadataDirty \|\| metadataHasColorErrors\}/);
+  assert.match(SOURCE, /disabled=\{createHasColorErrors\}/);
+  assert.match(SOURCE, /error=\{colorErrors\[key\]\}/);
+  // no silent normalization/rewrite of a stored color value
+  assert.equal(/normaliz/i.test(SOURCE), false);
+});
+
+test("each brand color keeps an authoritative text field plus a native picker writing the same state", () => {
+  assert.match(SOURCE, /type="color"/);
+  assert.match(SOURCE, /aria-label=\{`\$\{label\} picker`\}/);
+  const colorBlock = SOURCE.slice(
+    SOURCE.indexOf("BRANDING_COLOR_FIELDS.map(({ key, label }) =>"),
+    SOURCE.indexOf("function TenantOperationalFields"),
+  );
+  const sameStateWrites = colorBlock.match(/\[key\]: event\.target\.value/g) || [];
+  assert.equal(sameStateWrites.length, 2, "text field + picker both write [key]");
+});
+
+test("P-1 adds no FCOC/EventSync asset or literal brand fallback and no favicon runtime wiring", () => {
+  assert.doesNotMatch(SOURCE, /fcoc-logo/i);
+  assert.doesNotMatch(SOURCE, /\bFCOC\b/);
+  assert.doesNotMatch(SOURCE, /EventSync/i);
+  assert.doesNotMatch(SOURCE, /generateMetadata/);
+  assert.match(SOURCE, /not yet applied to the browser tab icon/);
+});
+
+test("Platform Administrator authority is unchanged and no new mutation surface is introduced", () => {
+  assert.match(SOURCE, /<AdminRouteGuard requiredPlatformAuthority>/);
+  assert.equal((SOURCE.match(/requiredPlatformAuthority/g) || []).length, 1);
+  const combined = `${SOURCE}\n${CLIENT_SOURCE}`;
+  for (const table of ["tenants", "admin_tenant_access", "tenant_hostname_mappings"]) {
+    assert.equal(new RegExp(`\\.from\\(["']${table}["']\\)`).test(combined), false);
+  }
+  assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(combined), false);
+  assert.equal(/checkAdminTenantAuthority|has_any_tenant_admin_authority/.test(SOURCE), false);
 });
 
 test("lifecycle status is a separate governed confirmation with accurate retained-data semantics and reason", () => {

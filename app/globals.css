@@ -1064,6 +1064,132 @@ textarea.app-control,
   }
 }
 
+/* Tenant Branding P-1: a text field paired with a native color-picker
+   convenience control. The text value stays authoritative; the picker is a
+   fixed-size affordance that never grows on narrow viewports. */
+.tenant-branding-color-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.tenant-branding-color-row .app-control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tenant-branding-color-swatch-input {
+  flex: 0 0 auto;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  padding: 2px;
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--radius-small);
+  background: var(--color-bg-panel);
+  cursor: pointer;
+}
+
+.tenant-branding-color-swatch-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Tenant Branding P-1: representative-only live preview of the branding
+   values being edited. Colors are shown as stored swatches; they are NOT
+   applied to any runtime shell rendering in P-1. */
+.tenant-branding-preview {
+  margin-top: var(--space-5);
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg-muted);
+  min-width: 0;
+}
+
+.tenant-branding-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.tenant-branding-preview-logo {
+  inline-size: 48px;
+  block-size: 48px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: var(--radius-small);
+  background: var(--color-bg-panel);
+}
+
+.tenant-branding-preview-logo-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+  border: var(--border-width-default) dashed var(--color-border-strong);
+}
+
+.tenant-branding-preview-titles {
+  min-width: 0;
+}
+
+.tenant-branding-preview-title {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-card-title);
+  overflow-wrap: anywhere;
+}
+
+.tenant-branding-preview-tagline {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+
+.tenant-branding-preview-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.tenant-branding-preview-swatch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.tenant-branding-preview-swatch-chip {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius-small);
+  border: var(--border-width-default) solid var(--color-border-default);
+}
+
+.tenant-branding-preview-swatch-chip[data-empty="true"] {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-bg-panel),
+    var(--color-bg-panel) 3px,
+    var(--color-border-default) 3px,
+    var(--color-border-default) 6px
+  );
+}
+
+.tenant-branding-preview-swatch-label {
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+
+.tenant-branding-preview-note {
+  margin: 0;
+}
+
 /* .app-form-input's declarations now live in the canonical .app-control
    rule above (Central UI Standard, Stage 2) -- this selector is kept as
    a transitional alias there, not redeclared here. */

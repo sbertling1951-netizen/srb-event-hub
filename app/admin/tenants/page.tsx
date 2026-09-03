@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { TenantBrandingPreview } from "@/components/admin/tenant/TenantBrandingPreview";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Alert } from "@/components/ui/Alert";
@@ -46,6 +47,10 @@ import {
   tenantRowToMetadataForm,
   updateTenantMetadataForAdministration,
 } from "@/lib/tenantAdministration";
+import {
+  brandColorErrorMessage,
+  isValidBrandColor,
+} from "@/lib/tenantBrandingColor";
 
 type TenantTypeRow = {
   id: string;
@@ -176,6 +181,26 @@ function auditSummary(row: TenantAdministrationAuditRow): string {
   return "Governed Tenant administration command recorded.";
 }
 
+const BRANDING_COLOR_FIELDS = [
+  { key: "primary_color", label: "Primary color" },
+  { key: "secondary_color", label: "Secondary color" },
+  { key: "accent_color", label: "Accent color" },
+] as const;
+
+type BrandingColorKey = (typeof BRANDING_COLOR_FIELDS)[number]["key"];
+
+function brandingColorErrors(
+  form: TenantMetadataForm,
+): Partial<Record<BrandingColorKey, string>> {
+  const errors: Partial<Record<BrandingColorKey, string>> = {};
+  for (const { key, label } of BRANDING_COLOR_FIELDS) {
+    if (!isValidBrandColor(form[key])) {
+      errors[key] = brandColorErrorMessage(label);
+    }
+  }
+  return errors;
+}
+
 function validateMetadata(form: TenantMetadataForm): string | null {
   if (!form.organization_name.trim() || !form.display_name.trim() || !form.app_title.trim()) {
     return "Organization name, display name, and app title are required.";
@@ -186,18 +211,25 @@ function validateMetadata(form: TenantMetadataForm): string | null {
   ) {
     return "Post-Event edit window must be a whole number zero or greater.";
   }
+  const colorErrors = brandingColorErrors(form);
+  const colorError = BRANDING_COLOR_FIELDS.map(
+    ({ key }) => colorErrors[key],
+  ).find(Boolean);
+  if (colorError) {
+    return colorError;
+  }
   return null;
 }
 
-function TenantMetadataFields({
+function TenantBrandingFields({
   form,
-  tenantTypes,
   disabled,
+  colorErrors,
   onChange,
 }: {
   form: TenantMetadataForm;
-  tenantTypes: TenantTypeRow[];
   disabled?: boolean;
+  colorErrors: Partial<Record<BrandingColorKey, string>>;
   onChange: (patch: Partial<TenantMetadataForm>) => void;
 }) {
   return (
@@ -238,7 +270,11 @@ function TenantMetadataFields({
           />
         )}
       </Field>
-      <Field label="Logo URL" disabled={disabled}>
+      <Field
+        label="Logo URL"
+        help="The tenant logo shown across EpicentraX presentation. An SVG or a roughly square PNG (192px or larger) works best. Blank uses the neutral platform default."
+        disabled={disabled}
+      >
         {(props) => (
           <Input
             {...props}
@@ -248,7 +284,11 @@ function TenantMetadataFields({
           />
         )}
       </Field>
-      <Field label="Favicon URL" disabled={disabled}>
+      <Field
+        label="Favicon URL"
+        help="Stored branding metadata. It is not yet applied to the browser tab icon."
+        disabled={disabled}
+      >
         {(props) => (
           <Input
             {...props}
@@ -258,33 +298,62 @@ function TenantMetadataFields({
           />
         )}
       </Field>
-      <Field label="Primary color" help="CSS color value" disabled={disabled}>
-        {(props) => (
-          <Input
-            {...props}
-            value={form.primary_color}
-            onChange={(event) => onChange({ primary_color: event.target.value })}
-          />
-        )}
-      </Field>
-      <Field label="Secondary color" help="CSS color value" disabled={disabled}>
-        {(props) => (
-          <Input
-            {...props}
-            value={form.secondary_color}
-            onChange={(event) => onChange({ secondary_color: event.target.value })}
-          />
-        )}
-      </Field>
-      <Field label="Accent color" help="CSS color value" disabled={disabled}>
-        {(props) => (
-          <Input
-            {...props}
-            value={form.accent_color}
-            onChange={(event) => onChange({ accent_color: event.target.value })}
-          />
-        )}
-      </Field>
+      {BRANDING_COLOR_FIELDS.map(({ key, label }) => {
+        const value = form[key];
+        const pickerValue = /^#[0-9a-fA-F]{6}$/.test(value.trim())
+          ? value.trim()
+          : "#000000";
+        return (
+          <Field
+            key={key}
+            label={label}
+            help="Hex (#rgb, #rrggbb), rgb()/hsl(), or a CSS color name. Blank uses the neutral default."
+            error={colorErrors[key]}
+            disabled={disabled}
+          >
+            {(props) => (
+              <div className="tenant-branding-color-row">
+                <Input
+                  {...props}
+                  value={value}
+                  onChange={(event) =>
+                    onChange({ [key]: event.target.value } as Partial<TenantMetadataForm>)
+                  }
+                />
+                <input
+                  type="color"
+                  className="tenant-branding-color-swatch-input"
+                  aria-label={`${label} picker`}
+                  disabled={disabled}
+                  value={pickerValue}
+                  onChange={(event) =>
+                    onChange({
+                      [key]: event.target.value,
+                    } as Partial<TenantMetadataForm>)
+                  }
+                />
+              </div>
+            )}
+          </Field>
+        );
+      })}
+    </div>
+  );
+}
+
+function TenantOperationalFields({
+  form,
+  tenantTypes,
+  disabled,
+  onChange,
+}: {
+  form: TenantMetadataForm;
+  tenantTypes: TenantTypeRow[];
+  disabled?: boolean;
+  onChange: (patch: Partial<TenantMetadataForm>) => void;
+}) {
+  return (
+    <div className="app-form-grid-2">
       <Field label="Tenant type" disabled={disabled}>
         {(props) => (
           <Select
@@ -320,6 +389,41 @@ function TenantMetadataFields({
         )}
       </Field>
     </div>
+  );
+}
+
+// One governed metadata editor, presented as two field groups. The create
+// dialog renders both inline; the per-Tenant editor splits them into named
+// PageSections. There is exactly one save path
+// (updateTenantMetadataForAdministration) regardless of grouping.
+function TenantMetadataFields({
+  form,
+  tenantTypes,
+  disabled,
+  colorErrors,
+  onChange,
+}: {
+  form: TenantMetadataForm;
+  tenantTypes: TenantTypeRow[];
+  disabled?: boolean;
+  colorErrors: Partial<Record<BrandingColorKey, string>>;
+  onChange: (patch: Partial<TenantMetadataForm>) => void;
+}) {
+  return (
+    <>
+      <TenantBrandingFields
+        form={form}
+        disabled={disabled}
+        colorErrors={colorErrors}
+        onChange={onChange}
+      />
+      <TenantOperationalFields
+        form={form}
+        tenantTypes={tenantTypes}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    </>
   );
 }
 
@@ -368,6 +472,17 @@ function TenantAdministrationWorkspace() {
     () => JSON.stringify(createForm) !== JSON.stringify(EMPTY_CREATE_FORM),
     [createForm],
   );
+
+  const metadataColorErrors = useMemo(
+    () => brandingColorErrors(metadataForm),
+    [metadataForm],
+  );
+  const createColorErrors = useMemo(
+    () => brandingColorErrors(createForm),
+    [createForm],
+  );
+  const metadataHasColorErrors = Object.keys(metadataColorErrors).length > 0;
+  const createHasColorErrors = Object.keys(createColorErrors).length > 0;
 
   const appointedPersonIds = useMemo(
     () => new Set(appointments.map((appointment) => appointment.person_id)),
@@ -797,7 +912,13 @@ function TenantAdministrationWorkspace() {
         footer={
           <>
             <AppButton onClick={requestCloseCreate} disabled={busy}>Cancel</AppButton>
-            <AppButton type="submit" form="create-tenant-form" variant="primary" loading={busy}>
+            <AppButton
+              type="submit"
+              form="create-tenant-form"
+              variant="primary"
+              loading={busy}
+              disabled={createHasColorErrors}
+            >
               Create Inactive Tenant
             </AppButton>
           </>
@@ -835,6 +956,7 @@ function TenantAdministrationWorkspace() {
           <TenantMetadataFields
             form={createForm}
             tenantTypes={tenantTypes}
+            colorErrors={createColorErrors}
             onChange={(patch) => setCreateForm((current) => ({ ...current, ...patch }))}
           />
           <Field label="Reason" help="Optional administrative context for the audit history.">
@@ -1002,48 +1124,74 @@ function TenantAdministrationWorkspace() {
                 ) : null}
               </PageSection>
 
-              <PageSection variant="card">
-                <PageHeader
-                  title="Governed metadata"
-                  headingLevel="h2"
-                  titleClassName="app-section-title"
-                  description="Tenant UUID, organization code, slug, and lifecycle status are not editable here."
-                  descriptionClassName="app-subtle-text"
-                />
-                <form className="app-stack-8" onSubmit={saveMetadata}>
-                  <TenantMetadataFields
+              <form className="app-stack-8" onSubmit={saveMetadata}>
+                <PageSection variant="card">
+                  <PageHeader
+                    title="Branding & Appearance"
+                    headingLevel="h2"
+                    titleClassName="app-section-title"
+                    description="Tenant identity shown across EpicentraX presentation. Immutable identity (UUID, organization code, slug, lifecycle status) is managed above and is not editable here."
+                    descriptionClassName="app-subtle-text"
+                  />
+                  <TenantBrandingFields
                     form={metadataForm}
-                    tenantTypes={tenantTypes}
                     disabled={busy}
+                    colorErrors={metadataColorErrors}
                     onChange={(patch) =>
                       setMetadataForm((current) => ({ ...current, ...patch }))
                     }
                   />
-                  <Field label="Change reason" help="Optional context retained with the audit record.">
-                    {(props) => (
-                      <Textarea
-                        {...props}
-                        rows={3}
-                        value={metadataReason}
-                        onChange={(event) => setMetadataReason(event.target.value)}
-                      />
-                    )}
-                  </Field>
-                  <FormActions>
-                    <AppButton
-                      onClick={() =>
-                        metadataDirty && setDiscardIntent({ kind: "reset-metadata" })
+                  <TenantBrandingPreview form={metadataForm} />
+                </PageSection>
+
+                <PageSection variant="card">
+                  <PageHeader
+                    title="Operational settings"
+                    headingLevel="h2"
+                    titleClassName="app-section-title"
+                    description="Non-branding Tenant configuration. Saved through the same governed metadata command."
+                    descriptionClassName="app-subtle-text"
+                  />
+                  <div className="app-stack-8">
+                    <TenantOperationalFields
+                      form={metadataForm}
+                      tenantTypes={tenantTypes}
+                      disabled={busy}
+                      onChange={(patch) =>
+                        setMetadataForm((current) => ({ ...current, ...patch }))
                       }
-                      disabled={!metadataDirty || busy}
-                    >
-                      Cancel
-                    </AppButton>
-                    <AppButton type="submit" variant="primary" loading={busy} disabled={!metadataDirty}>
-                      Save Metadata
-                    </AppButton>
-                  </FormActions>
-                </form>
-              </PageSection>
+                    />
+                    <Field label="Change reason" help="Optional context retained with the audit record.">
+                      {(props) => (
+                        <Textarea
+                          {...props}
+                          rows={3}
+                          value={metadataReason}
+                          onChange={(event) => setMetadataReason(event.target.value)}
+                        />
+                      )}
+                    </Field>
+                    <FormActions>
+                      <AppButton
+                        onClick={() =>
+                          metadataDirty && setDiscardIntent({ kind: "reset-metadata" })
+                        }
+                        disabled={!metadataDirty || busy}
+                      >
+                        Cancel
+                      </AppButton>
+                      <AppButton
+                        type="submit"
+                        variant="primary"
+                        loading={busy}
+                        disabled={!metadataDirty || metadataHasColorErrors}
+                      >
+                        Save Metadata
+                      </AppButton>
+                    </FormActions>
+                  </div>
+                </PageSection>
+              </form>
 
               <PageSection variant="card">
                 <PageHeader
