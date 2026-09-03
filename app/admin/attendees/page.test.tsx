@@ -10,8 +10,10 @@ import {
   type AttendeeRow,
   buildHouseholdRemovalConfirmMessage,
   computeHouseholdRemovalWarnings,
+  deriveHouseholdPeople,
   emptyAttendeeEditorState,
   formatCancellationDetail,
+  makeAdditionalDraft,
 } from "@/app/admin/attendees/attendeesWorkflow";
 import {
   AttendeeActionRow,
@@ -301,48 +303,27 @@ test("computeHouseholdRemovalWarnings: an existing Co-Pilot whose fields are sti
   assert.deepEqual(computeHouseholdRemovalWarnings("edit", state), []);
 });
 
-test("computeHouseholdRemovalWarnings: an existing Additional Participant whose fields were cleared is flagged for removal", () => {
+test("computeHouseholdRemovalWarnings: Additional Participants are NOT surfaced here -- their removal is an explicit, click-time-confirmed control", () => {
   const state: AttendeeEditorState = {
     ...emptyAttendeeEditorState(),
-    had_additional_at_load: true,
-    additional_name_at_load: "Pat Lee",
-    additional_first_name: "",
-    additional_last_name: "",
-    additional_email: "",
-    additional_nickname: "",
-    additional_cell_phone: "",
-  };
-
-  const warnings = computeHouseholdRemovalWarnings("edit", state);
-
-  assert.deepEqual(warnings, [{ role: "additional", name: "Pat Lee" }]);
-});
-
-test("computeHouseholdRemovalWarnings: no removal is flagged when the household member never existed at load", () => {
-  const state: AttendeeEditorState = {
-    ...emptyAttendeeEditorState(),
-    had_copilot_at_load: false,
-    had_additional_at_load: false,
+    // an Additional Participant present at load but now absent from the
+    // working set (removed via its card) -- not a save-time warning.
+    additionalParticipantsAtLoad: [
+      makeAdditionalDraft({ id: "hm-1", firstName: "Pat", lastName: "Lee" }),
+    ],
+    additionalParticipants: [],
   };
 
   assert.deepEqual(computeHouseholdRemovalWarnings("edit", state), []);
 });
 
-test("computeHouseholdRemovalWarnings: both Co-Pilot and Additional Participant cleared in the same save are both flagged", () => {
+test("computeHouseholdRemovalWarnings: no removal is flagged when the Co-Pilot never existed at load", () => {
   const state: AttendeeEditorState = {
     ...emptyAttendeeEditorState(),
-    had_copilot_at_load: true,
-    copilot_name_at_load: "Sam Rivera",
-    had_additional_at_load: true,
-    additional_name_at_load: "Pat Lee",
+    had_copilot_at_load: false,
   };
 
-  const warnings = computeHouseholdRemovalWarnings("edit", state);
-
-  assert.deepEqual(warnings, [
-    { role: "copilot", name: "Sam Rivera" },
-    { role: "additional", name: "Pat Lee" },
-  ]);
+  assert.deepEqual(computeHouseholdRemovalWarnings("edit", state), []);
 });
 
 test("computeHouseholdRemovalWarnings: falls back to a role-based name rather than an empty string", () => {
@@ -416,43 +397,63 @@ test("syncHouseholdMembers: no direct attendee_household_members upsert or delet
   assert.equal(/\.from\("attendee_household_members"\)\s*\n?\s*\.delete\(/.test(body), false);
 });
 
-test("syncHouseholdMembers: manage_attendee_household_member is called for all three roles", () => {
+function syncHouseholdBody(): string {
   const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
   const start = source.indexOf("async function syncHouseholdMembers(");
   const end = source.indexOf("\n  }\n\n  function openCreateAttendeeEditor", start);
-  const body = source.slice(start, end);
+  assert.ok(start > -1 && end > start, "syncHouseholdMembers body must be found");
+  return source.slice(start, end);
+}
 
-  const calls = body.match(/supabase\.rpc\("manage_attendee_household_member"/g) || [];
-  assert.equal(
-    calls.length,
-    5,
-    "pilot upsert, copilot upsert, copilot delete, additional upsert, additional delete",
-  );
+test("syncHouseholdMembers: manage_attendee_household_member is the only household write, and it is used for pilot, copilot, and every additional row", () => {
+  const body = syncHouseholdBody();
   assert.match(body, /p_person_role: "pilot"/);
   assert.match(body, /p_person_role: "copilot"/);
   assert.match(body, /p_person_role: "additional"/);
+  // No other write path.
+  assert.equal(
+    (body.match(/supabase\.rpc\("(?!manage_attendee_household_member)/g) || []).length,
+    0,
+  );
 });
 
-test("syncHouseholdMembers: delete behavior is preserved -- copilot/additional still delete only when their fields are cleared and a row exists", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
-  const start = source.indexOf("async function syncHouseholdMembers(");
-  const end = source.indexOf("\n  }\n\n  function openCreateAttendeeEditor", start);
-  const body = source.slice(start, end);
+test("syncHouseholdMembers: Co-Pilot keeps role-based upsert/delete; Additional Participants reconcile by household_member_id (insert, update-by-id, delete-by-id)", () => {
+  const body = syncHouseholdBody();
 
-  assert.match(body, /else if \(copilotRow\)/);
-  assert.match(body, /else if \(additionalRow\)/);
-  const deleteCalls = body.match(/p_delete: true/g) || [];
-  assert.equal(deleteCalls.length, 2);
+  // Co-Pilot: role-based clear-then-delete, unchanged.
+  assert.match(body, /else if \(copilotRow\) \{/);
+  assert.match(
+    body,
+    /p_person_role: "copilot",\s*\n\s*p_delete: true,\s*\n\s*\}\)/,
+  );
+
+  // Additional: delete every loaded id that is gone from the working set...
+  assert.match(
+    body,
+    /for \(const loaded of editorState\.additionalParticipantsAtLoad\) \{[\s\S]*?p_household_member_id: loaded\.id,/,
+  );
+  // ...update a persisted draft by its id, insert a new draft with no id.
+  assert.match(body, /for \(const draft of editorState\.additionalParticipants\) \{/);
+  assert.match(body, /if \(draft\.id\) \{[\s\S]*?p_household_member_id: draft\.id,/);
+  // Never a bulk role-only delete of Additional Participants.
+  assert.equal(
+    /p_person_role: "additional",\s*\n\s*p_delete: true,\s*\n\s*\}\)/.test(body),
+    false,
+  );
 });
 
-test("syncHouseholdMembers: rpcOwnedParticipantRole still skips exactly the one role record_participant_capacity_increase owns for the save", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
-  const start = source.indexOf("async function syncHouseholdMembers(");
-  const end = source.indexOf("\n  }\n\n  function openCreateAttendeeEditor", start);
-  const body = source.slice(start, end);
-
+test("syncHouseholdMembers: the one participant the capacity RPC owns is skipped -- a new Co-Pilot by role, a new Additional Participant by uiKey", () => {
+  const body = syncHouseholdBody();
   assert.match(body, /if \(rpcOwnedParticipantRole !== "copilot"\)/);
-  assert.match(body, /if \(rpcOwnedParticipantRole !== "additional"\)/);
+  assert.match(
+    body,
+    /if \(\s*\n\s*rpcOwnedAdditionalUiKey &&\s*\n\s*draft\.uiKey === rpcOwnedAdditionalUiKey\s*\n\s*\) \{\s*\n\s*continue;/,
+  );
+});
+
+test("syncHouseholdMembers: a household write failure fails the whole save (not silently swallowed)", () => {
+  const body = syncHouseholdBody();
+  assert.match(body, /console\.error\("syncHouseholdMembers error", err\);\s*\n\s*throw err;/);
 });
 
 // --- 2. Per-action edit permission guards ---------------------------------
@@ -1193,17 +1194,18 @@ test("an unavailable selected record (deleted, or the admin working Event change
 // the affected participant, and is now also reachable as an explicit,
 // discoverable action (not only a consequence discovered at Save time).
 
-test("removeHouseholdMember: builds a confirmation naming the specific participant and role, via the canonical confirm dialog", () => {
+test("removeHouseholdMember: Co-Pilot-only, confirmed by name via the canonical confirm dialog", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const fnSource = source.slice(
     source.indexOf("async function removeHouseholdMember("),
-    source.indexOf("async function removeHouseholdMember(") + 1200,
+    source.indexOf("async function removeAdditionalParticipant("),
   );
 
+  assert.match(fnSource, /if \(role !== "copilot"\) \{\s*\n\s*return;/);
   assert.match(fnSource, /confirmViaDialog\(/);
-  assert.match(fnSource, /role === "copilot" \? "Co-Pilot" : "Additional Participant"/);
+  assert.match(fnSource, /Remove \$\{name\} \(Co-Pilot\)/);
 });
 
 test("each non-pilot person card carries Edit + Remove; the Pilot card carries neither and says so", () => {
@@ -1215,16 +1217,13 @@ test("each non-pilot person card carries Edit + Remove; the Pilot card carries n
     source.indexOf("const roleFieldEditorStyle"),
   );
 
-  // Edit / Remove exist only for a removable (non-pilot) person, and Remove
-  // routes through the existing clear-then-Save flow (onRemoveHouseholdMember),
-  // not a new write path.
-  assert.match(cardSource, /const removable = editable && person\.role !== "pilot";/);
+  assert.match(cardSource, /const removable = editable && !isPilot;/);
   assert.match(cardSource, /\{removable \? \(/);
   assert.match(cardSource, /aria-label=\{`Edit \$\{person\.roleLabel\}`\}/);
-  assert.match(
-    cardSource,
-    /onRemoveHouseholdMember\(\s*person\.role as "copilot" \| "additional",\s*\)/,
-  );
+  // Co-Pilot removal keeps the clear-then-Save flow; an Additional
+  // Participant's Remove targets its exact row by uiKey.
+  assert.match(cardSource, /void onRemoveHouseholdMember\("copilot"\);/);
+  assert.match(cardSource, /void onRemoveAdditionalParticipant\(additionalUiKey\);/);
   assert.match(cardSource, /The\s+Pilot cannot be removed from the registration\./);
 });
 
@@ -1716,16 +1715,23 @@ test("reconcile: the audit note names automatic reconciliation to the materializ
   );
 });
 
-test("save handler: hasAdditional recognizes the same five fields syncHouseholdMembers does (first / last / email / nickname / cell phone)", () => {
+test("save handler: the capacity roster count is 1 + Co-Pilot + every named Additional Participant draft", () => {
   const source = pageSource();
   const start = source.indexOf("// --- Compute participant capacity ---");
   const end = source.indexOf("const isNewCopilot =", start);
   const block = source.slice(start, end);
-  assert.match(block, /const hasAdditional =[\s\S]*?additional_first_name\?\.trim\(\)/);
-  assert.match(block, /additional_last_name\?\.trim\(\)/);
-  assert.match(block, /additional_email\?\.trim\(\)/);
-  assert.match(block, /additional_nickname\?\.trim\(\)/);
-  assert.match(block, /additional_cell_phone\?\.trim\(\)/);
+  assert.match(
+    block,
+    /const namedAdditionalDrafts =\s*\n?\s*editorState\.additionalParticipants\.filter\(additionalDraftHasData\);/,
+  );
+  assert.match(
+    block,
+    /const newAdditionalDrafts = namedAdditionalDrafts\.filter\(\s*\(draft\) => draft\.id === null,\s*\)/,
+  );
+  assert.match(
+    source,
+    /const resultingRosterCount =\s*\n?\s*1 \+ \(hasCopilot \? 1 : 0\) \+ namedAdditionalDrafts\.length;/,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -1888,30 +1894,74 @@ test("person card shows role, name, email, and phone", () => {
     source.indexOf("const roleFieldEditorStyle"),
   );
   assert.match(card, /\{person\.roleLabel\}/);
-  assert.match(card, /householdPersonDisplayName\(person\)/);
+  assert.match(card, /householdParticipantDisplayName\(person\)/);
   assert.match(card, /Email: \{person\.email \|\| "—"\}/);
   assert.match(card, /Phone: \{person\.cellPhone \|\| "—"\}/);
 });
 
-test("Add Person only offers currently-unfilled supported roles, and says the household is full otherwise", () => {
+test("deriveHouseholdPeople renders every Additional Participant -- 4+ named people all get a card", () => {
+  const state: AttendeeEditorState = {
+    ...emptyAttendeeEditorState(),
+    pilot_first: "Steven",
+    pilot_last: "Bertling",
+    copilot_first: "Jan",
+    copilot_last: "Bertling",
+    additionalParticipants: [
+      makeAdditionalDraft({ id: "hm-1", firstName: "Janine", lastName: "Rowe" }),
+      makeAdditionalDraft({ id: "hm-2", firstName: "Alex", lastName: "Rowe" }),
+    ],
+  };
+  const people = deriveHouseholdPeople(state);
+  assert.equal(people.length, 4);
+  assert.deepEqual(people.map((p) => p.role), [
+    "pilot",
+    "copilot",
+    "additional",
+    "additional",
+  ]);
+  // Each additional card can address its exact row.
+  const additional = people.filter((p) => p.role === "additional");
+  assert.equal(additional[0].sourceUiKey, state.additionalParticipants[0].uiKey);
+  assert.notEqual(additional[0].sourceUiKey, additional[1].sourceUiKey);
+});
+
+test("Add Person: Co-Pilot slot is offered only when free; Additional Participant is always addable; no 'household is full' ceiling", () => {
+  const section = householdSectionSource();
+
+  assert.match(section, /\+ Add Person/);
+  // Co-Pilot only when the slot is free.
+  assert.match(pageSource(), /const canAddCopilot = !hasCopilotNow && !showCopilotFields;/);
+  assert.match(section, /if \(canAddCopilot\) \{\s*\n\s*setHouseholdMemberChooserOpen\(true\);\s*\n\s*\} else \{\s*\n\s*addAdditionalParticipant\(\);/);
+  assert.match(section, />\s*Add Co-Pilot\s*</);
+  assert.match(section, />\s*Add Additional Participant\s*</);
+  // There is no "full household" ceiling for Additional Participants.
+  assert.equal(section.includes("full household"), false);
+  assert.equal(section.includes("household is full"), false);
+});
+
+test("vacant authorized positions: one 'Unidentified participant / Add name' row per unfilled paid slot; Add name creates a new draft", () => {
   const source = pageSource();
   const section = householdSectionSource();
 
   assert.match(
     source,
-    /const openHouseholdRoles = \(\["copilot", "additional"\] as const\)\.filter\(\s*\(role\) => !filledHouseholdRoles\.has\(role\) && !roleEditorOpen\(role\),\s*\)/,
+    /const vacantPositionCount = state\.registration_capacity_was_unset\s*\n?\s*\?\s*0\s*\n?\s*:\s*Math\.max\(0, state\.registration_capacity - namedPersonCount\);/,
   );
-  assert.match(section, /\+ Add Person/);
-  assert.match(section, /\{editable && openHouseholdRoles\.length > 0 \? \(/);
-  assert.match(section, /openHouseholdRoles\.includes\("copilot"\) \? \(/);
-  assert.match(section, /openHouseholdRoles\.includes\("additional"\) \? \(/);
-  assert.match(section, /\) : editable && householdIsFull \? \(/);
-  assert.match(section, /This registration has its full household/);
-  // No arbitrary-N: the picker vocabulary is exactly the two canonical roles.
-  assert.equal(section.includes('"pilot"'), false);
+  assert.match(section, /Array\.from\(\{ length: vacantPositionCount \}\)/);
+  assert.match(section, /Unidentified participant/);
+  assert.match(section, /onClick=\{addAdditionalParticipant\}[\s\S]*?Add name/);
+
+  // addAdditionalParticipant appends a fresh draft and never writes.
+  const helper = source.slice(
+    source.indexOf("function addAdditionalParticipant()"),
+    source.indexOf("function renderHouseholdPersonCard("),
+  );
+  assert.match(helper, /makeAdditionalDraft\(\{ sortOrder: nextSort \}\)/);
+  assert.match(helper, /onChange\("additionalParticipants", \[\s*\n?\s*\.\.\.state\.additionalParticipants,\s*\n?\s*draft,\s*\n?\s*\]\)/);
+  assert.equal(/supabase\.(rpc|from)\(/.test(helper), false);
 });
 
-test("Add Person / Edit / role editors bind to existing AttendeeEditorState fields via onChange -- no new modal, no new write path", () => {
+test("Add Person / editors bind to state.additionalParticipants via onChange -- no new modal, no new write path", () => {
   const source = pageSource();
   const section = householdSectionSource();
   const editors = source.slice(
@@ -1919,19 +1969,20 @@ test("Add Person / Edit / role editors bind to existing AttendeeEditorState fiel
     source.indexOf("function renderHouseholdPeopleSection("),
   );
 
-  // The section and its editors issue no Supabase call of their own.
   assert.equal(/supabase\.rpc\(|supabase\.from\(/.test(section), false);
   assert.equal(/supabase\.rpc\(|supabase\.from\(/.test(editors), false);
-  // Adding a role only toggles which fields are shown.
-  assert.match(section, /setShowCopilotFields\(true\);\s*\n\s*setHouseholdMemberChooserOpen\(false\);/);
-  assert.match(section, /setShowAdditionalParticipant\(true\);\s*\n\s*setHouseholdMemberChooserOpen\(false\);/);
-  // The copilot editor reuses the existing household text fields; the
-  // additional editor binds each field back through onChange.
+  // Each Additional Participant field binds through updateAdditionalParticipant,
+  // which is a pure state map onto onChange("additionalParticipants", ...).
+  assert.match(editors, /updateAdditionalParticipant\(\s*\n?\s*draft\.uiKey,\s*\n?\s*"firstName",/);
+  assert.match(editors, /updateAdditionalParticipant\(\s*\n?\s*draft\.uiKey,\s*\n?\s*"email",/);
+  const updater = source.slice(
+    source.indexOf("function updateAdditionalParticipant("),
+    source.indexOf("function discardAdditionalDraft("),
+  );
+  assert.match(updater, /onChange\(\s*\n?\s*"additionalParticipants",[\s\S]*?state\.additionalParticipants\.map\(/);
+  assert.equal(/supabase\.(rpc|from)\(/.test(updater), false);
   assert.match(editors, /SECTION_TEXT_FIELDS\.household\.map\(renderTextField\)/);
-  assert.match(editors, /onChange\("additional_first_name", e\.target\.value\)/);
-  assert.match(editors, /onChange\("additional_email", e\.target\.value\)/);
 
-  // No second ObjectPanel / dialog was introduced for people.
   assert.equal(
     (source.match(/<ObjectPanel/g) || []).length,
     1,
@@ -1939,7 +1990,7 @@ test("Add Person / Edit / role editors bind to existing AttendeeEditorState fiel
   );
 });
 
-test("household writes still go only through the governed RPCs -- no direct attendee_household_members mutation, one Save path", () => {
+test("household writes go only through the governed RPCs; Additional edits/deletes name the exact row by household_member_id", () => {
   const source = pageSource();
 
   const householdRpcCalls =
@@ -1950,15 +2001,75 @@ test("household writes still go only through the governed RPCs -- no direct atte
     /attendee_household_members"\)\s*\n?\s*\.(insert|upsert|delete)\(/.test(source),
     false,
   );
-  // Remove Person is still the clear-then-Save flow.
-  assert.match(source, /onRemoveHouseholdMember=\{removeHouseholdMember\}/);
+
+  const sync = source.slice(
+    source.indexOf("async function syncHouseholdMembers("),
+    source.indexOf("function openCreateAttendeeEditor("),
+  );
+  // Deletes name the loaded row's id.
+  assert.match(
+    sync,
+    /p_person_role: "additional",\s*\n\s*p_delete: true,\s*\n\s*p_household_member_id: loaded\.id,/,
+  );
+  // Persisted-draft edits name the draft's id; new drafts insert with no id.
+  assert.match(sync, /p_household_member_id: draft\.id,/);
+  assert.match(sync, /if \(draft\.id\) \{/);
+  // Never a bulk role-only delete of Additional Participants.
+  assert.equal(
+    /p_person_role: "additional",\s*\n\s*p_delete: true,\s*\n\s*\}\)/.test(sync),
+    false,
+  );
+  // A household write failure fails the whole save.
+  assert.match(sync, /console\.error\("syncHouseholdMembers error", err\);\s*\n\s*throw err;/);
 });
 
-test("switching to a different record collapses the person-field editors so they never leak across records", () => {
+test("Removing an Additional Participant confirms by name and drops only that draft; the Pilot is never removable and Co-Pilot keeps its own flow", () => {
+  const source = pageSource();
+  const fn = source.slice(
+    source.indexOf("async function removeAdditionalParticipant("),
+    source.indexOf("// Continuous operation (Stage C requirement 8)"),
+  );
+  assert.match(fn, /editorState\.additionalParticipants\.find\(\s*\n?\s*\(d\) => d\.uiKey === uiKey,\s*\n?\s*\)/);
+  assert.match(fn, /confirmViaDialog\(/);
+  assert.match(fn, /Remove \$\{name\} \(Additional Participant\)/);
+  assert.match(
+    fn,
+    /additionalParticipants: prev\.additionalParticipants\.filter\(\s*\n?\s*\(d\) => d\.uiKey !== uiKey,\s*\n?\s*\)/,
+  );
+  // Co-Pilot removal path unchanged.
+  assert.match(source, /onRemoveHouseholdMember=\{removeHouseholdMember\}/);
+  assert.match(source, /onRemoveAdditionalParticipant=\{removeAdditionalParticipant\}/);
+  // removeHouseholdMember now only handles the Co-Pilot.
+  const rm = source.slice(
+    source.indexOf("async function removeHouseholdMember("),
+    source.indexOf("async function removeAdditionalParticipant("),
+  );
+  assert.match(rm, /if \(role !== "copilot"\) \{\s*\n\s*return;/);
+});
+
+test("switching to a different record collapses every person-field editor so they never leak across records", () => {
   const source = pageSource();
   assert.match(
     source,
-    /useEffect\(\(\) => \{\s*setShowCopilotFields\(false\);\s*setShowAdditionalParticipant\(false\);\s*setHouseholdMemberChooserOpen\(false\);\s*\}, \[state\.id\]\);/,
+    /useEffect\(\(\) => \{\s*setShowCopilotFields\(false\);\s*setHouseholdMemberChooserOpen\(false\);\s*setExpandedAdditionalKeys\(new Set\(\)\);\s*\}, \[state\.id\]\);/,
+  );
+});
+
+test("after a save, the Additional Participant set is re-read so a second save cannot re-insert a just-added person", () => {
+  const source = pageSource();
+  assert.match(
+    source,
+    /const household = await loadHouseholdParticipantsForEditor\(\s*\n?\s*editorState\.id,\s*\n?\s*\);/,
+  );
+  assert.match(source, /additionalParticipants: household\.additionalParticipants,/);
+  assert.match(
+    source,
+    /additionalParticipantsAtLoad: snapshotAdditionalParticipants\(\s*\n?\s*household\.additionalParticipants,\s*\n?\s*\)/,
+  );
+  // The helper reads id + sort_order so rows are individually identified & ordered.
+  assert.match(
+    source,
+    /\.select\(\s*\n?\s*"id,person_role,email,first_name,last_name,nickname,cell_phone,sort_order",\s*\n?\s*\)/,
   );
 });
 

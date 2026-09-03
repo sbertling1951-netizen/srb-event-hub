@@ -528,6 +528,23 @@ export function sortAttendees(
 // Record Workspace makes is independently unit-testable.
 // ---------------------------------------------------------------------------
 
+// One named Additional Participant, edited in the record workspace. A
+// registration holds zero to many of these; each corresponds to one
+// public.attendee_household_members row with person_role = 'additional',
+// individually identified by `id` once persisted and ordered by
+// `sortOrder`. `uiKey` is a stable client-only React key -- never sent to
+// the server. A draft with `id === null` has not been persisted yet.
+export type HouseholdParticipantDraft = {
+  uiKey: string;
+  id: string | null;
+  firstName: string;
+  lastName: string;
+  nickname: string;
+  email: string;
+  cellPhone: string;
+  sortOrder: number;
+};
+
 export type AttendeeEditorState = {
   id: string | null;
   pilot_first: string;
@@ -539,11 +556,14 @@ export type AttendeeEditorState = {
   email: string;
   copilot_email: string;
   copilot_cell_phone: string;
-  additional_first_name: string;
-  additional_last_name: string;
-  additional_nickname: string;
-  additional_email: string;
-  additional_cell_phone: string;
+  // Zero to many named Additional Participants (person_role = 'additional').
+  // `additionalParticipants` is the working set the operator edits;
+  // `additionalParticipantsAtLoad` is the immutable snapshot as loaded,
+  // used by the save diff (update / insert / delete-by-id) and the removal
+  // confirmation. Both are bookkeeping for diffing -- excluded from the
+  // generic scalar dirty-key comparison (see additionalParticipantsDirty).
+  additionalParticipants: HouseholdParticipantDraft[];
+  additionalParticipantsAtLoad: HouseholdParticipantDraft[];
   membership_number: string;
   city: string;
   state: string;
@@ -561,21 +581,18 @@ export type AttendeeEditorState = {
   // raising capacity above what is currently stored -- never written back
   // directly.
   registration_capacity_original: number | null;
-  // Whether a Co-Pilot / Additional Participant household row already
-  // existed when this editor session loaded. Used only to distinguish the
-  // administrator newly adding that participant this save (which
-  // automatically authorizes the resulting capacity, per governed product
-  // rule) from an unrelated edit to an already-existing row (which must
-  // never silently "fix" a pre-existing roster/capacity mismatch). Not
-  // applicable to create mode (always false there).
+  // Whether a Co-Pilot household row already existed when this editor
+  // session loaded. Used only to distinguish the administrator newly adding
+  // a Co-Pilot this save (which automatically authorizes the resulting
+  // capacity, per governed product rule) from an unrelated edit to an
+  // already-existing row. Not applicable to create mode (always false).
+  // (Additional Participants carry the equivalent per-row via the `id`
+  // field on each HouseholdParticipantDraft.)
   had_copilot_at_load: boolean;
-  had_additional_at_load: boolean;
-  // The Co-Pilot's / Additional Participant's display name as loaded, used
-  // only to name them in the removal-confirmation prompt if their fields
-  // are cleared before Save -- never written back, never used to infer
-  // identity. Empty when no such household member existed at load.
+  // The Co-Pilot's display name as loaded, used only to name them in the
+  // removal-confirmation prompt if their fields are cleared before Save --
+  // never written back, never used to infer identity.
   copilot_name_at_load: string;
-  additional_name_at_load: string;
   // Optional operational note attached to a capacity adjustment, if any
   // occurs this save. EpicentraX does not ask how a slot was authorized or
   // record payment information -- this is purely an optional free-text
@@ -613,11 +630,8 @@ export function emptyAttendeeEditorState(): AttendeeEditorState {
     email: "",
     copilot_email: "",
     copilot_cell_phone: "",
-    additional_first_name: "",
-    additional_last_name: "",
-    additional_nickname: "",
-    additional_email: "",
-    additional_cell_phone: "",
+    additionalParticipants: [],
+    additionalParticipantsAtLoad: [],
     membership_number: "",
     city: "",
     state: "",
@@ -627,9 +641,7 @@ export function emptyAttendeeEditorState(): AttendeeEditorState {
     registration_capacity_was_unset: false,
     registration_capacity_original: null,
     had_copilot_at_load: false,
-    had_additional_at_load: false,
     copilot_name_at_load: "",
-    additional_name_at_load: "",
     capacity_increase_note: "",
     primary_phone: "",
     cell_phone: "",
@@ -665,11 +677,10 @@ export function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorStat
     email: attendee.email || "",
     copilot_email: attendee.copilot_email || "",
     copilot_cell_phone: attendee.copilot_cell_phone || "",
-    additional_first_name: "",
-    additional_last_name: "",
-    additional_nickname: "",
-    additional_email: "",
-    additional_cell_phone: "",
+    // Populated immediately after this call in selectAttendee, once the
+    // actual attendee_household_members rows (with their ids) are read.
+    additionalParticipants: [],
+    additionalParticipantsAtLoad: [],
     membership_number: attendee.membership_number || "",
     city: attendee.city || "",
     state: attendee.state || "",
@@ -683,11 +694,7 @@ export function attendeeToEditorState(attendee: AttendeeRow): AttendeeEditorStat
     // Overwritten immediately after this call in selectAttendee, once the
     // actual attendee_household_members rows are known.
     had_copilot_at_load: false,
-    had_additional_at_load: false,
-    // Overwritten immediately after this call in selectAttendee, alongside
-    // had_copilot_at_load/had_additional_at_load above.
     copilot_name_at_load: "",
-    additional_name_at_load: "",
     capacity_increase_note: "",
     primary_phone: attendee.primary_phone || "",
     cell_phone: attendee.cell_phone || "",
@@ -739,9 +746,12 @@ export type HouseholdPerson = {
   email: string;
   cellPhone: string;
   // Whether this person was already on the registration when the editor
-  // loaded (always true for the Pilot). Mirrors had_copilot_at_load /
-  // had_additional_at_load; used only for presentation, never for a write.
+  // loaded (always true for the Pilot). Used only for presentation.
   presentAtLoad: boolean;
+  // For an 'additional' person only: the uiKey of the underlying
+  // HouseholdParticipantDraft, so a card's Edit / Remove control can
+  // address the exact row among several sharing person_role = 'additional'.
+  sourceUiKey?: string;
 };
 
 export const HOUSEHOLD_PERSON_ROLE_LABELS: Record<HouseholdPersonRole, string> = {
@@ -758,14 +768,56 @@ export function householdHasCopilot(state: AttendeeEditorState): boolean {
   );
 }
 
-export function householdHasAdditional(state: AttendeeEditorState): boolean {
+// A draft carries a real person iff any name / contact field has content.
+// Matches the server's own v_additional_supplied test; a blank draft (an
+// empty "Add name" that was opened and abandoned) is never written.
+export function additionalDraftHasData(draft: HouseholdParticipantDraft): boolean {
   return (
-    (state.additional_first_name ?? "").trim() !== "" ||
-    (state.additional_last_name ?? "").trim() !== "" ||
-    (state.additional_email ?? "").trim() !== "" ||
-    (state.additional_nickname ?? "").trim() !== "" ||
-    (state.additional_cell_phone ?? "").trim() !== ""
+    draft.firstName.trim() !== "" ||
+    draft.lastName.trim() !== "" ||
+    draft.nickname.trim() !== "" ||
+    draft.email.trim() !== "" ||
+    draft.cellPhone.trim() !== ""
   );
+}
+
+let additionalDraftKeySeq = 0;
+
+// Fresh client-only key for a new Additional Participant draft. Never sent
+// to the server; only React needs it.
+export function newAdditionalDraftKey(): string {
+  additionalDraftKeySeq += 1;
+  return `ahp-${Date.now().toString(36)}-${additionalDraftKeySeq}`;
+}
+
+export function makeAdditionalDraft(
+  overrides: Partial<HouseholdParticipantDraft> = {},
+): HouseholdParticipantDraft {
+  return {
+    uiKey: newAdditionalDraftKey(),
+    id: null,
+    firstName: "",
+    lastName: "",
+    nickname: "",
+    email: "",
+    cellPhone: "",
+    sortOrder: 0,
+    ...overrides,
+  };
+}
+
+export function householdParticipantDisplayName(
+  person: Pick<HouseholdPerson, "firstName" | "lastName" | "nickname">,
+): string {
+  const name = fullName(person.firstName, person.lastName);
+  if (name) {
+    return person.nickname ? `${name} "${person.nickname}"` : name;
+  }
+  return person.nickname ? `"${person.nickname}"` : "Name not provided";
+}
+
+export function householdHasAdditional(state: AttendeeEditorState): boolean {
+  return state.additionalParticipants.some(additionalDraftHasData);
 }
 
 export function deriveHouseholdPeople(
@@ -797,30 +849,27 @@ export function deriveHouseholdPeople(
     });
   }
 
-  if (householdHasAdditional(state)) {
+  // Every Additional Participant draft that carries data is its own person,
+  // in the array's order (sort_order at load; new drafts appended). A
+  // blank/abandoned draft yields no card.
+  for (const draft of state.additionalParticipants) {
+    if (!additionalDraftHasData(draft)) {
+      continue;
+    }
     people.push({
       role: "additional",
       roleLabel: HOUSEHOLD_PERSON_ROLE_LABELS.additional,
-      firstName: (state.additional_first_name ?? "").trim(),
-      lastName: (state.additional_last_name ?? "").trim(),
-      nickname: (state.additional_nickname ?? "").trim(),
-      email: (state.additional_email ?? "").trim(),
-      cellPhone: (state.additional_cell_phone ?? "").trim(),
-      presentAtLoad: state.had_additional_at_load,
+      firstName: draft.firstName.trim(),
+      lastName: draft.lastName.trim(),
+      nickname: draft.nickname.trim(),
+      email: draft.email.trim(),
+      cellPhone: draft.cellPhone.trim(),
+      presentAtLoad: draft.id !== null,
+      sourceUiKey: draft.uiKey,
     });
   }
 
   return people;
-}
-
-// The supported household roles that currently have no person -- the only
-// roles "Add Person" may ever offer. Never more than {copilot, additional};
-// arbitrary-N people are not representable in the canonical model.
-export function unfilledHouseholdRoles(
-  state: AttendeeEditorState,
-): Array<"copilot" | "additional"> {
-  const filled = new Set(deriveHouseholdPeople(state).map((p) => p.role));
-  return (["copilot", "additional"] as const).filter((role) => !filled.has(role));
 }
 
 export type HouseholdRemovalWarning = {
@@ -828,13 +877,12 @@ export type HouseholdRemovalWarning = {
   name: string;
 };
 
-// Pure decision gate: given the editor's loaded-vs-current household state,
-// determines which household-member rows this save would silently
-// hard-delete (per syncHouseholdMembers's own clear-the-row-when-empty
-// behavior), so the save flow can require explicit confirmation before any
-// write occurs rather than deleting a person record because a field was
-// cleared. Exported so this decision logic is directly unit-testable without
-// needing to drive the full save flow.
+// Pure decision gate for the Co-Pilot only: if clearing the Co-Pilot fields
+// would cause syncHouseholdMembers to hard-delete that row on Save, require
+// an explicit, specific confirmation first. Additional Participants are
+// removed by an explicit per-card control that confirms (naming the person)
+// at click time and drops the draft, so they are never a silent save-time
+// deletion and are intentionally not surfaced here.
 export function computeHouseholdRemovalWarnings(
   editorMode: "create" | "edit",
   state: AttendeeEditorState,
@@ -843,34 +891,66 @@ export function computeHouseholdRemovalWarnings(
     return [];
   }
 
-  const hasCopilot =
-    state.copilot_first.trim() !== "" ||
-    state.copilot_last.trim() !== "" ||
-    state.copilot_email.trim() !== "";
-  const hasAdditional =
-    (state.additional_first_name ?? "").trim() !== "" ||
-    (state.additional_last_name ?? "").trim() !== "" ||
-    (state.additional_email ?? "").trim() !== "" ||
-    (state.additional_nickname ?? "").trim() !== "" ||
-    (state.additional_cell_phone ?? "").trim() !== "";
-
   const warnings: HouseholdRemovalWarning[] = [];
 
-  if (state.had_copilot_at_load && !hasCopilot) {
+  if (state.had_copilot_at_load && !householdHasCopilot(state)) {
     warnings.push({
       role: "copilot",
       name: state.copilot_name_at_load || "the Co-Pilot",
     });
   }
 
-  if (state.had_additional_at_load && !hasAdditional) {
-    warnings.push({
-      role: "additional",
-      name: state.additional_name_at_load || "the Additional Participant",
-    });
-  }
-
   return warnings;
+}
+
+// The Additional Participant rows this save will delete: every row that was
+// on the registration at load whose id is no longer in the working set.
+// Used to name people in the removal confirmation and to drive the
+// governed delete-by-id in syncHouseholdMembers.
+export function additionalParticipantsRemovedOnSave(
+  state: AttendeeEditorState,
+): HouseholdParticipantDraft[] {
+  const keptIds = new Set(
+    state.additionalParticipants
+      .map((d) => d.id)
+      .filter((id): id is string => id !== null),
+  );
+  return state.additionalParticipantsAtLoad.filter(
+    (loaded) => loaded.id !== null && !keptIds.has(loaded.id),
+  );
+}
+
+// Deep, order-insensitive comparison of the working Additional Participant
+// set against the loaded snapshot -- true when Save has additional-row work
+// to do (an insert, an update, or a delete).
+export function additionalParticipantsDirty(state: AttendeeEditorState): boolean {
+  const persisted = state.additionalParticipants.filter((d) => d.id !== null);
+  const loadedById = new Map(
+    state.additionalParticipantsAtLoad.map((d) => [d.id, d] as const),
+  );
+
+  if (additionalParticipantsRemovedOnSave(state).length > 0) {
+    return true;
+  }
+  if (state.additionalParticipants.some((d) => d.id === null && additionalDraftHasData(d))) {
+    return true;
+  }
+  for (const draft of persisted) {
+    const loaded = loadedById.get(draft.id);
+    if (!loaded) {
+      return true;
+    }
+    if (
+      draft.firstName.trim() !== loaded.firstName.trim() ||
+      draft.lastName.trim() !== loaded.lastName.trim() ||
+      draft.nickname.trim() !== loaded.nickname.trim() ||
+      draft.email.trim() !== loaded.email.trim() ||
+      draft.cellPhone.trim() !== loaded.cellPhone.trim()
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const HOUSEHOLD_ROLE_LABEL: Record<HouseholdRemovalWarning["role"], string> = {
@@ -951,12 +1031,15 @@ const EDITOR_BOOKKEEPING_KEYS: ReadonlySet<keyof AttendeeEditorState> = new Set(
   "registration_capacity_was_unset",
   "registration_capacity_original",
   "had_copilot_at_load",
-  "had_additional_at_load",
   "copilot_name_at_load",
-  "additional_name_at_load",
   "assigned_site",
   "has_arrived",
   "source_type",
+  // Arrays -- a reference compare would be meaningless. Their dirtiness is
+  // computed by additionalParticipantsDirty() and folded into
+  // editorStateIsDirty / dirtySectionIds explicitly.
+  "additionalParticipants",
+  "additionalParticipantsAtLoad",
 ]);
 
 // Which editor fields changed between the loaded baseline and the current
@@ -977,7 +1060,10 @@ export function editorStateIsDirty(
   baseline: AttendeeEditorState,
   current: AttendeeEditorState,
 ): boolean {
-  return editorStateDiffKeys(baseline, current).length > 0;
+  return (
+    editorStateDiffKeys(baseline, current).length > 0 ||
+    additionalParticipantsDirty(current)
+  );
 }
 
 export type AttendeeEditSection = {
@@ -998,18 +1084,16 @@ export const ATTENDEE_EDIT_SECTIONS: AttendeeEditSection[] = [
   },
   {
     id: "household",
-    label: "Household",
+    label: "People on this Registration",
+    // The Additional Participant set is an array, not scalar fields -- its
+    // dirtiness is folded into dirtySectionIds() via
+    // additionalParticipantsDirty().
     fields: [
       "copilot_first",
       "copilot_last",
       "copilot_nickname",
       "copilot_email",
       "copilot_cell_phone",
-      "additional_first_name",
-      "additional_last_name",
-      "additional_nickname",
-      "additional_email",
-      "additional_cell_phone",
     ],
   },
   {
@@ -1073,12 +1157,25 @@ export function dirtySectionIds(
   current: AttendeeEditorState,
 ): string[] {
   const diffKeys = new Set(editorStateDiffKeys(baseline, current));
-  if (diffKeys.size === 0) {
+  const householdArrayChanged = additionalParticipantsDirty(current);
+
+  if (diffKeys.size === 0 && !householdArrayChanged) {
     return [];
   }
-  return ATTENDEE_EDIT_SECTIONS.filter((section) =>
+
+  const ids = ATTENDEE_EDIT_SECTIONS.filter((section) =>
     section.fields.some((field) => diffKeys.has(field)),
   ).map((section) => section.id);
+
+  if (householdArrayChanged && !ids.includes("household")) {
+    // Keep the canonical section order.
+    const withHousehold = ATTENDEE_EDIT_SECTIONS.map((s) => s.id).filter(
+      (id) => ids.includes(id) || id === "household",
+    );
+    return withHousehold;
+  }
+
+  return ids;
 }
 
 // ---------------------------------------------------------------------------

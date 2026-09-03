@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  additionalParticipantsDirty,
+  additionalParticipantsRemovedOnSave,
   ATTENDEE_EDIT_SECTIONS,
   attendeeChangedRemotelyWhileDirty,
   attendeeConcurrencyFingerprint,
@@ -16,9 +18,10 @@ import {
   editorStateIsDirty,
   emptyAttendeeEditorState,
   filterAttendees,
+  type HouseholdParticipantDraft,
+  makeAdditionalDraft,
   matchesViewMode,
   sortAttendees,
-  unfilledHouseholdRoles,
   type ValidationRule,
 } from "@/app/admin/attendees/attendeesWorkflow";
 
@@ -438,10 +441,16 @@ test("decideCapacityReconciliation: solo Pilot (roster 1) at stored capacity 1 -
   );
 });
 
-// --- "People on this Registration" projection (Phase 1) --------------------
+// --- "People on this Registration" projection -----------------------------
 
 function editorState(overrides: Partial<AttendeeEditorState> = {}): AttendeeEditorState {
   return { ...emptyAttendeeEditorState(), ...overrides };
+}
+
+function draft(
+  overrides: Partial<HouseholdParticipantDraft> = {},
+): HouseholdParticipantDraft {
+  return makeAdditionalDraft(overrides);
 }
 
 test("deriveHouseholdPeople: a solo Pilot yields exactly one person card", () => {
@@ -463,7 +472,7 @@ test("deriveHouseholdPeople: Pilot phone falls back to primary_phone when cell_p
   assert.equal(withPrimaryOnly[0].cellPhone, "555-2");
 });
 
-test("deriveHouseholdPeople: Co-Pilot and Additional Participant appear only when their own fields carry data", () => {
+test("deriveHouseholdPeople: Co-Pilot appears only when its own fields carry data", () => {
   const two = deriveHouseholdPeople(
     editorState({
       pilot_first: "Jane",
@@ -476,22 +485,43 @@ test("deriveHouseholdPeople: Co-Pilot and Additional Participant appear only whe
   assert.deepEqual(two.map((p) => p.role), ["pilot", "copilot"]);
   assert.equal(two[1].roleLabel, "Co-Pilot");
   assert.equal(two[1].cellPhone, "555-9");
+});
 
-  const three = deriveHouseholdPeople(
+test("deriveHouseholdPeople: every Additional Participant draft with data is its own person, in array order", () => {
+  const people = deriveHouseholdPeople(
     editorState({
       pilot_first: "Jane",
       copilot_first: "Sam",
-      additional_first_name: "Pat",
-      additional_last_name: "Lee",
+      additionalParticipants: [
+        draft({ id: "hm-1", firstName: "Pat", lastName: "Lee" }),
+        draft({ firstName: "Jordan", lastName: "Kim", email: "jk@example.com" }),
+        draft({ firstName: "", lastName: "", nickname: "", email: "", cellPhone: "" }),
+        draft({ id: "hm-9", nickname: "Buzz" }),
+      ],
     }),
   );
-  assert.deepEqual(three.map((p) => p.role), ["pilot", "copilot", "additional"]);
-  assert.equal(three[2].roleLabel, "Additional Participant");
+  assert.deepEqual(people.map((p) => p.role), [
+    "pilot",
+    "copilot",
+    "additional",
+    "additional",
+    "additional",
+  ]);
+  assert.deepEqual(
+    people.filter((p) => p.role === "additional").map((p) => p.firstName),
+    ["Pat", "Jordan", ""],
+  );
+  // the blank draft yields no card
+  assert.equal(people.length, 5);
 });
 
-test("deriveHouseholdPeople: an Additional Participant with only a nickname still yields a card (five-field test, matches syncHouseholdMembers)", () => {
-  const people = deriveHouseholdPeople(editorState({ additional_nickname: "Buzz" }));
+test("deriveHouseholdPeople: an Additional Participant draft with only a nickname still yields a person; its sourceUiKey addresses the exact row", () => {
+  const d = draft({ nickname: "Buzz" });
+  const people = deriveHouseholdPeople(
+    editorState({ additionalParticipants: [d] }),
+  );
   assert.deepEqual(people.map((p) => p.role), ["pilot", "additional"]);
+  assert.equal(people[1].sourceUiKey, d.uiKey);
 });
 
 test("deriveHouseholdPeople: a Co-Pilot with only a nickname does NOT yield a card (three-field test, matches syncHouseholdMembers)", () => {
@@ -499,38 +529,118 @@ test("deriveHouseholdPeople: a Co-Pilot with only a nickname does NOT yield a ca
   assert.deepEqual(people.map((p) => p.role), ["pilot"]);
 });
 
-test("deriveHouseholdPeople: presentAtLoad mirrors had_copilot_at_load / had_additional_at_load", () => {
+test("deriveHouseholdPeople: presentAtLoad is true only for a persisted person (Co-Pilot at load; Additional draft with an id)", () => {
   const people = deriveHouseholdPeople(
     editorState({
       copilot_first: "Sam",
       had_copilot_at_load: true,
-      additional_first_name: "Pat",
-      had_additional_at_load: false,
+      additionalParticipants: [
+        draft({ id: "hm-1", firstName: "Pat" }),
+        draft({ firstName: "New" }),
+      ],
     }),
   );
   assert.equal(people.find((p) => p.role === "copilot")?.presentAtLoad, true);
-  assert.equal(people.find((p) => p.role === "additional")?.presentAtLoad, false);
+  const additional = people.filter((p) => p.role === "additional");
+  assert.equal(additional[0].presentAtLoad, true);
+  assert.equal(additional[1].presentAtLoad, false);
 });
 
-test("deriveHouseholdPeople: capacity is never consulted -- roster of one with a large authorized party size still yields one card", () => {
+test("deriveHouseholdPeople: capacity is never consulted -- one named person with a large authorized party size still yields one card", () => {
   const people = deriveHouseholdPeople(
     editorState({ pilot_first: "Jane", registration_capacity: 9 }),
   );
   assert.equal(people.length, 1);
 });
 
-test("unfilledHouseholdRoles: offers only the currently-missing supported roles, never the pilot, never more than two", () => {
-  assert.deepEqual(unfilledHouseholdRoles(editorState()), ["copilot", "additional"]);
-  assert.deepEqual(
-    unfilledHouseholdRoles(editorState({ copilot_first: "Sam" })),
-    ["additional"],
+test("additionalParticipantsDirty: insert, edit, and delete-by-id are each detected; a no-op reload is not", () => {
+  const loaded = [
+    draft({ id: "hm-1", firstName: "Pat", lastName: "Lee" }),
+    draft({ id: "hm-2", firstName: "Jordan", lastName: "Kim" }),
+  ];
+  const clean = editorState({
+    additionalParticipants: loaded.map((d) => ({ ...d })),
+    additionalParticipantsAtLoad: loaded.map((d) => ({ ...d })),
+  });
+  assert.equal(additionalParticipantsDirty(clean), false);
+
+  // add a new person
+  assert.equal(
+    additionalParticipantsDirty({
+      ...clean,
+      additionalParticipants: [
+        ...clean.additionalParticipants,
+        draft({ firstName: "New", lastName: "Person" }),
+      ],
+    }),
+    true,
   );
-  assert.deepEqual(
-    unfilledHouseholdRoles(
-      editorState({ copilot_first: "Sam", additional_first_name: "Pat" }),
-    ),
-    [],
+  // a blank new draft is not "work to do"
+  assert.equal(
+    additionalParticipantsDirty({
+      ...clean,
+      additionalParticipants: [...clean.additionalParticipants, draft()],
+    }),
+    false,
   );
+  // edit an existing person
+  assert.equal(
+    additionalParticipantsDirty({
+      ...clean,
+      additionalParticipants: clean.additionalParticipants.map((d) =>
+        d.id === "hm-1" ? { ...d, lastName: "Leigh" } : d,
+      ),
+    }),
+    true,
+  );
+  // remove one existing person
+  assert.equal(
+    additionalParticipantsDirty({
+      ...clean,
+      additionalParticipants: clean.additionalParticipants.filter(
+        (d) => d.id !== "hm-2",
+      ),
+    }),
+    true,
+  );
+});
+
+test("additionalParticipantsRemovedOnSave: exactly the loaded rows whose id is gone from the working set", () => {
+  const loaded = [
+    draft({ id: "hm-1", firstName: "Pat" }),
+    draft({ id: "hm-2", firstName: "Jordan" }),
+    draft({ id: "hm-3", firstName: "Kai" }),
+  ];
+  const state = editorState({
+    additionalParticipantsAtLoad: loaded,
+    additionalParticipants: [
+      { ...loaded[0] },
+      draft({ firstName: "New" }),
+    ],
+  });
+  assert.deepEqual(
+    additionalParticipantsRemovedOnSave(state).map((d) => d.id),
+    ["hm-2", "hm-3"],
+  );
+});
+
+test("editorStateIsDirty / dirtySectionIds fold in Additional Participant changes under the household section", () => {
+  const loaded = [draft({ id: "hm-1", firstName: "Pat" })];
+  const baseline = editorState({
+    additionalParticipants: loaded.map((d) => ({ ...d })),
+    additionalParticipantsAtLoad: loaded.map((d) => ({ ...d })),
+  });
+  assert.equal(editorStateIsDirty(baseline, { ...baseline }), false);
+
+  const withNew: AttendeeEditorState = {
+    ...baseline,
+    additionalParticipants: [
+      ...baseline.additionalParticipants,
+      draft({ firstName: "New", lastName: "Person" }),
+    ],
+  };
+  assert.equal(editorStateIsDirty(baseline, withNew), true);
+  assert.ok(dirtySectionIds(baseline, withNew).includes("household"));
 });
 
 test("ATTENDEE_EDIT_SECTIONS: authorized party size is its own section, distinct from Registration", () => {

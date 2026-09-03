@@ -12,6 +12,7 @@ import React, {
 } from "react";
 
 import {
+  additionalDraftHasData,
   ATTENDEE_EDIT_SECTIONS,
   attendeeChangedRemotelyWhileDirty,
   attendeeConcurrencyFingerprint,
@@ -36,7 +37,10 @@ import {
   filterAttendees,
   formatCancellationDetail,
   fullName,
+  householdParticipantDisplayName,
+  type HouseholdParticipantDraft,
   type HouseholdPerson,
+  makeAdditionalDraft,
   normalizeDataStatusFilter,
   normalizeMemberNumber,
   type PageSize,
@@ -698,6 +702,62 @@ function attendeeOwnerHrefs(attendeeId: string): {
   };
 }
 
+type LoadedHousehold = {
+  pilotEmail: string | null;
+  copilotEmail: string | null;
+  hadCopilot: boolean;
+  additionalParticipants: HouseholdParticipantDraft[];
+};
+
+// Reads the canonical attendee_household_members rows for one attendee and
+// projects the 'additional' rows into ordered editor drafts (each carrying
+// its real `id` and `sort_order`). Used both when a record is opened
+// (selectAttendee) and immediately after a save, so a just-inserted
+// participant gets its server id before any second save.
+async function loadHouseholdParticipantsForEditor(
+  attendeeId: string,
+): Promise<LoadedHousehold> {
+  const { data: rows } = await supabase
+    .from("attendee_household_members")
+    .select(
+      "id,person_role,email,first_name,last_name,nickname,cell_phone,sort_order",
+    )
+    .eq("attendee_id", attendeeId);
+
+  const pilot = rows?.find((row) => row.person_role === "pilot");
+  const copilot = rows?.find((row) => row.person_role === "copilot");
+
+  const additionalParticipants: HouseholdParticipantDraft[] = (rows ?? [])
+    .filter((row) => row.person_role === "additional")
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map((row) =>
+      makeAdditionalDraft({
+        id: row.id,
+        firstName: row.first_name || "",
+        lastName: row.last_name || "",
+        nickname: row.nickname || "",
+        email: row.email || "",
+        cellPhone: row.cell_phone || "",
+        sortOrder: row.sort_order ?? 0,
+      }),
+    );
+
+  return {
+    pilotEmail: pilot?.email ?? null,
+    copilotEmail: copilot?.email ?? null,
+    hadCopilot: !!copilot,
+    additionalParticipants,
+  };
+}
+
+// A distinct snapshot copy (same field values, fresh objects) for the
+// "as loaded" baseline the save diff compares against.
+function snapshotAdditionalParticipants(
+  drafts: HouseholdParticipantDraft[],
+): HouseholdParticipantDraft[] {
+  return drafts.map((draft) => ({ ...draft }));
+}
+
 // A status shown by Attendees that links to its owner workspace. Renders
 // as the standard status pill; clicking navigates and never bubbles to the
 // row-open action underneath it.
@@ -1178,6 +1238,7 @@ export function AttendeeRecordWorkspace(props: {
   onSetCoachPlateNeed: (needsCoachPlate: boolean) => Promise<void>;
   onReloadRecord: () => void;
   onRemoveHouseholdMember: (role: "copilot" | "additional") => Promise<void>;
+  onRemoveAdditionalParticipant: (uiKey: string) => Promise<void>;
   onUpdateDataStatus: (
     attendeeId: string,
     nextStatus: string,
@@ -1214,6 +1275,7 @@ export function AttendeeRecordWorkspace(props: {
     onSetCoachPlateNeed,
     onReloadRecord,
     onRemoveHouseholdMember,
+    onRemoveAdditionalParticipant,
     onUpdateDataStatus,
     onCancelRegistration,
     onPrevious,
@@ -1221,18 +1283,30 @@ export function AttendeeRecordWorkspace(props: {
     operationalStatus,
   } = props;
   const mode = editorMode;
-  // Which non-pilot role's field editor is currently expanded in "People on
-  // this Registration". A role with data on record auto-expands (effects
-  // below); an empty role expands only when the operator picks it from "Add
-  // Person". The canonical household is exactly pilot + (optional) co-pilot
-  // + (optional) additional -- there is no generic member flow to build.
-  const [showAdditionalParticipant, setShowAdditionalParticipant] =
-    useState(false);
   const [showCopilotFields, setShowCopilotFields] = useState(false);
   // Whether the "Add Person" role picker (Co-Pilot / Additional Participant)
-  // is open. Only shown when more than one role is still available.
+  // is open -- only shown when the Co-Pilot slot is also still free.
   const [householdMemberChooserOpen, setHouseholdMemberChooserOpen] =
     useState(false);
+  // The uiKeys of the Additional Participant drafts whose inline field
+  // editor is currently expanded. A newly added draft starts expanded; an
+  // existing person expands only when the operator clicks its "Edit".
+  const [expandedAdditionalKeys, setExpandedAdditionalKeys] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+
+  const expandAdditionalEditor = (uiKey: string) =>
+    setExpandedAdditionalKeys((prev) => {
+      const next = new Set(prev);
+      next.add(uiKey);
+      return next;
+    });
+  const collapseAdditionalEditor = (uiKey: string) =>
+    setExpandedAdditionalKeys((prev) => {
+      const next = new Set(prev);
+      next.delete(uiKey);
+      return next;
+    });
 
   // Governed product rule: an administrator's own authorized action of
   // adding a participant, or explicitly adding an open slot, itself
@@ -1243,29 +1317,19 @@ export function AttendeeRecordWorkspace(props: {
     state.copilot_first.trim() !== "" ||
     state.copilot_last.trim() !== "" ||
     state.copilot_email.trim() !== "";
-  const hasAdditionalNow =
-    (state.additional_first_name ?? "").trim() !== "" ||
-    (state.additional_last_name ?? "").trim() !== "" ||
-    (state.additional_email ?? "").trim() !== "" ||
-    (state.additional_nickname ?? "").trim() !== "" ||
-    (state.additional_cell_phone ?? "").trim() !== "";
-  // "New" means this participant did not exist when the editor loaded --
+  const namedAdditionalCount =
+    state.additionalParticipants.filter(additionalDraftHasData).length;
+  // "New" means a participant that did not exist when the editor loaded --
   // distinguishes the admin adding someone (which authorizes a fresh
   // capacity increase, shown by the banner below) from an unrelated edit.
-  // An unrelated save still reconciles a KNOWN capacity up to the roster
-  // already materialized in attendee_household_members
-  // (reconcileCapacityToMaterializedRoster) -- to the existing roster count,
-  // never above an explicitly higher administrator-selected value, never
-  // downward, never for a null capacity.
   const isNewCopilot = mode === "edit" && hasCopilotNow && !state.had_copilot_at_load;
-  const isNewAdditional =
-    mode === "edit" && hasAdditionalNow && !state.had_additional_at_load;
+  const newAdditionalDrafts = state.additionalParticipants.filter(
+    (draft) => draft.id === null && additionalDraftHasData(draft),
+  );
+  const isNewAdditional = mode === "edit" && newAdditionalDrafts.length > 0;
   const isAddingNewParticipant = isNewCopilot || isNewAdditional;
-  // Both supported non-pilot roles are on the registration -- "Add Person"
-  // has nothing left to offer.
-  const householdIsFull = hasCopilotNow && hasAdditionalNow;
   const resultingRosterCount =
-    1 + (hasCopilotNow ? 1 : 0) + (hasAdditionalNow ? 1 : 0);
+    1 + (hasCopilotNow ? 1 : 0) + namedAdditionalCount;
   const currentStoredCapacity = state.registration_capacity_was_unset
     ? 0
     : (state.registration_capacity_original ?? 0);
@@ -1280,24 +1344,6 @@ export function AttendeeRecordWorkspace(props: {
   const isCapacityIncrease =
     (isAddingNewParticipant || stepperWasManuallyRaised) &&
     targetCapacity > currentStoredCapacity;
-  // Automatically show additional participant if any of its fields are populated
-  useEffect(() => {
-    if (
-      state.additional_first_name ||
-      state.additional_last_name ||
-      state.additional_nickname ||
-      state.additional_email ||
-      state.additional_cell_phone
-    ) {
-      setShowAdditionalParticipant(true);
-    }
-  }, [
-    state.additional_first_name,
-    state.additional_last_name,
-    state.additional_nickname,
-    state.additional_email,
-    state.additional_cell_phone,
-  ]);
   // A Co-Pilot already on record keeps its fields visible for editing.
   useEffect(() => {
     if (
@@ -1316,13 +1362,13 @@ export function AttendeeRecordWorkspace(props: {
     state.copilot_email,
     state.copilot_cell_phone,
   ]);
-  // When the workspace switches to a different record, collapse the
-  // person-field editors back to that record's own data (the auto-show
-  // effects above re-open any role that is populated).
+  // When the workspace switches to a different record, collapse every
+  // person-field editor back to that record's own data (the Co-Pilot
+  // auto-show effect above re-opens the Co-Pilot if it is populated).
   useEffect(() => {
     setShowCopilotFields(false);
-    setShowAdditionalParticipant(false);
     setHouseholdMemberChooserOpen(false);
+    setExpandedAdditionalKeys(new Set());
   }, [state.id]);
   // Insert membership_number after copilot_email if not already present there
   // Remove assigned_site from the main textFields array
@@ -1417,41 +1463,83 @@ export function AttendeeRecordWorkspace(props: {
   // "Remove" is the existing clear-then-Save flow (onRemoveHouseholdMember),
   // still ConfirmDialog-gated.
   const householdPeople = deriveHouseholdPeople(state);
-  const filledHouseholdRoles = new Set(householdPeople.map((p) => p.role));
-  const roleEditorOpen = (role: "copilot" | "additional") =>
-    role === "copilot" ? showCopilotFields : showAdditionalParticipant;
-  // The only roles "Add Person" may offer: a supported role that has no
-  // person AND whose field editor is not already open as a draft.
-  const openHouseholdRoles = (["copilot", "additional"] as const).filter(
-    (role) => !filledHouseholdRoles.has(role) && !roleEditorOpen(role),
-  );
   const namedPersonCount = householdPeople.length;
-  // Preserve null ("never established") semantics: an untouched, unset
-  // capacity reads as "—", never as a number.
+  const hasCopilotPerson = householdPeople.some((p) => p.role === "copilot");
+  const hasAdditionalPerson = householdPeople.some((p) => p.role === "additional");
+  const canAddCopilot = !hasCopilotNow && !showCopilotFields;
+
+  // Preserve null ("never established") capacity semantics: an untouched,
+  // unset capacity reads as "—", never as a number.
   const authorizedPartySizeDisplay = state.registration_capacity_was_unset
     ? "—"
     : String(state.registration_capacity);
   const namedExceedsAuthorized =
     !state.registration_capacity_was_unset &&
     namedPersonCount > state.registration_capacity;
+  // Vacant authorized positions: authorized party size beyond the people
+  // named so far. Raising the Authorized Party Size reveals more of these;
+  // it never creates a person. Each is identified by adding a name (which
+  // creates a new Additional Participant draft).
+  const vacantPositionCount = state.registration_capacity_was_unset
+    ? 0
+    : Math.max(0, state.registration_capacity - namedPersonCount);
 
-  function householdPersonDisplayName(person: HouseholdPerson) {
-    const name = fullName(person.firstName, person.lastName);
-    if (name) {
-      return person.nickname ? `${name} "${person.nickname}"` : name;
-    }
-    return person.nickname ? `"${person.nickname}"` : "Name not provided";
+  function updateAdditionalParticipant(
+    uiKey: string,
+    field: keyof Pick<
+      HouseholdParticipantDraft,
+      "firstName" | "lastName" | "nickname" | "email" | "cellPhone"
+    >,
+    value: string,
+  ) {
+    onChange(
+      "additionalParticipants",
+      state.additionalParticipants.map((draft) =>
+        draft.uiKey === uiKey ? { ...draft, [field]: value } : draft,
+      ),
+    );
+  }
+
+  function discardAdditionalDraft(uiKey: string) {
+    onChange(
+      "additionalParticipants",
+      state.additionalParticipants.filter((draft) => draft.uiKey !== uiKey),
+    );
+    collapseAdditionalEditor(uiKey);
+  }
+
+  function addAdditionalParticipant() {
+    const nextSort =
+      state.additionalParticipants.reduce(
+        (max, draft) => Math.max(max, draft.sortOrder),
+        -1,
+      ) + 1;
+    const draft = makeAdditionalDraft({ sortOrder: nextSort });
+    onChange("additionalParticipants", [
+      ...state.additionalParticipants,
+      draft,
+    ]);
+    expandAdditionalEditor(draft.uiKey);
+    setHouseholdMemberChooserOpen(false);
   }
 
   function renderHouseholdPersonCard(person: HouseholdPerson, editable: boolean) {
-    const removable = editable && person.role !== "pilot";
-    const editorOpen =
-      person.role === "pilot"
-        ? false
-        : roleEditorOpen(person.role as "copilot" | "additional");
+    const isPilot = person.role === "pilot";
+    const isCopilot = person.role === "copilot";
+    const additionalUiKey = person.sourceUiKey ?? null;
+    const removable = editable && !isPilot;
+    const editorOpen = isCopilot
+      ? showCopilotFields
+      : additionalUiKey !== null && expandedAdditionalKeys.has(additionalUiKey);
     return (
       <div
-        key={person.role}
+        key={
+          isPilot
+            ? "pilot"
+            : isCopilot
+              ? "copilot"
+              : `additional-${additionalUiKey}`
+        }
         style={{
           border: "var(--border-width-default) solid var(--color-border-default)",
           borderRadius: "var(--radius-medium)",
@@ -1469,7 +1557,7 @@ export function AttendeeRecordWorkspace(props: {
         >
           <div style={{ display: "grid", gap: 2, fontSize: 14 }}>
             <div style={{ fontWeight: 700 }}>{person.roleLabel}</div>
-            <div>{householdPersonDisplayName(person)}</div>
+            <div>{householdParticipantDisplayName(person)}</div>
             <div className="app-subtle-text" style={{ fontSize: 13 }}>
               Email: {person.email || "—"}
             </div>
@@ -1488,11 +1576,13 @@ export function AttendeeRecordWorkspace(props: {
             >
               {!editorOpen ? (
                 <AppButton
-                  onClick={() =>
-                    person.role === "copilot"
-                      ? setShowCopilotFields(true)
-                      : setShowAdditionalParticipant(true)
-                  }
+                  onClick={() => {
+                    if (isCopilot) {
+                      setShowCopilotFields(true);
+                    } else if (additionalUiKey) {
+                      expandAdditionalEditor(additionalUiKey);
+                    }
+                  }}
                   aria-label={`Edit ${person.roleLabel}`}
                 >
                   Edit
@@ -1500,11 +1590,13 @@ export function AttendeeRecordWorkspace(props: {
               ) : null}
               <AppButton
                 variant="danger"
-                onClick={() =>
-                  void onRemoveHouseholdMember(
-                    person.role as "copilot" | "additional",
-                  )
-                }
+                onClick={() => {
+                  if (isCopilot) {
+                    void onRemoveHouseholdMember("copilot");
+                  } else if (additionalUiKey) {
+                    void onRemoveAdditionalParticipant(additionalUiKey);
+                  }
+                }}
                 aria-label={`Remove ${person.roleLabel}`}
               >
                 Remove
@@ -1512,7 +1604,7 @@ export function AttendeeRecordWorkspace(props: {
             </div>
           ) : null}
         </div>
-        {editable && person.role === "pilot" ? (
+        {editable && isPilot ? (
           <p
             className="app-subtle-text"
             style={{ margin: "var(--space-2) 0 0", fontSize: 13 }}
@@ -1558,11 +1650,15 @@ export function AttendeeRecordWorkspace(props: {
     );
   }
 
-  function renderAdditionalFieldEditor() {
+  function renderAdditionalParticipantEditor(draft: HouseholdParticipantDraft) {
+    const hasData = additionalDraftHasData(draft);
+    const label = hasData
+      ? householdParticipantDisplayName(draft)
+      : "New participant";
     return (
-      <div style={roleFieldEditorStyle}>
+      <div key={`ahp-editor-${draft.uiKey}`} style={roleFieldEditorStyle}>
         <div style={{ fontWeight: 700, marginBottom: 8 }}>
-          Additional Participant details
+          Additional Participant — {label}
         </div>
         {/* Responsive auto-fit grid, not a fixed 5-column layout, so it
             never forces horizontal overflow on phone/tablet widths
@@ -1580,9 +1676,13 @@ export function AttendeeRecordWorkspace(props: {
               <Input
                 {...controlProps}
                 placeholder="First name"
-                value={state.additional_first_name}
+                value={draft.firstName}
                 onChange={(e) =>
-                  onChange("additional_first_name", e.target.value)
+                  updateAdditionalParticipant(
+                    draft.uiKey,
+                    "firstName",
+                    e.target.value,
+                  )
                 }
               />
             )}
@@ -1593,9 +1693,13 @@ export function AttendeeRecordWorkspace(props: {
               <Input
                 {...controlProps}
                 placeholder="Last name"
-                value={state.additional_last_name}
+                value={draft.lastName}
                 onChange={(e) =>
-                  onChange("additional_last_name", e.target.value)
+                  updateAdditionalParticipant(
+                    draft.uiKey,
+                    "lastName",
+                    e.target.value,
+                  )
                 }
               />
             )}
@@ -1606,9 +1710,13 @@ export function AttendeeRecordWorkspace(props: {
               <Input
                 {...controlProps}
                 placeholder="Nickname"
-                value={state.additional_nickname}
+                value={draft.nickname}
                 onChange={(e) =>
-                  onChange("additional_nickname", e.target.value)
+                  updateAdditionalParticipant(
+                    draft.uiKey,
+                    "nickname",
+                    e.target.value,
+                  )
                 }
               />
             )}
@@ -1619,8 +1727,14 @@ export function AttendeeRecordWorkspace(props: {
               <Input
                 {...controlProps}
                 placeholder="Email address"
-                value={state.additional_email}
-                onChange={(e) => onChange("additional_email", e.target.value)}
+                value={draft.email}
+                onChange={(e) =>
+                  updateAdditionalParticipant(
+                    draft.uiKey,
+                    "email",
+                    e.target.value,
+                  )
+                }
               />
             )}
           </Field>
@@ -1630,21 +1744,50 @@ export function AttendeeRecordWorkspace(props: {
               <Input
                 {...controlProps}
                 placeholder="Cell phone (optional)"
-                value={state.additional_cell_phone}
+                value={draft.cellPhone}
                 onChange={(e) =>
-                  onChange("additional_cell_phone", e.target.value)
+                  updateAdditionalParticipant(
+                    draft.uiKey,
+                    "cellPhone",
+                    e.target.value,
+                  )
                 }
               />
             )}
           </Field>
         </div>
-        <div style={{ marginTop: 10 }}>
-          <AppButton
-            variant="tertiary"
-            onClick={() => setShowAdditionalParticipant(false)}
-          >
-            {hasAdditionalNow ? "Done" : "Don't add an Additional Participant"}
-          </AppButton>
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            gap: "var(--space-2)",
+            flexWrap: "wrap",
+          }}
+        >
+          {hasData ? (
+            <>
+              <AppButton
+                variant="tertiary"
+                onClick={() => collapseAdditionalEditor(draft.uiKey)}
+              >
+                Done
+              </AppButton>
+              <AppButton
+                variant="danger"
+                onClick={() => void onRemoveAdditionalParticipant(draft.uiKey)}
+                aria-label={`Remove ${label}`}
+              >
+                Remove
+              </AppButton>
+            </>
+          ) : (
+            <AppButton
+              variant="tertiary"
+              onClick={() => discardAdditionalDraft(draft.uiKey)}
+            >
+              Cancel
+            </AppButton>
+          )}
         </div>
       </div>
     );
@@ -1659,44 +1802,75 @@ export function AttendeeRecordWorkspace(props: {
           style={{ margin: "0 0 var(--space-3)" }}
         >
           Everyone on this registration for this Event. The Pilot is always on
-          the registration; a Co-Pilot and one Additional Participant may also
-          be added.
+          the registration; a Co-Pilot and any number of Additional
+          Participants may also be added.
         </p>
 
         <div style={{ display: "grid", gap: "var(--space-3)" }}>
           {householdPeople.map((person) =>
             renderHouseholdPersonCard(person, editable),
           )}
-          {!editable && !filledHouseholdRoles.has("copilot") ? (
+          {!editable && !hasCopilotPerson ? (
             <div className="app-subtle-text" style={{ fontSize: 13 }}>
               Co-Pilot: none on record
             </div>
           ) : null}
-          {!editable && !filledHouseholdRoles.has("additional") ? (
+          {!editable && !hasAdditionalPerson ? (
             <div className="app-subtle-text" style={{ fontSize: 13 }}>
-              Additional Participant: none on record
+              Additional Participants: none on record
             </div>
           ) : null}
+          {/* Vacant authorized positions -- one row per unidentified paid
+              slot. "Add name" identifies it as a new Additional Participant. */}
+          {editable
+            ? Array.from({ length: vacantPositionCount }).map((_, index) => (
+                <div
+                  key={`vacant-${index}`}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "var(--space-3)",
+                    flexWrap: "wrap",
+                    border:
+                      "var(--border-width-default) dashed var(--color-border-default)",
+                    borderRadius: "var(--radius-medium)",
+                    padding: "var(--space-3) var(--space-4)",
+                    background: "var(--color-bg-muted)",
+                  }}
+                >
+                  <span className="app-subtle-text">
+                    Unidentified participant
+                  </span>
+                  <AppButton
+                    onClick={addAdditionalParticipant}
+                    aria-label="Add a name for an unidentified participant"
+                  >
+                    Add name
+                  </AppButton>
+                </div>
+              ))
+            : null}
         </div>
 
+        {/* Stable editors block -- position keyed by uiKey, so typing into a
+            just-added draft never reflows it out from under the cursor. */}
         {editable && showCopilotFields ? renderCopilotFieldEditor() : null}
-        {editable && showAdditionalParticipant
-          ? renderAdditionalFieldEditor()
+        {editable
+          ? state.additionalParticipants
+              .filter((draft) => expandedAdditionalKeys.has(draft.uiKey))
+              .map((draft) => renderAdditionalParticipantEditor(draft))
           : null}
 
-        {editable && openHouseholdRoles.length > 0 ? (
+        {editable ? (
           <div style={{ marginTop: "var(--space-4)" }}>
             {!householdMemberChooserOpen ? (
               <AppButton
                 onClick={() => {
-                  if (openHouseholdRoles.length === 1) {
-                    if (openHouseholdRoles[0] === "copilot") {
-                      setShowCopilotFields(true);
-                    } else {
-                      setShowAdditionalParticipant(true);
-                    }
-                  } else {
+                  if (canAddCopilot) {
                     setHouseholdMemberChooserOpen(true);
+                  } else {
+                    addAdditionalParticipant();
                   }
                 }}
                 style={{ width: "100%" }}
@@ -1719,26 +1893,17 @@ export function AttendeeRecordWorkspace(props: {
                     flexWrap: "wrap",
                   }}
                 >
-                  {openHouseholdRoles.includes("copilot") ? (
-                    <AppButton
-                      onClick={() => {
-                        setShowCopilotFields(true);
-                        setHouseholdMemberChooserOpen(false);
-                      }}
-                    >
-                      Add Co-Pilot
-                    </AppButton>
-                  ) : null}
-                  {openHouseholdRoles.includes("additional") ? (
-                    <AppButton
-                      onClick={() => {
-                        setShowAdditionalParticipant(true);
-                        setHouseholdMemberChooserOpen(false);
-                      }}
-                    >
-                      Add Additional Participant
-                    </AppButton>
-                  ) : null}
+                  <AppButton
+                    onClick={() => {
+                      setShowCopilotFields(true);
+                      setHouseholdMemberChooserOpen(false);
+                    }}
+                  >
+                    Add Co-Pilot
+                  </AppButton>
+                  <AppButton onClick={addAdditionalParticipant}>
+                    Add Additional Participant
+                  </AppButton>
                   <AppButton
                     onClick={() => setHouseholdMemberChooserOpen(false)}
                   >
@@ -1748,14 +1913,6 @@ export function AttendeeRecordWorkspace(props: {
               </div>
             )}
           </div>
-        ) : editable && householdIsFull ? (
-          <p
-            className="app-subtle-text"
-            style={{ marginTop: "var(--space-4)", marginBottom: 0 }}
-          >
-            This registration has its full household — Pilot, Co-Pilot, and one
-            Additional Participant are all on record.
-          </p>
         ) : null}
 
         <div
@@ -1764,9 +1921,8 @@ export function AttendeeRecordWorkspace(props: {
         >
           {namedPersonCount} named{" "}
           {namedPersonCount === 1 ? "person" : "people"}
-          {/* In view mode there is no separate Authorized Party Size block,
-              so the authorized number is surfaced here; edit mode has its
-              own dedicated block below. */}
+          {/* View mode has no separate Authorized Party Size block, so the
+              authorized number is surfaced here; edit mode has its own. */}
           {editable
             ? ""
             : ` · Authorized party size: ${authorizedPartySizeDisplay}`}
@@ -3680,19 +3836,17 @@ created_at
     payload: any,
     eventId: string,
     editorState: AttendeeEditorState,
-    // When set to "copilot" or "additional", this save is a governed
-    // "slot and participant" capacity increase and
-    // record_participant_capacity_increase(...) owns that one household
-    // role atomically with the capacity/audit change. This call skips only
-    // that one role, so it is never split across a non-atomic call and the
-    // atomic RPC. The other role (if any) still syncs normally here.
+    // "copilot" -> record_participant_capacity_increase owns the Co-Pilot
+    // row atomically for this save; skip it here. Additional Participants
+    // that the RPC owns are identified individually by
+    // rpcOwnedAdditionalUiKey below.
     rpcOwnedParticipantRole: "copilot" | "additional" | null = null,
+    rpcOwnedAdditionalUiKey: string | null = null,
   ) {
     try {
-      // 1. Query attendee_household_members for this attendee -- read-only,
-      //    used only to decide whether a cleared copilot/additional role
-      //    should upsert or delete; the RPC itself resolves created-vs-
-      //    updated server-side.
+      // 1. Read the current copilot row (used only to decide upsert vs
+      //    delete for a cleared Co-Pilot). Additional rows are reconciled
+      //    by id against editorState.additionalParticipantsAtLoad instead.
       const { data: memberRows, error: memberError } = await supabase
         .from("attendee_household_members")
         .select("id, person_role")
@@ -3703,12 +3857,9 @@ created_at
       const copilotRow = memberRows?.find(
         (row: any) => row.person_role === "copilot",
       );
-      const additionalRow = memberRows?.find(
-        (row: any) => row.person_role === "additional",
-      );
 
       // 2. Upsert the pilot row. Never deleted.
-      await supabase.rpc("manage_attendee_household_member", {
+      const pilotResult = await supabase.rpc("manage_attendee_household_member", {
         p_attendee_id: attendeeId,
         p_person_role: "pilot",
         p_delete: false,
@@ -3717,16 +3868,19 @@ created_at
         p_nickname: payload.nickname || null,
         p_email: payload.email || null,
       });
+      if (pilotResult.error) {
+        throw pilotResult.error;
+      }
 
-      // 3. Handle copilot logic. Skipped only when the capacity-increase RPC
-      //    owns the Co-Pilot row for this save.
+      // 3. Co-Pilot: role-based singleton upsert / delete, skipped only when
+      //    the capacity-increase RPC owns it.
       const hasCopilot =
         !!payload.copilot_first ||
         !!payload.copilot_last ||
         !!payload.copilot_email;
       if (rpcOwnedParticipantRole !== "copilot") {
         if (hasCopilot) {
-          await supabase.rpc("manage_attendee_household_member", {
+          const r = await supabase.rpc("manage_attendee_household_member", {
             p_attendee_id: attendeeId,
             p_person_role: "copilot",
             p_delete: false,
@@ -3735,48 +3889,97 @@ created_at
             p_nickname: payload.copilot_nickname || null,
             p_email: payload.copilot_email || null,
           });
+          if (r.error) {
+            throw r.error;
+          }
         } else if (copilotRow) {
-          // 4. If no copilot info but copilot row exists, delete only the copilot row
-          await supabase.rpc("manage_attendee_household_member", {
+          const r = await supabase.rpc("manage_attendee_household_member", {
             p_attendee_id: attendeeId,
             p_person_role: "copilot",
             p_delete: true,
           });
+          if (r.error) {
+            throw r.error;
+          }
         }
       }
 
-      // Additional participant sync logic. Skipped only when the
-      // capacity-increase RPC owns the Additional row for this save.
-      const hasAdditional =
-        !!editorState.additional_first_name ||
-        !!editorState.additional_last_name ||
-        !!editorState.additional_email ||
-        !!editorState.additional_nickname ||
-        !!editorState.additional_cell_phone;
+      // 4. Additional Participants: reconcile the working set against the
+      //    load snapshot. Every mutation names its exact row by
+      //    household_member_id; a new draft is a plain insert; a loaded row
+      //    that is gone from the working set is deleted by id. Never a bulk
+      //    "delete every 'additional' row".
+      const keptIds = new Set(
+        editorState.additionalParticipants
+          .map((d) => d.id)
+          .filter((id): id is string => id !== null),
+      );
 
-      if (rpcOwnedParticipantRole !== "additional") {
-        if (hasAdditional) {
-          await supabase.rpc("manage_attendee_household_member", {
-            p_attendee_id: attendeeId,
-            p_person_role: "additional",
-            p_delete: false,
-            p_first_name: editorState.additional_first_name || null,
-            p_last_name: editorState.additional_last_name || null,
-            p_nickname: editorState.additional_nickname || null,
-            p_email: editorState.additional_email || null,
-            p_cell_phone: editorState.additional_cell_phone || null,
-          });
-        } else if (additionalRow) {
-          await supabase.rpc("manage_attendee_household_member", {
+      for (const loaded of editorState.additionalParticipantsAtLoad) {
+        if (loaded.id && !keptIds.has(loaded.id)) {
+          const r = await supabase.rpc("manage_attendee_household_member", {
             p_attendee_id: attendeeId,
             p_person_role: "additional",
             p_delete: true,
+            p_household_member_id: loaded.id,
           });
+          if (r.error) {
+            throw r.error;
+          }
         }
+      }
+
+      for (const draft of editorState.additionalParticipants) {
+        if (
+          rpcOwnedAdditionalUiKey &&
+          draft.uiKey === rpcOwnedAdditionalUiKey
+        ) {
+          continue;
+        }
+        const hasData = additionalDraftHasData(draft);
+        if (draft.id) {
+          const r = await supabase.rpc("manage_attendee_household_member", {
+            p_attendee_id: attendeeId,
+            p_person_role: "additional",
+            p_delete: !hasData,
+            p_household_member_id: draft.id,
+            ...(hasData
+              ? {
+                  p_first_name: draft.firstName.trim() || null,
+                  p_last_name: draft.lastName.trim() || null,
+                  p_nickname: draft.nickname.trim() || null,
+                  p_email: draft.email.trim() || null,
+                  p_cell_phone: draft.cellPhone.trim() || null,
+                }
+              : {}),
+          });
+          if (r.error) {
+            throw r.error;
+          }
+        } else if (hasData) {
+          const r = await supabase.rpc("manage_attendee_household_member", {
+            p_attendee_id: attendeeId,
+            p_person_role: "additional",
+            p_delete: false,
+            p_first_name: draft.firstName.trim() || null,
+            p_last_name: draft.lastName.trim() || null,
+            p_nickname: draft.nickname.trim() || null,
+            p_email: draft.email.trim() || null,
+            p_cell_phone: draft.cellPhone.trim() || null,
+          });
+          if (r.error) {
+            throw r.error;
+          }
+        }
+        // an empty new draft -> nothing to write
       }
       // 5. Do not touch any other person_role rows
     } catch (err) {
+      // A household write failure must fail the whole save, not be silently
+      // swallowed -- the operator would otherwise believe an add / edit /
+      // remove succeeded (and, on a delete-by-id, that the right row went).
       console.error("syncHouseholdMembers error", err);
+      throw err;
     }
   }
 
@@ -3816,48 +4019,25 @@ created_at
         );
       }
 
-      const { data: participantRows } = await supabase
-        .from("attendee_household_members")
-        .select("person_role,email,first_name,last_name,nickname,cell_phone")
-        .eq("attendee_id", attendee.id);
+      const household = await loadHouseholdParticipantsForEditor(attendee.id);
 
-      const pilot = participantRows?.find((row) => row.person_role === "pilot");
+      if (household.pilotEmail) {
+        nextState.email = household.pilotEmail;
+      }
+      if (household.copilotEmail) {
+        nextState.copilot_email = household.copilotEmail;
+      }
 
-      const copilot = participantRows?.find(
-        (row) => row.person_role === "copilot",
+      nextState.additionalParticipants = household.additionalParticipants;
+      nextState.additionalParticipantsAtLoad = snapshotAdditionalParticipants(
+        household.additionalParticipants,
       );
 
-      if (pilot?.email) {
-        nextState.email = pilot.email;
-      }
-
-      if (copilot?.email) {
-        nextState.copilot_email = copilot.email;
-      }
-
-      const additional = participantRows?.find(
-        (row) => row.person_role === "additional",
-      );
-
-      if (additional) {
-        nextState.additional_first_name = additional.first_name || "";
-        nextState.additional_last_name = additional.last_name || "";
-        nextState.additional_nickname = additional.nickname || "";
-        nextState.additional_email = additional.email || "";
-        nextState.additional_cell_phone = additional.cell_phone || "";
-      }
-
-      nextState.had_copilot_at_load = !!copilot;
-      nextState.had_additional_at_load = !!additional;
+      nextState.had_copilot_at_load = household.hadCopilot;
       nextState.copilot_name_at_load =
         fullName(attendee.copilot_first, attendee.copilot_last) ||
-        copilot?.email ||
+        household.copilotEmail ||
         "";
-      nextState.additional_name_at_load = additional
-        ? fullName(additional.first_name, additional.last_name) ||
-          additional.email ||
-          ""
-        : "";
 
       setEditorState(nextState);
       setEditorBaseline(nextState);
@@ -3982,22 +4162,21 @@ created_at
   // at Save time. Clearing the fields still goes through the exact same
   // Save-time confirmation (buildHouseholdRemovalConfirmMessage) as a safety
   // net for any other path that clears them.
+  // Co-Pilot removal: clears the fields; the next Save's syncHouseholdMembers
+  // then hard-deletes the row. computeHouseholdRemovalWarnings re-confirms at
+  // save time as a safety net.
   async function removeHouseholdMember(role: "copilot" | "additional") {
+    if (role !== "copilot") {
+      return;
+    }
     const name =
-      role === "copilot"
-        ? editorState.copilot_name_at_load ||
-          fullName(editorState.copilot_first, editorState.copilot_last) ||
-          "the Co-Pilot"
-        : editorState.additional_name_at_load ||
-          fullName(
-            editorState.additional_first_name,
-            editorState.additional_last_name,
-          ) ||
-          "the Additional Participant";
+      editorState.copilot_name_at_load ||
+      fullName(editorState.copilot_first, editorState.copilot_last) ||
+      "the Co-Pilot";
 
     const confirmed = await confirmViaDialog(
       "Remove household member?",
-      `Remove ${name} (${role === "copilot" ? "Co-Pilot" : "Additional Participant"}) from this attendee record? This clears their fields; Save will then permanently remove them as a household member. This cannot be undone from here.`,
+      `Remove ${name} (Co-Pilot) from this attendee record? This clears their fields; Save will then permanently remove them as a household member. This cannot be undone from here.`,
       true,
     );
 
@@ -4005,25 +4184,51 @@ created_at
       return;
     }
 
-    setEditorState((prev) =>
-      role === "copilot"
-        ? {
-            ...prev,
-            copilot_first: "",
-            copilot_last: "",
-            copilot_nickname: "",
-            copilot_email: "",
-            copilot_cell_phone: "",
-          }
-        : {
-            ...prev,
-            additional_first_name: "",
-            additional_last_name: "",
-            additional_nickname: "",
-            additional_email: "",
-            additional_cell_phone: "",
-          },
+    setEditorState((prev) => ({
+      ...prev,
+      copilot_first: "",
+      copilot_last: "",
+      copilot_nickname: "",
+      copilot_email: "",
+      copilot_cell_phone: "",
+    }));
+  }
+
+  // Additional Participant removal identifies the exact row. Confirmed here
+  // (naming the person); the draft is dropped from the working set, and the
+  // next Save's syncHouseholdMembers issues a governed delete-by-id for the
+  // now-missing loaded row. Never a bulk "delete every 'additional' row".
+  async function removeAdditionalParticipant(uiKey: string) {
+    const draft = editorState.additionalParticipants.find(
+      (d) => d.uiKey === uiKey,
     );
+    if (!draft) {
+      return;
+    }
+    const name =
+      fullName(draft.firstName, draft.lastName) ||
+      draft.nickname ||
+      draft.email ||
+      "this participant";
+
+    const confirmed = await confirmViaDialog(
+      "Remove participant?",
+      draft.id
+        ? `Remove ${name} (Additional Participant) from this registration? They will be permanently removed as a household member when you Save. This cannot be undone from here.`
+        : `Discard ${name} (Additional Participant)? This person has not been saved yet.`,
+      true,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setEditorState((prev) => ({
+      ...prev,
+      additionalParticipants: prev.additionalParticipants.filter(
+        (d) => d.uiKey !== uiKey,
+      ),
+    }));
   }
 
   // Continuous operation (Stage C requirement 8): Next/Previous inside the
@@ -4111,43 +4316,36 @@ created_at
     // --- Compute participant capacity ---
     // hasCopilot uses the same three-field definition (first / last / email)
     // the governed RPC and syncHouseholdMembers use for the Co-Pilot role.
-    // hasAdditional mirrors syncHouseholdMembers' own five-field test
-    // (first / last / email / nickname / cell phone) so "an Additional
-    // participant exists" is judged identically in the capacity math and in
-    // the household write -- an Additional entered with only a nickname or
-    // only a cell phone still counts.
+    // namedAdditionalCount / newAdditionalDrafts read the working Additional
+    // Participant set (0..N) so the capacity math sees exactly the roster
+    // Save is about to materialize.
     const hasCopilot =
       !!editorState.copilot_first.trim() ||
       !!editorState.copilot_last.trim() ||
       !!editorState.copilot_email.trim();
-    const hasAdditional =
-      !!editorState.additional_first_name?.trim() ||
-      !!editorState.additional_last_name?.trim() ||
-      !!editorState.additional_email?.trim() ||
-      !!editorState.additional_nickname?.trim() ||
-      !!editorState.additional_cell_phone?.trim();
+    const namedAdditionalDrafts =
+      editorState.additionalParticipants.filter(additionalDraftHasData);
+    const newAdditionalDrafts = namedAdditionalDrafts.filter(
+      (draft) => draft.id === null,
+    );
 
     // Governed product rule: an administrator's own authorized action of
     // adding a participant, or explicitly raising the Authorized Party Size,
     // itself authorizes the resulting participant_capacity -- no separate
     // confirmation, accounting status, or payment attestation is required.
-    // "New" means this participant did not exist when the editor loaded --
-    // it distinguishes the admin adding someone (which authorizes a fresh
-    // increase, RPC'd atomically below) from an unrelated edit. An unrelated
-    // save no longer papers over the mismatch: after household sync,
-    // reconcileCapacityToMaterializedRoster raises a KNOWN participant_capacity
-    // up to the roster already materialized in attendee_household_members --
-    // never beyond an explicitly higher administrator-selected value, never
-    // downward, and never for a null (never-established) capacity.
+    // "New" means a participant that did not exist when the editor loaded.
+    // An unrelated save does not paper over a mismatch: after household
+    // sync, reconcileCapacityToMaterializedRoster raises a KNOWN
+    // participant_capacity up to the materialized roster -- never beyond an
+    // explicitly higher administrator-selected value, never downward, and
+    // never for a null (never-established) capacity.
     const isNewCopilot =
       editorMode === "edit" && hasCopilot && !editorState.had_copilot_at_load;
     const isNewAdditional =
-      editorMode === "edit" &&
-      hasAdditional &&
-      !editorState.had_additional_at_load;
+      editorMode === "edit" && newAdditionalDrafts.length > 0;
     const isAddingNewParticipant = isNewCopilot || isNewAdditional;
     const resultingRosterCount =
-      1 + (hasCopilot ? 1 : 0) + (hasAdditional ? 1 : 0);
+      1 + (hasCopilot ? 1 : 0) + namedAdditionalDrafts.length;
     const currentStoredCapacity = editorState.registration_capacity_was_unset
       ? 0
       : (editorState.registration_capacity_original ?? 0);
@@ -4168,11 +4366,12 @@ created_at
       (isAddingNewParticipant || stepperWasManuallyRaised) &&
       targetCapacity > currentStoredCapacity;
 
-    // Which household role (if any) the governed RPC atomically writes
-    // alongside the capacity increase. Prefers Co-Pilot when both are newly
-    // added in the same save; the other role still syncs via the existing
-    // generic path below, and the RPC's own roster-count validation still
-    // covers the combined resulting total.
+    // Which household participant (if any) the governed RPC atomically
+    // writes alongside the capacity increase. Prefers a new Co-Pilot;
+    // otherwise the first new Additional Participant. Any other new people,
+    // and every edit / delete, still sync via manage_attendee_household_member
+    // below, and the RPC's own roster-count validation covers the combined
+    // resulting total.
     const rpcParticipantRole: "copilot" | "additional" | null =
       !isCapacityIncrease
         ? null
@@ -4181,6 +4380,8 @@ created_at
           : isNewAdditional
             ? "additional"
             : null;
+    const rpcOwnedAdditionalDraft =
+      rpcParticipantRole === "additional" ? newAdditionalDrafts[0] : null;
 
     // Registration capacity is the authoritative participant-capacity
     // value. When capacity was unset (null) at load, the administrator has
@@ -4288,7 +4489,9 @@ created_at
           throw insertError;
         }
 
-        // Sync pilot, copilot, and additional household members
+        // Sync pilot, copilot, and every Additional Participant. Create has
+        // no atomicity concern (one INSERT then one sync), so no capacity
+        // RPC ownership -- every new participant goes through the sync.
         if (newAttendee) {
           await syncHouseholdMembers(
             newAttendee.id,
@@ -4296,13 +4499,6 @@ created_at
             currentEvent.id,
             editorState,
           );
-          const { data } = await supabase
-            .from("attendee_household_members")
-            .select("*")
-            .eq("attendee_id", newAttendee.id);
-
-          console.log("HOUSEHOLD AFTER SAVE", data);
-
           await reconcileCapacityToMaterializedRoster(
             newAttendee.id,
             requiredCapacity,
@@ -4321,16 +4517,17 @@ created_at
           throw new Error("Missing attendee id for edit");
         }
 
-        // Automatic mode: only the participant role this save is newly
-        // adding (if any) is withheld from the generic sync -- the RPC
-        // below owns exactly that one role atomically. The other role, and
-        // a pure slot-only increase, sync here exactly as before.
+        // Only the one participant the capacity RPC owns (a new Co-Pilot, or
+        // the first new Additional Participant identified by uiKey) is
+        // withheld from this sync -- so it is never written both here and by
+        // the atomic RPC. Every other add / edit / delete-by-id happens here.
         await syncHouseholdMembers(
           editorState.id,
           payload,
           currentEvent.id,
           editorState,
           rpcParticipantRole,
+          rpcOwnedAdditionalDraft?.uiKey ?? null,
         );
 
         if (isCapacityIncrease) {
@@ -4375,25 +4572,15 @@ created_at
                   ? editorState.copilot_email.trim().toLowerCase() || null
                   : null,
               p_additional_first_name:
-                rpcParticipantRole === "additional"
-                  ? editorState.additional_first_name?.trim() || null
-                  : null,
+                rpcOwnedAdditionalDraft?.firstName.trim() || null,
               p_additional_last_name:
-                rpcParticipantRole === "additional"
-                  ? editorState.additional_last_name?.trim() || null
-                  : null,
+                rpcOwnedAdditionalDraft?.lastName.trim() || null,
               p_additional_nickname:
-                rpcParticipantRole === "additional"
-                  ? editorState.additional_nickname?.trim() || null
-                  : null,
+                rpcOwnedAdditionalDraft?.nickname.trim() || null,
               p_additional_email:
-                rpcParticipantRole === "additional"
-                  ? editorState.additional_email?.trim() || null
-                  : null,
+                rpcOwnedAdditionalDraft?.email.trim() || null,
               p_additional_cell_phone:
-                rpcParticipantRole === "additional"
-                  ? editorState.additional_cell_phone?.trim() || null
-                  : null,
+                rpcOwnedAdditionalDraft?.cellPhone.trim() || null,
             },
           );
 
@@ -4487,10 +4674,34 @@ created_at
 
       if (editorMode === "edit" && viewMode !== "review" && editorState.id) {
         // The operator's own just-saved values are the new resting point
-        // (Stage D requirement 1: dirty-state resets on a clean save); the
-        // fingerprint used to detect a *different* station's later change
-        // comes from the server row this same save just produced.
-        setEditorBaseline(editorState);
+        // (Stage D requirement 1: dirty-state resets on a clean save). The
+        // Additional Participant set is re-read from the server so every
+        // just-inserted row now carries its real id -- a second save must
+        // not re-insert it -- and the load snapshot the diff compares
+        // against is refreshed to match.
+        const household = await loadHouseholdParticipantsForEditor(
+          editorState.id,
+        );
+        const rebased: AttendeeEditorState = {
+          ...editorState,
+          email: household.pilotEmail || editorState.email,
+          copilot_email: household.copilotEmail || editorState.copilot_email,
+          had_copilot_at_load: household.hadCopilot,
+          copilot_name_at_load:
+            fullName(editorState.copilot_first, editorState.copilot_last) ||
+            household.copilotEmail ||
+            "",
+          additionalParticipants: household.additionalParticipants,
+          additionalParticipantsAtLoad: snapshotAdditionalParticipants(
+            household.additionalParticipants,
+          ),
+        };
+        setEditorState(rebased);
+        setEditorBaseline(rebased);
+        // The reloaded drafts carry fresh uiKeys, so any expanded editor in
+        // the workspace naturally collapses -- the just-saved people show as
+        // cards.
+
         const savedRow = freshAttendees?.find(
           (row) => row.id === editorState.id,
         );
@@ -4761,6 +4972,7 @@ created_at
           }
         }}
         onRemoveHouseholdMember={removeHouseholdMember}
+        onRemoveAdditionalParticipant={removeAdditionalParticipant}
         onUpdateDataStatus={updateDataStatus}
         onCancelRegistration={onCancelRegistration}
         onPrevious={canGoPrevious ? () => goToWorkspaceOffset(-1) : undefined}
