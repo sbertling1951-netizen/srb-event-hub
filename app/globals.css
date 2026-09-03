@@ -1064,6 +1064,30 @@ textarea.app-control,
   }
 }
 
+/* Tenant Branding P-1A: the branding field set groups its six text fields
+   in the shared two-column grid, then the three brand colors in their own
+   three-across row that collapses to one column below tablet width (the
+   same 899px breakpoint the shared .app-form-grid-2 already uses). This
+   also lets the wide Add Tenant dialog put all three colors on one line. */
+.tenant-branding-fields {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.tenant-branding-color-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+@media (max-width: 899px) {
+  .tenant-branding-color-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Tenant Branding P-1: a text field paired with a native color-picker
    convenience control. The text value stays authoritative; the picker is a
    fixed-size affordance that never grows on narrow viewports. */

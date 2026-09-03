@@ -233,110 +233,114 @@ function TenantBrandingFields({
   onChange: (patch: Partial<TenantMetadataForm>) => void;
 }) {
   return (
-    <div className="app-form-grid-2">
-      <Field label="Organization name" required disabled={disabled}>
-        {(props) => (
-          <Input
-            {...props}
-            value={form.organization_name}
-            onChange={(event) => onChange({ organization_name: event.target.value })}
-          />
-        )}
-      </Field>
-      <Field label="Display name" required disabled={disabled}>
-        {(props) => (
-          <Input
-            {...props}
-            value={form.display_name}
-            onChange={(event) => onChange({ display_name: event.target.value })}
-          />
-        )}
-      </Field>
-      <Field label="App title" required disabled={disabled}>
-        {(props) => (
-          <Input
-            {...props}
-            value={form.app_title}
-            onChange={(event) => onChange({ app_title: event.target.value })}
-          />
-        )}
-      </Field>
-      <Field label="App tagline" disabled={disabled}>
-        {(props) => (
-          <Input
-            {...props}
-            value={form.app_tagline}
-            onChange={(event) => onChange({ app_tagline: event.target.value })}
-          />
-        )}
-      </Field>
-      <Field
-        label="Logo URL"
-        help="The tenant logo shown across EpicentraX presentation. An SVG or a roughly square PNG (192px or larger) works best. Blank uses the neutral platform default."
-        disabled={disabled}
-      >
-        {(props) => (
-          <Input
-            {...props}
-            type="url"
-            value={form.logo_url}
-            onChange={(event) => onChange({ logo_url: event.target.value })}
-          />
-        )}
-      </Field>
-      <Field
-        label="Favicon URL"
-        help="Stored branding metadata. It is not yet applied to the browser tab icon."
-        disabled={disabled}
-      >
-        {(props) => (
-          <Input
-            {...props}
-            type="url"
-            value={form.favicon_url}
-            onChange={(event) => onChange({ favicon_url: event.target.value })}
-          />
-        )}
-      </Field>
-      {BRANDING_COLOR_FIELDS.map(({ key, label }) => {
-        const value = form[key];
-        const pickerValue = /^#[0-9a-fA-F]{6}$/.test(value.trim())
-          ? value.trim()
-          : "#000000";
-        return (
-          <Field
-            key={key}
-            label={label}
-            help="Hex (#rgb, #rrggbb), rgb()/hsl(), or a CSS color name. Blank uses the neutral default."
-            error={colorErrors[key]}
-            disabled={disabled}
-          >
-            {(props) => (
-              <div className="tenant-branding-color-row">
-                <Input
-                  {...props}
-                  value={value}
-                  onChange={(event) =>
-                    onChange({ [key]: event.target.value } as Partial<TenantMetadataForm>)
-                  }
-                />
-                <input
-                  type="color"
-                  className="tenant-branding-color-swatch-input"
-                  aria-label={`${label} picker`}
-                  disabled={disabled}
-                  value={pickerValue}
-                  onChange={(event) =>
-                    onChange({
-                      [key]: event.target.value,
-                    } as Partial<TenantMetadataForm>)
-                  }
-                />
-              </div>
-            )}
-          </Field>
-        );
-      })}
+    <div className="tenant-branding-fields">
+      <div className="app-form-grid-2">
+        <Field label="Organization name" required disabled={disabled}>
+          {(props) => (
+            <Input
+              {...props}
+              value={form.organization_name}
+              onChange={(event) => onChange({ organization_name: event.target.value })}
+            />
+          )}
+        </Field>
+        <Field label="Display name" required disabled={disabled}>
+          {(props) => (
+            <Input
+              {...props}
+              value={form.display_name}
+              onChange={(event) => onChange({ display_name: event.target.value })}
+            />
+          )}
+        </Field>
+        <Field label="App title" required disabled={disabled}>
+          {(props) => (
+            <Input
+              {...props}
+              value={form.app_title}
+              onChange={(event) => onChange({ app_title: event.target.value })}
+            />
+          )}
+        </Field>
+        <Field label="App tagline" disabled={disabled}>
+          {(props) => (
+            <Input
+              {...props}
+              value={form.app_tagline}
+              onChange={(event) => onChange({ app_tagline: event.target.value })}
+            />
+          )}
+        </Field>
+        <Field
+          label="Logo URL"
+          help="The tenant logo shown across EpicentraX presentation. An SVG or a roughly square PNG (192px or larger) works best. Blank uses the neutral platform default."
+          disabled={disabled}
+        >
+          {(props) => (
+            <Input
+              {...props}
+              type="url"
+              value={form.logo_url}
+              onChange={(event) => onChange({ logo_url: event.target.value })}
+            />
+          )}
+        </Field>
+        <Field
+          label="Favicon URL"
+          help="Stored branding metadata. It is not yet applied to the browser tab icon."
+          disabled={disabled}
+        >
+          {(props) => (
+            <Input
+              {...props}
+              type="url"
+              value={form.favicon_url}
+              onChange={(event) => onChange({ favicon_url: event.target.value })}
+            />
+          )}
+        </Field>
+      </div>
+      <div className="tenant-branding-color-grid">
+        {BRANDING_COLOR_FIELDS.map(({ key, label }) => {
+          const value = form[key];
+          const pickerValue = /^#[0-9a-fA-F]{6}$/.test(value.trim())
+            ? value.trim()
+            : "#000000";
+          return (
+            <Field
+              key={key}
+              label={label}
+              help="Hex (#rgb, #rrggbb), rgb()/hsl(), or a CSS color name. Blank uses the neutral default."
+              error={colorErrors[key]}
+              disabled={disabled}
+            >
+              {(props) => (
+                <div className="tenant-branding-color-row">
+                  <Input
+                    {...props}
+                    value={value}
+                    onChange={(event) =>
+                      onChange({ [key]: event.target.value } as Partial<TenantMetadataForm>)
+                    }
+                  />
+                  <input
+                    type="color"
+                    className="tenant-branding-color-swatch-input"
+                    aria-label={`${label} picker`}
+                    disabled={disabled}
+                    value={pickerValue}
+                    onChange={(event) =>
+                      onChange({
+                        [key]: event.target.value,
+                      } as Partial<TenantMetadataForm>)
+                    }
+                  />
+                </div>
+              )}
+            </Field>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -908,7 +912,7 @@ function TenantAdministrationWorkspace() {
         dismissOnBackdrop={false}
         title="Add Tenant"
         description="New Tenants are always created Inactive. This does not create Events, hostname mappings, or Tenant Administrator appointments."
-        className="app-dialog-wide"
+        className="app-dialog-form"
         footer={
           <>
             <AppButton onClick={requestCloseCreate} disabled={busy}>Cancel</AppButton>
@@ -924,7 +928,11 @@ function TenantAdministrationWorkspace() {
           </>
         }
       >
-        <form id="create-tenant-form" className="app-dialog-form" onSubmit={createTenant}>
+        <form
+          id="create-tenant-form"
+          className="app-dialog-form app-stack-8"
+          onSubmit={createTenant}
+        >
           {error ? <Alert tone="danger">{error}</Alert> : null}
           <div className="app-form-grid-2">
             <Field label="Organization code" required>

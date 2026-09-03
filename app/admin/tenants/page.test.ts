@@ -232,3 +232,86 @@ test("the page uses centralized primitives and a responsive list/card master-det
   assert.match(SOURCE, /tenant-admin-workspace-grid/);
   assert.equal(/<table|<DataTable/.test(SOURCE), false);
 });
+
+// -- Tenant Branding P-1A: widen Add Tenant desktop workspace ---------------
+
+const CSS_SOURCE = readFileSync(
+  fileURLToPath(new URL("../../globals.css", import.meta.url)),
+  "utf8",
+);
+
+test("Add Tenant uses the shared intentional wide/container dialog variant, not a bespoke or global widening", () => {
+  const dialog = SOURCE.slice(
+    SOURCE.indexOf('title="Add Tenant"'),
+    SOURCE.indexOf("open={statusDialogOpen}"),
+  );
+  // The Add Tenant Dialog panel now opts into app-dialog-form (the same
+  // width/height/container variant admin-users and nearby already use).
+  assert.match(dialog, /className="app-dialog-form"/);
+  assert.equal(/app-dialog-wide/.test(dialog), false);
+
+  // That variant is viewport-responsive with safe margins, and the shared
+  // base .app-dialog rule is untouched (no global modal widening).
+  assert.match(
+    CSS_SOURCE,
+    /\.app-dialog-form \{\s*\n\s*max-width: min\(1080px, calc\(100vw - 32px\)\);/,
+  );
+  assert.match(CSS_SOURCE, /\.app-dialog \{\s*\n\s*width: 100%;\s*\n\s*max-width: 460px;/);
+  assert.match(CSS_SOURCE, /\.app-dialog-wide \{\s*\n\s*max-width: 900px;\s*\n\}/);
+});
+
+test("the first four field groups stay logically paired in the shared two-column grid", () => {
+  const brandingFields = SOURCE.slice(
+    SOURCE.indexOf("function TenantBrandingFields"),
+    SOURCE.indexOf('<div className="tenant-branding-color-grid">'),
+  );
+  // org name + display name + app title + tagline + logo + favicon all live
+  // in one .app-form-grid-2 (rows 2-4 of the desktop target); org code + slug
+  // (row 1) are their own .app-form-grid-2 in the create dialog.
+  assert.match(brandingFields, /<div className="app-form-grid-2">/);
+  for (const key of [
+    "organization_name",
+    "display_name",
+    "app_title",
+    "app_tagline",
+    "logo_url",
+    "favicon_url",
+  ]) {
+    assert.ok(brandingFields.includes(key));
+  }
+  const createDialog = SOURCE.slice(
+    SOURCE.indexOf('title="Add Tenant"'),
+    SOURCE.indexOf("open={statusDialogOpen}"),
+  );
+  assert.match(createDialog, /organization_code[\s\S]{0,400}<Field label="Slug"/);
+});
+
+test("the three brand colors get a dedicated three-across row that collapses responsively", () => {
+  assert.match(SOURCE, /<div className="tenant-branding-color-grid">/);
+  assert.match(
+    CSS_SOURCE,
+    /\.tenant-branding-color-grid \{\s*\n\s*display: grid;\s*\n\s*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/,
+  );
+  assert.match(
+    CSS_SOURCE,
+    /@media \(max-width: 899px\) \{\s*\n\s*\.tenant-branding-color-grid \{\s*\n\s*grid-template-columns: 1fr;/,
+  );
+  // the compact native picker never grows on narrow viewports
+  assert.match(CSS_SOURCE, /\.tenant-branding-color-swatch-input \{[\s\S]*?flex: 0 0 auto;/);
+});
+
+test("P-1A is layout-only: creation path, authority, and mutation surface unchanged", () => {
+  assert.match(SOURCE, /createTenantForAdministration\(createForm\)/);
+  assert.match(SOURCE, /onSubmit=\{createTenant\}/);
+  assert.match(SOURCE, /always created Inactive/);
+  assert.match(SOURCE, /<AdminRouteGuard requiredPlatformAuthority>/);
+  assert.equal((SOURCE.match(/requiredPlatformAuthority/g) || []).length, 1);
+  assert.equal(
+    (SOURCE.match(/updateTenantMetadataForAdministration\(/g) || []).length,
+    1,
+  );
+  const combined = `${SOURCE}\n${CLIENT_SOURCE}`;
+  assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(combined), false);
+  assert.doesNotMatch(SOURCE, /fcoc-logo/i);
+  assert.doesNotMatch(SOURCE, /\bFCOC\b/);
+});
