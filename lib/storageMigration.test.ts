@@ -32,10 +32,7 @@ import {
 } from "@/lib/storageKeys";
 import {
   addDualWindowEventListener,
-  dualDispatchWindowEvent,
   dualRemoveLocal,
-  dualSignalLocal,
-  dualWriteLocal,
   legacyStorageKeyFor,
   readMigratingLocal,
   storageEventMatches,
@@ -78,7 +75,7 @@ class MemoryStorage {
 const memory = new MemoryStorage();
 const sessionMemory = new MemoryStorage();
 
-// A `window` that is a real EventTarget so dualDispatchWindowEvent /
+// A `window` that is a real EventTarget so dispatchCanonicalWindowEvent /
 // addDualWindowEventListener exercise genuine dispatch + listener wiring.
 class FakeWindow extends EventTarget {
   localStorage = memory;
@@ -441,18 +438,6 @@ test("addDualWindowEventListener wires + tears down both names", () => {
   assert.equal(hits, 2);
 });
 
-test("dualDispatchWindowEvent emits both names exactly once each", () => {
-  const seen: string[] = [];
-  const a = () => seen.push("a");
-  const b = () => seen.push("b");
-  fakeWindow.addEventListener("epicentrax-y", a);
-  fakeWindow.addEventListener("fcoc-y", b);
-  dualDispatchWindowEvent("epicentrax-y", "fcoc-y");
-  assert.deepEqual(seen, ["a", "b"]);
-  fakeWindow.removeEventListener("epicentrax-y", a);
-  fakeWindow.removeEventListener("fcoc-y", b);
-});
-
 // ---------------------------------------------------------------------------
 // 11. Vendor access resolves with only the existing legacy cookie.
 // ---------------------------------------------------------------------------
@@ -584,14 +569,9 @@ test("readMigratingLocal: canonical wins; else legacy is returned AND migrated f
   assert.equal(readMigratingLocal("epicentrax-k", "fcoc-k"), null);
 });
 
-test("dualWriteLocal / dualSignalLocal / dualRemoveLocal act on both names", () => {
-  dualWriteLocal("epicentrax-w", "fcoc-w", "v");
-  assert.equal(memory.getItem("epicentrax-w"), "v");
-  assert.equal(memory.getItem("fcoc-w"), "v");
-
-  dualSignalLocal("epicentrax-s", "fcoc-s", "1");
-  assert.equal(memory.getItem("epicentrax-s"), "1");
-  assert.equal(memory.getItem("fcoc-s"), "1");
+test("dualRemoveLocal clears both the canonical and the legacy name", () => {
+  memory.setItem("epicentrax-w", "v");
+  memory.setItem("fcoc-w", "v");
 
   dualRemoveLocal("epicentrax-w", "fcoc-w");
   assert.equal(memory.getItem("epicentrax-w"), null);

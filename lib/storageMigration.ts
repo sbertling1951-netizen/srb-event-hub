@@ -3,11 +3,14 @@
 //
 // During the compatibility window, fresh Tier 1–4 identity / session /
 // Event-context / cross-tab state is written under canonical `epicentrax-`
-// names only. Legacy `fcoc-` values remain readable, migrate forward when
-// canonical state is absent, and remain accepted by listeners.
+// names ONLY -- there is deliberately no helper that writes a fresh legacy
+// `fcoc-` value. Legacy values remain readable, migrate forward when
+// canonical state is absent, are still cleared on logout, and are still
+// accepted by cross-tab listeners.
 //
-// This module contains the ONLY fallback / dual-write logic; consumers never
-// hand-roll it. It performs no React work and no network I/O.
+// This module contains the ONLY fallback / migrate-on-read / dual-remove /
+// dual-listen compatibility logic; consumers never hand-roll it. It performs
+// no React work and no network I/O.
 // ---------------------------------------------------------------------------
 
 import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
@@ -60,23 +63,6 @@ export function readMigratingLocal(
   }
 }
 
-/** Write the same value to both the canonical and the legacy key. */
-export function dualWriteLocal(
-  canonicalKey: string,
-  legacyKey: string,
-  value: string,
-): void {
-  if (!hasWindow()) {
-    return;
-  }
-  try {
-    localStorage.setItem(canonicalKey, value);
-    localStorage.setItem(legacyKey, value);
-  } catch {
-    // ignore storage failures (private mode / quota)
-  }
-}
-
 /** Write a newly established value under its canonical name only. */
 export function writeCanonicalLocal(canonicalKey: string, value: string): void {
   if (!hasWindow()) {
@@ -88,12 +74,6 @@ export function writeCanonicalLocal(canonicalKey: string, value: string): void {
     // ignore storage failures (private mode / quota)
   }
 }
-
-/**
- * Emit a cross-tab `storage`-event signal under both key names. Identical to
- * dualWriteLocal; named for intent at the call sites that fire signal pings.
- */
-export const dualSignalLocal = dualWriteLocal;
 
 /** Emit a cross-tab storage signal under its canonical name only. */
 export const signalCanonicalLocal = writeCanonicalLocal;
@@ -133,18 +113,6 @@ export function storageEventMatches(
     }
   }
   return false;
-}
-
-/** Dispatch a same-tab `window` CustomEvent under both names. */
-export function dualDispatchWindowEvent(
-  canonicalName: string,
-  legacyName: string,
-): void {
-  if (!hasWindow()) {
-    return;
-  }
-  window.dispatchEvent(new CustomEvent(canonicalName));
-  window.dispatchEvent(new CustomEvent(legacyName));
 }
 
 /** Dispatch a same-tab CustomEvent under its canonical name only. */
