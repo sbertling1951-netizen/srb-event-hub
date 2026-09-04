@@ -938,7 +938,7 @@ function TenantAdministrationWorkspace() {
         onClose={requestCloseCreate}
         dismissOnBackdrop={false}
         title="Add Tenant"
-        description="New Tenants are always created Inactive. This does not create Events, hostname mappings, or Tenant Administrator appointments."
+        description="Create a new Tenant. After creation, you can complete its setup and activate it from the Tenant workspace."
         className="app-dialog-form tenant-create-dialog"
         footer={
           <>
@@ -950,7 +950,7 @@ function TenantAdministrationWorkspace() {
               loading={busy}
               disabled={createHasColorErrors}
             >
-              Create Inactive Tenant
+              Create Tenant
             </AppButton>
           </>
         }

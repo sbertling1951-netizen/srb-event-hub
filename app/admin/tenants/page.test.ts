@@ -30,15 +30,21 @@ test("active and inactive Tenants come from the governed administrative list and
   }
 });
 
-test("Add Tenant communicates inactive-first side effects and contains no Active control", () => {
+test("Add Tenant uses positive create -> setup -> activate workflow wording and contains no Active control", () => {
   const dialog = SOURCE.slice(
     SOURCE.indexOf('title="Add Tenant"'),
     SOURCE.indexOf("open={statusDialogOpen}"),
   );
-  assert.match(dialog, /always created Inactive/);
-  assert.match(dialog, /does not create Events, hostname mappings, or Tenant Administrator appointments/);
+  // P-1D.2: the CREATION action is a positive action, not "Create Inactive"
+  assert.match(dialog, /description="Create a new Tenant\. After creation, you can complete its setup and activate it from the Tenant workspace\."/);
+  assert.match(dialog, />\s*Create Tenant\s*<\/AppButton>/);
+  assert.equal(/Create Inactive Tenant/.test(dialog), false);
+  // the inactive-first LIFECYCLE is unchanged: same governed RPC, no Active
+  // control on the create form
   assert.match(SOURCE, /createTenantForAdministration\(createForm\)/);
   assert.equal(/Active Tenant|is_active|p_is_active/.test(dialog), false);
+  // the accurate post-create Inactive status/toast is retained
+  assert.match(SOURCE, /Tenant created Inactive\. No Events, hostname mappings, or Tenant Admins were created\./);
 });
 
 test("metadata editing is bounded to the T3 allowlist while immutable identity is display-only", () => {
@@ -303,7 +309,7 @@ test("the three brand colors get a dedicated three-across row that collapses res
 test("P-1A is layout-only: creation path, authority, and mutation surface unchanged", () => {
   assert.match(SOURCE, /createTenantForAdministration\(createForm\)/);
   assert.match(SOURCE, /onSubmit=\{createTenant\}/);
-  assert.match(SOURCE, /always created Inactive/);
+  assert.match(SOURCE, /Tenant created Inactive\. No Events, hostname mappings, or Tenant Admins were created\./);
   assert.match(SOURCE, /<AdminRouteGuard requiredPlatformAuthority>/);
   assert.equal((SOURCE.match(/requiredPlatformAuthority/g) || []).length, 1);
   assert.equal(
@@ -436,8 +442,7 @@ test("P-1B keeps the three-color desktop row and responsive collapse intact", ()
 test("P-1B is layout-only: creation, authority, and P-1 color validation all unchanged", () => {
   assert.match(SOURCE, /createTenantForAdministration\(createForm\)/);
   assert.match(SOURCE, /onSubmit=\{createTenant\}/);
-  assert.match(SOURCE, /always created Inactive/);
-  assert.match(SOURCE, /does not create Events, hostname mappings, or Tenant Administrator appointments/);
+  assert.match(SOURCE, /Tenant created Inactive\. No Events, hostname mappings, or Tenant Admins were created\./);
   assert.match(SOURCE, /<AdminRouteGuard requiredPlatformAuthority>/);
   assert.equal((SOURCE.match(/requiredPlatformAuthority/g) || []).length, 1);
   assert.match(SOURCE, /function brandingColorErrors\(/);
@@ -535,8 +540,7 @@ test("P-1C keeps P-1A width, P-1B compact controls, 3-column colors, two-row Rea
 test("P-1C is layout-only: creation path, authority, validation and P-1 preview all unchanged", () => {
   assert.match(SOURCE, /createTenantForAdministration\(createForm\)/);
   assert.match(SOURCE, /onSubmit=\{createTenant\}/);
-  assert.match(SOURCE, /always created Inactive/);
-  assert.match(SOURCE, /does not create Events, hostname mappings, or Tenant Administrator appointments/);
+  assert.match(SOURCE, /Tenant created Inactive\. No Events, hostname mappings, or Tenant Admins were created\./);
   assert.match(SOURCE, /<AdminRouteGuard requiredPlatformAuthority>/);
   assert.equal((SOURCE.match(/requiredPlatformAuthority/g) || []).length, 1);
   assert.match(SOURCE, /disabled=\{createHasColorErrors\}/);
@@ -680,4 +684,34 @@ test("P-1D.1: no client change to the EVENT-level field or lifecycle behaviour",
   // page.tsx only ever touches the tenant field; nothing about events.* here
   assert.equal(/events\.post_event_edit_window_days/.test(SOURCE), false);
   assert.equal(/event_effective_lifecycle_state|assert_event_lifecycle_mutable/.test(SOURCE), false);
+});
+
+// -- Tenant Branding P-1D.2: positive tenant-creation wording ------------
+
+test("P-1D.2: the separate Activate/Deactivate lifecycle control is untouched", () => {
+  // detail-header lifecycle button
+  assert.match(SOURCE, /\{detail\.is_active \? "Deactivate Tenant" : "Activate Tenant"\}/);
+  // governed confirmation dialog + RPC path
+  assert.match(SOURCE, /title=\{detail\?\.is_active \? "Deactivate Tenant" : "Activate Tenant"\}/);
+  assert.match(SOURCE, /setTenantActiveStatus\(detail\.id, nextActive, statusReason\)/);
+  assert.match(SOURCE, /const nextActive = !detail\.is_active;/);
+  assert.match(SOURCE, /id="tenant-status-form"/);
+  // status badge + inactive alert both remain accurate
+  assert.match(SOURCE, /Tenant \{detail\.is_active \? "Active" : "Inactive"\}/);
+  assert.match(SOURCE, /This Tenant is inactive\. Active hostname mappings do not make it operational\./);
+});
+
+test("P-1D.2 is wording-only: governed create RPC, is_active flag, authority and post-create flow unchanged", () => {
+  assert.match(SOURCE, /createTenantForAdministration\(createForm\)/);
+  assert.match(SOURCE, /onSubmit=\{createTenant\}/);
+  // post-create flow: select the new tenant + open its workspace
+  assert.match(SOURCE, /setSelectedTenantId\(created\.id\);/);
+  assert.match(SOURCE, /await loadTenantWorkspace\(created\.id\);/);
+  assert.match(SOURCE, /<AdminRouteGuard requiredPlatformAuthority>/);
+  assert.equal((SOURCE.match(/requiredPlatformAuthority/g) || []).length, 1);
+  // no client is_active/activation control anywhere in the create path
+  assert.equal(/p_is_active|isActive: true|is_active: true/.test(SOURCE), false);
+  const combined = `${SOURCE}\n${CLIENT_SOURCE}`;
+  assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(combined), false);
+  assert.doesNotMatch(SOURCE, /\bFCOC\b/);
 });
