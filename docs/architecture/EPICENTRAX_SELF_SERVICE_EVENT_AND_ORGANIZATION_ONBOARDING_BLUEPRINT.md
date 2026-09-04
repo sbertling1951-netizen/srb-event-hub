@@ -232,6 +232,73 @@ stage. A future retention/aging policy may be designed separately from the
 commercial model, Event lifecycle, authority, and historical preservation
 rules.
 
+#### Accepted initial Event media capacity and archive direction
+
+Media capacity is an Event-level entitlement that follows the Event from first
+upload through archival retention. It is not an organizer-level allowance and
+must not be used to distinguish product tiers or withhold any core Event
+module. The initial commercial direction is:
+
+- A **Launch Pass** is priced at $24 per Event. It includes 100 GB of Event
+  media capacity and 12 months of gallery access after the Event ends.
+- A future **Event Archive** renewal is priced at $24 per Event per year and
+  preserves up to 100 GB of retained media and the authorized guests' access
+  to it.
+- Each future additional 100 GB capacity block is priced at $24 per Event per
+  year.
+- Capacity measures the canonical original media objects once per Event;
+  generated thumbnails, derivatives, and viewer downloads do not consume the
+  Event's stated capacity.
+
+The initial model has no annual account or organization-maintenance
+subscription. A host pays the one-time Launch Pass for each Event and then
+chooses independently which completed Events, if any, receive annual archive
+renewal. A future recurring-organization offering may bundle capacity or
+archives, but it must remain optional and cannot change the all-core-features
+product promise.
+
+The organizer-facing experience must remain plain and proactive. A future
+implementation shows an Event media meter and notifies authorized organizers
+at 75%, 90%, and 100% of included capacity. At capacity, existing media
+remains available for the established authorized viewing/download experience;
+only further uploads pause after a bounded grace buffer unless the organizer
+removes media or adds capacity. The product must never silently delete or hide
+existing Event media merely because capacity is exceeded.
+
+Media movement is a platform-owned, automated, and auditable operation. After
+the included online-access period, retained media may move through lifecycle
+rules to encrypted, tenant-isolated cold storage. Restoration on an active
+archive entitlement must be automated; it must never depend on a Super Admin,
+the network administrator, or a personal storage account. The exact grace,
+non-renewal, deletion, backup, restoration-time, and provider selection rules
+remain separate decisions before implementation.
+
+#### Accepted media compatibility and viewing-rendition direction
+
+EpicentraX must accept the ordinary photo formats guests use without asking
+them to convert files first. The minimum supported upload set is JPEG/JPG,
+HEIC/HEIF, PNG, and WebP; implementation must validate and test each format
+through the actual upload, authorization, thumbnail, and slideshow paths.
+Additional formats may be added only with the same end-to-end compatibility
+proof.
+
+The accepted original is retained as the authoritative Event media object and
+counts once toward Event capacity. It is not the routine viewing asset.
+Automated media processing creates purpose-specific viewing renditions:
+
+- a small, efficient thumbnail for grids and galleries; and
+- a high-quality, projection-ready slideshow rendition, preserving aspect
+  ratio and orientation and never upscaling a smaller source.
+
+The slideshow must use its projection-ready rendition rather than either the
+original upload or the thumbnail. The future implementation should generate a
+high-quality rendition suitable for large-screen/4K projection when source
+dimensions permit, while selecting a broadly compatible format and sensible
+delivery size. Authorized original download, if offered, remains a distinct
+action. The exact rendition formats, dimensions, quality settings, metadata
+handling, and processing provider are implementation decisions that must be
+tested before release.
+
 The established product direction is nevertheless clear:
 
 - Core Event modules are not withheld according to organizer size or
