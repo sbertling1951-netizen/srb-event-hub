@@ -141,6 +141,19 @@ must still be a distinct governed decision with its own audit record and
 failure/recovery behavior. It must not weaken the inactive-Tenant safety
 boundary.
 
+#### Accepted activation rule
+
+After a verified organizer creates a first private draft Event, EpicentraX
+automatically activates that organizer's underlying organization as part of
+the one governed onboarding workflow. The internal creation, organizer
+appointment, activation, and Event-creation steps remain distinct, auditable,
+and recoverable; the organizer experiences one continuous action.
+
+This activation does **not** publish the Event, invite anyone, create a
+hostname, expose public discovery, or grant Platform Administrator authority.
+The Event remains private, Draft, inactive, and hidden until later explicit
+organizer actions.
+
 ### 4.4 Guided Event setup
 
 After draft creation, the organizer sees a short setup hub rather than an
