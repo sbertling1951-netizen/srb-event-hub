@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { TenantBrandingPreview } from "@/components/admin/tenant/TenantBrandingPreview";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -232,6 +232,9 @@ function TenantBrandingFields({
   colorErrors: Partial<Record<BrandingColorKey, string>>;
   onChange: (patch: Partial<TenantMetadataForm>) => void;
 }) {
+  // One shared help line under the three brand colors instead of the same
+  // sentence repeated three times.
+  const colorHelpId = useId();
   return (
     <div className="tenant-branding-fields">
       <div className="app-form-grid-2">
@@ -300,46 +303,55 @@ function TenantBrandingFields({
           )}
         </Field>
       </div>
-      <div className="tenant-branding-color-grid">
-        {BRANDING_COLOR_FIELDS.map(({ key, label }) => {
-          const value = form[key];
-          const pickerValue = /^#[0-9a-fA-F]{6}$/.test(value.trim())
-            ? value.trim()
-            : "#000000";
-          return (
-            <Field
-              key={key}
-              label={label}
-              help="Hex (#rgb, #rrggbb), rgb()/hsl(), or a CSS color name. Blank uses the neutral default."
-              error={colorErrors[key]}
-              disabled={disabled}
-            >
-              {(props) => (
-                <div className="tenant-branding-color-row">
-                  <Input
-                    {...props}
-                    value={value}
-                    onChange={(event) =>
-                      onChange({ [key]: event.target.value } as Partial<TenantMetadataForm>)
-                    }
-                  />
-                  <input
-                    type="color"
-                    className="tenant-branding-color-swatch-input"
-                    aria-label={`${label} picker`}
-                    disabled={disabled}
-                    value={pickerValue}
-                    onChange={(event) =>
-                      onChange({
-                        [key]: event.target.value,
-                      } as Partial<TenantMetadataForm>)
-                    }
-                  />
-                </div>
-              )}
-            </Field>
-          );
-        })}
+      <div className="tenant-branding-color-group">
+        <div className="tenant-branding-color-grid">
+          {BRANDING_COLOR_FIELDS.map(({ key, label }) => {
+            const value = form[key];
+            const pickerValue = /^#[0-9a-fA-F]{6}$/.test(value.trim())
+              ? value.trim()
+              : "#000000";
+            return (
+              <Field
+                key={key}
+                label={label}
+                error={colorErrors[key]}
+                disabled={disabled}
+              >
+                {(props) => (
+                  <div className="tenant-branding-color-row">
+                    <Input
+                      {...props}
+                      aria-describedby={
+                        [props["aria-describedby"], colorHelpId]
+                          .filter(Boolean)
+                          .join(" ") || undefined
+                      }
+                      value={value}
+                      onChange={(event) =>
+                        onChange({ [key]: event.target.value } as Partial<TenantMetadataForm>)
+                      }
+                    />
+                    <input
+                      type="color"
+                      className="tenant-branding-color-swatch-input"
+                      aria-label={`${label} picker`}
+                      disabled={disabled}
+                      value={pickerValue}
+                      onChange={(event) =>
+                        onChange({
+                          [key]: event.target.value,
+                        } as Partial<TenantMetadataForm>)
+                      }
+                    />
+                  </div>
+                )}
+              </Field>
+            );
+          })}
+        </div>
+        <p id={colorHelpId} className="app-field-help tenant-branding-color-help">
+          Hex, RGB/HSL, or CSS color name. Blank uses the default.
+        </p>
       </div>
     </div>
   );
@@ -356,9 +368,10 @@ function TenantOperationalFields({
   tenantTypes: TenantTypeRow[];
   disabled?: boolean;
   /**
-   * Add Tenant dialog: render the row asymmetrically -- Tenant type keeps a
-   * useful width, Post-Event edit window is a compact numeric control. The
-   * per-Tenant editor keeps the standard two-column grid.
+   * Add Tenant dialog: two equal desktop columns where the Post-Event field
+   * lays its compact numeric input and its help text out side by side, so
+   * the row height is not driven up by wrapped help. The per-Tenant editor
+   * keeps the standard two-column grid.
    */
   compact?: boolean;
   onChange: (patch: Partial<TenantMetadataForm>) => void;
@@ -387,6 +400,7 @@ function TenantOperationalFields({
         label="Post-Event edit window (days)"
         help="Leave blank to use no Tenant-specific override. Zero is preserved."
         disabled={disabled}
+        className={compact ? "tenant-operational-window-field" : undefined}
       >
         {(props) => (
           <Input

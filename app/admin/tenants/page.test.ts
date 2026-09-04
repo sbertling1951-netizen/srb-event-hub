@@ -382,9 +382,21 @@ test("Post-Event edit window is a deliberately compact numeric control; Tenant t
   );
   // create dialog opts in; the per-Tenant editor does not
   assert.match(SOURCE, /<TenantOperationalFields\s*\n\s*form=\{form\}\s*\n\s*tenantTypes=\{tenantTypes\}\s*\n\s*disabled=\{disabled\}\s*\n\s*compact\s*\n\s*onChange=\{onChange\}/);
+  // P-1D: two equal desktop columns; the Post-Event field lays input + help
+  // side by side so its help does not inflate the row height
   assert.match(
     CSS_SOURCE,
-    /@media \(min-width: 900px\) \{[\s\S]*?\.tenant-operational-row-compact \{\s*\n\s*grid-template-columns: minmax\(0, 1fr\) minmax\(200px, 240px\);/,
+    /@media \(min-width: 900px\) \{[\s\S]*?\.tenant-operational-row-compact \{\s*\n\s*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/,
+  );
+  assert.match(SOURCE, /className=\{compact \? "tenant-operational-window-field" : undefined\}/);
+  assert.match(
+    CSS_SOURCE,
+    /\.tenant-create-form \.tenant-operational-window-field \{[\s\S]*?grid-template-areas:\s*\n\s*"label label"\s*\n\s*"control help";/,
+  );
+  // the compact input still lives in a ~7-9rem column (visually compact)
+  assert.match(
+    CSS_SOURCE,
+    /\.tenant-create-form \.tenant-operational-window-field \{\s*\n\s*grid-template-columns: minmax\(7rem, 9rem\) minmax\(0, 1fr\);/,
   );
   // semantics unchanged: still a number input writing post_event_edit_window_days
   assert.match(SOURCE, /type="number"[\s\S]{0,260}post_event_edit_window_days: event\.target\.value/);
@@ -539,4 +551,97 @@ test("P-1C is layout-only: creation path, authority, validation and P-1 preview 
   assert.doesNotMatch(SOURCE, /fcoc-logo/i);
   assert.doesNotMatch(SOURCE, /\bFCOC\b/);
   assert.doesNotMatch(SOURCE, /generateMetadata/);
+});
+
+// -- Tenant Branding P-1D: dedup color help + operational row layout -------
+
+test("P-1D: the three brand-color inputs share ONE help line, not the same sentence three times", () => {
+  const brandingFields = SOURCE.slice(
+    SOURCE.indexOf("function TenantBrandingFields"),
+    SOURCE.indexOf("function TenantOperationalFields"),
+  );
+  // no per-field help on the color Fields
+  assert.equal(
+    /BRANDING_COLOR_FIELDS\.map[\s\S]*?<Field[\s\S]*?help=/.test(brandingFields),
+    false,
+  );
+  // exactly one shared help line, concise wording
+  assert.match(
+    brandingFields,
+    /<p id=\{colorHelpId\} className="app-field-help tenant-branding-color-help">\s*\n\s*Hex, RGB\/HSL, or CSS color name\. Blank uses the default\.\s*\n\s*<\/p>/,
+  );
+  assert.equal((brandingFields.match(/Hex, RGB\/HSL/g) || []).length, 1);
+  // accessibility preserved: each color input is described by the shared help
+  assert.match(brandingFields, /const colorHelpId = useId\(\);/);
+  assert.match(
+    brandingFields,
+    /aria-describedby=\{\s*\n\s*\[props\["aria-describedby"\], colorHelpId\]/,
+  );
+});
+
+test("P-1D: all three color labels, text inputs, native pickers and per-field validation remain", () => {
+  const brandingFields = SOURCE.slice(
+    SOURCE.indexOf("function TenantBrandingFields"),
+    SOURCE.indexOf("function TenantOperationalFields"),
+  );
+  assert.match(brandingFields, /BRANDING_COLOR_FIELDS\.map\(\(\{ key, label \}\)/);
+  assert.match(brandingFields, /<Field\s*\n\s*key=\{key\}\s*\n\s*label=\{label\}\s*\n\s*error=\{colorErrors\[key\]\}/);
+  assert.match(brandingFields, /type="color"/);
+  assert.match(brandingFields, /aria-label=\{`\$\{label\} picker`\}/);
+});
+
+test("P-1D: BRANDING_COLOR_FIELDS still lists primary / secondary / accent", () => {
+  const constDef = SOURCE.slice(
+    SOURCE.indexOf("const BRANDING_COLOR_FIELDS"),
+    SOURCE.indexOf("] as const;"),
+  );
+  for (const key of ["primary_color", "secondary_color", "accent_color"]) {
+    assert.ok(constDef.includes(key));
+  }
+});
+
+test("P-1D: operational row is two equal columns and the Post-Event help sits beside its input on desktop", () => {
+  assert.match(SOURCE, /className=\{compact \? "tenant-operational-window-field" : undefined\}/);
+  assert.match(
+    CSS_SOURCE,
+    /@media \(min-width: 900px\) \{[\s\S]*?\.tenant-operational-row-compact \{\s*\n\s*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/,
+  );
+  assert.match(
+    CSS_SOURCE,
+    /\.tenant-create-form \.tenant-operational-window-field \{\s*\n\s*grid-template-columns: minmax\(7rem, 9rem\) minmax\(0, 1fr\);\s*\n\s*grid-template-areas:\s*\n\s*"label label"\s*\n\s*"control help";/,
+  );
+  // label/control/help area mappings exist
+  for (const part of [
+    "> .app-field-label {\n    grid-area: label;",
+    "> .app-control {\n    grid-area: control;",
+    "> .app-field-help {\n    grid-area: help;",
+  ]) {
+    assert.ok(CSS_SOURCE.includes(`.tenant-create-form .tenant-operational-window-field ${part}`), part);
+  }
+  // only inside the >= 900px block -- tablet/mobile keep the plain vertical field
+  const belowDesktop = CSS_SOURCE.slice(
+    CSS_SOURCE.indexOf("Tenant Branding P-1A/B/C/D"),
+    CSS_SOURCE.indexOf("@media (min-width: 900px)"),
+  );
+  assert.equal(/tenant-operational-window-field/.test(belowDesktop), false);
+});
+
+test("P-1D: Post-Event semantics, help text, Reason rows, dialog width and creation path all unchanged", () => {
+  // help TEXT is not touched in P-1D (Part A found dynamic/retroactive policy)
+  assert.match(SOURCE, /Leave blank to use no Tenant-specific override\. Zero is preserved\./);
+  assert.match(SOURCE, /type="number"[\s\S]{0,260}post_event_edit_window_days: event\.target\.value/);
+  const createDialog = SOURCE.slice(SOURCE.indexOf('title="Add Tenant"'), SOURCE.indexOf("open={statusDialogOpen}"));
+  assert.match(createDialog, /<Field label="Reason"[\s\S]*?rows=\{2\}/);
+  assert.match(createDialog, /className="app-dialog-form tenant-create-dialog"/);
+  assert.match(CSS_SOURCE, /\.app-dialog-form \{\s*\n\s*max-width: min\(1080px, calc\(100vw - 32px\)\);/);
+  assert.match(SOURCE, /createTenantForAdministration\(createForm\)/);
+  assert.match(SOURCE, /<AdminRouteGuard requiredPlatformAuthority>/);
+  assert.equal((SOURCE.match(/requiredPlatformAuthority/g) || []).length, 1);
+  const combined = `${SOURCE}\n${CLIENT_SOURCE}`;
+  assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(combined), false);
+  for (const table of ["tenants", "tenant_hostname_mappings", "admin_tenant_access"]) {
+    assert.equal(new RegExp(`\\.from\\(["']${table}["']\\)`).test(combined), false);
+  }
+  assert.doesNotMatch(SOURCE, /fcoc-logo/i);
+  assert.doesNotMatch(SOURCE, /\bFCOC\b/);
 });

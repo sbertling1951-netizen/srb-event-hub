@@ -1088,15 +1088,17 @@ textarea.app-control,
   }
 }
 
-/* Tenant Branding P-1A/B/C -- the Add Tenant creation dialog.
+/* Tenant Branding P-1A/B/C/D -- the Add Tenant creation dialog.
    Width comes from the shared `app-dialog-form` variant on the PANEL
    (`.tenant-create-dialog`): min(1080px, 100vw - 32px), a max-height
    min(90vh, 90dvh) safety ceiling, and a size container. This block is
    only the form-body treatment: a content-sized grid, compact desktop
-   controls, and -- the P-1C fix -- every paired field aligned to the TOP
-   of its cell (`align-items: start`) so a short control beside a control
-   with long wrapped help text is never stretched to match it and never
-   leaves a blank band. Scoped entirely to `.tenant-create-dialog` /
+   controls, every paired field aligned to the TOP of its cell
+   (`align-items: start`, P-1C) so a short control beside a control with
+   wrapped help text is never stretched, and -- P-1D -- one shared help
+   line under the three brand colors plus the Post-Event field laying its
+   input and help side by side so wrapped help never drives the operational
+   row height. Scoped entirely to `.tenant-create-dialog` /
    `.tenant-create-form`; no shared `.app-control` / `.app-field` /
    `.app-dialog` rule is touched, and the 45px touch target is kept below
    900px where the dialog stacks to one column and scrolls. */
@@ -1121,10 +1123,20 @@ textarea.app-control,
   min-height: 3.5rem;
 }
 
-/* Operational row: Tenant type keeps a flexible useful width; the
-   Post-Event edit window is a compact numeric column -- wide enough that
-   its help text wraps to about two lines, not four. Stacks below 900px
-   like the shared two-column grid. */
+/* P-1D: the three brand-color inputs share one help line rendered once
+   under the group, not repeated per field. */
+.tenant-branding-color-group {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.tenant-branding-color-help {
+  margin: 0;
+}
+
+/* Operational row: Tenant type and the compact Post-Event numeric field.
+   Stacks below 900px like the shared two-column grid. */
 .tenant-operational-row-compact {
   display: grid;
   grid-template-columns: 1fr;
@@ -1157,8 +1169,37 @@ textarea.app-control,
     block-size: 2.25rem;
   }
 
+  /* P-1D: two equal columns. The Post-Event field keeps a compact input
+     but lays its help text out beside the input (label spanning above)
+     rather than under it, so wrapped help does not inflate the row and
+     leave a blank band under Tenant type. */
   .tenant-operational-row-compact {
-    grid-template-columns: minmax(0, 1fr) minmax(200px, 240px);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .tenant-create-form .tenant-operational-window-field {
+    grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr);
+    grid-template-areas:
+      "label label"
+      "control help";
+    column-gap: var(--space-3);
+    align-items: center;
+  }
+
+  .tenant-create-form .tenant-operational-window-field > .app-field-label {
+    grid-area: label;
+  }
+
+  .tenant-create-form .tenant-operational-window-field > .app-control {
+    grid-area: control;
+  }
+
+  .tenant-create-form .tenant-operational-window-field > .app-field-help {
+    grid-area: help;
+  }
+
+  .tenant-create-form .tenant-operational-window-field > .app-field-error {
+    grid-column: 1 / -1;
   }
 }
 
