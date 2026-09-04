@@ -219,6 +219,19 @@ user typed a hostname.
 This blueprint does not define billing, plans, limits, or entitlements.
 Those require their own authoritative model and a separate product decision.
 
+#### Accepted initial draft and launch rule
+
+An organizer may create and retain a private draft Event indefinitely without
+payment. The draft remains private and does not become usable by guests merely
+because it exists. EpicentraX asks for payment at the future explicit **Launch
+Event** decision, when the organizer chooses to publish or otherwise make the
+Event available to others.
+
+No automatic draft expiry, deletion, or aging rule is introduced at this
+stage. A future retention/aging policy may be designed separately from the
+commercial model, Event lifecycle, authority, and historical preservation
+rules.
+
 The established product direction is nevertheless clear:
 
 - Core Event modules are not withheld according to organizer size or
