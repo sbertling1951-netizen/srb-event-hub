@@ -299,6 +299,31 @@ action. The exact rendition formats, dimensions, quality settings, metadata
 handling, and processing provider are implementation decisions that must be
 tested before release.
 
+#### Accepted Event visibility and guest-access direction
+
+New organizers must choose a guest-access approach using plain,
+consequence-oriented language rather than internal policy terms. The guided
+onboarding choice is:
+
+| Organizer-facing choice | Meaning |
+| --- | --- |
+| **Invite specific people** | Only people the organizer invites may join or see private Event content. This is the safe default and is recommended for family, corporate, and club Events. |
+| **Share a private link** | Anyone the organizer intentionally sends the link to may join; a recipient can forward the link to another person. This is appropriate for lower-control, casual gatherings. |
+| **Promote this Event publicly** | People may find the public Event page. Registration, an Event code, organizer approval, and participant-only content remain separately governable. |
+
+Visibility, participation, and private-content access are independent product
+decisions. A public Event page may show only organizer-approved public Event
+details. It must not by itself disclose the attendee roster, private Event
+workspace, photos, or other participant-only material. An Event code remains
+an available participation gate, but is not a substitute for a defined access
+policy because it can be shared.
+
+**Invite specific people** is preselected. Before a choice takes effect, the
+organizer receives a brief explanation of who can find the Event, who can join
+it, and what a recipient can share. The organizer may later deliberately
+change the setting, with a clear warning when doing so widens visibility or
+access.
+
 The established product direction is nevertheless clear:
 
 - Core Event modules are not withheld according to organizer size or
