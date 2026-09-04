@@ -273,7 +273,7 @@ function TenantBrandingFields({
         </Field>
         <Field
           label="Logo URL"
-          help="The tenant logo shown across EpicentraX presentation. An SVG or a roughly square PNG (192px or larger) works best. Blank uses the neutral platform default."
+          help="Shown across EpicentraX presentation. An SVG or a roughly square PNG (192px+) works best; blank uses the neutral platform default."
           disabled={disabled}
         >
           {(props) => (
@@ -940,7 +940,7 @@ function TenantAdministrationWorkspace() {
       >
         <form
           id="create-tenant-form"
-          className="app-dialog-form app-stack-8 tenant-create-form"
+          className="tenant-create-form"
           onSubmit={createTenant}
         >
           {error ? <Alert tone="danger">{error}</Alert> : null}
