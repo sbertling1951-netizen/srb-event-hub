@@ -349,15 +349,24 @@ function TenantOperationalFields({
   form,
   tenantTypes,
   disabled,
+  compact,
   onChange,
 }: {
   form: TenantMetadataForm;
   tenantTypes: TenantTypeRow[];
   disabled?: boolean;
+  /**
+   * Add Tenant dialog: render the row asymmetrically -- Tenant type keeps a
+   * useful width, Post-Event edit window is a compact numeric control. The
+   * per-Tenant editor keeps the standard two-column grid.
+   */
+  compact?: boolean;
   onChange: (patch: Partial<TenantMetadataForm>) => void;
 }) {
   return (
-    <div className="app-form-grid-2">
+    <div
+      className={compact ? "tenant-operational-row-compact" : "app-form-grid-2"}
+    >
       <Field label="Tenant type" disabled={disabled}>
         {(props) => (
           <Select
@@ -396,10 +405,10 @@ function TenantOperationalFields({
   );
 }
 
-// One governed metadata editor, presented as two field groups. The create
-// dialog renders both inline; the per-Tenant editor splits them into named
-// PageSections. There is exactly one save path
-// (updateTenantMetadataForAdministration) regardless of grouping.
+// One governed metadata editor, presented as two field groups. Only the
+// create dialog renders this composition (the per-Tenant editor splits the
+// two groups into named PageSections). There is exactly one create path
+// (createTenantForAdministration) regardless of grouping.
 function TenantMetadataFields({
   form,
   tenantTypes,
@@ -425,6 +434,7 @@ function TenantMetadataFields({
         form={form}
         tenantTypes={tenantTypes}
         disabled={disabled}
+        compact
         onChange={onChange}
       />
     </>
@@ -912,7 +922,7 @@ function TenantAdministrationWorkspace() {
         dismissOnBackdrop={false}
         title="Add Tenant"
         description="New Tenants are always created Inactive. This does not create Events, hostname mappings, or Tenant Administrator appointments."
-        className="app-dialog-form"
+        className="app-dialog-form tenant-create-dialog"
         footer={
           <>
             <AppButton onClick={requestCloseCreate} disabled={busy}>Cancel</AppButton>
@@ -930,7 +940,7 @@ function TenantAdministrationWorkspace() {
       >
         <form
           id="create-tenant-form"
-          className="app-dialog-form app-stack-8"
+          className="app-dialog-form app-stack-8 tenant-create-form"
           onSubmit={createTenant}
         >
           {error ? <Alert tone="danger">{error}</Alert> : null}
@@ -971,7 +981,7 @@ function TenantAdministrationWorkspace() {
             {(props) => (
               <Textarea
                 {...props}
-                rows={3}
+                rows={2}
                 value={createForm.reason}
                 onChange={(event) =>
                   setCreateForm((current) => ({ ...current, reason: event.target.value }))

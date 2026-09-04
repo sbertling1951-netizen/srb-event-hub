@@ -247,7 +247,7 @@ test("Add Tenant uses the shared intentional wide/container dialog variant, not 
   );
   // The Add Tenant Dialog panel now opts into app-dialog-form (the same
   // width/height/container variant admin-users and nearby already use).
-  assert.match(dialog, /className="app-dialog-form"/);
+  assert.match(dialog, /className="app-dialog-form(?: [^"]*)?"/);
   assert.equal(/app-dialog-wide/.test(dialog), false);
 
   // That variant is viewport-responsive with safe margins, and the shared
@@ -314,4 +314,124 @@ test("P-1A is layout-only: creation path, authority, and mutation surface unchan
   assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(combined), false);
   assert.doesNotMatch(SOURCE, /fcoc-logo/i);
   assert.doesNotMatch(SOURCE, /\bFCOC\b/);
+});
+
+// -- Tenant Branding P-1B: compact Add Tenant form / one-page desktop fit ---
+
+test("P-1A wide dialog stays: the panel still opts into app-dialog-form and never returns to app-dialog-wide", () => {
+  const dialog = SOURCE.slice(
+    SOURCE.indexOf('title="Add Tenant"'),
+    SOURCE.indexOf("open={statusDialogOpen}"),
+  );
+  assert.match(dialog, /className="app-dialog-form tenant-create-dialog"/);
+  assert.equal(/app-dialog-wide/.test(dialog), false);
+  assert.match(
+    CSS_SOURCE,
+    /\.app-dialog-form \{\s*\n\s*max-width: min\(1080px, calc\(100vw - 32px\)\);/,
+  );
+});
+
+test("the Add Tenant form carries the scoped compact treatment", () => {
+  assert.match(
+    SOURCE,
+    /id="create-tenant-form"\s*\n\s*className="app-dialog-form app-stack-8 tenant-create-form"/,
+  );
+  // scoped compact CSS exists
+  assert.match(CSS_SOURCE, /\.tenant-create-form \.app-field \{\s*\n\s*gap: var\(--space-1\);/);
+  assert.match(
+    CSS_SOURCE,
+    /@media \(min-width: 900px\) \{[\s\S]*?\.tenant-create-form \.app-control \{\s*\n\s*min-height: 2\.25rem;/,
+  );
+});
+
+test("compactness is scoped to the Add Tenant workspace -- shared control/field/dialog rules are untouched", () => {
+  // shared .app-control keeps its 45px touch target and 10px padding
+  assert.match(
+    CSS_SOURCE,
+    /\.app-control,[\s\S]*?\.app-form-input \{\s*\n\s*width: 100%;\s*\n\s*min-height: var\(--touch-target-min\);\s*\n\s*padding: var\(--space-4\);/,
+  );
+  // shared .app-field keeps its --space-2 rhythm
+  assert.match(CSS_SOURCE, /\.app-field \{\s*\n\s*display: grid;\s*\n\s*gap: var\(--space-2\);\s*\n\}/);
+  // every P-1B control/field override is prefixed with a tenant-create scope
+  const p1bBlock = CSS_SOURCE.slice(
+    CSS_SOURCE.indexOf("Tenant Branding P-1B:"),
+    CSS_SOURCE.indexOf("/* Tenant Branding P-1: a text field paired"),
+  );
+  for (const line of p1bBlock.split("\n")) {
+    if (/\.app-(control|field)\b/.test(line) && line.trim().endsWith("{")) {
+      assert.match(
+        line,
+        /\.tenant-create-form /,
+        `P-1B rule must be scoped to .tenant-create-form: ${line.trim()}`,
+      );
+    }
+  }
+});
+
+test("Post-Event edit window is a deliberately compact numeric control; Tenant type keeps a useful width", () => {
+  assert.match(SOURCE, /function TenantOperationalFields\(\{[\s\S]*?compact,/);
+  assert.match(
+    SOURCE,
+    /className=\{compact \? "tenant-operational-row-compact" : "app-form-grid-2"\}/,
+  );
+  // create dialog opts in; the per-Tenant editor does not
+  assert.match(SOURCE, /<TenantOperationalFields\s*\n\s*form=\{form\}\s*\n\s*tenantTypes=\{tenantTypes\}\s*\n\s*disabled=\{disabled\}\s*\n\s*compact\s*\n\s*onChange=\{onChange\}/);
+  assert.match(
+    CSS_SOURCE,
+    /@media \(min-width: 900px\) \{[\s\S]*?\.tenant-operational-row-compact \{\s*\n\s*grid-template-columns: minmax\(0, 1fr\) minmax\(120px, 160px\);/,
+  );
+  // semantics unchanged: still a number input writing post_event_edit_window_days
+  assert.match(SOURCE, /type="number"[\s\S]{0,260}post_event_edit_window_days: event\.target\.value/);
+  assert.match(SOURCE, /Leave blank to use no Tenant-specific override\. Zero is preserved\./);
+});
+
+test("Reason textarea has a reduced default desktop footprint but stays a real, resizable field", () => {
+  const createDialog = SOURCE.slice(
+    SOURCE.indexOf('title="Add Tenant"'),
+    SOURCE.indexOf("open={statusDialogOpen}"),
+  );
+  assert.match(createDialog, /<Field label="Reason"[\s\S]*?<Textarea\s*\n\s*\{\.\.\.props\}\s*\n\s*rows=\{2\}/);
+  assert.match(CSS_SOURCE, /\.tenant-create-form textarea\.app-control \{\s*\n\s*min-height: 3\.5rem;/);
+  assert.match(CSS_SOURCE, /textarea\.app-control,[\s\S]*?\{\s*\n\s*resize: vertical;/);
+  // Reason field, payload and audit copy unchanged
+  assert.match(createDialog, /Optional administrative context for the audit history\./);
+  assert.match(createDialog, /reason: event\.target\.value/);
+});
+
+test("P-1B keeps the three-color desktop row and responsive collapse intact", () => {
+  assert.match(SOURCE, /<div className="tenant-branding-color-grid">/);
+  assert.match(
+    CSS_SOURCE,
+    /\.tenant-branding-color-grid \{\s*\n\s*display: grid;\s*\n\s*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/,
+  );
+  assert.match(
+    CSS_SOURCE,
+    /@media \(max-width: 899px\) \{\s*\n\s*\.tenant-branding-color-grid \{\s*\n\s*grid-template-columns: 1fr;/,
+  );
+  // the compact operational row is single-column by default and only becomes
+  // the asymmetric two-column layout at >= 900px
+  assert.match(
+    CSS_SOURCE,
+    /\.tenant-operational-row-compact \{\s*\n\s*display: grid;\s*\n\s*grid-template-columns: 1fr;/,
+  );
+});
+
+test("P-1B is layout-only: creation, authority, and P-1 color validation all unchanged", () => {
+  assert.match(SOURCE, /createTenantForAdministration\(createForm\)/);
+  assert.match(SOURCE, /onSubmit=\{createTenant\}/);
+  assert.match(SOURCE, /always created Inactive/);
+  assert.match(SOURCE, /does not create Events, hostname mappings, or Tenant Administrator appointments/);
+  assert.match(SOURCE, /<AdminRouteGuard requiredPlatformAuthority>/);
+  assert.equal((SOURCE.match(/requiredPlatformAuthority/g) || []).length, 1);
+  assert.match(SOURCE, /function brandingColorErrors\(/);
+  assert.match(SOURCE, /disabled=\{createHasColorErrors\}/);
+  assert.match(SOURCE, /disabled=\{!metadataDirty \|\| metadataHasColorErrors\}/);
+  const combined = `${SOURCE}\n${CLIENT_SOURCE}`;
+  assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(combined), false);
+  for (const table of ["tenants", "tenant_hostname_mappings", "admin_tenant_access"]) {
+    assert.equal(new RegExp(`\\.from\\(["']${table}["']\\)`).test(combined), false);
+  }
+  assert.doesNotMatch(SOURCE, /fcoc-logo/i);
+  assert.doesNotMatch(SOURCE, /\bFCOC\b/);
+  assert.doesNotMatch(SOURCE, /generateMetadata/);
 });

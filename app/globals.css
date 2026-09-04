@@ -1088,6 +1088,69 @@ textarea.app-control,
   }
 }
 
+/* Tenant Branding P-1B: compact-form treatment scoped to the Add Tenant
+   creation dialog ONLY (`.tenant-create-dialog` panel, `.tenant-create-form`
+   body). The governed creation form has ~12 controls; at the shared 45px
+   touch-first control height it scrolled past its own action buttons on a
+   normal desktop window. These rules tighten control height, vertical
+   rhythm, the Reason box, and the Post-Event edit-window width so the whole
+   form fits one desktop dialog page -- WITHOUT touching the shared
+   .app-control / .app-field / .app-dialog rules any other form uses, and
+   WITHOUT reducing the 45px touch target below 900px (where the dialog is
+   single-column and vertical scrolling is already expected). The P-1A
+   width (app-dialog-form) is unchanged. */
+.app-stack-8.tenant-create-form {
+  gap: var(--space-2);
+}
+
+.tenant-create-form .app-field {
+  gap: var(--space-1);
+}
+
+.tenant-create-form textarea.app-control {
+  min-height: 3.5rem;
+}
+
+/* Asymmetric operational row: Tenant type keeps a useful width; the
+   Post-Event edit window is a compact numeric control. Stacks below 900px
+   like the shared two-column grid. */
+.tenant-operational-row-compact {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  align-items: start;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .app-dialog.tenant-create-dialog {
+    padding: var(--space-6);
+    padding-bottom: max(var(--space-6), env(safe-area-inset-bottom));
+  }
+
+  .tenant-create-dialog .app-dialog-description {
+    margin-top: var(--space-3);
+  }
+
+  .tenant-create-dialog .app-dialog-footer {
+    margin-top: var(--space-5);
+  }
+
+  .tenant-create-form .app-control {
+    min-height: 2.25rem;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .tenant-create-form .tenant-branding-color-swatch-input {
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+  }
+
+  .tenant-operational-row-compact {
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 160px);
+  }
+}
+
 /* Tenant Branding P-1: a text field paired with a native color-picker
    convenience control. The text value stays authoritative; the picker is a
    fixed-size affordance that never grows on narrow viewports. */
