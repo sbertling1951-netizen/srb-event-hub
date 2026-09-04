@@ -87,6 +87,23 @@ The future implementation must distinguish:
 No email match, event participation record, or browser state may silently
 collapse those facts into one another.
 
+#### Accepted minimum trust baseline
+
+- A verified email address is required before an organizer may create a
+  private draft Event.
+- A verified email address, proportionate automated risk checks, and rate
+  limits are required before an organizer may invite guests or publish/share
+  an Event.
+- A co-administrator is optional. A sole organizer may create, run, and close
+  an Event without appointing anyone else.
+- When an organizer invites a co-administrator, the invitee verifies their own
+  account before any authority becomes effective.
+- Suspicious or higher-risk activity may require step-up verification (such as
+  phone verification) or enter a temporary automated hold with a recovery
+  path. Routine cases do not require Platform Administrator approval.
+- No onboarding, invitation, or verification path may create Platform
+  Administrator authority automatically.
+
 ### 4.2 Create an Event
 
 The simple path asks only for information needed to begin a draft Event:
