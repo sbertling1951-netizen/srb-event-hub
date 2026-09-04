@@ -399,8 +399,7 @@ test("Post-Event edit window is a deliberately compact numeric control; Tenant t
     /\.tenant-create-form \.tenant-operational-window-field \{\s*\n\s*grid-template-columns: minmax\(7rem, 9rem\) minmax\(0, 1fr\);/,
   );
   // semantics unchanged: still a number input writing post_event_edit_window_days
-  assert.match(SOURCE, /type="number"[\s\S]{0,260}post_event_edit_window_days: event\.target\.value/);
-  assert.match(SOURCE, /Leave blank to use no Tenant-specific override\. Zero is preserved\./);
+  assert.match(SOURCE, /type="number"[\s\S]{0,300}post_event_edit_window_days: event\.target\.value/);
 });
 
 test("Reason textarea has a reduced default desktop footprint but stays a real, resizable field", () => {
@@ -626,10 +625,8 @@ test("P-1D: operational row is two equal columns and the Post-Event help sits be
   assert.equal(/tenant-operational-window-field/.test(belowDesktop), false);
 });
 
-test("P-1D: Post-Event semantics, help text, Reason rows, dialog width and creation path all unchanged", () => {
-  // help TEXT is not touched in P-1D (Part A found dynamic/retroactive policy)
-  assert.match(SOURCE, /Leave blank to use no Tenant-specific override\. Zero is preserved\./);
-  assert.match(SOURCE, /type="number"[\s\S]{0,260}post_event_edit_window_days: event\.target\.value/);
+test("P-1D: Post-Event control, Reason rows, dialog width and creation path all unchanged", () => {
+  assert.match(SOURCE, /type="number"[\s\S]{0,300}post_event_edit_window_days: event\.target\.value/);
   const createDialog = SOURCE.slice(SOURCE.indexOf('title="Add Tenant"'), SOURCE.indexOf("open={statusDialogOpen}"));
   assert.match(createDialog, /<Field label="Reason"[\s\S]*?rows=\{2\}/);
   assert.match(createDialog, /className="app-dialog-form tenant-create-dialog"/);
@@ -644,4 +641,43 @@ test("P-1D: Post-Event semantics, help text, Reason rows, dialog width and creat
   }
   assert.doesNotMatch(SOURCE, /fcoc-logo/i);
   assert.doesNotMatch(SOURCE, /\bFCOC\b/);
+});
+
+// -- Tenant Branding P-1D.1: tenant Post-Event window 0-59 ----------------
+
+test("P-1D.1: the tenant Post-Event input is bounded 0-59 with integer steps", () => {
+  const opFields = SOURCE.slice(
+    SOURCE.indexOf("function TenantOperationalFields"),
+    SOURCE.indexOf("function TenantMetadataFields"),
+  );
+  assert.match(
+    opFields,
+    /<Input\s*\n\s*\{\.\.\.props\}\s*\n\s*type="number"\s*\n\s*min="0"\s*\n\s*max="59"\s*\n\s*step="1"/,
+  );
+});
+
+test("P-1D.1: help text is exactly the approved wording", () => {
+  assert.match(SOURCE, /help="Blank = 60 days, or enter 0–59\."/);
+  // the old developer-facing wording is gone
+  assert.doesNotMatch(SOURCE, /Leave blank to use no Tenant-specific override/);
+  assert.doesNotMatch(SOURCE, /Tenant-specific override/);
+});
+
+test("P-1D.1: shared validateMetadata rejects >59 / non-integer / negative but accepts blank, 0, 1..59", () => {
+  const fn = SOURCE.slice(
+    SOURCE.indexOf("function validateMetadata"),
+    SOURCE.indexOf("function TenantBrandingFields"),
+  );
+  assert.match(fn, /const rawWindow = form\.post_event_edit_window_days\.trim\(\);/);
+  assert.match(fn, /!\/\^\\d\+\$\/\.test\(rawWindow\) \|\| Number\(rawWindow\) > 59/);
+  assert.match(fn, /must be blank \(Platform default of 60 days\) or a whole number from 0 through 59/);
+  // validateMetadata still guards both create and edit save paths
+  assert.match(SOURCE, /const validationError = validateMetadata\(metadataForm\);/);
+  assert.match(SOURCE, /const validationError = validateMetadata\(createForm\);/);
+});
+
+test("P-1D.1: no client change to the EVENT-level field or lifecycle behaviour", () => {
+  // page.tsx only ever touches the tenant field; nothing about events.* here
+  assert.equal(/events\.post_event_edit_window_days/.test(SOURCE), false);
+  assert.equal(/event_effective_lifecycle_state|assert_event_lifecycle_mutable/.test(SOURCE), false);
 });

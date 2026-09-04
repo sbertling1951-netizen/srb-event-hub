@@ -205,11 +205,13 @@ function validateMetadata(form: TenantMetadataForm): string | null {
   if (!form.organization_name.trim() || !form.display_name.trim() || !form.app_title.trim()) {
     return "Organization name, display name, and app title are required.";
   }
-  if (
-    form.post_event_edit_window_days.trim() &&
-    !/^\d+$/.test(form.post_event_edit_window_days.trim())
-  ) {
-    return "Post-Event edit window must be a whole number zero or greater.";
+  const rawWindow = form.post_event_edit_window_days.trim();
+  if (rawWindow && (!/^\d+$/.test(rawWindow) || Number(rawWindow) > 59)) {
+    // Tenant-level policy: blank = the 60-day Platform default; an explicit
+    // tenant value may only make the window stricter (0-59). Extensions
+    // beyond 60 days are a governed single-Event exception (P-1E), never a
+    // tenant-wide value.
+    return "Post-Event edit window must be blank (Platform default of 60 days) or a whole number from 0 through 59.";
   }
   const colorErrors = brandingColorErrors(form);
   const colorError = BRANDING_COLOR_FIELDS.map(
@@ -398,7 +400,7 @@ function TenantOperationalFields({
       </Field>
       <Field
         label="Post-Event edit window (days)"
-        help="Leave blank to use no Tenant-specific override. Zero is preserved."
+        help="Blank = 60 days, or enter 0–59."
         disabled={disabled}
         className={compact ? "tenant-operational-window-field" : undefined}
       >
@@ -407,6 +409,7 @@ function TenantOperationalFields({
             {...props}
             type="number"
             min="0"
+            max="59"
             step="1"
             value={form.post_event_edit_window_days}
             onChange={(event) =>
