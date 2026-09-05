@@ -324,6 +324,34 @@ it, and what a recipient can share. The organizer may later deliberately
 change the setting, with a clear warning when doing so widens visibility or
 access.
 
+#### Accepted guest-entry methods and Event-code direction
+
+Event visibility and guest-entry methods are separate organizer choices. The
+organizer selects where people may find the Event—hidden/invitation-only,
+unlisted, or public—and may enable one or more entry methods:
+
+- a personal invitation link;
+- an Event access code;
+- a shareable private link; and/or
+- public registration.
+
+The guided setup recommends sensible methods for the selected visibility but
+does not force a single brittle entry path. An organizer may send personal
+links to known guests while retaining an Event access code for a guest invited
+in person or whose contact information is not known.
+
+An Event access code is intentionally transferable. The organizer must see a
+plain notice that anyone given the code may use it, along with a way to rotate
+the code. EpicentraX records the method through which a guest was admitted.
+
+Code rotation stops new admission through the old code; it does not remove
+access already granted to legitimate Event guests. Removing a particular
+guest requires a distinct, governed revoke-access action. A guest with an
+account or separately verified contact can return through their established
+Event relationship after a code rotates. A guest who used only a code and
+retains only a browser session cannot safely recover access on another device
+after that session is lost without a new code or invitation.
+
 #### Accepted party invitation and individual-claim direction
 
 An invitation contact point is not assumed to identify one individual. A
