@@ -352,6 +352,33 @@ Event relationship after a code rotates. A guest who used only a code and
 retains only a browser session cannot safely recover access on another device
 after that session is lost without a new code or invitation.
 
+#### Accepted organizer Guest & Invitations control-panel direction
+
+After launch, the organizer manages Event admission through one clear **Guest
+& Invitations** screen. It presents each party/contact's name, party count,
+invitation or entry method, and Event-scoped state such as drafted, sent,
+opened, entered, registered, declined, or revoked. The organizer can add an
+individual invitation, resend an invitation, revoke a specific guest's Event
+access, and view/rotate the current Event access code.
+
+This screen is an Event-access tool, not a view into a guest's broader
+EpicentraX identity. It may show whether a person has entered or registered
+for this Event, but it must not disclose a guest's private account details or
+cross-Event history to the organizer.
+
+The organizer may personalize the Event invitation through a deliberately
+simple editor. Event title, logo, dates, venue, private link, and access-code
+mechanics are supplied by EpicentraX. The organizer may provide a greeting,
+short message, sign-off, and optional organizer contact name, then preview
+the invitation separately for email and text delivery. A reset-to-recommended
+wording control is always available.
+
+Security and privacy mechanics remain system-owned: the private link,
+access-code behavior, expiry/revocation behavior, and the no-marketing notice
+cannot be overridden through invitation customization. The product does not
+expose a raw-HTML or campaign-style email designer for ordinary Event
+organizers.
+
 #### Accepted party invitation and individual-claim direction
 
 An invitation contact point is not assumed to identify one individual. A
