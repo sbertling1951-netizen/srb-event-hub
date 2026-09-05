@@ -352,6 +352,107 @@ or account governs an individual's durable identity and history. Sending an
 individual invitation is optional, and an Event invitation must not silently
 enroll its recipient in marketing.
 
+#### Accepted primary invitee “Your group” registration flow
+
+The primary invitee receives a short, low-pressure registration step headed
+**Who is coming with you?** It collects the minimum Event attendance facts:
+
+```text
+You
+- name
+- attending? yes / no
+
+Add another guest
+- name
+- adult or child
+- attending? yes / no
+- optional email or mobile number: “Send this person their own Event invitation”
+
+Or, if you do not want to add individual details yet
+- total people in your party (including you)
+```
+
+The primary invitee may add multiple guests and continue without supplying a
+contact method for any other person. They may instead provide only the total
+number of people in their party, including themselves. That lightweight count
+is useful for Event capacity and planning but must not fabricate individual
+identity or attendee records; individual details can be added or reconciled
+later. Children, offline guests, and adults who decline an individual
+invitation remain ordinary Event-scoped party members; they are not failed or
+incomplete accounts.
+
+Event-specific information—such as parking, meals, accessibility needs,
+arrival details, or other organizer-selected questions—appears progressively
+after this minimal party step, only when relevant to that Event. A recipient
+who accepts an individual invitation may later provide or control their own
+details. This guided flow must not grant administrative authority to the
+primary invitee over another adult merely because they were included in the
+same party registration.
+
+#### Accepted host-guided Guest Entry Panel direction
+
+Each Event provides an Event-scoped **Guest Entry Panel** that the organizer
+configures through guided choices, not a blank form builder. The organizer
+first selects a familiar Event starting point—such as casual gathering,
+birthday/family celebration, club or RV rally, conference/corporate Event,
+dinner/meal Event, or sports/activity Event. The selected template supplies
+the most likely guest-entry sections and Event-appropriate terminology.
+
+The organizer then answers **What do you need from guests?** using a simple
+selector list. Initial built-in sections include party size, names, meal
+choice, parking/vehicle details, arrival details, accessibility needs,
+volunteer interest, and individual invitations for adults. Each enabled
+section offers only proportionate controls: show or hide, required or
+optional, organizer-facing wording, and a brief guest-facing helper sentence.
+The organizer can preview the exact guest experience, skip a section, and
+return to it later.
+
+An RV rally template may preselect coach, campsite, arrival, and co-pilot
+language; a birthday template uses plain terms such as **Your group** and
+**Who are you bringing?** The template is a guided presentation starting
+point, never a separate product tier, identity model, or data system.
+
+All templates and selector choices resolve through one canonical registration
+and response backend. They control which questions appear, their labels and
+help text, whether they are required, and which existing Event capability
+receives an answer. A future genuinely custom question must use one governed,
+reusable form-response capability—not a one-off backend created for a
+particular Event type.
+
+#### Accepted private draft setup and Launch Event direction
+
+Before payment, an organizer may configure and privately preview all core
+Event capabilities. This includes the Guest Entry Panel, agenda, parking,
+meals, activities, Event messaging, branding, photo/gallery settings,
+slideshow setup, and Event venue assets such as PNG/JPEG venue images,
+parking maps, seating charts, tables, sites, and markers. The organizer may
+revise this private draft as often as needed.
+
+A draft is not a guest-facing Event. Until the organizer deliberately chooses
+**Launch Event**, it cannot issue guest invitations, provide a shareable or
+public Event experience, or accept live guest participation. Launch is the
+explicit point at which the organizer confirms the $24 Launch Pass and makes
+the Event available according to its selected access setting.
+
+The initial Launch Event checklist requires only:
+
+- a verified organizer account;
+- an Event name;
+- a date/time or an explicit date-to-be-announced state;
+- a location or an explicit location-to-be-announced state;
+- an Event access choice; and
+- confirmation of the Launch Pass.
+
+No organizer is blocked from launching a simple Event because they have not
+configured a core capability they do not need.
+
+An indefinite free draft receives a modest, separately governed private setup
+asset allowance for planning materials such as venue maps, logos, and seating
+charts. This is a capacity boundary, not a feature gate. The exact allowance
+remains a separate commercial decision. At launch, retained setup assets enter
+the Event's normal active media-capacity model; high-volume guest media begins
+only when the Event is live.
+
 #### Accepted guest photo contribution and account-recovery direction
 
 An EpicentraX account is not required for an Event guest to contribute photos.
