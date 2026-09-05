@@ -523,6 +523,47 @@ organizer account becomes the initial billing contact for any future Event
 Archive renewal, but no recurring charge or automatic archive renewal begins
 at launch.
 
+#### Accepted Launch Pass payment, cancellation, and refund direction
+
+EpicentraX uses a platform payment provider that keeps payment credentials
+tokenized with that provider; EpicentraX does not store a customer's raw card
+number. The checkout must show any applicable tax, the total due, the Event
+that will launch, and the cancellation/refund terms before the organizer
+confirms payment. A successful charge creates an immutable receipt available
+to the billing contact. The specific payment provider and supported payment
+methods are implementation choices, provided they can support this record,
+refunds, and payment-status webhooks safely.
+
+An organizer may cancel a launched Event at any time. Cancellation immediately
+closes new guest entry and removes public/shareable Event access; it does not
+erase the Event's records or media. EpicentraX notifies guests for whom the
+Event has an individual invitation/contact path, where that notification is
+available, and presents a clear closed/cancelled message to anyone who reaches
+the Event afterward. The organizer retains authorized private access to the
+Event and may export its content under the normal access rules. The Event's
+archive clock begins on its cancellation date unless the organizer later
+provides a governed replacement date.
+
+The $24 Launch Pass has one self-service courtesy refund: a full refund is
+available within 24 hours of purchase only while the Event has had no
+guest-facing use—no invitation sent, no shareable/public entry enabled, no
+guest registration, and no guest contribution. On refund, EpicentraX closes
+the Event and returns it to its private draft state; it does not silently
+delete the organizer's setup work. This narrow rule is automated and
+auditable, prevents an Event from being used and then refunded, and avoids a
+routine Super Admin judgement call.
+
+After that 24-hour unused-event window, a Launch Pass is not refundable or
+prorated merely because an organizer cancels, changes plans, or uses less than
+the included capacity. A cancelled Event may still be retained or exported
+under its included period and the normal Event Archive rules. Likewise,
+archive renewals and added-capacity blocks are explicit one-time purchases:
+they do not auto-renew and are not prorated. A payment that fails, is pending,
+or is reversed never launches an Event; it leaves the Event safely private
+until a successful payment is confirmed. Provider disputes and legally
+required exceptions must be recorded and handled through a governed payment
+workflow rather than ad-hoc production changes.
+
 #### Accepted Event Archive renewal and grace-period direction
 
 Event Archive renewal is proactive and never a surprise charge. At nine
